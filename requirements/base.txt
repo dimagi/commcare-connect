@@ -12,8 +12,6 @@ argon2-cffi-bindings==21.2.0
     # via argon2-cffi
 asgiref==3.7.2
     # via django
-async-timeout==4.0.2
-    # via redis
 attrs==23.1.0
     # via jsonschema
 billiard==3.6.4.0
@@ -50,7 +48,7 @@ cryptography==41.0.0
     # via pyjwt
 defusedxml==0.7.1
     # via python3-openid
-django==4.2.1
+django==4.2.2
     # via
     #   -r requirements/base.in
     #   crispy-bootstrap5
@@ -141,8 +139,6 @@ sqlparse==0.4.4
     # via django
 text-unidecode==1.3
     # via python-slugify
-typing-extensions==4.6.2
-    # via asgiref
 tzdata==2023.3
     # via django-celery-beat
 uritemplate==4.1.1
