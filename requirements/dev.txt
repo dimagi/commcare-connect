@@ -45,10 +45,6 @@ django==4.2.1
     #   django-debug-toolbar
 django-debug-toolbar==4.1.0
     # via -r requirements/dev.in
-exceptiongroup==1.1.1
-    # via
-    #   anyio
-    #   pytest
 executing==1.2.0
     # via stack-data
 factory-boy==3.2.1
@@ -152,7 +148,7 @@ pylint-plugin-utils==0.8.2
     #   pylint-django
 pyproject-hooks==1.0.0
     # via build
-pytest==7.3.1
+pytest==7.4.0
     # via
     #   -r requirements/dev.in
     #   pytest-django
@@ -169,7 +165,6 @@ pyyaml==6.0
 six==1.16.0
     # via
     #   -c requirements/base.txt
-    #   asttokens
     #   python-dateutil
 sniffio==1.3.0
     # via anyio
@@ -180,25 +175,12 @@ sqlparse==0.4.4
     #   django-debug-toolbar
 stack-data==0.6.2
     # via ipython
-tomli==2.0.1
-    # via
-    #   black
-    #   build
-    #   ipdb
-    #   pylint
-    #   pyproject-hooks
-    #   pytest
 tomlkit==0.11.8
     # via pylint
 traitlets==5.9.0
     # via
     #   ipython
     #   matplotlib-inline
-typing-extensions==4.6.2
-    # via
-    #   -c requirements/base.txt
-    #   asgiref
-    #   astroid
 virtualenv==20.23.0
     # via pre-commit
 watchdog==3.0.0
