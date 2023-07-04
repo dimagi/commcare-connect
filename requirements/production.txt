@@ -33,7 +33,7 @@ cryptography==41.0.0
     # via
     #   -c requirements/base.txt
     #   django-anymail
-django==4.2.1
+django==4.2.3
     # via
     #   -c requirements/base.txt
     #   django-anymail
@@ -78,10 +78,6 @@ sqlparse==0.4.4
     # via
     #   -c requirements/base.txt
     #   django
-typing-extensions==4.6.2
-    # via
-    #   -c requirements/base.txt
-    #   asgiref
 urllib3==1.26.16
     # via
     #   -c requirements/base.txt
