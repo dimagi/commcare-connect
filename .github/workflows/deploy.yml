@@ -32,8 +32,10 @@ jobs:
           role-session-name: GithubDeploy
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Set Version Label
-        run: echo "version_label=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_ENV
+      - name: Set Vars
+        run: |
+          echo "version_label=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_ENV
+          echo "deploy_start=$(date --iso-8601=second)" >> $GITHUB_ENV
 
       - name: Deploy to EB
         uses: einaregilsson/beanstalk-deploy@v21
@@ -50,4 +52,6 @@ jobs:
           wait_for_environment_recovery: 120
 
       - name: Tail logs
-        run: aws logs --region ${{ env.AWS_REGION }} tail /aws/elasticbeanstalk/Commcare-connect-env/var/log/cfn-init-cmd.log
+        run: |
+          aws logs --region ${{ env.AWS_REGION }} tail --format short --since ${{ env.deploy_start }} \
+          /aws/elasticbeanstalk/Commcare-connect-env/var/log/cfn-init-cmd.log
