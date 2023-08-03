@@ -13,6 +13,7 @@ on:
   #    types: [completed]
   #    branches: [main]
   workflow_dispatch:
+  pull_request:
 
 jobs:
   deploy:
@@ -47,3 +48,6 @@ jobs:
           region: ${{ env.AWS_REGION }}
           deployment_package: deploy.zip
           wait_for_environment_recovery: 120
+
+      - name: Tail logs
+        run: aws logs --region ${{ env.AWS_REGION }} tail /aws/elasticbeanstalk/Commcare-connect-env/var/log/cfn-init-cmd.log
