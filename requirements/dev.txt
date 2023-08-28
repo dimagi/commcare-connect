@@ -48,7 +48,7 @@ dill==0.3.7
     # via pylint
 distlib==0.3.7
     # via virtualenv
-django==4.2.3
+django==4.2.4
     # via
     #   -c requirements/base.txt
     #   django-debug-toolbar
@@ -228,7 +228,9 @@ werkzeug[watchdog]==2.3.6
 wheel==0.41.0
     # via pip-tools
 wrapt==1.15.0
-    # via astroid
+    # via
+    #   -c requirements/base.txt
+    #   astroid
 xml2json @ git+https://github.com/dimagi/xml2json@041b1ef
     # via -r requirements/dev.in
 

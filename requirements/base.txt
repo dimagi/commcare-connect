@@ -52,14 +52,16 @@ crispy-bootstrap5==0.7
 cron-descriptor==1.4.0
     # via django-celery-beat
 cryptography==41.0.2
-    # via pyjwt
+    # via
+    #   jwcrypto
+    #   pyjwt
 decorator==5.1.1
     # via jsonpath-ng
-deprecated==1.2.14
-    # via jwcrypto
 defusedxml==0.7.1
     # via python3-openid
-django==4.2.3
+deprecated==1.2.14
+    # via jwcrypto
+django==4.2.4
     # via
     #   -r requirements/base.in
     #   crispy-bootstrap5

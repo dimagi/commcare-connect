@@ -33,7 +33,7 @@ cryptography==41.0.2
     # via
     #   -c requirements/base.txt
     #   django-anymail
-django==4.2.3
+django==4.2.4
     # via
     #   -c requirements/base.txt
     #   django-anymail
