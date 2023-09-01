@@ -20,7 +20,7 @@ attrs==23.1.0
     #   referencing
 billiard==4.1.0
     # via celery
-celery==5.3.1
+celery==5.3.3
     # via
     #   -r requirements/base.in
     #   django-celery-beat
@@ -52,13 +52,15 @@ crispy-bootstrap5==0.7
 cron-descriptor==1.4.0
     # via django-celery-beat
 cryptography==41.0.2
-    # via pyjwt
+    # via
+    #   jwcrypto
+    #   pyjwt
 decorator==5.1.1
     # via jsonpath-ng
-deprecated==1.2.14
-    # via jwcrypto
 defusedxml==0.7.1
     # via python3-openid
+deprecated==1.2.14
+    # via jwcrypto
 django==4.2.3
     # via
     #   -r requirements/base.in
@@ -135,7 +137,7 @@ jsonschema-specifications==2023.7.1
     # via jsonschema
 jwcrypto==1.5.0
     # via django-oauth-toolkit
-kombu==5.3.1
+kombu==5.3.2
     # via celery
 oauthlib==3.2.2
     # via
