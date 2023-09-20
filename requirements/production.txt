@@ -59,7 +59,7 @@ packaging==23.1
     # via
     #   django-allow-cidr
     #   gunicorn
-psycopg2==2.9.6
+psycopg2==2.9.7
     # via -r requirements/production.in
 pycparser==2.21
     # via
