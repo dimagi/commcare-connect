@@ -16,7 +16,7 @@ amqp==5.1.1
     # via kombu
 anyio==3.7.1
     # via httpcore
-argon2-cffi==21.3.0
+argon2-cffi==23.1.0
     # via -r requirements/base.in
 argon2-cffi-bindings==21.2.0
     # via argon2-cffi
