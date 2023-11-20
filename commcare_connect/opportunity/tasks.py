@@ -46,7 +46,7 @@ def create_learn_modules_and_deliver_units(opportunity_id):
         )
 
     for block in deliver_app_connect_blocks:
-        DeliverUnit.objects.get_or_create(app=deliver_app, slug=block.id, defaults=dict(name=block.name))
+        DeliverUnit.objects.update_or_create(app=deliver_app, slug=block.id, defaults=dict(name=block.name))
 
 
 @celery_app.task()
