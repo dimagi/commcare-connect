@@ -52,7 +52,7 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_payment_status,
     bulk_update_visit_status,
 )
-from commcare_connect.organization.decorators import org_member_required
+from commcare_connect.organization.decorators import org_admin_required, org_member_required
 from commcare_connect.utils.commcarehq_api import get_applications_for_user
 
 
@@ -398,3 +398,24 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, SingleTableView):
         opportunity_id = self.kwargs["pk"]
         opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
         return PaymentUnit.objects.filter(opportunity=opportunity)
+
+
+@org_admin_required
+def refresh_app_metadata(request, org_slug=None, pk=None):
+    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    result = create_learn_modules_and_deliver_units.delay(opportunity_id=opportunity.id)
+    redirect_url = reverse(
+        "opportunity:detail",
+        args=(request.org.slug, opportunity.id),
+    )
+    return redirect(f"{redirect_url}?refresh_task_id={result.id}")
+
+
+@org_admin_required
+@require_GET
+def refresh_app_metadata_status(request, org_slug=None, task_id=None):
+    task_meta = AsyncResult(task_id)._get_task_meta()
+    status = task_meta.get("status")
+    if status == "FAILURE":
+        HttpResponse(status=500, content=task_meta.get("result"))
+    return HttpResponse(status=200)
