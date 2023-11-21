@@ -154,52 +154,52 @@
           </table>
         </div>
       </div>
-        {% if refresh_task_id %}
-          <div hx-trigger="load, appsRefreshing from:body delay:2s"
-            hx-get="{% url "opportunity:refresh_app_metadata_status" request.org.slug refresh_task_id %}"></div>
-        {% endif %}
-        <div class="accordion" id="accordionExample">
+      {% if refresh_task_id %}
+        <div hx-trigger="load, appsRefreshing from:body delay:2s"
+             hx-get="{% url "opportunity:refresh_app_metadata_status" request.org.slug refresh_task_id %}"></div>
+      {% endif %}
+      <div class="accordion" id="accordionExample">
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingOne">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#learn-app-modules" aria-expanded="true" aria-controls="collapseOne">
               Learn App Modules
               {% if refresh_task_id %}
-              &nbsp;
-              <span id="refresh-learn-spinner" class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
-              <span class="visually-hidden">Loading...</span>
-              {% endif %}
-              </button>
-              </h2>
-              <div id="learn-app-modules" class="accordion-collapse collapse show" aria-labelledby="headingOne" data-bs-parent="#accordionExample">
-              <div class="accordion-body p-0 m-0">
-                <div hx-trigger="load, appsRefreshed from:body"
-                     hx-get="{% url "opportunity:learn_module_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}">
-                  {% include "tables/table_placeholder.html" with num_cols=3 %}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="accordion-item">
-            <h2 class="accordion-header" id="headingTwo">
-              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#deliver-units" aria-expanded="false" aria-controls="collapseTwo">
-                Deliver Units
-                {% if refresh_task_id %}
                 &nbsp;
-                <span id="refresh-deliver-spinner" class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                <span id="refresh-learn-spinner" class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
                 <span class="visually-hidden">Loading...</span>
-                {% endif %}
-              </button>
-            </h2>
-            <div id="deliver-units" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#accordionExample">
-              <div class="accordion-body p-0 m-0">
-                <div hx-trigger="load, appsRefreshed from:body"
-                     hx-get="{% url "opportunity:deliver_unit_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}">
-                  {% include "tables/table_placeholder.html" with num_cols=2 %}
-                </div>
+              {% endif %}
+            </button>
+          </h2>
+          <div id="learn-app-modules" class="accordion-collapse collapse show" aria-labelledby="headingOne" data-bs-parent="#accordionExample">
+            <div class="accordion-body p-0 m-0">
+              <div hx-trigger="load, appsRefreshed from:body"
+                   hx-get="{% url "opportunity:learn_module_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}">
+                {% include "tables/table_placeholder.html" with num_cols=3 %}
               </div>
             </div>
           </div>
         </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingTwo">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#deliver-units" aria-expanded="false" aria-controls="collapseTwo">
+              Deliver Units
+              {% if refresh_task_id %}
+                &nbsp;
+                <span id="refresh-deliver-spinner" class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                <span class="visually-hidden">Loading...</span>
+              {% endif %}
+            </button>
+          </h2>
+          <div id="deliver-units" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#accordionExample">
+            <div class="accordion-body p-0 m-0">
+              <div hx-trigger="load, appsRefreshed from:body"
+                   hx-get="{% url "opportunity:deliver_unit_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}">
+                {% include "tables/table_placeholder.html" with num_cols=2 %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="pt-2 px-4">
