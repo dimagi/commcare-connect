@@ -2,8 +2,10 @@ from django.urls import path
 
 from commcare_connect.opportunity.views import (
     OpportunityCreate,
+    OpportunityDeliverUnitTableView,
     OpportunityDetail,
     OpportunityEdit,
+    OpportunityLearnModuleTableView,
     OpportunityList,
     OpportunityPaymentTableView,
     OpportunityPaymentUnitTableView,
@@ -51,4 +53,6 @@ urlpatterns = [
     path("<int:opp_id>/user_payment_table/<int:pk>", view=UserPaymentsTableView.as_view(), name="user_payments_table"),
     path("<int:pk>/refresh_apps/", view=refresh_app_metadata, name="refresh_app_metadata"),
     path("refresh_app_status/<slug:task_id>", view=refresh_app_metadata_status, name="refresh_app_metadata_status"),
+    path("<int:pk>/learn_module_table/", view=OpportunityLearnModuleTableView.as_view(), name="learn_module_table"),
+    path("<int:pk>/deliver_unit_table/", view=OpportunityDeliverUnitTableView.as_view(), name="deliver_unit_table"),
 ]

@@ -1,7 +1,14 @@
 from django.utils.safestring import mark_safe
 from django_tables2 import columns, tables, utils
 
-from commcare_connect.opportunity.models import OpportunityAccess, Payment, PaymentUnit, UserVisit
+from commcare_connect.opportunity.models import (
+    DeliverUnit,
+    LearnModule,
+    OpportunityAccess,
+    Payment,
+    PaymentUnit,
+    UserVisit,
+)
 
 
 class OpportunityAccessTable(tables.Table):
@@ -102,3 +109,19 @@ class PaymentUnitTable(tables.Table):
     def render_deliver_units(self, record):
         deliver_units = "".join([f"<li>{d.name}</li>" for d in record.deliver_units.all()])
         return mark_safe(f"<ul>{deliver_units}</ul>")
+
+
+class LearnModuleTable(tables.Table):
+    class Meta:
+        model = LearnModule
+        fields = ("name", "description", "time_estimate")
+        orderable = False
+        empty_text = "No learn modules for Learn App."
+
+
+class DeliverUnitTable(tables.Table):
+    class Meta:
+        model = DeliverUnit
+        fields = ("name", "slug")
+        orderable = False
+        empty_text = "No deliver units for Learn App."

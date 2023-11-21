@@ -1,3 +1,5 @@
+from http import HTTPStatus
+
 from celery.result import AsyncResult
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -26,6 +28,7 @@ from commcare_connect.opportunity.forms import (
 from commcare_connect.opportunity.models import (
     CompletedModule,
     DeliverUnit,
+    LearnModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -34,6 +37,8 @@ from commcare_connect.opportunity.models import (
     UserVisit,
 )
 from commcare_connect.opportunity.tables import (
+    DeliverUnitTable,
+    LearnModuleTable,
     OpportunityAccessTable,
     OpportunityPaymentTable,
     PaymentUnitTable,
@@ -124,6 +129,7 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         context["visit_export_form"] = VisitExportForm()
         context["payment_export_form"] = PaymentExportForm()
         context["export_task_id"] = self.request.GET.get("export_task_id")
+        context["refresh_task_id"] = self.request.GET.get("refresh_task_id")
         return context
 
 
@@ -417,5 +423,29 @@ def refresh_app_metadata_status(request, org_slug=None, task_id=None):
     task_meta = AsyncResult(task_id)._get_task_meta()
     status = task_meta.get("status")
     if status == "FAILURE":
-        HttpResponse(status=500, content=task_meta.get("result"))
-    return HttpResponse(status=200)
+        HttpResponse(status=HTTPStatus.INTERNAL_SERVER_ERROR, content=task_meta.get("result"))
+    if status == "SUCCESS":
+        return HttpResponse(status=HTTPStatus.CREATED, headers={"HX-Trigger": "appsRefreshed"})
+    return HttpResponse(status=HTTPStatus.ACCEPTED, headers={"HX-Trigger": "appsRefreshing"})
+
+
+class OpportunityLearnModuleTableView(OrganizationUserMixin, SingleTableView):
+    model = LearnModule
+    table_class = LearnModuleTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
+        return LearnModule.objects.filter(app=opportunity.learn_app).order_by("name")
+
+
+class OpportunityDeliverUnitTableView(OrganizationUserMixin, SingleTableView):
+    model = DeliverUnit
+    table_class = DeliverUnitTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
+        return DeliverUnit.objects.filter(app=opportunity.deliver_app).order_by("name")
