@@ -191,7 +191,7 @@ def get_opportunity(*, learn_app=None, deliver_app=None):
         kwargs = {"deliver_app": deliver_app}
 
     try:
-        return Opportunity.objects.get(active=True, end_date__gt=now().date(), **kwargs)
+        return Opportunity.objects.get(active=True, end_date__gte=now().date(), **kwargs)
     except Opportunity.DoesNotExist:
         pass
     except Opportunity.MultipleObjectsReturned:
