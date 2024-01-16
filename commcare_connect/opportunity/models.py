@@ -18,7 +18,7 @@ class CommCareApp(BaseModel):
         related_query_name="app",
     )
     cc_domain = models.CharField(max_length=255)
-    cc_app_id = models.CharField(max_length=50)
+    cc_app_id = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=255)
     description = models.TextField()
     passing_score = models.IntegerField(null=True)
