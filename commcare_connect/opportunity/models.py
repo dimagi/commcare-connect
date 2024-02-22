@@ -145,35 +145,25 @@ class OpportunityAccess(models.Model):
         learn_modules_count = learn_modules.count()
         if learn_modules_count <= 0:
             return 0
-        completed_modules = CompletedModule.objects.filter(
-            opportunity=self.opportunity, module__in=learn_modules, user=self.user
-        ).count()
+        completed_modules = self.completedmodule_set.count()
         percentage = (completed_modules / learn_modules_count) * 100
         return round(percentage, 2)
 
     @property
     def visit_count(self):
-        user_visits = (
-            UserVisit.objects.filter(user=self.user_id, opportunity=self.opportunity)
-            .exclude(status=VisitValidationStatus.over_limit)
-            .order_by("visit_date")
-        )
+        user_visits = self.uservisit_set.exclude(status=VisitValidationStatus.over_limit).order_by("visit_date")
         return user_visits.count()
 
     @property
     def last_visit_date(self):
-        user_visits = (
-            UserVisit.objects.filter(user=self.user_id, opportunity=self.opportunity)
-            .exclude(status=VisitValidationStatus.over_limit)
-            .order_by("visit_date")
-        )
+        user_visits = self.uservisit_set.exclude(status=VisitValidationStatus.over_limit).order_by("visit_date")
         if user_visits.exists():
             return user_visits.last().visit_date
         return
 
     @property
     def total_paid(self):
-        return Payment.objects.filter(opportunity_access=self).aggregate(total=Sum("amount")).get("total", 0)
+        return self.payment_set.aggregate(total=Sum("amount")).get("total", 0)
 
     @property
     def display_name(self):

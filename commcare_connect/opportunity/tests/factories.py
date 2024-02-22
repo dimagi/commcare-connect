@@ -52,6 +52,14 @@ class OpportunityFactory(DjangoModelFactory):
         model = "opportunity.Opportunity"
 
 
+class OpportunityAccessFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    user = SubFactory("commcare_connect.users.tests.factories.MobileUserFactory")
+
+    class Meta:
+        model = "opportunity.OpportunityAccess"
+
+
 class LearnModuleFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("pystr")
@@ -86,6 +94,7 @@ class DeliverUnitFactory(DjangoModelFactory):
 class UserVisitFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
     deliver_unit = SubFactory(DeliverUnitFactory)
     entity_id = Faker("uuid4")
     entity_name = Faker("name")
@@ -96,14 +105,6 @@ class UserVisitFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.UserVisit"
-
-
-class OpportunityAccessFactory(DjangoModelFactory):
-    opportunity = SubFactory(OpportunityFactory)
-    user = SubFactory("commcare_connect.users.tests.factories.MobileUserFactory")
-
-    class Meta:
-        model = "opportunity.OpportunityAccess"
 
 
 class OpportunityClaimFactory(DjangoModelFactory):
@@ -119,6 +120,7 @@ class OpportunityClaimFactory(DjangoModelFactory):
 class CompletedModuleFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
     date = Faker("date_time", tzinfo=timezone.utc)
     module = SubFactory(LearnModuleFactory, app=SelfAttribute("..opportunity.learn_app"))
     duration = Faker("time_delta")
@@ -130,6 +132,7 @@ class CompletedModuleFactory(DjangoModelFactory):
 class AssessmentFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
     app = SubFactory(CommCareAppFactory)
     passed = True
     score = Faker("pyint", min_value=75, max_value=100)

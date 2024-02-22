@@ -106,10 +106,8 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
 def update_payment_accrued(opportunity: Opportunity, users):
     payment_units = opportunity.paymentunit_set.all()
     for user in users:
-        user_visits = UserVisit.objects.filter(
-            opportunity=opportunity, user=user, status=VisitValidationStatus.approved
-        ).order_by("entity_id")
         access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
+        user_visits = access.uservisit_set.filter(status=VisitValidationStatus.approved).order_by("entity_id")
         payment_accrued = 0
         for payment_unit in payment_units:
             payment_unit_deliver_units = {deliver_unit.id for deliver_unit in payment_unit.deliver_units.all()}

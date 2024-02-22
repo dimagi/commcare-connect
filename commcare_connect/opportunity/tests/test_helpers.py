@@ -1,14 +1,14 @@
 import pytest
 
 from commcare_connect.opportunity.helpers import get_annotated_opportunity_access_deliver_status
-from commcare_connect.opportunity.models import Opportunity, UserVisit
+from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserVisitFactory
 from commcare_connect.users.tests.factories import MobileUserFactory
 
 
 @pytest.mark.django_db
 def test_deliver_status_query_no_visits(opportunity: Opportunity):
-    mobile_users = list(MobileUserFactory.create_batch(5))
+    mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
@@ -53,14 +53,14 @@ def test_deliver_status_query(opportunity: Opportunity):
 def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunity):
     # Test user visit counts when visits are for another opportunity. Should return 0 for all counts as the user has
     # done no visits in the current opportunity.
-    mobile_users = list(MobileUserFactory.create_batch(5))
+    mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
-        OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
-        UserVisitFactory.create_batch(5, user=mobile_user)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
+        UserVisitFactory.create_batch(5, user=mobile_user, opportunity_access=access)
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
     usernames = {user.username for user in mobile_users}
     for access in access_objects:
-        assert UserVisit.objects.filter(user=mobile_user).count() == 5
+        assert access.uservisit_set.count() == 5
         assert access.user.username in usernames
         assert access.visits_approved == 0
         assert access.visits_rejected == 0

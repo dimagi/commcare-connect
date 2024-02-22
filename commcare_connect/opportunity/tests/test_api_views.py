@@ -1,7 +1,6 @@
 import datetime
 
 import pytest
-from django.utils.timezone import now
 from rest_framework.test import APIClient
 
 from commcare_connect.opportunity.api.serializers import (
@@ -11,8 +10,6 @@ from commcare_connect.opportunity.api.serializers import (
     UserVisitSerializer,
 )
 from commcare_connect.opportunity.models import (
-    Assessment,
-    CompletedModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -20,6 +17,8 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
+    AssessmentFactory,
+    CompletedModuleFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
@@ -122,20 +121,15 @@ def test_learn_progress_endpoint(mobile_user: User, api_client: APIClient):
         mobile_user, total_budget=1000, end_date=datetime.date.today() + datetime.timedelta(days=100)
     )
     learn_module = LearnModuleFactory(slug="module_1", app=opportunity.learn_app)
-    CompletedModule.objects.create(
-        module=learn_module,
-        user=mobile_user,
-        opportunity=opportunity,
-        date=now(),
-        duration=datetime.timedelta(hours=10),
+    CompletedModuleFactory(
+        module=learn_module, user=mobile_user, opportunity=opportunity, opportunity_access=opportunity_access
     )
-    Assessment.objects.create(
+    AssessmentFactory(
         user=mobile_user,
         app=opportunity.learn_app,
         opportunity=opportunity,
-        date=now(),
+        opportunity_access=opportunity_access,
         score=100,
-        passing_score=opportunity.learn_app.passing_score,
         passed=True,
     )
     api_client.force_authenticate(mobile_user)
@@ -164,7 +158,10 @@ def test_delivery_progress_endpoint(
 ):
     access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
     UserVisitFactory.create(
-        opportunity=opportunity, user=mobile_user_with_connect_link, status=VisitValidationStatus.pending
+        opportunity=opportunity,
+        user=mobile_user_with_connect_link,
+        status=VisitValidationStatus.pending,
+        opportunity_access=access,
     )
     api_client.force_authenticate(mobile_user_with_connect_link)
     response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")

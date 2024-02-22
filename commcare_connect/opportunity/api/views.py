@@ -12,15 +12,7 @@ from commcare_connect.opportunity.api.serializers import (
     UserLearnProgressSerializer,
     UserVisitSerializer,
 )
-from commcare_connect.opportunity.models import (
-    Assessment,
-    CompletedModule,
-    Opportunity,
-    OpportunityAccess,
-    OpportunityClaim,
-    UserVisit,
-    VisitValidationStatus,
-)
+from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, OpportunityClaim, VisitValidationStatus
 from commcare_connect.users.helpers import create_hq_user
 from commcare_connect.users.models import ConnectIDUserLink
 
@@ -42,11 +34,8 @@ class UserLearnProgressView(RetrieveAPIView):
             OpportunityAccess, user=self.request.user, opportunity=self.kwargs.get("pk")
         )
         return dict(
-            completed_modules=CompletedModule.objects.filter(
-                user=self.request.user,
-                opportunity=opportunity_access.opportunity,
-            ),
-            assessments=Assessment.objects.filter(user=self.request.user, opportunity=opportunity_access.opportunity),
+            completed_modules=opportunity_access.completedmodule_set.all(),
+            assessments=opportunity_access.assessment_set.all(),
         )
 
 
@@ -55,10 +44,10 @@ class UserVisitViewSet(viewsets.GenericViewSet, viewsets.mixins.ListModelMixin):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return UserVisit.objects.filter(
-            opportunity=self.kwargs.get("opportunity_id"),
-            user=self.request.user,
-        ).exclude(status=VisitValidationStatus.over_limit)
+        opportunity_access = get_object_or_404(
+            OpportunityAccess, user=self.request.user, opportunity=self.kwargs.get("pk")
+        )
+        return opportunity_access.uservisit_set.exclude(status=VisitValidationStatus.over_limit)
 
 
 class DeliveryProgressView(RetrieveAPIView):

@@ -50,11 +50,11 @@ class OpportunityAccessAdmin(admin.ModelAdmin):
     @admin.action(description="Clear User Progress")
     def clear_user_progress(self, request, queryset):
         for access in queryset:
-            UserVisit.objects.filter(user=access.user, opportunity=access.opportunity).delete()
+            UserVisit.objects.filter(opportunity_access=access).delete()
             Payment.objects.filter(opportunity_access=access).delete()
             OpportunityClaim.objects.filter(opportunity_access=access).delete()
-            CompletedModule.objects.filter(user=access.user, opportunity=access.opportunity).delete()
-            Assessment.objects.filter(user=access.user, opportunity=access.opportunity).delete()
+            CompletedModule.objects.filter(opportunity_access=access).delete()
+            Assessment.objects.filter(opportunity_access=access).delete()
 
 
 @admin.register(LearnModule)
