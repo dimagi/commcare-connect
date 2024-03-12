@@ -83,12 +83,28 @@ class DeliverUnitFactory(DjangoModelFactory):
         model = "opportunity.DeliverUnit"
 
 
+class OpportunityAccessFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    user = SubFactory("commcare_connect.users.tests.factories.MobileUserFactory")
+
+    class Meta:
+        model = "opportunity.OpportunityAccess"
+
+
+class CompletedWorkFactory(DjangoModelFactory):
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+    payment_unit = SubFactory(PaymentUnitFactory)
+    entity_id = Faker("uuid4")
+    entity_name = Faker("name")
+
+    class Meta:
+        model = "opportunity.CompletedWork"
+
+
 class UserVisitFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
     deliver_unit = SubFactory(DeliverUnitFactory)
-    entity_id = Faker("uuid4")
-    entity_name = Faker("name")
     status = Faker("enum", enum_cls=VisitValidationStatus)
     visit_date = Faker("date_time", tzinfo=timezone.utc)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
@@ -96,14 +112,6 @@ class UserVisitFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.UserVisit"
-
-
-class OpportunityAccessFactory(DjangoModelFactory):
-    opportunity = SubFactory(OpportunityFactory)
-    user = SubFactory("commcare_connect.users.tests.factories.MobileUserFactory")
-
-    class Meta:
-        model = "opportunity.OpportunityAccess"
 
 
 class OpportunityClaimFactory(DjangoModelFactory):

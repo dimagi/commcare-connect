@@ -1,8 +1,6 @@
 import codecs
-import itertools
 import mimetypes
 import textwrap
-from collections import Counter
 from dataclasses import dataclass
 
 from django.core.files.uploadedfile import UploadedFile
@@ -105,28 +103,13 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
 
 def update_payment_accrued(opportunity: Opportunity, users):
     payment_units = opportunity.paymentunit_set.all()
-    for user in users:
-        user_visits = (
-            UserVisit.objects.filter(opportunity=opportunity, user=user, status=VisitValidationStatus.approved)
-            .order_by("entity_id")
-            .values("entity_id", "deliver_unit_id")
-        )
-        access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
+    access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity)
+    for access in access_objects:
         payment_accrued = 0
         for payment_unit in payment_units:
-            required_deliver_units = payment_unit.deliver_units.filter(optional=False).values_list("id", flat=True)
-            optional_deliver_units = payment_unit.deliver_units.filter(optional=True).values_list("id", flat=True)
-            for _, visits in itertools.groupby(user_visits, key=lambda visit: visit["entity_id"]):
-                unit_counts = Counter(v["deliver_unit_id"] for v in visits)
-                # The min unit count is the completed required deliver units for an entity_id
-                number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
-                if optional_deliver_units:
-                    # The sum calculates the number of optional deliver units completed and to process
-                    # duplicates with extra optional deliver units
-                    optional_completed = sum(unit_counts[deliver_id] for deliver_id in optional_deliver_units)
-                    number_completed = min(number_completed, optional_completed)
-                if number_completed > 0:
-                    payment_accrued += payment_unit.amount * number_completed
+            completed_works = access.completedwork_set.filter(payment_unit=payment_unit)
+            for completed_work in completed_works:
+                payment_accrued += completed_work.completed_count * payment_unit.amount
         access.payment_accrued = payment_accrued
         access.save()
 

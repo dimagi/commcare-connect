@@ -1,4 +1,5 @@
 import math
+from collections import Counter
 from uuid import uuid4
 
 from django.db import models
@@ -223,6 +224,13 @@ class PaymentUnit(models.Model):
     amount = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
     description = models.TextField()
+    parent_payment_unit = models.ForeignKey(
+        "self",
+        on_delete=models.DO_NOTHING,
+        related_name="child_payment_units",
+        blank=True,
+        null=True,
+    )
 
 
 class DeliverUnit(models.Model):
@@ -235,7 +243,7 @@ class DeliverUnit(models.Model):
     name = models.CharField(max_length=255)
     payment_unit = models.ForeignKey(
         PaymentUnit,
-        on_delete=models.CASCADE,
+        on_delete=models.DO_NOTHING,
         related_name="deliver_units",
         related_query_name="deliver_unit",
         null=True,
@@ -281,6 +289,45 @@ class CompletedWork(models.Model):
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     reason = models.CharField(max_length=300, null=True, blank=True)
+
+    # TODO: add caching on this property
+    @property
+    def completed_count(self):
+        """Returns the no of completion of this work. Includes duplicate submissions."""
+        visits = self.uservisit_set.filter(status=VisitValidationStatus.approved).values_list(
+            "deliver_unit_id", flat=True
+        )
+        unit_counts = Counter(visits)
+        required_deliver_units = self.payment_unit.deliver_units.filter(optional=False).values_list("id", flat=True)
+        optional_deliver_units = self.payment_unit.deliver_units.filter(optional=True).values_list("id", flat=True)
+        # NOTE: The min unit count is the completed required deliver units for an entity_id
+        number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
+        if optional_deliver_units:
+            # The sum calculates the number of optional deliver units completed and to process
+            # duplicates with extra optional deliver units
+            optional_completed = sum(unit_counts[deliver_id] for deliver_id in optional_deliver_units)
+            number_completed = min(number_completed, optional_completed)
+        child_payment_units = self.payment_unit.child_payment_units.all()
+        if child_payment_units:
+            child_completed_works = CompletedWork.objects.filter(
+                opportunity_access=self.opportunity_access,
+                payment_unit__in=child_payment_units,
+                entity_id=self.entity_id,
+            )
+            child_completed_work_count = 0
+            for completed_work in child_completed_works:
+                child_completed_work_count += completed_work.completed_count
+            number_completed = min(number_completed, child_completed_work_count)
+        return number_completed
+
+    @property
+    def completed(self):
+        return self.completed_count > 0
+
+    @property
+    def payment_accrued(self):
+        """Returns the total payment accrued for this completed work. Includes duplicates"""
+        return self.completed_count * self.payment_unit.amount
 
 
 class UserVisit(XFormBaseModel):

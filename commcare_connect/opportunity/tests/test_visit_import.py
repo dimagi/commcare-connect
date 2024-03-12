@@ -14,6 +14,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
+    CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
     PaymentUnitFactory,
@@ -61,23 +62,23 @@ def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
 @pytest.mark.django_db
 def test_payment_accrued(opportunity: Opportunity):
     payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
-    deliver_units = []
     mobile_users = MobileUserFactory.create_batch(5)
     for payment_unit in payment_units:
-        deliver_units += DeliverUnitFactory.create_batch(
-            2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False
-        )
+        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
     access_objects = []
     for mobile_user in mobile_users:
-        access_objects.append(OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True))
-        for deliver_unit in deliver_units:
-            UserVisitFactory(
-                opportunity=opportunity,
-                user=mobile_user,
-                deliver_unit=deliver_unit,
-                entity_id=deliver_unit.payment_unit.name,
-                status=VisitValidationStatus.approved.value,
-            )
+        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True)
+        access_objects.append(access)
+        for payment_unit in payment_units:
+            completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+            for deliver_unit in payment_unit.deliver_units.all():
+                UserVisitFactory(
+                    opportunity=opportunity,
+                    user=mobile_user,
+                    deliver_unit=deliver_unit,
+                    status=VisitValidationStatus.approved.value,
+                    completed_work=completed_work,
+                )
     update_payment_accrued(opportunity, {mobile_user.id for mobile_user in mobile_users})
     for access in access_objects:
         access.refresh_from_db()
@@ -86,18 +87,20 @@ def test_payment_accrued(opportunity: Opportunity):
 
 @pytest.mark.django_db
 def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
-    payment_unit = PaymentUnitFactory.create(opportunity=opportunity)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
     deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
     UserVisitFactory.create_batch(
         2,
         opportunity=opportunity,
         user=mobile_user,
         deliver_unit=deliver_unit,
-        entity_id=deliver_unit.payment_unit.name,
         status=VisitValidationStatus.approved.value,
+        completed_work=completed_work,
     )
     update_payment_accrued(opportunity, {mobile_user.id})
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 2
 
 
@@ -106,28 +109,26 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
     payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
     access_objects = OpportunityAccessFactory.create_batch(5, opportunity=opportunity, accepted=True)
     for payment_unit in payment_units:
-        required_deliver_units = DeliverUnitFactory.create_batch(
-            2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False
-        )
-        optional_deliver_units = DeliverUnitFactory.create_batch(
-            2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=True
-        )
-        for access in access_objects:
-            for deliver_unit in required_deliver_units:
+        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=True)
+    for access in access_objects:
+        for payment_unit in payment_units:
+            completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+            for deliver_unit in payment_unit.deliver_units.filter(optional=False):
                 UserVisitFactory(
                     opportunity=opportunity,
                     user=access.user,
                     deliver_unit=deliver_unit,
-                    entity_id=deliver_unit.payment_unit.name,
                     status=VisitValidationStatus.approved.value,
+                    completed_work=completed_work,
                 )
-            optional_deliver_unit = random.choice(optional_deliver_units)
+            optional_deliver_unit = random.choice(payment_unit.deliver_units.filter(optional=True))
             UserVisitFactory(
                 opportunity=opportunity,
                 user=access.user,
                 deliver_unit=optional_deliver_unit,
-                entity_id=payment_unit.name,
                 status=VisitValidationStatus.approved.value,
+                completed_work=completed_work,
             )
     update_payment_accrued(opportunity, {access.user.id for access in access_objects})
     for access in access_objects:
@@ -139,13 +140,15 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
 def test_payment_accrued_assymetric_optional_deliver_units(opportunity: Opportunity, mobile_user: User):
     payment_unit = PaymentUnitFactory.create(opportunity=opportunity)
     deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
     UserVisitFactory.create_batch(
         2,
         opportunity=opportunity,
         user=mobile_user,
         deliver_unit=deliver_unit,
-        entity_id=payment_unit.name,
         status=VisitValidationStatus.approved.value,
+        completed_work=completed_work,
     )
     optional_deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=True)
     UserVisitFactory.create_batch(
@@ -153,11 +156,11 @@ def test_payment_accrued_assymetric_optional_deliver_units(opportunity: Opportun
         opportunity=opportunity,
         user=mobile_user,
         deliver_unit=optional_deliver_unit,
-        entity_id=payment_unit.name,
         status=VisitValidationStatus.approved.value,
+        completed_work=completed_work,
     )
     update_payment_accrued(opportunity, {mobile_user.id})
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 1
     optional_deliver_unit_2 = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=True)
     UserVisitFactory.create_batch(
@@ -165,8 +168,8 @@ def test_payment_accrued_assymetric_optional_deliver_units(opportunity: Opportun
         opportunity=opportunity,
         user=mobile_user,
         deliver_unit=optional_deliver_unit_2,
-        entity_id=payment_unit.name,
         status=VisitValidationStatus.approved.value,
+        completed_work=completed_work,
     )
     update_payment_accrued(opportunity, {mobile_user.id})
     access.refresh_from_db()
