@@ -363,21 +363,20 @@ def payment_import(request, org_slug=None, pk=None):
 def add_payment_unit(request, org_slug=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
     deliver_units = DeliverUnit.objects.filter(app=opportunity.deliver_app, payment_unit__isnull=True)
-
-    form = PaymentUnitForm(deliver_units=deliver_units)
-
-    if request.method == "POST":
-        form = PaymentUnitForm(deliver_units=deliver_units, data=request.POST)
-        if form.is_valid():
-            form.instance.opportunity = opportunity
-            form.save()
-            deliver_units = form.cleaned_data["deliver_units"]
-            DeliverUnit.objects.filter(id__in=deliver_units, payment_unit__isnull=True).update(
-                payment_unit=form.instance.id
-            )
-            messages.success(request, f"Payment unit {form.instance.name} created.")
-            return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
-
+    form = PaymentUnitForm(deliver_units=deliver_units, data=request.POST or None)
+    if form.is_valid():
+        form.instance.opportunity = opportunity
+        form.save()
+        required_deliver_units = form.cleaned_data["required_deliver_units"]
+        DeliverUnit.objects.filter(id__in=required_deliver_units, payment_unit__isnull=True).update(
+            payment_unit=form.instance.id
+        )
+        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
+        DeliverUnit.objects.filter(id__in=optional_deliver_units, payment_unit__isnull=True).update(
+            payment_unit=form.instance.id, optional=True
+        )
+        messages.success(request, f"Payment unit {form.instance.name} created.")
+        return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
     return render(
         request,
         "form.html",
@@ -385,26 +384,25 @@ def add_payment_unit(request, org_slug=None, pk=None):
     )
 
 
+@org_member_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=opp_id)
     payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=opportunity)
     deliver_units = DeliverUnit.objects.filter(app=opportunity.deliver_app)
     payment_unit_deliver_units = {deliver_unit.pk for deliver_unit in payment_unit.deliver_units.all()}
-
-    form = PaymentUnitForm(deliver_units=deliver_units, instance=payment_unit)
-
-    if request.method == "POST":
-        form = PaymentUnitForm(deliver_units=deliver_units, data=request.POST, instance=payment_unit)
-        if form.is_valid():
-            form.save()
-            deliver_units = form.cleaned_data["deliver_units"]
-            DeliverUnit.objects.filter(id__in=deliver_units).update(payment_unit=form.instance.id)
-            # Remove deliver units which are not selected anymore
-            removed_deliver_units = payment_unit_deliver_units - {int(deliver_unit) for deliver_unit in deliver_units}
-            DeliverUnit.objects.filter(id__in=removed_deliver_units).update(payment_unit=None)
-            messages.success(request, f"Payment unit {form.instance.name} updated.")
-            return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
-
+    form = PaymentUnitForm(deliver_units=deliver_units, instance=payment_unit, data=request.POST or None)
+    if form.is_valid():
+        form.save()
+        required_deliver_units = form.cleaned_data["required_deliver_units"]
+        DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=form.instance.id, optional=False)
+        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
+        DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=form.instance.id, optional=True)
+        # Remove deliver units which are not selected anymore
+        deliver_units = required_deliver_units + optional_deliver_units
+        removed_deliver_units = payment_unit_deliver_units - {int(deliver_unit) for deliver_unit in deliver_units}
+        DeliverUnit.objects.filter(id__in=removed_deliver_units).update(payment_unit=None, optional=False)
+        messages.success(request, f"Payment unit {form.instance.name} updated.")
+        return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
     return render(
         request,
         "form.html",

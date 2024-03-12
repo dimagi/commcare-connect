@@ -42,7 +42,6 @@ class TestOpportunityCreationForm:
         )
 
         assert form.is_valid()
-        print(form.errors)
         assert len(form.errors) == 0
 
     def test_incorrect_end_date(self, organization):

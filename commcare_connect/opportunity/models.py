@@ -240,6 +240,7 @@ class DeliverUnit(models.Model):
         related_query_name="deliver_unit",
         null=True,
     )
+    optional = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
