@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.opportunity.views import (
+    OpportunityCompletedWorkTable,
     OpportunityCreate,
     OpportunityDeliverStatusTable,
     OpportunityDetail,
@@ -81,4 +82,5 @@ urlpatterns = [
     path("approve/<int:pk>/", view=approve_visit, name="approve_visit"),
     path("reject/<int:pk>/", view=reject_visit, name="reject_visit"),
     path("fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
+    path("<int:pk>/completed_work_table/", view=OpportunityCompletedWorkTable.as_view(), name="completed_work_table"),
 ]

@@ -40,6 +40,7 @@ from commcare_connect.opportunity.helpers import (
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedModule,
+    CompletedWork,
     DeliverUnit,
     Opportunity,
     OpportunityAccess,
@@ -50,6 +51,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
+    CompletedWorkTable,
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
@@ -754,3 +756,16 @@ def fetch_attachment(self, org_slug, blob_id):
     blob_meta = BlobMeta.objects.get(blob_id=blob_id)
     attachment = storages["default"].open(blob_id)
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+
+
+class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
+    model = CompletedWork
+    paginate_by = 25
+    table_class = CompletedWorkTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
+        access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
+        return CompletedWork.objects.filter(opportunity_access__in=access_objects)
