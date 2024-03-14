@@ -19,6 +19,7 @@ from commcare_connect.opportunity.export import (
     export_empty_payment_table,
     export_user_status_table,
     export_user_visit_data,
+    export_work_status_table,
 )
 from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import (
@@ -257,3 +258,12 @@ def download_user_visit_attachments(user_visit_id: id):
                 headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
             )
             default_storage.save(str(blob_meta.blob_id), ContentFile(response.content, name))
+
+
+@celery_app.task()
+def generate_work_status_export(opportunity_id: int, export_format: str):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    dataset = export_work_status_table(opportunity)
+    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_verification.{export_format}"
+    save_export(dataset, export_tmp_name, export_format)
+    return export_tmp_name

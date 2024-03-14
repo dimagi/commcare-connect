@@ -21,6 +21,7 @@ from commcare_connect.opportunity.views import (
     approve_visit,
     download_export,
     edit_payment_unit,
+    export_completed_work,
     export_deliver_status,
     export_status,
     export_user_status,
@@ -32,6 +33,7 @@ from commcare_connect.opportunity.views import (
     payment_import,
     reject_visit,
     send_message_mobile_users,
+    update_completed_work_status_import,
     update_visit_status_import,
     user_profile,
     user_visits_list,
@@ -83,4 +85,6 @@ urlpatterns = [
     path("reject/<int:pk>/", view=reject_visit, name="reject_visit"),
     path("fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
     path("<int:pk>/completed_work_table/", view=OpportunityCompletedWorkTable.as_view(), name="completed_work_table"),
+    path("<int:pk>/completed_work_export/", view=export_completed_work, name="completed_work_export"),
+    path("<int:pk>/completed_work_import/", view=update_completed_work_status_import, name="completed_work_import"),
 ]

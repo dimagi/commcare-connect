@@ -228,15 +228,20 @@ class DeliverStatusTable(tables.Table):
 
 
 class CompletedWorkTable(tables.Table):
-    display_name = columns.Column("Name of the User", accessor="opportunity_access__display_name")
+    id = columns.Column(visible=False)
     username = columns.Column(accessor="user__username", visible=False)
+    entity_id = columns.Column(visible=False)
+    reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
+    display_name = columns.Column("Name of the User", accessor="opportunity_access__display_name")
     payment_unit = columns.Column("Payment Unit", accessor="payment_unit__name")
+    completed = columns.BooleanColumn()
 
     class Meta:
         model = CompletedWork
         fields = ("entity_id", "entity_name", "completed", "status", "reason", "payment_accrued")
         orderable = False
         sequence = (
+            "id",
             "display_name",
             "username",
             "payment_unit",

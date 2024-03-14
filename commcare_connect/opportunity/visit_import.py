@@ -8,6 +8,8 @@ from django.db import transaction
 from tablib import Dataset
 
 from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
     Payment,
@@ -22,6 +24,7 @@ STATUS_COL = "status"
 USERNAME_COL = "username"
 AMOUNT_COL = "payment amount"
 REASON_COL = "rejected reason"
+WORK_ID_COL = "id"
 REQUIRED_COLS = [VISIT_ID_COL, STATUS_COL]
 
 
@@ -54,9 +57,23 @@ class PaymentImportStatus:
         return len(self.seen_users)
 
     def get_missing_message(self):
-        joined = ", ".join(self.missing_visits)
+        joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
         return f"<br>{len(self.missing_users)} usernames were not found:<br>{'<br>'.join(missing)}"
+
+
+@dataclass
+class CompletedWorkImportStatus:
+    seen_completed_works: set[str]
+    missing_completed_works: set[str]
+
+    def __len__(self):
+        return len(self.seen_completed_works)
+
+    def get_missing_message(self):
+        joined = ", ".join(self.missing_completed_works)
+        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
+        return f"<br>{len(self.missing_completed_works)} usernames were not found:<br>{'<br>'.join(missing)}"
 
 
 def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
@@ -210,3 +227,72 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
     return PaymentImportStatus(seen_users, missing_users)
+
+
+def bulk_update_completed_work_status(opportunity: Opportunity, file: UploadedFile) -> CompletedWorkImportStatus:
+    file_format = None
+    if file.content_type:
+        file_format = mimetypes.guess_extension(file.content_type)
+        if file_format:
+            file_format = file_format[1:]
+    if not file_format:
+        file_format = file.name.split(".")[-1].lower()
+    if file_format not in ("csv", "xlsx"):
+        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+    imported_data = get_imported_dataset(file, file_format)
+    return _bulk_update_completed_work_status(opportunity, imported_data)
+
+
+def _bulk_update_completed_work_status(opportunity: Opportunity, dataset: Dataset):
+    status_by_work_id, reasons_by_work_id = get_status_by_completed_work_id(dataset)
+    work_ids = list(status_by_work_id)
+    missing_completed_works = set()
+    seen_completed_works = set()
+    user_ids = set()
+    with transaction.atomic():
+        for work_batch in batched(work_ids, 100):
+            to_update = []
+            completed_works = CompletedWork.objects.filter(
+                id__in=work_batch, opportunity_access__opportunity=opportunity
+            )
+            for completed_work in completed_works:
+                seen_completed_works.add(completed_work.id)
+                status = status_by_work_id[completed_work.id]
+                if completed_work.status != status:
+                    completed_work.status = status
+                    reason = reasons_by_work_id.get(completed_work.id)
+                    if completed_work.status == CompletedWorkStatus.rejected and reason:
+                        completed_work.reason = reason
+                    to_update.append(completed_work)
+                user_ids.add(completed_work.opportunity_access.user_id)
+            CompletedWork.objects.bulk_update(to_update, fields=["status", "reason"])
+            missing_completed_works |= set(work_batch) - seen_completed_works
+
+    return CompletedWorkImportStatus(seen_completed_works, missing_completed_works)
+
+
+def get_status_by_completed_work_id(dataset):
+    headers = [header.lower() for header in dataset.headers or []]
+    if not headers:
+        raise ImportException("The uploaded file did not contain any headers")
+
+    work_id_col_index = _get_header_index(headers, WORK_ID_COL)
+    status_col_index = _get_header_index(headers, STATUS_COL)
+    reason_col_index = _get_header_index(headers, REASON_COL)
+    status_by_work_id = {}
+    reason_by_work_id = {}
+    invalid_rows = []
+    for row in dataset:
+        row = list(row)
+        work_id = int(row[work_id_col_index])
+        status_raw = row[status_col_index].lower().replace(" ", "_")
+        try:
+            status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
+        except KeyError:
+            invalid_rows.append((row, f"status must be one of {CompletedWorkStatus.values}"))
+        if status_raw == CompletedWorkStatus.rejected.value:
+            reason_by_work_id[work_id] = str(row[reason_col_index])
+
+    if invalid_rows:
+        raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
+    return status_by_work_id, reason_by_work_id
