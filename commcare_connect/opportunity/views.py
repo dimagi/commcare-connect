@@ -798,7 +798,7 @@ def update_completed_work_status_import(request, org_slug=None, pk=None):
     except ImportException as e:
         messages.error(request, e.message)
     else:
-        message = f"Visit status updated successfully for {len(status)} visits."
+        message = f"Payment Verification status updated successfully for {len(status)} completed works."
         if status.missing_completed_works:
             message += status.get_missing_message()
         messages.success(request, mark_safe(message))
