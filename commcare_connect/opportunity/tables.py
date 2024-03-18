@@ -228,40 +228,36 @@ class DeliverStatusTable(tables.Table):
 
 
 class CompletedWorkTable(tables.Table):
-    id = columns.Column(visible=False)
-    username = columns.Column(accessor="user__username", visible=False)
+    id = columns.Column("Instance Id", visible=False)
+    username = columns.Column(accessor="opportunity_access__user__username", visible=False)
     entity_id = columns.Column(visible=False)
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
     display_name = columns.Column("Name of the User", accessor="opportunity_access__display_name")
     payment_unit = columns.Column("Payment Unit", accessor="payment_unit__name")
-    completed = columns.BooleanColumn()
+    status = columns.Column("Payment Approval")
 
     class Meta:
         model = CompletedWork
         fields = (
             "entity_id",
             "entity_name",
-            "completed",
             "status",
             "reason",
-            "payment_accrued",
             "completion_date",
             "flags",
         )
         orderable = False
         sequence = (
             "id",
-            "display_name",
             "username",
-            "payment_unit",
+            "display_name",
             "entity_id",
             "entity_name",
-            "completed",
+            "payment_unit",
             "completion_date",
+            "flags",
             "status",
             "reason",
-            "flags",
-            "payment_accrued",
         )
 
     def render_flags(self, record, value):
