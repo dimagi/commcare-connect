@@ -770,7 +770,9 @@ class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
         opportunity_id = self.kwargs["pk"]
         opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
         access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
-        return CompletedWork.objects.filter(opportunity_access__in=access_objects)
+        return list(
+            filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
+        )
 
 
 @org_member_required

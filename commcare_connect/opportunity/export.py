@@ -101,7 +101,9 @@ def export_deliver_status_table(opportunity: Opportunity) -> Dataset:
 
 def export_work_status_table(opportunity: Opportunity) -> Dataset:
     access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
-    completed_works = CompletedWork.objects.filter(opportunity_access__in=access_objects)
+    completed_works = list(
+        filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
+    )
     table = CompletedWorkTable(completed_works, exclude=("date_popup"))
     return get_dataset(table, export_title="Payment Verification export")
 
