@@ -238,7 +238,16 @@ class CompletedWorkTable(tables.Table):
 
     class Meta:
         model = CompletedWork
-        fields = ("entity_id", "entity_name", "completed", "status", "reason", "payment_accrued")
+        fields = (
+            "entity_id",
+            "entity_name",
+            "completed",
+            "status",
+            "reason",
+            "payment_accrued",
+            "completion_date",
+            "flags",
+        )
         orderable = False
         sequence = (
             "id",
@@ -248,12 +257,17 @@ class CompletedWorkTable(tables.Table):
             "entity_id",
             "entity_name",
             "completed",
+            "completion_date",
             "status",
             "reason",
+            "flags",
             "payment_accrued",
         )
 
-    def render_last_modified(self, record, value):
+    def render_flags(self, record, value):
+        return ", ".join(value)
+
+    def render_completion_date(self, record, value):
         return date_with_time_popup(self, value)
 
 
