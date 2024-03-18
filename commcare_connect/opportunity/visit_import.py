@@ -124,7 +124,9 @@ def update_payment_accrued(opportunity: Opportunity, users):
     for access in access_objects:
         payment_accrued = 0
         for payment_unit in payment_units:
-            completed_works = access.completedwork_set.filter(payment_unit=payment_unit)
+            completed_works = access.completedwork_set.filter(
+                payment_unit=payment_unit, status=CompletedWorkStatus.approved
+            )
             for completed_work in completed_works:
                 payment_accrued += completed_work.completed_count * payment_unit.amount
         access.payment_accrued = payment_accrued
@@ -267,7 +269,7 @@ def _bulk_update_completed_work_status(opportunity: Opportunity, dataset: Datase
                 user_ids.add(completed_work.opportunity_access.user_id)
             CompletedWork.objects.bulk_update(to_update, fields=["status", "reason"])
             missing_completed_works |= set(work_batch) - seen_completed_works
-
+        update_payment_accrued(opportunity, users=user_ids)
     return CompletedWorkImportStatus(seen_completed_works, missing_completed_works)
 
 
