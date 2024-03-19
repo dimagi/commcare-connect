@@ -271,6 +271,22 @@ class Payment(models.Model):
     )
 
 
+class CompletedWorkStatus(models.TextChoices):
+    pending = "pending", gettext("Pending")
+    approved = "approved", gettext("Approved")
+    rejected = "rejected", gettext("Rejected")
+
+
+class CompletedWork(models.Model):
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
+    payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
+    status = models.CharField(max_length=50, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.pending)
+    last_modified = models.DateTimeField(auto_now=True)
+    entity_id = models.CharField(max_length=255, null=True, blank=True)
+    entity_name = models.CharField(max_length=255, null=True, blank=True)
+    reason = models.CharField(max_length=300, null=True, blank=True)
+
+
 class UserVisit(XFormBaseModel):
     opportunity = models.ForeignKey(
         Opportunity,
@@ -292,6 +308,7 @@ class UserVisit(XFormBaseModel):
     location = models.CharField(null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
+    completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
 
     @property
     def images(self):
