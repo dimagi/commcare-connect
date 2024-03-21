@@ -329,6 +329,20 @@ class CompletedWork(models.Model):
         """Returns the total payment accrued for this completed work. Includes duplicates"""
         return self.completed_count * self.payment_unit.amount
 
+    @property
+    def flags(self):
+        visits = self.uservisit_set.values_list("flag_reason", flat=True)
+        flags = set()
+        for visit in visits:
+            for flag, _ in visit.get("flags", []):
+                flags.add(flag)
+        return list(flags)
+
+    @property
+    def completion_date(self):
+        visit = self.uservisit_set.order_by("visit_date").last()
+        return visit.visit_date if visit else None
+
 
 class UserVisit(XFormBaseModel):
     opportunity = models.ForeignKey(

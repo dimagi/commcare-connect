@@ -38,6 +38,7 @@ from commcare_connect.opportunity.helpers import (
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedModule,
+    CompletedWork,
     DeliverUnit,
     Opportunity,
     OpportunityAccess,
@@ -48,6 +49,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
+    CompletedWorkTable,
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
@@ -63,11 +65,13 @@ from commcare_connect.opportunity.tasks import (
     generate_payment_export,
     generate_user_status_export,
     generate_visit_export,
+    generate_work_status_export,
     send_push_notification_task,
     send_sms_task,
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
+    bulk_update_completed_work_status,
     bulk_update_payment_status,
     bulk_update_visit_status,
     update_payment_accrued,
@@ -678,3 +682,50 @@ def fetch_attachment(self, org_slug, blob_id):
     blob_meta = BlobMeta.objects.get(blob_id=blob_id)
     attachment = storages["default"].open(blob_id)
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+
+
+class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
+    model = CompletedWork
+    paginate_by = 25
+    table_class = CompletedWorkTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
+        access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
+        return list(
+            filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
+        )
+
+
+@org_member_required
+def export_completed_work(request, **kwargs):
+    opportunity_id = kwargs["pk"]
+    get_object_or_404(Opportunity, organization=request.org, id=opportunity_id)
+    form = PaymentExportForm(data=request.POST)
+    if not form.is_valid():
+        messages.error(request, form.errors)
+        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+
+    export_format = form.cleaned_data["format"]
+    result = generate_work_status_export.delay(opportunity_id, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
+
+
+@org_member_required
+@require_POST
+def update_completed_work_status_import(request, org_slug=None, pk=None):
+    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    file = request.FILES.get("visits")
+    try:
+        status = bulk_update_completed_work_status(opportunity, file)
+    except ImportException as e:
+        messages.error(request, e.message)
+    else:
+        message = f"Payment Verification status updated successfully for {len(status)} completed works."
+        if status.missing_completed_works:
+            message += status.get_missing_message()
+        messages.success(request, mark_safe(message))
+    return redirect("opportunity:detail", org_slug, pk)

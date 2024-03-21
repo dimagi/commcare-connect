@@ -7,6 +7,7 @@ from tablib import Dataset
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.opportunity.models import (
+    CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
     Payment,
@@ -70,7 +71,11 @@ def test_payment_accrued(opportunity: Opportunity):
         access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True)
         access_objects.append(access)
         for payment_unit in payment_units:
-            completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+            completed_work = CompletedWorkFactory(
+                opportunity_access=access,
+                payment_unit=payment_unit,
+                status=CompletedWorkStatus.approved.value,
+            )
             for deliver_unit in payment_unit.deliver_units.all():
                 UserVisitFactory(
                     opportunity=opportunity,
@@ -90,7 +95,11 @@ def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
     payment_unit = PaymentUnitFactory(opportunity=opportunity)
     deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
-    completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+    completed_work = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=payment_unit,
+        status=CompletedWorkStatus.approved.value,
+    )
     UserVisitFactory.create_batch(
         2,
         opportunity=opportunity,
@@ -113,7 +122,11 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
         DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=True)
     for access in access_objects:
         for payment_unit in payment_units:
-            completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+            completed_work = CompletedWorkFactory(
+                opportunity_access=access,
+                payment_unit=payment_unit,
+                status=CompletedWorkStatus.approved.value,
+            )
             for deliver_unit in payment_unit.deliver_units.filter(optional=False):
                 UserVisitFactory(
                     opportunity=opportunity,
@@ -141,7 +154,11 @@ def test_payment_accrued_assymetric_optional_deliver_units(opportunity: Opportun
     payment_unit = PaymentUnitFactory.create(opportunity=opportunity)
     deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
-    completed_work = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit)
+    completed_work = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=payment_unit,
+        status=CompletedWorkStatus.approved.value,
+    )
     UserVisitFactory.create_batch(
         2,
         opportunity=opportunity,
