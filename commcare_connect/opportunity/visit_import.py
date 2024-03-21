@@ -24,7 +24,8 @@ STATUS_COL = "status"
 USERNAME_COL = "username"
 AMOUNT_COL = "payment amount"
 REASON_COL = "rejected reason"
-WORK_ID_COL = "id"
+WORK_ID_COL = "instance id"
+PAYMENT_APPROVAL_STATUS_COL = "payment approval"
 REQUIRED_COLS = [VISIT_ID_COL, STATUS_COL]
 
 
@@ -73,7 +74,7 @@ class CompletedWorkImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_completed_works)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_completed_works)} usernames were not found:<br>{'<br>'.join(missing)}"
+        return f"<br>{len(self.missing_completed_works)} completed works were not found:<br>{'<br>'.join(missing)}"
 
 
 def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
@@ -258,11 +259,11 @@ def _bulk_update_completed_work_status(opportunity: Opportunity, dataset: Datase
                 id__in=work_batch, opportunity_access__opportunity=opportunity
             )
             for completed_work in completed_works:
-                seen_completed_works.add(completed_work.id)
-                status = status_by_work_id[completed_work.id]
+                seen_completed_works.add(str(completed_work.id))
+                status = status_by_work_id[str(completed_work.id)]
                 if completed_work.status != status:
                     completed_work.status = status
-                    reason = reasons_by_work_id.get(completed_work.id)
+                    reason = reasons_by_work_id.get(str(completed_work.id))
                     if completed_work.status == CompletedWorkStatus.rejected and reason:
                         completed_work.reason = reason
                     to_update.append(completed_work)
@@ -279,14 +280,14 @@ def get_status_by_completed_work_id(dataset):
         raise ImportException("The uploaded file did not contain any headers")
 
     work_id_col_index = _get_header_index(headers, WORK_ID_COL)
-    status_col_index = _get_header_index(headers, STATUS_COL)
+    status_col_index = _get_header_index(headers, PAYMENT_APPROVAL_STATUS_COL)
     reason_col_index = _get_header_index(headers, REASON_COL)
     status_by_work_id = {}
     reason_by_work_id = {}
     invalid_rows = []
     for row in dataset:
         row = list(row)
-        work_id = int(row[work_id_col_index])
+        work_id = row[work_id_col_index]
         status_raw = row[status_col_index].lower().replace(" ", "_")
         try:
             status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
