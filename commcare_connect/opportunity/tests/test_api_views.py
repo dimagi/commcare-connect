@@ -20,6 +20,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
+    CompletedWorkFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
@@ -163,8 +164,12 @@ def test_delivery_progress_endpoint(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    completed_work = CompletedWorkFactory(opportunity_access=access)
     UserVisitFactory.create(
-        opportunity=opportunity, user=mobile_user_with_connect_link, status=VisitValidationStatus.pending
+        opportunity=opportunity,
+        user=mobile_user_with_connect_link,
+        status=VisitValidationStatus.pending,
+        completed_work=completed_work,
     )
     api_client.force_authenticate(mobile_user_with_connect_link)
     response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
