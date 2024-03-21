@@ -26,6 +26,8 @@ from commcare_connect.opportunity.forms import (
     DateRanges,
     OpportunityChangeForm,
     OpportunityCreationForm,
+    OpportunityFinalizeForm,
+    OpportunityInitForm,
     PaymentExportForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
@@ -115,6 +117,26 @@ class OpportunityCreate(OrganizationUserMixin, CreateView):
         return response
 
 
+class OpportunityInit(OrganizationUserMixin, CreateView):
+    template_name = "opportunity/opportunity_init.html"
+    form_class = OpportunityInitForm
+
+    def get_success_url(self):
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["domains"] = get_domains_for_user(self.request.user)
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
+
+    def form_valid(self, form: OpportunityInitForm) -> HttpResponse:
+        response = super().form_valid(form)
+        create_learn_modules_and_deliver_units(self.object.id)
+        return response
+
+
 class OpportunityEdit(OrganizationUserMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_edit.html"
@@ -134,6 +156,34 @@ class OpportunityEdit(OrganizationUserMixin, UpdateView):
             opportunity.total_budget += (
                 opportunity.budget_per_visit * opportunity.max_visits_per_user * additional_users
             )
+        end_date = form.cleaned_data["end_date"]
+        if end_date:
+            opportunity.end_date = end_date
+        response = super().form_valid(form)
+        return response
+
+
+class OpportunityFinalize(OrganizationUserMixin, UpdateView):
+    model = Opportunity
+    template_name = "opportunity/opportunity_finalize.html"
+    form_class = OpportunityFinalizeForm
+
+    def get_success_url(self):
+        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.id))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        opportunity = self.object
+        payment_units = opportunity.paymentunit_set.all()
+        budget_per_user = 0
+        for pu in payment_units:
+            budget_per_user += pu.amount * pu.max_total
+        kwargs["budget_per_user"] = budget_per_user
+        return kwargs
+
+    def form_valid(self, form):
+        opportunity = form.instance
+        opportunity.modified_by = self.request.user.email
         end_date = form.cleaned_data["end_date"]
         if end_date:
             opportunity.end_date = end_date
@@ -364,7 +414,15 @@ def payment_import(request, org_slug=None, pk=None):
 
 
 @org_member_required
-def add_payment_unit(request, org_slug=None, pk=None):
+def add_payment_units(request, org_slug=None, pk=None):
+    if request.POST:
+        return add_payment_unit(request, org_slug=request.org, pk=pk, partial=True)
+    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    return render(request, "opportunity/add_payment_units.html", dict(opportunity=opportunity))
+
+
+@org_member_required
+def add_payment_unit(request, org_slug=None, pk=None, partial=True):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
     deliver_units = DeliverUnit.objects.filter(app=opportunity.deliver_app, payment_unit__isnull=True)
     form = PaymentUnitForm(
@@ -388,10 +446,13 @@ def add_payment_unit(request, org_slug=None, pk=None):
             parent_payment_unit=form.instance.id
         )
         messages.success(request, f"Payment unit {form.instance.name} created.")
-        return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=opportunity.id)
+    elif request.POST:
+        messages.error(request, "Invalid Data")
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=opportunity.id)
     return render(
         request,
-        "form.html",
+        "partial_form.html" if partial else "form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Create", form=form),
     )
 
@@ -440,8 +501,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         PaymentUnit.objects.filter(id__in=removed_payment_units, parent_payment_unit=form.instance.id).update(
             parent_payment_unit=None
         )
-        messages.success(request, f"Payment unit {form.instance.name} updated.")
-        return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
+        messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
+        return redirect("opportunity:finalize", org_slug=request.org.slug, pk=opportunity.id)
     return render(
         request,
         "form.html",

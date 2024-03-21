@@ -2,13 +2,8 @@
 {% load static %}
 {% load crispy_forms_tags %}
 
-{% if title %}{% block title %}{{ title }}{% endblock %} {% endif %}
 
+{% if title %}{% block title %}{{ title }}{% endblock %} {% endif %}
 {% block content %}
-  {% if form_title %}<h2 class="my-2 pt-3">{{ form_title }}</h2>{% endif %}
-  <hr/>
-  <form method="post">
-    {% csrf_token %}
-    {% crispy form %}
-  </form>
+  {% include "partial_form.html" %}
 {% endblock content %}
