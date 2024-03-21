@@ -1,4 +1,5 @@
 import math
+from collections import Counter
 from uuid import uuid4
 
 from django.conf import settings
@@ -228,6 +229,13 @@ class PaymentUnit(models.Model):
     amount = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
     description = models.TextField()
+    parent_payment_unit = models.ForeignKey(
+        "self",
+        on_delete=models.DO_NOTHING,
+        related_name="child_payment_units",
+        blank=True,
+        null=True,
+    )
 
 
 class DeliverUnit(models.Model):
@@ -240,11 +248,12 @@ class DeliverUnit(models.Model):
     name = models.CharField(max_length=255)
     payment_unit = models.ForeignKey(
         PaymentUnit,
-        on_delete=models.CASCADE,
+        on_delete=models.DO_NOTHING,
         related_name="deliver_units",
         related_query_name="deliver_unit",
         null=True,
     )
+    optional = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -271,6 +280,75 @@ class Payment(models.Model):
     )
 
 
+class CompletedWorkStatus(models.TextChoices):
+    pending = "pending", gettext("Pending")
+    approved = "approved", gettext("Approved")
+    rejected = "rejected", gettext("Rejected")
+
+
+class CompletedWork(models.Model):
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
+    payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
+    status = models.CharField(max_length=50, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.pending)
+    last_modified = models.DateTimeField(auto_now=True)
+    entity_id = models.CharField(max_length=255, null=True, blank=True)
+    entity_name = models.CharField(max_length=255, null=True, blank=True)
+    reason = models.CharField(max_length=300, null=True, blank=True)
+
+    # TODO: add caching on this property
+    @property
+    def completed_count(self):
+        """Returns the no of completion of this work. Includes duplicate submissions."""
+        visits = self.uservisit_set.filter(status=VisitValidationStatus.approved).values_list(
+            "deliver_unit_id", flat=True
+        )
+        unit_counts = Counter(visits)
+        required_deliver_units = self.payment_unit.deliver_units.filter(optional=False).values_list("id", flat=True)
+        optional_deliver_units = self.payment_unit.deliver_units.filter(optional=True).values_list("id", flat=True)
+        # NOTE: The min unit count is the completed required deliver units for an entity_id
+        number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
+        if optional_deliver_units:
+            # The sum calculates the number of optional deliver units completed and to process
+            # duplicates with extra optional deliver units
+            optional_completed = sum(unit_counts[deliver_id] for deliver_id in optional_deliver_units)
+            number_completed = min(number_completed, optional_completed)
+        child_payment_units = self.payment_unit.child_payment_units.all()
+        if child_payment_units:
+            child_completed_works = CompletedWork.objects.filter(
+                opportunity_access=self.opportunity_access,
+                payment_unit__in=child_payment_units,
+                entity_id=self.entity_id,
+            )
+            child_completed_work_count = 0
+            for completed_work in child_completed_works:
+                child_completed_work_count += completed_work.completed_count
+            number_completed = min(number_completed, child_completed_work_count)
+        return number_completed
+
+    @property
+    def completed(self):
+        return self.completed_count > 0
+
+    @property
+    def payment_accrued(self):
+        """Returns the total payment accrued for this completed work. Includes duplicates"""
+        return self.completed_count * self.payment_unit.amount
+
+    @property
+    def flags(self):
+        visits = self.uservisit_set.values_list("flag_reason", flat=True)
+        flags = set()
+        for visit in visits:
+            for flag, _ in visit.get("flags", []):
+                flags.add(flag)
+        return list(flags)
+
+    @property
+    def completion_date(self):
+        visit = self.uservisit_set.order_by("visit_date").last()
+        return visit.visit_date if visit else None
+
+
 class UserVisit(XFormBaseModel):
     opportunity = models.ForeignKey(
         Opportunity,
@@ -292,6 +370,7 @@ class UserVisit(XFormBaseModel):
     location = models.CharField(null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
+    completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
 
     @property
     def images(self):

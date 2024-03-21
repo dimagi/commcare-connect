@@ -10,6 +10,7 @@ from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
     CommCareApp,
+    DeliverUnit,
     HQApiKey,
     Opportunity,
     OpportunityAccess,
@@ -327,6 +328,7 @@ class PaymentUnitForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         deliver_units = kwargs.pop("deliver_units", [])
+        payment_units = kwargs.pop("payment_units", [])
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -334,16 +336,59 @@ class PaymentUnitForm(forms.ModelForm):
             Row(Field("name")),
             Row(Field("description")),
             Row(Field("amount")),
-            Row(Field("deliver_units")),
+            Row(Field("required_deliver_units")),
+            Row(Field("optional_deliver_units")),
+            Row(Field("payment_units")),
             Submit(name="submit", value="Submit"),
         )
-
-        choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
-        self.fields["deliver_units"] = forms.MultipleChoiceField(choices=choices, widget=forms.CheckboxSelectMultiple)
+        deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
+        payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
+        self.fields["required_deliver_units"] = forms.MultipleChoiceField(
+            choices=deliver_unit_choices,
+            widget=forms.CheckboxSelectMultiple,
+            help_text="All of the selected Deliver Units are required for payment accrual.",
+        )
+        self.fields["optional_deliver_units"] = forms.MultipleChoiceField(
+            choices=deliver_unit_choices,
+            widget=forms.CheckboxSelectMultiple,
+            help_text=(
+                "Any one of these Deliver Units combined with all the required "
+                "Deliver Units will accrue payment. Multiple Deliver Units can be selected."
+            ),
+            required=False,
+        )
+        self.fields["payment_units"] = forms.MultipleChoiceField(
+            choices=payment_unit_choices,
+            widget=forms.CheckboxSelectMultiple,
+            help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
+            required=False,
+        )
         if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
-            self.fields["deliver_units"].initial = [
-                deliver_unit.pk for deliver_unit in self.instance.deliver_units.all()
+            deliver_units = self.instance.deliver_units.all()
+            self.fields["required_deliver_units"].initial = [
+                deliver_unit.pk for deliver_unit in filter(lambda x: not x.optional, deliver_units)
             ]
+            self.fields["optional_deliver_units"].initial = [
+                deliver_unit.pk for deliver_unit in filter(lambda x: x.optional, deliver_units)
+            ]
+            payment_units_initial = []
+            for payment_unit in payment_units:
+                if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
+                    payment_units_initial.append(payment_unit.pk)
+            self.fields["payment_units"].initial = payment_units_initial
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data:
+            required_deliver_units = set(cleaned_data.get("required_deliver_units", []))
+            for deliver_unit in cleaned_data.get("optional_deliver_units", []):
+                if deliver_unit in required_deliver_units:
+                    deliver_unit_obj = DeliverUnit.objects.get(pk=deliver_unit)
+                    self.add_error(
+                        "optional_deliver_units",
+                        error=f"{deliver_unit_obj.name} cannot be marked both Required and Optional",
+                    )
+        return cleaned_data
 
 
 class SendMessageMobileUsersForm(forms.Form):

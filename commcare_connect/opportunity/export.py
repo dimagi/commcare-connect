@@ -9,8 +9,14 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access,
     get_annotated_opportunity_access_deliver_status,
 )
-from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserVisit, VisitValidationStatus
-from commcare_connect.opportunity.tables import DeliverStatusTable, UserStatusTable, UserVisitTable
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    Opportunity,
+    OpportunityAccess,
+    UserVisit,
+    VisitValidationStatus,
+)
+from commcare_connect.opportunity.tables import CompletedWorkTable, DeliverStatusTable, UserStatusTable, UserVisitTable
 
 
 def export_user_visit_data(
@@ -90,7 +96,16 @@ def export_user_status_table(opportunity: Opportunity) -> Dataset:
 def export_deliver_status_table(opportunity: Opportunity) -> Dataset:
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
     table = DeliverStatusTable(access_objects, exclude=("details", "date_popup"))
-    return get_dataset(table, export_title="Payment and Verification export")
+    return get_dataset(table, export_title="Deliver Status export")
+
+
+def export_work_status_table(opportunity: Opportunity) -> Dataset:
+    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
+    completed_works = list(
+        filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
+    )
+    table = CompletedWorkTable(completed_works, exclude=("date_popup"))
+    return get_dataset(table, export_title="Payment Verification export")
 
 
 def get_dataset(table, export_title):

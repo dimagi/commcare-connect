@@ -4,6 +4,7 @@ from django.utils.safestring import mark_safe
 from django_tables2 import columns, tables, utils
 
 from commcare_connect.opportunity.models import (
+    CompletedWork,
     OpportunityAccess,
     Payment,
     PaymentUnit,
@@ -223,6 +224,46 @@ class DeliverStatusTable(tables.Table):
         )
 
     def render_last_visit_date(self, record, value):
+        return date_with_time_popup(self, value)
+
+
+class CompletedWorkTable(tables.Table):
+    id = columns.Column("Instance Id", visible=False)
+    username = columns.Column(accessor="opportunity_access__user__username", visible=False)
+    entity_id = columns.Column(visible=False)
+    reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
+    display_name = columns.Column("Name of the User", accessor="opportunity_access__display_name")
+    payment_unit = columns.Column("Payment Unit", accessor="payment_unit__name")
+    status = columns.Column("Payment Approval")
+
+    class Meta:
+        model = CompletedWork
+        fields = (
+            "entity_id",
+            "entity_name",
+            "status",
+            "reason",
+            "completion_date",
+            "flags",
+        )
+        orderable = False
+        sequence = (
+            "id",
+            "username",
+            "display_name",
+            "entity_id",
+            "entity_name",
+            "payment_unit",
+            "completion_date",
+            "flags",
+            "status",
+            "reason",
+        )
+
+    def render_flags(self, record, value):
+        return ", ".join(value)
+
+    def render_completion_date(self, record, value):
         return date_with_time_popup(self, value)
 
 

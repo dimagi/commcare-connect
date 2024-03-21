@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.storage import storages
-from django.db.models import F
+from django.db.models import F, Q
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -38,6 +38,7 @@ from commcare_connect.opportunity.helpers import (
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedModule,
+    CompletedWork,
     DeliverUnit,
     Opportunity,
     OpportunityAccess,
@@ -48,6 +49,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
+    CompletedWorkTable,
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
@@ -63,11 +65,13 @@ from commcare_connect.opportunity.tasks import (
     generate_payment_export,
     generate_user_status_export,
     generate_visit_export,
+    generate_work_status_export,
     send_push_notification_task,
     send_sms_task,
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
+    bulk_update_completed_work_status,
     bulk_update_payment_status,
     bulk_update_visit_status,
     update_payment_accrued,
@@ -363,21 +367,28 @@ def payment_import(request, org_slug=None, pk=None):
 def add_payment_unit(request, org_slug=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
     deliver_units = DeliverUnit.objects.filter(app=opportunity.deliver_app, payment_unit__isnull=True)
-
-    form = PaymentUnitForm(deliver_units=deliver_units)
-
-    if request.method == "POST":
-        form = PaymentUnitForm(deliver_units=deliver_units, data=request.POST)
-        if form.is_valid():
-            form.instance.opportunity = opportunity
-            form.save()
-            deliver_units = form.cleaned_data["deliver_units"]
-            DeliverUnit.objects.filter(id__in=deliver_units, payment_unit__isnull=True).update(
-                payment_unit=form.instance.id
-            )
-            messages.success(request, f"Payment unit {form.instance.name} created.")
-            return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
-
+    form = PaymentUnitForm(
+        deliver_units=deliver_units,
+        data=request.POST or None,
+        payment_units=opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
+    )
+    if form.is_valid():
+        form.instance.opportunity = opportunity
+        form.save()
+        required_deliver_units = form.cleaned_data["required_deliver_units"]
+        DeliverUnit.objects.filter(id__in=required_deliver_units, payment_unit__isnull=True).update(
+            payment_unit=form.instance.id
+        )
+        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
+        DeliverUnit.objects.filter(id__in=optional_deliver_units, payment_unit__isnull=True).update(
+            payment_unit=form.instance.id, optional=True
+        )
+        sub_payment_units = form.cleaned_data["payment_units"]
+        PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
+            parent_payment_unit=form.instance.id
+        )
+        messages.success(request, f"Payment unit {form.instance.name} created.")
+        return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
     return render(
         request,
         "form.html",
@@ -385,26 +396,52 @@ def add_payment_unit(request, org_slug=None, pk=None):
     )
 
 
+@org_member_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=opp_id)
     payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=opportunity)
-    deliver_units = DeliverUnit.objects.filter(app=opportunity.deliver_app)
+    deliver_units = DeliverUnit.objects.filter(
+        Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit), app=opportunity.deliver_app
+    )
+    exclude_payment_units = [payment_unit.pk]
+    if payment_unit.parent_payment_unit_id:
+        exclude_payment_units.append(payment_unit.parent_payment_unit_id)
     payment_unit_deliver_units = {deliver_unit.pk for deliver_unit in payment_unit.deliver_units.all()}
-
-    form = PaymentUnitForm(deliver_units=deliver_units, instance=payment_unit)
-
-    if request.method == "POST":
-        form = PaymentUnitForm(deliver_units=deliver_units, data=request.POST, instance=payment_unit)
-        if form.is_valid():
-            form.save()
-            deliver_units = form.cleaned_data["deliver_units"]
-            DeliverUnit.objects.filter(id__in=deliver_units).update(payment_unit=form.instance.id)
-            # Remove deliver units which are not selected anymore
-            removed_deliver_units = payment_unit_deliver_units - {int(deliver_unit) for deliver_unit in deliver_units}
-            DeliverUnit.objects.filter(id__in=removed_deliver_units).update(payment_unit=None)
-            messages.success(request, f"Payment unit {form.instance.name} updated.")
-            return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
-
+    opportunity_payment_units = (
+        opportunity.paymentunit_set.filter(
+            Q(parent_payment_unit=payment_unit.pk) | Q(parent_payment_unit__isnull=True)
+        )
+        .exclude(pk__in=exclude_payment_units)
+        .all()
+    )
+    form = PaymentUnitForm(
+        deliver_units=deliver_units,
+        instance=payment_unit,
+        data=request.POST or None,
+        payment_units=opportunity_payment_units,
+    )
+    if form.is_valid():
+        form.save()
+        required_deliver_units = form.cleaned_data["required_deliver_units"]
+        DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=form.instance.id, optional=False)
+        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
+        DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=form.instance.id, optional=True)
+        sub_payment_units = form.cleaned_data["payment_units"]
+        PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
+            parent_payment_unit=form.instance.id
+        )
+        # Remove deliver units which are not selected anymore
+        deliver_units = required_deliver_units + optional_deliver_units
+        removed_deliver_units = payment_unit_deliver_units - {int(deliver_unit) for deliver_unit in deliver_units}
+        DeliverUnit.objects.filter(id__in=removed_deliver_units).update(payment_unit=None, optional=False)
+        removed_payment_units = {payment_unit.id for payment_unit in opportunity_payment_units} - {
+            int(payment_unit_id) for payment_unit_id in sub_payment_units
+        }
+        PaymentUnit.objects.filter(id__in=removed_payment_units, parent_payment_unit=form.instance.id).update(
+            parent_payment_unit=None
+        )
+        messages.success(request, f"Payment unit {form.instance.name} updated.")
+        return redirect("opportunity:detail", org_slug=request.org.slug, pk=opportunity.id)
     return render(
         request,
         "form.html",
@@ -645,3 +682,50 @@ def fetch_attachment(self, org_slug, blob_id):
     blob_meta = BlobMeta.objects.get(blob_id=blob_id)
     attachment = storages["default"].open(blob_id)
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+
+
+class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
+    model = CompletedWork
+    paginate_by = 25
+    table_class = CompletedWorkTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
+        access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
+        return list(
+            filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
+        )
+
+
+@org_member_required
+def export_completed_work(request, **kwargs):
+    opportunity_id = kwargs["pk"]
+    get_object_or_404(Opportunity, organization=request.org, id=opportunity_id)
+    form = PaymentExportForm(data=request.POST)
+    if not form.is_valid():
+        messages.error(request, form.errors)
+        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+
+    export_format = form.cleaned_data["format"]
+    result = generate_work_status_export.delay(opportunity_id, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
+
+
+@org_member_required
+@require_POST
+def update_completed_work_status_import(request, org_slug=None, pk=None):
+    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    file = request.FILES.get("visits")
+    try:
+        status = bulk_update_completed_work_status(opportunity, file)
+    except ImportException as e:
+        messages.error(request, e.message)
+    else:
+        message = f"Payment Verification status updated successfully for {len(status)} completed works."
+        if status.missing_completed_works:
+            message += status.get_missing_message()
+        messages.success(request, mark_safe(message))
+    return redirect("opportunity:detail", org_slug, pk)

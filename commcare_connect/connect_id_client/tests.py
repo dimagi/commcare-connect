@@ -38,7 +38,6 @@ def test_send_message(httpx_mock):
         match_json={"usernames": ["user_name1"], "body": "test message"},
         json={"all_success": True, "responses": [{"username": "user_name1", "status": "success"}]},
     )
-    print(Message(usernames=["user_name1"], body="test message").asdict())
     result = send_message(Message(usernames=["user_name1"], body="test message"))
     assert result.all_success is True
     assert len(result.responses) == 1

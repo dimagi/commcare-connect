@@ -78,6 +78,19 @@
           </li>
           <li class="dropdown-divider"></li>
           <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportCompletedWorkModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export Payment Verification" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importCompletedWorkModal">
+              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+              {% translate "Import Verified Payments" %}
+            </a>
+          </li>
+          <li class="dropdown-divider"></li>
+          <li>
             <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportUserStatusModal">
               <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
               {% translate "Export User Status" %}
@@ -262,19 +275,19 @@
       <li class="nav-item" role="presentation">
         <button class="nav-link active" id="user-status-tab" data-bs-toggle="tab" data-bs-target="#user-status-tab-pane"
                 type="button" role="tab" aria-controls="user-status-tab-pane" aria-selected="true">
-          <i class="bi bi-person-lines-fill"></i> User Status
+          <i class="bi bi-person-lines-fill"></i> {% trans "User Status" %}
         </button>
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="learn-tab" data-bs-toggle="tab" data-bs-target="#learn-tab-pane"
                 type="button" role="tab" aria-controls="learn-tab-pane" aria-selected="false">
-          <i class="bi bi-mortarboard-fill"></i> Learn Status
+          <i class="bi bi-mortarboard-fill"></i> {% trans "Learn Status" %}
         </button>
       </li>
       <li class="nav-item" role="presentation">
         <button class="nav-link" id="deliver-status-tab" data-bs-toggle="tab" data-bs-target="#deliver-status-tab-pane"
                 type="button" role="tab" aria-controls="deliver-status-tab-pane" aria-selected="false">
-          <i class="bi bi-journal-text"></i> Deliver Status
+          <i class="bi bi-journal-text"></i> {% trans "Deliver Status" %}
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -417,4 +430,41 @@
   <!-- Deliver Status Export Modal -->
   {% url 'opportunity:deliver_status_export' org_slug=request.org.slug pk=opportunity.pk as deliver_status_export_url %}
   {% include "export_modal.html" with modal_id="exportDeliverStatusModal" modal_title=_("Export Deliver Status") export_url=deliver_status_export_url export_form=export_form %}
+
+  <!-- Completed Work Export Modal -->
+  {% url 'opportunity:completed_work_export' org_slug=request.org.slug pk=opportunity.pk as completed_work_export_url %}
+  {% include "export_modal.html" with modal_id="exportCompletedWorkModal" modal_title=_("Export Payment Verification") export_url=completed_work_export_url export_form=export_form %}
+
+  <!-- Completed Work Import modal -->
+  <div class="modal fade" id="importCompletedWorkModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary">
+          <h1 class="modal-title fs-5 text-white">{% translate "Import Verified Payments" %}</h1>
+          <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form action="{% url "opportunity:completed_work_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+              enctype="multipart/form-data">
+          <div class="modal-body">
+            <div class="mb-3">
+              {% csrf_token %}
+              <input class="form-control" type="file" id="importFile" name="visits" required>
+              <div class="col-auto">
+                <span id="importFileHelp" class="form-text">
+                  {% blocktrans %}
+                    The file must contain at least the "ID" and "Status" column.
+                    The import is case-insensitive.
+                  {% endblocktrans %}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 {% endblock modal %}
