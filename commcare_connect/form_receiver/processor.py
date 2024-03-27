@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
+    OpportunityClaimLimit,
     UserVisit,
     VisitValidationStatus,
 )
@@ -164,6 +165,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             "entity_name": entity_name,
         },
     )
+    claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=completed_work.payment_unit)
     user_visit = UserVisit(
         opportunity=opportunity,
         user=user,
@@ -180,7 +182,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     )
     if (
         counts["daily"] >= opportunity.daily_max_visits_per_user
-        or counts["total"] >= claim.max_payments
+        or counts["total"] >= claim_limit.max_visits
         or datetime.date.today() > claim.end_date
     ):
         user_visit.status = VisitValidationStatus.over_limit
