@@ -134,6 +134,10 @@ class OpportunityEdit(OrganizationUserMixin, UpdateView):
         if end_date:
             opportunity.end_date = end_date
         response = super().form_valid(form)
+        if opportunity.auto_approve_visits:
+            UserVisit.objects.filter(
+                opportunity=opportunity, flagged=False, status=VisitValidationStatus.pending
+            ).update(status=VisitValidationStatus.approved)
         return response
 
 

@@ -70,6 +70,7 @@ class Opportunity(BaseModel):
     total_budget = models.IntegerField(null=True)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency = models.CharField(max_length=3, null=True)
+    auto_approve_visits = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name

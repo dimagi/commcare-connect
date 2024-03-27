@@ -192,6 +192,13 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     if flags:
         user_visit.flagged = True
         user_visit.flag_reason = {"flags": flags}
+
+    if (
+        opportunity.auto_approve_visits
+        and not user_visit.flagged
+        and user_visit.status == VisitValidationStatus.pending
+    ):
+        user_visit.status = VisitValidationStatus.approved
     user_visit.save()
     download_user_visit_attachments.delay(user_visit.id)
 
