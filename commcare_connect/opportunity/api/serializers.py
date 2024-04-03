@@ -76,6 +76,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "organization",
             "learn_app",
             "deliver_app",
+            "start_date",
             "end_date",
             "max_visits_per_user",
             "daily_max_visits_per_user",

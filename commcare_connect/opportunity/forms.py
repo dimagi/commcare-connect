@@ -239,6 +239,8 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 self.add_error("end_date", "Please enter the correct end date for this opportunity")
             if cleaned_data["start_date"] < now().date():
                 self.add_error("start_date", "Start date should be today or latter")
+            if cleaned_data["start_date"] >= cleaned_data["end_date"]:
+                self.add_error("end_date", "End date must be after start date")
             return cleaned_data
 
 

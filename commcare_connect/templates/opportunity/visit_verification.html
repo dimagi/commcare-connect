@@ -63,6 +63,12 @@
               <th scope="row">Duration</th>
               <td>{{ xform.metadata.duration|duration_minutes }}</td>
             </tr>
+            {% if visit.is_trial %}
+            <tr>
+              <th scope="row">Visited Before Start Date</th>
+              <td>Yes</td>
+            </tr>
+            {% endif %}
           </tbody>
         </table>
       </div>

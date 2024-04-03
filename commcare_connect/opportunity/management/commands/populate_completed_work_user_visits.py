@@ -22,6 +22,7 @@ class Command(BaseCommand):
                     opportunity=access.opportunity,
                     user=access.user,
                     deliver_unit__in=payment_unit.deliver_units.all(),
+                    is_trial=False,
                 )
                 for _, visits in groupby(user_visits, key=lambda x: x.entity_id):
                     for visit in visits:

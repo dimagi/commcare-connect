@@ -62,7 +62,7 @@ class UserVisitViewSet(viewsets.GenericViewSet, viewsets.mixins.ListModelMixin):
         return UserVisit.objects.filter(
             opportunity=self.kwargs.get("opportunity_id"),
             user=self.request.user,
-        ).exclude(status=VisitValidationStatus.over_limit)
+        ).exclude(status=VisitValidationStatus.over_limit, is_trial=True)
 
 
 class DeliveryProgressView(RetrieveAPIView):
