@@ -1,3 +1,4 @@
+import datetime
 from collections import Counter, defaultdict
 from uuid import uuid4
 
@@ -65,6 +66,7 @@ class Opportunity(BaseModel):
     )
     max_visits_per_user = models.IntegerField(null=True)
     daily_max_visits_per_user = models.IntegerField(null=True)
+    start_date = models.DateField(null=True, default=datetime.date.today)
     end_date = models.DateField(null=True)
     budget_per_visit = models.IntegerField(null=True)
     total_budget = models.IntegerField(null=True)

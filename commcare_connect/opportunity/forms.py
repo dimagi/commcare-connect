@@ -1,3 +1,4 @@
+import datetime
 import json
 
 from crispy_forms.helper import FormHelper, Layout
@@ -201,26 +202,34 @@ class OpportunityFinalizeForm(forms.ModelForm):
     class Meta:
         model = Opportunity
         fields = [
+            "start_date",
             "end_date",
             "total_budget",
         ]
         widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
             "end_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
         }
 
     def __init__(self, *args, **kwargs):
         budget_per_user = kwargs.pop("budget_per_user")
+        current_start_date = kwargs.pop("current_start_date")
+        is_start_date_readonly = current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper()
-
         self.helper.layout = Layout(
+            Field(
+                "start_date",
+                help="Start date can't be edited if it was set in past" if is_start_date_readonly else None,
+            ),
             Field("end_date"),
             Field("max_users", oninput=f"id_total_budget.value = {budget_per_user} * parseInt(this.value || 0)"),
             Field("total_budget", readonly=True, wrapper_class="form-group col-md-4 mb-0"),
             Submit("submit", "Submit"),
         )
         self.fields["max_users"] = forms.IntegerField()
+        self.fields["start_date"].disabled = is_start_date_readonly
         self.fields["total_budget"].widget.attrs.update({"class": "form-control-plaintext"})
 
     def clean(self):
@@ -228,6 +237,8 @@ class OpportunityFinalizeForm(forms.ModelForm):
         if cleaned_data:
             if cleaned_data["end_date"] < now().date():
                 self.add_error("end_date", "Please enter the correct end date for this opportunity")
+            if cleaned_data["start_date"] < now().date():
+                self.add_error("start_date", "Start date should be today or latter")
             return cleaned_data
 
 
