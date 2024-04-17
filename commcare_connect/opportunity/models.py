@@ -348,9 +348,7 @@ class CompletedWork(models.Model):
     @property
     def completed_count(self):
         """Returns the no of completion of this work. Includes duplicate submissions."""
-        visits = self.uservisit_set.filter(status=VisitValidationStatus.approved).values_list(
-            "deliver_unit_id", flat=True
-        )
+        visits = self.uservisit_set.values_list("deliver_unit_id", flat=True)
         unit_counts = Counter(visits)
         deliver_units = self.payment_unit.deliver_units.values("id", "optional")
         required_deliver_units = list(
