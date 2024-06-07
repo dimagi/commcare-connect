@@ -74,7 +74,7 @@ def get_or_create_learn_module(app, module_data):
     return module
 
 
-def process_learn_modules(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
+def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
     """Process learn modules from a form received from CommCare HQ.
 
     :param user: The user who submitted the form.
@@ -82,12 +82,14 @@ def process_learn_modules(user, xform: XForm, app: CommCareApp, opportunity: Opp
     :param app: The CommCare app the form belongs to.
     :param opportunity: The opportunity the app belongs to.
     :param blocks: A list of learn module form blocks."""
+    access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
     for module_data in blocks:
         module = get_or_create_learn_module(app, module_data)
         completed_module, created = CompletedModule.objects.get_or_create(
             user=user,
             module=module,
             opportunity=opportunity,
+            opportunity_access=access,
             defaults={
                 "xform_id": xform.id,
                 "date": xform.received_on,
@@ -116,10 +118,12 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
             raise ProcessingError("User score must be an integer")
         # TODO: should this move to the opportunity to allow better re-use of the app?
         passing_score = app.passing_score
+        access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
         assessment, created = Assessment.objects.get_or_create(
             user=user,
             app=app,
             opportunity=opportunity,
+            opportunity_access=access,
             xform_id=xform.id,
             defaults={
                 "date": xform.received_on,
@@ -148,7 +152,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     counts = (
-        UserVisit.objects.filter(opportunity=opportunity, user=user, deliver_unit=deliver_unit)
+        UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
         .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
         .aggregate(
             daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
@@ -156,12 +160,13 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
         )
     )
-    claim = OpportunityClaim.objects.get(opportunity_access__opportunity=opportunity, opportunity_access__user=user)
+    claim = OpportunityClaim.objects.get(opportunity_access=access)
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
     user_visit = UserVisit(
         opportunity=opportunity,
         user=user,
+        opportunity_access=access,
         deliver_unit=deliver_unit,
         entity_id=entity_id,
         entity_name=entity_name,

@@ -24,7 +24,6 @@ from commcare_connect.opportunity.export import (
 from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import (
     BlobMeta,
-    CompletedModule,
     CompletedWorkStatus,
     DeliverUnit,
     LearnModule,
@@ -171,9 +170,7 @@ def _get_inactive_message(access: OpportunityAccess):
 
 
 def _get_learn_message(access: OpportunityAccess):
-    last_user_learn_module = (
-        CompletedModule.objects.filter(user=access.user, opportunity=access.opportunity).order_by("date").last()
-    )
+    last_user_learn_module = access.completedmodule_set.order_by("date").last()
     if last_user_learn_module and is_date_before(last_user_learn_module.date, days=3):
         return Message(
             usernames=[access.user.username],
@@ -186,9 +183,7 @@ def _get_learn_message(access: OpportunityAccess):
 
 
 def _check_deliver_inactive(access: OpportunityAccess):
-    last_user_deliver_visit = (
-        UserVisit.objects.filter(user=access.user, opportunity=access.opportunity).order_by("visit_date").last()
-    )
+    last_user_deliver_visit = access.uservisit_set.order_by("visit_date").last()
     if last_user_deliver_visit and is_date_before(last_user_deliver_visit.visit_date, days=2):
         return _get_deliver_message(access)
 

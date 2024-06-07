@@ -15,8 +15,6 @@ from commcare_connect.opportunity.api.serializers import (
     UserLearnProgressSerializer,
 )
 from commcare_connect.opportunity.models import (
-    Assessment,
-    CompletedModule,
     CompletedWork,
     Opportunity,
     OpportunityAccess,
@@ -45,11 +43,8 @@ class UserLearnProgressView(RetrieveAPIView):
             OpportunityAccess, user=self.request.user, opportunity=self.kwargs.get("pk")
         )
         return dict(
-            completed_modules=CompletedModule.objects.filter(
-                user=self.request.user,
-                opportunity=opportunity_access.opportunity,
-            ),
-            assessments=Assessment.objects.filter(user=self.request.user, opportunity=opportunity_access.opportunity),
+            completed_modules=opportunity_access.completedmodule_set.all(),
+            assessments=opportunity_access.assessment_set.all(),
         )
 
 

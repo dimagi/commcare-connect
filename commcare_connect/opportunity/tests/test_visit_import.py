@@ -33,8 +33,13 @@ from commcare_connect.users.models import User
 
 @pytest.mark.django_db
 def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
-        5, opportunity=opportunity, status=VisitValidationStatus.pending.value, user=mobile_user
+        5,
+        opportunity=opportunity,
+        status=VisitValidationStatus.pending.value,
+        user=mobile_user,
+        opportunity_access=access,
     )
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
@@ -47,8 +52,12 @@ def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
 
 @pytest.mark.django_db
 def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visit = UserVisitFactory.create(
-        opportunity=opportunity, status=VisitValidationStatus.pending.value, user=mobile_user
+        opportunity=opportunity,
+        status=VisitValidationStatus.pending.value,
+        user=mobile_user,
+        opportunity_access=access,
     )
     reason = "bad form"
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
@@ -82,6 +91,7 @@ def test_payment_accrued(opportunity: Opportunity):
                     user=mobile_user,
                     deliver_unit=deliver_unit,
                     status=VisitValidationStatus.approved.value,
+                    opportunity_access=access,
                     completed_work=completed_work,
                 )
     update_payment_accrued(opportunity, {mobile_user.id for mobile_user in mobile_users})
@@ -92,6 +102,9 @@ def test_payment_accrued(opportunity: Opportunity):
 
 @pytest.mark.django_db
 def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    payment_unit = PaymentUnitFactory.create(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app)
     payment_unit = PaymentUnitFactory(opportunity=opportunity)
     deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
@@ -106,6 +119,7 @@ def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
         user=mobile_user,
         deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved.value,
+        opportunity_access=access,
         completed_work=completed_work,
     )
     update_payment_accrued(opportunity, {mobile_user.id})

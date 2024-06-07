@@ -12,7 +12,7 @@ from commcare_connect.users.tests.factories import MobileUserFactory
 
 @pytest.mark.django_db
 def test_deliver_status_query_no_visits(opportunity: Opportunity):
-    mobile_users = list(MobileUserFactory.create_batch(5))
+    mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
@@ -56,7 +56,7 @@ def test_deliver_status_query(opportunity: Opportunity):
 def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunity):
     # Test user visit counts when visits are for another opportunity. Should return 0 for all counts as the user has
     # done no visits in the current opportunity.
-    mobile_users = list(MobileUserFactory.create_batch(5))
+    mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
         CompletedWorkFactory.create_batch(5)

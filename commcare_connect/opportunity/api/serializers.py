@@ -132,7 +132,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     def get_learn_progress(self, obj):
         opp_access = _get_opp_access(self.context.get("request").user, obj)
         total_modules = LearnModule.objects.filter(app=opp_access.opportunity.learn_app)
-        completed_modules = CompletedModule.objects.filter(opportunity=opp_access.opportunity, user=opp_access.user)
+        completed_modules = opp_access.completedmodule_set.all()
         return {"total_modules": total_modules.count(), "completed_modules": completed_modules.count()}
 
     def get_deliver_progress(self, obj):
