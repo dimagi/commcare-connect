@@ -8,4 +8,5 @@ urlpatterns = [
     path("organization/", views.organization_home, name="home"),
     path("organization/invite/<slug:invite_id>/", views.accept_invite, name="accept_invite"),
     path("organization/member", views.add_members_form, name="add_members"),
+    path("organization/add_credential", views.add_credential_view, name="add_credential"),
 ]

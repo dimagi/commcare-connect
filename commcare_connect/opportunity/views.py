@@ -158,8 +158,11 @@ class OpportunityEdit(OrganizationUserMixin, UpdateView):
         opportunity = form.instance
         opportunity.modified_by = self.request.user.email
         users = form.cleaned_data["users"]
-        if users:
-            add_connect_users.delay(users, form.instance.id)
+        filter_country = form.cleaned_data["filter_country"]
+        filter_credential = form.cleaned_data["filter_credential"]
+        if users or filter_country or filter_credential:
+            add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
+
         additional_users = form.cleaned_data["additional_users"]
         if additional_users:
             for payment_unit in opportunity.paymentunit_set.all():

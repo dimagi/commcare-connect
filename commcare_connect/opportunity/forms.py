@@ -10,6 +10,7 @@ from django.db.models import Q, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect import connect_id_client
 from commcare_connect.opportunity.models import (
     CommCareApp,
     DeliverUnit,
@@ -22,6 +23,8 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
+
+FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 
 class OpportunityChangeForm(forms.ModelForm):
@@ -38,6 +41,7 @@ class OpportunityChangeForm(forms.ModelForm):
         ]
 
     def __init__(self, *args, **kwargs):
+        credentials = connect_id_client.fetch_credentials()
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -54,7 +58,14 @@ class OpportunityChangeForm(forms.ModelForm):
                 Field("end_date", wrapper_class="form-group col-md-6 mb-0"),
             ),
             HTML("<hr />"),
-            Row(Field("users")),
+            Fieldset(
+                "Invite Users",
+                Row(Field("users")),
+                Row(
+                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
+                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
+                ),
+            ),
             Submit("submit", "Submit"),
         )
 
@@ -71,8 +82,20 @@ class OpportunityChangeForm(forms.ModelForm):
             required=False,
             help_text="Extends opportunity end date for all users.",
         )
+        self.fields["filter_country"] = forms.CharField(
+            label="Filter By Country",
+            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
+            required=False,
+        )
+        self.fields["filter_credential"] = forms.CharField(
+            label="Filter By Credential",
+            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
+            required=False,
+        )
         self.initial["end_date"] = self.instance.end_date.isoformat()
         self.currently_active = self.instance.active
+        self.initial["filter_country"] = [""]
+        self.initial["filter_credential"] = [""]
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]

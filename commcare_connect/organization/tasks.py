@@ -3,7 +3,8 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.urls import reverse
 
-from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect import connect_id_client
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.users.models import User
 from config import celery_app
 
@@ -31,3 +32,9 @@ Commcare Connect"""
         recipient_list=[membership.user.email],
         from_email=settings.DEFAULT_FROM_EMAIL,
     )
+
+
+@celery_app.task()
+def add_credential_task(org_pk: int, credential: str, users: list[str]):
+    org = Organization.objects.get(pk=org_pk)
+    connect_id_client.add_credential(org, credential, users)
