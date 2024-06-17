@@ -128,8 +128,13 @@
     </dl>
     {% endif %}
     <div id="action-buttons" style="margin-bottom: 25px;">
-    <a class="btn btn-success" href="{% url 'opportunity:approve_visit' org_slug=request.org.slug pk=visit.id  %}" role="button">Approve</a>
-    <a class="btn btn-danger" href="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=visit.id  %}" role="button">Reject</a>
+      {% if request.org_membership.is_viewer %}
+        <button class="btn btn-success" disabled>Approve</button>
+        <button class="btn btn-danger" disabled>Reject</button>
+      {% else %}
+        <a class="btn btn-success" href="{% url 'opportunity:approve_visit' org_slug=request.org.slug pk=visit.id  %}" role="button">Approve</a>
+        <a class="btn btn-danger" href="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=visit.id  %}" role="button">Reject</a>
+      {% endif %}
     </div>
   </div>
 {% endblock content %}

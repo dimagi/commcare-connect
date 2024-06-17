@@ -9,10 +9,16 @@
     <div class="mt-5 py-3">
       <h1> Opportunities
         <span class="float-end">
+          {% if request.org_membership.is_viewer %}
+          <button class="btn btn-primary" disabled>
+            <span class="bi bi-plus"></span> Add new
+          </button>
+          {% else %}
           <a class="btn btn-primary"
              href="{% url 'opportunity:init' org_slug=request.org.slug %}" title="Add new opportunity"><span
             class="bi bi-plus"></span> Add new
           </a>
+          {% endif %}
         </span>
       </h1>
     </div>
@@ -50,6 +56,14 @@
                    href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.id %}">
                   <span class="bi bi-eye"></span><span class="d-none d-md-inline">&nbsp;View</span>
                 </a>
+              {% if request.org_membership.is_viewer %}
+                <button class="btn btn-warning btn-sm" disabled>
+                  <span class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span>
+                </button>
+                <button class="btn btn-primary btn-sm" disabled>
+                  <span class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
+                </button>
+              {% else %}
                 <a class="btn btn-warning btn-sm"
                    href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span></a>
@@ -57,8 +71,8 @@
                    href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
                 </a>
+              {% endif %}
               </div>
-
             </td>
           </tr>
         {% empty %}

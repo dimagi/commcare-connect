@@ -84,7 +84,7 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_status,
     update_payment_accrued,
 )
-from commcare_connect.organization.decorators import org_admin_required, org_member_required
+from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 
@@ -92,7 +92,14 @@ from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_d
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         # request.org_membership is a SimpleLazyObject object so `is not None` is always `True`
-        return self.request.org_membership != None or self.request.user.is_superuser  # noqa: E711
+        return (self.request.org_membership != None) or self.request.user.is_superuser  # noqa: E711
+
+
+class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return (
+            self.request.org_membership != None and not self.request.org_membership.is_viewer  # noqa: E711
+        ) or self.request.user.is_superuser
 
 
 class OpportunityList(OrganizationUserMixin, ListView):
@@ -106,7 +113,7 @@ class OpportunityList(OrganizationUserMixin, ListView):
         return Opportunity.objects.filter(organization=self.request.org).order_by(ordering)
 
 
-class OpportunityCreate(OrganizationUserMixin, CreateView):
+class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):
     template_name = "opportunity/opportunity_create.html"
     form_class = OpportunityCreationForm
 
@@ -126,7 +133,7 @@ class OpportunityCreate(OrganizationUserMixin, CreateView):
         return response
 
 
-class OpportunityInit(OrganizationUserMixin, CreateView):
+class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
@@ -146,7 +153,7 @@ class OpportunityInit(OrganizationUserMixin, CreateView):
         return response
 
 
-class OpportunityEdit(OrganizationUserMixin, UpdateView):
+class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_edit.html"
     form_class = OpportunityChangeForm
@@ -174,7 +181,7 @@ class OpportunityEdit(OrganizationUserMixin, UpdateView):
         return response
 
 
-class OpportunityFinalize(OrganizationUserMixin, UpdateView):
+class OpportunityFinalize(OrganizationUserMemberRoleMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -602,7 +609,7 @@ def export_deliver_status(request, **kwargs):
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
-@org_member_required
+@org_viewer_required
 def user_visits_list(request, org_slug=None, opp_id=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=opp_id)
     opportunity_access = get_object_or_404(OpportunityAccess, pk=pk, opportunity=opportunity)
@@ -627,7 +634,7 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     return redirect("opportunity:user_payments_table", org_slug=org_slug, opp_id=opp_id, pk=access_id)
 
 
-@org_member_required
+@org_viewer_required
 def user_profile(request, org_slug=None, opp_id=None, pk=None):
     access = get_object_or_404(OpportunityAccess, pk=pk, accepted=True)
     user_visits = UserVisit.objects.filter(user=access.user, opportunity=access.opportunity)
@@ -733,7 +740,7 @@ def get_application(request, org_slug=None):
     return HttpResponse("\n".join(options))
 
 
-@org_member_required
+@org_viewer_required
 def visit_verification(request, org_slug=None, pk=None):
     user_visit = get_object_or_404(UserVisit, pk=pk)
     serializer = XFormSerializer(data=user_visit.form_json)
