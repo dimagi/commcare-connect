@@ -314,8 +314,9 @@ def export_user_visits(request, **kwargs):
     export_format = form.cleaned_data["format"]
     date_range = DateRanges(form.cleaned_data["date_range"])
     status = form.cleaned_data["status"]
+    flatten = form.cleaned_data["flatten_form_data"]
 
-    result = generate_visit_export.delay(opportunity_id, date_range, status, export_format)
+    result = generate_visit_export.delay(opportunity_id, date_range, status, export_format, flatten)
     redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -727,9 +728,9 @@ def get_application(request, org_slug=None):
     ).select_related("learn_app", "deliver_app")
     existing_apps = set()
     for opp in active_opps:
-        if opp.learn_app.domain == domain:
+        if opp.learn_app.cc_domain == domain:
             existing_apps.add(opp.learn_app.cc_app_id)
-        if opp.deliver_app.domain == domain:
+        if opp.deliver_app.cc_domain == domain:
             existing_apps.add(opp.deliver_app.cc_app_id)
     options = []
     for app in applications:

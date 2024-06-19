@@ -159,7 +159,7 @@ def get_status_by_visit_id(dataset) -> dict[int, VisitValidationStatus]:
     for row in dataset:
         row = list(row)
         visit_id = str(row[visit_col_index])
-        status_raw = row[status_col_index].lower().replace(" ", "_")
+        status_raw = row[status_col_index].lower().strip().replace(" ", "_")
         try:
             status_by_visit_id[visit_id] = VisitValidationStatus[status_raw]
         except KeyError:
@@ -299,7 +299,7 @@ def get_status_by_completed_work_id(dataset):
     for row in dataset:
         row = list(row)
         work_id = str(row[work_id_col_index])
-        status_raw = row[status_col_index].lower().replace(" ", "_")
+        status_raw = row[status_col_index].lower().strip().replace(" ", "_")
         try:
             status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
         except KeyError:

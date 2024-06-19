@@ -476,6 +476,7 @@ class VisitExportForm(forms.Form):
     format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
     date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
     status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
+    flatten_form_data = forms.BooleanField(initial=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -484,6 +485,7 @@ class VisitExportForm(forms.Form):
             Row(Field("format")),
             Row(Field("date_range")),
             Row(Field("status")),
+            Row(Field("flatten_form_data", css_class="form-check-input", wrapper_class="form-check form-switch")),
         )
         self.helper.form_tag = False
 

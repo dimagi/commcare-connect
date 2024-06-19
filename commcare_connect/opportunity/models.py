@@ -266,7 +266,9 @@ class OpportunityAccess(models.Model):
 
     @property
     def visit_count(self):
-        return self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).count()
+        return sum(
+            [cw.completed for cw in self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).all()]
+        )
 
     @property
     def last_visit_date(self):
@@ -403,9 +405,9 @@ class CompletedWork(models.Model):
         visits = self.uservisit_set.filter(status=VisitValidationStatus.approved).values_list(
             "deliver_unit_id", flat=True
         )
-        return self.calculate_completed(visits)
+        return self.calculate_completed(visits, approved=True)
 
-    def calculate_completed(self, visits):
+    def calculate_completed(self, visits, approved=False):
         unit_counts = Counter(visits)
         deliver_units = self.payment_unit.deliver_units.values("id", "optional")
         required_deliver_units = list(
@@ -428,7 +430,10 @@ class CompletedWork(models.Model):
             )
             child_completed_work_count = 0
             for completed_work in child_completed_works:
-                child_completed_work_count += completed_work.completed_count
+                if approved:
+                    child_completed_work_count += completed_work.approved_count
+                else:
+                    child_completed_work_count += completed_work.completed_count
             number_completed = min(number_completed, child_completed_work_count)
         return number_completed
 

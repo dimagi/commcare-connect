@@ -1,3 +1,5 @@
+import random
+
 import pytest
 from django.utils.timezone import now
 from tablib import Dataset
@@ -44,7 +46,7 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
             ),
         ]
     )
-    exporter = export_user_visit_data(opportunity, DateRanges.LAST_30_DAYS, [])
+    exporter = export_user_visit_data(opportunity, DateRanges.LAST_30_DAYS, [], True)
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
 
@@ -191,7 +193,13 @@ def test_export_user_status_table_data(opportunity: Opportunity):
         for learn_module in opportunity.learn_app.learn_modules.all():
             CompletedModuleFactory(module=learn_module, user=mobile_user, opportunity=opportunity, date=date)
         AssessmentFactory(app=opportunity.learn_app, opportunity=opportunity, user=mobile_user, passed=True, date=date)
-        UserVisitFactory.create_batch(1, opportunity=opportunity, user=mobile_user, visit_date=date)
+        UserVisitFactory.create_batch(
+            1,
+            opportunity=opportunity,
+            user=mobile_user,
+            visit_date=date,
+            status=random.choice(["approved", "rejected", "pending"]),
+        )
         rows.append(
             (
                 mobile_user.name,

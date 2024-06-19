@@ -130,10 +130,12 @@ def invite_user(user_id, opportunity_access_id):
 
 
 @celery_app.task()
-def generate_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str):
+def generate_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str, flatten: bool):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     logger.info(f"Export for {opportunity.name} with date range {date_range} and status {','.join(status)}")
-    dataset = export_user_visit_data(opportunity, DateRanges(date_range), [VisitValidationStatus(s) for s in status])
+    dataset = export_user_visit_data(
+        opportunity, DateRanges(date_range), [VisitValidationStatus(s) for s in status], flatten
+    )
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name

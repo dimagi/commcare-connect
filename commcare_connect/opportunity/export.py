@@ -20,7 +20,7 @@ from commcare_connect.opportunity.tables import CompletedWorkTable, DeliverStatu
 
 
 def export_user_visit_data(
-    opportunity: Opportunity, date_range: DateRanges, status: list[VisitValidationStatus]
+    opportunity: Opportunity, date_range: DateRanges, status: list[VisitValidationStatus], flatten: bool
 ) -> Dataset:
     """Export all user visits for an opportunity."""
     user_visits = UserVisit.objects.filter(opportunity=opportunity)
@@ -42,7 +42,14 @@ def export_user_visit_data(
         for row in table.rows
     ]
     base_headers = [force_str(column.header, strings_only=True) for column in columns]
-    return get_flattened_dataset(base_headers, base_data)
+    if flatten:
+        return get_flattened_dataset(base_headers, base_data)
+    else:
+        base_headers.append("form_json")
+        dataset = Dataset(title="Export", headers=base_headers)
+        for row in base_data:
+            dataset.append([force_str(col, strings_only=True) for col in row])
+        return dataset
 
 
 def get_flattened_dataset(headers: list[str], data: list[list]) -> Dataset:

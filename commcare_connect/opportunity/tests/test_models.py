@@ -3,10 +3,13 @@ import pytest
 from commcare_connect.opportunity.models import Opportunity, OpportunityClaimLimit
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
+    CompletedWorkFactory,
+    DeliverUnitFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     PaymentUnitFactory,
+    UserVisitFactory,
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
@@ -88,3 +91,17 @@ def test_claim_limits(opportunity: Opportunity):
     assert limit_count(mobile_users[1]) in [2, 3]
     # Not enough for 3rd user at all
     assert limit_count(mobile_users[2]) == 0
+
+
+@pytest.mark.django_db
+def test_access_visit_count(opportunity: Opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    assert access.visit_count == 0
+
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
+    completed_work = CompletedWorkFactory(payment_unit=payment_unit, opportunity_access=access)
+    UserVisitFactory(
+        completed_work=completed_work, deliver_unit=deliver_unit, user=access.user, opportunity=access.opportunity
+    )
+    assert access.visit_count == 1
