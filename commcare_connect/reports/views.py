@@ -45,15 +45,15 @@ def _get_table_data_for_quarter(quarter):
             work_date__gte=quarter_start,
             work_date__lt=quarter_end,
         )
-        .values("opportunity_access__user", "entity_id")
+        .select_related("opportunity_access")
     )
 
     user_set = set()
     beneficiary_set = set()
     service_count = 0
     for v in visit_data:
-        user_set.add(v["opportunity_access__user"])
-        beneficiary_set.add(v["entity_id"])
+        user_set.add(v.opportunity_access.user_id)
+        beneficiary_set.add(v.entity_id)
         service_count += v.approved_count
 
     payment_data = Payment.objects.filter(
