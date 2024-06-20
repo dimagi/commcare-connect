@@ -52,7 +52,7 @@ def _get_table_data_for_quarter(quarter):
     beneficiary_set = set()
     service_count = 0
     for v in visit_data:
-        user_set.add(v["user"])
+        user_set.add(v["opportunity_access__user"])
         beneficiary_set.add(v["entity_id"])
         service_count += v.approved_count
 
