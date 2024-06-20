@@ -19,6 +19,7 @@ urlpatterns = [
     # Your stuff: custom urls includes go here
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
+    path("admin_reports/", include("commcare_connect.reports.urls")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # API URLS
