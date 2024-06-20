@@ -1,11 +1,11 @@
 from datetime import date
 
 from django.contrib.auth.decorators import login_required, user_passes_test
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from commcare_connect.opportunity.models import Payment, UserVisit, VisitValidationStatus
+from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, Payment
 
 from .tables import AdminReportTable
 
@@ -37,12 +37,16 @@ def _get_table_data_for_quarter(quarter):
     quarter_start = date(quarter[0], quarter[1] * 3, 1)
     next_quarter = _increment(quarter)
     quarter_end = date(next_quarter[0], next_quarter[1] * 3, 1)
-    visit_data = UserVisit.objects.filter(
-        # opportunity_access__opportunity__is_test=False,
-        status=VisitValidationStatus.approved,
-        visit_date__gte=quarter_start,
-        visit_date__lt=quarter_end,
-    ).values("user", "entity_id")
+    visit_data = (
+        CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
+        .filter(
+            # opportunity_access__opportunity__is_test=False,
+            status=CompletedWorkStatus.approved,
+            work_date__gte=quarter_start,
+            work_date__lt=quarter_end,
+        )
+        .values("opportunity_access__user", "entity_id")
+    )
 
     user_set = set()
     beneficiary_set = set()
@@ -50,7 +54,7 @@ def _get_table_data_for_quarter(quarter):
     for v in visit_data:
         user_set.add(v["user"])
         beneficiary_set.add(v["entity_id"])
-        service_count += 1
+        service_count += v.approved_count
 
     payment_data = Payment.objects.filter(
         # opportunity_access__opportunity__is_test=False,
@@ -66,6 +70,41 @@ def _get_table_data_for_quarter(quarter):
         "payments": payment_data["amount__sum"],
         "beneficiaries": len(beneficiary_set),
     }
+
+
+# def _get_table_data_for_quarter(quarter):
+#     quarter_start = date(quarter[0], quarter[1] * 3, 1)
+#     next_quarter = _increment(quarter)
+#     quarter_end = date(next_quarter[0], next_quarter[1] * 3, 1)
+#     visit_data = UserVisit.objects.filter(
+#         #opportunity_access__opportunity__is_test=False,
+#         status=VisitValidationStatus.approved,
+#         visit_date__gte=quarter_start,
+#         visit_date__lt=quarter_end,
+#     ).values("user", "entity_id")
+
+#     user_set = set()
+#     beneficiary_set = set()
+#     service_count = 0
+#     for v in visit_data:
+#         user_set.add(v["user"])
+#         beneficiary_set.add(v["entity_id"])
+#         service_count += 1
+
+#     payment_data = Payment.objects.filter(
+#         #opportunity_access__opportunity__is_test=False,
+#         confirmed=True,
+#         date_paid__gte=quarter_start,
+#         date_paid__lt=quarter_end,
+#     ).aggregate(Sum("amount"))
+
+#     return {
+#         "quarter": f"{quarter[0]} Q{quarter[1]}",
+#         "users": len(user_set),
+#         "services": service_count,
+#         "payments": payment_data["amount__sum"] or 0,
+#         "beneficiaries": len(beneficiary_set),
+#     }
 
 
 @login_required
