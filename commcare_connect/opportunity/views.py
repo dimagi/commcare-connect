@@ -92,7 +92,7 @@ from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_d
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         # request.org_membership is a SimpleLazyObject object so `is not None` is always `True`
-        return (self.request.org_membership != None) or self.request.user.is_superuser  # noqa: E711
+        return self.request.org_membership != None or self.request.user.is_superuser  # noqa: E711
 
 
 class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
