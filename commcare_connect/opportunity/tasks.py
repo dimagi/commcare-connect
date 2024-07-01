@@ -14,6 +14,7 @@ from tablib import Dataset
 
 from commcare_connect.connect_id_client import fetch_users, filter_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import Message
+from commcare_connect.events.models import Event
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.export import (
     export_deliver_status_table,
@@ -127,6 +128,9 @@ def invite_user(user_id, opportunity_access_id):
         ),
     )
     send_message(message)
+    Event(event_type=Event.Type.INVITE_SENT, user=user, opportunity=opportunity_access.opportunity).track(
+        use_async=False
+    )
 
 
 @celery_app.task()
