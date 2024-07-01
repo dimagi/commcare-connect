@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from tablib import Dataset
 
+from commcare_connect.events.models import Event
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
@@ -143,6 +144,7 @@ def update_payment_accrued(opportunity: Opportunity, users):
                 access.payment_accrued += approved_count * completed_work.payment_unit.amount
             completed_work.save()
         access.save()
+        Event(event_type=Event.Type.PAYMENT_ACCRUED, user=access.user, opportunity=access.opportunity).track()
 
 
 def get_status_by_visit_id(dataset) -> dict[int, VisitValidationStatus]:
@@ -238,6 +240,7 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
             payment = Payment.objects.create(opportunity_access=access, amount=amount)
             seen_users.add(username)
             payment_ids.append(payment.pk)
+            Event(event_type=Event.Type.PAYMENT_TRANSFERRED, user=access.user, opportunity=opportunity).track()
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
     return PaymentImportStatus(seen_users, missing_users)
