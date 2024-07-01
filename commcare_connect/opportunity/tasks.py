@@ -101,6 +101,11 @@ def invite_user(user_id, opportunity_access_id):
         ),
     )
     send_message(message)
+    from commcare_connect.events.models import Event
+
+    Event(event_type=Event.Type.INVITE_SENT, user=user, opportunity=opportunity_access.opportunity).track(
+        use_async=False
+    )
 
 
 @celery_app.task()
