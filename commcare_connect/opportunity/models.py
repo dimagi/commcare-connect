@@ -580,3 +580,19 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+
+
+class FormJsonValidationRules(models.Model):
+    slug = models.SlugField()
+    name = models.CharField(max_length=25)
+    deliver_unit = models.ManyToManyField(DeliverUnit)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    question_path = models.CharField(max_length=255)
+    question_value = models.CharField(max_length=255)
+
+
+class DeliverUnitFlagRules(models.Model):
+    deliver_unit = models.ForeignKey(DeliverUnit, on_delete=models.CASCADE)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    check_attachments = models.BooleanField(default=False)
+    duration = models.PositiveIntegerField(default=0)

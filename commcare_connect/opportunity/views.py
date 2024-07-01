@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.storage import storages
 from django.db.models import F, Q
+from django.forms import modelformset_factory
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -25,6 +26,8 @@ from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     DateRanges,
+    DeliverUnitFlagsForm,
+    FormJsonValidationRulesForm,
     OpportunityChangeForm,
     OpportunityCreationForm,
     OpportunityFinalizeForm,
@@ -45,6 +48,8 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
+    DeliverUnitFlagRules,
+    FormJsonValidationRules,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -818,18 +823,50 @@ def verification_flags_config(request, org_slug=None, pk=None):
     opportunity = get_object_or_404(Opportunity, pk=pk, organization=request.org)
     verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=opportunity).first()
     form = OpportunityVerificationFlagsConfigForm(instance=verification_flags, data=request.POST or None)
+    deliver_units = DeliverUnit.objects.filter(app=opportunity.deliver_app)
 
-    if form.is_valid():
+    DeliverUnitFlagsFormset = modelformset_factory(
+        DeliverUnitFlagRules, DeliverUnitFlagsForm, max_num=len(deliver_units), can_delete=True
+    )
+    deliver_unit_formset = DeliverUnitFlagsFormset(
+        form_kwargs={"deliver_units": deliver_units},
+        data=request.POST or None,
+        prefix="deliver_unit",
+        queryset=DeliverUnitFlagRules.objects.filter(opportunity=opportunity),
+    )
+    FormJsonValidationRulesFormset = modelformset_factory(
+        FormJsonValidationRules, FormJsonValidationRulesForm, can_delete=True
+    )
+    form_json_formset = FormJsonValidationRulesFormset(
+        form_kwargs={"deliver_units": deliver_units},
+        data=request.POST or None,
+        prefix="form_json",
+        queryset=FormJsonValidationRules.objects.filter(opportunity=opportunity),
+    )
+
+    if form.is_valid() and deliver_unit_formset.is_valid() and form_json_formset.is_valid():
         verification_flags = form.save(commit=False)
         verification_flags.opportunity = opportunity
         verification_flags.save()
+        for du_form in deliver_unit_formset.forms:
+            if du_form.is_valid() and du_form.cleaned_data != {}:
+                du_form.instance.opportunity = opportunity
+                du_form.save()
+        for fj_form in form_json_formset.forms:
+            if fj_form.is_valid() and fj_form.cleaned_data != {}:
+                fj_form.instance.opportunity = opportunity
+                fj_form.save()
         return redirect("opportunity:detail", request.org.slug, opportunity.id)
 
     return render(
         request,
-        "form.html",
+        "opportunity/verification_flags_config.html",
         context=dict(
-            title=f"{request.org.slug} - {opportunity.name}", form_title="Verification Flags Configuration", form=form
+            opportunity=opportunity,
+            title=f"{request.org.slug} - {opportunity.name}",
+            form=form,
+            deliver_unit_formset=deliver_unit_formset,
+            form_json_formset=form_json_formset,
         ),
     )
 

@@ -1,0 +1,148 @@
+{% extends "opportunity/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+  <li class="breadcrumb-item">
+    <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.pk %}">
+      {{ opportunity.name }}
+    </a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">Learn Progress</li>
+{% endblock %}
+
+{% block content %}
+  <h2 class="mb-2">Verification Flags Configuration</h2>
+  <hr/>
+  <form method="post">
+    {% csrf_token %}
+    <div class="mb-2">
+      {% crispy form %}
+    </div>
+    <div class="my-2">
+      <h3 class="mb-2">Deliver Unit Flags</h3>
+      {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+    </div>
+    <div class="my-2" x-data="form_json_formset">
+      <h3 class="mb-2">
+        Form Validation Rules
+        <button type="button" class="btn btn-secondary ms-2" @click="addForm()"><i class="bi bi-plus-circle-fill"></i></button>
+      </h3>
+      {{ form_json_formset.management_form }}
+      <template>
+        <div class="card my-1" id="form_json_form">
+          <div class="card-header">
+            <button type="button" class="btn btn-danger" aria-label="Delete" @click="deleteForm()">
+              <i class="bi bi-trash-fill"></i>
+            </button>
+          </div>
+          <div class="card-body">
+            {% crispy form_json_formset.empty_form form_json_formset.empty_form.helper %}
+          </div>
+        </div>
+      </template>
+      <div id="form_json_forms">
+        {% for form in form_json_formset %}
+          <div class="card my-1" id="form_json_form">
+            {% if not form.instance.id  %}
+            <div class="card-header">
+              <button type="button" class="btn btn-danger" aria-label="Delete" @click="deleteForm()">
+                <i class="bi bi-trash-fill"></i>
+              </button>
+            </div>
+            {% endif %}
+            <div class="card-body">
+              {% for hidden in form.hidden_fields %}
+                  {{ hidden }}
+              {% endfor %}
+              {% crispy form form.helper %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+{% endblock content %}
+
+{% block inline_javascript %}
+    <script>
+      document.addEventListener("alpine:init", () => {
+        Alpine.data("form_json_formset", () => ({
+          init() {
+            this.template = this.$root.querySelector("template");
+            this.formsContainer = this.$root.querySelector("#form_json_forms");
+            this.totalFormsInput = this.$root.querySelector(
+              `input[name$='-TOTAL_FORMS']`
+            );
+            this.initialFormsInput = this.$root.querySelector(
+              'input[name$="-INITIAL_FORMS"]'
+            );
+          },
+          addForm() {
+            const newForm = this.template.content.cloneNode(true);
+            // replace __prefix__ with the correct index
+            for (let el of newForm.querySelectorAll("div", "input, select, textarea")) {
+              if (el.name && el.name.includes("__prefix__")) {
+                el.name = el.name.replace(
+                  "__prefix__",
+                  this.formsContainer.children.length
+                );
+              }
+              if (el.id && el.id.includes("__prefix__")) {
+                el.id = el.id.replace(
+                  "__prefix__",
+                  this.formsContainer.children.length
+                );
+              }
+            }
+            const labels = newForm.querySelectorAll("label");
+            for (let el of labels) {
+              if (el.htmlFor.includes("__prefix__")) {
+                el.htmlFor = el.htmlFor.replace(
+                  "__prefix__",
+                  this.formsContainer.children.length
+                );
+              }
+            }
+
+            // add the new form to the dom
+            this.formsContainer.appendChild(newForm);
+
+            // adjust the management form inputs
+            this.totalFormsInput.value = parseInt(this.totalFormsInput.value) + 1;
+            this.initialFormsInput.value = parseInt(this.initialFormsInput.value) + 1;
+          },
+          deleteForm() {
+            // remove the element from the dom
+            this.$el.closest("#form_json_form").remove();
+
+            // adjust the ids of the remaining inputs
+            for (let i = 0; i < this.formsContainer.children.length; i++) {
+              const form = this.formsContainer.children[i];
+              const elements = form.querySelectorAll("div", "input, select, textarea", "label");
+              for (let el of elements) {
+                if (el.name)
+                  el.name = el.name.replace(/\d+/, i);
+                if (el.id)
+                  el.id = el.id.replace(/\d+/, i);
+                if (el.htmlFor)
+                  el.htmlFor = el.htmlFor.replace(/\d+/, i);
+              }
+            }
+
+            // adjust the management form inputs
+            this.totalFormsInput.value = Math.max(
+              0, parseInt(this.totalFormsInput.value) - 1
+            );
+            this.initialFormsInput.value = Math.max(
+              0, parseInt(this.initialFormsInput.value) - 1
+            );
+          }
+        }));
+      });
+    </script>
+{% endblock inline_javascript %}
