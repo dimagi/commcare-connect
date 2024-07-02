@@ -306,6 +306,7 @@ def test_auto_approve_payments_unflagged_visit(
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
     opportunity.auto_approve_payments = True
+    opportunity.auto_approve_visits = False
     opportunity.save()
     make_request(api_client, form_json, user_with_connectid_link)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
