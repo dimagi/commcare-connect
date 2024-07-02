@@ -230,6 +230,18 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 if dist.m <= 10:
                     flags.append(["location", "Visit location is too close to another visit"])
                     break
+        if opportunity_flags.catchment_areas:
+            areas = access.catchmentarea_set.filter(active=True)
+            if areas:
+                cur_lat, cur_lon, *_ = xform.metadata.location.split(" ")
+                within_catchment = False
+                for area in areas:
+                    dist = distance((area.latitude, area.longitude), (cur_lat, cur_lon))
+                    if dist < area.radius:
+                        within_catchment = True
+                        break
+                if not within_catchment:
+                    flags.append(["catchment", "Visit outside worker catchment areas"])
     if (
         opportunity_flags.form_submission_start
         and opportunity_flags.form_submission_start > xform.metadata.timeStart.time()

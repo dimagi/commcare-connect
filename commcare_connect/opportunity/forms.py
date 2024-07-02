@@ -648,7 +648,15 @@ class SendMessageMobileUsersForm(forms.Form):
 class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
     class Meta:
         model = OpportunityVerificationFlags
-        fields = ("duplicate", "duration", "gps", "location", "form_submission_start", "form_submission_end")
+        fields = (
+            "duplicate",
+            "duration",
+            "gps",
+            "location",
+            "form_submission_start",
+            "form_submission_end",
+            "catchment_areas",
+        )
         widgets = {
             "form_submission_start": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
@@ -659,12 +667,14 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_start": "Start Time",
             "form_submission_end": "End Time",
             "location": "Location Distance",
+            "catchment_areas": "Catchment Area",
         }
         help_texts = {
             "duration": "Minimum time to complete form (minutes)",
             "location": "Minimum distance between form locations (metres)",
             "duplicate": "Flag duplicate form submissions for an entity.",
             "gps": "Flag forms with no location information.",
+            "catchment_areas": "Flag forms outside a users's assigned catchment area",
         }
 
     def __init__(self, *args, **kwargs):

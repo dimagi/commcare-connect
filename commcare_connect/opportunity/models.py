@@ -195,6 +195,7 @@ class OpportunityVerificationFlags(models.Model):
     location = models.PositiveIntegerField(default=10)
     form_submission_start = models.TimeField(null=True, blank=True)
     form_submission_end = models.TimeField(null=True, blank=True)
+    catchment_areas = models.BooleanField(default=False)
 
 
 class LearnModule(models.Model):
@@ -580,3 +581,13 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+
+
+class CatchmentArea(models.Model):
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    latitude = models.DecimalField(max_digits=8, decimal_places=8)
+    longitude = models.DecimalField(max_digits=8, decimal_places=8)
+    radius = models.IntegerField(default=1000)
+    opportunity_access = models.ForeignKey(OpportunityAccess, null=True, on_delete=models.DO_NOTHING)
+    active = models.BooleanField(default=True)
+    name = models.CharField(max_length=255)
