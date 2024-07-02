@@ -111,7 +111,8 @@ def start_learn_app(request):
     except OpportunityAccess.DoesNotExist:
         return HttpResponse("user has no access to opportunity", status=400)
     with transaction.atomic():
-        access_object.date_learn_started = now()
+        if access_object.date_learn_started is None:
+            access_object.date_learn_started = now()
         access_object.accepted = True
         access_object.save()
         user_invite = UserInvite.objects.get(opportunity_access=access_object)
@@ -153,9 +154,10 @@ class SMSStatusCallbackView(APIView):
         message_sid = self.request.data.get("MessageSid", None)
         message_status = self.request.data.get("MessageStatus", None)
         user_invite = get_object_or_404(UserInvite, message_sid=message_sid)
-        if message_status == "delivered":
-            user_invite.status = UserInviteStatus.sms_delivered
-        if message_status == "undelivered":
-            user_invite.status = UserInviteStatus.sms_not_delivered
-        user_invite.save()
+        if not user_invite.status == UserInviteStatus.accepted:
+            if message_status == "delivered":
+                user_invite.status = UserInviteStatus.sms_delivered
+            if message_status == "undelivered":
+                user_invite.status = UserInviteStatus.sms_not_delivered
+            user_invite.save()
         return Response(status=200)
