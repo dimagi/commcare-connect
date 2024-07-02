@@ -406,6 +406,11 @@ class CompletedWork(models.Model):
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     reason = models.CharField(max_length=300, null=True, blank=True)
+    status_modified_date = models.DateTimeField(null=True)
+
+    def update_status(self, status):
+        self.status = status
+        self.status_modified_date = now()
 
     # TODO: add caching on this property
     @property
@@ -501,6 +506,11 @@ class UserVisit(XFormBaseModel):
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
+    status_modified_date = models.DateTimeField(null=True)
+
+    def update_status(self, status):
+        self.status = status
+        self.status_modified_date = now()
 
     @property
     def images(self):

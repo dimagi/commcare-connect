@@ -194,17 +194,17 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             or counts["total"] >= claim_limit.max_visits
             or datetime.date.today() > claim.end_date
         ):
-            user_visit.status = VisitValidationStatus.over_limit
+            user_visit.update_status(VisitValidationStatus.over_limit)
             if not completed_work.status == CompletedWorkStatus.over_limit:
-                completed_work.status = CompletedWorkStatus.over_limit
+                completed_work.update_status(CompletedWorkStatus.over_limit)
                 completed_work_needs_save = True
         elif counts["entity"] > 0:
-            user_visit.status = VisitValidationStatus.duplicate
+            user_visit.update_status(VisitValidationStatus.duplicate)
 
     flags = []
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=opportunity)
     if counts["entity"] > 0:
-        user_visit.status = VisitValidationStatus.duplicate
+        user_visit.update_status(VisitValidationStatus.duplicate)
         if opportunity_flags.duplicate:
             flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
     if opportunity_flags.duration > 0 and xform.metadata.duration < datetime.timedelta(
@@ -243,7 +243,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     if access.suspended:
         flags.append(["user_suspended", "This user is suspended from the opportunity."])
-        user_visit.status = VisitValidationStatus.rejected
+        user_visit.update_status(VisitValidationStatus.rejected)
     if flags:
         user_visit.flagged = True
         user_visit.flag_reason = {"flags": flags}
@@ -253,14 +253,14 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         and user_visit.status == VisitValidationStatus.pending
         and not user_visit.flagged
     ):
-        user_visit.status = VisitValidationStatus.approved
+        user_visit.update_status(VisitValidationStatus.approved)
     user_visit.save()
     if (
         completed_work is not None
         and completed_work.completed_count > 0
         and completed_work.status == CompletedWorkStatus.incomplete
     ):
-        completed_work.status = CompletedWorkStatus.pending
+        completed_work.update_status(CompletedWorkStatus.pending)
         completed_work_needs_save = True
     if completed_work_needs_save:
         completed_work.save()

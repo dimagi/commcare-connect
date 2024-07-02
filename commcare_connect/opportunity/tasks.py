@@ -324,10 +324,10 @@ def bulk_approve_completed_work():
                 approved_count = completed_work.approved_count
                 visits = completed_work.uservisit_set.values_list("status", "reason")
                 if any(status == "rejected" for status, _ in visits):
-                    completed_work.status = CompletedWorkStatus.rejected
+                    completed_work.update_status(CompletedWorkStatus.rejected)
                     completed_work.reason = "\n".join(reason for _, reason in visits if reason)
                 elif all(status == "approved" for status, _ in visits):
-                    completed_work.status = CompletedWorkStatus.approved
+                    completed_work.update_status(CompletedWorkStatus.approved)
                 if approved_count > 0 and completed_work.status == CompletedWorkStatus.approved:
                     access.payment_accrued += approved_count * completed_work.payment_unit.amount
                 completed_work.save()
