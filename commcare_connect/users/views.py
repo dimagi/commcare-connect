@@ -19,7 +19,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from commcare_connect.connect_id_client.main import fetch_demo_user_tokens
+from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_info
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 
 from .helpers import create_hq_user
@@ -161,3 +161,19 @@ class SMSStatusCallbackView(APIView):
                 user_invite.status = UserInviteStatus.sms_not_delivered
             user_invite.save()
         return Response(status=200)
+
+
+@csrf_exempt
+@api_view(["POST"])
+@authentication_classes([OAuth2Authentication])
+def user_suspend(request):
+    username = request.POST.get("username")
+    try:
+        user = User.objects.get(username=username)
+    except User.DoesNotExist:
+        return Response("User does not exists.", status=400)
+    user_info = get_user_info(request.auth.token)
+    if not user_info.is_active:
+        user.is_active = False
+        user.save()
+    return Response(status=200)

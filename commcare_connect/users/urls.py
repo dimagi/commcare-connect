@@ -8,6 +8,7 @@ from commcare_connect.users.views import (
     start_learn_app,
     user_detail_view,
     user_redirect_view,
+    user_suspend,
     user_update_view,
 )
 
@@ -21,4 +22,5 @@ urlpatterns = [
     path("accept_invite/<slug:invite_id>/", view=accept_invite, name="accept_invite"),
     path("demo_users/", view=demo_user_tokens, name="demo_users"),
     path("sms_status_callback/", SMSStatusCallbackView.as_view(), name="sms_status_callback"),
+    path("user_suspend/", user_suspend, name="user_suspend"),
 ]
