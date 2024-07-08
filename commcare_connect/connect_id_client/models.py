@@ -86,3 +86,14 @@ class Credential:
 
     def __str__(self) -> str:
         return self.name
+
+
+@dataclasses.dataclass
+class UserInfo:
+    sub: str
+    name: str
+    phone: str
+    is_active: bool = True
+
+    def __str__(self) -> str:
+        return self.name
