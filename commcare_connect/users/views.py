@@ -166,7 +166,7 @@ class SMSStatusCallbackView(APIView):
 @csrf_exempt
 @api_view(["POST"])
 @authentication_classes([OAuth2Authentication])
-def user_suspend(request):
+def user_deactivate(request):
     username = request.POST.get("username")
     try:
         user = User.objects.get(username=username)
