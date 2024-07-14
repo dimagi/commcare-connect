@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractproperty
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass
 from datetime import datetime
 
 from django.db import models
@@ -7,40 +7,23 @@ from django.utils.translation import gettext as _
 
 from commcare_connect.users.models import User
 
-EVENT_TYPES = {"invite_sent": {}}
-
-
-@dataclass(frozen=True)
-class EventTypeChoice:
-    INVITE_SENT: tuple[str, str] = field(default=("invite_sent", _("Invite Sent")))
-    RECORDS_APPROVED: tuple[str, str] = field(default=("records_approved", _("Records Approved")))
-    RECORDS_FLAGGED: tuple[str, str] = field(default=("records_flagged", _("Records Flagged")))
-    RECORDS_REJECTED: tuple[str, str] = field(default=("records_rejected", _("Records Rejected")))
-    PAYMENT_APPROVED: tuple[str, str] = field(default=("payment_approved", _("Payment Approved")))
-    PAYMENT_ACCRUED: tuple[str, str] = field(default=("payment_accrued", _("Payment Accrued")))
-    PAYMENT_TRANSFERRED: tuple[str, str] = field(default=("payment_transferred", _("Payment Transferred")))
-    NOTIFICATIONS_SENT: tuple[str, str] = field(default=("notifications_sent", _("Notifications Sent")))
-    ADDITIONAL_BUDGET_ADDED: tuple[str, str] = field(default=("additional_budget_added", _("Additional Budget Added")))
-
-    @classmethod
-    @property
-    def choices(cls):
-        return [(field.default[0], field.default[1]) for field in fields(cls)]
+from . import types
 
 
 class Event(models.Model):
-    # this allows referring to Event.Type without importing EventTypeChoice separately
-    Type = EventTypeChoice
+    from commcare_connect.opportunity.models import Opportunity
+
+    # this allows referring to event types in this style: Event.Type.INVITE_SENT
+    Type = types
 
     date_created = models.DateTimeField(auto_now_add=True, db_index=True)
-    event_type = models.CharField(max_length=40, choices=Type.choices)
+    event_type = models.CharField(max_length=40, choices=types.EVENT_TYPE_CHOICES)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
-    opportunity = models.ForeignKey("Opportunity", on_delete=models.PROTECT, null=True)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT, null=True)
 
-    @classmethod
-    def track(cls, use_async=True):
+    def track(self, use_async=True):
         """
-        To track an event instantiate the object and call this method,
+        To track an event, instantiate the object and call this method,
         instead of calling save directly.
 
         If use_async is True, the event is queued in Redis and saved
@@ -48,7 +31,7 @@ class Event(models.Model):
         """
         from commcare_connect.events.tasks import track_event
 
-        track_event(cls, use_async=use_async)
+        track_event(self, use_async=use_async)
 
 
 @dataclass
@@ -64,7 +47,7 @@ class InferredEvent:
 class InferredEventSpec(metaclass=ABCMeta):
     """
     Use this to define an Event that can be inferred
-    based on other models.
+    based on other models. See RecordsFlagged for example
     """
 
     @abstractproperty
@@ -136,7 +119,7 @@ class InferredEventSpec(metaclass=ABCMeta):
 
 
 class RecordsFlagged(InferredEventSpec):
-    event_type = ("RECORDS_FLAGGED", _("Records Flagged"))
+    event_type = (types.RECORDS_FLAGGED, _("Records Flagged"))
     model_cls = "UserVisit"
     event_filters = {"flagged": True}
     user = "user"

@@ -104,6 +104,7 @@ def invite_user(user_id, opportunity_access_id):
     from commcare_connect.events.models import Event
 
     Event(event_type=Event.Type.INVITE_SENT, user=user, opportunity=opportunity_access.opportunity).track(
+        # this is already in async worker, so user_async is False
         use_async=False
     )
 
