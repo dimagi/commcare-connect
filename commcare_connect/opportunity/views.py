@@ -491,6 +491,9 @@ def add_payment_unit(request, org_slug=None, pk=None):
             parent_payment_unit=form.instance.id
         )
         messages.success(request, f"Payment unit {form.instance.name} created.")
+        claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=opportunity)
+        for claim in claims:
+            OpportunityClaimLimit.create_claim_limits(opportunity, claim)
         return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=opportunity.id)
     elif request.POST:
         messages.error(request, "Invalid Data")
