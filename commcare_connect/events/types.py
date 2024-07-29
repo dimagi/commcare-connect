@@ -21,6 +21,7 @@ EVENT_TYPES = {
     ADDITIONAL_BUDGET_ADDED: _("Additional Budget Added"),
 }
 
+
 EVENT_TYPE_CHOICES = list(EVENT_TYPES.items())
 
 

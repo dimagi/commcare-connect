@@ -10,6 +10,12 @@ from commcare_connect.users.models import User
 from . import types
 
 
+def get_event_type_choices():
+    # A callable avoids migration getting created
+    #   each time when EVENT_TYPE_CHOICES is edited
+    return types.EVENT_TYPE_CHOICES
+
+
 class Event(models.Model):
     from commcare_connect.opportunity.models import Opportunity
 
@@ -17,7 +23,7 @@ class Event(models.Model):
     Type = types
 
     date_created = models.DateTimeField(auto_now_add=True, db_index=True)
-    event_type = models.CharField(max_length=40, choices=types.EVENT_TYPE_CHOICES)
+    event_type = models.CharField(max_length=40, choices=get_event_type_choices())
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT, null=True)
 

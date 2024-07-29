@@ -65,6 +65,7 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "oauth2_provider",
     "django_tables2",
+    "django_filters",
 ]
 
 LOCAL_APPS = [
@@ -116,6 +117,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django_htmx.middleware.HtmxMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "commcare_connect.users.middleware.OrganizationMiddleware",
@@ -302,6 +304,8 @@ CACHES = {
         },
     }
 }
+
+FILTERS_EMPTY_CHOICE_LABEL = "All"
 
 DJANGO_TABLES2_TEMPLATE = "tables/tabbed_table.html"
 DJANGO_TABLES2_TABLE_ATTRS = {

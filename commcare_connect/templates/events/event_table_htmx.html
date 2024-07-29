@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% load render_table from django_tables2 %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+    <h1>Events</h1>
+
+    <form hx-get="{% url 'events:event_htmx' org_slug=request.org.slug %}"
+          hx-target="div.table-container"
+          hx-swap="outerHTML"
+          hx-trigger="change"
+          hx-push-url="true"
+          class="form-inline">
+        {% crispy filter.form %}
+    </form>
+
+    {% render_table table %}
+{% endblock %}
