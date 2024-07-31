@@ -22,7 +22,7 @@ class Event(models.Model):
     # this allows referring to event types in this style: Event.Type.INVITE_SENT
     Type = types
 
-    date_created = models.DateTimeField(auto_now_add=True, db_index=True)
+    date_created = models.DateTimeField(db_index=True)
     event_type = models.CharField(max_length=40, choices=get_event_type_choices())
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT, null=True)
