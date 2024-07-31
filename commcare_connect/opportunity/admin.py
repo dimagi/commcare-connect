@@ -7,12 +7,16 @@ from commcare_connect.opportunity.models import (
     CompletedModule,
     CompletedWork,
     DeliverUnit,
+    DeliverUnitFlagRules,
+    DeliveryType,
+    FormJsonValidationRules,
     LearnModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     Payment,
     PaymentUnit,
+    UserInvite,
     UserVisit,
 )
 from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_units
@@ -22,6 +26,10 @@ from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_
 
 admin.site.register(CommCareApp)
 admin.site.register(PaymentUnit)
+admin.site.register(UserInvite)
+admin.site.register(DeliveryType)
+admin.site.register(DeliverUnitFlagRules)
+admin.site.register(FormJsonValidationRules)
 
 
 @admin.register(Opportunity)
@@ -51,11 +59,11 @@ class OpportunityAccessAdmin(admin.ModelAdmin):
     @admin.action(description="Clear User Progress")
     def clear_user_progress(self, request, queryset):
         for access in queryset:
-            UserVisit.objects.filter(user=access.user, opportunity=access.opportunity).delete()
+            UserVisit.objects.filter(opportunity_access=access).delete()
             Payment.objects.filter(opportunity_access=access).delete()
             OpportunityClaim.objects.filter(opportunity_access=access).delete()
-            CompletedModule.objects.filter(user=access.user, opportunity=access.opportunity).delete()
-            Assessment.objects.filter(user=access.user, opportunity=access.opportunity).delete()
+            CompletedModule.objects.filter(opportunity_access=access).delete()
+            Assessment.objects.filter(opportunity_access=access).delete()
             CompletedWork.objects.filter(opportunity_access=access).delete()
 
 

@@ -1,5 +1,6 @@
 import random
 import re
+from decimal import Decimal
 from itertools import chain
 
 import pytest
@@ -7,6 +8,7 @@ from tablib import Dataset
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.opportunity.models import (
+    CatchmentArea,
     CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
@@ -15,6 +17,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
+    CatchmentAreaFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
@@ -23,6 +26,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
+    _bulk_update_catchments,
     _bulk_update_payments,
     _bulk_update_visit_status,
     get_status_by_visit_id,
@@ -33,8 +37,13 @@ from commcare_connect.users.models import User
 
 @pytest.mark.django_db
 def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
-        5, opportunity=opportunity, status=VisitValidationStatus.pending.value, user=mobile_user
+        5,
+        opportunity=opportunity,
+        status=VisitValidationStatus.pending.value,
+        user=mobile_user,
+        opportunity_access=access,
     )
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
@@ -47,8 +56,12 @@ def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
 
 @pytest.mark.django_db
 def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visit = UserVisitFactory.create(
-        opportunity=opportunity, status=VisitValidationStatus.pending.value, user=mobile_user
+        opportunity=opportunity,
+        status=VisitValidationStatus.pending.value,
+        user=mobile_user,
+        opportunity_access=access,
     )
     reason = "bad form"
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
@@ -82,6 +95,7 @@ def test_payment_accrued(opportunity: Opportunity):
                     user=mobile_user,
                     deliver_unit=deliver_unit,
                     status=VisitValidationStatus.approved.value,
+                    opportunity_access=access,
                     completed_work=completed_work,
                 )
     update_payment_accrued(opportunity, {mobile_user.id for mobile_user in mobile_users})
@@ -92,6 +106,9 @@ def test_payment_accrued(opportunity: Opportunity):
 
 @pytest.mark.django_db
 def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    payment_unit = PaymentUnitFactory.create(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app)
     payment_unit = PaymentUnitFactory(opportunity=opportunity)
     deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
@@ -106,6 +123,7 @@ def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
         user=mobile_user,
         deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved.value,
+        opportunity_access=access,
         completed_work=completed_work,
     )
     update_payment_accrued(opportunity, {mobile_user.id})
@@ -240,3 +258,96 @@ def test_bulk_update_payments(opportunity: Opportunity):
     for access in access_objects:
         payment = Payment.objects.get(opportunity_access=access)
         assert payment.amount == 50
+
+
+@pytest.fixture
+def dataset():
+    return Dataset(headers=["latitude", "longitude", "area name", "radius", "active", "username", "site code"])
+
+
+@pytest.fixture
+def new_catchments():
+    return [
+        ["40.7128", "-74.0060", "New York", "5000", "yes", "", "new york"],
+        ["20.7128", "-84.0060", "London", "4500", "No", "", "london"],
+    ]
+
+
+@pytest.fixture
+def old_catchments(opportunity):
+    mobile_users = MobileUserFactory.create_batch(2)
+    catchments = set()
+    for user in mobile_users:
+        access = OpportunityAccessFactory.create(opportunity=opportunity, user=user)
+        catchments.add(
+            CatchmentAreaFactory.create(
+                opportunity=opportunity, opportunity_access=access, latitude=28, longitude=45, radius=100, active=True
+            )
+        )
+    return catchments
+
+
+@pytest.mark.django_db
+def test_bulk_update_catchments_missing_headers(opportunity):
+    required_headers = ["latitude", "longitude", "area name", "radius", "active", "site code"]
+    sample_data = ["40.7128", "-74.0060", "New York", "100", "yes", "new york"]  # Sample data for a complete row
+
+    for missing_header in required_headers:
+        incomplete_headers = [header for header in required_headers if header != missing_header]
+        dataset = Dataset(headers=incomplete_headers)
+
+        # Add a row with data, excluding the value for the missing header
+        row_data = [value for header, value in zip(required_headers, sample_data) if header != missing_header]
+        dataset.append(row_data)
+
+        with pytest.raises(ImportException) as excinfo:
+            _bulk_update_catchments(opportunity, dataset)
+
+        expected_message = f"Missing required column(s): '{missing_header}'"
+        assert str(excinfo.value) == expected_message, f"Expected: {expected_message}, but got {str(excinfo.value)}"
+
+
+@pytest.mark.django_db
+def test_bulk_update_catchments(opportunity, dataset, new_catchments, old_catchments):
+    latitude_change = Decimal("10.5")
+    longitude_change = Decimal("10.5")
+    radius_change = 10
+    name_change = "updated"
+
+    for catchment in old_catchments:
+        dataset.append(
+            [
+                str(catchment.latitude + latitude_change),
+                str(catchment.longitude + longitude_change),
+                f"{name_change} {catchment.name}",
+                str(catchment.radius + radius_change),
+                "yes",
+                catchment.opportunity_access.user.username,
+                catchment.site_code,
+            ]
+        )
+
+    dataset.extend(new_catchments)
+
+    import_status = _bulk_update_catchments(opportunity, dataset)
+
+    assert import_status.seen_catchments == {
+        str(catchment.id) for catchment in old_catchments
+    }, "Mismatch in updated catchments"
+    assert import_status.new_catchments == len(new_catchments), "Incorrect number of new catchments"
+
+    for catchment in old_catchments:
+        updated_catchment = CatchmentArea.objects.get(site_code=catchment.site_code)
+        assert (
+            updated_catchment.name == f"{name_change} {catchment.name}"
+        ), f"Name not updated correctly for catchment {catchment.id}"
+        assert (
+            updated_catchment.radius == catchment.radius + radius_change
+        ), f"Radius not updated correctly for catchment {catchment.id}"
+        assert (
+            updated_catchment.latitude == catchment.latitude + latitude_change
+        ), f"Latitude not updated correctly for catchment {catchment.id}"
+        assert (
+            updated_catchment.longitude == catchment.longitude + longitude_change
+        ), f"Longitude not updated correctly for catchment {catchment.id}"
+        assert updated_catchment.active, f"Active status not updated correctly for catchment {catchment.id}"

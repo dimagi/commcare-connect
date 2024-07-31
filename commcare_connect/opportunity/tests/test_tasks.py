@@ -49,63 +49,83 @@ class TestConnectUserCreation:
 
 def test_send_inactive_notification_learn_inactive_message(mobile_user: User, opportunity: Opportunity):
     learn_modules = LearnModuleFactory.create_batch(2, app=opportunity.learn_app)
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     CompletedModuleFactory.create(
         date=now() - datetime.timedelta(days=3),
         user=mobile_user,
         opportunity=opportunity,
         module=learn_modules[0],
+        opportunity_access=access,
     )
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    access.refresh_from_db()
     message = _get_inactive_message(access)
+    assert message is not None
     assert message.usernames[0] == mobile_user.username
-    assert message.title == f"Resume your learning journey for {opportunity.name}"
+    assert message.data.get("title") == f"Resume your learning journey for {opportunity.name}"
 
 
 def test_send_inactive_notification_deliver_inactive_message(mobile_user: User, opportunity: Opportunity):
     learn_modules = LearnModuleFactory.create_batch(2, app=opportunity.learn_app)
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     for learn_module in learn_modules:
         CompletedModuleFactory.create(
             user=mobile_user,
             opportunity=opportunity,
             module=learn_module,
             date=now() - datetime.timedelta(days=2),
+            opportunity_access=access,
         )
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    access.refresh_from_db()
     OpportunityClaimFactory.create(opportunity_access=access, end_date=opportunity.end_date)
-    UserVisitFactory.create(user=mobile_user, opportunity=opportunity, visit_date=now() - datetime.timedelta(days=2))
+    UserVisitFactory.create(
+        user=mobile_user,
+        opportunity=opportunity,
+        visit_date=now() - datetime.timedelta(days=2),
+        opportunity_access=access,
+    )
 
     message = _get_inactive_message(access)
+    assert message is not None
     assert message.usernames[0] == mobile_user.username
-    assert message.title == f"Resume your job for {opportunity.name}"
+    assert message.data.get("title") == f"Resume your job for {opportunity.name}"
 
 
 def test_send_inactive_notification_not_claimed_deliver_message(mobile_user: User, opportunity: Opportunity):
     learn_modules = LearnModuleFactory.create_batch(2, app=opportunity.learn_app)
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     for learn_module in learn_modules:
         CompletedModuleFactory.create(
             user=mobile_user,
             opportunity=opportunity,
             module=learn_module,
             date=now() - datetime.timedelta(days=2),
+            opportunity_access=access,
         )
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     message = _get_inactive_message(access)
+    assert message is not None
     assert message.usernames[0] == mobile_user.username
-    assert message.title == f"Resume your job for {opportunity.name}"
+    assert message.data.get("title") == f"Resume your job for {opportunity.name}"
 
 
 def test_send_inactive_notification_active_user(mobile_user: User, opportunity: Opportunity):
     learn_modules = LearnModuleFactory.create_batch(2, app=opportunity.learn_app)
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     for learn_module in learn_modules:
         CompletedModuleFactory.create(
             user=mobile_user,
             opportunity=opportunity,
             module=learn_module,
             date=now() - datetime.timedelta(days=2),
+            opportunity_access=access,
         )
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     OpportunityClaimFactory.create(opportunity_access=access, end_date=opportunity.end_date)
-    UserVisitFactory.create(user=mobile_user, opportunity=opportunity, visit_date=now() - datetime.timedelta(days=1))
+    UserVisitFactory.create(
+        user=mobile_user,
+        opportunity=opportunity,
+        visit_date=now() - datetime.timedelta(days=1),
+        opportunity_access=access,
+    )
     message = _get_inactive_message(access)
     assert message is None
 

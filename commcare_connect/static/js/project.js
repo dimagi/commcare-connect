@@ -63,3 +63,59 @@ function addAccuracyCircles(map, visit_data) {
 }
 
 window.addAccuracyCircles = addAccuracyCircles;
+
+function addCatchmentAreas(map, catchments) {
+  const ACTIVE_COLOR = '#3366ff';
+  const INACTIVE_COLOR = '#ff4d4d';
+  const CIRCLE_OPACITY = 0.3;
+
+  map.on('load', () => {
+    const catchmentCircles = catchments.map((catchment) =>
+      circle([catchment.lng, catchment.lat], catchment.radius, {
+        units: 'meters',
+        properties: { active: catchment.active },
+      }),
+    );
+
+    map.addSource('catchment_circles', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: catchmentCircles,
+      },
+    });
+
+    map.addLayer({
+      id: 'catchment-circles-layer',
+      source: 'catchment_circles',
+      type: 'fill',
+      paint: {
+        'fill-color': ['case', ['get', 'active'], ACTIVE_COLOR, INACTIVE_COLOR],
+        'fill-opacity': CIRCLE_OPACITY,
+      },
+    });
+
+    map.addLayer({
+      id: 'catchment-circle-outlines-layer',
+      source: 'catchment_circles',
+      type: 'line',
+      paint: {
+        'line-color': '#fcbf49',
+        'line-width': 3,
+        'line-opacity': 0.5,
+      },
+    });
+
+    if (catchments?.length) {
+      window.Alpine.nextTick(() => {
+        const legendElement = document.getElementById('legend');
+        if (legendElement) {
+          const legendData = window.Alpine.$data(legendElement);
+          legendData.show = true;
+        }
+      });
+    }
+  });
+}
+
+window.addCatchmentAreas = addCatchmentAreas;

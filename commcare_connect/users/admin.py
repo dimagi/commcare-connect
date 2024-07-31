@@ -10,6 +10,19 @@ from commcare_connect.users.models import ConnectIDUserLink
 User = get_user_model()
 
 
+class WebUserFilter(admin.SimpleListFilter):
+    title = _("Web Users")
+    parameter_name = "web_users"
+
+    def lookups(self, request, model_admin):
+        return (("web_users", _("Web Users")),)
+
+    def queryset(self, request, queryset):
+        if self.value() == "web_users":
+            return queryset.exclude(email__isnull=True)
+        return queryset
+
+
 @admin.register(User)
 class UserAdmin(auth_admin.UserAdmin):
     form = UserAdminChangeForm
@@ -32,8 +45,14 @@ class UserAdmin(auth_admin.UserAdmin):
         (_("Important dates"), {"fields": ("last_login", "date_joined")}),
     )
     list_display = ["email", "name", "is_superuser"]
-    search_fields = ["name"]
+    search_fields = ["email", "name"]
     ordering = ["id"]
+    list_filter = [
+        "is_staff",
+        "is_superuser",
+        "is_active",
+        WebUserFilter,
+    ]
     add_fieldsets = (
         (
             None,

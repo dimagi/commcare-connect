@@ -52,6 +52,14 @@ class OpportunityFactory(DjangoModelFactory):
         model = "opportunity.Opportunity"
 
 
+class OpportunityAccessFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    user = SubFactory("commcare_connect.users.tests.factories.MobileUserFactory")
+
+    class Meta:
+        model = "opportunity.OpportunityAccess"
+
+
 class OpportunityVerificationFlagsFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
 
@@ -94,14 +102,6 @@ class DeliverUnitFactory(DjangoModelFactory):
         model = "opportunity.DeliverUnit"
 
 
-class OpportunityAccessFactory(DjangoModelFactory):
-    opportunity = SubFactory(OpportunityFactory)
-    user = SubFactory("commcare_connect.users.tests.factories.MobileUserFactory")
-
-    class Meta:
-        model = "opportunity.OpportunityAccess"
-
-
 class CompletedWorkFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
     payment_unit = SubFactory(PaymentUnitFactory)
@@ -115,6 +115,7 @@ class CompletedWorkFactory(DjangoModelFactory):
 class UserVisitFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
     deliver_unit = SubFactory(DeliverUnitFactory)
     status = Faker("enum", enum_cls=VisitValidationStatus)
     visit_date = Faker("date_time", tzinfo=timezone.utc)
@@ -146,6 +147,7 @@ class OpportunityClaimLimitFactory(DjangoModelFactory):
 class CompletedModuleFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
     date = Faker("date_time", tzinfo=timezone.utc)
     module = SubFactory(LearnModuleFactory, app=SelfAttribute("..opportunity.learn_app"))
     duration = Faker("time_delta")
@@ -157,6 +159,7 @@ class CompletedModuleFactory(DjangoModelFactory):
 class AssessmentFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
     app = SubFactory(CommCareAppFactory)
     passed = True
     score = Faker("pyint", min_value=75, max_value=100)
@@ -165,3 +168,43 @@ class AssessmentFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.Assessment"
+
+
+class UserInviteFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    phone_number = Faker("word")
+    message_sid = Faker("word")
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+
+    class Meta:
+        model = "opportunity.UserInvite"
+
+
+class DeliverUnitFlagRulesFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    deliver_unit = SubFactory(DeliverUnitFactory)
+
+    class Meta:
+        model = "opportunity.DeliverUnitFlagRules"
+
+
+class FormJsonValidationRulesFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    name = Faker("word")
+
+    class Meta:
+        model = "opportunity.FormJsonValidationRules"
+
+
+class CatchmentAreaFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+    latitude = Faker("latitude")
+    longitude = Faker("longitude")
+    radius = Faker("random_int", min=500, max=2000)
+    active = Faker("boolean")
+    name = Faker("city")
+    site_code = Faker("pystr")
+
+    class Meta:
+        model = "opportunity.CatchmentArea"

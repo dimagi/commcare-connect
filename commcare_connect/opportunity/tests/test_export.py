@@ -1,18 +1,28 @@
+import random
+from datetime import timedelta
+
 import pytest
 from django.utils.timezone import now
 from tablib import Dataset
 
-from commcare_connect.opportunity.export import export_user_status_table, export_user_visit_data, get_flattened_dataset
+from commcare_connect.opportunity.export import (
+    export_catchment_area_table,
+    export_user_status_table,
+    export_user_visit_data,
+    get_flattened_dataset,
+)
 from commcare_connect.opportunity.forms import DateRanges
-from commcare_connect.opportunity.models import Opportunity, UserVisit
+from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
+    CatchmentAreaFactory,
     CompletedModuleFactory,
     DeliverUnitFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    UserInviteFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.tests.factories import MobileUserFactory
@@ -22,7 +32,7 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
     deliver_unit = DeliverUnitFactory()
     opportunity = OpportunityFactory()
     date1 = now()
-    date2 = now()
+    date2 = date1 + timedelta(minutes=10)
     UserVisit.objects.bulk_create(
         [
             UserVisit(
@@ -43,7 +53,7 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
             ),
         ]
     )
-    exporter = export_user_visit_data(opportunity, DateRanges.LAST_30_DAYS, [])
+    exporter = export_user_visit_data(opportunity, DateRanges.LAST_30_DAYS, [], True)
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
 
@@ -84,7 +94,7 @@ def _get_prepared_dataset_for_user_status_test(data):
     headers = (
         "Name",
         "Username",
-        "Accepted",
+        "Status",
         "Started Learning",
         "Completed Learning",
         "Passed Assessment",
@@ -110,8 +120,13 @@ def test_export_user_status_table_no_data_only(opportunity: Opportunity):
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date)
-        rows.append((mobile_user.name, mobile_user.username, True, date.replace(tzinfo=None), "", False, "", "", ""))
+        access = OpportunityAccessFactory(
+            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
+        )
+        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
+        rows.append(
+            (mobile_user.name, mobile_user.username, "Accepted", date.replace(tzinfo=None), "", False, "", "", "")
+        )
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
@@ -124,10 +139,17 @@ def test_export_user_status_table_learn_data_only(opportunity: Opportunity):
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date)
+        access = OpportunityAccessFactory(
+            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
+        )
+        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
         for learn_module in opportunity.learn_app.learn_modules.all()[2:]:
-            CompletedModuleFactory(module=learn_module, user=mobile_user, opportunity=opportunity, date=date)
-        rows.append((mobile_user.name, mobile_user.username, True, date.replace(tzinfo=None), "", False, "", "", ""))
+            CompletedModuleFactory(
+                module=learn_module, user=mobile_user, opportunity=opportunity, date=date, opportunity_access=access
+            )
+        rows.append(
+            (mobile_user.name, mobile_user.username, "Accepted", date.replace(tzinfo=None), "", False, "", "", "")
+        )
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
@@ -140,15 +162,27 @@ def test_export_user_status_table_learn_assessment_data_only(opportunity: Opport
     rows = []
     for mobile_user in sorted(mobile_users, key=lambda x: x.name):
         date = now()
-        OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date)
+        access = OpportunityAccessFactory(
+            opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
+        )
+        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
         for learn_module in opportunity.learn_app.learn_modules.all():
-            CompletedModuleFactory(module=learn_module, user=mobile_user, opportunity=opportunity, date=date)
-        AssessmentFactory(app=opportunity.learn_app, opportunity=opportunity, user=mobile_user, passed=True, date=date)
+            CompletedModuleFactory(
+                module=learn_module, user=mobile_user, opportunity=opportunity, date=date, opportunity_access=access
+            )
+        AssessmentFactory(
+            app=opportunity.learn_app,
+            opportunity=opportunity,
+            user=mobile_user,
+            passed=True,
+            date=date,
+            opportunity_access=access,
+        )
         rows.append(
             (
                 mobile_user.name,
                 mobile_user.username,
-                True,
+                "Accepted",
                 date.replace(tzinfo=None),
                 date.replace(tzinfo=None),
                 True,
@@ -173,15 +207,32 @@ def test_export_user_status_table_data(opportunity: Opportunity):
             opportunity=opportunity, user=mobile_user, accepted=True, date_learn_started=date
         )
         OpportunityClaimFactory(opportunity_access=access, max_payments=10, date_claimed=date)
+        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted, opportunity_access=access)
         for learn_module in opportunity.learn_app.learn_modules.all():
-            CompletedModuleFactory(module=learn_module, user=mobile_user, opportunity=opportunity, date=date)
-        AssessmentFactory(app=opportunity.learn_app, opportunity=opportunity, user=mobile_user, passed=True, date=date)
-        UserVisitFactory.create_batch(1, opportunity=opportunity, user=mobile_user, visit_date=date)
+            CompletedModuleFactory(
+                module=learn_module, user=mobile_user, opportunity=opportunity, date=date, opportunity_access=access
+            )
+        AssessmentFactory(
+            app=opportunity.learn_app,
+            opportunity=opportunity,
+            user=mobile_user,
+            passed=True,
+            date=date,
+            opportunity_access=access,
+        )
+        UserVisitFactory.create_batch(
+            1,
+            opportunity=opportunity,
+            user=mobile_user,
+            visit_date=date,
+            opportunity_access=access,
+            status=random.choice(["approved", "rejected", "pending"]),
+        )
         rows.append(
             (
                 mobile_user.name,
                 mobile_user.username,
-                True,
+                "Accepted",
                 date.replace(tzinfo=None),
                 date.replace(tzinfo=None),
                 True,
@@ -193,3 +244,39 @@ def test_export_user_status_table_data(opportunity: Opportunity):
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
+
+
+@pytest.mark.django_db
+def test_export_catchment_area_table_data(opportunity: Opportunity):
+    catchments = CatchmentAreaFactory.create_batch(5, opportunity=opportunity)
+    expected_headers = [
+        "Latitude",
+        "Longitude",
+        "Area name",
+        "Radius",
+        "Active",
+        "Username",
+        "Site code",
+        "Name",
+        "Phone Number",
+    ]
+
+    data_set = export_catchment_area_table(opportunity)
+
+    assert set(expected_headers).issubset(
+        set(data_set.headers)
+    ), f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
+
+    assert len(data_set) == len(catchments), f"Expected {len(catchments)} catchments, but got {len(data_set)}"
+
+    for i, catchment in enumerate(catchments):
+        exported_data = data_set[i]
+        assert catchment.latitude == exported_data[data_set.headers.index("Latitude")]
+        assert catchment.longitude == exported_data[data_set.headers.index("Longitude")]
+        assert catchment.name == exported_data[data_set.headers.index("Area name")]
+        assert catchment.radius == exported_data[data_set.headers.index("Radius")]
+        expected_active = "Yes" if catchment.active else "No"
+        assert expected_active == exported_data[data_set.headers.index("Active")]
+        expected_username = catchment.opportunity_access.user.username if catchment.opportunity_access.user else ""
+        assert expected_username == exported_data[data_set.headers.index("Username")]
+        assert catchment.site_code == exported_data[data_set.headers.index("Site code")]

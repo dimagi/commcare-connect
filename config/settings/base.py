@@ -74,6 +74,7 @@ LOCAL_APPS = [
     "commcare_connect.form_receiver",
     "commcare_connect.opportunity",
     "commcare_connect.organization",
+    "commcare_connect.reports",
     "commcare_connect.users",
     "commcare_connect.web",
 ]
@@ -124,6 +125,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
+    "commcare_connect.utils.middleware.CurrentVersionMiddleware",
 ]
 
 # STATIC
@@ -283,6 +285,7 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
+    "ALLOWED_VERSIONS": ["1.0"],
 }
 
 CORS_URLS_REGEX = r"^/api/.*$"

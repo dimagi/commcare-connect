@@ -11,7 +11,7 @@ from django.utils.translation import gettext
 
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
-from commcare_connect.utils.db import BaseModel
+from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
 class CommCareApp(BaseModel):
@@ -41,6 +41,15 @@ class HQApiKey(models.Model):
         User,
         on_delete=models.CASCADE,
     )
+
+
+class DeliveryType(models.Model):
+    name = models.CharField(max_length=255)
+    slug = models.CharField(max_length=255)
+    description = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.name
 
 
 class Opportunity(BaseModel):
@@ -75,8 +84,10 @@ class Opportunity(BaseModel):
     total_budget = models.IntegerField(null=True)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency = models.CharField(max_length=3, null=True)
-    auto_approve_visits = models.BooleanField(default=False)
-    auto_approve_payments = models.BooleanField(default=False)
+    auto_approve_visits = models.BooleanField(default=True)
+    auto_approve_payments = models.BooleanField(default=True)
+    is_test = models.BooleanField(default=True)
+    delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
 
     def __str__(self):
         return self.name
@@ -141,7 +152,9 @@ class Opportunity(BaseModel):
 
     @property
     def approved_visits(self):
-        return CompletedWork.objects.filter(opportunity_access__opportunity=self).count()
+        return CompletedWork.objects.filter(
+            opportunity_access__opportunity=self, status=CompletedWorkStatus.approved
+        ).count()
 
     @property
     def number_of_users(self):
@@ -184,6 +197,7 @@ class OpportunityVerificationFlags(models.Model):
     location = models.PositiveIntegerField(default=10)
     form_submission_start = models.TimeField(null=True, blank=True)
     form_submission_end = models.TimeField(null=True, blank=True)
+    catchment_areas = models.BooleanField(default=False)
 
 
 class LearnModule(models.Model):
@@ -210,32 +224,6 @@ class XFormBaseModel(models.Model):
         abstract = True
 
 
-class CompletedModule(XFormBaseModel):
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="completed_modules",
-    )
-    module = models.ForeignKey(LearnModule, on_delete=models.PROTECT)
-    opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
-    date = models.DateTimeField()
-    duration = models.DurationField()
-
-
-class Assessment(XFormBaseModel):
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="assessments",
-    )
-    app = models.ForeignKey(CommCareApp, on_delete=models.PROTECT)
-    opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
-    date = models.DateTimeField()
-    score = models.IntegerField()
-    passing_score = models.IntegerField()
-    passed = models.BooleanField()
-
-
 class OpportunityAccess(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
@@ -243,6 +231,9 @@ class OpportunityAccess(models.Model):
     accepted = models.BooleanField(default=False)
     invite_id = models.CharField(max_length=50, default=uuid4)
     payment_accrued = models.PositiveIntegerField(default=0)
+    suspended = models.BooleanField(default=False)
+    suspension_date = models.DateTimeField(null=True, blank=True)
+    suspension_reason = models.CharField(max_length=300, null=True, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["invite_id"])]
@@ -255,15 +246,15 @@ class OpportunityAccess(models.Model):
         learn_modules_count = learn_modules.count()
         if learn_modules_count <= 0:
             return 0
-        completed_modules = CompletedModule.objects.filter(
-            opportunity=self.opportunity, module__in=learn_modules, user=self.user
-        ).count()
+        completed_modules = self.completedmodule_set.count()
         percentage = (completed_modules / learn_modules_count) * 100
         return round(percentage, 2)
 
     @property
     def visit_count(self):
-        return self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).count()
+        return sum(
+            [cw.completed for cw in self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).all()]
+        )
 
     @property
     def last_visit_date(self):
@@ -278,7 +269,16 @@ class OpportunityAccess(models.Model):
 
     @property
     def total_paid(self):
-        return Payment.objects.filter(opportunity_access=self).aggregate(total=Sum("amount")).get("total", 0)
+        return Payment.objects.filter(opportunity_access=self).aggregate(total=Sum("amount")).get("total", 0) or 0
+
+    @property
+    def total_confirmed_paid(self):
+        return (
+            Payment.objects.filter(opportunity_access=self, confirmed=True)
+            .aggregate(total=Sum("amount"))
+            .get("total", 0)
+            or 0
+        )
 
     @property
     def display_name(self):
@@ -309,6 +309,34 @@ class OpportunityAccess(models.Model):
         else:
             status = "Not completed"
         return status
+
+
+class CompletedModule(XFormBaseModel):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="completed_modules",
+    )
+    module = models.ForeignKey(LearnModule, on_delete=models.PROTECT)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE, null=True)
+    date = models.DateTimeField()
+    duration = models.DurationField()
+
+
+class Assessment(XFormBaseModel):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="assessments",
+    )
+    app = models.ForeignKey(CommCareApp, on_delete=models.PROTECT)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE, null=True)
+    date = models.DateTimeField()
+    score = models.IntegerField()
+    passing_score = models.IntegerField()
+    passed = models.BooleanField()
 
 
 class PaymentUnit(models.Model):
@@ -377,16 +405,24 @@ class CompletedWorkStatus(models.TextChoices):
     approved = "approved", gettext("Approved")
     rejected = "rejected", gettext("Rejected")
     over_limit = "over_limit", gettext("Over Limit")
+    incomplete = "incomplete", gettext("Incomplete")
 
 
 class CompletedWork(models.Model):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.DO_NOTHING)
-    status = models.CharField(max_length=50, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.pending)
+    status = models.CharField(
+        max_length=50, choices=CompletedWorkStatus.choices, default=CompletedWorkStatus.incomplete
+    )
     last_modified = models.DateTimeField(auto_now=True)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
     reason = models.CharField(max_length=300, null=True, blank=True)
+    status_modified_date = models.DateTimeField(null=True)
+
+    def update_status(self, status):
+        self.status = status
+        self.status_modified_date = now()
 
     # TODO: add caching on this property
     @property
@@ -400,9 +436,9 @@ class CompletedWork(models.Model):
         visits = self.uservisit_set.filter(status=VisitValidationStatus.approved).values_list(
             "deliver_unit_id", flat=True
         )
-        return self.calculate_completed(visits)
+        return self.calculate_completed(visits, approved=True)
 
-    def calculate_completed(self, visits):
+    def calculate_completed(self, visits, approved=False):
         unit_counts = Counter(visits)
         deliver_units = self.payment_unit.deliver_units.values("id", "optional")
         required_deliver_units = list(
@@ -425,7 +461,10 @@ class CompletedWork(models.Model):
             )
             child_completed_work_count = 0
             for completed_work in child_completed_works:
-                child_completed_work_count += completed_work.completed_count
+                if approved:
+                    child_completed_work_count += completed_work.approved_count
+                else:
+                    child_completed_work_count += completed_work.completed_count
             number_completed = min(number_completed, child_completed_work_count)
         return number_completed
 
@@ -466,6 +505,7 @@ class UserVisit(XFormBaseModel):
         User,
         on_delete=models.CASCADE,
     )
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE, null=True)
     deliver_unit = models.ForeignKey(DeliverUnit, on_delete=models.PROTECT)
     entity_id = models.CharField(max_length=255, null=True, blank=True)
     entity_name = models.CharField(max_length=255, null=True, blank=True)
@@ -479,6 +519,11 @@ class UserVisit(XFormBaseModel):
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
+    status_modified_date = models.DateTimeField(null=True)
+
+    def update_status(self, status):
+        self.status = status
+        self.status_modified_date = now()
 
     @property
     def images(self):
@@ -542,3 +587,57 @@ class BlobMeta(models.Model):
             ("parent_id", "name"),
         ]
         indexes = [models.Index(fields=["blob_id"])]
+
+
+class UserInviteStatus(models.TextChoices):
+    sms_delivered = "sms_delivered", gettext("SMS Delivered")
+    sms_not_delivered = "sms_not_delivered", gettext("SMS Not Delivered")
+    accepted = "accepted", gettext("Accepted")
+    invited = "invited", gettext("Invited")
+    not_found = "not_found", gettext("ConnectID Not Found")
+
+
+class UserInvite(models.Model):
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    phone_number = models.CharField(max_length=15)
+    opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
+    message_sid = models.CharField(max_length=50, null=True, blank=True)
+    status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+
+
+class FormJsonValidationRules(models.Model):
+    slug = models.SlugField()
+    name = models.CharField(max_length=25)
+    deliver_unit = models.ManyToManyField(DeliverUnit)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    question_path = models.CharField(max_length=255)
+    question_value = models.CharField(max_length=255)
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.slug = slugify_uniquely(self.name, self.__class__)
+        super().save(*args, **kwargs)
+
+
+class DeliverUnitFlagRules(models.Model):
+    deliver_unit = models.ForeignKey(DeliverUnit, on_delete=models.CASCADE)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    check_attachments = models.BooleanField(default=False)
+    duration = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("deliver_unit", "opportunity")
+
+
+class CatchmentArea(models.Model):
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    latitude = models.DecimalField(max_digits=11, decimal_places=8)
+    longitude = models.DecimalField(max_digits=11, decimal_places=8)
+    radius = models.IntegerField(default=1000)
+    opportunity_access = models.ForeignKey(OpportunityAccess, null=True, on_delete=models.DO_NOTHING)
+    active = models.BooleanField(default=True)
+    name = models.CharField(max_length=255)
+    site_code = models.SlugField(max_length=255)
+
+    class Meta:
+        unique_together = ("site_code", "opportunity")

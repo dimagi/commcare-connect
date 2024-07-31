@@ -1,5 +1,6 @@
 {% extends "opportunity/base.html" %}
 {% load static %}
+{% load sort_link %}
 
 {% block title %}{{ request.org }} - Opportunities{% endblock %}
 
@@ -8,10 +9,16 @@
     <div class="mt-5 py-3">
       <h1> Opportunities
         <span class="float-end">
+          {% if request.org_membership.is_viewer %}
+          <button class="btn btn-primary" disabled>
+            <span class="bi bi-plus"></span> Add new
+          </button>
+          {% else %}
           <a class="btn btn-primary"
              href="{% url 'opportunity:init' org_slug=request.org.slug %}" title="Add new opportunity"><span
             class="bi bi-plus"></span> Add new
           </a>
+          {% endif %}
         </span>
       </h1>
     </div>
@@ -19,15 +26,19 @@
       <table class="table border table-responsive">
         <thead class="table-light">
         <tr>
-          <th>Name</th>
+          <th>{% sort_link 'name' 'Name' %}</th>
+          <th>{% sort_link 'start_date' 'Start Date' %}</th>
+          <th>{% sort_link 'end_date' 'End Date' %}</th>
           <th>Status</th>
-          <th></th>
+          <th>Manage</th>
         </tr>
         </thead>
-        <tbody>
+        <tbody x-ref="tbody">
         {% for opportunity in page_obj %}
           <tr>
             <td>{{ opportunity.name }}</td>
+            <td>{{ opportunity.start_date|default:"Not Set" }}</td>
+            <td>{{ opportunity.end_date|default:"Not Set" }}</td>
             <td>
               {% if opportunity.is_setup_complete %}
                 {% if opportunity.is_active %}
@@ -40,11 +51,19 @@
               {% endif %}
             </td>
             <td width="300">
-              <div class="float-end">
+              <div>
                 <a class="btn btn-primary btn-sm"
                    href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.id %}">
                   <span class="bi bi-eye"></span><span class="d-none d-md-inline">&nbsp;View</span>
                 </a>
+              {% if request.org_membership.is_viewer %}
+                <button class="btn btn-warning btn-sm" disabled>
+                  <span class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span>
+                </button>
+                <button class="btn btn-primary btn-sm" disabled>
+                  <span class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
+                </button>
+              {% else %}
                 <a class="btn btn-warning btn-sm"
                    href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span></a>
@@ -52,8 +71,8 @@
                    href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
                 </a>
+              {% endif %}
               </div>
-
             </td>
           </tr>
         {% empty %}
@@ -89,7 +108,7 @@
                 {% else %}
               <li class="page-item">
             {% endif %}
-          <a class="page-link" href="?page={{ page_number }}">
+          <a class="page-link" href="?{% update_query_params page=page_number %}">
             {{ page_number }}
           </a>
           </li>

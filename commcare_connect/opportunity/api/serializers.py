@@ -5,6 +5,7 @@ from rest_framework import serializers
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     Assessment,
+    CatchmentArea,
     CommCareApp,
     CompletedModule,
     CompletedWork,
@@ -79,7 +80,15 @@ class OpportunityClaimSerializer(serializers.ModelSerializer):
         return obj.opportunityclaimlimit_set.aggregate(max_visits=Sum("max_visits")).get("max_visits", 0) or -1
 
     def get_payment_units(self, obj):
-        return OpportunityClaimLimitSerializer(obj.opportunityclaimlimit_set.all(), many=True).data
+        return OpportunityClaimLimitSerializer(
+            obj.opportunityclaimlimit_set.order_by("payment_unit_id"), many=True
+        ).data
+
+
+class CatchmentAreaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CatchmentArea
+        fields = ["id", "name", "latitude", "longitude", "radius", "active"]
 
 
 class OpportunitySerializer(serializers.ModelSerializer):
@@ -94,6 +103,8 @@ class OpportunitySerializer(serializers.ModelSerializer):
     budget_per_visit = serializers.SerializerMethodField()
     budget_per_user = serializers.SerializerMethodField()
     payment_units = serializers.SerializerMethodField()
+    is_user_suspended = serializers.SerializerMethodField()
+    catchment_areas = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -120,6 +131,8 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "is_active",
             "budget_per_user",
             "payment_units",
+            "is_user_suspended",
+            "catchment_areas",
         ]
 
     def get_claim(self, obj):
@@ -132,7 +145,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     def get_learn_progress(self, obj):
         opp_access = _get_opp_access(self.context.get("request").user, obj)
         total_modules = LearnModule.objects.filter(app=opp_access.opportunity.learn_app)
-        completed_modules = CompletedModule.objects.filter(opportunity=opp_access.opportunity, user=opp_access.user)
+        completed_modules = opp_access.completedmodule_set.all()
         return {"total_modules": total_modules.count(), "completed_modules": completed_modules.count()}
 
     def get_deliver_progress(self, obj):
@@ -153,13 +166,26 @@ class OpportunitySerializer(serializers.ModelSerializer):
         return obj.budget_per_user
 
     def get_payment_units(self, obj):
-        payment_units = PaymentUnit.objects.filter(opportunity=obj)
+        payment_units = PaymentUnit.objects.filter(opportunity=obj).order_by("pk")
         return PaymentUnitSerializer(payment_units, many=True).data
+
+    def get_is_user_suspended(self, obj):
+        opp_access = _get_opp_access(self.context.get("request").user, obj)
+        return opp_access.suspended
+
+    def get_catchment_areas(self, obj):
+        opp_access = _get_opp_access(self.context.get("request").user, obj)
+        catchments = CatchmentArea.objects.filter(opportunity_access=opp_access)
+        return CatchmentAreaSerializer(catchments, many=True).data
 
 
 @quickcache(vary_on=["user.pk", "opportunity.pk"], timeout=60 * 60)
 def _get_opp_access(user, opportunity):
     return OpportunityAccess.objects.filter(user=user, opportunity=opportunity).first()
+
+
+def remove_opportunity_access_cache(user, opportunity):
+    return _get_opp_access.clear(user, opportunity)
 
 
 class CompletedModuleSerializer(serializers.ModelSerializer):
@@ -247,7 +273,9 @@ class DeliveryProgressSerializer(serializers.Serializer):
         return PaymentSerializer(obj.payment_set.all(), many=True).data
 
     def get_deliveries(self, obj):
-        completed_works = CompletedWork.objects.filter(opportunity_access=obj).exclude(
-            status=CompletedWorkStatus.over_limit
+        completed_works = (
+            CompletedWork.objects.filter(opportunity_access=obj)
+            .exclude(status=CompletedWorkStatus.over_limit)
+            .exclude(status=CompletedWorkStatus.incomplete)
         )
         return CompletedWorkSerializer(completed_works, many=True).data

@@ -49,6 +49,14 @@
         </div>
       </section>
 
+      <section class="shadow-sm p-3 mb-5 bg-white rounded">
+        <h3 class="mb-4">{% translate "Add Credential" %}</h3>
+        <form method="post" action="{% url 'organization:add_credential' org_slug=organization.slug %}">
+          {% csrf_token %}
+          {% crispy add_credential_form %}
+        </form>
+      </section>
+
     </div>
   </div>
 {% endblock content %}

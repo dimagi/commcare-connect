@@ -25,7 +25,7 @@
     </tr>
     </thead>
     <tbody>
-    {% for mod in completed_modules %}
+    {% for mod in object.completedmodule_set.all %}
       <tr>
         <td>{{ mod.module.name }}</td>
         <td>{{ mod.date }}</td>

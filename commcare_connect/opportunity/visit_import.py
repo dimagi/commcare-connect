@@ -1,7 +1,7 @@
 import codecs
-import mimetypes
 import textwrap
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
@@ -9,6 +9,7 @@ from tablib import Dataset
 
 from commcare_connect.events.models import Event
 from commcare_connect.opportunity.models import (
+    CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
     Opportunity,
@@ -18,6 +19,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import send_payment_notification
+from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.itertools import batched
 
 VISIT_ID_COL = "visit id"
@@ -28,12 +30,26 @@ REASON_COL = "rejected reason"
 WORK_ID_COL = "instance id"
 PAYMENT_APPROVAL_STATUS_COL = "payment approval"
 REQUIRED_COLS = [VISIT_ID_COL, STATUS_COL]
+LATITUDE_COL = "latitude"
+LONGITUDE_COL = "longitude"
+RADIUS_COL = "radius"
+AREA_NAME_COL = "area name"
+ACTIVE_COL = "active"
+SITE_CODE_COL = "site code"
 
 
 class ImportException(Exception):
     def __init__(self, message, rows=None):
         self.message = message
         self.rows = rows
+
+
+class RowDataError(Exception):
+    pass
+
+
+class InvalidValueError(RowDataError):
+    pass
 
 
 @dataclass
@@ -78,14 +94,17 @@ class CompletedWorkImportStatus:
         return f"<br>{len(self.missing_completed_works)} completed works were not found:<br>{'<br>'.join(missing)}"
 
 
+@dataclass
+class CatchmentAreaImportStatus:
+    seen_catchments: set[str]
+    new_catchments: int
+
+    def __len__(self):
+        return len(self.seen_catchments)
+
+
 def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
-    file_format = None
-    if file.content_type:
-        file_format = mimetypes.guess_extension(file.content_type)
-        if file_format:
-            file_format = file_format[1:]
-    if not file_format:
-        file_format = file.name.split(".")[-1].lower()
+    file_format = get_file_extension(file)
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
     imported_data = get_imported_dataset(file, file_format)
@@ -107,11 +126,18 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 seen_visits.add(visit.xform_id)
                 seen_completed_works.add(visit.completed_work_id)
                 status = status_by_visit_id[visit.xform_id]
+                reason = reasons_by_visit_id.get(visit.xform_id)
+                changed = False
+
                 if visit.status != status:
-                    visit.status = status
-                    reason = reasons_by_visit_id.get(visit.xform_id)
-                    if visit.status == VisitValidationStatus.rejected and reason:
-                        visit.reason = reason
+                    visit.update_status(status)
+                    changed = True
+
+                if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
+                    visit.reason = reason
+                    changed = True
+
+                if changed:
                     to_update.append(visit)
                 user_ids.add(visit.user_id)
 
@@ -124,7 +150,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
 
 def update_payment_accrued(opportunity: Opportunity, users):
     """Updates payment accrued for completed and approved CompletedWork instances."""
-    access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity)
+    access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
     for access in access_objects:
         completed_works = access.completedwork_set.exclude(
             status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
@@ -132,17 +158,18 @@ def update_payment_accrued(opportunity: Opportunity, users):
         access.payment_accrued = 0
         for completed_work in completed_works:
             # Auto Approve Payment conditions
-            if opportunity.auto_approve_payments:
-                visits = completed_work.uservisit_set.values_list("status", "reason")
-                if any(status == "rejected" for status, _ in visits):
-                    completed_work.status = CompletedWorkStatus.rejected
-                    completed_work.reason = "\n".join(reason for _, reason in visits if reason)
-                elif all(status == "approved" for status, _ in visits):
-                    completed_work.status = CompletedWorkStatus.approved
-            approved_count = completed_work.approved_count
-            if approved_count > 0 and completed_work.status == CompletedWorkStatus.approved:
-                access.payment_accrued += approved_count * completed_work.payment_unit.amount
-            completed_work.save()
+            if completed_work.completed_count > 0:
+                if opportunity.auto_approve_payments:
+                    visits = completed_work.uservisit_set.values_list("status", "reason")
+                    if any(status == "rejected" for status, _ in visits):
+                        completed_work.update_status(CompletedWorkStatus.rejected)
+                        completed_work.reason = "\n".join(reason for _, reason in visits if reason)
+                    elif all(status == "approved" for status, _ in visits):
+                        completed_work.update_status(CompletedWorkStatus.approved)
+                approved_count = completed_work.approved_count
+                if approved_count > 0 and completed_work.status == CompletedWorkStatus.approved:
+                    access.payment_accrued += approved_count * completed_work.payment_unit.amount
+                completed_work.save()
         access.save()
         Event(event_type=Event.Type.PAYMENT_ACCRUED, user=access.user, opportunity=access.opportunity).track()
 
@@ -161,7 +188,7 @@ def get_status_by_visit_id(dataset) -> dict[int, VisitValidationStatus]:
     for row in dataset:
         row = list(row)
         visit_id = str(row[visit_col_index])
-        status_raw = row[status_col_index].lower().replace(" ", "_")
+        status_raw = row[status_col_index].lower().strip().replace(" ", "_")
         try:
             status_by_visit_id[visit_id] = VisitValidationStatus[status_raw]
         except KeyError:
@@ -189,13 +216,7 @@ def _get_header_index(headers: list[str], col_name: str) -> int:
 
 
 def bulk_update_payment_status(opportunity: Opportunity, file: UploadedFile) -> PaymentImportStatus:
-    file_format = None
-    if file.content_type:
-        file_format = mimetypes.guess_extension(file.content_type)
-        if file_format:
-            file_format = file_format[1:]
-    if not file_format:
-        file_format = file.name.split(".")[-1].lower()
+    file_format = get_file_extension(file)
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
     imported_data = get_imported_dataset(file, file_format)
@@ -231,9 +252,9 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
     payment_ids = []
     with transaction.atomic():
         usernames = list(payments)
-        users = OpportunityAccess.objects.filter(user__username__in=usernames, opportunity=opportunity).select_related(
-            "user"
-        )
+        users = OpportunityAccess.objects.filter(
+            user__username__in=usernames, opportunity=opportunity, suspended=False
+        ).select_related("user")
         for access in users:
             username = access.user.username
             amount = payments[username]
@@ -247,13 +268,7 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
 
 
 def bulk_update_completed_work_status(opportunity: Opportunity, file: UploadedFile) -> CompletedWorkImportStatus:
-    file_format = None
-    if file.content_type:
-        file_format = mimetypes.guess_extension(file.content_type)
-        if file_format:
-            file_format = file_format[1:]
-    if not file_format:
-        file_format = file.name.split(".")[-1].lower()
+    file_format = get_file_extension(file)
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
     imported_data = get_imported_dataset(file, file_format)
@@ -275,11 +290,17 @@ def _bulk_update_completed_work_status(opportunity: Opportunity, dataset: Datase
             for completed_work in completed_works:
                 seen_completed_works.add(str(completed_work.id))
                 status = status_by_work_id[str(completed_work.id)]
+                reason = reasons_by_work_id.get(str(completed_work.id))
+                changed = False
+
                 if completed_work.status != status:
-                    completed_work.status = status
-                    reason = reasons_by_work_id.get(str(completed_work.id))
-                    if completed_work.status == CompletedWorkStatus.rejected and reason:
-                        completed_work.reason = reason
+                    completed_work.update_status(status)
+                    changed = True
+                if status == CompletedWorkStatus.rejected and reason and reason != completed_work.reason:
+                    completed_work.reason = reason
+                    changed = True
+
+                if changed:
                     to_update.append(completed_work)
                 user_ids.add(completed_work.opportunity_access.user_id)
             CompletedWork.objects.bulk_update(to_update, fields=["status", "reason"])
@@ -302,7 +323,7 @@ def get_status_by_completed_work_id(dataset):
     for row in dataset:
         row = list(row)
         work_id = str(row[work_id_col_index])
-        status_raw = row[status_col_index].lower().replace(" ", "_")
+        status_raw = row[status_col_index].lower().strip().replace(" ", "_")
         try:
             status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
         except KeyError:
@@ -313,3 +334,178 @@ def get_status_by_completed_work_id(dataset):
     if invalid_rows:
         raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
     return status_by_work_id, reason_by_work_id
+
+
+def bulk_update_catchments(opportunity: Opportunity, file: UploadedFile):
+    file_format = get_file_extension(file)
+    if file_format not in ("csv", "xlsx"):
+        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+    imported_data = get_imported_dataset(file, file_format)
+    return _bulk_update_catchments(opportunity, imported_data)
+
+
+class RowData:
+    def __init__(self, row: list[str], headers: list[str]):
+        self.row = row
+        self.headers = headers
+        self.latitude = self._get_latitude()
+        self.longitude = self._get_longitude()
+        self.radius = self._get_radius()
+        self.active = self._get_active()
+        self.area_name = self._get_area_name()
+        self.username = self._get_username()
+        self.site_code = self._get_site_code()
+
+    def _get_latitude(self) -> Decimal:
+        error_message = "Latitude must be between -90 and 90 degrees."
+        index = _get_header_index(self.headers, LATITUDE_COL)
+        try:
+            latitude = Decimal(self.row[index])
+        except (ValueError, TypeError, InvalidOperation):
+            raise InvalidValueError(error_message)
+        if not Decimal("-90") <= latitude <= Decimal("90"):
+            raise InvalidValueError(error_message)
+        return latitude
+
+    def _get_longitude(self) -> Decimal:
+        index = _get_header_index(self.headers, LONGITUDE_COL)
+        try:
+            longitude = Decimal(self.row[index])
+        except (ValueError, TypeError, InvalidOperation):
+            raise InvalidValueError(f"Invalid longitude value: {self.row[index]}")
+        if not Decimal("-180") <= longitude <= Decimal("180"):
+            raise InvalidValueError("Longitude must be between -180 and 180 degrees")
+        return longitude
+
+    def _get_radius(self) -> int:
+        index = _get_header_index(self.headers, RADIUS_COL)
+        try:
+            radius = int(self.row[index])
+        except (ValueError, TypeError):
+            raise InvalidValueError(f"Invalid radius value: {self.row[index]}")
+        if radius <= 0:
+            raise InvalidValueError("Radius must be a positive integer")
+        return radius
+
+    def _get_active(self) -> bool:
+        error_message = "Active status must be 'yes' or 'no'"
+        index = _get_header_index(self.headers, ACTIVE_COL)
+        active = self.row[index]
+        if not active:
+            raise InvalidValueError(error_message)
+        active = active.lower().strip()
+        if active not in ["yes", "no"]:
+            raise InvalidValueError(error_message)
+        return active == "yes"
+
+    def _get_area_name(self) -> str:
+        index = _get_header_index(self.headers, AREA_NAME_COL)
+        area_name = self.row[index]
+        if not area_name:
+            raise InvalidValueError("Area name is not valid.")
+        return area_name
+
+    def _get_username(self) -> str | None:
+        try:
+            index = _get_header_index(self.headers, USERNAME_COL)
+        except ImportException:
+            return None
+        username = self.row[index]
+        return username if username else None
+
+    def _get_site_code(self) -> str:
+        index = _get_header_index(self.headers, SITE_CODE_COL)
+        site_code = self.row[index]
+        if not site_code:
+            raise InvalidValueError("Site code is not provided.")
+        return site_code
+
+
+def create_or_update_catchment(row_data: RowData, opportunity: Opportunity, username_to_oa_map: dict):
+    try:
+        catchment = CatchmentArea.objects.get(site_code=row_data.site_code, opportunity=opportunity)
+        catchment.latitude = row_data.latitude
+        catchment.longitude = row_data.longitude
+        catchment.radius = row_data.radius
+        catchment.name = row_data.area_name
+        catchment.active = row_data.active
+        catchment.opportunity_access = username_to_oa_map.get(row_data.username, None)
+        return catchment, False
+    except CatchmentArea.DoesNotExist:
+        return (
+            CatchmentArea(
+                latitude=row_data.latitude,
+                longitude=row_data.longitude,
+                radius=row_data.radius,
+                opportunity=opportunity,
+                name=row_data.area_name,
+                active=row_data.active,
+                site_code=row_data.site_code,
+                opportunity_access=username_to_oa_map.get(row_data.username, None),
+            ),
+            True,
+        )
+
+
+def _bulk_update_catchments(opportunity: Opportunity, dataset: Dataset):
+    headers = [header.lower() for header in dataset.headers or [] if header]
+    if not headers:
+        raise ImportException("The uploaded file did not contain any headers")
+
+    with transaction.atomic():
+        to_create = []
+        to_update = []
+        invalid_rows = []
+        seen_catchments = set()
+        new_catchments = 0
+
+        username_to_oa_map = {}
+        if USERNAME_COL in headers:
+            username_index = _get_header_index(headers, USERNAME_COL)
+            usernames = []
+            for row in dataset:
+                row_list = list(row)
+                if row_list[username_index]:
+                    usernames.append(row_list[username_index])
+
+            opportunity_accesses = OpportunityAccess.objects.filter(
+                opportunity=opportunity, user__username__in=usernames
+            ).select_related("user")
+            username_to_oa_map = {oa.user.username: oa for oa in opportunity_accesses}
+
+        for row in dataset:
+            row = list(row)
+            try:
+                row_data = RowData(row, headers)
+                catchment, created = create_or_update_catchment(row_data, opportunity, username_to_oa_map)
+
+                if created:
+                    to_create.append(catchment)
+                    new_catchments += 1
+                else:
+                    to_update.append(catchment)
+                    seen_catchments.add(str(catchment.id))
+
+            except InvalidValueError as e:
+                invalid_rows.append((row, f"Error in row {row}: {e}"))
+
+        if to_create:
+            CatchmentArea.objects.bulk_create(to_create)
+
+        if to_update:
+            CatchmentArea.objects.bulk_update(
+                to_update,
+                [
+                    "latitude",
+                    "longitude",
+                    "radius",
+                    "active",
+                    "name",
+                    "opportunity_access",
+                ],
+            )
+
+        if invalid_rows:
+            raise ImportException(f"{len(invalid_rows)} rows have errors", invalid_rows)
+
+    return CatchmentAreaImportStatus(seen_catchments, new_catchments)

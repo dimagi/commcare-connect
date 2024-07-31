@@ -4,10 +4,13 @@ from django.utils.safestring import mark_safe
 from django_tables2 import columns, tables, utils
 
 from commcare_connect.opportunity.models import (
+    CatchmentArea,
     CompletedWork,
     OpportunityAccess,
     Payment,
     PaymentUnit,
+    UserInvite,
+    UserInviteStatus,
     UserVisit,
     VisitValidationStatus,
 )
@@ -63,7 +66,7 @@ class UserVisitTable(tables.Table):
     )
 
     def render_flag_reason(self, value):
-        short = [flag[0] for flag in value.get("flags")]
+        short = [flag[1] for flag in value.get("flags")]
         return ", ".join(short)
 
     class Meta:
@@ -95,7 +98,7 @@ class OpportunityPaymentTable(tables.Table):
 
     class Meta:
         model = OpportunityAccess
-        fields = ("display_name", "username", "payment_accrued", "total_paid")
+        fields = ("display_name", "username", "payment_accrued", "total_paid", "total_confirmed_paid")
         orderable = False
         empty_text = "No user have payments accrued yet."
 
@@ -114,29 +117,38 @@ class AggregateColumn(columns.Column):
         return sum(1 if bound_column.accessor.resolve(row) else 0 for row in table.data)
 
 
+class SumColumn(columns.Column):
+    def render_footer(self, bound_column, table):
+        return sum(getattr(x, bound_column.accessor) or 0 for x in table.data)
+
+
 class BooleanAggregateColumn(columns.BooleanColumn, AggregateColumn):
     pass
 
 
 class UserStatusTable(tables.Table):
-    display_name = columns.Column(verbose_name="Name", footer="Total")
-    username = columns.Column(accessor="user__username", visible=False)
-    accepted = BooleanAggregateColumn(verbose_name="Accepted")
+    display_name = columns.Column(verbose_name="Name", footer="Total", empty_values=())
+    username = columns.Column(accessor="opportunity_access__user__username", visible=False)
     claimed = AggregateColumn(verbose_name="Job Claimed", accessor="job_claimed")
-    started_learning = AggregateColumn(verbose_name="Started Learning", accessor="date_learn_started")
+    status = columns.Column(
+        footer=lambda table: f"Accepted: {sum(invite.status == UserInviteStatus.accepted for invite in table.data)}",
+    )
+    started_learning = AggregateColumn(
+        verbose_name="Started Learning", accessor="opportunity_access__date_learn_started"
+    )
     completed_learning = AggregateColumn(verbose_name="Completed Learning", accessor="date_learn_completed")
     passed_assessment = BooleanAggregateColumn(verbose_name="Passed Assessment")
     started_delivery = AggregateColumn(verbose_name="Started Delivery", accessor="date_deliver_started")
     last_visit_date = columns.Column(accessor="last_visit_date_d")
-    view_profile = AggregateColumn("View Profile", empty_values=(), footer=lambda table: len(table.rows))
+    view_profile = columns.Column("View Profile", empty_values=(), footer=lambda table: f"Invited: {len(table.rows)}")
 
     class Meta:
-        model = OpportunityAccess
-        fields = ("display_name", "accepted", "last_visit_date")
+        model = UserInvite
+        fields = ("status",)
         sequence = (
             "display_name",
             "username",
-            "accepted",
+            "status",
             "started_learning",
             "completed_learning",
             "passed_assessment",
@@ -147,15 +159,24 @@ class UserStatusTable(tables.Table):
         empty_text = "No users invited for this opportunity."
         orderable = False
 
+    def render_display_name(self, record):
+        if record.opportunity_access is None:
+            return record.phone_number
+        if not record.opportunity_access.accepted:
+            return "---"
+        return record.opportunity_access.display_name
+
     def render_view_profile(self, record):
-        if not record.accepted:
+        if record.opportunity_access is None:
+            return "---"
+        if not record.opportunity_access.accepted:
             return "---"
         url = reverse(
             "opportunity:user_profile",
             kwargs={
                 "org_slug": record.opportunity.organization.slug,
                 "opp_id": record.opportunity_id,
-                "pk": record.id,
+                "pk": record.opportunity_access_id,
             },
         )
         return format_html('<a href="{}">View Profile</a>', url)
@@ -194,14 +215,15 @@ class PaymentUnitTable(tables.Table):
 
 
 class DeliverStatusTable(tables.Table):
-    display_name = columns.Column("Name of the User")
+    display_name = columns.Column(verbose_name="Name of the User", footer="Total")
     username = columns.Column(accessor="user__username", visible=False)
     payment_unit = columns.Column("Name of Payment Unit")
-    completed = columns.Column("Delivered")
-    pending = columns.Column("Pending")
-    approved = columns.Column("Approved")
-    rejected = columns.Column("Rejected")
-    over_limit = columns.Column("Over Limit")
+    completed = SumColumn("Delivered")
+    pending = SumColumn("Pending")
+    approved = SumColumn("Approved")
+    rejected = SumColumn("Rejected")
+    over_limit = SumColumn("Over Limit")
+    incomplete = SumColumn("Incomplete")
 
     details = columns.LinkColumn(
         "opportunity:user_visits_list",
@@ -223,6 +245,7 @@ class DeliverStatusTable(tables.Table):
             "approved",
             "rejected",
             "over_limit",
+            "incomplete",
         )
 
     def render_last_visit_date(self, record, value):
@@ -267,6 +290,76 @@ class CompletedWorkTable(tables.Table):
 
     def render_completion_date(self, record, value):
         return date_with_time_popup(self, value)
+
+
+class SuspendedUsersTable(tables.Table):
+    display_name = columns.Column("Name of the User")
+    revoke_suspension = columns.LinkColumn(
+        "opportunity:revoke_user_suspension",
+        verbose_name="",
+        text="Revoke",
+        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
+    )
+
+    class Meta:
+        model = OpportunityAccess
+        fields = ("display_name", "suspension_date", "suspension_reason")
+        orderable = False
+        empty_text = "No suspended users."
+
+    def render_suspension_date(self, record, value):
+        return date_with_time_popup(self, value)
+
+    def render_revoke_suspension(self, record, value):
+        revoke_url = reverse(
+            "opportunity:revoke_user_suspension",
+            args=(record.opportunity.organization.slug, record.opportunity.id, record.pk),
+        )
+        page_url = reverse(
+            "opportunity:suspended_users_list", args=(record.opportunity.organization.slug, record.opportunity_id)
+        )
+        return format_html('<a class="btn btn-success" href="{}?next={}">Revoke</a>', revoke_url, page_url)
+
+
+class CatchmentAreaTable(tables.Table):
+    username = columns.Column(accessor="opportunity_access__user__username", verbose_name="Username")
+    name_of_user = columns.Column(accessor="opportunity_access__user__name", verbose_name="Name")
+    phone_number = columns.Column(accessor="opportunity_access__user__phone_number", verbose_name="Phone Number")
+    name = columns.Column(verbose_name="Area name")
+    active = columns.Column(verbose_name="Active")
+    latitude = columns.Column(verbose_name="Latitude")
+    longitude = columns.Column(verbose_name="Longitude")
+    radius = columns.Column(verbose_name="Radius")
+    site_code = columns.Column(verbose_name="Site code")
+
+    def render_active(self, value):
+        return "Yes" if value else "No"
+
+    class Meta:
+        model = CatchmentArea
+        fields = (
+            "username",
+            "site_code",
+            "name",
+            "name_of_user",
+            "phone_number",
+            "active",
+            "latitude",
+            "longitude",
+            "radius",
+        )
+        orderable = False
+        sequence = (
+            "username",
+            "name_of_user",
+            "phone_number",
+            "name",
+            "site_code",
+            "active",
+            "latitude",
+            "longitude",
+            "radius",
+        )
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):

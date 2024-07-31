@@ -7,7 +7,9 @@ from .models import UserOrganizationMembership
 
 
 def _request_user_is_member(request):
-    return (request.org and request.org_membership) or request.user.is_superuser
+    return (
+        request.org and request.org_membership and not request.org_membership.is_viewer
+    ) or request.user.is_superuser
 
 
 def _request_user_is_admin(request):
@@ -16,12 +18,20 @@ def _request_user_is_admin(request):
     ) or request.user.is_superuser
 
 
+def _request_user_is_viewer(request):
+    return (request.org and request.org_membership) or request.user.is_superuser
+
+
 def org_member_required(view_func):
     return _get_decorated_function(view_func, _request_user_is_member)
 
 
 def org_admin_required(view_func):
     return _get_decorated_function(view_func, _request_user_is_admin)
+
+
+def org_viewer_required(view_func):
+    return _get_decorated_function(view_func, _request_user_is_viewer)
 
 
 def _get_decorated_function(view_func, permission_test_function):

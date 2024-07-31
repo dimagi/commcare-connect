@@ -77,3 +77,12 @@ class Message:
 
     def asdict(self):
         return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}
+
+
+@dataclasses.dataclass
+class Credential:
+    name: str
+    slug: str
+
+    def __str__(self) -> str:
+        return self.name

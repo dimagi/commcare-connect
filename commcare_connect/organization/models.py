@@ -28,6 +28,7 @@ class UserOrganizationMembership(models.Model):
     class Role(models.TextChoices):
         ADMIN = "admin", _("Admin")
         MEMBER = "member", _("Member")
+        VIEWER = "viewer", _("Viewer")
 
     organization = models.ForeignKey(
         Organization,
@@ -46,6 +47,10 @@ class UserOrganizationMembership(models.Model):
     @property
     def is_admin(self):
         return self.role == self.Role.ADMIN
+
+    @property
+    def is_viewer(self):
+        return self.role == self.Role.VIEWER
 
     class Meta:
         db_table = "organization_membership"

@@ -7,7 +7,7 @@
 
 {% block breadcrumbs_inner %}
   {{ block.super }}
-  <li class="breadcrumb-item active" aria-current="page">{{ object.name }}</li>
+ <li class="breadcrumb-item active" aria-current="page">{{ object.name }}</li>
 {% endblock %}
 
 {% block content %}
@@ -18,7 +18,7 @@
     <div class="col-6">
       <div class="dropdown float-end">
         <button class="btn btn-primary btn-sm rounded-circle" type="button" id="opportunity_details_dropdown"
-                data-bs-toggle="dropdown" aria-expanded="false">
+          data-bs-toggle="dropdown" aria-expanded="false" {% if request.org_membership.is_viewer %} disabled {% endif %}>
           <i class="bi bi-three-dots-vertical"></i>
         </button>
         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="opportunity_details_dropdown">
@@ -55,6 +55,13 @@
                href="{% url 'opportunity:verification_flags_config' org_slug=request.org.slug pk=opportunity.id %}">
               <i class="bi bi-plus-circle-fill pe-2"></i>
               {% translate "Configure Verification Flags" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:suspended_users_list' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-person-fill-exclamation pe-2"></i>
+              {% translate "Suspended Users" %}
             </a>
           </li>
           <li class="dropdown-divider"></li>
@@ -107,6 +114,19 @@
             <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportDeliverStatusModal">
               <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
               {% translate "Export Deliver Status" %}
+            </a>
+          </li>
+           <li class="dropdown-divider"></li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportCatchmentModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export Catchment Area" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importCatchmentModal">
+              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+              {% translate "Import Catchment Area" %}
             </a>
           </li>
         </ul>
@@ -442,6 +462,11 @@
   {% url 'opportunity:completed_work_export' org_slug=request.org.slug pk=opportunity.pk as completed_work_export_url %}
   {% include "export_modal.html" with modal_id="exportCompletedWorkModal" modal_title=_("Export Payment Verification") export_url=completed_work_export_url export_form=export_form %}
 
+ <!-- Catchment Area Export Modal -->
+  {% url 'opportunity:catchment_area_export' org_slug=request.org.slug pk=opportunity.pk as catchment_area_export_url %}
+  {% include "export_modal.html" with modal_id="exportCatchmentModal" modal_title=_("Export Catchment Area") export_url=catchment_area_export_url export_form=export_form %}
+
+
   <!-- Completed Work Import modal -->
   <div class="modal fade" id="importCompletedWorkModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -474,4 +499,36 @@
       </div>
     </div>
   </div>
+
+<!-- Catchment Area Import modal -->
+<div class="modal fade" id="importCatchmentModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Import Catchment Areas" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:catchment_area_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% csrf_token %}
+            <input class="form-control" type="file" id="importFile" name="catchments" required>
+            <div class="col-auto">
+              <span id="importFileHelp" class="form-text">
+                {% blocktrans %}
+                  The file must contain at least the "Area Name", "Active", "Latitude", "Longitude", "Site code" and "Radius" column.
+                {% endblocktrans %}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock modal %}

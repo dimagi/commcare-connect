@@ -1,4 +1,5 @@
 import datetime
+import json
 
 from django.utils.encoding import force_str
 from flatten_dict import flatten
@@ -10,17 +11,24 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
 )
 from commcare_connect.opportunity.models import (
+    CatchmentArea,
     CompletedWork,
     Opportunity,
     OpportunityAccess,
     UserVisit,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tables import CompletedWorkTable, DeliverStatusTable, UserStatusTable, UserVisitTable
+from commcare_connect.opportunity.tables import (
+    CatchmentAreaTable,
+    CompletedWorkTable,
+    DeliverStatusTable,
+    UserStatusTable,
+    UserVisitTable,
+)
 
 
 def export_user_visit_data(
-    opportunity: Opportunity, date_range: DateRanges, status: list[VisitValidationStatus]
+    opportunity: Opportunity, date_range: DateRanges, status: list[VisitValidationStatus], flatten: bool
 ) -> Dataset:
     """Export all user visits for an opportunity."""
     user_visits = UserVisit.objects.filter(opportunity=opportunity)
@@ -42,7 +50,17 @@ def export_user_visit_data(
         for row in table.rows
     ]
     base_headers = [force_str(column.header, strings_only=True) for column in columns]
-    return get_flattened_dataset(base_headers, base_data)
+    if flatten:
+        return get_flattened_dataset(base_headers, base_data)
+    else:
+        base_headers.append("form_json")
+        dataset = Dataset(title="Export", headers=base_headers)
+        for row in base_data:
+            form_json = json.dumps(row.pop())
+            row.append(form_json)
+            row_data = [force_str(col, strings_only=True) for col in row]
+            dataset.append(row_data)
+        return dataset
 
 
 def get_flattened_dataset(headers: list[str], data: list[list]) -> Dataset:
@@ -80,7 +98,7 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
     headers = ["Username", "Phone Number", "Name", "Payment Amount"]
     dataset = Dataset(title="Export", headers=headers)
 
-    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity).select_related("user")
+    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=False).select_related("user")
     for access in access_objects:
         row = (access.user.username, access.user.phone_number, access.user.name, "")
         dataset.append(row)
@@ -100,7 +118,7 @@ def export_deliver_status_table(opportunity: Opportunity) -> Dataset:
 
 
 def export_work_status_table(opportunity: Opportunity) -> Dataset:
-    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
+    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=False)
     completed_works = []
     for completed_work in CompletedWork.objects.filter(opportunity_access__in=access_objects):
         completed = completed_work.completed
@@ -111,6 +129,12 @@ def export_work_status_table(opportunity: Opportunity) -> Dataset:
             completed_works.append(completed_work)
     table = CompletedWorkTable(completed_works, exclude=("date_popup"))
     return get_dataset(table, export_title="Payment Verification export")
+
+
+def export_catchment_area_table(opportunity):
+    catchment_areas = CatchmentArea.objects.filter(opportunity=opportunity)
+    table = CatchmentAreaTable(catchment_areas)
+    return get_dataset(table, export_title="Catchment Area Export")
 
 
 def get_dataset(table, export_title):

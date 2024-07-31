@@ -1,4 +1,6 @@
+from allauth.utils import build_absolute_uri
 from django.conf import settings
+from django.urls import reverse
 from twilio.rest import Client
 
 
@@ -11,7 +13,13 @@ def send_sms(to, body):
         raise SMSException("Twilio credentials not provided")
     client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
     sender = get_sms_sender(to)
-    client.messages.create(body=body, to=to, from_=sender, messaging_service_sid=settings.TWILIO_MESSAGING_SERVICE)
+    return client.messages.create(
+        body=body,
+        to=to,
+        from_=sender,
+        messaging_service_sid=settings.TWILIO_MESSAGING_SERVICE,
+        status_callback=build_absolute_uri(None, reverse("users:sms_status_callback")),
+    )
 
 
 def get_sms_sender(number):

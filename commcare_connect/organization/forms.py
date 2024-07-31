@@ -47,3 +47,33 @@ class MembershipForm(forms.ModelForm):
                 layout.Div(layout.Submit("submit", gettext("Submit")), css_class="col-md-2"),
             ),
         )
+
+
+class AddCredentialForm(forms.Form):
+    credential = forms.CharField(widget=forms.Select)
+    users = forms.CharField(
+        widget=forms.Textarea(
+            attrs=dict(
+                placeholder="Enter the phone numbers of the users you want to add the "
+                "credential to, one on each line.",
+            )
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        credentials = kwargs.pop("credentials", [])
+        super().__init__(*args, **kwargs)
+
+        self.fields["credential"].widget.choices = [(c.name, c.name) for c in credentials]
+
+        self.helper = helper.FormHelper(self)
+        self.helper.layout = layout.Layout(
+            layout.Row(layout.Field("credential")),
+            layout.Row(layout.Field("users")),
+            layout.Row(layout.Div(layout.Submit("submit", gettext("Submit")))),
+        )
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
+        return split_users

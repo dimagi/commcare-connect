@@ -5,13 +5,17 @@ from crispy_forms.helper import FormHelper, Layout
 from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
-from django.db.models import TextChoices
+from django.core.exceptions import ValidationError
+from django.db.models import Q, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect import connect_id_client
 from commcare_connect.opportunity.models import (
     CommCareApp,
     DeliverUnit,
+    DeliverUnitFlagRules,
+    FormJsonValidationRules,
     HQApiKey,
     Opportunity,
     OpportunityAccess,
@@ -21,6 +25,8 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
+
+FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 
 class OpportunityChangeForm(forms.ModelForm):
@@ -32,19 +38,20 @@ class OpportunityChangeForm(forms.ModelForm):
             "active",
             "currency",
             "short_description",
-            "auto_approve_visits",
-            "auto_approve_payments",
+            "is_test",
+            "delivery_type",
         ]
 
     def __init__(self, *args, **kwargs):
+        credentials = connect_id_client.fetch_credentials()
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(Field("name")),
             Row(Field("active", css_class="form-check-input", wrapper_class="form-check form-switch")),
-            Row(Field("auto_approve_visits", css_class="form-check-input", wrapper_class="form-check form-switch")),
-            Row(Field("auto_approve_payments", css_class="form-check-input", wrapper_class="form-check form-switch")),
+            Row(Field("is_test", css_class="form-check-input", wrapper_class="form-check form-switch")),
+            Row(Field("delivery_type")),
             Row(Field("description")),
             Row(Field("short_description")),
             Row(Field("currency")),
@@ -53,7 +60,14 @@ class OpportunityChangeForm(forms.ModelForm):
                 Field("end_date", wrapper_class="form-group col-md-6 mb-0"),
             ),
             HTML("<hr />"),
-            Row(Field("users")),
+            Fieldset(
+                "Invite Users",
+                Row(Field("users")),
+                Row(
+                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
+                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
+                ),
+            ),
             Submit("submit", "Submit"),
         )
 
@@ -70,12 +84,37 @@ class OpportunityChangeForm(forms.ModelForm):
             required=False,
             help_text="Extends opportunity end date for all users.",
         )
+        self.fields["filter_country"] = forms.CharField(
+            label="Filter By Country",
+            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
+            required=False,
+        )
+        self.fields["filter_credential"] = forms.CharField(
+            label="Filter By Credential",
+            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
+            required=False,
+        )
         self.initial["end_date"] = self.instance.end_date.isoformat()
+        self.initial["filter_country"] = [""]
+        self.initial["filter_credential"] = [""]
+        self.currently_active = self.instance.active
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
+
+    def clean_active(self):
+        active = self.cleaned_data["active"]
+        if active and not self.currently_active:
+            app_ids = (self.instance.learn_app.cc_app_id, self.instance.deliver_app.cc_app_id)
+            if (
+                Opportunity.objects.filter(active=True)
+                .filter(Q(learn_app__cc_app_id__in=app_ids) | Q(deliver_app__cc_app_id__in=app_ids))
+                .exists()
+            ):
+                raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
+        return active
 
 
 class OpportunityInitForm(forms.ModelForm):
@@ -439,6 +478,7 @@ class VisitExportForm(forms.Form):
     format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
     date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
     status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
+    flatten_form_data = forms.BooleanField(initial=True, required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -447,6 +487,7 @@ class VisitExportForm(forms.Form):
             Row(Field("format")),
             Row(Field("date_range")),
             Row(Field("status")),
+            Row(Field("flatten_form_data", css_class="form-check-input", wrapper_class="form-check form-switch")),
         )
         self.helper.form_tag = False
 
@@ -605,7 +646,7 @@ class SendMessageMobileUsersForm(forms.Form):
 class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
     class Meta:
         model = OpportunityVerificationFlags
-        fields = ("duplicate", "duration", "gps", "location", "form_submission_start", "form_submission_end")
+        fields = ("duplicate", "gps", "location", "form_submission_start", "form_submission_end", "catchment_areas")
         widgets = {
             "form_submission_start": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
@@ -616,24 +657,26 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_start": "Start Time",
             "form_submission_end": "End Time",
             "location": "Location Distance",
+            "catchment_areas": "Catchment Area",
         }
         help_texts = {
-            "duration": "Minimum time to complete form (minutes)",
             "location": "Minimum distance between form locations (metres)",
             "duplicate": "Flag duplicate form submissions for an entity.",
             "gps": "Flag forms with no location information.",
+            "catchment_areas": "Flag forms outside a users's assigned catchment area",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = Layout(
             Row(
                 Field("duplicate", css_class="form-check-input", wrapper_class="form-check form-switch"),
                 Field("gps", css_class="form-check-input", wrapper_class="form-check form-switch"),
+                Field("catchment_areas", css_class="form-check-input", wrapper_class="form-check form-switch"),
             ),
-            Row(Field("duration")),
             Row(Field("location")),
             Fieldset(
                 "Form Submission Hours",
@@ -642,13 +685,75 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
                     Column(Field("form_submission_end")),
                 ),
             ),
-            Submit(name="submit", value="Submit"),
         )
 
         self.fields["duplicate"].required = False
-        self.fields["duration"].required = False
         self.fields["location"].required = False
         self.fields["gps"].required = False
+        self.fields["catchment_areas"].required = False
         if self.instance:
             self.fields["form_submission_start"].initial = self.instance.form_submission_start
             self.fields["form_submission_end"].initial = self.instance.form_submission_end
+
+
+class DeliverUnitFlagsForm(forms.ModelForm):
+    class Meta:
+        model = DeliverUnitFlagRules
+        fields = ("deliver_unit", "check_attachments", "duration")
+        help_texts = {"duration": "Minimum time to complete form (minutes)"}
+        labels = {"check_attachments": "Require Attachments"}
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Row(
+                Column(Field("deliver_unit")),
+                Column(
+                    HTML("<div class='fw-bold mb-3'>Attachments</div>"),
+                    Field("check_attachments", css_class="form-check-input", wrapper_class="form-check form-switch"),
+                ),
+                Column(Field("duration")),
+            ),
+        )
+        self.fields["deliver_unit"] = forms.ModelChoiceField(
+            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
+        )
+
+    def clean_deliver_unit(self):
+        deliver_unit = self.cleaned_data["deliver_unit"]
+        if (
+            self.instance.pk is None
+            and DeliverUnitFlagRules.objects.filter(deliver_unit=deliver_unit, opportunity=self.opportunity).exists()
+        ):
+            raise ValidationError("Flags are already configured for this Deliver Unit.")
+        return deliver_unit
+
+
+class FormJsonValidationRulesForm(forms.ModelForm):
+    class Meta:
+        model = FormJsonValidationRules
+        fields = ("name", "deliver_unit", "question_path", "question_value")
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Row(
+                Column(Field("name")),
+                Column(Field("question_path")),
+                Column(Field("question_value")),
+            ),
+            Row(Column(Field("deliver_unit"))),
+        )
+        self.helper.render_hidden_fields = True
+
+        self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
+            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), widget=forms.CheckboxSelectMultiple
+        )

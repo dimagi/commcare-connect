@@ -31,6 +31,13 @@ MOCK_FORM = {
     "metadata": FORM_META,
     "received_on": "2023-06-07T12:34:12.153323Z",
     "server_modified_on": "2023-06-07T12:34:12.509392Z",
+    "attachments": {
+        "form.xml": {
+            "content_type": "text/xml",
+            "length": 1000,
+            "url": "https://www.commcarehq.org/form.xml",
+        }
+    },
 }
 
 MODULE_XML_TEMPLATE = (
