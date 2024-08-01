@@ -77,3 +77,16 @@ class AddCredentialForm(forms.Form):
         user_data = self.cleaned_data["users"]
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
+
+
+OrganizationCreationForm = forms.modelform_factory(
+    Organization,
+    fields=("name",),
+    labels={"name": "Organization Name"},
+    help_texts={
+        "name": (
+            "This would be used to create the Organization URL,"
+            " and you will not be able to change the URL in future."
+        )
+    },
+)

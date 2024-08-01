@@ -9,9 +9,27 @@ from rest_framework.decorators import api_view
 from commcare_connect import connect_id_client
 from commcare_connect.connect_id_client.models import Credential
 from commcare_connect.organization.decorators import org_admin_required
-from commcare_connect.organization.forms import AddCredentialForm, MembershipForm, OrganizationChangeForm
+from commcare_connect.organization.forms import (
+    AddCredentialForm,
+    MembershipForm,
+    OrganizationChangeForm,
+    OrganizationCreationForm,
+)
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.organization.tasks import add_credential_task, send_org_invite
+
+
+@login_required
+def organization_create(request):
+    form = OrganizationCreationForm(data=request.POST or None)
+
+    if form.is_valid():
+        org = form.save(commit=False)
+        org.save()
+        org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        return redirect("opportunity:list", org.slug)
+
+    return render(request, "organization/organization_create.html", context={"form": form})
 
 
 @org_admin_required
