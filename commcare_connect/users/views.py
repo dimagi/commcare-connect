@@ -1,4 +1,5 @@
 from allauth.account.models import transaction
+from dal.autocomplete import Select2QuerySetView
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -161,3 +162,13 @@ class SMSStatusCallbackView(APIView):
                 user_invite.status = UserInviteStatus.sms_not_delivered
             user_invite.save()
         return Response(status=200)
+
+
+class UserSearchView(LoginRequiredMixin, Select2QuerySetView):
+    def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return User.objects.none()
+        queryset = User.objects.filter(opportunityaccess__opportunity__organization=self.request.org).distinct()
+        if self.q:
+            queryset = queryset.filter(name__istartswith=self.q)
+        return queryset

@@ -48,6 +48,8 @@ DJANGO_APPS = [
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
+    "dal",
+    "dal_select2",
     # "django.contrib.humanize", # Handy template tags
     "django.contrib.admin",
     "django.forms",

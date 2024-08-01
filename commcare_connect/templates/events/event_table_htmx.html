@@ -18,3 +18,18 @@
 
     {% render_table table %}
 {% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+
+{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<style>
+.select2-selection__rendered {
+    line-height: initial!important;
+}
+</style>
+{% endblock %}

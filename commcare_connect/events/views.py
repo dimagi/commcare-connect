@@ -1,7 +1,8 @@
 import django_tables2 as tables
+from dal.autocomplete import ModelSelect2
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from django_filters import ChoiceFilter, FilterSet
+from django_filters import ChoiceFilter, FilterSet, ModelChoiceFilter
 from django_filters.views import FilterView
 from rest_framework import serializers, status
 from rest_framework.generics import ListCreateAPIView
@@ -9,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from commcare_connect.opportunity.forms import DateRanges
-from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.users.models import User
 
 from .models import Event
 
@@ -51,6 +52,15 @@ class EventTable(tables.Table):
 
 class EventFilter(FilterSet):
     date_range = ChoiceFilter(choices=DateRanges.choices, method="filter_by_date_range", label="Date Range")
+    user = ModelChoiceFilter(
+        queryset=User.objects.all(),
+        widget=ModelSelect2(
+            url="users:search",
+            attrs={
+                "data-placeholder": "All",
+            },
+        ),
+    )
 
     class Meta:
         model = Event
@@ -84,4 +94,4 @@ class EventListView(tables.SingleTableMixin, FilterView):
         return template_name
 
     def get_queryset(self):
-        return Event.objects.filter(opportunity__in=Opportunity.objects.filter(organization=self.request.org))
+        return Event.objects.filter(organization=self.request.org)

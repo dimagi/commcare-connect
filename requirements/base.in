@@ -31,6 +31,7 @@ django-cors-headers
 drf-spectacular
 django-tables2
 django-filter
+django-autocomplete-light
 
 # Temporary
 # -------------------------------------------------------------------------------

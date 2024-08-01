@@ -3,20 +3,6 @@
 {% load django_tables2 %}
 {% load i18n %}
 
-{% block extra_head %}
-<style>
-    .table-container th.asc:after {
-        content: '\0000a0\0025b2';
-        float: right;
-    }
-
-    .table-container th.desc:after {
-        content: '\0000a0\0025bc';
-        float: right;
-    }
-</style>
-{% endblock %}
-
 {% block table.thead %}
   {% if table.show_header %}
       <thead {{ table.attrs.thead.as_html }}>
