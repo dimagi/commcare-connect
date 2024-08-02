@@ -37,12 +37,6 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         null=True, on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL
                     ),
-                ),
-                (
-                    "organization",
-                    models.ForeignKey(
-                        on_delete=models.CASCADE, related_name="events", related_query_name="event", to="organization.organization"
-                    ),
                 )
             ],
         ),

@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from commcare_connect.opportunity.forms import DateRanges
+from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.users.models import User
 
 from .models import Event
@@ -95,4 +96,4 @@ class EventListView(tables.SingleTableMixin, FilterView):
         return template_name
 
     def get_queryset(self):
-        return Event.objects.filter(organization=self.request.org)
+        return Event.objects.filter(opportunity__in=Opportunity.objects.filter(organization=self.request.org))

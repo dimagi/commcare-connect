@@ -6,7 +6,6 @@ from django.db import models
 from django.utils.translation import gettext as _
 
 from commcare_connect.cache import quickcache
-from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 
 from . import types
@@ -22,12 +21,6 @@ class Event(models.Model):
     event_type = models.CharField(max_length=40, db_index=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT, null=True)
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name="events",
-        related_query_name="event",
-    )
 
     @classmethod
     @quickcache([], timeout=60 * 60)

@@ -21,7 +21,16 @@
 
 {% block javascript %}
 {{ block.super }}
+<!-- This is required for select2 'user' field-->
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+
+<script>
+ window.addEventListener("DOMContentLoaded", (e) => {
+  $('select').on('select2:select', function (e) {
+   $(this).closest('form').get(0).dispatchEvent(new Event('change'));
+});
+ })
+</script>
 
 {% endblock %}
 
