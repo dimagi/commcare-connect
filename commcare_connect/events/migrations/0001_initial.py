@@ -22,18 +22,8 @@ class Migration(migrations.Migration):
                 (
                     "event_type",
                     models.CharField(
-                        choices=[
-                            ("invite_sent", "Invite Sent"),
-                            ("records_approved", "Records Approved"),
-                            ("records_flagged", "Records Flagged"),
-                            ("records_rejected", "Records Rejected"),
-                            ("payment_approved", "Payment Approved"),
-                            ("payment_accrued", "Payment Accrued"),
-                            ("payment_transferred", "Payment Transferred"),
-                            ("notifications_sent", "Notifications Sent"),
-                            ("additional_budget_added", "Additional Budget Added"),
-                        ],
                         max_length=40,
+                        db_index=True
                     ),
                 ),
                 (

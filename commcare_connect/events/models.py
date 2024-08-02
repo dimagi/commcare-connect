@@ -5,16 +5,11 @@ from datetime import datetime
 from django.db import models
 from django.utils.translation import gettext as _
 
+from commcare_connect.cache import quickcache
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 
 from . import types
-
-
-def get_event_type_choices():
-    # A callable avoids migration getting created
-    #   each time when EVENT_TYPE_CHOICES is edited
-    return types.EVENT_TYPE_CHOICES
 
 
 class Event(models.Model):
@@ -24,7 +19,7 @@ class Event(models.Model):
     Type = types
 
     date_created = models.DateTimeField(db_index=True)
-    event_type = models.CharField(max_length=40, choices=get_event_type_choices())
+    event_type = models.CharField(max_length=40, db_index=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT, null=True)
     organization = models.ForeignKey(
@@ -33,6 +28,11 @@ class Event(models.Model):
         related_name="events",
         related_query_name="event",
     )
+
+    @classmethod
+    @quickcache([], timeout=60 * 60)
+    def get_all_event_types(cls):
+        return set(cls.objects.values_list("event_type", flat=True).distinct()) | set(types.EVENT_TYPES)
 
     def track(self, use_async=True):
         """

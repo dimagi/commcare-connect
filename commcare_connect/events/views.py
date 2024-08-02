@@ -61,6 +61,7 @@ class EventFilter(FilterSet):
             },
         ),
     )
+    event_type = ChoiceFilter(choices=[(_type, _type) for _type in Event.get_all_event_types()])
 
     class Meta:
         model = Event
