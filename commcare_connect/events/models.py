@@ -34,17 +34,10 @@ class Event(models.Model):
     def get_all_event_types(cls):
         return set(cls.objects.values_list("event_type", flat=True).distinct()) | set(types.EVENT_TYPES)
 
-    def track(self, use_async=True):
-        """
-        To track an event, instantiate the object and call this method,
-        instead of calling save directly.
-
-        If use_async is True, the event is queued in Redis and saved
-        via celery, otherwise it's saved directly.
-        """
-        from commcare_connect.events.tasks import track_event
-
-        track_event(self, use_async=use_async)
+    def save(self, *args, **kwargs):
+        if not self.date_created:
+            self.date_created = datetime.utcnow()
+        super().save(*args, **kwargs)
 
 
 @dataclass
