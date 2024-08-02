@@ -48,6 +48,8 @@ DJANGO_APPS = [
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
+    "dal",
+    "dal_select2",
     # "django.contrib.humanize", # Handy template tags
     "django.contrib.admin",
     "django.forms",
@@ -65,10 +67,12 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "oauth2_provider",
     "django_tables2",
+    "django_filters",
 ]
 
 LOCAL_APPS = [
     "commcare_connect.commcarehq_provider",
+    "commcare_connect.events",
     "commcare_connect.form_receiver",
     "commcare_connect.opportunity",
     "commcare_connect.organization",
@@ -116,6 +120,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django_htmx.middleware.HtmxMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "commcare_connect.users.middleware.OrganizationMiddleware",
@@ -304,6 +309,8 @@ CACHES = {
         },
     }
 }
+
+FILTERS_EMPTY_CHOICE_LABEL = "All"
 
 DJANGO_TABLES2_TEMPLATE = "tables/tabbed_table.html"
 DJANGO_TABLES2_TABLE_ATTRS = {

@@ -23,6 +23,7 @@ from django_tables2 import SingleTableView
 from django_tables2.export import TableExport
 from geopy import distance
 
+from commcare_connect.events.models import Event
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.forms import (
@@ -400,6 +401,7 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
                 opportunity.total_budget += ocl.payment_unit.amount * additional_visits
             opportunity.save()
             return redirect("opportunity:detail", org_slug, pk)
+    Event(event_type=Event.Type.ADDITIONAL_BUDGET_ADDED, opportunity=opportunity).save()
 
     return render(
         request,
@@ -808,6 +810,7 @@ def approve_visit(request, org_slug=None, pk=None):
     opp_id = user_visit.opportunity_id
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=opp_id)
     update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    Event(event_type=Event.Type.RECORDS_APPROVED, user=user_visit.user, opportunity=access.opportunity).save()
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity.id, pk=access.id)
 
 
@@ -821,6 +824,7 @@ def reject_visit(request, org_slug=None, pk=None):
     user_visit.save()
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=user_visit.opportunity_id)
     update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    Event(event_type=Event.Type.RECORDS_REJECTED, user=user_visit.user, opportunity=access.opportunity).save()
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity_id, pk=access.id)
 
 

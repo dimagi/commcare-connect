@@ -30,6 +30,8 @@ django-cors-headers
 # DRF-spectacular for api documentation
 drf-spectacular
 django-tables2
+django-filter
+django-autocomplete-light
 
 # Temporary
 # -------------------------------------------------------------------------------
