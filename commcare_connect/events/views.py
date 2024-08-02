@@ -1,5 +1,6 @@
 import django_tables2 as tables
 from dal.autocomplete import ModelSelect2
+from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django_filters import ChoiceFilter, FilterSet, ModelChoiceFilter
@@ -34,9 +35,24 @@ class EventListCreateView(ListCreateAPIView):
 
         serializer = self.get_serializer(data=request.data, many=True)
         serializer.is_valid(raise_exception=True)
+        try:
+            event_objects = [Event(**item) for item in serializer.validated_data]
+            Event.objects.bulk_create(event_objects)
+        except Exception as e:
+            # Bulk create failed, try saving each item individually
+            failed_items = []
 
-        event_objects = [Event(**item) for item in serializer.validated_data]
-        Event.objects.bulk_create(event_objects)
+            for item in serializer.validated_data:
+                try:
+                    with transaction.atomic():
+                        Event.objects.save(**item)
+                except Exception:
+                    failed_items.append((item, e))
+
+            if failed_items:
+                partial_error_response = {"error": "Some items could not be saved", "failed_items": failed_items}
+                headers = self.get_success_headers(serializer.data)
+                return Response(partial_error_response, status=status.HTTP_206_PARTIAL_CONTENT, headers=headers)
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
