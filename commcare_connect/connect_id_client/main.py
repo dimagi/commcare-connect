@@ -9,6 +9,7 @@ from commcare_connect.connect_id_client.models import (
     Message,
     MessagingBulkResponse,
     MessagingResponse,
+    UserInfo,
 )
 from commcare_connect.organization.models import Organization
 
@@ -65,6 +66,16 @@ def filter_users(country_code: str, credential: list[str]):
     response = _make_request(GET, "/users/filter_users", params=params)
     data = response.json()
     return [ConnectIdUser(**user_dict) for user_dict in data["found_users"]]
+
+
+def get_user_info(token: str) -> UserInfo:
+    # Returns userinfo for mobile user from ConnectID using access_token.
+    response = httpx.request(
+        GET, f"{settings.CONNECTID_URL}/o/userinfo/", headers={"Authorization": f"Bearer {token}"}
+    )
+    response.raise_for_status()
+    data = response.json()
+    return UserInfo(**data)
 
 
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
