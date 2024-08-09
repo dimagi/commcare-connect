@@ -40,6 +40,10 @@
             <a class="btn btn-warning btn-sm"
                href="{% url 'program:edit' org_slug=request.org.slug pk=program.id %}"><span
               class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span></a>
+            <a class="btn btn-primary btn-sm"
+               href="{% url 'program:opportunity_list' org_slug=request.org.slug pk=program.id %}">
+              <span class="bi bi-eye"></span><span class="d-none d-md-inline">&nbsp;View Opportunities</span>
+            </a>
           </div>
         </td>
       </tr>

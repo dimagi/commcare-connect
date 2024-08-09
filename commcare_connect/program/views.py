@@ -1,37 +1,45 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.views.generic import ListView, UpdateView
 
-from commcare_connect.program.forms import ProgramForm
-from commcare_connect.program.models import Program
+from commcare_connect.opportunity.views import OpportunityInit
+from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
+from commcare_connect.program.models import ManagedOpportunity, Program
 
 
-class SuperUserMixin(LoginRequiredMixin, UserPassesTestMixin):
+class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
-        return self.request.user.is_superuser
+        return (
+            self.request.org_membership is not None
+            and self.request.org_membership.is_admin
+            and self.request.org.program_manager
+        ) or self.request.user.is_superuser
 
 
-class ProgramList(SuperUserMixin, ListView):
+ALLOWED_ORDERINGS = {
+    "name": "name",
+    "-name": "-name",
+    "start_date": "start_date",
+    "-start_date": "-start_date",
+    "end_date": "end_date",
+    "-end_date": "-end_date",
+}
+
+
+class ProgramList(ProgramManagerMixin, ListView):
     model = Program
     paginate_by = 10
-    allowed_orderings = {
-        "name": "name",
-        "-name": "-name",
-        "start_date": "start_date",
-        "-start_date": "-start_date",
-        "end_date": "end_date",
-        "-end_date": "-end_date",
-    }
     default_ordering = "name"
 
     def get_queryset(self):
         ordering = self.request.GET.get("sort", self.default_ordering)
-        ordering = self.allowed_orderings.get(ordering, self.default_ordering)
+        ordering = ALLOWED_ORDERINGS.get(ordering, self.default_ordering)
         return Program.objects.all().order_by(ordering)
 
 
-class ProgramCreateOrUpdate(SuperUserMixin, UpdateView):
+class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
     model = Program
     form_class = ProgramForm
 
@@ -66,3 +74,42 @@ class ProgramCreateOrUpdate(SuperUserMixin, UpdateView):
         view = ("add", "edit")[self.object is not None]
         template = f"program/program_{view}.html"
         return template
+
+
+class ManagedOpportunityList(ProgramManagerMixin, ListView):
+    model = ManagedOpportunity
+    paginate_by = 10
+    default_ordering = "name"
+    template_name = "opportunity/opportunity_list.html"
+
+    def get_queryset(self):
+        ordering = self.request.GET.get("sort", self.default_ordering)
+        ordering = ALLOWED_ORDERINGS.get(ordering, self.default_ordering)
+        program_id = self.kwargs.get("pk")
+        return ManagedOpportunity.objects.filter(program_id=program_id).order_by(ordering)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["program_id"] = self.kwargs.get("pk")
+        context["opportunity_init_url"] = reverse(
+            "program:opportunity_init", kwargs={"org_slug": self.request.org.slug, "pk": self.kwargs.get("pk")}
+        )
+        return context
+
+
+class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
+    form_class = ManagedOpportunityInitForm
+    program = None
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            self.program = Program.objects.get(pk=self.kwargs.get("pk"))
+        except Program.DoesNotExist:
+            messages.error(request, "Program not found.")
+            return redirect(reverse("program:list", kwargs={"org_slug": request.org.slug}))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["program"] = self.program
+        return kwargs

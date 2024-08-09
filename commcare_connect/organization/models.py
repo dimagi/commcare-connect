@@ -14,6 +14,7 @@ class Organization(BaseModel):
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name="organizations", through="UserOrganizationMembership"
     )
+    program_manager = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.id:

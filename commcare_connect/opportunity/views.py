@@ -88,6 +88,7 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
+from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 
@@ -114,6 +115,11 @@ class OpportunityList(OrganizationUserMixin, ListView):
         if ordering not in ["name", "-name", "start_date", "-start_date", "end_date", "-end_date"]:
             ordering = "name"
         return Opportunity.objects.filter(organization=self.request.org).order_by(ordering)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opportunity_init_url"] = reverse("opportunity:init", kwargs={"org_slug": self.request.org.slug})
+        return context
 
 
 class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):
@@ -204,10 +210,14 @@ class OpportunityFinalize(OrganizationUserMemberRoleMixin, UpdateView):
         opportunity = self.object
         payment_units = opportunity.paymentunit_set.all()
         budget_per_user = 0
+        payment_units_max_total = 0
         for pu in payment_units:
             budget_per_user += pu.amount * pu.max_total
+            payment_units_max_total += pu.max_total
         kwargs["budget_per_user"] = budget_per_user
         kwargs["current_start_date"] = opportunity.start_date
+        kwargs["opportunity"] = opportunity
+        kwargs["payment_units_max_total"] = payment_units_max_total
         return kwargs
 
     def form_valid(self, form):
@@ -219,6 +229,11 @@ class OpportunityFinalize(OrganizationUserMemberRoleMixin, UpdateView):
             opportunity.end_date = end_date
         if start_date:
             opportunity.start_date = start_date
+
+        if opportunity.managed:
+            ManagedOpportunity.objects.filter(id=opportunity.id).update(
+                org_pay_per_visit=form.cleaned_data["org_pay_per_visit"]
+            )
         response = super().form_valid(form)
         return response
 

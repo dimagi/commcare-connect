@@ -15,7 +15,8 @@
           </button>
           {% else %}
           <a class="btn btn-primary"
-             href="{% url 'opportunity:init' org_slug=request.org.slug %}" title="Add new opportunity"><span
+             href="{{ opportunity_init_url }}"
+             title="Add new opportunity"><span
             class="bi bi-plus"></span> Add new
           </a>
           {% endif %}
@@ -56,24 +57,29 @@
                    href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.id %}">
                   <span class="bi bi-eye"></span><span class="d-none d-md-inline">&nbsp;View</span>
                 </a>
-              {% if request.org_membership.is_viewer %}
+                {% if request.org_membership.is_viewer %}
                 <button class="btn btn-warning btn-sm" disabled>
                   <span class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span>
                 </button>
+                {% if not opportunity.managed %}
                 <button class="btn btn-primary btn-sm" disabled>
                   <span class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
                 </button>
-              {% else %}
+                {% endif %}
+                {% else %}
                 <a class="btn btn-warning btn-sm"
                    href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span></a>
+                {% if not opportunity.managed %}
                 <a class="btn btn-primary btn-sm"
                    href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
                 </a>
-              {% endif %}
+                {% endif %}
+                {% endif %}
               </div>
             </td>
+
           </tr>
         {% empty %}
           <tr>
