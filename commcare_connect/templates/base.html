@@ -73,23 +73,27 @@
               <a class="nav-link {% active_link "account_logout" %}"
                  href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a>
             </li>
-            {% if request.org %}
-              <li class="nav-item dropdown">
-                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                   aria-expanded="false">
-                  {{ request.org.name }}
-                </a>
-                <ul class="dropdown-menu dropdown-menu-end bg-light">
-                  {% for membership in request.user.memberships.all %}
-                    <li>
-                      <a
-                        class="dropdown-item {% if request.org.slug == membership.organization.slug %} active {% endif %}"
-                        href="{% url 'opportunity:list' membership.organization.slug %}">{{ membership.organization.name }}</a>
-                    </li>
-                  {% endfor %}
-                </ul>
-              </li>
-            {% endif %}
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
+                 aria-expanded="false">
+              {% if request.org %}
+                {{ request.org.name }}
+              {% else %}
+                Select Organization
+              {% endif %}
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end bg-light">
+                {% for membership in request.user.memberships.all %}
+                  <li>
+                    <a
+                      class="dropdown-item {% if request.org.slug == membership.organization.slug %} active {% endif %}"
+                      href="{% url 'opportunity:list' membership.organization.slug %}">{{ membership.organization.name }}</a>
+                  </li>
+                {% endfor %}
+                  {% if request.org %}<li><hr class="dropdown-divider"></li>{% endif %}
+                  <li><a class="dropdown-item" href="{% url 'organization_create' %}">Add Organization</a></li>
+              </ul>
+            </li>
           {% else %}
             {% if ACCOUNT_ALLOW_REGISTRATION %}
               <li class="nav-item">

@@ -4,15 +4,18 @@ from decimal import Decimal
 from itertools import chain
 
 import pytest
+from django.utils.timezone import now
 from tablib import Dataset
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.opportunity.models import (
     CatchmentArea,
+    CompletedWork,
     CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
     Payment,
+    PaymentUnit,
     UserVisit,
     VisitValidationStatus,
 )
@@ -27,6 +30,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     _bulk_update_catchments,
+    _bulk_update_completed_work_status,
     _bulk_update_payments,
     _bulk_update_visit_status,
     get_status_by_visit_id,
@@ -48,10 +52,38 @@ def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
 
+    before_update = now()
     import_status = _bulk_update_visit_status(opportunity, dataset)
+    after_update = now()
+
     assert not import_status.missing_visits
-    after_status = set(UserVisit.objects.filter(opportunity=opportunity).values_list("status", flat=True))
-    assert after_status == {VisitValidationStatus.approved.value}
+
+    updated_visits = UserVisit.objects.filter(opportunity=opportunity)
+    for visit in updated_visits:
+        assert visit.status == VisitValidationStatus.approved.value
+        assert visit.status_modified_date is not None
+        assert before_update <= visit.status_modified_date <= after_update
+
+
+@pytest.mark.django_db
+def test_bulk_update_completed_work_status(opportunity: Opportunity, mobile_user: User):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    payment_unit = PaymentUnit.objects.get(opportunity=opportunity)
+    DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+
+    completed_works = CompletedWorkFactory.create_batch(5, opportunity_access=access, payment_unit=payment_unit)
+    dataset = Dataset(headers=["instance id", "payment approval", "rejected reason"])
+    dataset.extend([[work.id, CompletedWorkStatus.approved.value, ""] for work in completed_works])
+
+    before_update = now()
+    _bulk_update_completed_work_status(opportunity=opportunity, dataset=dataset)
+    after_update = now()
+
+    updated_work = CompletedWork.objects.filter(opportunity_access=access)
+    for work in updated_work:
+        assert work.status == CompletedWorkStatus.approved.value
+        assert work.status_modified_date is not None
+        assert before_update <= work.status_modified_date <= after_update
 
 
 @pytest.mark.django_db

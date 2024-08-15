@@ -9,19 +9,23 @@
       <tr>
           {% for column in table.columns %}
               <th {{ column.attrs.th.as_html }}
+                  {% if column.orderable %}
                   hx-get="{% querystring table.prefixed_order_by_field=column.order_by_alias.next%}&{{ table.prefixed_page_field }}=1"
+                  {% endif %}
                   hx-trigger="click"
                   hx-target="div.table-container"
                   hx-swap="outerHTML"
                   style="cursor: pointer;">
                   {{ column.header }}
-                  {% if column.order_by_alias == column.order_by_alias.next %}
-                  <i class="bi bi-arrow-down-short"></i>
-                  {% elif column.order_by_alias|slice:":1" == "-" %}
-                  <i class="bi bi-arrow-down-square-fill"></i>
-                  {% else %}
-                  <i class="bi bi-arrow-up-square-fill"></i>
-                  {% endif %}
+                  {% if column.orderable %}
+                    {% if column.order_by_alias == column.order_by_alias.next %}
+                    <i class="bi bi-arrow-down-short"></i>
+                    {% elif column.order_by_alias|slice:":1" == "-" %}
+                    <i class="bi bi-arrow-down-square-fill"></i>
+                    {% else %}
+                    <i class="bi bi-arrow-up-square-fill"></i>
+                    {% endif %}
+                  {% endif%}
               </th>
           {% endfor %}
       </tr>

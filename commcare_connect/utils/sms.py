@@ -23,7 +23,7 @@ def send_sms(to, body):
 
 
 def get_sms_sender(number):
-    SMS_SENDERS = {"+265": "ConnectID"}
+    SMS_SENDERS = {"+265": "ConnectID", "+258": "ConnectID"}
     for code, sender in SMS_SENDERS.items():
         if number.startswith(code):
             return sender

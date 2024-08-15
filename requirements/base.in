@@ -32,6 +32,7 @@ drf-spectacular
 django-tables2
 django-filter
 django-autocomplete-light
+django-htmx
 
 # Temporary
 # -------------------------------------------------------------------------------

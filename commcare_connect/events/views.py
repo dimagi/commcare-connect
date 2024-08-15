@@ -60,11 +60,12 @@ class EventListCreateView(ListCreateAPIView):
 
 class EventTable(tables.Table):
     date_created = tables.Column(verbose_name="Time")
+    metadata = tables.Column(verbose_name="Metadata", orderable=False)
 
     class Meta:
         model = Event
         template_name = "events/htmx_table.html"
-        fields = ("user", "opportunity", "event_type", "date_created")
+        fields = ("user", "opportunity", "event_type", "date_created", "metadata")
 
 
 class EventFilter(FilterSet):

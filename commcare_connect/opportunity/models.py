@@ -420,9 +420,16 @@ class CompletedWork(models.Model):
     reason = models.CharField(max_length=300, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
 
-    def update_status(self, status):
-        self.status = status
+    def __init__(self, *args, **kwargs):
+        self.status = CompletedWorkStatus.incomplete
         self.status_modified_date = now()
+        super().__init__(*args, **kwargs)
+
+    def __setattr__(self, name, value):
+        if name == "status":
+            if getattr(self, "status", None) != value:  # Check if status has changed
+                self.status_modified_date = now()
+        super().__setattr__(name, value)
 
     # TODO: add caching on this property
     @property
@@ -521,9 +528,16 @@ class UserVisit(XFormBaseModel):
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
 
-    def update_status(self, status):
-        self.status = status
+    def __init__(self, *args, **kwargs):
+        self.status = VisitValidationStatus.pending
         self.status_modified_date = now()
+        super().__init__(*args, **kwargs)
+
+    def __setattr__(self, name, value):
+        if name == "status":
+            if getattr(self, "status", None) != value:
+                self.status_modified_date = now()
+        super().__setattr__(name, value)
 
     @property
     def images(self):
