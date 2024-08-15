@@ -30,6 +30,48 @@ from commcare_connect.users.models import User
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 
+class OpportunityUserInviteForm(forms.Form):
+    def __init__(self, *args, **kwargs):
+        credentials = connect_id_client.fetch_credentials()
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Fieldset(
+                "",
+                Row(Field("users")),
+                Row(
+                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
+                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
+                ),
+            ),
+            Submit("submit", "Submit"),
+        )
+
+        self.fields["users"] = forms.CharField(
+            widget=forms.Textarea,
+            help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
+            required=False,
+        )
+        self.fields["filter_country"] = forms.CharField(
+            label="Filter By Country",
+            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
+            required=False,
+        )
+        self.fields["filter_credential"] = forms.CharField(
+            label="Filter By Credential",
+            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
+            required=False,
+        )
+        self.initial["filter_country"] = [""]
+        self.initial["filter_credential"] = [""]
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
+        return split_users
+
+
 class OpportunityChangeForm(forms.ModelForm):
     class Meta:
         model = Opportunity

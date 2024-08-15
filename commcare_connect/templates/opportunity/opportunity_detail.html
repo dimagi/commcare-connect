@@ -22,12 +22,21 @@
           <i class="bi bi-three-dots-vertical"></i>
         </button>
         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="opportunity_details_dropdown">
+          {% if object.managed and request.org == object.organization %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:user_invite' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-pencil-fill pe-2"></i> Invite Users
+            </a>
+          </li>
+          {% else %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}">
               <i class="bi bi-pencil-fill pe-2"></i> Edit
             </a>
           </li>
+          {% endif %}
           {% if not object.managed %}
           <li>
             <a class="dropdown-item"
