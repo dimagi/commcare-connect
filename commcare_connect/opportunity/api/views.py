@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from commcare_connect.events.models import Event
 from commcare_connect.opportunity.api.serializers import (
     CompletedWorkSerializer,
     DeliveryProgressSerializer,
@@ -101,6 +102,11 @@ class ClaimOpportunityView(APIView):
                 return Response("Failed to create user", status=400)
             cc_username = f"{self.request.user.username.lower()}@{domain}.commcarehq.org"
             ConnectIDUserLink.objects.create(commcare_username=cc_username, user=self.request.user, domain=domain)
+        Event(
+            event_type=Event.Type.JOB_CLAIMED,
+            user=opportunity_access.user,
+            opportunity=opportunity,
+        ).save()
         return Response(status=201)
 
 
@@ -119,4 +125,12 @@ class ConfirmPaymentView(APIView):
         payment.confirmed = confirmed
         payment.confirmation_date = now()
         payment.save()
+
+        Event(
+            event_type=Event.Type.PAYMENT_ACKNOWLEDGED,
+            user=payment.opportunity_access.user,
+            opportunity=payment.opportunity_access.opportunity,
+            metadata={"confirmed": confirmed},
+        ).save()
+
         return Response(status=200)

@@ -6,6 +6,7 @@ from geopy.distance import distance
 from jsonpath_ng import JSONPathError
 from jsonpath_ng.ext import parse
 
+from commcare_connect.events.models import Event
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
@@ -103,6 +104,15 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
 
         if not created:
             raise ProcessingError("Learn Module is already completed")
+        else:
+            Event(
+                event_type=Event.Type.MODULE_COMPLETED,
+                user=user,
+                opportunity=opportunity,
+                metadata={"module_name": module.name},
+            ).save()
+            if access.learn_progress == 100:
+                Event(event_type=Event.Type.ALL_MODULES_COMPLETED, user=user, opportunity=opportunity).save()
 
 
 def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
@@ -121,6 +131,7 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         # TODO: should this move to the opportunity to allow better re-use of the app?
         passing_score = app.passing_score
         access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
+        passed = score >= passing_score
         assessment, created = Assessment.objects.get_or_create(
             user=user,
             app=app,
@@ -131,7 +142,7 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
                 "date": xform.received_on,
                 "score": score,
                 "passing_score": passing_score,
-                "passed": score >= passing_score,
+                "passed": passed,
                 "app_build_id": xform.build_id,
                 "app_build_version": xform.metadata.app_build_version,
             },
@@ -139,6 +150,13 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
         if not created:
             return ProcessingError("Learn Assessment is already completed")
+        else:
+            Event(
+                event_type=Event.Type.ASSESSMENT_PASSED if passed else Event.Type.ASSESSMENT_FAILED,
+                user=user,
+                opportunity=opportunity,
+                metadata={"score": score, "passing_score": passing_score},
+            ).save()
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -229,6 +247,11 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
+    Event(
+        event_type=Event.Type.DELIVERY_FORM_SUBMITTED,
+        user=user,
+        opportunity=opportunity,
+    ).save()
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     counts = (

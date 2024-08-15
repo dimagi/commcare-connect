@@ -21,6 +21,7 @@ class Event(models.Model):
     event_type = models.CharField(max_length=40, db_index=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT, null=True)
+    metadata = models.JSONField()
 
     @classmethod
     @quickcache([], timeout=60 * 60)
