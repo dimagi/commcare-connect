@@ -1,4 +1,5 @@
 import django_tables2 as tables
+import sentry_sdk
 from dal.autocomplete import ModelSelect2
 from django.db import transaction
 from django.utils.decorators import method_decorator
@@ -12,15 +13,27 @@ from rest_framework.response import Response
 
 from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.views import OrganizationUserMixin
 from commcare_connect.users.models import User
 
 from .models import Event
 
 
 class EventSerializer(serializers.ModelSerializer):
+    uid = serializers.JSONField(write_only=True, required=False)
+
     class Meta:
         model = Event
-        fields = ["date_created", "event_type", "user", "opportunity"]
+        fields = ["date_created", "event_type", "user", "opportunity", "metadata", "uid"]
+
+    def to_internal_value(self, data):
+        # Extract the 'meta' field if present and remove it from the data
+        uid = data.pop("uid", None)
+
+        internal_value = super().to_internal_value(data)
+        internal_value["uid"] = uid
+
+        return internal_value
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -39,23 +52,26 @@ class EventListCreateView(ListCreateAPIView):
             event_objects = [Event(**item) for item in serializer.validated_data]
             Event.objects.bulk_create(event_objects)
         except Exception as e:
+            sentry_sdk.capture_exception(e)
             # Bulk create failed, try saving each item individually
             failed_items = []
 
             for item in serializer.validated_data:
+                uid = item.pop("uid")
                 try:
                     with transaction.atomic():
-                        Event.objects.save(**item)
-                except Exception:
-                    failed_items.append((item, e))
+                        Event(**item).save()
+                except Exception as e:
+                    sentry_sdk.capture_exception(e)
+                    failed_items.append(uid)
 
             if failed_items:
-                partial_error_response = {"error": "Some items could not be saved", "failed_items": failed_items}
+                partial_error_response = {"success": False, "failed_items": failed_items}
                 headers = self.get_success_headers(serializer.data)
-                return Response(partial_error_response, status=status.HTTP_206_PARTIAL_CONTENT, headers=headers)
+                return Response(partial_error_response, status=status.HTTP_201_CREATED, headers=headers)
 
         headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        return Response({"success": True}, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class EventTable(tables.Table):
@@ -98,7 +114,7 @@ class EventFilter(FilterSet):
             return queryset
 
 
-class EventListView(tables.SingleTableMixin, FilterView):
+class EventListView(tables.SingleTableMixin, OrganizationUserMixin, FilterView):
     table_class = EventTable
     queryset = Event.objects.all()
     filterset_class = EventFilter
