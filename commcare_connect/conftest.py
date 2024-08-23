@@ -15,6 +15,7 @@ from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
     MobileUserFactory,
     OrgWithUsersFactory,
+    ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
 
@@ -105,3 +106,18 @@ def org_user_member(organization) -> User:
 @pytest.fixture
 def org_user_admin(organization) -> User:
     return organization.memberships.filter(role="admin").first().user
+
+
+@pytest.fixture
+def program_manager_org(db) -> Organization:
+    return ProgramManagerOrgWithUsersFactory()
+
+
+@pytest.fixture
+def program_manager_org_user_member(program_manager_org) -> User:
+    return program_manager_org.memberships.filter(role="member").first().user
+
+
+@pytest.fixture
+def program_manager_org_user_admin(program_manager_org) -> User:
+    return program_manager_org.memberships.filter(role="admin").first().user

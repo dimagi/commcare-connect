@@ -58,6 +58,7 @@ class Opportunity(BaseModel):
         on_delete=models.CASCADE,
         related_name="opportunities",
         related_query_name="opportunity",
+        null=True,
     )
     name = models.CharField(max_length=255)
     description = models.TextField()
@@ -88,6 +89,7 @@ class Opportunity(BaseModel):
     auto_approve_payments = models.BooleanField(default=True)
     is_test = models.BooleanField(default=True)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
+    managed = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -503,6 +505,12 @@ class CompletedWork(models.Model):
         return visit.visit_date if visit else None
 
 
+class VisitReviewStatus(models.TextChoices):
+    pending = "pending", gettext("Pending")
+    approved = "approved", gettext("Approved")
+    rejected = "rejected", gettext("Rejected")
+
+
 class UserVisit(XFormBaseModel):
     opportunity = models.ForeignKey(
         Opportunity,
@@ -527,6 +535,10 @@ class UserVisit(XFormBaseModel):
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
+    review_status = models.CharField(
+        max_length=50, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
+    )
+    review_created_on = models.DateTimeField(blank=True, null=True)
 
     def __init__(self, *args, **kwargs):
         self.status = VisitValidationStatus.pending

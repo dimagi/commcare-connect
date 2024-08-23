@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.utils.timezone import now
 from tablib import Dataset
 
 from commcare_connect.opportunity.models import (
@@ -131,6 +132,8 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
 
                 if visit.status != status:
                     visit.status = status
+                    if opportunity.managed and status in ["approved", "rejected"]:
+                        visit.review_created_on = now()
                     changed = True
 
                 if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
@@ -141,7 +144,9 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                     to_update.append(visit)
                 user_ids.add(visit.user_id)
 
-            UserVisit.objects.bulk_update(to_update, fields=["status", "reason", "status_modified_date"])
+            UserVisit.objects.bulk_update(
+                to_update, fields=["status", "reason", "status_modified_date", "review_created_on"]
+            )
             missing_visits |= set(visit_batch) - seen_visits
     update_payment_accrued(opportunity, users=user_ids)
 

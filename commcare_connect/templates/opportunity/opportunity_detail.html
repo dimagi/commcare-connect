@@ -28,6 +28,7 @@
               <i class="bi bi-pencil-fill pe-2"></i> Edit
             </a>
           </li>
+          {% if not object.managed %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}">
@@ -35,11 +36,30 @@
               Add Budget
             </a>
           </li>
+          {% endif %}
+          {% if object.managed and request.org_membership.is_admin and request.org_membership.program_manager or request.user.is_superuser %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url "program:opportunity_application_list" org_slug=request.org.slug pk=opportunity.managedopportunity.program.id opp_id=opportunity.pk %}">
+              <i class="bi bi-building-fill-add pe-2"></i>
+             {% translate "View Application" %}
+            </a>
+          </li>
+           {% endif %}
+          {% if object.managed %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">
+              <i class="bi bi-clipboard2-data-fill pe-2"></i>
+             {% translate "Review User Visits" %}
+            </a>
+          </li>
+          {% endif %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:add_payment_unit' org_slug=request.org.slug pk=opportunity.id %}">
               <i class="bi bi-plus-circle-fill pe-2"></i>
-              Add Payment Unit
+              {% translate "Add Payment Unit" %}
             </a>
           </li>
           {% if request.org_membership.is_admin %}
@@ -531,4 +551,5 @@
     </div>
   </div>
 </div>
+
 {% endblock modal %}

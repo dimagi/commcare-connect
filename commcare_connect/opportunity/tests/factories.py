@@ -208,3 +208,11 @@ class CatchmentAreaFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.CatchmentArea"
+
+
+class DeliveryTypeFactory(DjangoModelFactory):
+    name = Faker("name")
+    description = Faker("text", max_nb_chars=200)
+
+    class Meta:
+        model = "opportunity.DeliveryType"

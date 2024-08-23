@@ -362,6 +362,44 @@ class CatchmentAreaTable(tables.Table):
         )
 
 
+class UserVisitReviewTable(tables.Table):
+    pk = columns.CheckBoxColumn(
+        accessor="pk",
+        verbose_name="",
+        attrs={
+            "input": {"x-model": "selected"},
+            "th__input": {"@click": "toggleSelectAll()", "x-bind:checked": "selectAll"},
+        },
+    )
+    username = columns.Column(accessor="user__username", verbose_name="Username")
+    name = columns.Column(accessor="user__name", verbose_name="Name of the User")
+    reason = columns.Column(verbose_name="Justification")
+    visit_date = columns.Column()
+    created_on = columns.Column(accessor="review_created_on", verbose_name="Review Requested On")
+    review_status = columns.Column()
+    user_visit = columns.LinkColumn(
+        "opportunity:visit_verification",
+        verbose_name="User Visit",
+        text="View",
+        args=[utils.A("opportunity__organization__slug"), utils.A("pk")],
+    )
+
+    class Meta:
+        model = UserVisit
+        orderable = False
+        fields = (
+            "pk",
+            "username",
+            "name",
+            "status",
+            "reason",
+            "visit_date",
+            "review_status",
+            "created_on",
+            "user_visit",
+        )
+
+
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):
     return format_html(
         "<span class='{}' data-bs-toggle='tooltip' data-bs-placement='{}' data-bs-title='{}' {}>{}</span>",

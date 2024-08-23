@@ -51,4 +51,4 @@ class UserSocialSignupForm(SocialSignupForm):
 class OrganizationCreationForm(forms.ModelForm):
     class Meta:
         model = Organization
-        fields = ["name"]
+        fields = ["name", "program_manager"]

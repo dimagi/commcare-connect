@@ -1,8 +1,17 @@
-{% extends "opportunity/base.html" %}
+{% extends base_template %}
 {% load static %}
 {% load sort_link %}
-
+{% load i18n %}
 {% block title %}{{ request.org }} - Opportunities{% endblock %}
+
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+  {% if program %}
+    <li class="breadcrumb-item active" aria-current="page">{{ program.name }}</li>
+  {% endif %}
+{% endblock %}
+
+
 
 {% block content %}
   <div class="container bg-white shadow">
@@ -15,7 +24,8 @@
           </button>
           {% else %}
           <a class="btn btn-primary"
-             href="{% url 'opportunity:init' org_slug=request.org.slug %}" title="Add new opportunity"><span
+             href="{{ opportunity_init_url }}"
+             title="Add new opportunity"><span
             class="bi bi-plus"></span> Add new
           </a>
           {% endif %}
@@ -56,80 +66,91 @@
                    href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.id %}">
                   <span class="bi bi-eye"></span><span class="d-none d-md-inline">&nbsp;View</span>
                 </a>
-              {% if request.org_membership.is_viewer %}
+                {% if request.org_membership.is_viewer %}
                 <button class="btn btn-warning btn-sm" disabled>
                   <span class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span>
                 </button>
+                {% if not opportunity.managed %}
                 <button class="btn btn-primary btn-sm" disabled>
                   <span class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
                 </button>
-              {% else %}
+                {% endif %}
+                {% else %}
                 <a class="btn btn-warning btn-sm"
                    href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-pen"></span><span class="d-none d-md-inline">&nbsp;Edit</span></a>
+                {% if not opportunity.managed %}
                 <a class="btn btn-primary btn-sm"
                    href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}"><span
                   class="bi bi-plus"></span><span class="d-none d-md-inline">&nbsp;Add Budget</span>
                 </a>
-              {% endif %}
+                {% endif %}
+                {% endif %}
               </div>
             </td>
+
           </tr>
         {% empty %}
           <tr>
-            <td colspan="3">No opportunities yet.</td>
+            <td colspan="3">{% translate "No opportunities yet." %}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
-
-
-    {% if page_obj.has_other_pages %}
-      <nav aria-label="Page navigation">
-        <ul class="pagination justify-content-center">
-          {% if page_obj.has_previous %}
-            <li class="page-item">
-              <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
-                <span aria-hidden="true">&laquo;</span>
-              </a>
-            </li>
-          {% else %}
-            <li class="page-item disabled">
-              <a class="page-link">
-                <span aria-hidden="true">&laquo;</span>
-              </a>
-            </li>
-          {% endif %}
-
-          {% for page_number in page_obj.paginator.page_range %}
-            {% if page_obj.number == page_number %}
-              <li class="page-item active">
-                {% else %}
-              <li class="page-item">
-            {% endif %}
-          <a class="page-link" href="?{% update_query_params page=page_number %}">
-            {{ page_number }}
-          </a>
-          </li>
-          {% endfor %}
-
-          {% if page_obj.has_next %}
-            <li class="page-item">
-              <a class="page-link"
-                 href="?page={{ page_obj.next_page_number }}" aria-label="Next">
-                <span aria-hidden="true">&raquo;</span>
-              </a>
-            </li>
-          {% else %}
-            <li class="page-item disabled">
-              <a class="page-link">
-                <span aria-hidden="true">&raquo;</span>
-              </a>
-            </li>
-          {% endif %}
-        </ul>
-      </nav>
-    {% endif %}
+    {% include 'pagination.html' %}
   </div>
+
+{% if opportunity_invitations %}
+<div class="container bg-white shado mb-5">
+  <div class="mt-5 py-3">
+    <h2>{% translate "Opportunity Invitations" %}</h2>
+  </div>
+  <div class="pb-4">
+    <table class="table border table-responsive">
+      <thead class="table-light">
+      <tr>
+        <th>{% translate "Name" %}</th>
+        <th>{% translate "Start Date" %}</th>
+        <th>{% translate "End Date" %}</th>
+        <th>{% translate "Status" %}</th>
+        <th>{% translate "Manage" %}</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for invitation in opportunity_invitations %}
+      <tr>
+        <td>{{ invitation.managed_opportunity.name }}</td>
+        <td>{{ invitation.managed_opportunity.start_date|default:"Not Set" }}</td>
+        <td>{{ invitation.managed_opportunity.end_date|default:"Not Set" }}</td>
+        <td>
+          {% if invitation.managed_opportunity.is_setup_complete %}
+          {% if invitation.managed_opportunity.is_active %}
+          <span class="badge bg-success rounded-pill">{% translate "Active" %}</span>
+          {% else %}
+          <span class="badge bg-secondary text-white rounded-pill">{% translate "Inactive" %}</span>
+          {% endif %}
+          {% else %}
+          <span class="badge bg-warning text-white rounded-pill">{% translate "Pending Setup" %}</span>
+          {% endif %}
+        </td>
+        <td width="300">
+          <div>
+            <form
+              action="{% url 'opportunity:apply_opportunity_invite' org_slug=request.org.slug pk=invitation.managed_opportunity.id application_id=invitation.id %}"
+              method="post" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary btn-sm">
+                <span class="bi bi-check-circle-fill"></span><span class="d-none d-md-inline">&nbsp;{% translate "Apply" %}</span>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% endblock content %}

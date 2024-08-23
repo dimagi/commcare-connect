@@ -6,7 +6,7 @@ from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Q, TextChoices
+from django.db.models import Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
 
@@ -24,6 +24,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
@@ -118,6 +119,8 @@ class OpportunityChangeForm(forms.ModelForm):
 
 
 class OpportunityInitForm(forms.ModelForm):
+    managed_opp = False
+
     class Meta:
         model = Opportunity
         fields = [
@@ -234,7 +237,12 @@ class OpportunityInitForm(forms.ModelForm):
         )
         self.instance.created_by = self.user.email
         self.instance.modified_by = self.user.email
-        self.instance.organization = organization
+
+        # In the case of a managed opportunity, the organization will be null initially,
+        # as it will be set to the network manager's organization when the invitation is accepted.
+        if not self.managed_opp:
+            self.instance.organization = organization
+
         api_key, _ = HQApiKey.objects.get_or_create(user=self.user, api_key=self.cleaned_data["api_key"])
         self.instance.api_key = api_key
         super().save(commit=commit)
@@ -256,7 +264,9 @@ class OpportunityFinalizeForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        budget_per_user = kwargs.pop("budget_per_user")
+        self.budget_per_user = kwargs.pop("budget_per_user")
+        self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
+        self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
@@ -268,10 +278,32 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
             ),
             Field("end_date"),
-            Field("max_users", oninput=f"id_total_budget.value = {budget_per_user} * parseInt(this.value || 0)"),
+            Field(
+                "max_users",
+                oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
+                f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
+                f"* parseInt(this.value || 0)",
+            ),
             Field("total_budget", readonly=True, wrapper_class="form-group col-md-4 mb-0"),
             Submit("submit", "Submit"),
         )
+
+        if self.opportunity.managed:
+            self.helper.layout.fields.insert(
+                -2,
+                Row(
+                    Field(
+                        "org_pay_per_visit",
+                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
+                        f"* parseInt(this.value || 0)) "
+                        f"* parseInt(document.getElementById('id_max_users')?.value || 0)",
+                    )
+                ),
+            )
+            self.fields["org_pay_per_visit"] = forms.IntegerField(
+                required=True, widget=forms.NumberInput(attrs={"class": "form-control"})
+            )
+
         self.fields["max_users"] = forms.IntegerField()
         self.fields["start_date"].disabled = self.is_start_date_readonly
         self.fields["total_budget"].widget.attrs.update({"class": "form-control-plaintext"})
@@ -289,6 +321,23 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 self.add_error("start_date", "Start date should be today or latter")
             if start_date >= end_date:
                 self.add_error("end_date", "End date must be after start date")
+
+            if self.opportunity.managed:
+                managed_opportunity = self.opportunity.managedopportunity
+                program = managed_opportunity.program
+                if not (program.start_date <= start_date <= program.end_date):
+                    self.add_error("start_date", "Start date must be within the program's start and end dates.")
+
+                if not (program.start_date <= end_date <= program.end_date):
+                    self.add_error("end_date", "End date must be within the program's start and end dates.")
+
+                total_budget_sum = (
+                    ManagedOpportunity.objects.filter(program=program).aggregate(total=Sum("total_budget"))["total"]
+                    or 0
+                )
+                if total_budget_sum + cleaned_data["total_budget"] > program.budget:
+                    self.add_error("total_budget", "Budget exceeds the program budget.")
+
             return cleaned_data
 
 
