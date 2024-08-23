@@ -1112,7 +1112,7 @@ def opportunity_user_invite(request, org_slug=None, pk=None):
         filter_country = form.cleaned_data["filter_country"]
         filter_credential = form.cleaned_data["filter_credential"]
         if users or filter_country or filter_credential:
-            add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
+            add_connect_users.delay(users, opportunity.id, filter_country, filter_credential)
         return redirect("opportunity:detail", request.org.slug, pk)
     return render(
         request,
