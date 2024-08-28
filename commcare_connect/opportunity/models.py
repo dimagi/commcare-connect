@@ -506,9 +506,9 @@ class CompletedWork(models.Model):
 
 
 class VisitReviewStatus(models.TextChoices):
-    pending = "pending", gettext("Pending")
-    approved = "approved", gettext("Approved")
-    rejected = "rejected", gettext("Rejected")
+    pending = "pending", gettext("Pending Review")
+    agree = "agree", gettext("Agree")
+    disagree = "disagree", gettext("Disagree")
 
 
 class UserVisit(XFormBaseModel):

@@ -851,10 +851,14 @@ def visit_verification(request, org_slug=None, pk=None):
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
     user_visit.status = VisitValidationStatus.approved
+    if user_visit.opportunity.managed:
+        user_visit.review_created_on = now()
     user_visit.save()
     opp_id = user_visit.opportunity_id
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=opp_id)
     update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    if user_visit.opportunity.managed:
+        return redirect("opportunity:user_visit_review", org_slug, pk)
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity.id, pk=access.id)
 
 
@@ -865,9 +869,13 @@ def reject_visit(request, org_slug=None, pk=None):
     reason = request.POST.get("reason")
     user_visit.status = VisitValidationStatus.rejected
     user_visit.reason = reason
+    if user_visit.opportunity.managed:
+        user_visit.review_created_on = now()
     user_visit.save()
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=user_visit.opportunity_id)
     update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    if user_visit.opportunity.managed:
+        return redirect("opportunity:user_visit_review", org_slug, pk)
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity_id, pk=access.id)
 
 
@@ -1080,9 +1088,9 @@ def apply_opportunity_invite(request, application_id, org_slug=None, pk=None):
 
 @org_member_required
 def user_visit_review(request, org_slug, opp_id):
-    opportunity = get_object_or_404(ManagedOpportunity, pk=opp_id)
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
     if not opportunity.managed:
-        return Http404
+        return redirect("opportunity:detail", org_slug, opp_id)
     is_program_manager = request.org_membership.is_admin and request.org.program_manager
     user_visit_reviews = UserVisit.objects.filter(opportunity=opportunity, review_created_on__isnull=False).order_by(
         "visit_date"

@@ -135,10 +135,7 @@
     </dl>
     {% endif %}
     <div id="action-buttons" style="margin-bottom: 25px;">
-      {% if request.org_membership.is_viewer %}
-        <button class="btn btn-success" disabled>Approve</button>
-        <button class="btn btn-danger" disabled>Reject</button>
-      {% else %}
+      {% if not object.managed and not request.org.is_program_manager %}
         <a class="btn btn-success" href="{% url 'opportunity:approve_visit' org_slug=request.org.slug pk=visit.id  %}" role="button">Approve</a>
         <button class="btn btn-danger" role="button" data-bs-toggle="modal" data-bs-target="#user-visit-reject-modal">Reject</a>
       {% endif %}
