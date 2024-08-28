@@ -137,7 +137,7 @@ class OpportunityChangeForm(forms.ModelForm):
             widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
             required=False,
         )
-        self.initial["end_date"] = self.instance.end_date.isoformat()
+        self.initial["end_date"] = self.instance.end_date.isoformat() if self.instance.end_date else None
         self.initial["filter_country"] = [""]
         self.initial["filter_credential"] = [""]
         self.currently_active = self.instance.active
