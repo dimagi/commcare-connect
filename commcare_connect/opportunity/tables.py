@@ -196,12 +196,7 @@ class UserStatusTable(tables.Table):
 
 class PaymentUnitTable(tables.Table):
     deliver_units = columns.Column("Deliver Units")
-    details = columns.LinkColumn(
-        "opportunity:edit_payment_unit",
-        verbose_name="",
-        text="Edit",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
 
     class Meta:
         model = PaymentUnit
@@ -209,9 +204,20 @@ class PaymentUnitTable(tables.Table):
         empty_text = "No payment units for this opportunity."
         orderable = False
 
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug")
+        super().__init__(*args, **kwargs)
+
     def render_deliver_units(self, record):
         deliver_units = "".join([f"<li>{d.name}</li>" for d in record.deliver_units.all()])
         return mark_safe(f"<ul>{deliver_units}</ul>")
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:edit_payment_unit",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">Edit</a>')
 
 
 class DeliverStatusTable(tables.Table):

@@ -551,7 +551,7 @@ def add_payment_unit(request, org_slug=None, pk=None):
 
 @org_member_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=request.org.slug)
+    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
     payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=opportunity)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
@@ -613,6 +613,11 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, SingleTableView):
         opportunity_id = self.kwargs["pk"]
         opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
         return PaymentUnit.objects.filter(opportunity=opportunity).order_by("name")
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
 
 
 @org_member_required
