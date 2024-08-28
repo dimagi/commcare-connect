@@ -551,7 +551,7 @@ def add_payment_unit(request, org_slug=None, pk=None):
 
 @org_member_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=opp_id)
+    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=request.org.slug)
     payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=opportunity)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
