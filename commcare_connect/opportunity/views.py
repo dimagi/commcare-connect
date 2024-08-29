@@ -311,7 +311,7 @@ class OpportunityPaymentTableView(OrganizationUserMixin, SingleTableView):
 
     def get_queryset(self):
         opportunity_id = self.kwargs["pk"]
-        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         return OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
             "-payment_accrued"
         )
@@ -332,7 +332,7 @@ class UserPaymentsTableView(OrganizationUserMixin, SingleTableView):
 
     def get_queryset(self):
         opportunity_id = self.kwargs["opp_id"]
-        self.opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        self.opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         access_id = self.kwargs["pk"]
         self.access = get_object_or_404(OpportunityAccess, opportunity=self.opportunity, pk=access_id)
         return Payment.objects.filter(opportunity_access=self.access).order_by("-date_paid")
@@ -348,7 +348,7 @@ class OpportunityUserLearnProgress(OrganizationUserMixin, DetailView):
 @org_member_required
 def export_user_visits(request, **kwargs):
     opportunity_id = kwargs["pk"]
-    get_object_or_404(Opportunity, organization=request.org, id=opportunity_id)
+    get_opportunity_or_404(org_slug=kwargs["org_slug"], pk=opportunity_id)
     form = VisitExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -391,7 +391,7 @@ def download_export(request, org_slug, task_id):
     task_meta = AsyncResult(task_id)._get_task_meta()
     saved_filename = task_meta.get("result")
     opportunity_id = task_meta.get("args")[0]
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=opportunity_id)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
     op_slug = slugify(opportunity.name)
     export_format = saved_filename.split(".")[-1]
     filename = f"{org_slug}_{op_slug}_export.{export_format}"
@@ -405,7 +405,7 @@ def download_export(request, org_slug, task_id):
 @org_member_required
 @require_POST
 def update_visit_status_import(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("visits")
     try:
         status = bulk_update_visit_status(opportunity, file)
@@ -423,7 +423,7 @@ def update_visit_status_import(request, org_slug=None, pk=None):
 
 @org_member_required
 def add_budget_existing_users(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
     form = AddBudgetExistingUsersForm(opportunity_claims=opportunity_claims)
@@ -465,7 +465,7 @@ class OpportunityUserStatusTableView(OrganizationUserMixin, SingleTableView):
 
     def get_queryset(self):
         opportunity_id = self.kwargs["pk"]
-        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         access_objects = get_annotated_opportunity_access(opportunity)
         return access_objects
 
@@ -473,7 +473,7 @@ class OpportunityUserStatusTableView(OrganizationUserMixin, SingleTableView):
 @org_member_required
 def export_users_for_payment(request, **kwargs):
     opportunity_id = kwargs["pk"]
-    get_object_or_404(Opportunity, organization=request.org, id=opportunity_id)
+    get_opportunity_or_404(org_slug=kwargs["org_slug"], pk=opportunity_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -488,7 +488,7 @@ def export_users_for_payment(request, **kwargs):
 @org_member_required
 @require_POST
 def payment_import(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("payments")
     try:
         status = bulk_update_payment_status(opportunity, file)
@@ -503,14 +503,14 @@ def payment_import(request, org_slug=None, pk=None):
 @org_member_required
 def add_payment_units(request, org_slug=None, pk=None):
     if request.POST:
-        return add_payment_unit(request, org_slug=request.org, pk=pk)
-    opportunity = get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
+        return add_payment_unit(request, org_slug=org_slug, pk=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     return render(request, "opportunity/add_payment_units.html", dict(opportunity=opportunity))
 
 
 @org_member_required
 def add_payment_unit(request, org_slug=None, pk=None):
-    opportunity = get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=opportunity.deliver_app
     )
@@ -611,7 +611,7 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, SingleTableView):
 
     def get_queryset(self):
         opportunity_id = self.kwargs["pk"]
-        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         return PaymentUnit.objects.filter(opportunity=opportunity).order_by("name")
 
     def get_table_kwargs(self):
@@ -623,7 +623,7 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, SingleTableView):
 @org_member_required
 def export_user_status(request, **kwargs):
     opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opportunity_id)
+    get_opportunity_or_404(org_slug=kwargs["org_slug"], pk=opportunity_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -643,7 +643,7 @@ class OpportunityDeliverStatusTable(OrganizationUserMixin, SingleTableView):
 
     def get_queryset(self):
         opportunity_id = self.kwargs["pk"]
-        opportunity = get_opportunity_or_404(pk=opportunity_id, org_slug=self.request.org.slug)
+        opportunity = get_opportunity_or_404(pk=opportunity_id, org_slug=self.kwargs["org_slug"])
         access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
         return access_objects
 
@@ -651,7 +651,7 @@ class OpportunityDeliverStatusTable(OrganizationUserMixin, SingleTableView):
 @org_member_required
 def export_deliver_status(request, **kwargs):
     opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(pk=opportunity_id, org_slug=request.org.slug)
+    get_opportunity_or_404(pk=opportunity_id, org_slug=kwargs["org_slug"])
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -665,7 +665,7 @@ def export_deliver_status(request, **kwargs):
 
 @org_viewer_required
 def user_visits_list(request, org_slug=None, opp_id=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=request.org.slug)
+    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
     opportunity_access = get_object_or_404(OpportunityAccess, pk=pk, opportunity=opportunity)
     user_visits = opportunity_access.uservisit_set.order_by("visit_date")
     user_visits_table = UserVisitTable(user_visits)
@@ -679,7 +679,7 @@ def user_visits_list(request, org_slug=None, opp_id=None, pk=None):
 @org_member_required
 @require_POST
 def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, pk=opp_id)
+    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
     opportunity_access = get_object_or_404(OpportunityAccess, pk=access_id, opportunity=opportunity)
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, pk=pk)
     payment.delete()
@@ -748,7 +748,7 @@ def user_profile(request, org_slug=None, opp_id=None, pk=None):
 
 @org_admin_required
 def send_message_mobile_users(request, org_slug=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=pk, org_slug=request.org.slug)
+    opportunity = get_opportunity_or_404(pk=pk, org_slug=org_slug)
     user_ids = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).values_list(
         "user_id", flat=True
     )
@@ -893,7 +893,7 @@ def fetch_attachment(self, org_slug, blob_id):
 
 @org_member_required
 def verification_flags_config(request, org_slug=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=pk, org_slug=request.org.slug)
+    opportunity = get_opportunity_or_404(pk=pk, org_slug=org_slug)
     verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=opportunity).first()
     form = OpportunityVerificationFlagsConfigForm(instance=verification_flags, data=request.POST or None)
     deliver_unit_count = DeliverUnit.objects.filter(app=opportunity.deliver_app).count()
@@ -973,7 +973,7 @@ class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
 
     def get_queryset(self):
         opportunity_id = self.kwargs["pk"]
-        opportunity = get_object_or_404(Opportunity, organization=self.request.org, id=opportunity_id)
+        opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         access_objects = OpportunityAccess.objects.filter(opportunity=opportunity)
         return list(
             filter(lambda cw: cw.completed, CompletedWork.objects.filter(opportunity_access__in=access_objects))
@@ -983,7 +983,7 @@ class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
 @org_member_required
 def export_completed_work(request, **kwargs):
     opportunity_id = kwargs["pk"]
-    get_object_or_404(Opportunity, organization=request.org, id=opportunity_id)
+    get_opportunity_or_404(org_slug=kwargs["org_slug"], pk=opportunity_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -998,7 +998,7 @@ def export_completed_work(request, **kwargs):
 @org_member_required
 @require_POST
 def update_completed_work_status_import(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("visits")
     try:
         status = bulk_update_completed_work_status(opportunity, file)
@@ -1039,7 +1039,7 @@ def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
 
 @org_member_required
 def suspended_users_list(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=True)
     table = SuspendedUsersTable(access_objects)
     return render(request, "opportunity/suspended_users.html", dict(table=table, opportunity=opportunity))
@@ -1048,7 +1048,7 @@ def suspended_users_list(request, org_slug=None, pk=None):
 @org_member_required
 def export_catchment_area(request, **kwargs):
     opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(pk=opportunity_id, org_slug=request.org.slug)
+    get_opportunity_or_404(org_slug=kwargs["org_slug"], pk=opportunity_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -1063,7 +1063,7 @@ def export_catchment_area(request, **kwargs):
 @org_member_required
 @require_POST
 def import_catchment_area(request, org_slug=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=pk, org_slug=request.org.slug)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("catchments")
     try:
         status = bulk_update_catchments(opportunity, file)
