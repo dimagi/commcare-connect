@@ -137,11 +137,19 @@
         <td width="300">
           <div>
             <form
-              action="{% url 'opportunity:apply_opportunity_invite' org_slug=request.org.slug pk=invitation.managed_opportunity.id application_id=invitation.id %}"
-              method="post" style="display:inline;">
+              action="{% url 'opportunity:apply_or_decline_application' org_slug=request.org.slug pk=invitation.managed_opportunity.id application_id=invitation.id action='apply' %}"
+              method="post" class="d-inline">
               {% csrf_token %}
               <button type="submit" class="btn btn-primary btn-sm">
                 <span class="bi bi-check-circle-fill"></span><span class="d-none d-md-inline">&nbsp;{% translate "Apply" %}</span>
+              </button>
+            </form>
+            <form
+              action="{% url 'opportunity:apply_or_decline_application' org_slug=request.org.slug pk=invitation.managed_opportunity.id application_id=invitation.id action='decline' %}"
+              method="post"  class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-warning btn-sm">
+                <span class="bi bi bi-x-square-fill"></span><span class="d-none d-md-inline">&nbsp;{% translate "Decline" %}</span>
               </button>
             </form>
           </div>

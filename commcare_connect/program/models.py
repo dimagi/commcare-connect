@@ -38,6 +38,7 @@ class ManagedOpportunityApplicationStatus(models.TextChoices):
     APPLIED = "applied", _("Applied")
     ACCEPTED = "accepted", _("Accepted")
     REJECTED = "rejected", _("Rejected")
+    DECLINED = "declined", _("Declined")
 
 
 class ManagedOpportunityApplication(BaseModel):

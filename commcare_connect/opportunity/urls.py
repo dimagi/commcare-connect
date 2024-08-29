@@ -18,7 +18,7 @@ from commcare_connect.opportunity.views import (
     add_budget_existing_users,
     add_payment_unit,
     add_payment_units,
-    apply_opportunity_invite,
+    apply_or_decline_application,
     approve_visit,
     delete_form_json_rule,
     download_export,
@@ -105,7 +105,9 @@ urlpatterns = [
     path("<int:pk>/catchment_area_export/", view=export_catchment_area, name="catchment_area_export"),
     path("<int:pk>/catchment_area_import/", view=import_catchment_area, name="catchment_area_import"),
     path(
-        "<int:pk>/invite/<int:application_id>/apply/", view=apply_opportunity_invite, name="apply_opportunity_invite"
+        "<int:pk>/application/<int:application_id>/<str:action>/",
+        view=apply_or_decline_application,
+        name="apply_or_decline_application",
     ),
     path("<int:pk>/user_invite/", view=opportunity_user_invite, name="user_invite"),
     path("<int:opp_id>/user_visit_review", user_visit_review, name="user_visit_review"),

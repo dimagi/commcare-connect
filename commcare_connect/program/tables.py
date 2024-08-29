@@ -30,22 +30,41 @@ class OpportunityInvitationTable(tables.Table):
     )
 
     def render_manage(self, record):
-        url = reverse(
-            "opportunity:apply_opportunity_invite",
+        apply_url = reverse(
+            "opportunity:apply_or_decline_application",
             kwargs={
                 "org_slug": self.context["request"].org.slug,
                 "pk": record.managed_opportunity.id,
                 "application_id": record.id,
+                "action": "apply",
             },
         )
-        button = {
-            "post": True,
-            "url": url,
-            "text": "Apply",
-            "color": "primary",
-            "icon": "bi bi-check-circle-fill",
-        }
-        return get_manage_buttons_html([button], self.context["request"])
+        decline_url = reverse(
+            "opportunity:apply_or_decline_application",
+            kwargs={
+                "org_slug": self.context["request"].org.slug,
+                "pk": record.managed_opportunity.id,
+                "application_id": record.id,
+                "action": "decline",
+            },
+        )
+        buttons = [
+            {
+                "post": True,
+                "url": apply_url,
+                "text": "Apply",
+                "color": "primary",
+                "icon": "bi bi-check-circle-fill",
+            },
+            {
+                "post": True,
+                "url": decline_url,
+                "text": "Decline",
+                "color": "warning",
+                "icon": "bi bi-x-square-fill",
+            },
+        ]
+        return get_manage_buttons_html(buttons, self.context["request"])
 
     class Meta:
         model = ManagedOpportunityApplication
@@ -57,9 +76,9 @@ class OpportunityInvitationTable(tables.Table):
 
 
 class ManagedOpportunityApplicationTable(tables.Table):
-    organization = tables.Column(orderable=False)
+    organization = tables.Column()
     created_by = tables.Column(orderable=False)
-    status = tables.Column(orderable=False)
+    status = tables.Column()
     date_modified = tables.DateColumn(verbose_name=_("Updated On"), order_by=("date_modified",))
     manage = tables.Column(
         verbose_name=_("Manage"),
@@ -96,6 +115,7 @@ class ManagedOpportunityApplicationTable(tables.Table):
                 in [
                     ManagedOpportunityApplicationStatus.ACCEPTED,
                     ManagedOpportunityApplicationStatus.REJECTED,
+                    ManagedOpportunityApplicationStatus.DECLINED,
                 ],
             },
         ]
