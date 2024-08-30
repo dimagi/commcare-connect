@@ -1,5 +1,6 @@
 import datetime
 import json
+from collections import namedtuple
 from functools import reduce
 
 from celery.result import AsyncResult
@@ -68,6 +69,7 @@ from commcare_connect.opportunity.tables import (
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
+    PaymentReportTable,
     PaymentUnitTable,
     SuspendedUsersTable,
     UserPaymentsTable,
@@ -1148,4 +1150,53 @@ def opportunity_user_invite(request, org_slug=None, pk=None):
         request,
         "form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Invite Users", form=form),
+    )
+
+
+@org_member_required
+def payment_report(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed:
+        return redirect("opportunity:detail", org_slug, pk)
+    payment_units = PaymentUnit.objects.filter(opportunity=opportunity)
+    PaymentReportData = namedtuple(
+        "PaymentReportData", ["payment_unit", "approved", "user_payment_accrued", "nm_payment_accrued"]
+    )
+    data = []
+    total_paid_users = sum(
+        Payment.objects.filter(opportunity_access__opportunity=opportunity, organization__isnull=True).values_list(
+            "amount"
+        )
+    )
+    total_paid_nm = sum(
+        Payment.objects.filter(opportunity_access__isnull=True, organization=opportunity.organization).values_list(
+            "amount"
+        )
+    )
+    total_user_payment_accrued = 0
+    total_nm_payment_accrued = 0
+    for payment_unit in payment_units:
+        completed_works = CompletedWork.objects.filter(
+            opportunity_access__opportunity=opportunity, status=CompletedWorkStatus.approved
+        )
+        completed_work_count = len(completed_works)
+        user_payment_accrued = sum([cw.payment_accrued for cw in completed_works])
+        nm_payment_accrued = completed_work_count * opportunity.managedopportunity.org_pay_per_visit
+        total_user_payment_accrued += user_payment_accrued
+        total_nm_payment_accrued += nm_payment_accrued
+        data.append(
+            PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
+        )
+    table = PaymentReportTable(data)
+    return render(
+        request,
+        "opportunity/payment_report.html",
+        context=dict(
+            table=table,
+            opportunity=opportunity,
+            total_paid_users=total_paid_users,
+            total_user_payment_accrued=total_user_payment_accrued,
+            total_paid_nm=total_paid_nm,
+            total_nm_payment_accrued=total_nm_payment_accrued,
+        ),
     )

@@ -406,6 +406,16 @@ class UserVisitReviewTable(tables.Table):
         )
 
 
+class PaymentReportTable(tables.Table):
+    payment_unit = columns.Column(verbose_name="Payment Unit")
+    approved = SumColumn(verbose_name="Approved Units")
+    user_payment_accrued = SumColumn(verbose_name="User Payment Accrued")
+    nm_payment_accrued = SumColumn(verbose_name="Network Manager Payment Accrued")
+
+    class Meta:
+        orderable = False
+
+
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):
     return format_html(
         "<span class='{}' data-bs-toggle='tooltip' data-bs-placement='{}' data-bs-title='{}' {}>{}</span>",

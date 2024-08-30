@@ -390,6 +390,7 @@ class VisitValidationStatus(models.TextChoices):
 class Payment(models.Model):
     amount = models.PositiveIntegerField()
     date_paid = models.DateTimeField(auto_now_add=True)
+    # This is used to indicate payments made to Opportunity Users
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.DO_NOTHING, null=True, blank=True)
     payment_unit = models.ForeignKey(
         PaymentUnit,
@@ -400,6 +401,8 @@ class Payment(models.Model):
     )
     confirmed = models.BooleanField(default=False)
     confirmation_date = models.DateTimeField(null=True)
+    # This is used to indicate Payments made to Network Manager organizations
+    organization = models.ForeignKey(Organization, on_delete=models.DO_NOTHING, null=True, blank=True)
 
 
 class CompletedWorkStatus(models.TextChoices):

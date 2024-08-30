@@ -63,6 +63,13 @@
                {% translate "Review User Visits" %}
               </a>
             </li>
+            <li>
+              <a class="dropdown-item"
+                 href="{% url "opportunity:payment_report" org_slug=request.org.slug pk=opportunity.pk %}">
+                <i class="bi bi-pie-chart-fill pe-2"></i>
+               {% translate "Payment Report" %}
+              </a>
+            </li>
           {% endif %}
           <li>
             <a class="dropdown-item"
