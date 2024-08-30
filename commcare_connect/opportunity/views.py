@@ -1131,7 +1131,7 @@ def user_visit_review(request, org_slug, opp_id):
     return render(
         request,
         "opportunity/user_visit_review.html",
-        context=dict(table=table, user_visit_ids=[v.pk for v in user_visit_reviews]),
+        context=dict(table=table, user_visit_ids=[v.pk for v in user_visit_reviews], opportunity=opportunity),
     )
 
 
