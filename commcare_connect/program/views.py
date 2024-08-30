@@ -22,11 +22,11 @@ from commcare_connect.program.tables import ManagedOpportunityApplicationTable, 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
-        return (
-            self.request.org_membership is not None
-            and self.request.org_membership.is_admin
-            and self.request.org.program_manager
-        ) or self.request.user.is_superuser
+        org_membership = getattr(self.request, "org_membership", None)
+        is_admin = getattr(org_membership, "is_admin", False)
+        org = getattr(self.request, "org", None)
+        program_manager = getattr(org, "program_manager", False)
+        return (org_membership is not None and is_admin and program_manager) or self.request.user.is_superuser
 
 
 ALLOWED_ORDERINGS = {
