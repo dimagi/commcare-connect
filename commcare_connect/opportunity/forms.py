@@ -374,7 +374,9 @@ class OpportunityFinalizeForm(forms.ModelForm):
                     self.add_error("end_date", "End date must be within the program's start and end dates.")
 
                 total_budget_sum = (
-                    ManagedOpportunity.objects.filter(program=program).aggregate(total=Sum("total_budget"))["total"]
+                    ManagedOpportunity.objects.filter(program=program)
+                    .exclude(id=managed_opportunity.id)
+                    .aggregate(total=Sum("total_budget"))["total"]
                     or 0
                 )
                 if total_budget_sum + cleaned_data["total_budget"] > program.budget:
