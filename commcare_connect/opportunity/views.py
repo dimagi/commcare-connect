@@ -1115,7 +1115,11 @@ def user_visit_review(request, org_slug, opp_id):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, opp_id)
-    is_program_manager = request.org_membership.is_admin and request.org.program_manager
+    is_program_manager = (
+        request.org_membership != None  # noqa: E711
+        and request.org_membership.is_admin
+        and request.org.program_manager
+    )
     user_visit_reviews = UserVisit.objects.filter(opportunity=opportunity, review_created_on__isnull=False).order_by(
         "visit_date"
     )
