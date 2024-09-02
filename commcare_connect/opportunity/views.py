@@ -1131,7 +1131,7 @@ def user_visit_review(request, org_slug, opp_id):
     if request.POST and is_program_manager:
         review_status = request.POST.get("review_status")
         updated_reviews = request.POST.getlist("pk")
-        if review_status in ["approved", "rejected"]:
+        if review_status in ["agree", "disagree"]:
             UserVisit.objects.filter(pk__in=updated_reviews).update(review_status=review_status)
 
     return render(
