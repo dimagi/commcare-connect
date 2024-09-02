@@ -285,11 +285,13 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         context = self.get_context_data(object=self.object)
         return self.render_to_response(context)
 
-    def get_context_data(self, **kwargs):
+    def get_context_data(self, object, **kwargs):
         context = super().get_context_data(**kwargs)
         context["export_task_id"] = self.request.GET.get("export_task_id")
         context["visit_export_form"] = VisitExportForm()
         context["export_form"] = PaymentExportForm()
+        context["user_is_program_manager"] = object.managed and self.request.org_membership.is_program_manager
+        context["user_is_network_manager"] = object.managed and object.organization == self.request.org
         return context
 
 

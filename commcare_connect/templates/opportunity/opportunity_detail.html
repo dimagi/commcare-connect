@@ -22,7 +22,7 @@
           <i class="bi bi-three-dots-vertical"></i>
         </button>
         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="opportunity_details_dropdown">
-          {% if object.managed and request.org == object.organization %}
+          {% if user_is_network_manager %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:user_invite' org_slug=request.org.slug pk=opportunity.id %}">
@@ -86,7 +86,7 @@
               </a>
             </li>
           {% endif %}
-          {% if not object.managed or request.org != object.organization %}
+          {% if not object.managed or user_is_program_manager %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:verification_flags_config' org_slug=request.org.slug pk=opportunity.id %}">

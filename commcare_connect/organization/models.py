@@ -53,6 +53,10 @@ class UserOrganizationMembership(models.Model):
     def is_viewer(self):
         return self.role == self.Role.VIEWER
 
+    @property
+    def is_program_manager(self):
+        return self.organization.program_manager and self.is_admin
+
     class Meta:
         db_table = "organization_membership"
         unique_together = ("user", "organization")
