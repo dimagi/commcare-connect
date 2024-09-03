@@ -18,7 +18,7 @@ class ProgramInvitationTable(tables.Table):
     start_date = tables.DateColumn(accessor="program__start_date", verbose_name=_("Start Date"))
     end_date = tables.DateColumn(accessor="program__end_date", verbose_name=_("End Date"))
 
-    budget = tables.Column(accessor="program__budget", verbose_name=_("Name"))
+    budget = tables.Column(accessor="program__budget", verbose_name=_("Budget"))
 
     manage = tables.Column(
         verbose_name=_("Manage"),
