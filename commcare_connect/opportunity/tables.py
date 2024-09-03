@@ -21,12 +21,7 @@ class LearnStatusTable(tables.Table):
     learn_progress = columns.Column(verbose_name="Modules Completed")
     assessment_count = columns.Column(verbose_name="Number of Attempts")
     assessment_status = columns.Column(verbose_name="Assessment Status")
-    details = columns.LinkColumn(
-        "opportunity:user_learn_progress",
-        verbose_name="",
-        text="View Details",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
 
     class Meta:
         model = OpportunityAccess
@@ -34,6 +29,17 @@ class LearnStatusTable(tables.Table):
         sequence = ("display_name", "learn_progress")
         orderable = False
         empty_text = "No learn progress for users."
+
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug", None)
+        super().__init__(*args, **kwargs)
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:user_learn_progress",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View Details</a>')
 
 
 def show_warning(record):
@@ -159,6 +165,10 @@ class UserStatusTable(tables.Table):
         empty_text = "No users invited for this opportunity."
         orderable = False
 
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug", None)
+        super().__init__(*args, **kwargs)
+
     def render_display_name(self, record):
         if record.opportunity_access is None:
             return record.phone_number
@@ -173,11 +183,7 @@ class UserStatusTable(tables.Table):
             return "---"
         url = reverse(
             "opportunity:user_profile",
-            kwargs={
-                "org_slug": record.opportunity.organization.slug,
-                "opp_id": record.opportunity_id,
-                "pk": record.opportunity_access_id,
-            },
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
         )
         return format_html('<a href="{}">View Profile</a>', url)
 
@@ -205,7 +211,7 @@ class PaymentUnitTable(tables.Table):
         orderable = False
 
     def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug")
+        self.org_slug = kwargs.pop("org_slug", None)
         super().__init__(*args, **kwargs)
 
     def render_deliver_units(self, record):
@@ -230,13 +236,7 @@ class DeliverStatusTable(tables.Table):
     rejected = SumColumn("Rejected")
     over_limit = SumColumn("Over Limit")
     incomplete = SumColumn("Incomplete")
-
-    details = columns.LinkColumn(
-        "opportunity:user_visits_list",
-        verbose_name="",
-        text="View Details",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
 
     class Meta:
         model = OpportunityAccess
@@ -253,6 +253,17 @@ class DeliverStatusTable(tables.Table):
             "over_limit",
             "incomplete",
         )
+
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug", None)
+        super().__init__(*args, **kwargs)
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:user_visits_list",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View Details</a>')
 
     def render_last_visit_date(self, record, value):
         return date_with_time_popup(self, value)
