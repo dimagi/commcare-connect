@@ -1,15 +1,14 @@
-{% extends "opportunity/base.html" %}
+{% extends "program/base.html" %}
 {% load static %}
 {% load i18n %}
 {% load sort_link %}
 {% load django_tables2 %}
-{% block title %}{{ request.org }} - Opportunities{% endblock %}
+{% block title %}{{ request.org }} - Programs{% endblock %}
 
 {% block breadcrumbs_inner %}
 {{ block.super }}
-<li class="breadcrumb-item active" aria-current="page"><a
-  href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.id %}">{{ opportunity.name }}</a></li>
-<li class="breadcrumb-item">{% translate "Applications" %}</li>
+<li class="breadcrumb-item" aria-current="page">{{ program.name }}</li>
+<li class="breadcrumb-item active">{% translate "Applications" %}</li>
 {% endblock %}
 {% block content %}
 <div class="container bg-white shadow">
@@ -39,7 +38,7 @@
         <h1 class="modal-title fs-5 text-white">{% translate "Invite Organizations" %}</h1>
         <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=pk opp_id=opportunity.id %}" method="post">
+      <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=pk %}" method="post">
       <div class="modal-body">
         <div class="mb-3">
           {% csrf_token %}

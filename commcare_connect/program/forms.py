@@ -3,7 +3,8 @@ from crispy_forms.layout import Field, Layout, Row, Submit
 from django import forms
 
 from commcare_connect.opportunity.forms import OpportunityInitForm
-from commcare_connect.program.models import ManagedOpportunity, Program
+from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 
 HALF_WIDTH_FIELD = "form-group col-md-6 mb-0"
 DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"})
@@ -75,6 +76,18 @@ class ManagedOpportunityInitForm(OpportunityInitForm):
         self.fields["currency"].initial = self.program.currency
         self.fields["currency"].widget = forms.TextInput(attrs={"readonly": "readonly", "disabled": True})
         self.fields["currency"].required = False
+
+        program_members = Organization.objects.filter(
+            programapplication__program=self.program, programapplication__status=ProgramApplicationStatus.ACCEPTED
+        ).distinct()
+
+        self.fields["organization"] = forms.ModelChoiceField(
+            queryset=program_members,
+            required=True,
+            widget=forms.Select(attrs={"class": "form-control"}),
+        )
+
+        self.helper.layout.fields.insert(3, Row(Field("organization")))
 
     def save(self, commit=True):
         self.instance.program = self.program

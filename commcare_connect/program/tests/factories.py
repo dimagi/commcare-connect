@@ -2,7 +2,7 @@ from factory import Faker, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory, OpportunityFactory
-from commcare_connect.program.models import ManagedOpportunity, ManagedOpportunityApplication, Program
+from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication
 from commcare_connect.users.tests.factories import OrganizationFactory
 
 
@@ -27,9 +27,9 @@ class ManagedOpportunityFactory(OpportunityFactory):
         model = ManagedOpportunity
 
 
-class ManagedOpportunityApplicationFactory(DjangoModelFactory):
-    managed_opportunity = SubFactory(ManagedOpportunityFactory)
+class ProgramApplicationFactory(DjangoModelFactory):
+    program = SubFactory(ProgramFactory)
     organization = SubFactory(OrganizationFactory)
 
     class Meta:
-        model = ManagedOpportunityApplication
+        model = ProgramApplication

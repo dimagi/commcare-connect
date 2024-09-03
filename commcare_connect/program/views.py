@@ -6,18 +6,12 @@ from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 from django_tables2 import SingleTableView
 
-from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.views import OpportunityInit
-from commcare_connect.organization.decorators import org_program_manager_required
+from commcare_connect.organization.decorators import org_admin_required, org_program_manager_required
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
-from commcare_connect.program.models import (
-    ManagedOpportunity,
-    ManagedOpportunityApplication,
-    ManagedOpportunityApplicationStatus,
-    Program,
-)
-from commcare_connect.program.tables import ManagedOpportunityApplicationTable, ProgramTable
+from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tables import ProgramApplicationTable, ProgramTable
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -45,7 +39,7 @@ class ProgramList(ProgramManagerMixin, SingleTableView):
     table_class = ProgramTable
 
     def get_queryset(self):
-        return Program.objects.filter(organization=self.request.org)
+        return Program.objects.filter(organization=self.request.org).order_by("date_modified")
 
 
 class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
@@ -128,16 +122,16 @@ class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
 
 @org_program_manager_required
 @require_POST
-def invite_organization(request, org_slug, pk, opp_id):
+def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
     organization = get_object_or_404(Organization, slug=requested_org_slug)
-    managed_opp = get_object_or_404(ManagedOpportunity, id=opp_id)
+    program = get_object_or_404(Program, id=pk)
 
-    obj, created = ManagedOpportunityApplication.objects.update_or_create(
-        managed_opportunity=managed_opp,
+    obj, created = ProgramApplication.objects.update_or_create(
+        program=program,
         organization=organization,
         defaults={
-            "status": ManagedOpportunityApplicationStatus.INVITED,
+            "status": ProgramApplicationStatus.INVITED,
             "created_by": request.user.email,
             "modified_by": request.user.email,
         },
@@ -148,57 +142,49 @@ def invite_organization(request, org_slug, pk, opp_id):
     else:
         messages.info(request, "The invitation for this organization has been updated.")
 
-    return redirect(
-        reverse("program:opportunity_application_list", kwargs={"org_slug": org_slug, "pk": pk, "opp_id": opp_id})
-    )
+    return redirect(reverse("program:applications", kwargs={"org_slug": org_slug, "pk": pk}))
 
 
-class ManagedOpportunityApplicationList(ProgramManagerMixin, SingleTableView):
-    model = ManagedOpportunityApplication
-    table_class = ManagedOpportunityApplicationTable
+class ProgramApplicationList(ProgramManagerMixin, SingleTableView):
+    model = ProgramApplication
+    table_class = ProgramApplicationTable
     paginate_by = 10
-    template_name = "program/managed_opportunity_application_list.html"
+    template_name = "program/application_list.html"
 
     def get_queryset(self):
-        opportunity_id = self.kwargs.get("opp_id")
-        return ManagedOpportunityApplication.objects.filter(managed_opportunity__id=opportunity_id)
+        program_id = self.kwargs.get("pk")
+        return ProgramApplication.objects.filter(program__id=program_id).order_by("date_modified")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["pk"] = self.kwargs.get("pk")
-        opportunity = get_object_or_404(Opportunity, id=self.kwargs.get("opp_id"))
+        program = get_object_or_404(Program, id=self.kwargs.get("pk"), organization=self.request.org)
 
-        # Fetch organizations that are not invited, applied, or accepted.
-        invited_orgs_ids = ManagedOpportunityApplication.objects.filter(
-            managed_opportunity__id=opportunity.id,
-            status__in=[
-                ManagedOpportunityApplicationStatus.INVITED,
-                ManagedOpportunityApplicationStatus.APPLIED,
-                ManagedOpportunityApplicationStatus.ACCEPTED,
-            ],
+        org_already_member_ids = ProgramApplication.objects.filter(
+            program__id=self.kwargs.get("pk"),
+            status__in=[ProgramApplicationStatus.ACCEPTED, ProgramApplicationStatus.APPLIED],
         ).values_list("organization_id", flat=True)
 
-        context["organizations"] = Organization.objects.exclude(id__in=invited_orgs_ids)
-        context["opportunity"] = opportunity
+        context["organizations"] = Organization.objects.exclude(id__in=org_already_member_ids)
+        context["program"] = program
         return context
 
 
 @org_program_manager_required
 @require_POST
 def manage_application(request, org_slug, application_id, action):
-    application = get_object_or_404(ManagedOpportunityApplication, id=application_id)
+    application = get_object_or_404(ProgramApplication, id=application_id)
     redirect_url = reverse(
-        "program:opportunity_application_list",
+        "program:applications",
         kwargs={
             "org_slug": org_slug,
-            "pk": application.managed_opportunity.program.id,
-            "opp_id": application.managed_opportunity.id,
+            "pk": application.program.id,
         },
     )
 
     status_mapping = {
-        "accept": ManagedOpportunityApplicationStatus.ACCEPTED,
-        "reject": ManagedOpportunityApplicationStatus.REJECTED,
+        "accept": ProgramApplicationStatus.ACCEPTED,
+        "reject": ProgramApplicationStatus.REJECTED,
     }
 
     new_status = status_mapping.get(action, None)
@@ -209,11 +195,40 @@ def manage_application(request, org_slug, application_id, action):
     application.status = new_status
     application.modified_by = request.user.email
 
-    if new_status == ManagedOpportunityApplicationStatus.ACCEPTED:
-        application.managed_opportunity.organization = application.organization
-        application.managed_opportunity.save()
-
     application.save()
 
     messages.success(request, f"Application has been {action}ed successfully.")
+    return redirect(redirect_url)
+
+
+@require_POST
+@org_admin_required
+def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
+    application = get_object_or_404(ProgramApplication, id=application_id, status=ProgramApplicationStatus.INVITED)
+
+    redirect_url = reverse("opportunity:list", kwargs={"org_slug": org_slug})
+
+    action_map = {
+        "apply": {
+            "status": ProgramApplicationStatus.APPLIED,
+            "message": f"Application for the program '{application.program.name}' has been "
+            f"successfully submitted.",
+        },
+        "decline": {
+            "status": ProgramApplicationStatus.DECLINED,
+            "message": f"The application for the program '{application.program.name}' has been marked "
+            f"as 'Declined'.",
+        },
+    }
+
+    if action not in action_map:
+        messages.error(request, "Action not allowed.")
+        return redirect(redirect_url)
+
+    application.status = action_map[action]["status"]
+    application.modified_by = request.user.email
+    application.save()
+
+    messages.success(request, action_map[action]["message"])
+
     return redirect(redirect_url)

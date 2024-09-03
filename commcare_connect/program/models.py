@@ -22,6 +22,9 @@ class Program(BaseModel):
             self.slug = slugify_uniquely(self.name, self.__class__)
         super().save(*args, **kwargs)
 
+    def __str__(self):
+        return self.slug
+
 
 class ManagedOpportunity(Opportunity):
     program = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
@@ -33,7 +36,7 @@ class ManagedOpportunity(Opportunity):
         self.managed = True
 
 
-class ManagedOpportunityApplicationStatus(models.TextChoices):
+class ProgramApplicationStatus(models.TextChoices):
     INVITED = "invited", _("Invited")
     APPLIED = "applied", _("Applied")
     ACCEPTED = "accepted", _("Accepted")
@@ -41,11 +44,11 @@ class ManagedOpportunityApplicationStatus(models.TextChoices):
     DECLINED = "declined", _("Declined")
 
 
-class ManagedOpportunityApplication(BaseModel):
-    managed_opportunity = models.ForeignKey(ManagedOpportunity, on_delete=models.CASCADE)
+class ProgramApplication(BaseModel):
+    program = models.ForeignKey(Program, on_delete=models.CASCADE)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     status = models.CharField(
         max_length=20,
-        choices=ManagedOpportunityApplicationStatus.choices,
-        default=ManagedOpportunityApplicationStatus.INVITED,
+        choices=ProgramApplicationStatus.choices,
+        default=ProgramApplicationStatus.INVITED,
     )

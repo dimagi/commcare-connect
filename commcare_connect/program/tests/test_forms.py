@@ -9,8 +9,13 @@ from commcare_connect.opportunity.forms import OpportunityFinalizeForm
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.tests.factories import ApplicationFactory, DeliveryTypeFactory, PaymentUnitFactory
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
-from commcare_connect.program.models import ManagedOpportunity, Program
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
+from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
+from commcare_connect.program.tests.factories import (
+    ManagedOpportunityFactory,
+    ProgramApplicationFactory,
+    ProgramFactory,
+)
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 @pytest.fixture
@@ -86,6 +91,10 @@ class TestManagedOpportunityInitForm:
         self.user = program_manager_org_user_admin
         self.organization = program_manager_org
         self.program = ProgramFactory.create(organization=program_manager_org)
+        self.invited_org = OrganizationFactory.create()
+        self.program_application = ProgramApplicationFactory.create(
+            program=self.program, organization=self.invited_org, status=ProgramApplicationStatus.ACCEPTED
+        )
         self.learn_app = ApplicationFactory()
         self.deliver_app = ApplicationFactory()
 
@@ -93,6 +102,7 @@ class TestManagedOpportunityInitForm:
             "name": "Test managed opportunity",
             "description": FuzzyText(length=150).fuzz(),
             "short_description": FuzzyText(length=50).fuzz(),
+            "organization": self.invited_org.id,
             "learn_app_domain": "test_domain",
             "learn_app": json.dumps(self.learn_app),
             "learn_app_description": FuzzyText(length=150).fuzz(),
@@ -107,6 +117,7 @@ class TestManagedOpportunityInitForm:
         assert form.fields["currency"].initial == self.program.currency
         assert form.fields["currency"].widget.attrs.get("readonly") == "readonly"
         assert form.fields["currency"].widget.attrs.get("disabled") is True
+        assert "organization" in form.fields
 
     def test_form_validation_valid_data(self):
         form = ManagedOpportunityInitForm(
@@ -125,6 +136,7 @@ class TestManagedOpportunityInitForm:
         assert form.errors["deliver_app"] == ["Learn app and Deliver app cannot be same"]
 
     def test_form_save(self):
+        print(self.invited_org)
         form = ManagedOpportunityInitForm(
             data=self.form_data,
             program=self.program,

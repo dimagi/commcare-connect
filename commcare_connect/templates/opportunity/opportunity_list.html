@@ -2,6 +2,7 @@
 {% load static %}
 {% load sort_link %}
 {% load i18n %}
+{% load django_tables2 %}
 {% block title %}{{ request.org }} - Opportunities{% endblock %}
 
 {% block breadcrumbs_inner %}
@@ -101,63 +102,13 @@
     {% include 'pagination.html' %}
   </div>
 
-{% if opportunity_invitations %}
+{% if program_invitation_table and program_invitation_table.data %}
 <div class="container bg-white shado mb-5">
   <div class="mt-5 py-3">
-    <h2>{% translate "Opportunity Invitations" %}</h2>
+    <h2>{% translate "Program Invitations" %}</h2>
   </div>
   <div class="pb-4">
-    <table class="table border table-responsive">
-      <thead class="table-light">
-      <tr>
-        <th>{% translate "Name" %}</th>
-        <th>{% translate "Start Date" %}</th>
-        <th>{% translate "End Date" %}</th>
-        <th>{% translate "Status" %}</th>
-        <th>{% translate "Manage" %}</th>
-      </tr>
-      </thead>
-      <tbody>
-      {% for invitation in opportunity_invitations %}
-      <tr>
-        <td>{{ invitation.managed_opportunity.name }}</td>
-        <td>{{ invitation.managed_opportunity.start_date|default:"Not Set" }}</td>
-        <td>{{ invitation.managed_opportunity.end_date|default:"Not Set" }}</td>
-        <td>
-          {% if invitation.managed_opportunity.is_setup_complete %}
-          {% if invitation.managed_opportunity.is_active %}
-          <span class="badge bg-success rounded-pill">{% translate "Active" %}</span>
-          {% else %}
-          <span class="badge bg-secondary text-white rounded-pill">{% translate "Inactive" %}</span>
-          {% endif %}
-          {% else %}
-          <span class="badge bg-warning text-white rounded-pill">{% translate "Pending Setup" %}</span>
-          {% endif %}
-        </td>
-        <td width="300">
-          <div>
-            <form
-              action="{% url 'opportunity:apply_or_decline_application' org_slug=request.org.slug pk=invitation.managed_opportunity.id application_id=invitation.id action='apply' %}"
-              method="post" class="d-inline">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-primary btn-sm">
-                <span class="bi bi-check-circle-fill"></span><span class="d-none d-md-inline">&nbsp;{% translate "Apply" %}</span>
-              </button>
-            </form>
-            <form
-              action="{% url 'opportunity:apply_or_decline_application' org_slug=request.org.slug pk=invitation.managed_opportunity.id application_id=invitation.id action='decline' %}"
-              method="post"  class="d-inline">
-              {% csrf_token %}
-              <button type="submit" class="btn btn-warning btn-sm">
-                <span class="bi bi bi-x-square-fill"></span><span class="d-none d-md-inline">&nbsp;{% translate "Decline" %}</span>
-              </button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    {% render_table program_invitation_table %}
   </div>
 </div>
 {% endif %}
