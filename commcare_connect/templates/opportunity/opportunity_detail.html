@@ -37,7 +37,6 @@
             </a>
           </li>
           {% endif %}
-          {% if not object.managed %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}">
@@ -45,7 +44,6 @@
               Add Budget
             </a>
           </li>
-          {% endif %}
           {% if object.managed %}
             <li>
               <a class="dropdown-item"
