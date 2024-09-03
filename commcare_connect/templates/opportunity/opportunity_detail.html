@@ -47,15 +47,6 @@
           </li>
           {% endif %}
           {% if object.managed %}
-            {% if request.org_membership.is_admin and request.org.program_manager or request.user.is_superuser %}
-              <li>
-                  <a class="dropdown-item"
-                     href="{% url "program:opportunity_application_list" org_slug=request.org.slug pk=opportunity.managedopportunity.program.id opp_id=opportunity.pk %}">
-                      <i class="bi bi-building-fill-add pe-2"></i>
-                      {% translate "View Application" %}
-                  </a>
-              </li>
-            {% endif %}
             <li>
               <a class="dropdown-item"
                  href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">

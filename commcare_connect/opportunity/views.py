@@ -98,11 +98,8 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
-from commcare_connect.program.models import (
-    ManagedOpportunity,
-    ManagedOpportunityApplication,
-    ManagedOpportunityApplicationStatus,
-)
+from commcare_connect.program.models import ManagedOpportunity, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tables import ProgramInvitationTable
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 
@@ -146,13 +143,13 @@ class OpportunityList(OrganizationUserMixin, ListView):
         context = super().get_context_data(**kwargs)
         context["opportunity_init_url"] = reverse("opportunity:init", kwargs={"org_slug": self.request.org.slug})
 
-        opportunity_invitations = None
+        program_invitation_table = None
         if self.request.org_membership and self.request.org_membership.is_admin or self.request.user.is_superuser:
-            opportunity_invitations = ManagedOpportunityApplication.objects.filter(
-                organization=self.request.org, status=ManagedOpportunityApplicationStatus.INVITED
+            program_invitations = ProgramApplication.objects.filter(
+                organization=self.request.org, status=ProgramApplicationStatus.INVITED
             )
-
-        context["opportunity_invitations"] = opportunity_invitations
+            program_invitation_table = ProgramInvitationTable(program_invitations)
+        context["program_invitation_table"] = program_invitation_table
         context["base_template"] = "opportunity/base.html"
         return context
 
@@ -1077,39 +1074,6 @@ def import_catchment_area(request, org_slug=None, pk=None):
         message = f"{len(status)} catchment areas were updated successfully and {status.new_catchments} were created."
         messages.success(request, mark_safe(message))
     return redirect("opportunity:detail", org_slug, pk)
-
-
-@require_POST
-@org_admin_required
-def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
-    application = get_object_or_404(
-        ManagedOpportunityApplication, id=application_id, status=ManagedOpportunityApplicationStatus.INVITED
-    )
-
-    redirect_url = reverse("opportunity:list", kwargs={"org_slug": org_slug})
-
-    action_map = {
-        "apply": {
-            "status": ManagedOpportunityApplicationStatus.APPLIED,
-            "message": f"Application for the opportunity '{application.managed_opportunity.name}' has been "
-            f"successfully submitted.",
-        },
-        "decline": {
-            "status": ManagedOpportunityApplicationStatus.DECLINED,
-            "message": f"The application for the opportunity '{application.managed_opportunity.name}' has been marked "
-            f"as 'Declined'.",
-        },
-    }
-
-    if action not in action_map:
-        messages.error(request, "Action not allowed.")
-        return redirect(redirect_url)
-
-    application.status = action_map[action]["status"]
-    application.modified_by = request.user.email
-    application.save()
-    messages.success(request, action_map[action]["message"])
-    return redirect(redirect_url)
 
 
 @org_member_required
