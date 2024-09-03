@@ -128,6 +128,13 @@ def get_opportunity_or_404(pk, org_slug):
     raise Http404("Opportunity not found.")
 
 
+class OrgContextSingleTableView(SingleTableView):
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
+
+
 class OpportunityList(OrganizationUserMixin, ListView):
     model = Opportunity
     paginate_by = 10
@@ -292,7 +299,7 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         return context
 
 
-class OpportunityLearnStatusTableView(OrganizationUserMixin, SingleTableView):
+class OpportunityLearnStatusTableView(OrganizationUserMixin, OrgContextSingleTableView):
     model = OpportunityAccess
     paginate_by = 25
     table_class = LearnStatusTable
@@ -303,13 +310,8 @@ class OpportunityLearnStatusTableView(OrganizationUserMixin, SingleTableView):
         opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
         return OpportunityAccess.objects.filter(opportunity=opportunity).order_by("user__name")
 
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
 
-
-class OpportunityPaymentTableView(OrganizationUserMixin, SingleTableView):
+class OpportunityPaymentTableView(OrganizationUserMixin, OrgContextSingleTableView):
     model = OpportunityAccess
     paginate_by = 25
     table_class = OpportunityPaymentTable
@@ -463,7 +465,7 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     )
 
 
-class OpportunityUserStatusTableView(OrganizationUserMixin, SingleTableView):
+class OpportunityUserStatusTableView(OrganizationUserMixin, OrgContextSingleTableView):
     model = OpportunityAccess
     paginate_by = 25
     table_class = UserStatusTable
@@ -474,11 +476,6 @@ class OpportunityUserStatusTableView(OrganizationUserMixin, SingleTableView):
         opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         access_objects = get_annotated_opportunity_access(opportunity)
         return access_objects
-
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
 
 
 @org_member_required
@@ -614,7 +611,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     )
 
 
-class OpportunityPaymentUnitTableView(OrganizationUserMixin, SingleTableView):
+class OpportunityPaymentUnitTableView(OrganizationUserMixin, OrgContextSingleTableView):
     model = PaymentUnit
     paginate_by = 25
     table_class = PaymentUnitTable
@@ -624,11 +621,6 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, SingleTableView):
         opportunity_id = self.kwargs["pk"]
         opportunity = get_opportunity_or_404(org_slug=self.kwargs["org_slug"], pk=opportunity_id)
         return PaymentUnit.objects.filter(opportunity=opportunity).order_by("name")
-
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
 
 
 @org_member_required
@@ -646,7 +638,7 @@ def export_user_status(request, **kwargs):
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
-class OpportunityDeliverStatusTable(OrganizationUserMixin, SingleTableView):
+class OpportunityDeliverStatusTable(OrganizationUserMixin, OrgContextSingleTableView):
     model = OpportunityAccess
     paginate_by = 25
     table_class = DeliverStatusTable
@@ -657,11 +649,6 @@ class OpportunityDeliverStatusTable(OrganizationUserMixin, SingleTableView):
         opportunity = get_opportunity_or_404(pk=opportunity_id, org_slug=self.kwargs["org_slug"])
         access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
         return access_objects
-
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
 
 
 @org_member_required

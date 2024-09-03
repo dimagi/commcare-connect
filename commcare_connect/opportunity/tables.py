@@ -16,7 +16,13 @@ from commcare_connect.opportunity.models import (
 )
 
 
-class LearnStatusTable(tables.Table):
+class OrgContextTable(tables.Table):
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug", None)
+        super().__init__(*args, **kwargs)
+
+
+class LearnStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name")
     learn_progress = columns.Column(verbose_name="Modules Completed")
     assessment_count = columns.Column(verbose_name="Number of Attempts")
@@ -29,10 +35,6 @@ class LearnStatusTable(tables.Table):
         sequence = ("display_name", "learn_progress")
         orderable = False
         empty_text = "No learn progress for users."
-
-    def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug", None)
-        super().__init__(*args, **kwargs)
 
     def render_details(self, record):
         url = reverse(
@@ -49,7 +51,7 @@ def show_warning(record):
     return ""
 
 
-class UserVisitTable(tables.Table):
+class UserVisitTable(OrgContextTable):
     # export only columns
     visit_id = columns.Column("Visit ID", accessor="xform_id", visible=False)
     username = columns.Column("Username", accessor="user__username", visible=False)
@@ -63,13 +65,14 @@ class UserVisitTable(tables.Table):
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
     entity_name = columns.Column("Entity Name", accessor="entity_name")
     flag_reason = columns.Column("Flags", accessor="flag_reason", empty_values=({}, None))
-    details = columns.LinkColumn(
-        "opportunity:visit_verification",
-        verbose_name="",
-        text="Review",
-        attrs={"a": {"class": "btn btn-sm btn-primary"}},
-        args=[utils.A("opportunity__organization__slug"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:visit_verification",
+            kwargs={"org_slug": self.org_slug, "pk": record.pk},
+        )
+        return mark_safe(f'<a class="btn btn-sm btn-primary" href="{url}">Review</a>')
 
     def render_flag_reason(self, value):
         short = [flag[1] for flag in value.get("flags")]
@@ -92,15 +95,17 @@ class UserVisitTable(tables.Table):
         row_attrs = {"class": show_warning}
 
 
-class OpportunityPaymentTable(tables.Table):
+class OpportunityPaymentTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name")
     username = columns.Column(accessor="user__username", visible=False)
-    view_payments = columns.LinkColumn(
-        "opportunity:user_payments_table",
-        verbose_name="",
-        text="View Details",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    view_payments = columns.Column(verbose_name="", empty_values=())
+
+    def render_view_payments(self, record):
+        url = reverse(
+            "opportunity:user_payments_table",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View Details</a>')
 
     class Meta:
         model = OpportunityAccess
@@ -132,7 +137,7 @@ class BooleanAggregateColumn(columns.BooleanColumn, AggregateColumn):
     pass
 
 
-class UserStatusTable(tables.Table):
+class UserStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name", footer="Total", empty_values=())
     username = columns.Column(accessor="opportunity_access__user__username", visible=False)
     claimed = AggregateColumn(verbose_name="Job Claimed", accessor="job_claimed")
@@ -165,10 +170,6 @@ class UserStatusTable(tables.Table):
         empty_text = "No users invited for this opportunity."
         orderable = False
 
-    def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug", None)
-        super().__init__(*args, **kwargs)
-
     def render_display_name(self, record):
         if record.opportunity_access is None:
             return record.phone_number
@@ -200,7 +201,7 @@ class UserStatusTable(tables.Table):
         return date_with_time_popup(self, value)
 
 
-class PaymentUnitTable(tables.Table):
+class PaymentUnitTable(OrgContextTable):
     deliver_units = columns.Column("Deliver Units")
     details = columns.Column(verbose_name="", empty_values=())
 
@@ -209,10 +210,6 @@ class PaymentUnitTable(tables.Table):
         fields = ("name", "amount")
         empty_text = "No payment units for this opportunity."
         orderable = False
-
-    def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug", None)
-        super().__init__(*args, **kwargs)
 
     def render_deliver_units(self, record):
         deliver_units = "".join([f"<li>{d.name}</li>" for d in record.deliver_units.all()])
@@ -226,7 +223,7 @@ class PaymentUnitTable(tables.Table):
         return mark_safe(f'<a href="{url}">Edit</a>')
 
 
-class DeliverStatusTable(tables.Table):
+class DeliverStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name of the User", footer="Total")
     username = columns.Column(accessor="user__username", visible=False)
     payment_unit = columns.Column("Name of Payment Unit")
@@ -253,10 +250,6 @@ class DeliverStatusTable(tables.Table):
             "over_limit",
             "incomplete",
         )
-
-    def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug", None)
-        super().__init__(*args, **kwargs)
 
     def render_details(self, record):
         url = reverse(
