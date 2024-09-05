@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.storage import storages
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1138,15 +1138,12 @@ def payment_report(request, org_slug, pk):
         "PaymentReportData", ["payment_unit", "approved", "user_payment_accrued", "nm_payment_accrued"]
     )
     data = []
-    total_paid_users = sum(
-        Payment.objects.filter(opportunity_access__opportunity=opportunity, organization__isnull=True).values_list(
-            "amount"
-        )
+    total_paid_users = (
+        Payment.objects.filter(opportunity_access__opportunity=opportunity).aggregate(total=Sum("amount"))["total"]
+        or 0
     )
-    total_paid_nm = sum(
-        Payment.objects.filter(opportunity_access__isnull=True, organization=opportunity.organization).values_list(
-            "amount"
-        )
+    total_paid_nm = (
+        Payment.objects.filter(organization=opportunity.organization).aggregate(total=Sum("amount"))["total"] or 0
     )
     total_user_payment_accrued = 0
     total_nm_payment_accrued = 0
