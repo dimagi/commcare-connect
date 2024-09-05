@@ -1185,7 +1185,7 @@ class PaymentInvoiceTableView(OrganizationUserMixin, SingleTableView):
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
-        if not self.request.org_membership.is_program_manager:
+        if self.request.org_membership != None and not self.request.org_membership.is_program_manager:  # noqa: E711
             kwargs["exclude"] = ("pk",)
         return kwargs
 

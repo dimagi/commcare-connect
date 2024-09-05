@@ -874,7 +874,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
         if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
-            raise ValidationError(f"Invoice with {invoice_number} number already exists", code="invoice_number_reused")
+            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
         return invoice_number
 
     def save(self, commit=True):
