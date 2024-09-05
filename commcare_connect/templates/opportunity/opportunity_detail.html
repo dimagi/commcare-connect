@@ -75,7 +75,7 @@
               </a>
             </li>
           {% endif %}
-          {% if not object.managed or user_is_program_manager %}
+          {% if not object.managed or request.org_membership.is_program_manager %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:verification_flags_config' org_slug=request.org.slug pk=opportunity.id %}">

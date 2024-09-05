@@ -294,7 +294,6 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         context["export_task_id"] = self.request.GET.get("export_task_id")
         context["visit_export_form"] = VisitExportForm()
         context["export_form"] = PaymentExportForm()
-        context["user_is_program_manager"] = object.managed and self.request.org_membership.is_program_manager
         context["user_is_network_manager"] = object.managed and object.organization == self.request.org
         return context
 
