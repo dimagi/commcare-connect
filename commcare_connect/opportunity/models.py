@@ -608,7 +608,9 @@ class OpportunityClaimLimit(models.Model):
                 # claimed limit exceeded for this paymentunit
                 continue
             OpportunityClaimLimit.objects.get_or_create(
-                opportunity_claim=claim, payment_unit=payment_unit, max_visits=min(remaining, payment_unit.max_total)
+                opportunity_claim=claim,
+                payment_unit=payment_unit,
+                defaults={"max_visits": min(remaining, payment_unit.max_total)},
             )
 
 
