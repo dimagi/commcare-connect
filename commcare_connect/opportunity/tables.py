@@ -8,6 +8,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     OpportunityAccess,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     UserInvite,
     UserInviteStatus,
@@ -418,6 +419,35 @@ class PaymentReportTable(tables.Table):
 
     class Meta:
         orderable = False
+
+
+class PaymentInvoiceTable(tables.Table):
+    pk = columns.CheckBoxColumn(
+        accessor="pk",
+        verbose_name="",
+        attrs={
+            "input": {"x-model": "selected"},
+            "th__input": {"@click": "toggleSelectAll()", "x-bind:checked": "selectAll"},
+        },
+    )
+    payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
+    payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
+
+    class Meta:
+        model = PaymentInvoice
+        orderable = False
+        fields = ("pk", "amount", "date", "invoice_number")
+        empty_text = "No Payment Invoices"
+
+    def render_payment_status(self, value):
+        if value is not None:
+            return "Paid"
+        return "Pending"
+
+    def render_payment_date(self, value):
+        if value is not None:
+            return value.date_paid
+        return
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):

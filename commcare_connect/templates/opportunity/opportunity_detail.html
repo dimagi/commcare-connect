@@ -45,20 +45,27 @@
             </a>
           </li>
           {% if object.managed %}
-            <li>
-              <a class="dropdown-item"
-                 href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">
-                <i class="bi bi-clipboard2-data-fill pe-2"></i>
-               {% translate "Review User Visits" %}
-              </a>
-            </li>
-            <li>
-              <a class="dropdown-item"
-                 href="{% url "opportunity:payment_report" org_slug=request.org.slug pk=opportunity.pk %}">
-                <i class="bi bi-pie-chart-fill pe-2"></i>
-               {% translate "Payment Report" %}
-              </a>
-            </li>
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">
+              <i class="bi bi-clipboard2-data-fill pe-2"></i>
+             {% translate "Review User Visits" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:payment_report" org_slug=request.org.slug pk=opportunity.pk %}">
+              <i class="bi bi-pie-chart-fill pe-2"></i>
+             {% translate "Payment Report" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:invoice_list" org_slug=request.org.slug pk=opportunity.pk %}">
+              <i class="bi bi-cash-stack pe-2"></i>
+             {% translate "Invoices" %}
+            </a>
+          </li>
           {% endif %}
           <li>
             <a class="dropdown-item"

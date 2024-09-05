@@ -4,6 +4,7 @@ from collections import namedtuple
 from functools import reduce
 
 from celery.result import AsyncResult
+from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -38,6 +39,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
+    PaymentInvoiceForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -60,6 +62,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     UserVisit,
     VisitValidationStatus,
@@ -69,6 +72,7 @@ from commcare_connect.opportunity.tables import (
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
+    PaymentInvoiceTable,
     PaymentReportTable,
     PaymentUnitTable,
     SuspendedUsersTable,
@@ -1171,3 +1175,69 @@ def payment_report(request, org_slug, pk):
             total_nm_payment_accrued=total_nm_payment_accrued,
         ),
     )
+
+
+class PaymentInvoiceTableView(OrganizationUserMixin, SingleTableView):
+    model = PaymentInvoice
+    paginate_by = 25
+    table_class = PaymentInvoiceTable
+    template_name = "tables/single_table.html"
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        if not self.request.org_membership.is_program_manager:
+            kwargs["exclude"] = ("pk",)
+        return kwargs
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        filter_kwargs = dict(opportunity=opportunity)
+        table_filter = self.request.GET.get("filter")
+        if table_filter is not None and table_filter in ["paid", "pending"]:
+            filter_kwargs["payment__isnull"] = table_filter == "pending"
+        return PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+
+
+@org_member_required
+def invoice_list(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed:
+        return redirect("opportunity:detail", org_slug, pk)
+    form = PaymentInvoiceForm(opportunity=opportunity)
+    return render(
+        request,
+        "opportunity/invoice_list.html",
+        context=dict(opportunity=opportunity, form=form),
+    )
+
+
+@org_member_required
+def invoice_create(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed or request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
+    form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
+    if request.POST and form.is_valid():
+        form.save()
+        form = PaymentInvoiceForm(opportunity=opportunity)
+        return HttpResponse(render_crispy_form(form), headers={"HX-Trigger": "newInvoice"})
+    return HttpResponse(render_crispy_form(form))
+
+
+@org_member_required
+@require_POST
+def invoice_approve(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed or not request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
+    invoice_ids = request.POST.getlist("pk")
+    invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)
+    for invoice in invoices:
+        payment = Payment(
+            amount=invoice.amount,
+            organization=opportunity.organization,
+            invoice=invoice,
+        )
+        payment.save()
+    return HttpResponse(headers={"HX-Trigger": "newInvoice"})

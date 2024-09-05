@@ -1,0 +1,103 @@
+{% extends "opportunity/base.html" %}
+{% load django_tables2 %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ request.org }} - Invoices{% endblock title %}
+
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+  <li class="breadcrumb-item">
+    <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.pk %}">
+      {{ opportunity.name }}
+    </a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">Invoices</li>
+{% endblock %}
+
+{% block content %}
+  <h2>Invoices</h2>
+  <hr />
+  {% if not request.org_membership.is_program_manager %}
+    <button type="button" class="btn btn-primary mb-2" data-bs-toggle="modal" data-bs-target="#invoiceModal">
+      Add New Invoice
+    </button>
+  {% endif %}
+
+  <form hx-get="{% url "opportunity:invoice_table" org_slug=request.org.slug pk=opportunity.pk %}"
+        hx-trigger="load, change, newInvoice from:body"
+        hx-target="#invoiceTable">
+    <select class="form-select mb-2" id="filterSelect" name="filter">
+      <option selected value="">Filter Invoices</option>
+      <option value="paid">Paid</option>
+      <option value="pending">Pending</option>
+    </select>
+  </form>
+
+  {% if request.org_membership.is_program_manager %}
+    <form x-data="{
+            selectAll: false,
+            selected: [],
+            toggleSelectAll() {
+              this.selectAll = !this.selectAll;
+              if(this.selectAll)
+                this.selected = JSON.parse(document.getElementById('invoice_ids').textContent);
+              else
+                this.selected = [];
+            }
+          }"
+      hx-post="{% url "opportunity:invoice_approve" org_slug=request.org.slug pk=opportunity.pk %}"
+      hx-swap="none"
+    >
+    {% csrf_token %}
+  {% endif %}
+
+  <div id="invoiceTable">
+    {% include "tables/table_placeholder.html" with num_cols=4 %}
+  </div>
+
+  {% if request.org_membership.is_program_manager %}
+      <button type="submit" class="btn btn-primary mt-2">Pay</button>
+    </form>
+  {% endif %}
+{% endblock content %}
+
+{% if not request.org_membership.is_program_manager %}
+{% block modal %}
+  <div class="modal fade" id="invoiceModal" tabindex="-1" role="dialog" aria-labelledby="invoiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="invoiceModalLabel">Create Invoice</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form hx-post="{% url "opportunity:invoice_create" org_slug=request.org.slug pk=opportunity.pk %}"
+              hx-trigger="submit"
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              hx-target="#formFields">
+          <div class="modal-body">
+            <div id="formFields">{% crispy form %}</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="submit" class="btn btn-primary">Save changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock modal %}
+{% endif %}
+
+{% block inline_javascript %}
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const filter = document.querySelector("#filterSelect");
+      filter.addEventListener("change", (event) => {
+        const url = new URL(window.location);
+        url.searchParams.set("filter", event.target.value)
+        history.pushState(null, '', url);
+      });
+    });
+  </script>
+{% endblock inline_javascript %}

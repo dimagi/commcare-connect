@@ -387,6 +387,16 @@ class VisitValidationStatus(models.TextChoices):
     trial = "trial", gettext("Trial")
 
 
+class PaymentInvoice(models.Model):
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
+    amount = models.PositiveIntegerField()
+    date = models.DateField()
+    invoice_number = models.CharField(max_length=50)
+
+    class Meta:
+        unique_together = ("opportunity", "invoice_number")
+
+
 class Payment(models.Model):
     amount = models.PositiveIntegerField()
     date_paid = models.DateTimeField(auto_now_add=True)
@@ -403,6 +413,7 @@ class Payment(models.Model):
     confirmation_date = models.DateTimeField(null=True)
     # This is used to indicate Payments made to Network Manager organizations
     organization = models.ForeignKey(Organization, on_delete=models.DO_NOTHING, null=True, blank=True)
+    invoice = models.OneToOneField(PaymentInvoice, on_delete=models.DO_NOTHING, null=True, blank=True)
 
 
 class CompletedWorkStatus(models.TextChoices):
