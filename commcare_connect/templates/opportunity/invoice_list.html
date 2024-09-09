@@ -27,11 +27,14 @@
   <form hx-get="{% url "opportunity:invoice_table" org_slug=request.org.slug pk=opportunity.pk %}"
         hx-trigger="load, change, newInvoice from:body"
         hx-target="#invoiceTable">
-    <select class="form-select mb-2" id="filterSelect" name="filter">
-      <option selected value="">Filter Invoices</option>
-      <option value="paid">Paid</option>
-      <option value="pending">Pending</option>
-    </select>
+    <div class="input-group mb-3" x-data="{ filter: new URLSearchParams(location.search).get('filter')}">
+      <label class="input-group-text" for="filterSelect">Filter</label>
+      <select class="form-select" id="filterSelect" name="filter" x-model="filter">
+        <option selected value="">All</option>
+        <option value="paid">Paid</option>
+        <option value="pending">Pending</option>
+      </select>
+    </div>
   </form>
 
   {% if request.org_membership.is_program_manager %}
@@ -40,16 +43,17 @@
             selected: [],
             toggleSelectAll() {
               this.selectAll = !this.selectAll;
-              if(this.selectAll)
-                this.selected = JSON.parse(document.getElementById('invoice_ids').textContent);
-              else
-                this.selected = [];
+              const checkboxes = document.querySelectorAll('input[name=pk]');
+              const allSelected = [];
+              checkboxes.forEach(el => {
+                allSelected.push(el.value);
+                this.selected = this.selectAll ? allSelected : [];
+              });
             }
           }"
       hx-post="{% url "opportunity:invoice_approve" org_slug=request.org.slug pk=opportunity.pk %}"
       hx-swap="none"
-    >
-    {% csrf_token %}
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
   {% endif %}
 
   <div id="invoiceTable">
@@ -74,7 +78,8 @@
         <form hx-post="{% url "opportunity:invoice_create" org_slug=request.org.slug pk=opportunity.pk %}"
               hx-trigger="submit"
               hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-              hx-target="#formFields">
+              hx-target="#formFields"
+              hx-on::after-request="this.reset()">
           <div class="modal-body">
             <div id="formFields">{% crispy form %}</div>
           </div>
