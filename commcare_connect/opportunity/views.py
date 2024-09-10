@@ -1100,8 +1100,10 @@ def user_visit_review(request, org_slug, opp_id):
     if request.POST and is_program_manager:
         review_status = request.POST.get("review_status")
         updated_reviews = request.POST.getlist("pk")
+        user_visits = UserVisit.objects.filter(pk__in=updated_reviews)
         if review_status in ["agree", "disagree"]:
-            UserVisit.objects.filter(pk__in=updated_reviews).update(review_status=review_status)
+            user_visits.update(review_status=review_status)
+            update_payment_accrued(opportunity=opportunity, users=[visit.user for visit in user_visits])
 
     return render(
         request,
