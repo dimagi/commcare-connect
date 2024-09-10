@@ -674,7 +674,7 @@ def user_visits_list(request, org_slug=None, opp_id=None, pk=None):
     opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
     opportunity_access = get_object_or_404(OpportunityAccess, pk=pk, opportunity=opportunity)
     user_visits = opportunity_access.uservisit_set.order_by("visit_date")
-    user_visits_table = UserVisitTable(user_visits)
+    user_visits_table = UserVisitTable(user_visits, org_slug=request.org.slug)
     return render(
         request,
         "opportunity/user_visits_list.html",
