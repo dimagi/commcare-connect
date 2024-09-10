@@ -22,7 +22,7 @@ def update_status(completed_works, opportunity_access, compute_payment=True):
                 and not all(review_status == "agree" for *_, review_status in visits)
                 and completed_work.status == CompletedWorkStatus.approved
             ):
-                completed_work.update_status(CompletedWorkStatus.pending)
+                completed_work.status = CompletedWorkStatus.pending
             completed_work.save()
 
         if compute_payment:
