@@ -41,6 +41,7 @@
           <th>{% sort_link 'start_date' 'Start Date' %}</th>
           <th>{% sort_link 'end_date' 'End Date' %}</th>
           <th>Status</th>
+          <th>Program</th>
           <th>Manage</th>
         </tr>
         </thead>
@@ -61,6 +62,7 @@
                 <span class="badge bg-warning text-white rounded-pill">Pending Setup</span>
               {% endif %}
             </td>
+            <td>{% if opportunity.managed %} {{ opportunity.managedopportunity.program.name }} {% else %} - {% endif %}</td>
             <td width="300">
               <div>
                 <a class="btn btn-primary btn-sm"

@@ -102,7 +102,7 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
-from commcare_connect.program.models import ManagedOpportunity, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
 from commcare_connect.program.tables import ProgramInvitationTable
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
@@ -156,9 +156,7 @@ class OpportunityList(OrganizationUserMixin, ListView):
 
         program_invitation_table = None
         if self.request.org_membership and self.request.org_membership.is_admin or self.request.user.is_superuser:
-            program_invitations = ProgramApplication.objects.filter(
-                organization=self.request.org, status=ProgramApplicationStatus.INVITED
-            )
+            program_invitations = ProgramApplication.objects.filter(organization=self.request.org)
             program_invitation_table = ProgramInvitationTable(program_invitations)
         context["program_invitation_table"] = program_invitation_table
         context["base_template"] = "opportunity/base.html"

@@ -85,6 +85,7 @@ class ManagedOpportunityInitForm(OpportunityInitForm):
             queryset=program_members,
             required=True,
             widget=forms.Select(attrs={"class": "form-control"}),
+            label="Network Manager Organization",
         )
 
         self.helper.layout.fields.insert(3, Row(Field("organization")))
