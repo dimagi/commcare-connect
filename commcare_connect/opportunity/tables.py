@@ -409,6 +409,7 @@ class UserVisitReviewTable(tables.Table):
             "created_on",
             "user_visit",
         )
+        empty_text = "No visits submitted for review."
 
 
 class PaymentReportTable(tables.Table):
