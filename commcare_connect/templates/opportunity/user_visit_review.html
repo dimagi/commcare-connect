@@ -33,17 +33,11 @@
       }"
 >
   {% csrf_token %}
-  <div class="table-responsive">
+  <div class="table-responsive mb-2">
     {% render_table table %}
   </div>
-  <div class="mt-2 input-group w-25">
-    <select class="form-select" name="review_status" required>
-      <option value="">Select</option>
-      <option value="agree">Agree</option>
-      <option value="disagree">Disagree</option>
-    </select>
-    <button type="submit" class="btn btn-primary">Save</button>
-  </div>
+  <input type="submit" class="btn btn-primary" name="review_status" value="Agree">
+  <input type="submit" class="btn btn-danger" name="review_status" value="Disagree">
 </form>
 {{ user_visit_ids|json_script:"user_visit_ids" }}
 {% else %}

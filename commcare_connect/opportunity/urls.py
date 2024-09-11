@@ -106,7 +106,7 @@ urlpatterns = [
     path("<int:pk>/catchment_area_export/", view=export_catchment_area, name="catchment_area_export"),
     path("<int:pk>/catchment_area_import/", view=import_catchment_area, name="catchment_area_import"),
     path("<int:pk>/user_invite/", view=opportunity_user_invite, name="user_invite"),
-    path("<int:opp_id>/user_visit_review", user_visit_review, name="user_visit_review"),
+    path("<int:opp_id>/user_visit_review/", user_visit_review, name="user_visit_review"),
     path("<int:pk>/payment_report", payment_report, name="payment_report"),
     path("<int:pk>/invoice/", views.invoice_list, name="invoice_list"),
     path("<int:pk>/invoice_table/", views.PaymentInvoiceTableView.as_view(), name="invoice_table"),

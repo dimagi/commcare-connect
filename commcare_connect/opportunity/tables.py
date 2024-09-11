@@ -387,7 +387,7 @@ class UserVisitReviewTable(tables.Table):
     reason = columns.Column(verbose_name="Justification")
     visit_date = columns.Column()
     created_on = columns.Column(accessor="review_created_on", verbose_name="Review Requested On")
-    review_status = columns.Column()
+    review_status = columns.Column(verbose_name="Program Manager Review")
     user_visit = columns.LinkColumn(
         "opportunity:visit_verification",
         verbose_name="User Visit",
