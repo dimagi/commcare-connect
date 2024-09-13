@@ -1,5 +1,4 @@
 import django_tables2 as tables
-import sentry_sdk
 from dal.autocomplete import ModelSelect2
 from django.db import transaction
 from django.utils.decorators import method_decorator
@@ -52,6 +51,8 @@ class EventListCreateView(ListCreateAPIView):
             event_objects = [Event(**item) for item in serializer.validated_data]
             Event.objects.bulk_create(event_objects)
         except Exception as e:
+            import sentry_sdk
+
             sentry_sdk.capture_exception(e)
             # Bulk create failed, try saving each item individually
             failed_items = []
