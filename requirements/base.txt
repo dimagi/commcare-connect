@@ -21,7 +21,9 @@ argon2-cffi==21.3.0
 argon2-cffi-bindings==21.2.0
     # via argon2-cffi
 asgiref==3.7.2
-    # via django
+    # via
+    #   django
+    #   django-htmx
 async-timeout==4.0.3
     # via aiohttp
 attrs==23.1.0
@@ -79,9 +81,12 @@ django==4.2.5
     #   -r requirements/base.in
     #   crispy-bootstrap5
     #   django-allauth
+    #   django-autocomplete-light
     #   django-celery-beat
     #   django-cors-headers
     #   django-crispy-forms
+    #   django-filter
+    #   django-htmx
     #   django-model-utils
     #   django-oauth-toolkit
     #   django-redis
@@ -90,6 +95,8 @@ django==4.2.5
     #   djangorestframework
     #   drf-spectacular
 django-allauth==0.54.0
+    # via -r requirements/base.in
+django-autocomplete-light==3.11.0
     # via -r requirements/base.in
 django-celery-beat==2.5.0
     # via -r requirements/base.in
@@ -100,6 +107,10 @@ django-crispy-forms==2.0
     #   -r requirements/base.in
     #   crispy-bootstrap5
 django-environ==0.10.0
+    # via -r requirements/base.in
+django-filter==24.3
+    # via -r requirements/base.in
+django-htmx==1.19.0
     # via -r requirements/base.in
 django-model-utils==4.3.1
     # via -r requirements/base.in
