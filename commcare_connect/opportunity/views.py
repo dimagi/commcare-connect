@@ -460,7 +460,7 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
         {
             "form": form,
             "opportunity_claims": opportunity_claims,
-            "budget_per_visit": opportunity.budget_per_visit,
+            "budget_per_visit": opportunity.budget_per_visit_new,
             "opportunity": opportunity,
         },
     )
