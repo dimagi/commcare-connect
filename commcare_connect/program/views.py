@@ -125,6 +125,9 @@ class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
 def invite_organization(request, org_slug, pk):
     requested_org_slug = request.POST.get("organization")
     organization = get_object_or_404(Organization, slug=requested_org_slug)
+    if organization == request.org:
+        messages.error(request, f"Cannot invite organization {organization.name} to program.")
+        return redirect(reverse("program:applications", kwargs={"org_slug": org_slug, "pk": pk}))
     program = get_object_or_404(Program, id=pk)
 
     obj, created = ProgramApplication.objects.update_or_create(
@@ -165,7 +168,7 @@ class ProgramApplicationList(ProgramManagerMixin, SingleTableView):
             status__in=[ProgramApplicationStatus.ACCEPTED, ProgramApplicationStatus.APPLIED],
         ).values_list("organization_id", flat=True)
 
-        context["organizations"] = Organization.objects.exclude(id__in=org_already_member_ids)
+        context["organizations"] = Organization.objects.exclude(id__in=[*org_already_member_ids, self.request.org.pk])
         context["program"] = program
         return context
 
