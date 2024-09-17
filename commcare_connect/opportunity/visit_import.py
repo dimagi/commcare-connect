@@ -126,7 +126,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
             visits = UserVisit.objects.filter(xform_id__in=visit_batch, opportunity=opportunity)
             for visit in visits:
                 seen_visits.add(visit.xform_id)
-                visit_data = data_by_visit_id[visit.xform.id]
+                visit_data = data_by_visit_id[visit.xform_id]
                 status = visit_data["status"]
                 reason = visit_data["reason"]
                 justification = visit_data["justification"]
