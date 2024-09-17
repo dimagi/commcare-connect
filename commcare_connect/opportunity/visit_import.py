@@ -128,8 +128,8 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 seen_visits.add(visit.xform_id)
                 visit_data = data_by_visit_id[visit.xform_id]
                 status = visit_data["status"]
-                reason = visit_data["reason"]
-                justification = visit_data["justification"]
+                reason = visit_data.get("reason")
+                justification = visit_data.get("justification")
                 changed = False
                 if visit.status != status:
                     visit.status = status
