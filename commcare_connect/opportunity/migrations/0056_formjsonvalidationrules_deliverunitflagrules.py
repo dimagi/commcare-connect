@@ -6,7 +6,7 @@ import django.db.models.deletion
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0055_uservisit_review_created_on_uservisit_review_status"),
+        ("opportunity", "0055_uservisit_justification_uservisit_review_created_on_and_more"),
     ]
 
     operations = [
