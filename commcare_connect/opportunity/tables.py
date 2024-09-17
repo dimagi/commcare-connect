@@ -61,6 +61,7 @@ class UserVisitTable(OrgContextTable):
         verbose_name="Visit date", accessor="visit_date", format="c", visible=False
     )
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
+    justification = columns.Column("Justification", accessor="justification", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
@@ -384,7 +385,7 @@ class UserVisitReviewTable(tables.Table):
     )
     username = columns.Column(accessor="user__username", verbose_name="Username")
     name = columns.Column(accessor="user__name", verbose_name="Name of the User")
-    reason = columns.Column(verbose_name="Justification")
+    justification = columns.Column(verbose_name="Justification")
     visit_date = columns.Column()
     created_on = columns.Column(accessor="review_created_on", verbose_name="Review Requested On")
     review_status = columns.Column(verbose_name="Program Manager Review")
@@ -403,7 +404,7 @@ class UserVisitReviewTable(tables.Table):
             "username",
             "name",
             "status",
-            "reason",
+            "justification",
             "visit_date",
             "review_status",
             "created_on",

@@ -1,5 +1,6 @@
 import codecs
 import textwrap
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -28,6 +29,7 @@ STATUS_COL = "status"
 USERNAME_COL = "username"
 AMOUNT_COL = "payment amount"
 REASON_COL = "rejected reason"
+JUSTIFICATION_COL = "justification"
 WORK_ID_COL = "instance id"
 PAYMENT_APPROVAL_STATUS_COL = "payment approval"
 REQUIRED_COLS = [VISIT_ID_COL, STATUS_COL]
@@ -113,40 +115,39 @@ def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> Vi
 
 
 def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
-    status_by_visit_id, reasons_by_visit_id = get_status_by_visit_id(dataset)
-    visit_ids = list(status_by_visit_id)
+    data_by_visit_id = get_data_by_visit_id(dataset)
+    visit_ids = list(data_by_visit_id.keys())
     missing_visits = set()
     seen_visits = set()
     user_ids = set()
-    seen_completed_works = set()
     with transaction.atomic():
         for visit_batch in batched(visit_ids, 100):
             to_update = []
             visits = UserVisit.objects.filter(xform_id__in=visit_batch, opportunity=opportunity)
             for visit in visits:
                 seen_visits.add(visit.xform_id)
-                seen_completed_works.add(visit.completed_work_id)
-                status = status_by_visit_id[visit.xform_id]
-                reason = reasons_by_visit_id.get(visit.xform_id)
+                visit_data = data_by_visit_id[visit.xform.id]
+                status = visit_data["status"]
+                reason = visit_data["reason"]
+                justification = visit_data["justification"]
                 changed = False
-
                 if visit.status != status:
                     visit.status = status
-                    visit.reason = reason
                     if opportunity.managed and status == VisitValidationStatus.approved:
                         visit.review_created_on = now()
                     changed = True
-
+                if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
+                    visit.reason = reason
+                    changed = True
+                if justification and justification != visit.justification:
+                    visit.justification = justification
+                    changed = True
                 if changed:
                     to_update.append(visit)
                 user_ids.add(visit.user_id)
-
-            UserVisit.objects.bulk_update(
-                to_update, fields=["status", "reason", "status_modified_date", "review_created_on"]
-            )
+            UserVisit.objects.bulk_update(to_update, fields=["status", "reason", "review_created_on"])
             missing_visits |= set(visit_batch) - seen_visits
     update_payment_accrued(opportunity, users=user_ids)
-
     return VisitImportStatus(seen_visits, missing_visits)
 
 
@@ -187,6 +188,35 @@ def get_status_by_visit_id(dataset) -> dict[int, VisitValidationStatus]:
     return status_by_visit_id, reason_by_visit_id
 
 
+def get_data_by_visit_id(dataset) -> dict[int, any]:
+    headers = [header.lower() for header in dataset.headers or []]
+    if not headers:
+        raise ImportException("The uploaded file did not contain any headers")
+
+    visit_col_index = _get_header_index(headers, VISIT_ID_COL)
+    status_col_index = _get_header_index(headers, STATUS_COL)
+    reason_col_index = _get_header_index(headers, REASON_COL)
+    justification_col_index = _get_header_index(headers, JUSTIFICATION_COL, required=False)
+    data_by_visit_id = defaultdict(dict)
+    invalid_rows = []
+    for row in dataset:
+        row = list(row)
+        visit_id = str(row[visit_col_index])
+        status_raw = row[status_col_index].lower().strip().replace(" ", "_")
+        try:
+            data_by_visit_id[visit_id]["status"] = VisitValidationStatus[status_raw]
+        except KeyError:
+            invalid_rows.append((row, f"status must be one of {VisitValidationStatus.values}"))
+        if status_raw == VisitValidationStatus.rejected.value:
+            data_by_visit_id[visit_id]["reason"] = str(row[reason_col_index])
+        if justification_col_index > 0:
+            data_by_visit_id[visit_id]["justification"] = str(row[justification_col_index])
+
+    if invalid_rows:
+        raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
+    return data_by_visit_id
+
+
 def get_imported_dataset(file, file_format):
     if file_format == "csv":
         file = codecs.iterdecode(file, "utf-8")
@@ -194,10 +224,12 @@ def get_imported_dataset(file, file_format):
     return imported_data
 
 
-def _get_header_index(headers: list[str], col_name: str) -> int:
+def _get_header_index(headers: list[str], col_name: str, required=True) -> int:
     try:
         return headers.index(col_name)
     except ValueError:
+        if not required:
+            return -1
         raise ImportException(f"Missing required column(s): '{col_name}'")
 
 
