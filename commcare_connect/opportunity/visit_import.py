@@ -145,7 +145,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 if changed:
                     to_update.append(visit)
                 user_ids.add(visit.user_id)
-            UserVisit.objects.bulk_update(to_update, fields=["status", "reason", "review_created_on"])
+            UserVisit.objects.bulk_update(to_update, fields=["status", "reason", "review_created_on", "justification"])
             missing_visits |= set(visit_batch) - seen_visits
     update_payment_accrued(opportunity, users=user_ids)
     return VisitImportStatus(seen_visits, missing_visits)
