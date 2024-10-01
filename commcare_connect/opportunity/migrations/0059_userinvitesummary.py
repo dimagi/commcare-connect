@@ -15,14 +15,14 @@ def create_refresh_materialized_view_task(apps, schema_editor):
     PeriodicTask.objects.update_or_create(
         crontab=schedule,
         name="refresh_materialized_view",
-        task="your_app_name.tasks.refresh_materialized_view",
+        task="commcare_connect.opportunity.tasks.refresh_materialized_view",
     )
 
 
 def delete_refresh_materialized_view_task(apps, schema_editor):
     PeriodicTask.objects.filter(
         name="refresh_materialized_view",
-        task="your_app_name.tasks.refresh_materialized_view",
+        task="commcare_connect.opportunity.tasks.refresh_materialized_view",
     ).delete()
 
 
@@ -128,4 +128,5 @@ class Migration(migrations.Migration):
                     """,
             reverse_sql="DROP MATERIALIZED VIEW IF EXISTS opportunity_userinvite_summary;",
         ),
+        migrations.RunPython(create_refresh_materialized_view_task, delete_refresh_materialized_view_task),
     ]
