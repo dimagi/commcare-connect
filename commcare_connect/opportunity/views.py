@@ -44,7 +44,6 @@ from commcare_connect.opportunity.forms import (
     VisitExportForm,
 )
 from commcare_connect.opportunity.helpers import (
-    get_annotated_opportunity_access,
     get_annotated_opportunity_access_deliver_status,
     get_payment_report_data,
 )
@@ -64,6 +63,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     PaymentUnit,
+    UserInviteSummary,
     UserVisit,
     VisitValidationStatus,
 )
@@ -478,8 +478,7 @@ class OpportunityUserStatusTableView(OrganizationUserMixin, OrgContextSingleTabl
         opportunity_id = self.kwargs["pk"]
         org_slug = self.kwargs["org_slug"]
         opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-        access_objects = get_annotated_opportunity_access(opportunity)
-        return access_objects
+        return UserInviteSummary.objects.filter(opportunity=opportunity)
 
 
 @org_member_required

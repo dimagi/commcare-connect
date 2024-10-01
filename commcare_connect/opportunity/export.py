@@ -6,15 +6,13 @@ from flatten_dict import flatten
 from tablib import Dataset
 
 from commcare_connect.opportunity.forms import DateRanges
-from commcare_connect.opportunity.helpers import (
-    get_annotated_opportunity_access,
-    get_annotated_opportunity_access_deliver_status,
-)
+from commcare_connect.opportunity.helpers import get_annotated_opportunity_access_deliver_status
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
     Opportunity,
     OpportunityAccess,
+    UserInviteSummary,
     UserVisit,
     VisitValidationStatus,
 )
@@ -108,7 +106,7 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
 
 
 def export_user_status_table(opportunity: Opportunity) -> Dataset:
-    access_objects = get_annotated_opportunity_access(opportunity)
+    access_objects = UserInviteSummary.objects.filter(opportunity=opportunity)
     table = UserStatusTable(access_objects, exclude=("date_popup", "view_profile"))
     return get_dataset(table, export_title="User status export")
 
