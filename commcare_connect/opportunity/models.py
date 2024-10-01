@@ -691,8 +691,8 @@ class UserInviteSummary(models.Model):
     status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
     last_visit_date = models.DateTimeField(null=True, blank=True)
     date_deliver_started = models.DateTimeField(null=True, blank=True)
-    passed_assessment = models.IntegerField()
-    completed_modules_count = models.IntegerField()
+    passed_assessment = models.IntegerField(default=0)
+    completed_modules_count = models.IntegerField(default=0)
     job_claimed = models.DateTimeField(null=True)
     date_learn_completed = models.DateTimeField(null=True)
 

@@ -58,8 +58,8 @@ class Migration(migrations.Migration):
                 ),
                 ("last_visit_date", models.DateTimeField(blank=True, null=True)),
                 ("date_deliver_started", models.DateTimeField(blank=True, null=True)),
-                ("passed_assessment", models.IntegerField()),
-                ("completed_modules_count", models.IntegerField()),
+                ("passed_assessment", models.IntegerField(default=0)),
+                ("completed_modules_count", models.IntegerField(default=0)),
                 ("job_claimed", models.DateTimeField(null=True)),
                 ("date_learn_completed", models.DateTimeField(null=True)),
                 (
