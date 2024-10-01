@@ -9,11 +9,14 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
+    UserInviteSummary,
     VisitValidationStatus,
 )
 
 
 def get_annotated_opportunity_access(opportunity: Opportunity):
+    return UserInviteSummary.objects.filter(opportunity=opportunity)
+
     learn_modules_count = opportunity.learn_app.learn_modules.count()
     access_objects = (
         UserInvite.objects.filter(opportunity=opportunity)
@@ -65,7 +68,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
         )
         .order_by("opportunity_access__user__name")
     )
-
+    print(str(access_objects.query))
     return access_objects
 
 

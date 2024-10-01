@@ -13,6 +13,7 @@ from commcare_connect.opportunity.export import (
 )
 from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit
+from commcare_connect.opportunity.tasks import refresh_materialized_view
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CatchmentAreaFactory,
@@ -127,6 +128,7 @@ def test_export_user_status_table_no_data_only(opportunity: Opportunity):
         rows.append(
             (mobile_user.name, mobile_user.username, "Accepted", date.replace(tzinfo=None), "", False, "", "", "")
         )
+    refresh_materialized_view()
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
@@ -150,6 +152,7 @@ def test_export_user_status_table_learn_data_only(opportunity: Opportunity):
         rows.append(
             (mobile_user.name, mobile_user.username, "Accepted", date.replace(tzinfo=None), "", False, "", "", "")
         )
+    refresh_materialized_view()
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
@@ -191,6 +194,7 @@ def test_export_user_status_table_learn_assessment_data_only(opportunity: Opport
                 "",
             )
         )
+    refresh_materialized_view()
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")
@@ -241,6 +245,7 @@ def test_export_user_status_table_data(opportunity: Opportunity):
                 date.replace(tzinfo=None),
             )
         )
+    refresh_materialized_view()
     dataset = export_user_status_table(opportunity)
     prepared_test_dataset = _get_prepared_dataset_for_user_status_test(rows)
     assert prepared_test_dataset.export("csv") == dataset.export("csv")

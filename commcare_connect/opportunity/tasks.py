@@ -6,7 +6,7 @@ from allauth.utils import build_absolute_uri
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import connection, transaction
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext
@@ -339,3 +339,8 @@ def generate_catchment_area_export(opportunity_id: int, export_format: str):
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_catchment_area.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
+
+
+def refresh_materialized_view():
+    with connection.cursor() as cursor:
+        cursor.execute("REFRESH MATERIALIZED VIEW opportunity_userinvite_summary;")

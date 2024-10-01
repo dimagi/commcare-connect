@@ -683,3 +683,19 @@ class CatchmentArea(models.Model):
 
     class Meta:
         unique_together = ("site_code", "opportunity")
+
+
+class UserInviteSummary(models.Model):
+    opportunity_access = models.ForeignKey(OpportunityAccess, null=True, on_delete=models.DO_NOTHING)
+    opportunity = models.ForeignKey(Opportunity, null=True, on_delete=models.CASCADE)
+    status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+    last_visit_date = models.DateTimeField(null=True, blank=True)
+    date_deliver_started = models.DateTimeField(null=True, blank=True)
+    passed_assessment = models.IntegerField()  # Rename to total_passed_assessments
+    completed_modules_count = models.IntegerField()  # Rename to total_completed_modules_count
+    job_claimed = models.DateTimeField(null=True)  # Rename to match SQL
+    date_learn_completed = models.DateTimeField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = "opportunity_userinvite_summary"
