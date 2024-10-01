@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
 
     """This migration exists because we created a materialized view for the `UserInviteSummary` model.
         Django automatically generates migrations for all models present in the application.
-        Since `managed = False` and `db_table = "opportunity_userinvite_summary"`, Django will not create or modify this table in the database.
+        Since `managed = False` and `db_table is provided Django will not create or modify this table in the database.
         However, we still need this migration in the migration script to prevent Django from generating it again when `makemigrations` is run in the future.
         This ensures that the model is recognized without altering the actual database structure."""
 
@@ -127,6 +127,89 @@ class Migration(migrations.Migration):
                     userinvite.id, _user.id, claim.id, learning_module.total_modules_count, userinvite.opportunity_access_id;
                     """,
             reverse_sql="DROP MATERIALIZED VIEW IF EXISTS opportunity_userinvite_summary;",
+        ),
+        migrations.CreateModel(
+            name="OpportunityDeliverySummary",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("approved", models.IntegerField(default=0)),
+                ("pending", models.IntegerField(default=0)),
+                ("rejected", models.IntegerField(default=0)),
+                ("over_limit", models.IntegerField(default=0)),
+                ("incomplete", models.IntegerField(default=0)),
+                ("completed", models.IntegerField(default=0)),
+                ("payment_unit", models.CharField(max_length=255)),
+                (
+                    "opportunity",
+                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="opportunity.opportunity"),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="users.user"),
+                ),
+                (
+                    "opportunity_access",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.DO_NOTHING,
+                        to="opportunity.opportunityaccess",
+                    ),
+                ),
+            ],
+            options={
+                "db_table": "opportunity_delivery_summary",
+                "managed": False,
+            },
+        ),
+        migrations.RunSQL(
+            sql="""
+                    CREATE MATERIALIZED VIEW opportunity_delivery_summary AS
+                    SELECT
+                        access.id AS id,
+                        access.id AS opportunity_access_id,
+                        access.opportunity_id AS opportunity_id,
+                        access.user_id AS user_id,
+                        payment_unit.name AS payment_unit,
+
+                        COUNT(DISTINCT CASE WHEN completed_work.status = 'pending'
+                                            AND completed_work.opportunity_access_id = access.id
+                                            AND completed_work.payment_unit_id = payment_unit.id THEN completed_work.id END) AS pending,
+
+                        COUNT(DISTINCT CASE WHEN completed_work.status = 'approved'
+                                            AND completed_work.opportunity_access_id = access.id
+                                            AND completed_work.payment_unit_id = payment_unit.id THEN completed_work.id END) AS approved,
+
+                        COUNT(DISTINCT CASE WHEN completed_work.status = 'rejected'
+                                            AND completed_work.opportunity_access_id = access.id
+                                            AND completed_work.payment_unit_id = payment_unit.id THEN completed_work.id END) AS rejected,
+
+                        COUNT(DISTINCT CASE WHEN completed_work.status = 'over_limit'
+                                            AND completed_work.opportunity_access_id = access.id
+                                            AND completed_work.payment_unit_id = payment_unit.id THEN completed_work.id END) AS over_limit,
+
+                        COUNT(DISTINCT CASE WHEN completed_work.status = 'incomplete'
+                                            AND completed_work.opportunity_access_id = access.id
+                                            AND completed_work.payment_unit_id = payment_unit.id THEN completed_work.id END) AS incomplete,
+
+                        COALESCE(
+                            COUNT(DISTINCT CASE WHEN completed_work.status IN ('approved', 'rejected', 'pending', 'over_limit')
+                                                AND completed_work.opportunity_access_id = access.id
+                                                AND completed_work.payment_unit_id = payment_unit.id THEN completed_work.id END),
+                            0
+                        ) AS completed
+                    FROM
+                        opportunity_opportunityaccess AS access
+                    LEFT JOIN
+                        opportunity_completedwork AS completed_work ON access.id = completed_work.opportunity_access_id
+                    LEFT JOIN
+                        opportunity_paymentunit AS payment_unit ON completed_work.payment_unit_id = payment_unit.id
+                    INNER JOIN
+                        users_user AS _user ON access.user_id = _user.id
+                    GROUP BY
+                        access.id,
+                        _user.id,
+                        payment_unit.name;
+                    """,
+            reverse_sql="DROP MATERIALIZED VIEW IF EXISTS opportunity_delivery_summary;",
         ),
         migrations.RunPython(create_refresh_materialized_view_task, delete_refresh_materialized_view_task),
     ]

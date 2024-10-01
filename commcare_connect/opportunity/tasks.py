@@ -344,4 +344,8 @@ def generate_catchment_area_export(opportunity_id: int, export_format: str):
 @celery_app.task()
 def refresh_materialized_view():
     with connection.cursor() as cursor:
-        cursor.execute("REFRESH MATERIALIZED VIEW opportunity_userinvite_summary;")
+        cursor.execute(
+            """REFRESH MATERIALIZED VIEW opportunity_userinvite_summary;
+               REFRESH MATERIALIZED VIEW opportunity_delivery_summary;
+        """
+        )

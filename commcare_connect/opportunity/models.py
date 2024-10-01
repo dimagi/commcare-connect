@@ -699,3 +699,20 @@ class UserInviteSummary(models.Model):
     class Meta:
         managed = False
         db_table = "opportunity_userinvite_summary"
+
+
+class OpportunityDeliverySummary(models.Model):
+    opportunity_access = models.ForeignKey(OpportunityAccess, null=True, on_delete=models.DO_NOTHING)
+    opportunity = models.ForeignKey(Opportunity, null=True, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, null=True, on_delete=models.CASCADE)
+    approved = models.IntegerField(default=0)
+    pending = models.IntegerField(default=0)
+    rejected = models.IntegerField(default=0)
+    over_limit = models.IntegerField(default=0)
+    incomplete = models.IntegerField(default=0)
+    completed = models.IntegerField(default=0)
+    payment_unit = models.CharField(max_length=255)
+
+    class Meta:
+        managed = False
+        db_table = "opportunity_delivery_summary"

@@ -43,10 +43,7 @@ from commcare_connect.opportunity.forms import (
     SendMessageMobileUsersForm,
     VisitExportForm,
 )
-from commcare_connect.opportunity.helpers import (
-    get_annotated_opportunity_access_deliver_status,
-    get_payment_report_data,
-)
+from commcare_connect.opportunity.helpers import get_payment_report_data
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CatchmentArea,
@@ -59,6 +56,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityDeliverySummary,
     OpportunityVerificationFlags,
     Payment,
     PaymentInvoice,
@@ -652,8 +650,7 @@ class OpportunityDeliverStatusTable(OrganizationUserMixin, OrgContextSingleTable
         opportunity_id = self.kwargs["pk"]
         org_slug = self.kwargs["org_slug"]
         opportunity = get_opportunity_or_404(pk=opportunity_id, org_slug=org_slug)
-        access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
-        return access_objects
+        return OpportunityDeliverySummary.objects.filter(opportunity=opportunity)
 
 
 @org_member_required
