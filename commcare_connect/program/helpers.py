@@ -17,6 +17,13 @@ from django.db.models.functions import Cast, Round
 from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
 from commcare_connect.program.models import ManagedOpportunity, Program
 
+EXCLUDED_STATUS = [
+    VisitValidationStatus.over_limit,
+    VisitValidationStatus.trial,
+]
+
+FILTER_FOR_VALID_VISIT_DATE = ~Q(opportunityaccess__uservisit__status__in=EXCLUDED_STATUS)
+
 
 def calculate_safe_percentage(numerator, denominator):
     return Case(
@@ -27,18 +34,11 @@ def calculate_safe_percentage(numerator, denominator):
 
 
 def get_annotated_managed_opportunity(program: Program):
-    excluded_status = [
-        VisitValidationStatus.over_limit,
-        VisitValidationStatus.trial,
-    ]
-
-    filter_for_valid__visit_date = ~Q(opportunityaccess__uservisit__status__in=excluded_status)
-
     earliest_visits = (
         UserVisit.objects.filter(
             opportunity_access=OuterRef("opportunityaccess"),
         )
-        .exclude(status__in=excluded_status)
+        .exclude(status__in=EXCLUDED_STATUS)
         .order_by("visit_date")
         .values("visit_date")[:1]
     )
@@ -57,7 +57,7 @@ def get_annotated_managed_opportunity(program: Program):
             ),
             workers_starting_delivery=Count(
                 "opportunityaccess__uservisit__user",
-                filter=filter_for_valid__visit_date,
+                filter=FILTER_FOR_VALID_VISIT_DATE,
                 distinct=True,
             ),
             percentage_conversion=calculate_safe_percentage("workers_starting_delivery", "workers_invited"),
@@ -65,13 +65,65 @@ def get_annotated_managed_opportunity(program: Program):
                 ExpressionWrapper(
                     Subquery(earliest_visits) - F("opportunityaccess__invited_date"), output_field=DurationField()
                 ),
-                filter=filter_for_valid__visit_date,
+                filter=FILTER_FOR_VALID_VISIT_DATE,
             ),
         )
         .prefetch_related(
             "opportunityaccess_set",
             "opportunityaccess_set__uservisit_set",
             "opportunityaccess_set__assessment_set",
+        )
+    )
+
+    return managed_opportunities
+
+
+def get_delivery_performance_report(program: Program, start_date, end_date):
+    date_filter = FILTER_FOR_VALID_VISIT_DATE
+
+    if start_date:
+        date_filter &= Q(opportunityaccess__uservisit__visit_date__gte=start_date)
+
+    if end_date:
+        date_filter &= Q(opportunityaccess__uservisit__visit_date__lte=end_date)
+
+    flagged_visits_filter = Q(opportunityaccess__uservisit__flagged=True) & ~Q(
+        opportunityaccess__uservisit__status__in=[
+            VisitValidationStatus.rejected,
+            VisitValidationStatus.approved,
+        ]
+    )
+
+    managed_opportunities = (
+        ManagedOpportunity.objects.filter(program=program)
+        .order_by("start_date")
+        .prefetch_related(
+            "opportunityaccess_set",
+            "opportunityaccess_set__uservisit_set",
+            "opportunityaccess_set__completedwork_set",
+        )
+        .annotate(
+            total_workers_starting_delivery=Count(
+                "opportunityaccess__uservisit__user",
+                filter=FILTER_FOR_VALID_VISIT_DATE,
+                distinct=True,
+            ),
+            active_workers=Count(
+                "opportunityaccess__uservisit__user",
+                filter=date_filter,
+                distinct=True,
+            ),
+            total_payment_units=Count("opportunityaccess__completedwork"),
+            total_payment_units_with_flags=Count("opportunityaccess__completedwork", filter=flagged_visits_filter),
+            total_payment_since_start_date=Count("opportunityaccess__completedwork", filter=date_filter),
+            delivery_per_day_per_worker=Case(
+                When(active_workers=0, then=Value(0)),
+                default=Round(F("total_payment_since_start_date") / F("active_workers"), 2),
+                output_field=FloatField(),
+            ),
+            records_flagged_percentage=calculate_safe_percentage(
+                "total_payment_units_with_flags", "total_payment_since_start_date"
+            ),
         )
     )
 
