@@ -464,12 +464,9 @@ def test_reciever_verification_flags_form_submission(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.form_submission_start = datetime.time(hour=10, minute=0)
-    verification_flags.form_submission_end = datetime.time(hour=12, minute=0)
-    verification_flags.save()
 
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    time = datetime.datetime(2024, 4, 17, 10, 0, 0)
+    time = datetime.datetime(2024, 4, 17, verification_flags.form_submission_start.hour, 0, 0)
     form_json["metadata"]["timeStart"] = time
     form_json["metadata"]["timeEnd"] = time + datetime.timedelta(minutes=10)
     make_request(api_client, form_json, user_with_connectid_link)
@@ -481,12 +478,9 @@ def test_reciever_verification_flags_form_submission_start(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.form_submission_start = datetime.time(hour=10, minute=0)
-    verification_flags.form_submission_end = datetime.time(hour=12, minute=0)
-    verification_flags.save()
 
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    time = datetime.datetime(2024, 4, 17, 9, 0, 0)
+    time = datetime.datetime(2024, 4, 17, verification_flags.form_submission_start.hour - 1, 0, 0)
     form_json["metadata"]["timeStart"] = time
     make_request(api_client, form_json, user_with_connectid_link)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
@@ -498,12 +492,9 @@ def test_reciever_verification_flags_form_submission_end(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.form_submission_start = datetime.time(hour=10, minute=0)
-    verification_flags.form_submission_end = datetime.time(hour=12, minute=0)
-    verification_flags.save()
 
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    time = datetime.datetime(2024, 4, 17, 13, 0, 0)
+    time = datetime.datetime(2024, 4, 17, verification_flags.form_submission_end.hour + 1, 0, 0)
     form_json["metadata"]["timeStart"] = time
     make_request(api_client, form_json, user_with_connectid_link)
     visit = UserVisit.objects.get(user=user_with_connectid_link)

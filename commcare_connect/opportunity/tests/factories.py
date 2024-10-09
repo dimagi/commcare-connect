@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import time, timezone
 
 from factory import DictFactory, Faker, LazyAttribute, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
@@ -72,6 +72,8 @@ class OpportunityAccessFactory(DjangoModelFactory):
 
 class OpportunityVerificationFlagsFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
+    form_submission_start = time(10, 0, 0)
+    form_submission_end = time(12, 0, 0)
 
     class Meta:
         model = "opportunity.OpportunityVerificationFlags"
