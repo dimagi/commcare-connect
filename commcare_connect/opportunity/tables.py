@@ -10,8 +10,8 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     PaymentUnit,
-    UserInvite,
     UserInviteStatus,
+    UserInviteSummary,
     UserVisit,
     VisitValidationStatus,
 )
@@ -152,11 +152,11 @@ class UserStatusTable(OrgContextTable):
     completed_learning = AggregateColumn(verbose_name="Completed Learning", accessor="date_learn_completed")
     passed_assessment = BooleanAggregateColumn(verbose_name="Passed Assessment")
     started_delivery = AggregateColumn(verbose_name="Started Delivery", accessor="date_deliver_started")
-    last_visit_date = columns.Column(accessor="last_visit_date_d")
+    last_visit_date = columns.Column(accessor="last_visit_date")
     view_profile = columns.Column("View Profile", empty_values=(), footer=lambda table: f"Invited: {len(table.rows)}")
 
     class Meta:
-        model = UserInvite
+        model = UserInviteSummary
         fields = ("status",)
         sequence = (
             "display_name",
