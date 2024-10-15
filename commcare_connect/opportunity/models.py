@@ -235,6 +235,7 @@ class OpportunityAccess(models.Model):
     suspended = models.BooleanField(default=False)
     suspension_date = models.DateTimeField(null=True, blank=True)
     suspension_reason = models.CharField(max_length=300, null=True, blank=True)
+    invited_date = models.DateTimeField(auto_now_add=True, editable=False, null=True)
 
     class Meta:
         indexes = [models.Index(fields=["invite_id"])]
