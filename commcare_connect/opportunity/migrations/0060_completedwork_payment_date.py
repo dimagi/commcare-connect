@@ -2,15 +2,17 @@
 
 from django.db import migrations, models, transaction
 
-from commcare_connect.opportunity.models import OpportunityAccess
 from commcare_connect.opportunity.utils.completed_work import update_work_payment_date
 
 
 @transaction.atomic
 def update_paid_date_from_payments(apps, schema_editor):
+    OpportunityAccess = apps.get_model("opportunity.OpportunityAccess")
+    Payment = apps.get_model("opportunity.Payment")
+    CompletedWork = apps.get_model("opportunity.CompletedWork")
     accesses = OpportunityAccess.objects.all()
     for access in accesses:
-        update_work_payment_date(access)
+        update_work_payment_date(access, Payment, CompletedWork)
 
 
 class Migration(migrations.Migration):

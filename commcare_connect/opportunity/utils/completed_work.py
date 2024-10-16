@@ -44,9 +44,19 @@ def update_status(completed_works, opportunity_access, compute_payment=True):
         opportunity_access.save()
 
 
-def update_work_payment_date(access: OpportunityAccess):
-    payments = Payment.objects.filter(opportunity_access=access).order_by("date_paid")
-    completed_works = CompletedWork.objects.filter(opportunity_access=access).order_by("status_modified_date")
+def update_work_payment_date(access: OpportunityAccess, payment_model=None, completed_work_model=None):
+    """
+    Dynamically assign models to avoid issues with historical models during migrations.
+    Top-level imports use the current model, which may not match the schema at migration
+    time. This ensures we use historical models during migrations and current models in normal execution.
+    """
+    payment_model_ref = payment_model or Payment
+    completed_work_model_ref = completed_work_model or CompletedWork
+
+    payments = payment_model_ref.objects.filter(opportunity_access=access).order_by("date_paid")
+    completed_works = completed_work_model_ref.objects.filter(opportunity_access=access).order_by(
+        "status_modified_date"
+    )
 
     if not payments or not completed_works:
         return
@@ -76,4 +86,4 @@ def update_work_payment_date(access: OpportunityAccess):
         break
 
     if works_to_update:
-        CompletedWork.objects.bulk_update(works_to_update, ["payment_date"])
+        completed_work_model_ref.objects.bulk_update(works_to_update, ["payment_date"])
