@@ -40,7 +40,7 @@ def test_delivery_stats(opportunity: Opportunity):
                     status=VisitValidationStatus.approved.value,
                     opportunity_access=access,
                     completed_work=completed_work,
-                    visit_date=Faker("date_this_month"),
+                    visit_date=Faker("date_time_this_month", tzinfo=datetime.UTC),
                 )
 
     quarter = math.ceil(datetime.datetime.utcnow().month / 12 * 4)

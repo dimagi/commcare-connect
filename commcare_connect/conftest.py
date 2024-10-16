@@ -47,9 +47,11 @@ def user(db) -> User:
     return UserFactory()
 
 
-@pytest.fixture()
-def opportunity():
-    factory = OpportunityFactory(is_test=False)
+@pytest.fixture
+def opportunity(request):
+    opp_options = {"is_test": False}
+    opp_options.update(request.param if hasattr(request, "param") else {})
+    factory = OpportunityFactory(**opp_options)
     OpportunityVerificationFlagsFactory(opportunity=factory)
     return factory
 
