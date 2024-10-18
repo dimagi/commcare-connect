@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentUnit,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -539,3 +540,47 @@ def get_assignable_completed_work_count(access: OpportunityAccess) -> int:
             total_assigned_count += 1
 
     return total_assigned_count
+
+
+@pytest.mark.parametrize("opportunity", [{"managed": True}], indirect=True)
+def test_network_manager_approve_flagged_visit(mobile_user: User, opportunity: Opportunity):
+    assert opportunity.managed
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    visits = UserVisitFactory.create_batch(
+        5, opportunity=opportunity, status=VisitValidationStatus.pending, user=mobile_user, opportunity_access=access
+    )
+    dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
+    dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, "", "justification"] for visit in visits])
+    before_update = now()
+    import_status = _bulk_update_visit_status(opportunity, dataset)
+    after_update = now()
+    assert not import_status.missing_visits
+    updated_visits = UserVisit.objects.filter(opportunity=opportunity)
+    for visit in updated_visits:
+        assert visit.status == VisitValidationStatus.approved
+        assert visit.status_modified_date is not None
+        assert before_update <= visit.status_modified_date <= after_update
+        assert before_update <= visit.review_created_on <= after_update
+        assert visit.review_status == VisitReviewStatus.pending
+        assert visit.justification == "justification"
+
+
+@pytest.mark.parametrize("opportunity", [{"managed": True}], indirect=True)
+def test_network_manager_reject_flagged_visit(mobile_user: User, opportunity: Opportunity):
+    assert opportunity.managed
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    visits = UserVisitFactory.create_batch(
+        5, opportunity=opportunity, status=VisitValidationStatus.pending, user=mobile_user, opportunity_access=access
+    )
+    dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
+    dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, "", "justification"] for visit in visits])
+    before_update = now()
+    import_status = _bulk_update_visit_status(opportunity, dataset)
+    after_update = now()
+    assert not import_status.missing_visits
+    updated_visits = UserVisit.objects.filter(opportunity=opportunity)
+    for visit in updated_visits:
+        assert visit.status == VisitValidationStatus.rejected
+        assert visit.status_modified_date is not None
+        assert before_update <= visit.status_modified_date <= after_update
+        assert visit.review_created_on is None
