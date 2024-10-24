@@ -24,6 +24,14 @@
         </button>
       </li>
 
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="delivery-performance-tab" data-bs-toggle="tab"
+                data-bs-target="#delivery-performance-tab-pane"
+                type="button" role="tab" aria-controls="delivery-performance" aria-selected="false">
+          <i class="bi bi-journal-text"></i> {% trans "Delivery Performance" %}
+        </button>
+      </li>
+
     </ul>
     <div class="tab-content">
       <div class="tab-pane fade show active" id="funnel-performance-tab-pane" role="tabpanel"
@@ -33,6 +41,35 @@
              hx-get="{% url 'program:funnel_performance_table' request.org.slug program.id %}" hx-trigger="load"
              hx-swap="outerHTML">
           {% include "tables/table_placeholder.html" with num_cols=6 %}
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="delivery-performance-tab-pane" role="tabpanel"
+           aria-labelledby="funnel-performance-tab"
+           tabindex="0" hx-on::after-request="refreshTooltips()">
+        <div class="d-flex gap-3 justify-content-end align-items-end my-3 me-3">
+          <div>
+            <label for="startDate">Start Date</label>
+            <input id="startDate" name="start_date" class="form-control" type="date"/>
+          </div>
+          <div>
+            <label for="endDate">End Date</label>
+            <input id="endDate" name="end_date" class="form-control" type="date"/>
+          </div>
+          <button class="btn btn-primary h-50"
+                  hx-get="{% url "program:delivery_performance_table" org_slug=request.org.slug pk=program.id %}{% querystring %}"
+                  hx-include="[name='start_date'],[name='end_date']"
+                  hx-trigger="click"
+                  hx-target="#performanceTable">
+            <i class="bi bi-funnel-fill"></i> Filter
+          </button>
+        </div>
+        <div id="performanceTable">
+        <div class="pb-4" id="delivery-performance-table-containers"
+             hx-get="{% url "program:delivery_performance_table" org_slug=request.org.slug pk=program.id %}{% querystring %}"
+             hx-trigger="load"
+             hx-swap="outerHTML">
+          {% include "tables/table_placeholder.html" with num_cols=7 %}
         </div>
       </div>
     </div>

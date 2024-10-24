@@ -10,9 +10,14 @@ from commcare_connect.opportunity.views import OpportunityInit
 from commcare_connect.organization.decorators import org_admin_required, org_program_manager_required
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
-from commcare_connect.program.helpers import get_annotated_managed_opportunity
+from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tables import FunnelPerformanceTable, ProgramApplicationTable, ProgramTable
+from commcare_connect.program.tables import (
+    DeliveryPerformanceTable,
+    FunnelPerformanceTable,
+    ProgramApplicationTable,
+    ProgramTable,
+)
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -258,3 +263,17 @@ class FunnelPerformanceTableView(ProgramManagerMixin, SingleTableView):
         program_id = self.kwargs["pk"]
         program = get_object_or_404(Program, id=program_id)
         return get_annotated_managed_opportunity(program)
+
+
+class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
+    model = ManagedOpportunity
+    paginate_by = 10
+    table_class = DeliveryPerformanceTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        program_id = self.kwargs["pk"]
+        program = get_object_or_404(Program, id=program_id)
+        start_date = self.request.GET.get("start_date") or None
+        end_date = self.request.GET.get("end_date") or None
+        return get_delivery_performance_report(program, start_date, end_date)

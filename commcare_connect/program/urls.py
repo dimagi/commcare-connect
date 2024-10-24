@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.program.views import (
+    DeliveryPerformanceTableView,
     FunnelPerformanceTableView,
     ManagedOpportunityInit,
     ManagedOpportunityList,
@@ -30,4 +31,9 @@ urlpatterns = [
     ),
     path("<int:pk>/dashboard", dashboard, name="dashboard"),
     path("<int:pk>/funnel_performance_table", FunnelPerformanceTableView.as_view(), name="funnel_performance_table"),
+    path(
+        "<int:pk>/delivery_performance_table",
+        DeliveryPerformanceTableView.as_view(),
+        name="delivery_performance_table",
+    ),
 ]
