@@ -23,6 +23,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import bulk_approve_completed_work
@@ -172,24 +173,14 @@ def test_receiver_deliver_form_daily_visits_reached(
 def test_receiver_deliver_form_max_visits_reached(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
-    def form_json(payment_unit):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
-        stub = DeliverUnitStubFactory(id=deliver_unit.slug)
-        form_json = get_form_json(
-            form_block=stub.json,
-            domain=deliver_unit.app.cc_domain,
-            app_id=deliver_unit.app.cc_app_id,
-        )
-        return form_json
-
     def submit_form_for_random_entity(form_json):
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
         make_request(api_client, duplicate_json, mobile_user_with_connect_link)
 
     payment_units = opportunity.paymentunit_set.all()
-    form_json1 = form_json(payment_units[0])
-    form_json2 = form_json(payment_units[1])
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    form_json2 = get_form_json_for_payment_unit(payment_units[1])
     for _ in range(2):
         submit_form_for_random_entity(form_json1)
         submit_form_for_random_entity(form_json2)
@@ -503,7 +494,7 @@ def test_reciever_verification_flags_form_submission(
         assert ["form_submission_period", expected_message] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_duration(
+def test_receiver_verification_flags_duration(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -516,7 +507,7 @@ def test_reciever_verification_flags_duration(
     assert ["duration", "The form was completed too quickly."] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_check_attachments(
+def test_receiver_verification_flags_check_attachments(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -529,7 +520,7 @@ def test_reciever_verification_flags_check_attachments(
     assert ["attachment_missing", "Form was submitted without attachements."] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_form_json_rule(
+def test_receiver_verification_flags_form_json_rule(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -547,7 +538,7 @@ def test_reciever_verification_flags_form_json_rule(
     assert not visit.flagged
 
 
-def test_reciever_verification_flags_form_json_rule_flagged(
+def test_receiver_verification_flags_form_json_rule_flagged(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -569,7 +560,7 @@ def test_reciever_verification_flags_form_json_rule_flagged(
     ] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_catchment_areas(
+def test_receiver_verification_flags_catchment_areas(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
@@ -586,6 +577,35 @@ def test_reciever_verification_flags_catchment_areas(
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize(
+    "visit_status, review_status",
+    [
+        (VisitValidationStatus.approved, VisitReviewStatus.agree),
+        (VisitValidationStatus.pending, VisitReviewStatus.pending),
+    ],
+)
+def test_receiver_visit_review_status(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity, visit_status, review_status
+):
+    assert opportunity.managed
+    form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
+    if visit_status != VisitValidationStatus.approved:
+        form_json["metadata"]["location"] = None
+    make_request(api_client, form_json, mobile_user_with_connect_link)
+
+
+def get_form_json_for_payment_unit(payment_unit):
+    deliver_unit = DeliverUnitFactory(app=payment_unit.opportunity.deliver_app, payment_unit=payment_unit)
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug)
+    form_json = get_form_json(
+        form_block=stub.json,
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+    return form_json
 
 
 def _get_form_json(learn_app, module_id, form_block=None):

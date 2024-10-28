@@ -133,6 +133,7 @@ class UserVisitFactory(DjangoModelFactory):
     visit_date = Faker("date_time", tzinfo=timezone.utc)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
+    completed_work = SubFactory(CompletedWorkFactory)
 
     class Meta:
         model = "opportunity.UserVisit"
@@ -233,7 +234,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 class PaymentFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
     amount = Faker("pyint", min_value=1, max_value=10000)
-    date_paid = Faker("past_date")
+    date_paid = Faker("date_time", tzinfo=timezone.utc)
 
     class Meta:
         model = "opportunity.Payment"

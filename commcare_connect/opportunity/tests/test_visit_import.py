@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentUnit,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -539,3 +540,65 @@ def get_assignable_completed_work_count(access: OpportunityAccess) -> int:
             total_assigned_count += 1
 
     return total_assigned_count
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.rejected])
+def test_network_manager_flagged_visit_review_status(mobile_user: User, opportunity: Opportunity, visit_status):
+    assert opportunity.managed
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    visits = UserVisitFactory.create_batch(
+        5, opportunity=opportunity, status=VisitValidationStatus.pending, user=mobile_user, opportunity_access=access
+    )
+    dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
+    dataset.extend([[visit.xform_id, visit_status.value, "", "justification"] for visit in visits])
+    before_update = now()
+    import_status = _bulk_update_visit_status(opportunity, dataset)
+    after_update = now()
+    assert not import_status.missing_visits
+    updated_visits = UserVisit.objects.filter(opportunity=opportunity)
+    for visit in updated_visits:
+        assert visit.status == visit_status
+        assert visit.status_modified_date is not None
+        assert before_update <= visit.status_modified_date <= after_update
+        if visit.status == VisitValidationStatus.approved:
+            assert before_update <= visit.review_created_on <= after_update
+            assert visit.review_status == VisitReviewStatus.pending
+            assert visit.justification == "justification"
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize(
+    "review_status, cw_status",
+    [
+        (VisitReviewStatus.pending, CompletedWorkStatus.pending),
+        (VisitReviewStatus.agree, CompletedWorkStatus.approved),
+        (VisitReviewStatus.disagree, CompletedWorkStatus.pending),
+    ],
+)
+def test_review_completed_work_status(
+    mobile_user_with_connect_link: User, opportunity: Opportunity, review_status, cw_status
+):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    UserVisitFactory.create_batch(
+        2,
+        opportunity_access=access,
+        status=VisitValidationStatus.approved,
+        review_status=review_status,
+        review_created_on=now(),
+        completed_work__status=CompletedWorkStatus.pending,
+        completed_work__opportunity_access=access,
+        completed_work__payment_unit=opportunity.paymentunit_set.first(),
+        deliver_unit=deliver_unit,
+    )
+    assert access.payment_accrued == 0
+    update_payment_accrued(opportunity, {mobile_user_with_connect_link.id})
+    completed_works = CompletedWork.objects.filter(opportunity_access=access)
+    payment_accrued = 0
+    for cw in completed_works:
+        assert cw.status == cw_status
+        if cw.status == CompletedWorkStatus.approved:
+            payment_accrued += cw.payment_accrued
+    access.refresh_from_db()
+    assert access.payment_accrued == payment_accrued

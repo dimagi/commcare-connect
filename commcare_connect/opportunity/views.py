@@ -65,6 +65,7 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
     PaymentUnit,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
@@ -1119,7 +1120,7 @@ def user_visit_review(request, org_slug, opp_id):
         review_status = request.POST.get("review_status").lower()
         updated_reviews = request.POST.getlist("pk")
         user_visits = UserVisit.objects.filter(pk__in=updated_reviews)
-        if review_status in ["agree", "disagree"]:
+        if review_status in [VisitReviewStatus.agree.value, VisitReviewStatus.disagree.value]:
             user_visits.update(review_status=review_status)
             update_payment_accrued(opportunity=opportunity, users=[visit.user for visit in user_visits])
 

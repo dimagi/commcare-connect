@@ -50,7 +50,9 @@ def user(db) -> User:
 @pytest.fixture()
 def opportunity(request):
     verification_flags = getattr(request, "param", {}).get("verification_flags", {})
-    factory = OpportunityFactory(is_test=False)
+    opp_options = {"is_test": False}
+    opp_options.update(getattr(request, "param", {}).get("opp_options", {}))
+    factory = OpportunityFactory(**opp_options)
     OpportunityVerificationFlagsFactory(opportunity=factory, **verification_flags)
     return factory
 
