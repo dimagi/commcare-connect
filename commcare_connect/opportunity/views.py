@@ -358,21 +358,20 @@ class OpportunityUserLearnProgress(OrganizationUserMixin, DetailView):
 
 
 @org_member_required
-def export_user_visits(request, **kwargs):
-    opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opportunity_id)
+def export_user_visits(request, org_slug, pk):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
     form = VisitExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+        return redirect("opportunity:detail", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
     date_range = DateRanges(form.cleaned_data["date_range"])
     status = form.cleaned_data["status"]
     flatten = form.cleaned_data["flatten_form_data"]
 
-    result = generate_visit_export.delay(opportunity_id, date_range, status, export_format, flatten)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    result = generate_visit_export.delay(pk, date_range, status, export_format, flatten)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
@@ -484,17 +483,16 @@ class OpportunityUserStatusTableView(OrganizationUserMixin, OrgContextSingleTabl
 
 
 @org_member_required
-def export_users_for_payment(request, **kwargs):
-    opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opportunity_id)
+def export_users_for_payment(request, org_slug, pk):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+        return redirect("opportunity:detail", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
-    result = generate_payment_export.delay(opportunity_id, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    result = generate_payment_export.delay(pk, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
@@ -630,17 +628,16 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OrgContextSingleTab
 
 
 @org_member_required
-def export_user_status(request, **kwargs):
-    opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opportunity_id)
+def export_user_status(request, org_slug, pk):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+        return redirect("opportunity:detail", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
-    result = generate_user_status_export.delay(opportunity_id, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    result = generate_user_status_export.delay(pk, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
@@ -659,17 +656,16 @@ class OpportunityDeliverStatusTable(OrganizationUserMixin, OrgContextSingleTable
 
 
 @org_member_required
-def export_deliver_status(request, **kwargs):
-    opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(pk=opportunity_id, org_slug=request.org.slug)
+def export_deliver_status(request, org_slug, pk):
+    get_opportunity_or_404(pk=pk, org_slug=request.org.slug)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+        return redirect("opportunity:detail", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
-    result = generate_deliver_status_export.delay(opportunity_id, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    result = generate_deliver_status_export.delay(pk, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
@@ -988,17 +984,16 @@ class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
 
 
 @org_member_required
-def export_completed_work(request, **kwargs):
-    opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opportunity_id)
+def export_completed_work(request, org_slug, pk):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+        return redirect("opportunity:detail", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
-    result = generate_work_status_export.delay(opportunity_id, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    result = generate_work_status_export.delay(pk, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
@@ -1053,17 +1048,16 @@ def suspended_users_list(request, org_slug=None, pk=None):
 
 
 @org_member_required
-def export_catchment_area(request, **kwargs):
-    opportunity_id = kwargs["pk"]
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opportunity_id)
+def export_catchment_area(request, org_slug, pk):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, opportunity_id)
+        return redirect("opportunity:detail", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
-    result = generate_catchment_area_export.delay(opportunity_id, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, opportunity_id))
+    result = generate_catchment_area_export.delay(pk, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 

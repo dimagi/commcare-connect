@@ -1,12 +1,13 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import django_filters
 import django_tables2 as tables
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Column, Layout, Row
 from django import forms
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db import connection
 from django.db.models import Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -16,7 +17,9 @@ from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
 
 from commcare_connect.cache import quickcache
-from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, DeliveryType, Payment
+from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, DeliveryType, Payment, UserVisit
+from commcare_connect.organization.models import Organization
+from commcare_connect.reports.queries import get_visit_map_queryset
 
 from .tables import AdminReportTable
 
@@ -151,14 +154,83 @@ def _get_table_data_for_quarter(quarter, delivery_type, group_by_delivery_type=F
     return data
 
 
+class DashboardFilters(django_filters.FilterSet):
+    program = django_filters.ModelChoiceFilter(
+        queryset=DeliveryType.objects.all(),
+        field_name="opportunity__delivery_type",
+        label="Program",
+        empty_label="All Programs",
+        required=False,
+    )
+    organization = django_filters.ModelChoiceFilter(
+        queryset=Organization.objects.all(),
+        field_name="opportunity__organization",
+        label="Organization",
+        empty_label="All Organizations",
+        required=False,
+    )
+    from_date = django_filters.DateTimeFilter(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="visit_date",
+        lookup_expr="gt",
+        label="From Date",
+        required=False,
+    )
+    to_date = django_filters.DateTimeFilter(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="visit_date",
+        lookup_expr="lte",
+        label="To Date",
+        required=False,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.form.helper = FormHelper()
+        self.form.helper.form_class = "form-inline"
+        self.form.helper.layout = Layout(
+            Row(
+                Column("program", css_class="col-md-3"),
+                Column("organization", css_class="col-md-3"),
+                Column("from_date", css_class="col-md-3"),
+                Column("to_date", css_class="col-md-3"),
+            )
+        )
+
+        # Set default values if no data is provided
+        if not self.data:
+            # Create a mutable copy of the QueryDict
+            self.data = self.data.copy() if self.data else {}
+
+            # Set default dates
+            today = date.today()
+            default_from = today - timedelta(days=90)
+
+            # Set the default values
+            self.data["to_date"] = today.strftime("%Y-%m-%d")
+            self.data["from_date"] = default_from.strftime("%Y-%m-%d")
+
+            # Force the form to bind with the default data
+            self.form.is_bound = True
+            self.form.data = self.data
+
+    class Meta:
+        model = UserVisit
+        fields = ["program", "organization", "from_date", "to_date"]
+
+
 @login_required
-@user_passes_test(lambda user: user.is_superuser)
-@require_GET
+@user_passes_test(lambda u: u.is_superuser)
 def program_dashboard_report(request):
+    filterset = DashboardFilters(request.GET)
+
     return render(
         request,
         "reports/dashboard.html",
-        context={"mapbox_token": settings.MAPBOX_TOKEN},
+        context={
+            "mapbox_token": settings.MAPBOX_TOKEN,
+            "filter": filterset,
+        },
     )
 
 
@@ -166,20 +238,18 @@ def program_dashboard_report(request):
 @user_passes_test(lambda user: user.is_superuser)
 @require_GET
 def visit_map_data(request):
-    with connection.cursor() as cursor:
-        # Read the SQL file
-        with open("commcare_connect/reports/sql/visit_map.sql") as sql_file:
-            sql_query = sql_file.read()
+    filterset = DashboardFilters(request.GET)
 
-        # Execute the query
-        cursor.execute(sql_query)
+    # Use the filtered queryset to calculate stats
 
-        # Fetch all results
-        columns = [col[0] for col in cursor.description]
-        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    queryset = UserVisit.objects.all()
+    if filterset.is_valid():
+        queryset = filterset.filter_queryset(queryset)
+
+    queryset = get_visit_map_queryset(queryset)
 
     # Convert to GeoJSON
-    geojson = _results_to_geojson(results)
+    geojson = _results_to_geojson(queryset)
 
     # Return the GeoJSON as JSON response
     return JsonResponse(geojson, safe=False)
@@ -191,14 +261,20 @@ def _results_to_geojson(results):
         "approved": "#00FF00",
         "rejected": "#FF0000",
     }
-    for result in results:
+    for i, result in enumerate(results.all()):
+        location_str = result.get("location_str")
         # Check if both latitude and longitude are not None and can be converted to float
-        if result.get("gps_location_long") and result.get("gps_location_lat"):
-            try:
-                longitude = float(result["gps_location_long"])
-                latitude = float(result["gps_location_lat"])
-            except ValueError:
-                # Skip this result if conversion to float fails
+        if location_str:
+            split_location = location_str.split(" ")
+            if len(split_location) >= 2:
+                try:
+                    longitude = float(split_location[1])
+                    latitude = float(split_location[0])
+                except ValueError:
+                    # Skip this result if conversion to float fails
+                    continue
+            else:
+                # Or if the location string is not in the expected format
                 continue
 
             feature = {
@@ -317,3 +393,29 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
             data = _get_table_data_for_quarter(q, delivery_type, group_by_delivery_type)
             table_data += data
         return table_data
+
+
+@login_required
+@user_passes_test(lambda u: u.is_superuser)
+def dashboard_stats_api(request):
+    filterset = DashboardFilters(request.GET)
+
+    # Use the filtered queryset to calculate stats
+    queryset = UserVisit.objects.all()
+    if filterset.is_valid():
+        queryset = filterset.filter_queryset(queryset)
+
+    # Example stats calculation (adjust based on your needs)
+    active_users = queryset.values("opportunity_access__user").distinct().count()
+    total_visits = queryset.count()
+    verified_visits = queryset.filter(status=CompletedWorkStatus.approved).count()
+    percent_verified = round(float(verified_visits / total_visits) * 100, 1) if total_visits > 0 else 0
+
+    return JsonResponse(
+        {
+            "total_visits": total_visits,
+            "active_users": active_users,
+            "verified_visits": verified_visits,
+            "percent_verified": f"{percent_verified:.1f}%",
+        }
+    )

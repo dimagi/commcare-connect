@@ -579,7 +579,7 @@ def test_receiver_verification_flags_catchment_areas(
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
 @pytest.mark.parametrize(
     "visit_status, review_status",
     [
@@ -595,6 +595,11 @@ def test_receiver_visit_review_status(
     if visit_status != VisitValidationStatus.approved:
         form_json["metadata"]["location"] = None
     make_request(api_client, form_json, mobile_user_with_connect_link)
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    if visit_status != VisitValidationStatus.approved:
+        assert visit.flagged
+    assert visit.status == visit_status
+    assert visit.review_status == review_status
 
 
 def get_form_json_for_payment_unit(payment_unit):
