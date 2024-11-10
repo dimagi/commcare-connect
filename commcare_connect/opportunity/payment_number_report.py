@@ -47,7 +47,9 @@ class PaymentFilters(django_filters.FilterSet):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        opportunities = Opportunity.objects.values_list("id", "name")
+        opportunities = Opportunity.objects.filter(
+            organization=self.request.org, payment_info_required=True
+        ).values_list("id", "name")
         self.filters["opportunity"] = django_filters.ChoiceFilter(
             choices=opportunities, label="Opportunity", empty_label=None
         )
@@ -63,7 +65,7 @@ class PaymentFilters(django_filters.FilterSet):
 class PaymentNumberReport(tables.SingleTableMixin, SuperUserRequiredMixin, NonModelTableBaseView):
     table_class = PaymentNumberReportTable
     filterset_class = PaymentFilters
-    htmx_template = "opportunity/payment_numbers_table.html"
+    htmx_table_template = "opportunity/payment_numbers_table.html"
     report_title = "Verify Payment Phone Numbers"
 
     @property
