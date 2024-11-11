@@ -103,9 +103,13 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
                 filter=date_filter,
                 distinct=True,
             ),
-            total_payment_units=Count("opportunityaccess__completedwork"),
-            total_payment_units_with_flags=Count("opportunityaccess__completedwork", filter=flagged_visits_filter),
-            total_payment_since_start_date=Count("opportunityaccess__completedwork", filter=date_filter),
+            total_payment_units=Count("opportunityaccess__completedwork", distinct=True),
+            total_payment_units_with_flags=Count(
+                "opportunityaccess__completedwork", distinct=True, filter=flagged_visits_filter
+            ),
+            total_payment_since_start_date=Count(
+                "opportunityaccess__completedwork", distinct=True, filter=date_filter
+            ),
             delivery_per_day_per_worker=Case(
                 When(active_workers=0, then=Value(0)),
                 default=Round(F("total_payment_since_start_date") / F("active_workers"), 2),
