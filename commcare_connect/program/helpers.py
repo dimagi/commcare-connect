@@ -82,12 +82,7 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
     if end_date:
         date_filter &= Q(opportunityaccess__uservisit__visit_date__lte=end_date)
 
-    flagged_visits_filter = Q(opportunityaccess__uservisit__flagged=True) & ~Q(
-        opportunityaccess__uservisit__status__in=[
-            VisitValidationStatus.rejected,
-            VisitValidationStatus.approved,
-        ]
-    )
+    flagged_visits_filter = Q(opportunityaccess__uservisit__flagged=True) & FILTER_FOR_VALID_VISIT_DATE
 
     managed_opportunities = (
         ManagedOpportunity.objects.filter(program=program)

@@ -27,13 +27,17 @@ class BaseManagedOpportunityTest:
         user = UserFactory.create()
         access = OpportunityAccessFactory.create(opportunity=self.opp, user=user, invited_date=now())
         AssessmentFactory.create(opportunity=self.opp, user=user, opportunity_access=access, passed=passed_assessment)
-        UserVisitFactory.create(
+        visit = UserVisitFactory.create(
             user=user,
             opportunity=self.opp,
             status=visit_status,
             opportunity_access=access,
             visit_date=now() + timedelta(days=1),
         )
+        print("invited date:", access.invited_date)
+        print("invited date:", visit.visit_date)
+        print(visit.visit_date - access.invited_date)
+        print("@@@@@")
         return user
 
     def create_user_with_visit(self, visit_status, visit_date, flagged=False, create_completed_work=True):
@@ -115,6 +119,7 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
         opps = get_annotated_managed_opportunity(self.program)
         assert len(opps) == 1
         annotated_opp = opps[0]
+        print("avergae ==>:", annotated_opp.average_time_to_convert)
         assert annotated_opp.workers_invited == expected_invited, f"Failed in {scenario}"
         assert annotated_opp.workers_passing_assessment == expected_passing, f"Failed in {scenario}"
         assert annotated_opp.workers_starting_delivery == expected_delivery, f"Failed in {scenario}"
