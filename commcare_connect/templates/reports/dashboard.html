@@ -132,6 +132,7 @@
 </script>
 <script type="module">
   let map;
+  const minClusterSize = 5;
   const mapLoading = document.getElementById('map-loading');
 
   window.refreshMapData = async () => {
@@ -196,8 +197,9 @@
         type: 'geojson',
         data: `{% url "reports:visit_map_data" %}?${queryString}`,
         cluster: true,
-        clusterMaxZoom: 12,
+        clusterMaxZoom: 14,
         clusterRadius: 80,
+        clusterMinPoints: minClusterSize,
         clusterProperties: {
           // keep separate counts for each status category in a cluster
           'approved': ['+', ['case', approved, 1, 0]],
