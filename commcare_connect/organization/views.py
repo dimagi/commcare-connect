@@ -47,7 +47,7 @@ def organization_home(request, org_slug):
     if not form:
         form = OrganizationChangeForm(instance=org)
 
-    credentials = connect_id_client.fetch_credentials()
+    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
     credential_name = f"Worked for {org.name}"
     if not any(c.name == credential_name for c in credentials):
         credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))
@@ -96,7 +96,7 @@ def accept_invite(request, org_slug, invite_id):
 @require_POST
 def add_credential_view(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
-    credentials = connect_id_client.fetch_credentials()
+    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
     credential_name = f"Worked for {org.name}"
     if not any(c.name == credential_name for c in credentials):
         credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))

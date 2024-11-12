@@ -204,7 +204,7 @@ class DashboardFilters(django_filters.FilterSet):
 
             # Set default dates
             today = date.today()
-            default_from = today - timedelta(days=90)
+            default_from = today - timedelta(days=30)
 
             # Set the default values
             self.data["to_date"] = today.strftime("%Y-%m-%d")
@@ -223,7 +223,6 @@ class DashboardFilters(django_filters.FilterSet):
 @user_passes_test(lambda u: u.is_superuser)
 def program_dashboard_report(request):
     filterset = DashboardFilters(request.GET)
-
     return render(
         request,
         "reports/dashboard.html",
@@ -258,8 +257,8 @@ def visit_map_data(request):
 def _results_to_geojson(results):
     geojson = {"type": "FeatureCollection", "features": []}
     status_to_color = {
-        "approved": "#00FF00",
-        "rejected": "#FF0000",
+        "approved": "#4ade80",
+        "rejected": "#f87171",
     }
     for i, result in enumerate(results.all()):
         location_str = result.get("location_str")
@@ -287,7 +286,7 @@ def _results_to_geojson(results):
                     key: value for key, value in result.items() if key not in ["gps_location_lat", "gps_location_long"]
                 },
             }
-            color = status_to_color.get(result.get("status", ""), "#FFFF00")
+            color = status_to_color.get(result.get("status", ""), "#fbbf24")
             feature["properties"]["color"] = color
             geojson["features"].append(feature)
 

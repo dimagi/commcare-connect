@@ -33,7 +33,8 @@ FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Afri
 
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
-        credentials = connect_id_client.fetch_credentials()
+        org_slug = kwargs.pop("org_slug", None)
+        credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -73,7 +74,10 @@ class OpportunityUserInviteForm(forms.Form):
         return split_users
 
 
-class OpportunityChangeForm(forms.ModelForm, OpportunityUserInviteForm):
+class OpportunityChangeForm(
+    OpportunityUserInviteForm,
+    forms.ModelForm,
+):
     class Meta:
         model = Opportunity
         fields = [

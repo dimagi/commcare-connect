@@ -22,6 +22,7 @@ class ProgramFactory(DjangoModelFactory):
 
 class ManagedOpportunityFactory(OpportunityFactory):
     program = SubFactory(ProgramFactory)
+    org_pay_per_visit = Faker("random_int", min=500, max=1000)
 
     class Meta:
         model = ManagedOpportunity
