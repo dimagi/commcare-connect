@@ -46,7 +46,7 @@ class OpportunityAdmin(admin.ModelAdmin):
 @admin.register(OpportunityAccess)
 class OpportunityAccessAdmin(admin.ModelAdmin):
     form = OpportunityAccessCreationForm
-    list_display = ["get_opp_name", "get_username"]
+    list_display = ["get_opp_name", "get_username", "invited_date"]
     actions = ["clear_user_progress"]
     search_fields = ["user__username"]
 
