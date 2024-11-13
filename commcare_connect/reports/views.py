@@ -8,7 +8,7 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Max, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -418,3 +418,109 @@ def dashboard_stats_api(request):
             "percent_verified": f"{percent_verified:.1f}%",
         }
     )
+
+
+@login_required
+@user_passes_test(lambda u: u.is_superuser)
+def dashboard_charts_api(request):
+    filterset = DashboardFilters(request.GET)
+    queryset = UserVisit.objects.all()
+    # Use the filtered queryset if available, else use last 30 days
+    if filterset.is_valid():
+        queryset = filterset.filter_queryset(queryset)
+        from_date = filterset.form.cleaned_data["from_date"]
+        to_date = filterset.form.cleaned_data["to_date"]
+    else:
+        to_date = datetime.now().date()
+        from_date = to_date - timedelta(days=30)
+        queryset = queryset.filter(visit_date__gte=from_date, visit_date__lte=to_date)
+
+    return JsonResponse(
+        {
+            "time_series": _get_time_series_data(queryset, from_date, to_date),
+            "program_pie": _get_program_pie_data(queryset),
+            "status_pie": _get_status_pie_data(queryset),
+        }
+    )
+
+
+def _get_time_series_data(queryset, from_date, to_date):
+    """Example output:
+    {
+        "labels": ["Jan 01", "Jan 02", "Jan 03"],
+        "datasets": [
+            {
+                "name": "Program A",
+                "data": [5, 3, 7]
+            },
+            {
+                "name": "Program B",
+                "data": [2, 4, 1]
+            }
+        ]
+    }
+    """
+    # Get visits over time by program
+    visits_by_program_time = (
+        queryset.values("visit_date", "opportunity__delivery_type__name")
+        .annotate(count=Count("id"))
+        .order_by("visit_date", "opportunity__delivery_type__name")
+    )
+
+    # Process time series data
+    program_data = {}
+    for visit in visits_by_program_time:
+        program_name = visit["opportunity__delivery_type__name"]
+        if program_name not in program_data:
+            program_data[program_name] = {}
+        program_data[program_name][visit["visit_date"]] = visit["count"]
+
+    # Create labels and datasets for time series
+    labels = []
+    time_datasets = []
+    current_date = from_date
+
+    while current_date <= to_date:
+        labels.append(current_date.strftime("%b %d"))
+        current_date += timedelta(days=1)
+
+    for program_name in program_data.keys():
+        data = []
+        current_date = from_date
+        while current_date <= to_date:
+            data.append(program_data[program_name].get(current_date, 0))
+            current_date += timedelta(days=1)
+
+        time_datasets.append({"name": program_name or "Unknown", "data": data})
+
+    return {"labels": labels, "datasets": time_datasets}
+
+
+def _get_program_pie_data(queryset):
+    """Example output:
+    {
+        "labels": ["Program A", "Program B", "Unknown"],
+        "data": [10, 5, 2]
+    }
+    """
+    visits_by_program = (
+        queryset.values("opportunity__delivery_type__name").annotate(count=Count("id")).order_by("-count")
+    )
+    return {
+        "labels": [item["opportunity__delivery_type__name"] or "Unknown" for item in visits_by_program],
+        "data": [item["count"] for item in visits_by_program],
+    }
+
+
+def _get_status_pie_data(queryset):
+    """Example output:
+    {
+        "labels": ["Approved", "Pending", "Rejected", "Unknown"],
+        "data": [15, 8, 4, 1]
+    }
+    """
+    visits_by_status = queryset.values("status").annotate(count=Count("id")).order_by("-count")
+    return {
+        "labels": [item["status"] or "Unknown" for item in visits_by_status],
+        "data": [item["count"] for item in visits_by_status],
+    }

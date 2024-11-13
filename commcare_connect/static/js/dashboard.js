@@ -128,5 +128,198 @@ function donutSegment(start, end, r, r0, color) {
   }" fill="${color}" opacity="0.85" stroke="#1f2937" stroke-width="1" />`;
 }
 
+const chartColors = [
+  { border: 'rgb(75, 192, 192)', background: 'rgba(75, 192, 192, 0.8)' },
+  { border: 'rgb(255, 99, 132)', background: 'rgba(255, 99, 132, 0.8)' },
+  { border: 'rgb(255, 205, 86)', background: 'rgba(255, 205, 86, 0.8)' },
+  { border: 'rgb(54, 162, 235)', background: 'rgba(54, 162, 235, 0.8)' },
+];
+
+const statusColors = {
+  approved: {
+    background: 'rgba(74, 222, 128, 0.8)',
+    border: 'rgb(74, 222, 128)',
+  },
+  rejected: {
+    background: 'rgba(248, 113, 113, 0.8)',
+    border: 'rgb(248, 113, 113)',
+  },
+  pending: {
+    background: 'rgba(251, 191, 36, 0.8)',
+    border: 'rgb(251, 191, 36)',
+  },
+};
+
+function createTimeSeriesChart(ctx, data) {
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.labels,
+      datasets: data.datasets.map((dataset, index) => ({
+        label: dataset.name,
+        data: dataset.data,
+        borderColor: chartColors[index % chartColors.length].border,
+        backgroundColor: chartColors[index % chartColors.length].background,
+        borderWidth: 1,
+      })),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          title: {
+            display: true,
+            text: 'Date',
+          },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Number of Visits',
+          },
+        },
+      },
+    },
+  });
+}
+
+function createProgramPieChart(ctx, data) {
+  // Check if there's no data or empty data
+  if (!data?.data?.length) {
+    return new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: ['No data'],
+        datasets: [
+          {
+            data: [1],
+            backgroundColor: ['rgba(156, 163, 175, 0.3)'],
+            borderColor: ['rgb(156, 163, 175)'],
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              boxWidth: 12,
+              color: 'rgb(156, 163, 175)',
+            },
+          },
+        },
+      },
+    });
+  }
+
+  return new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: data.labels,
+      datasets: [
+        {
+          data: data.data,
+          backgroundColor: chartColors.map((c) => c.background),
+          borderColor: chartColors.map((c) => c.border),
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 12,
+          },
+        },
+      },
+    },
+  });
+}
+
+function createStatusPieChart(ctx, data) {
+  // Check if there's no data or empty data
+  if (!data?.data?.length) {
+    return new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: ['No data'],
+        datasets: [
+          {
+            data: [1],
+            backgroundColor: ['rgba(156, 163, 175, 0.3)'],
+            borderColor: ['rgb(156, 163, 175)'],
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              boxWidth: 12,
+              color: 'rgb(156, 163, 175)',
+            },
+          },
+        },
+      },
+    });
+  }
+
+  return new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: data.labels,
+      datasets: [
+        {
+          data: data.data,
+          backgroundColor: data.labels.map(
+            (status) =>
+              statusColors[status]?.background || 'rgba(156, 163, 175, 0.8)',
+          ),
+          borderColor: data.labels.map(
+            (status) => statusColors[status]?.border || 'rgb(156, 163, 175)',
+          ),
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 12,
+          },
+        },
+      },
+    },
+  });
+}
+
 window.updateMarkers = updateMarkers;
 window.createDonutChart = createDonutChart;
+window.createTimeSeriesChart = createTimeSeriesChart;
+window.createProgramPieChart = createProgramPieChart;
+window.createStatusPieChart = createStatusPieChart;
