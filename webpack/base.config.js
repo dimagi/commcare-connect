@@ -8,6 +8,10 @@ module.exports = {
   context: path.join(__dirname, '../'),
   entry: {
     project: path.resolve(__dirname, '../commcare_connect/static/js/project'),
+    dashboard: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/dashboard',
+    ),
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
   },
   output: {
