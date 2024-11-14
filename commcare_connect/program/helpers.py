@@ -37,6 +37,7 @@ def get_annotated_managed_opportunity(program: Program):
     earliest_visits = (
         UserVisit.objects.filter(
             opportunity_access=OuterRef("opportunityaccess"),
+            user=OuterRef("opportunityaccess__uservisit__user"),
         )
         .exclude(status__in=EXCLUDED_STATUS)
         .order_by("visit_date")
@@ -66,10 +67,10 @@ def get_annotated_managed_opportunity(program: Program):
                     Subquery(earliest_visits) - F("opportunityaccess__invited_date"), output_field=DurationField()
                 ),
                 filter=FILTER_FOR_VALID_VISIT_DATE,
+                distinct=True,
             ),
         )
     )
-
     return managed_opportunities
 
 
