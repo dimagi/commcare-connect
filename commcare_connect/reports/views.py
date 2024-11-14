@@ -278,14 +278,11 @@ class NonModelTableBaseView(FilterView):
 
     @property
     def object_list(self):
-        # Override this
-        return []
+        raise NotImplementedError()
 
     @property
     def report_url(self):
-        # Override this
-        # This report's url
-        return ""
+        raise NotImplementedError()
 
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(**kwargs)

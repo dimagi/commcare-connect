@@ -8,7 +8,8 @@ from django.utils.html import format_html
 
 from commcare_connect.connect_id_client.main import fetch_payment_phone_numbers, validate_phone_numbers
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
-from commcare_connect.reports.views import NonModelTableBaseView, SuperUserRequiredMixin
+from commcare_connect.opportunity.views import OrganizationUserMixin
+from commcare_connect.reports.views import NonModelTableBaseView
 
 
 class PaymentNumberReportTable(tables.Table):
@@ -62,7 +63,7 @@ class PaymentFilters(django_filters.FilterSet):
         return queryset
 
 
-class PaymentNumberReport(tables.SingleTableMixin, SuperUserRequiredMixin, NonModelTableBaseView):
+class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMixin, NonModelTableBaseView):
     table_class = PaymentNumberReportTable
     filterset_class = PaymentFilters
     htmx_table_template = "opportunity/payment_numbers_table.html"
