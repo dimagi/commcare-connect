@@ -233,14 +233,12 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
-    counts = (
-        UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
-        .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
-        .aggregate(
-            daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
-            total=Count("*"),
-            entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
-        )
+    counts = UserVisit.objects.filter(
+        opportunity_access=access, deliver_unit=deliver_unit, status=VisitValidationStatus.approved, flagged=False
+    ).aggregate(
+        daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
+        total=Count("*"),
+        entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
     )
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     entity_id = deliver_unit_block.get("entity_id")
