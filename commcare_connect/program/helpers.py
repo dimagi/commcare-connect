@@ -83,7 +83,11 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
     if end_date:
         date_filter &= Q(opportunityaccess__uservisit__visit_date__lte=end_date)
 
-    flagged_visits_filter = Q(opportunityaccess__uservisit__flagged=True) & FILTER_FOR_VALID_VISIT_DATE
+    flagged_visits_filter = (
+        Q(opportunityaccess__uservisit__flagged=True)
+        & date_filter
+        & Q(opportunityaccess__uservisit__completed_work__isnull=False)
+    )
 
     managed_opportunities = (
         ManagedOpportunity.objects.filter(program=program)
@@ -101,10 +105,12 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
             ),
             total_payment_units=Count("opportunityaccess__completedwork", distinct=True),
             total_payment_units_with_flags=Count(
-                "opportunityaccess__completedwork", distinct=True, filter=flagged_visits_filter
+                "opportunityaccess__uservisit", distinct=True, filter=flagged_visits_filter
             ),
             total_payment_since_start_date=Count(
-                "opportunityaccess__completedwork", distinct=True, filter=date_filter
+                "opportunityaccess__uservisit",
+                distinct=True,
+                filter=date_filter & Q(opportunityaccess__uservisit__completed_work__isnull=False),
             ),
             delivery_per_day_per_worker=Case(
                 When(active_workers=0, then=Value(0)),

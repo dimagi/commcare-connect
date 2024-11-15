@@ -39,7 +39,7 @@ class BaseManagedOpportunityTest:
     def create_user_with_visit(self, visit_status, visit_date, flagged=False, create_completed_work=True):
         user = UserFactory.create()
         access = OpportunityAccessFactory.create(opportunity=self.opp, user=user, invited_date=now())
-        UserVisitFactory.create(
+        visit = UserVisitFactory.create(
             user=user,
             opportunity=self.opp,
             status=visit_status,
@@ -48,7 +48,9 @@ class BaseManagedOpportunityTest:
             flagged=flagged,
         )
         if create_completed_work:
-            CompletedWorkFactory.create(opportunity_access=access)
+            work = CompletedWorkFactory.create(opportunity_access=access)
+            visit.completed_work = work
+            visit.save()
         return user
 
 
