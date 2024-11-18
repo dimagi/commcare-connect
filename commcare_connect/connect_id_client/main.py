@@ -54,8 +54,11 @@ def add_credential(organization: Organization, credential: str, users: list[str]
     return
 
 
-def fetch_credentials():
-    response = _make_request(GET, "/users/fetch_credentials")
+def fetch_credentials(org_slug=None):
+    params = {}
+    if org_slug:
+        params["org_slug"] = org_slug
+    response = _make_request(GET, "/users/fetch_credentials", params=params)
     data = response.json()
     return [Credential(**c) for c in data["credentials"]]
 

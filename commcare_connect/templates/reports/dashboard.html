@@ -3,9 +3,14 @@
 {% load crispy_forms_tags %}
 {% load django_tables2 %}
 {% block title %}Admin Dashboard{% endblock %}
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/dashboard-bundle.js' %}" ></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
 {% block content %}
 <h2 class="my-2">Program Dashboard</h2>
-<div class="container" x-data="dashboardStats()" >
+<div class="container" x-data="dashboardStats()">
   <div class="mb-4">
     <div class="row mb-4" x-ref="filterForm" id="filterForm">
       {% crispy filter.form %}
@@ -70,10 +75,42 @@
     </div>
   </div>
 </div>
-<div class="row">
-  <div class="col-12">
-    <h3 class="my-2">Service Delivery Map</h3>
-    <div id="map" class="mt-3 mb-2 rounded border" style="height: 900px;"></div>
+<div class="container">
+  <div class="row">
+    <div class="col-12 col-md-6">
+      <h3 class="my-2">Service Delivery Map</h3>
+      <div class="position-relative">
+        <div id="map" class="mt-3 mb-2 rounded border" style="height: 500px;"></div>
+        <div id="map-loading"
+          class="position-absolute top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 d-flex justify-content-center align-items-center">
+          <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading map...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <h3 class="my-2">Visit Breakdown</h3>
+      <div class="row mb-4">
+        <div class="col-12 col-md-6">
+          <h5 class="my-2">By Program</h3>
+          <div style="position: relative; height: 200px; width: 100%;">
+            <canvas id="visits-by-program"></canvas>
+          </div>
+        </div>
+        <div class="col-12 col-md-6">
+          <h5 class="my-2">By Status</h3>
+          <div style="position: relative; height: 200px; width: 100%;">
+            <canvas id="visits-by-status"></canvas>
+          </div>
+        </div>
+      </div>
+      <h5>Over time</h5>
+      <div style="position: relative; height: 200px; width: 100%;">
+        <canvas id="visits-over-time"></canvas>
+      </div>
+
+    </div>
   </div>
 </div>
 {% endblock content %}
@@ -124,28 +161,57 @@
 </script>
 <script type="module">
   let map;
+  const minClusterSize = 5;
+  const mapLoading = document.getElementById('map-loading');
 
-  // Add this function to handle map data refresh
-  window.refreshMapData = () => {
+  window.refreshMapData = async () => {
     if (!map) return;
+
+    mapLoading.classList.remove('d-none');  // Show loading state
 
     const formElement = document.querySelector('#filterForm form');
     const formData = new FormData(formElement);
     const queryString = new URLSearchParams(formData).toString();
 
-    // Update the source data with new filters
-    map.getSource('visits').setData(`{% url "reports:visit_map_data" %}?${queryString}`);
+    try {
+      // Fetch the data
+      const response = await fetch(`{% url "reports:visit_map_data" %}?${queryString}`);
+      const data = await response.json();
+
+      // Set it on the map source
+      map.getSource('visits').setData(data);
+
+      // Hide loading state after data is set
+      mapLoading.classList.add('d-none');
+    } catch (error) {
+      console.error('Error refreshing map data:', error);
+      mapLoading.classList.add('d-none');
+    }
   };
 
   window.addEventListener('DOMContentLoaded', () => {
     mapboxgl.accessToken = "{{ mapbox_token }}";
     map = new mapboxgl.Map({
       container: 'map',
-      // Choose from Mapbox's core styles, or make your own style with Mapbox Studio
       style: 'mapbox://styles/mapbox/dark-v11',
-      center: [-103.5917, 40.6699],
-      zoom: 3
+      center: [20, 0], // Centered on Africa (roughly central coordinates)
+      zoom: 2,
     });
+
+    // This loads a map with two layers, one is a cluster with donut
+    // charts based on the visit data, inspired heavily by this mapbox example:
+    // https://docs.mapbox.com/mapbox-gl-js/example/cluster-html/
+    // The other is a layer of unclustered points with clickable popups, based on
+    // this example: https://docs.mapbox.com/mapbox-gl-js/example/popup-on-click/
+
+    // filters for classifying visits by status
+    const approved = ['==', ['get', 'status'], 'approved'];
+    const pending = ['all',
+      ['!=', ['get', 'status'], 'approved'],
+      ['!=', ['get', 'status'], 'rejected']
+    ];
+    const rejected = ['==', ['get', 'status'], 'rejected'];
+
 
     map.on('load', () => {
       // Modify the source configuration to include initial filters
@@ -158,53 +224,13 @@
         data: `{% url "reports:visit_map_data" %}?${queryString}`,
         cluster: true,
         clusterMaxZoom: 14,
-        clusterRadius: 50
-      });
-
-      const clusterStep1 = 50;
-      const clusterStep2 = 100;
-
-      map.addLayer({
-        id: 'clusters',
-        type: 'circle',
-        source: 'visits',
-        filter: ['has', 'point_count'],
-        paint: {
-          // Use step expressions (https://docs.mapbox.com/style-spec/reference/expressions/#step)
-          // with three steps to implement three types of circles:
-          //   * Blue, 20px circles when point count is less than clusterStep1
-          //   * Yellow, 30px circles when point count is between clusterStep1 and clusterStep2
-          //   * Green, 40px circles when point count is greater than or equal to clusterStep2
-          'circle-color': [
-            'step',
-            ['get', 'point_count'],
-            '#51bbd6',
-            clusterStep1,
-            '#f1f075',
-            clusterStep2,
-            '#00FF00'
-          ],
-          'circle-radius': [
-            'step',
-            ['get', 'point_count'],
-            20,
-            clusterStep1,
-            30,
-            clusterStep2,
-            40
-          ]
-        }
-      });
-
-      map.addLayer({
-        id: 'cluster-count',
-        type: 'symbol',
-        source: 'visits',
-        filter: ['has', 'point_count'],
-        layout: {
-          'text-field': ['get', 'point_count_abbreviated'],
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': 12
+        clusterRadius: 40,
+        clusterMinPoints: minClusterSize,
+        clusterProperties: {
+          // keep separate counts for each status category in a cluster
+          'approved': ['+', ['case', approved, 1, 0]],
+          'pending': ['+', ['case', pending, 1, 0]],
+          'rejected': ['+', ['case', rejected, 1, 0]]
         }
       });
 
@@ -219,25 +245,6 @@
           'circle-stroke-width': 1,
           'circle-stroke-color': '#fff'
         }
-      });
-
-      // inspect a cluster on click
-      map.on('click', 'clusters', (e) => {
-        const features = map.queryRenderedFeatures(e.point, {
-          layers: ['clusters']
-        });
-        const clusterId = features[0].properties.cluster_id;
-        map.getSource('visits').getClusterExpansionZoom(
-          clusterId,
-          (err, zoom) => {
-            if (err) return;
-
-            map.easeTo({
-              center: features[0].geometry.coordinates,
-              zoom: zoom
-            });
-          }
-        );
       });
 
       // When a click event occurs on a feature in
@@ -268,13 +275,74 @@
           .addTo(map);
       });
 
-      map.on('mouseenter', 'clusters', () => {
-        map.getCanvas().style.cursor = 'pointer';
+
+      map.on('render', () => {
+        if (!map.isSourceLoaded('visits')) return;
+        updateMarkers(map);
       });
-      map.on('mouseleave', 'clusters', () => {
-        map.getCanvas().style.cursor = '';
-      });
+
+      // Hide loading overlay when initial map load is complete
+      console.log('setting loading to none')
+      mapLoading.classList.add('d-none');
+    });
+
+    // Show loading state if map errors
+    map.on('error', () => {
+      console.log('setting loading to none for an error')
+      mapLoading.classList.add('d-none');
+      // Optionally add error messaging here
+    });
+
+
+  });
+  // Update chart when page loads
+  window.addEventListener('DOMContentLoaded', () => {
+    const timeSeriesCtx = document.getElementById('visits-over-time');
+    const programPieCtx = document.getElementById('visits-by-program');
+    const statusPieCtx = document.getElementById('visits-by-status');
+
+    let timeSeriesChart, programPieChart, statusPieChart;
+
+    async function updateCharts() {
+      try {
+        const formElement = document.querySelector('#filterForm form');
+        const formData = new FormData(formElement);
+        const queryString = new URLSearchParams(formData).toString();
+
+        const response = await fetch(`{% url 'reports:dashboard_charts_api' %}?${queryString}`);
+        const data = await response.json();
+
+        // Update time series chart
+        if (timeSeriesChart) {
+          timeSeriesChart.destroy();
+        }
+        timeSeriesChart = createTimeSeriesChart(timeSeriesCtx, data.time_series);
+
+        // Update program pie chart
+        if (programPieChart) {
+          programPieChart.destroy();
+        }
+        programPieChart = createProgramPieChart(programPieCtx, data.program_pie);
+
+        // Update status pie chart
+        if (statusPieChart) {
+          statusPieChart.destroy();
+        }
+        statusPieChart = createStatusPieChart(statusPieCtx, data.status_pie);
+
+      } catch (error) {
+        console.error('Error updating charts:', error);
+      }
+    }
+
+    updateCharts();
+
+    // Update charts when filters change
+    const formElement = document.querySelector('#filterForm form');
+    formElement.querySelectorAll('select, input').forEach(input => {
+      input.addEventListener('change', updateCharts);
     });
   });
+
 </script>
 {% endblock %}

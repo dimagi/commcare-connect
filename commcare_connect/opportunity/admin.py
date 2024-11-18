@@ -48,6 +48,7 @@ class OpportunityAccessAdmin(admin.ModelAdmin):
     form = OpportunityAccessCreationForm
     list_display = ["get_opp_name", "get_username"]
     actions = ["clear_user_progress"]
+    search_fields = ["user__username"]
 
     @admin.display(description="Opportunity Name")
     def get_opp_name(self, obj):

@@ -106,7 +106,7 @@ def test_results_to_geojson():
     assert feature1["geometry"]["coordinates"] == [10.123, 20.456]
     assert feature1["properties"]["status"] == "approved"
     assert feature1["properties"]["other_field"] == "value1"
-    assert feature1["properties"]["color"] == "#00FF00"
+    assert feature1["properties"]["color"] == "#4ade80"
 
     # Check the second feature
     feature2 = geojson["features"][1]
@@ -115,7 +115,7 @@ def test_results_to_geojson():
     assert feature2["geometry"]["coordinates"] == [30.789, 40.012]
     assert feature2["properties"]["status"] == "rejected"
     assert feature2["properties"]["other_field"] == "value2"
-    assert feature2["properties"]["color"] == "#FF0000"
+    assert feature2["properties"]["color"] == "#f87171"
 
     # Check that the other cases are not included
     assert all(f["properties"]["other_field"] not in ["value3", "value4", "value5"] for f in geojson["features"])
