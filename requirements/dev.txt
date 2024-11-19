@@ -52,7 +52,7 @@ django==4.2.5
     # via
     #   -c requirements/base.txt
     #   django-debug-toolbar
-django-debug-toolbar==4.1.0
+django-debug-toolbar==4.2.0
     # via -r requirements/dev.in
 executing==1.2.0
     # via stack-data
