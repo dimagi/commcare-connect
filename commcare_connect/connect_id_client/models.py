@@ -30,7 +30,7 @@ class UserMessageStatus:
     status: MessageStatus
 
     @classmethod
-    def build(cls, username: str, status: str):
+    def build(cls, username: str, status: str, *args, **kwargs):
         return cls(username, MessageStatus(status))
 
 
