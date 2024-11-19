@@ -1,7 +1,7 @@
 import pytest
 
-from commcare_connect.opportunity.helpers import get_annotated_opportunity_access_deliver_status
-from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.models import Opportunity, OpportunityDeliverySummary
+from commcare_connect.opportunity.tasks import refresh_materialized_view
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
@@ -15,7 +15,8 @@ def test_deliver_status_query_no_visits(opportunity: Opportunity):
     mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
+    refresh_materialized_view()
+    access_objects = OpportunityDeliverySummary.objects.filter(opportunity=opportunity)
 
     usernames = {user.username for user in mobile_users}
     for access in access_objects:
@@ -41,7 +42,8 @@ def test_deliver_status_query(opportunity: Opportunity):
             count_by_status["completed"] = len(completed_works) - count_by_status["incomplete"]
             completed_work_counts[(mobile_user.username, pu.name)] = count_by_status
 
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
+    refresh_materialized_view()
+    access_objects = OpportunityDeliverySummary.objects.filter(opportunity=opportunity)
     for access in access_objects:
         username = access.user.username
         assert (username, access.payment_unit) in completed_work_counts
@@ -61,7 +63,9 @@ def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunit
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
         CompletedWorkFactory.create_batch(5)
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
+
+    refresh_materialized_view()
+    access_objects = OpportunityDeliverySummary.objects.filter(opportunity=opportunity)
     usernames = {user.username for user in mobile_users}
     for access in access_objects:
         assert access.user.username in usernames
