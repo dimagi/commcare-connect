@@ -178,7 +178,7 @@ def test_receiver_deliver_form_max_visits_reached(
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
         # generate random locations for form submissions
-        duplicate_json["metadata"]["location"] = " ".join([str(random.uniform(10, 100)) for _ in range(4)])
+        duplicate_json["metadata"]["location"] = " ".join([str(random.uniform(-90, 90)) for _ in range(4)])
         make_request(api_client, duplicate_json, mobile_user_with_connect_link)
 
     payment_units = opportunity.paymentunit_set.all()
