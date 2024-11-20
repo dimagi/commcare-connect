@@ -257,7 +257,8 @@ class NonModelTableBaseView(FilterView):
     # Inherit this for a tabular report
     page_template = "reports/report_table.html"
     htmx_table_template = "reports/htmx_table.html"
-    report_title = "Override this"
+    # Override this
+    report_title = None
 
     def get_queryset(self):
         # Doesn't matter which model it is here
