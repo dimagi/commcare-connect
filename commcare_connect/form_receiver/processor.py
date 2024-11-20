@@ -245,6 +245,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
+    payment_unit = deliver_unit.payment_unit
     user_visit = UserVisit(
         opportunity=opportunity,
         user=user,
@@ -260,26 +261,25 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         location=xform.metadata.location,
     )
     completed_work_needs_save = False
-    if opportunity.start_date > datetime.date.today():
+    today = datetime.date.today()
+    if opportunity.start_date > today or (payment_unit.start_date and payment_unit.start_date > today):
         completed_work = None
         user_visit.status = VisitValidationStatus.trial
     else:
         completed_work, _ = CompletedWork.objects.get_or_create(
             opportunity_access=access,
             entity_id=entity_id,
-            payment_unit=deliver_unit.payment_unit,
+            payment_unit=payment_unit,
             defaults={
                 "entity_name": entity_name,
             },
         )
         user_visit.completed_work = completed_work
-        claim_limit = OpportunityClaimLimit.objects.get(
-            opportunity_claim=claim, payment_unit=completed_work.payment_unit
-        )
+        claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
         if (
-            counts["daily"] >= deliver_unit.payment_unit.max_daily
+            counts["daily"] >= payment_unit.max_daily
             or counts["total"] >= claim_limit.max_visits
-            or datetime.date.today() > claim.end_date
+            or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
         ):
             user_visit.status = VisitValidationStatus.over_limit
             if not completed_work.status == CompletedWorkStatus.over_limit:

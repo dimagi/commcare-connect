@@ -3,6 +3,7 @@ from copy import deepcopy
 from uuid import uuid4
 
 import pytest
+from django.utils.timezone import now
 from rest_framework.test import APIClient
 
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
@@ -600,6 +601,25 @@ def test_receiver_visit_review_status(
         assert visit.flagged
     assert visit.status == visit_status
     assert visit.review_status == review_status
+
+
+@pytest.mark.parametrize(
+    "paymentunit_options, visit_status",
+    [
+        ({"start_date": now().date()}, VisitValidationStatus.approved),
+        ({"start_date": now() + datetime.timedelta(days=2)}, VisitValidationStatus.trial),
+        ({"end_date": now().date()}, VisitValidationStatus.approved),
+        ({"end_date": now() - datetime.timedelta(days=2)}, VisitValidationStatus.over_limit),
+    ],
+)
+def test_receiver_visit_payment_unit_dates(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity, visit_status
+):
+    form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
+    form_json["metadata"]["timeStart"] = now() - datetime.timedelta(minutes=2)
+    make_request(api_client, form_json, mobile_user_with_connect_link)
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    assert visit.status == visit_status
 
 
 def get_form_json_for_payment_unit(payment_unit):
