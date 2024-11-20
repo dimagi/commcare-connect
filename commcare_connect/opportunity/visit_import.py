@@ -6,6 +6,7 @@ from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils.timezone import now
@@ -168,10 +169,11 @@ def update_payment_accrued(opportunity: Opportunity, users):
     """Updates payment accrued for completed and approved CompletedWork instances."""
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
     for access in access_objects:
-        completed_works = access.completedwork_set.exclude(
-            status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
-        ).select_related("payment_unit")
-        update_status(completed_works, access, True)
+        with cache.lock(f"update_payment_accrued_lock_{access.id}"):
+            completed_works = access.completedwork_set.exclude(
+                status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
+            ).select_related("payment_unit")
+            update_status(completed_works, access, True)
 
 
 def get_data_by_visit_id(dataset) -> dict[int, VisitData]:

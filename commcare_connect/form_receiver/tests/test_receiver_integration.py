@@ -343,8 +343,11 @@ def test_auto_approve_payments_approved_visit(
     assert access.payment_accrued == completed_work.payment_accrued
 
 
-def test_auto_approve_payments_rejected_visit(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+@pytest.mark.parametrize(
+    "update_func, args_required", [(update_payment_accrued, True), (bulk_approve_completed_work, False)]
+)
+def test_auto_approve_payments_rejected_visit_functions(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity, update_func, args_required
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
@@ -358,17 +361,10 @@ def test_auto_approve_payments_rejected_visit(
     rejected_reason.append(visit.reason)
     visit.save()
 
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    visit.status = VisitValidationStatus.rejected
-    visit.reason = "duplicate"
-    rejected_reason.append(visit.reason)
-    visit.save()
-
     # Payment Approval
-    update_payment_accrued(opportunity, users=[user_with_connectid_link])
+    args = (opportunity, [user_with_connectid_link]) if args_required else ()
+    update_func(*args)
+
     access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.rejected
@@ -395,40 +391,6 @@ def test_auto_approve_payments_approved_visit_task(
     access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.approved
-    assert access.payment_accrued == completed_work.payment_accrued
-
-
-def test_auto_approve_payments_rejected_visit_task(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
-    opportunity.auto_approve_payments = True
-    opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
-    rejected_reason = []
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    visit.status = VisitValidationStatus.rejected
-    visit.reason = "rejected"
-    rejected_reason.append(visit.reason)
-    visit.save()
-
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    visit.status = VisitValidationStatus.rejected
-    visit.reason = "duplicate"
-    rejected_reason.append(visit.reason)
-    visit.save()
-
-    # Payment Approval
-    bulk_approve_completed_work()
-    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
-    completed_work = CompletedWork.objects.get(opportunity_access=access)
-    assert completed_work.status == CompletedWorkStatus.rejected
-    for reason in rejected_reason:
-        assert reason in completed_work.reason
     assert access.payment_accrued == completed_work.payment_accrued
 
 
