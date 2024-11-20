@@ -237,11 +237,12 @@ def get_manage_buttons_html(buttons, request):
 
 class FunnelPerformanceTable(tables.Table):
     organization = tables.Column()
+    opportunity = tables.Column()
     start_date = tables.DateColumn()
     workers_invited = tables.Column(verbose_name=_("Workers Invited"))
     workers_passing_assessment = tables.Column(verbose_name=_("Workers Passing Assessment"))
     workers_starting_delivery = tables.Column(verbose_name=_("Workers Starting Delivery"))
-    percentage_conversion = tables.Column(verbose_name=_("Percentage Conversion"))
+    percentage_conversion = tables.Column(verbose_name=_("% Conversion"))
     average_time_to_convert = tables.Column(verbose_name=_("Average Time To convert"))
 
     class Meta:
@@ -249,6 +250,7 @@ class FunnelPerformanceTable(tables.Table):
         empty_text = "No data available yet."
         fields = (
             "organization",
+            "opportunity",
             "start_date",
             "workers_invited",
             "workers_passing_assessment",
@@ -265,24 +267,46 @@ class FunnelPerformanceTable(tables.Table):
         hours = total_seconds / 3600
         return f"{round(hours, 2)}hr"
 
+    def render_opportunity(self, record):
+        url = reverse(
+            "opportunity:detail",
+            kwargs={
+                "org_slug": record.organization.slug,
+                "pk": record.id,
+            },
+        )
+        return mark_safe(f'<a href="{url}">{record.name}</a>')
+
 
 class DeliveryPerformanceTable(tables.Table):
     organization = tables.Column()
+    opportunity = tables.Column()
     start_date = tables.DateColumn()
     total_workers_starting_delivery = tables.Column(verbose_name=_("Workers Starting Delivery"))
     active_workers = tables.Column(verbose_name=_("Active Workers"))
-    delivery_per_day_per_worker = tables.Column(verbose_name=_("Delivery Per Day Per Worker"))
-    records_flagged_percentage = tables.Column(verbose_name=_("Records flagged"))
+    deliveries_per_day_per_worker = tables.Column(verbose_name=_("Deliveries per Day per Worker"))
+    records_flagged_percentage = tables.Column(verbose_name=_("% Records flagged"))
 
     class Meta:
         model = ManagedOpportunity
         empty_text = "No data available yet."
         fields = (
             "organization",
+            "opportunity",
             "start_date",
             "total_workers_starting_delivery",
             "active_workers",
-            "delivery_per_day_per_worker",
+            "deliveries_per_day_per_worker",
             "records_flagged_percentage",
         )
         orderable = False
+
+    def render_opportunity(self, record):
+        url = reverse(
+            "opportunity:detail",
+            kwargs={
+                "org_slug": record.organization.slug,
+                "pk": record.id,
+            },
+        )
+        return mark_safe(f'<a href="{url}">{record.name}</a>')

@@ -103,7 +103,6 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
                 filter=date_filter,
                 distinct=True,
             ),
-            total_payment_units=Count("opportunityaccess__completedwork", distinct=True),
             total_payment_units_with_flags=Count(
                 "opportunityaccess__uservisit", distinct=True, filter=flagged_visits_filter
             ),
@@ -112,7 +111,7 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
                 distinct=True,
                 filter=date_filter & Q(opportunityaccess__uservisit__completed_work__isnull=False),
             ),
-            delivery_per_day_per_worker=Case(
+            deliveries_per_day_per_worker=Case(
                 When(active_workers=0, then=Value(0)),
                 default=Round(F("total_payment_since_start_date") / F("active_workers"), 2),
                 output_field=FloatField(),

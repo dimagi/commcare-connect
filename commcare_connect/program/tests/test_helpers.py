@@ -246,4 +246,4 @@ class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
         assert opps[0].records_flagged_percentage == expected_records_flagged_percentage
         assert opps[0].total_payment_units_with_flags == total_payment_units_with_flags
         assert opps[0].total_payment_since_start_date == total_payment_since_start_date
-        assert opps[0].delivery_per_day_per_worker == delivery_per_day_per_worker
+        assert opps[0].deliveries_per_day_per_worker == delivery_per_day_per_worker
