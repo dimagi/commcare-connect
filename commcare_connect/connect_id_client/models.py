@@ -35,7 +35,7 @@ class UserMessageStatus:
 
     @classmethod
     def build(cls, username: str, status: str, *args, **kwargs):
-        error = kwargs.pop("error")
+        error = kwargs.get("error")
         if error is not None:
             raise MessagingError(error)
         return cls(username, MessageStatus(status))
