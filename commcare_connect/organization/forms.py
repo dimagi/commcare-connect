@@ -1,5 +1,6 @@
 from crispy_forms import helper, layout
 from django import forms
+from django.core.exceptions import ValidationError
 from django.utils.translation import gettext
 
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
@@ -25,28 +26,41 @@ class OrganizationChangeForm(forms.ModelForm):
 
 
 class MembershipForm(forms.ModelForm):
+    email = forms.CharField(
+        max_length=254,
+        required=True,
+        label="",
+        widget=forms.TextInput(attrs={"placeholder": "Enter email address"}),
+    )
+
     class Meta:
         model = UserOrganizationMembership
-        fields = ("user", "role")
-        labels = {"user": "", "role": ""}
+        fields = ("role",)
+        labels = {"role": ""}
 
     def __init__(self, *args, **kwargs):
         self.organization = kwargs.pop("organization")
         super().__init__(*args, **kwargs)
 
-        self.fields["user"].queryset = User.objects.filter(email__isnull=False).exclude(
-            memberships__organization=self.organization
-        )
-
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
             layout.Row(
                 layout.HTML("<h4>Add new member</h4>"),
-                layout.Field("user", wrapper_class="col-md-5"),
+                layout.Field("email", wrapper_class="col-md-5"),
                 layout.Field("role", wrapper_class="col-md-5"),
                 layout.Div(layout.Submit("submit", gettext("Submit")), css_class="col-md-2"),
             ),
         )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"]
+        user = User.objects.filter(email=email).exclude(memberships__organization=self.organization).first()
+
+        if not user:
+            raise ValidationError("User with this email does not exist or is already a member")
+
+        self.instance.user = user
+        return email
 
 
 class AddCredentialForm(forms.Form):

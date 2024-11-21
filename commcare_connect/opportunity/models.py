@@ -367,6 +367,9 @@ class PaymentUnit(models.Model):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
 
+    def __str__(self):
+        return self.name
+
 
 class DeliverUnit(models.Model):
     app = models.ForeignKey(

@@ -67,16 +67,21 @@ window.addAccuracyCircles = addAccuracyCircles;
 function addCatchmentAreas(map, catchments) {
   const ACTIVE_COLOR = '#3366ff';
   const INACTIVE_COLOR = '#ff4d4d';
-  const CIRCLE_OPACITY = 0.3;
+  const CIRCLE_OPACITY = 0.15;
 
-  map.on('load', () => {
-    const catchmentCircles = catchments.map((catchment) =>
-      circle([catchment.lng, catchment.lat], catchment.radius, {
-        units: 'meters',
-        properties: { active: catchment.active },
-      }),
-    );
+  const catchmentCircles = catchments.map((catchment) =>
+    circle([catchment.lng, catchment.lat], catchment.radius, {
+      units: 'meters',
+      properties: { active: catchment.active },
+    }),
+  );
 
+  if (map.getSource('catchment_circles')) {
+    map.getSource('catchment_circles').setData({
+      type: 'FeatureCollection',
+      features: catchmentCircles,
+    });
+  } else {
     map.addSource('catchment_circles', {
       type: 'geojson',
       data: {
@@ -105,17 +110,17 @@ function addCatchmentAreas(map, catchments) {
         'line-opacity': 0.5,
       },
     });
+  }
 
-    if (catchments?.length) {
-      window.Alpine.nextTick(() => {
-        const legendElement = document.getElementById('legend');
-        if (legendElement) {
-          const legendData = window.Alpine.$data(legendElement);
-          legendData.show = true;
-        }
-      });
-    }
-  });
+  if (catchments?.length) {
+    window.Alpine.nextTick(() => {
+      const legendElement = document.getElementById('legend');
+      if (legendElement) {
+        const legendData = window.Alpine.$data(legendElement);
+        legendData.show = true;
+      }
+    });
+  }
 }
 
 window.addCatchmentAreas = addCatchmentAreas;
