@@ -98,6 +98,19 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
                 username = key.split("phone_")[1]
                 user_statuses[username].update({"phone_number": value})
 
+        # validate that usernames do belong to this opportunity
+        opportunity_id = request.GET.get("opportunity")
+        if not opportunity_id:
+            return HttpResponse("Opportunity must be specified", status=400)
+        opportunity = Opportunity.objects.get(pk=opportunity_id)
+        if opportunity.organization != request.org:
+            return HttpResponse("You can't specify this opportunity", status=400)
+        is_valid = OpportunityAccess.objects.filter(
+            opportunity_id=opportunity_id, user__username__in=user_statuses.keys()
+        ).count() == len(user_statuses)
+        if not is_valid:
+            return HttpResponse("Unknown usernames", status=400)
+
         updates = [{"username": username, **values} for username, values in user_statuses.items()]
         result = validate_phone_numbers(updates)
         return HttpResponse(

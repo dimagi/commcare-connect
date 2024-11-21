@@ -5,7 +5,7 @@
 
 
 {% block table%}
-<form hx-post="{% url "opportunity:payment_number_report" org_slug=request.org.slug  %}"
+<form hx-post
       hx-target="#result"
       hx-disabled-elt="this">
       {% csrf_token %}
