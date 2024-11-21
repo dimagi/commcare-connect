@@ -24,13 +24,22 @@ window.circle = circle;
  * @param {Array.<{lng: float, lat: float, precision: float}> visit_data - Visit location data for User
  */
 function addAccuracyCircles(map, visit_data) {
-  map.on('load', () => {
-    const visit_accuracy_circles = [];
-    visit_data.forEach((loc) => {
-      visit_accuracy_circles.push(
-        circle([loc.lng, loc.lat], loc.precision, { units: 'meters' }),
-      );
+  const FILL_OPACITY = 0.1;
+  const OUTLINE_COLOR = '#fcbf49';
+  const OUTLINE_WIDTH = 3;
+  const OUTLINE_OPACITY = 0.5;
+
+  const visit_accuracy_circles = visit_data.map((loc) =>
+    circle([loc.lng, loc.lat], loc.precision, { units: 'meters' }),
+  );
+
+  // Check if the source exists, then update or add the source
+  if (map.getSource('visit_accuracy_circles')) {
+    map.getSource('visit_accuracy_circles').setData({
+      type: 'FeatureCollection',
+      features: visit_accuracy_circles,
     });
+  } else {
     map.addSource('visit_accuracy_circles', {
       type: 'geojson',
       data: {
@@ -45,21 +54,22 @@ function addAccuracyCircles(map, visit_data) {
       type: 'fill',
       paint: {
         'fill-antialias': true,
-        'fill-opacity': 0.3,
+        'fill-opacity': FILL_OPACITY,
       },
     });
 
+    // Add the outline layer
     map.addLayer({
       id: 'visit-accuracy-circle-outlines-layer',
       source: 'visit_accuracy_circles',
       type: 'line',
       paint: {
-        'line-color': '#fcbf49',
-        'line-width': 3,
-        'line-opacity': 0.5,
+        'line-color': OUTLINE_COLOR,
+        'line-width': OUTLINE_WIDTH,
+        'line-opacity': OUTLINE_OPACITY,
       },
     });
-  });
+  }
 }
 
 window.addAccuracyCircles = addAccuracyCircles;

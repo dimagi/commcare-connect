@@ -83,15 +83,14 @@
         </div>
 
         <!-- Map Section -->
-        <div class="position-relative">
-          <div class="card">
+        <div class="card position-relative" x-data="{ currentStyle: 'streets-v12' }">
             <div class="card-header bg-light d-flex justify-content-between align-items-center">
               <h5 class="mb-0">Visit Locations</h5>
               <div class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-outline-primary active pe-none" id="streets-v12">
+                <button type="button" @click="currentStyle = 'streets-v12'" class="btn btn-outline-primary" :class="{ 'active pe-none': currentStyle === 'streets-v12' }" id="streets-v12">
                   <i class="bi bi-map me-1"></i>Streets
                 </button>
-                <button type="button" class="btn btn-outline-primary" id="satellite-streets-v12">
+                <button type="button" @click="currentStyle = 'satellite-streets-v12'" class="btn btn-outline-primary" :class="{ 'active pe-none': currentStyle === 'satellite-streets-v12' }" id="satellite-streets-v12">
                   <i class="bi bi-globe me-1"></i>Satellite
                 </button>
               </div>
@@ -115,7 +114,6 @@
               </div>
             </div>
           </div>
-        </div>
 
         <!-- Action Buttons -->
         <div class="text-center mt-4">
@@ -143,7 +141,7 @@
       mapboxgl.accessToken = "{{ MAPBOX_TOKEN }}";
       const map = new mapboxgl.Map({
         container: 'user-visit-map',
-        style: 'mapbox://styles/mapbox/streets-v12', // Default to streets style
+        style: 'mapbox://styles/mapbox/streets-v12',
         center: [{{ lng_avg }}, {{ lat_avg }}],
         zoom: 14,
       });
@@ -151,33 +149,34 @@
       const userVisits = JSON.parse(document.getElementById('userVisits').textContent);
       const userCatchments = JSON.parse(document.getElementById('userCatchments').textContent);
 
-      userVisits.forEach(loc => {
-        new mapboxgl.Marker()
-          .setLngLat([loc.lng, loc.lat])
-          .setPopup(new mapboxgl.Popup().setHTML(`${loc.entity_name}<br />${loc.visit_date}`))
-          .addTo(map)
-      })
+      map.on('load', () => {
+        userVisits.forEach(loc => {
+          new mapboxgl.Marker()
+            .setLngLat([loc.lng, loc.lat])
+            .setPopup(new mapboxgl.Popup().setHTML(`${loc.entity_name}<br />${loc.visit_date}`))
+            .addTo(map)
+        });
 
-      const setMapStyle = (styleId, targetElementId, otherElementId) => {
-        map.setStyle(styleId);
-        const targetElement = document.getElementById(targetElementId);
-        targetElement.classList.add('active', 'pe-none');
-
-        const otherElement = document.getElementById(otherElementId);
-        otherElement.classList.remove('active', 'pe-none');
-      };
-
-      document.getElementById('streets-v12').addEventListener('click', (e) => {
-        setMapStyle('mapbox://styles/mapbox/streets-v12', 'streets-v12', 'satellite-streets-v12');
-      });
-
-      document.getElementById('satellite-streets-v12').addEventListener('click', (e) => {
-        setMapStyle('mapbox://styles/mapbox/satellite-streets-v12', 'satellite-streets-v12', 'streets-v12');
-      });
-
-      map.on('style.load', () => {
         addAccuracyCircles(map, userVisits);
         addCatchmentAreas(map, userCatchments);
+      });
+
+      // Watch for Alpine.js style changes
+      Alpine.effect(() => {
+        const alpineData = Alpine.$data(document.querySelector('[x-data]'));
+        const currentStyle = alpineData.currentStyle;
+        const styles = {
+          'streets-v12': 'mapbox://styles/mapbox/streets-v12',
+          'satellite-streets-v12': 'mapbox://styles/mapbox/satellite-streets-v12'
+        };
+        map.setStyle(styles[currentStyle]);
+
+        // Re-add circles and catchments after style changes
+        map.once('style.load', () => {
+          alpineData.currentStyle = currentStyle;
+          addAccuracyCircles(map, userVisits);
+          addCatchmentAreas(map, userCatchments);
+        });
       });
     });
   </script>
