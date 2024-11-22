@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
-from commcare_connect.connect_id_client.main import fetch_payment_phone_numbers, validate_phone_numbers
+from commcare_connect.connect_id_client.main import fetch_payment_phone_numbers, validate_payment_profiles
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin
 from commcare_connect.reports.views import NonModelTableBaseView
@@ -26,13 +26,11 @@ class PaymentNumberReportTable(tables.Table):
     def render_status(self, value, record):
         options = ["pending", "approved", "rejected"]
         username = record["username"]
-        phone_number = record["phone_number"]
 
         radio_buttons = [
             f'<input type="radio" name="status_{username}" value="{option}" {"checked" if value == option else ""}> {option.capitalize()}'
             for option in options
         ]
-        radio_buttons.append(f'<input type="hidden" name="phone_{username}" value="{phone_number}">')
         return format_html("<br>".join(radio_buttons))
 
 
@@ -89,14 +87,10 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
 
     def post(self, request, *args, **kwargs):
         user_statuses = defaultdict(dict)
-
         for key, value in request.POST.items():
             if key.startswith("status_"):
                 username = key.split("status_")[1]
                 user_statuses[username].update({"status": value})
-            if key.startswith("phone_"):
-                username = key.split("phone_")[1]
-                user_statuses[username].update({"phone_number": value})
 
         # validate that usernames do belong to this opportunity
         opportunity_id = request.GET.get("opportunity")
@@ -112,7 +106,7 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
             return HttpResponse("Unknown usernames", status=400)
 
         updates = [{"username": username, **values} for username, values in user_statuses.items()]
-        result = validate_phone_numbers(updates)
+        result = validate_payment_profiles(updates)
         return HttpResponse(
             format_html(
                 """<span id="result" class="alert alert-info p-1">{}</span>""".format(
