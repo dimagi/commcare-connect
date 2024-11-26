@@ -15,6 +15,15 @@ function refreshTooltips() {
 }
 window.refreshTooltips = refreshTooltips;
 
+function handleResendInviteResponse(event) {
+  const response = event.detail.elt;
+  const resendModal = new bootstrap.Modal(
+    document.getElementById('resendInviteModal'),
+  );
+  resendModal.show();
+}
+window.handleResendInviteResponse = handleResendInviteResponse;
+
 window.mapboxgl = mapboxgl;
 window.circle = circle;
 
