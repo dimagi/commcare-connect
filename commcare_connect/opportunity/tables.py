@@ -204,7 +204,7 @@ class UserStatusTable(OrgContextTable):
             "opportunity:user_profile",
             kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
         )
-        return format_html('<a href="{}">View Profile</a>', url)
+        return format_html('<a class="btn btn-primary btn-sm" href="{}">View Profile</a>', url)
 
     def render_started_learning(self, record, value):
         return date_with_time_popup(self, value)
