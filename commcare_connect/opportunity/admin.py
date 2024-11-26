@@ -127,8 +127,8 @@ class CompletedWorkAdmin(admin.ModelAdmin):
 @admin.register(PaymentUnit)
 class PaymentUnitAdmin(admin.ModelAdmin):
     list_display = ["name", "get_opp_name"]
-    search_fields = ["name"]
+    search_fields = ["name", "opportunity__name"]
 
     @admin.display(description="Opportunity Name")
     def get_opp_name(self, obj):
-        return obj.opportunity_access.opportunity.name
+        return obj.opportunity.name
