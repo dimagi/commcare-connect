@@ -2,6 +2,10 @@ import dataclasses
 from enum import StrEnum
 
 
+class MessagingError(Exception):
+    pass
+
+
 @dataclasses.dataclass
 class ConnectIdUser:
     name: str
@@ -30,7 +34,10 @@ class UserMessageStatus:
     status: MessageStatus
 
     @classmethod
-    def build(cls, username: str, status: str):
+    def build(cls, username: str, status: str, *args, **kwargs):
+        error = kwargs.get("error")
+        if error is not None:
+            raise MessagingError(error)
         return cls(username, MessageStatus(status))
 
 
