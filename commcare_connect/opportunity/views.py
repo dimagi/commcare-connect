@@ -1248,7 +1248,7 @@ def resend_user_invite(request, org_slug, opp_id, pk):
     if user_invite.notification_date and (now() - user_invite.notification_date) < datetime.timedelta(days=1):
         return HttpResponse("You can only send one invitation per user every 24 hours. Please try again later.")
 
-    if user_invite.status != UserInviteStatus.not_found:
+    if user_invite.status == UserInviteStatus.not_found:
         found_user_list = fetch_users([user_invite.phone_number])
         if not found_user_list:
             return HttpResponse("The user is not registered on Connect ID yet. Please ask them to sign up first.")
