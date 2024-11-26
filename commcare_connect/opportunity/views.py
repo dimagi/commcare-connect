@@ -1257,7 +1257,7 @@ def resend_user_invite(request, org_slug, opp_id, pk):
         update_user_and_send_invite(connect_user, opp_id=pk)
     else:
         user = User.objects.get(phone_number=user_invite.phone_number)
-        access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity_id=pk)
+        access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity_id=opp_id)
         invite_user.delay(user.id, access.pk)
 
     return HttpResponse("The invitation has been successfully resent to the user.")
