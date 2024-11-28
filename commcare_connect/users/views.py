@@ -1,4 +1,5 @@
 from allauth.account.models import transaction
+from dal.autocomplete import Select2QuerySetView
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -20,6 +21,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens
+from commcare_connect.events.models import Event
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 
 from .helpers import create_hq_user
@@ -135,6 +137,13 @@ def accept_invite(request, invite_id):
         user_invite = UserInvite.objects.get(opportunity_access=o)
         user_invite.status = UserInviteStatus.accepted
         user_invite.save()
+
+    Event(
+        event_type=Event.Type.INVITE_ACCEPTED,
+        user=o.user,
+        opportunity=o.opportunity,
+    ).save()
+
     return HttpResponse(
         "Thank you for accepting the invitation. Open your CommCare Connect App to "
         "see more information about the opportunity and begin learning"
@@ -163,3 +172,13 @@ class SMSStatusCallbackView(APIView):
                 user_invite.status = UserInviteStatus.sms_not_delivered
             user_invite.save()
         return Response(status=200)
+
+
+class UserSearchView(LoginRequiredMixin, Select2QuerySetView):
+    def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return User.objects.none()
+        queryset = User.objects.filter(opportunityaccess__opportunity__organization=self.request.org).distinct()
+        if self.q:
+            queryset = queryset.filter(name__istartswith=self.q)
+        return queryset
