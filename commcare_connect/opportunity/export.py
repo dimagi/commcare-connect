@@ -36,9 +36,12 @@ def export_user_visit_data(
         user_visits = user_visits.filter(visit_date__gte=date_range.get_cutoff_date())
     if status and "all" not in status:
         user_visits = user_visits.filter(status__in=status)
+    user_visits = user_visits.order_by("visit_date")
 
     table = UserVisitTable(user_visits)
-    exclude_columns = ("visit_date", "form_json", "details")
+    exclude_columns = ("visit_date", "form_json", "details", "justification")
+    if opportunity.managed:
+        exclude_columns = ("visit_date", "form_json", "details")
     columns = [
         column
         for column in table.columns.iterall()

@@ -48,7 +48,7 @@ Some useful command are available via the `tasks.py` file:
 
 - Install loca.lt
   - `npm install -g localtunnel`
-- Run `loca.lt --port 8000 --subdomain [my-unique-subdomain]` and copy the generated URL
+- Run `lt --port 8000 --subdomain [my-unique-subdomain]` and copy the generated URL
 - Update your `.env` file with the host:
 
       DJANGO_ALLOWED_HOSTS=[my-unique-subdomain].loca.lt
@@ -66,6 +66,7 @@ Some useful command are available via the `tasks.py` file:
 
 **Test the OAuth2 flow**
 
+- Set `COMMCARE_HQ_URL=https://staging.commcarehq.org` in your `.env` file and restart the server.
 - Navigate to http://[my-unique-subdomain].loca.lt/accounts/login/
 - Click the "Log in with CommCare HQ" button
 - You should be redirected to CommCare HQ to log in
@@ -144,6 +145,19 @@ For details on how this actions is configured see:
 
 - https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/
 - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+
+### Deploying to the staging environment
+
+The project has a staging environment at [https://connect-staging.dimagi.com/](https://connect-staging.dimagi.com/),
+which is connected to the staging environment of CommCare HQ at
+[https://staging.commcarehq.org/](https://staging.commcarehq.org/).
+
+By convention, the `pkv/staging` branch is used for changes that are on the staging environment.
+To put your own changes on the staging environment, you can create merge your own branch into
+`pkv/staging` and then push it to GitHub.
+
+After that, you can deploy to the staging environment by manually running the `deploy`
+[workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
 ### Custom Bootstrap Compilation
 

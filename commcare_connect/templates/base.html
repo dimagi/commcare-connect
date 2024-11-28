@@ -55,6 +55,12 @@
         <ul class="navbar-nav">
           {% if request.user.is_authenticated %}
             {% if request.org %}
+              {% if request.user.is_superuser or request.org_membership.is_admin and request.org.program_manager %}
+              <li class="nav-item">
+                <a class="nav-link {% active_link "list || init || edit || opportunity_list || opportunity_init" namespace='program' %}"
+                   href="{% url 'program:list' request.org.slug %}">{% translate "Programs" %}</a>
+              </li>
+              {% endif %}
               <li class="nav-item">
                 <a class="nav-link {% active_link "list || create || edit || detail" namespace='opportunity' %}"
                    href="{% url 'opportunity:list' request.org.slug %}">{% translate "Opportunities" %}</a>
@@ -128,7 +134,10 @@
   {% block breadcrumbs %}{% endblock %}
 
   {% block content %}
-    <p>Use this document as a way to quick start any new project.</p>
+  <div class="mt-4">
+    <h1>CommCare Connect</h1>
+    <p class="lead">Unlocking more impact from Frontline Workers</p>
+  </div>
   {% endblock content %}
 
 </div> <!-- /container -->

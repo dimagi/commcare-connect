@@ -8,6 +8,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     OpportunityAccess,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     UserInvite,
     UserInviteStatus,
@@ -16,17 +17,18 @@ from commcare_connect.opportunity.models import (
 )
 
 
-class LearnStatusTable(tables.Table):
+class OrgContextTable(tables.Table):
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug", None)
+        super().__init__(*args, **kwargs)
+
+
+class LearnStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name")
     learn_progress = columns.Column(verbose_name="Modules Completed")
     assessment_count = columns.Column(verbose_name="Number of Attempts")
     assessment_status = columns.Column(verbose_name="Assessment Status")
-    details = columns.LinkColumn(
-        "opportunity:user_learn_progress",
-        verbose_name="",
-        text="View Details",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
 
     class Meta:
         model = OpportunityAccess
@@ -34,6 +36,13 @@ class LearnStatusTable(tables.Table):
         sequence = ("display_name", "learn_progress")
         orderable = False
         empty_text = "No learn progress for users."
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:user_learn_progress",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View Details</a>')
 
 
 def show_warning(record):
@@ -43,7 +52,7 @@ def show_warning(record):
     return ""
 
 
-class UserVisitTable(tables.Table):
+class UserVisitTable(OrgContextTable):
     # export only columns
     visit_id = columns.Column("Visit ID", accessor="xform_id", visible=False)
     username = columns.Column("Username", accessor="user__username", visible=False)
@@ -52,18 +61,20 @@ class UserVisitTable(tables.Table):
         verbose_name="Visit date", accessor="visit_date", format="c", visible=False
     )
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
+    justification = columns.Column("Justification", accessor="justification", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
     entity_name = columns.Column("Entity Name", accessor="entity_name")
     flag_reason = columns.Column("Flags", accessor="flag_reason", empty_values=({}, None))
-    details = columns.LinkColumn(
-        "opportunity:visit_verification",
-        verbose_name="",
-        text="Review",
-        attrs={"a": {"class": "btn btn-sm btn-primary"}},
-        args=[utils.A("opportunity__organization__slug"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:visit_verification",
+            kwargs={"org_slug": self.org_slug, "pk": record.pk},
+        )
+        return mark_safe(f'<a class="btn btn-sm btn-primary" href="{url}">Review</a>')
 
     def render_flag_reason(self, value):
         short = [flag[1] for flag in value.get("flags")]
@@ -86,15 +97,17 @@ class UserVisitTable(tables.Table):
         row_attrs = {"class": show_warning}
 
 
-class OpportunityPaymentTable(tables.Table):
+class OpportunityPaymentTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name")
     username = columns.Column(accessor="user__username", visible=False)
-    view_payments = columns.LinkColumn(
-        "opportunity:user_payments_table",
-        verbose_name="",
-        text="View Details",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    view_payments = columns.Column(verbose_name="", empty_values=())
+
+    def render_view_payments(self, record):
+        url = reverse(
+            "opportunity:user_payments_table",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View Details</a>')
 
     class Meta:
         model = OpportunityAccess
@@ -126,7 +139,7 @@ class BooleanAggregateColumn(columns.BooleanColumn, AggregateColumn):
     pass
 
 
-class UserStatusTable(tables.Table):
+class UserStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name", footer="Total", empty_values=())
     username = columns.Column(accessor="opportunity_access__user__username", visible=False)
     claimed = AggregateColumn(verbose_name="Job Claimed", accessor="job_claimed")
@@ -173,11 +186,7 @@ class UserStatusTable(tables.Table):
             return "---"
         url = reverse(
             "opportunity:user_profile",
-            kwargs={
-                "org_slug": record.opportunity.organization.slug,
-                "opp_id": record.opportunity_id,
-                "pk": record.opportunity_access_id,
-            },
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
         )
         return format_html('<a href="{}">View Profile</a>', url)
 
@@ -194,14 +203,9 @@ class UserStatusTable(tables.Table):
         return date_with_time_popup(self, value)
 
 
-class PaymentUnitTable(tables.Table):
+class PaymentUnitTable(OrgContextTable):
     deliver_units = columns.Column("Deliver Units")
-    details = columns.LinkColumn(
-        "opportunity:edit_payment_unit",
-        verbose_name="",
-        text="Edit",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
 
     class Meta:
         model = PaymentUnit
@@ -213,8 +217,15 @@ class PaymentUnitTable(tables.Table):
         deliver_units = "".join([f"<li>{d.name}</li>" for d in record.deliver_units.all()])
         return mark_safe(f"<ul>{deliver_units}</ul>")
 
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:edit_payment_unit",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">Edit</a>')
 
-class DeliverStatusTable(tables.Table):
+
+class DeliverStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name of the User", footer="Total")
     username = columns.Column(accessor="user__username", visible=False)
     payment_unit = columns.Column("Name of Payment Unit")
@@ -224,13 +235,7 @@ class DeliverStatusTable(tables.Table):
     rejected = SumColumn("Rejected")
     over_limit = SumColumn("Over Limit")
     incomplete = SumColumn("Incomplete")
-
-    details = columns.LinkColumn(
-        "opportunity:user_visits_list",
-        verbose_name="",
-        text="View Details",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    details = columns.Column(verbose_name="", empty_values=())
 
     class Meta:
         model = OpportunityAccess
@@ -247,6 +252,13 @@ class DeliverStatusTable(tables.Table):
             "over_limit",
             "incomplete",
         )
+
+    def render_details(self, record):
+        url = reverse(
+            "opportunity:user_visits_list",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View Details</a>')
 
     def render_last_visit_date(self, record, value):
         return date_with_time_popup(self, value)
@@ -360,6 +372,84 @@ class CatchmentAreaTable(tables.Table):
             "longitude",
             "radius",
         )
+
+
+class UserVisitReviewTable(tables.Table):
+    pk = columns.CheckBoxColumn(
+        accessor="pk",
+        verbose_name="",
+        attrs={
+            "input": {"x-model": "selected"},
+            "th__input": {"@click": "toggleSelectAll()", "x-bind:checked": "selectAll"},
+        },
+    )
+    username = columns.Column(accessor="user__username", verbose_name="Username")
+    name = columns.Column(accessor="user__name", verbose_name="Name of the User")
+    justification = columns.Column(verbose_name="Justification")
+    visit_date = columns.Column()
+    created_on = columns.Column(accessor="review_created_on", verbose_name="Review Requested On")
+    review_status = columns.Column(verbose_name="Program Manager Review")
+    user_visit = columns.LinkColumn(
+        "opportunity:visit_verification",
+        verbose_name="User Visit",
+        text="View",
+        args=[utils.A("opportunity__organization__slug"), utils.A("pk")],
+    )
+
+    class Meta:
+        model = UserVisit
+        orderable = False
+        fields = (
+            "pk",
+            "username",
+            "name",
+            "status",
+            "justification",
+            "visit_date",
+            "review_status",
+            "created_on",
+            "user_visit",
+        )
+        empty_text = "No visits submitted for review."
+
+
+class PaymentReportTable(tables.Table):
+    payment_unit = columns.Column(verbose_name="Payment Unit")
+    approved = SumColumn(verbose_name="Approved Units")
+    user_payment_accrued = SumColumn(verbose_name="User Payment Accrued")
+    nm_payment_accrued = SumColumn(verbose_name="Network Manager Payment Accrued")
+
+    class Meta:
+        orderable = False
+
+
+class PaymentInvoiceTable(tables.Table):
+    pk = columns.CheckBoxColumn(
+        accessor="pk",
+        verbose_name="",
+        attrs={
+            "input": {"x-model": "selected"},
+            "th__input": {"@click": "toggleSelectAll()", "x-bind:checked": "selectAll"},
+        },
+    )
+    payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
+    payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
+
+    class Meta:
+        model = PaymentInvoice
+        orderable = False
+        fields = ("pk", "amount", "date", "invoice_number")
+        empty_text = "No Payment Invoices"
+
+    def render_payment_status(self, value):
+        if value is not None:
+            return "Paid"
+        return "Pending"
+
+    def render_payment_date(self, value):
+        if value is not None:
+            return value.date_paid
+        return
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):

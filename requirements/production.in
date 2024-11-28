@@ -1,6 +1,6 @@
 -c base.txt
 
-gunicorn
+gunicorn[gevent]
 psycopg2
 sentry-sdk
 

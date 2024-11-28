@@ -6,7 +6,7 @@ from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Q, TextChoices
+from django.db.models import Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
 
@@ -20,16 +20,64 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityVerificationFlags,
+    PaymentInvoice,
     PaymentUnit,
     VisitValidationStatus,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 
-class OpportunityChangeForm(forms.ModelForm):
+class OpportunityUserInviteForm(forms.Form):
+    def __init__(self, *args, **kwargs):
+        org_slug = kwargs.pop("org_slug", None)
+        credentials = connect_id_client.fetch_credentials(org_slug)
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Fieldset(
+                "",
+                Row(Field("users")),
+                Row(
+                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
+                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
+                ),
+            ),
+            Submit("submit", "Submit"),
+        )
+
+        self.fields["users"] = forms.CharField(
+            widget=forms.Textarea,
+            help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
+            required=False,
+        )
+        self.fields["filter_country"] = forms.CharField(
+            label="Filter By Country",
+            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
+            required=False,
+        )
+        self.fields["filter_credential"] = forms.CharField(
+            label="Filter By Credential",
+            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
+            required=False,
+        )
+        self.initial["filter_country"] = [""]
+        self.initial["filter_credential"] = [""]
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
+        return split_users
+
+
+class OpportunityChangeForm(
+    OpportunityUserInviteForm,
+    forms.ModelForm,
+):
     class Meta:
         model = Opportunity
         fields = [
@@ -43,7 +91,6 @@ class OpportunityChangeForm(forms.ModelForm):
         ]
 
     def __init__(self, *args, **kwargs):
-        credentials = connect_id_client.fetch_credentials()
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -71,11 +118,6 @@ class OpportunityChangeForm(forms.ModelForm):
             Submit("submit", "Submit"),
         )
 
-        self.fields["users"] = forms.CharField(
-            widget=forms.Textarea,
-            help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
-            required=False,
-        )
         self.fields["additional_users"] = forms.IntegerField(
             required=False, help_text="Adds budget for additional users."
         )
@@ -84,25 +126,8 @@ class OpportunityChangeForm(forms.ModelForm):
             required=False,
             help_text="Extends opportunity end date for all users.",
         )
-        self.fields["filter_country"] = forms.CharField(
-            label="Filter By Country",
-            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
-            required=False,
-        )
-        self.fields["filter_credential"] = forms.CharField(
-            label="Filter By Credential",
-            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
-            required=False,
-        )
         self.initial["end_date"] = self.instance.end_date.isoformat()
-        self.initial["filter_country"] = [""]
-        self.initial["filter_credential"] = [""]
         self.currently_active = self.instance.active
-
-    def clean_users(self):
-        user_data = self.cleaned_data["users"]
-        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
-        return split_users
 
     def clean_active(self):
         active = self.cleaned_data["active"]
@@ -118,6 +143,8 @@ class OpportunityChangeForm(forms.ModelForm):
 
 
 class OpportunityInitForm(forms.ModelForm):
+    managed_opp = False
+
     class Meta:
         model = Opportunity
         fields = [
@@ -234,7 +261,12 @@ class OpportunityInitForm(forms.ModelForm):
         )
         self.instance.created_by = self.user.email
         self.instance.modified_by = self.user.email
-        self.instance.organization = organization
+
+        if self.managed_opp:
+            self.instance.organization = self.cleaned_data.get("organization")
+        else:
+            self.instance.organization = organization
+
         api_key, _ = HQApiKey.objects.get_or_create(user=self.user, api_key=self.cleaned_data["api_key"])
         self.instance.api_key = api_key
         super().save(commit=commit)
@@ -256,7 +288,9 @@ class OpportunityFinalizeForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        budget_per_user = kwargs.pop("budget_per_user")
+        self.budget_per_user = kwargs.pop("budget_per_user")
+        self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
+        self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
@@ -268,10 +302,32 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
             ),
             Field("end_date"),
-            Field("max_users", oninput=f"id_total_budget.value = {budget_per_user} * parseInt(this.value || 0)"),
+            Field(
+                "max_users",
+                oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
+                f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
+                f"* parseInt(this.value || 0)",
+            ),
             Field("total_budget", readonly=True, wrapper_class="form-group col-md-4 mb-0"),
             Submit("submit", "Submit"),
         )
+
+        if self.opportunity.managed:
+            self.helper.layout.fields.insert(
+                -2,
+                Row(
+                    Field(
+                        "org_pay_per_visit",
+                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
+                        f"* parseInt(this.value || 0)) "
+                        f"* parseInt(document.getElementById('id_max_users')?.value || 0)",
+                    )
+                ),
+            )
+            self.fields["org_pay_per_visit"] = forms.IntegerField(
+                required=True, widget=forms.NumberInput(attrs={"class": "form-control"})
+            )
+
         self.fields["max_users"] = forms.IntegerField()
         self.fields["start_date"].disabled = self.is_start_date_readonly
         self.fields["total_budget"].widget.attrs.update({"class": "form-control-plaintext"})
@@ -289,6 +345,25 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 self.add_error("start_date", "Start date should be today or latter")
             if start_date >= end_date:
                 self.add_error("end_date", "End date must be after start date")
+
+            if self.opportunity.managed:
+                managed_opportunity = self.opportunity.managedopportunity
+                program = managed_opportunity.program
+                if not (program.start_date <= start_date <= program.end_date):
+                    self.add_error("start_date", "Start date must be within the program's start and end dates.")
+
+                if not (program.start_date <= end_date <= program.end_date):
+                    self.add_error("end_date", "End date must be within the program's start and end dates.")
+
+                total_budget_sum = (
+                    ManagedOpportunity.objects.filter(program=program)
+                    .exclude(id=managed_opportunity.id)
+                    .aggregate(total=Sum("total_budget"))["total"]
+                    or 0
+                )
+                if total_budget_sum + cleaned_data["total_budget"] > program.budget:
+                    self.add_error("total_budget", "Budget exceeds the program budget.")
+
             return cleaned_data
 
 
@@ -757,3 +832,35 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
             queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), widget=forms.CheckboxSelectMultiple
         )
+
+
+class PaymentInvoiceForm(forms.ModelForm):
+    class Meta:
+        model = PaymentInvoice
+        fields = ("amount", "date", "invoice_number")
+        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": "form-control"})}
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("amount")),
+            Row(Field("date")),
+            Row(Field("invoice_number")),
+        )
+        self.helper.form_tag = False
+
+    def clean_invoice_number(self):
+        invoice_number = self.cleaned_data["invoice_number"]
+        if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
+            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
+        return invoice_number
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.opportunity = self.opportunity
+        if commit:
+            instance.save()
+        return instance

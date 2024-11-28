@@ -10,11 +10,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
     MobileUserFactory,
     OrgWithUsersFactory,
+    ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
 
@@ -47,9 +49,15 @@ def user(db) -> User:
 
 
 @pytest.fixture()
-def opportunity():
-    factory = OpportunityFactory()
-    OpportunityVerificationFlagsFactory(opportunity=factory)
+def opportunity(request):
+    verification_flags = getattr(request, "param", {}).get("verification_flags", {})
+    opp_options = {"is_test": False}
+    opp_options.update(getattr(request, "param", {}).get("opp_options", {}))
+    if opp_options.get("managed", False):
+        factory = ManagedOpportunityFactory(**opp_options)
+    else:
+        factory = OpportunityFactory(**opp_options)
+    OpportunityVerificationFlagsFactory(opportunity=factory, **verification_flags)
     return factory
 
 
@@ -105,3 +113,18 @@ def org_user_member(organization) -> User:
 @pytest.fixture
 def org_user_admin(organization) -> User:
     return organization.memberships.filter(role="admin").first().user
+
+
+@pytest.fixture
+def program_manager_org(db) -> Organization:
+    return ProgramManagerOrgWithUsersFactory()
+
+
+@pytest.fixture
+def program_manager_org_user_member(program_manager_org) -> User:
+    return program_manager_org.memberships.filter(role="member").first().user
+
+
+@pytest.fixture
+def program_manager_org_user_admin(program_manager_org) -> User:
+    return program_manager_org.memberships.filter(role="admin").first().user

@@ -1,7 +1,7 @@
 webservers:
   hosts:
     web0:
-      ansible_host: 54.146.23.50
+      ansible_host: 54.158.97.180
     celery0:
       ansible_host: 44.193.193.67
   vars:

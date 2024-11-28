@@ -14,6 +14,7 @@ class Organization(BaseModel):
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name="organizations", through="UserOrganizationMembership"
     )
+    program_manager = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
         if not self.id:
@@ -51,6 +52,10 @@ class UserOrganizationMembership(models.Model):
     @property
     def is_viewer(self):
         return self.role == self.Role.VIEWER
+
+    @property
+    def is_program_manager(self):
+        return self.organization.program_manager and self.is_admin
 
     class Meta:
         db_table = "organization_membership"

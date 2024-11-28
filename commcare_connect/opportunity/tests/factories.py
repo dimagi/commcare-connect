@@ -33,6 +33,14 @@ class HQApiKeyFactory(DjangoModelFactory):
         model = "opportunity.HQApiKey"
 
 
+class DeliveryTypeFactory(DjangoModelFactory):
+    name = Faker("name")
+    slug = Faker("pystr")
+
+    class Meta:
+        model = "opportunity.DeliveryType"
+
+
 class OpportunityFactory(DjangoModelFactory):
     organization = SubFactory(OrganizationFactory)
     name = Faker("name")
@@ -47,6 +55,8 @@ class OpportunityFactory(DjangoModelFactory):
     budget_per_visit = Faker("pyint", min_value=1, max_value=10)
     total_budget = Faker("pyint", min_value=1000, max_value=10000)
     api_key = SubFactory(HQApiKeyFactory)
+    delivery_type = SubFactory(DeliveryTypeFactory)
+    currency = "USD"
 
     class Meta:
         model = "opportunity.Opportunity"
@@ -62,6 +72,8 @@ class OpportunityAccessFactory(DjangoModelFactory):
 
 class OpportunityVerificationFlagsFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
+    form_submission_start = None  # Default to None
+    form_submission_end = None  # Default to None
 
     class Meta:
         model = "opportunity.OpportunityVerificationFlags"
@@ -121,6 +133,7 @@ class UserVisitFactory(DjangoModelFactory):
     visit_date = Faker("date_time", tzinfo=timezone.utc)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
+    completed_work = SubFactory(CompletedWorkFactory)
 
     class Meta:
         model = "opportunity.UserVisit"
@@ -208,3 +221,20 @@ class CatchmentAreaFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.CatchmentArea"
+
+
+class DeliveryTypeFactory(DjangoModelFactory):
+    name = Faker("name")
+    description = Faker("text", max_nb_chars=200)
+
+    class Meta:
+        model = "opportunity.DeliveryType"
+
+
+class PaymentFactory(DjangoModelFactory):
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+    amount = Faker("pyint", min_value=1, max_value=10000)
+    date_paid = Faker("date_time", tzinfo=timezone.utc)
+
+    class Meta:
+        model = "opportunity.Payment"

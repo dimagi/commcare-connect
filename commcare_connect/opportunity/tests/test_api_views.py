@@ -146,8 +146,22 @@ def test_learn_progress_endpoint(mobile_user: User, api_client: APIClient):
     assert list(response.data["assessments"][0].keys()) == ["date", "score", "passing_score", "passed"]
 
 
+@pytest.mark.parametrize(
+    "opportunity",
+    [
+        {
+            "verification_flags": {
+                "form_submission_start": datetime.time(10, 0),
+                "form_submission_end": datetime.time(14, 0),
+            }
+        }
+    ],
+    indirect=True,
+)
 def test_opportunity_list_endpoint(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
 ):
     api_client.force_authenticate(mobile_user_with_connect_link)
     response = api_client.get("/api/opportunity/")
@@ -160,6 +174,11 @@ def test_opportunity_list_endpoint(
     assert response.data[0]["budget_per_visit"] == max([pu.amount for pu in payment_units])
     claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=opportunity)
     assert response.data[0]["claim"]["max_payments"] == sum([cl.max_visits for cl in claim_limits])
+    verification_flags = opportunity.opportunityverificationflags
+    assert response.data[0]["verification_flags"]["form_submission_start"] == str(
+        verification_flags.form_submission_start
+    )
+    assert response.data[0]["verification_flags"]["form_submission_end"] == str(verification_flags.form_submission_end)
 
 
 def test_delivery_progress_endpoint(

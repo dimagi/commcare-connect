@@ -22,12 +22,21 @@
           <i class="bi bi-three-dots-vertical"></i>
         </button>
         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="opportunity_details_dropdown">
+          {% if user_is_network_manager %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:user_invite' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-pencil-fill pe-2"></i> Invite Users
+            </a>
+          </li>
+          {% else %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}">
               <i class="bi bi-pencil-fill pe-2"></i> Edit
             </a>
           </li>
+          {% endif %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}">
@@ -35,11 +44,36 @@
               Add Budget
             </a>
           </li>
+          {% if object.managed %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">
+              <i class="bi bi-clipboard2-data-fill pe-2"></i>
+             {% translate "Review User Visits" %}
+            </a>
+          </li>
+            {% if request.org_membership.is_program_manager or request.user.is_superuser %}
+              <li>
+                <a class="dropdown-item"
+                   href="{% url "opportunity:payment_report" org_slug=request.org.slug pk=opportunity.pk %}">
+                  <i class="bi bi-pie-chart-fill pe-2"></i>
+                 {% translate "Payment Report" %}
+                </a>
+              </li>
+            {% endif %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:invoice_list" org_slug=request.org.slug pk=opportunity.pk %}">
+              <i class="bi bi-cash-stack pe-2"></i>
+             {% translate "Invoices" %}
+            </a>
+          </li>
+          {% endif %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:add_payment_unit' org_slug=request.org.slug pk=opportunity.id %}">
               <i class="bi bi-plus-circle-fill pe-2"></i>
-              Add Payment Unit
+              {% translate "Add Payment Unit" %}
             </a>
           </li>
           {% if request.org_membership.is_admin %}
@@ -50,6 +84,7 @@
               </a>
             </li>
           {% endif %}
+          {% if not object.managed or request.org_membership.is_program_manager %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:verification_flags_config' org_slug=request.org.slug pk=opportunity.id %}">
@@ -57,6 +92,7 @@
               {% translate "Configure Verification Flags" %}
             </a>
           </li>
+          {% endif %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:suspended_users_list' org_slug=request.org.slug pk=opportunity.id %}">
@@ -531,4 +567,5 @@
     </div>
   </div>
 </div>
+
 {% endblock modal %}

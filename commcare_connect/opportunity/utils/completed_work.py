@@ -1,4 +1,11 @@
-from commcare_connect.opportunity.models import CompletedWorkStatus
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
+    OpportunityAccess,
+    Payment,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 
 
 def update_status(completed_works, opportunity_access, compute_payment=True):
@@ -11,7 +18,21 @@ def update_status(completed_works, opportunity_access, compute_payment=True):
             continue
 
         if opportunity_access.opportunity.auto_approve_payments:
-            update_completed_work_status(completed_work)
+            visits = completed_work.uservisit_set.values_list("status", "reason", "review_status")
+            if any(status == VisitValidationStatus.rejected for status, *_ in visits):
+                completed_work.status = CompletedWorkStatus.rejected
+                completed_work.reason = "\n".join(reason for _, reason, _ in visits if reason)
+            elif all(status == VisitValidationStatus.approved for status, *_ in visits):
+                completed_work.status = CompletedWorkStatus.approved
+
+            if (
+                opportunity_access.opportunity.managed
+                and not all(review_status == VisitReviewStatus.agree for *_, review_status in visits)
+                and completed_work.status == CompletedWorkStatus.approved
+            ):
+                completed_work.status = CompletedWorkStatus.pending
+
+            completed_work.save()
 
         if compute_payment:
             approved_count = completed_work.approved_count
@@ -23,12 +44,36 @@ def update_status(completed_works, opportunity_access, compute_payment=True):
         opportunity_access.save()
 
 
-def update_completed_work_status(completed_work):
-    visits = completed_work.uservisit_set.values_list("status", "reason")
-    if any(status == "rejected" for status, _ in visits):
-        completed_work.status = CompletedWorkStatus.rejected
-        completed_work.reason = "\n".join(reason for _, reason in visits if reason)
-    elif all(status == "approved" for status, _ in visits):
-        completed_work.status = CompletedWorkStatus.approved
+def update_work_payment_date(access: OpportunityAccess):
+    payments = Payment.objects.filter(opportunity_access=access).order_by("date_paid")
+    completed_works = CompletedWork.objects.filter(opportunity_access=access).order_by("status_modified_date")
 
-    completed_work.save()
+    if not payments or not completed_works:
+        return
+
+    works_to_update = []
+    completed_works_iter = iter(completed_works)
+    current_work = next(completed_works_iter)
+
+    remaining_amount = 0
+
+    for payment in payments:
+        remaining_amount += payment.amount
+
+        while remaining_amount >= current_work.payment_accrued:
+            current_work.payment_date = payment.date_paid
+            works_to_update.append(current_work)
+            remaining_amount -= current_work.payment_accrued
+
+            try:
+                current_work = next(completed_works_iter)
+            except StopIteration:
+                break
+        else:
+            continue
+
+        # we've broken out of the inner while loop so all completed_works are processed.
+        break
+
+    if works_to_update:
+        CompletedWork.objects.bulk_update(works_to_update, ["payment_date"])

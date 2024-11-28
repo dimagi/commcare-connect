@@ -103,7 +103,7 @@
     </table>
     {% endif %}
     {% if visit.reason %}
-    <h4 class="mb-2">Rejection Reason</h4>
+    <h4 class="mb-2">Rejected Reason</h4>
     <div class="p-2 mb-2 bg-white">{{ visit.reason }}</div>
     {% endif %}
     {% if visit.location %}
@@ -135,7 +135,7 @@
     </dl>
     {% endif %}
     <div id="action-buttons" style="margin-bottom: 25px;">
-      {% if request.org_membership.is_viewer %}
+      {% if request.org_membership.is_admin and request.org.program_manager or request.org_membership.is_viewer %}
         <button class="btn btn-success" disabled>Approve</button>
         <button class="btn btn-danger" disabled>Reject</button>
       {% else %}

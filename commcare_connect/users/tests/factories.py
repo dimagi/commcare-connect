@@ -65,3 +65,19 @@ class OrgWithUsersFactory(OrganizationFactory):
 
     class Meta:
         skip_postgeneration_save = True
+
+
+class ProgramManagerOrganisationFactory(DjangoModelFactory):
+    name = Faker("company")
+    program_manager = True
+
+    class Meta:
+        model = Organization
+
+
+class ProgramManagerOrgWithUsersFactory(ProgramManagerOrganisationFactory):
+    admin = RelatedFactory(MembershipFactory, "organization", role="admin")
+    member = RelatedFactory(MembershipFactory, "organization", role="member")
+
+    class Meta:
+        skip_postgeneration_save = True

@@ -8,4 +8,4 @@ set -o nounset
 echo "Django migrate"
 python manage.py migrate --noinput
 echo "Run Gunicorn"
-gunicorn config.wsgi --bind 0.0.0.0:8000 --chdir=/app
+gunicorn config.wsgi --bind 0.0.0.0:8000 --chdir=/app --timeout 300 -w 3

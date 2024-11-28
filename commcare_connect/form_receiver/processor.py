@@ -26,6 +26,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import download_user_visit_attachments
@@ -196,13 +197,14 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
     if opportunity_flags.catchment_areas:
         areas = access.catchmentarea_set.filter(active=True)
         if areas:
-            cur_lat, cur_lon, *_ = xform.metadata.location.split(" ")
             within_catchment = False
-            for area in areas:
-                dist = distance((area.latitude, area.longitude), (cur_lat, cur_lon))
-                if dist.meters < area.radius:
-                    within_catchment = True
-                    break
+            if xform.metadata.location is not None:
+                cur_lat, cur_lon, *_ = xform.metadata.location.split(" ")
+                for area in areas:
+                    dist = distance((area.latitude, area.longitude), (cur_lat, cur_lon))
+                    if dist.meters < area.radius:
+                        within_catchment = True
+                        break
             if not within_catchment:
                 flags.append(["catchment", "Visit outside worker catchment areas"])
     if (
@@ -317,6 +319,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         and not user_visit.flagged
     ):
         user_visit.status = VisitValidationStatus.approved
+        user_visit.review_status = VisitReviewStatus.agree
     user_visit.save()
     if (
         completed_work is not None

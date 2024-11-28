@@ -72,10 +72,11 @@ class UserOrganizationMembershipInline(admin.TabularInline):
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     form = OrganizationCreationForm
-    list_display = ["name", "created_by"]
+    list_display = ["name", "created_by", "program_manager"]
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [UserOrganizationMembershipInline]
+    list_filter = ["program_manager"]
 
 
 @admin.register(ConnectIDUserLink)

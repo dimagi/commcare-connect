@@ -15,6 +15,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
+    OpportunityVerificationFlags,
     Payment,
     PaymentUnit,
     UserVisit,
@@ -91,6 +92,12 @@ class CatchmentAreaSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "latitude", "longitude", "radius", "active"]
 
 
+class OpportunityVerificationFlagsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OpportunityVerificationFlags
+        fields = ["form_submission_start", "form_submission_end"]
+
+
 class OpportunitySerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     learn_app = CommCareAppSerializer()
@@ -105,6 +112,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     payment_units = serializers.SerializerMethodField()
     is_user_suspended = serializers.SerializerMethodField()
     catchment_areas = serializers.SerializerMethodField()
+    verification_flags = OpportunityVerificationFlagsSerializer(source="opportunityverificationflags", read_only=True)
 
     class Meta:
         model = Opportunity
@@ -133,6 +141,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
             "payment_units",
             "is_user_suspended",
             "catchment_areas",
+            "verification_flags",
         ]
 
     def get_claim(self, obj):

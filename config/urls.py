@@ -9,9 +9,12 @@ from rest_framework.authtoken.views import obtain_auth_token
 
 from commcare_connect.organization.views import organization_create
 
+from . import views
+
 urlpatterns = [
     path("", TemplateView.as_view(template_name="pages/home.html"), name="home"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
+    path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
@@ -23,6 +26,7 @@ urlpatterns = [
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/events/", include("commcare_connect.events.urls", namespace="events")),
+    path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
     path("admin_reports/", include("commcare_connect.reports.urls")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

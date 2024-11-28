@@ -1,9 +1,11 @@
 import random
 import re
+from datetime import timedelta
 from decimal import Decimal
 from itertools import chain
 
 import pytest
+from django.utils import timezone
 from django.utils.timezone import now
 from tablib import Dataset
 
@@ -17,6 +19,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentUnit,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -24,16 +27,19 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
+    PaymentFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.completed_work import update_work_payment_date
 from commcare_connect.opportunity.visit_import import (
     ImportException,
+    VisitData,
     _bulk_update_catchments,
     _bulk_update_completed_work_status,
     _bulk_update_payments,
     _bulk_update_visit_status,
-    get_status_by_visit_id,
+    get_data_by_visit_id,
     update_payment_accrued,
 )
 from commcare_connect.users.models import User
@@ -249,12 +255,12 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
         (
             ["visit id", "status", "rejected reason"],
             [[123, "approved", ""], ["abc", "rejected", ""]],
-            {"123": VisitValidationStatus.approved.value, "abc": VisitValidationStatus.rejected.value},
+            {"123": VisitData(VisitValidationStatus.approved), "abc": VisitData(VisitValidationStatus.rejected)},
         ),
         (
             ["extra col", "visit id", "status", "rejected reason"],
             [["x", "1", "approved", ""], ["y", "2", "rejected", ""]],
-            {"1": VisitValidationStatus.approved.value, "2": VisitValidationStatus.rejected.value},
+            {"1": VisitData(VisitValidationStatus.approved), "2": VisitData(VisitValidationStatus.rejected)},
         ),
         (["a", "status"], [], ImportException("Missing required column(s): 'visit id'")),
         (["visit id", "a"], [], ImportException("Missing required column(s): 'status'")),
@@ -266,10 +272,10 @@ def test_get_status_by_visit_id(headers, rows, expected):
 
     if isinstance(expected, ImportException):
         with pytest.raises(ImportException, match=re.escape(expected.message)):
-            get_status_by_visit_id(dataset)
+            get_data_by_visit_id(dataset)
     else:
-        actual, _ = get_status_by_visit_id(dataset)
-        assert actual == expected
+        actual = get_data_by_visit_id(dataset)
+        assert dict(actual) == expected
 
 
 @pytest.mark.django_db
@@ -383,3 +389,216 @@ def test_bulk_update_catchments(opportunity, dataset, new_catchments, old_catchm
             updated_catchment.longitude == catchment.longitude + longitude_change
         ), f"Longitude not updated correctly for catchment {catchment.id}"
         assert updated_catchment.active, f"Active status not updated correctly for catchment {catchment.id}"
+
+
+def prepare_opportunity_payment_test_data(opportunity):
+    user = MobileUserFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity, user=user, accepted=True)
+
+    payment_units = [
+        PaymentUnitFactory(opportunity=opportunity, amount=100),
+        PaymentUnitFactory(opportunity=opportunity, amount=150),
+        PaymentUnitFactory(opportunity=opportunity, amount=200),
+    ]
+
+    for payment_unit in payment_units:
+        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+
+    completed_works = []
+    for payment_unit in payment_units:
+        completed_work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved.value,
+            payment_date=None,
+        )
+        completed_works.append(completed_work)
+        for deliver_unit in payment_unit.deliver_units.all():
+            UserVisitFactory(
+                opportunity=opportunity,
+                user=user,
+                deliver_unit=deliver_unit,
+                status=VisitValidationStatus.approved.value,
+                opportunity_access=access,
+                completed_work=completed_work,
+            )
+    return user, access, payment_units, completed_works
+
+
+@pytest.mark.django_db
+def test_update_work_payment_date_partially(opportunity):
+    user, access, payment_units, completed_works = prepare_opportunity_payment_test_data(opportunity)
+
+    payment_dates = [
+        timezone.now() - timedelta(5),
+        timezone.now() - timedelta(3),
+        timezone.now() - timedelta(1),
+    ]
+    for date in payment_dates:
+        PaymentFactory(opportunity_access=access, amount=100, date_paid=date)
+
+    update_work_payment_date(access)
+
+    assert (
+        get_assignable_completed_work_count(access)
+        == CompletedWork.objects.filter(opportunity_access=access, payment_date__isnull=False).count()
+    )
+
+
+@pytest.mark.django_db
+def test_update_work_payment_date_fully(opportunity):
+    user, access, payment_units, completed_works = prepare_opportunity_payment_test_data(opportunity)
+
+    payment_dates = [
+        timezone.now() - timedelta(days=5),
+        timezone.now() - timedelta(days=3),
+        timezone.now() - timedelta(days=1),
+    ]
+    amounts = [100, 150, 200]
+    for date, amount in zip(payment_dates, amounts):
+        PaymentFactory(opportunity_access=access, amount=amount, date_paid=date)
+
+    update_work_payment_date(access)
+
+    assert CompletedWork.objects.filter(
+        opportunity_access=access, payment_date__isnull=False
+    ).count() == get_assignable_completed_work_count(access)
+
+
+@pytest.mark.django_db
+def test_update_work_payment_date_with_precise_dates(opportunity):
+    user = MobileUserFactory()
+    access = OpportunityAccessFactory(opportunity=opportunity, user=user, accepted=True)
+
+    payment_units = [
+        PaymentUnitFactory(opportunity=opportunity, amount=5),
+        PaymentUnitFactory(opportunity=opportunity, amount=5),
+    ]
+
+    for payment_unit in payment_units:
+        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+
+    completed_work_1 = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=payment_units[0],
+        status=CompletedWorkStatus.approved.value,
+        payment_date=None,
+    )
+
+    completed_work_2 = CompletedWorkFactory(
+        opportunity_access=access,
+        payment_unit=payment_units[1],
+        status=CompletedWorkStatus.approved.value,
+        payment_date=None,
+    )
+
+    create_user_visits_for_completed_work(opportunity, user, access, payment_units[0], completed_work_1)
+    create_user_visits_for_completed_work(opportunity, user, access, payment_units[1], completed_work_2)
+
+    now = timezone.now()
+
+    payment_1 = PaymentFactory(opportunity_access=access, amount=7)
+    payment_2 = PaymentFactory(opportunity_access=access, amount=3)
+
+    payment_1.date_paid = now - timedelta(3)
+    payment_2.date_paid = now - timedelta(1)
+    payment_1.save()
+    payment_2.save()
+
+    payment_1.refresh_from_db()
+    payment_2.refresh_from_db()
+
+    update_work_payment_date(access)
+
+    completed_work_1.refresh_from_db()
+    completed_work_2.refresh_from_db()
+
+    assert completed_work_1.payment_date == payment_1.date_paid
+
+    assert completed_work_2.payment_date == payment_2.date_paid
+
+
+def create_user_visits_for_completed_work(opportunity, user, access, payment_unit, completed_work):
+    for deliver_unit in payment_unit.deliver_units.all():
+        UserVisitFactory(
+            opportunity=opportunity,
+            user=user,
+            deliver_unit=deliver_unit,
+            status=VisitValidationStatus.approved.value,
+            opportunity_access=access,
+            completed_work=completed_work,
+        )
+
+
+def get_assignable_completed_work_count(access: OpportunityAccess) -> int:
+    total_available_amount = sum(payment.amount for payment in Payment.objects.filter(opportunity_access=access))
+    total_assigned_count = 0
+    completed_works = CompletedWork.objects.filter(opportunity_access=access)
+    for completed_work in completed_works:
+        if total_available_amount >= completed_work.payment_accrued:
+            total_available_amount -= completed_work.payment_accrued
+            total_assigned_count += 1
+
+    return total_assigned_count
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize("visit_status", [VisitValidationStatus.approved, VisitValidationStatus.rejected])
+def test_network_manager_flagged_visit_review_status(mobile_user: User, opportunity: Opportunity, visit_status):
+    assert opportunity.managed
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    visits = UserVisitFactory.create_batch(
+        5, opportunity=opportunity, status=VisitValidationStatus.pending, user=mobile_user, opportunity_access=access
+    )
+    dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
+    dataset.extend([[visit.xform_id, visit_status.value, "", "justification"] for visit in visits])
+    before_update = now()
+    import_status = _bulk_update_visit_status(opportunity, dataset)
+    after_update = now()
+    assert not import_status.missing_visits
+    updated_visits = UserVisit.objects.filter(opportunity=opportunity)
+    for visit in updated_visits:
+        assert visit.status == visit_status
+        assert visit.status_modified_date is not None
+        assert before_update <= visit.status_modified_date <= after_update
+        if visit.status == VisitValidationStatus.approved:
+            assert before_update <= visit.review_created_on <= after_update
+            assert visit.review_status == VisitReviewStatus.pending
+            assert visit.justification == "justification"
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize(
+    "review_status, cw_status",
+    [
+        (VisitReviewStatus.pending, CompletedWorkStatus.pending),
+        (VisitReviewStatus.agree, CompletedWorkStatus.approved),
+        (VisitReviewStatus.disagree, CompletedWorkStatus.pending),
+    ],
+)
+def test_review_completed_work_status(
+    mobile_user_with_connect_link: User, opportunity: Opportunity, review_status, cw_status
+):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    UserVisitFactory.create_batch(
+        2,
+        opportunity_access=access,
+        status=VisitValidationStatus.approved,
+        review_status=review_status,
+        review_created_on=now(),
+        completed_work__status=CompletedWorkStatus.pending,
+        completed_work__opportunity_access=access,
+        completed_work__payment_unit=opportunity.paymentunit_set.first(),
+        deliver_unit=deliver_unit,
+    )
+    assert access.payment_accrued == 0
+    update_payment_accrued(opportunity, {mobile_user_with_connect_link.id})
+    completed_works = CompletedWork.objects.filter(opportunity_access=access)
+    payment_accrued = 0
+    for cw in completed_works:
+        assert cw.status == cw_status
+        if cw.status == CompletedWorkStatus.approved:
+            payment_accrued += cw.payment_accrued
+    access.refresh_from_db()
+    assert access.payment_accrued == payment_accrued
