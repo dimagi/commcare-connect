@@ -190,11 +190,14 @@ class UserStatusTable(OrgContextTable):
             return format_html(
                 (
                     """<div class="d-flex gap-1">
-                      <button hx-post="{}" hx-target="#modalBodyContent" hx-trigger="click"
-                              hx-on::after-request="handleResendInviteResponse(event)"
-                              class="btn btn-sm btn-primary">Resend Invite</button>
-                      <button hx-post="{}" hx-swap="none" hx-confirm="Please confirm to delete the User Invite."
-                      class="btn btn-sm btn-danger" type="button">Delete</button>
+                      <button title="Resend invitation"
+                            hx-post="{}" hx-target="#modalBodyContent" hx-trigger="click"
+                            hx-on::after-request="handleResendInviteResponse(event)"
+                            class="btn btn-sm btn-success">Resend</button>
+                      <button title="Delete invitation"
+                            hx-post="{}" hx-swap="none" hx-confirm="Please confirm to delete the User Invite."
+                            class="btn btn-sm btn-danger" type="button"><i class="bi bi-trash"></i>
+                      </button>
                     </div>"""
                 ),
                 resend_invite_url,
