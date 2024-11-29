@@ -393,7 +393,7 @@ class CatchmentAreaTable(tables.Table):
         )
 
 
-class UserVisitReviewTable(tables.Table):
+class UserVisitReviewTable(OrgContextTable):
     pk = columns.CheckBoxColumn(
         accessor="pk",
         verbose_name="",
@@ -408,12 +408,7 @@ class UserVisitReviewTable(tables.Table):
     visit_date = columns.Column()
     created_on = columns.Column(accessor="review_created_on", verbose_name="Review Requested On")
     review_status = columns.Column(verbose_name="Program Manager Review")
-    user_visit = columns.LinkColumn(
-        "opportunity:visit_verification",
-        verbose_name="User Visit",
-        text="View",
-        args=[utils.A("opportunity__organization__slug"), utils.A("pk")],
-    )
+    user_visit = columns.Column(verbose_name="User Visit", empty_values=())
 
     class Meta:
         model = UserVisit
@@ -430,6 +425,13 @@ class UserVisitReviewTable(tables.Table):
             "user_visit",
         )
         empty_text = "No visits submitted for review."
+
+    def render_user_visit(self, record):
+        url = reverse(
+            "opportunity:visit_verification",
+            kwargs={"org_slug": self.org_slug, "pk": record.pk},
+        )
+        return mark_safe(f'<a href="{url}">View</a>')
 
 
 class PaymentReportTable(tables.Table):

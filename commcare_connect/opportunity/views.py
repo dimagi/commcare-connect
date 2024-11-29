@@ -1117,7 +1117,7 @@ def user_visit_review(request, org_slug, opp_id):
     user_visit_reviews = UserVisit.objects.filter(opportunity=opportunity, review_created_on__isnull=False).order_by(
         "visit_date"
     )
-    table = UserVisitReviewTable(user_visit_reviews)
+    table = UserVisitReviewTable(user_visit_reviews, org_slug=request.org.slug)
     if not is_program_manager:
         table.exclude = ("pk",)
     if request.POST and is_program_manager:
