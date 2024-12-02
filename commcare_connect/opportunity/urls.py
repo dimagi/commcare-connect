@@ -2,6 +2,7 @@ from django.urls import path
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.views import (
+    AllOpportunitiesView,
     OpportunityCompletedWorkTable,
     OpportunityCreate,
     OpportunityDeliverStatusTable,
@@ -54,6 +55,7 @@ from commcare_connect.opportunity.views import (
 app_name = "opportunity"
 urlpatterns = [
     path("", view=OpportunityList.as_view(), name="list"),
+    path("all_opportunities", view=AllOpportunitiesView.as_view(), name="all_opportunities"),
     path("create/", view=OpportunityCreate.as_view(), name="create"),
     path("init/", view=OpportunityInit.as_view(), name="init"),
     path("<int:pk>/finalize/", view=OpportunityFinalize.as_view(), name="finalize"),

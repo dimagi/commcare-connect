@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load static %}
+{% load sort_link %}
+{% load i18n %}
+{% load django_tables2 %}
+
+{% block title %}{{ request.org }} - Opportunities{% endblock %}
+
+{% block content %}
+  <div class="container">
+    <div class="row">
+      <div class="col">
+        <h1>All Opportunities</h1>
+        <div class="table-responsive">
+          {% render_table table %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

@@ -73,6 +73,7 @@ from commcare_connect.opportunity.tables import (
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
+    OpportunityTable,
     PaymentInvoiceTable,
     PaymentReportTable,
     PaymentUnitTable,
@@ -122,6 +123,11 @@ class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
         ) or self.request.user.is_superuser
 
 
+class SuperUserMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_superuser
+
+
 def get_opportunity_or_404(pk, org_slug):
     opp = get_object_or_404(Opportunity, id=pk)
 
@@ -162,6 +168,28 @@ class OpportunityList(OrganizationUserMixin, ListView):
         context["program_invitation_table"] = program_invitation_table
         context["base_template"] = "opportunity/base.html"
         return context
+
+
+class AllOpportunitiesView(SuperUserMixin, SingleTableView):
+    model = Opportunity
+    paginate_by = 15
+    table_class = OpportunityTable
+    template_name = "opportunity/all_opportunities_view.html"
+
+    def get_queryset(self):
+        ordering = self.request.GET.get("sort", "name")
+        if ordering not in [
+            "name",
+            "-name",
+            "start_date",
+            "-start_date",
+            "end_date",
+            "-end_date",
+            "active",
+            "-active",
+        ]:
+            ordering = "name"
+        return Opportunity.objects.all().order_by(ordering)
 
 
 class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):

@@ -65,6 +65,10 @@
                 <a class="nav-link {% active_link "list || create || edit || detail" namespace='opportunity' %}"
                    href="{% url 'opportunity:list' request.org.slug %}">{% translate "Opportunities" %}</a>
               </li>
+              <li class="nav-item">
+                <a class="nav-link {% active_link "all_opportunities" namespace='opportunity' %}"
+                   href="{% url 'opportunity:all_opportunities' request.org.slug %}">{% translate "All opportunities" %}</a>
+              </li>
             {% endif %}
           {% endif %}
         </ul>
