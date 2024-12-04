@@ -197,7 +197,6 @@ def test_receiver_deliver_form_max_visits_reached(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("paymentunit_options", [pytest.param({"max_daily": 2})])
 def test_receiver_same_visit_twice(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
