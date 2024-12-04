@@ -197,6 +197,20 @@ def test_receiver_deliver_form_max_visits_reached(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("paymentunit_options", [pytest.param({"max_daily": 2})])
+def test_receiver_same_visit_twice(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    payment_units = opportunity.paymentunit_set.all()
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    form_json2 = deepcopy(form_json1)
+    make_request(api_client, form_json1, mobile_user_with_connect_link)
+    make_request(api_client, form_json2, mobile_user_with_connect_link)
+    user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
+    assert user_visits.count() == 1
+
+
+@pytest.mark.django_db
 def test_receiver_deliver_form_end_date_reached(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
