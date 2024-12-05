@@ -64,6 +64,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     PaymentUnit,
+    UserInvite,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -1222,3 +1223,13 @@ def invoice_approve(request, org_slug, pk):
         )
         payment.save()
     return HttpResponse(headers={"HX-Trigger": "newInvoice"})
+
+
+@org_member_required
+@require_POST
+@csrf_exempt
+def user_invite_delete(request, org_slug, opp_id, pk):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    invite = get_object_or_404(UserInvite, pk=pk, opportunity=opportunity)
+    invite.delete()
+    return HttpResponse(status=200, headers={"HX-Trigger": "userStatusReload"})

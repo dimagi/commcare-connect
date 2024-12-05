@@ -153,7 +153,7 @@ class UserStatusTable(OrgContextTable):
     passed_assessment = BooleanAggregateColumn(verbose_name="Passed Assessment")
     started_delivery = AggregateColumn(verbose_name="Started Delivery", accessor="date_deliver_started")
     last_visit_date = columns.Column(accessor="last_visit_date_d")
-    view_profile = columns.Column("View Profile", empty_values=(), footer=lambda table: f"Invited: {len(table.rows)}")
+    view_profile = columns.Column("", empty_values=(), footer=lambda table: f"Invited: {len(table.rows)}")
 
     class Meta:
         model = UserInvite
@@ -173,22 +173,29 @@ class UserStatusTable(OrgContextTable):
         orderable = False
 
     def render_display_name(self, record):
-        if record.opportunity_access is None:
-            return record.phone_number
-        if not record.opportunity_access.accepted:
+        if not getattr(record.opportunity_access, "accepted", False):
             return "---"
         return record.opportunity_access.display_name
 
     def render_view_profile(self, record):
-        if record.opportunity_access is None:
-            return "---"
-        if not record.opportunity_access.accepted:
-            return "---"
+        if not getattr(record.opportunity_access, "accepted", False):
+            invite_delete_url = reverse(
+                "opportunity:user_invite_delete",
+                args=(self.org_slug, record.opportunity.id, record.id),
+            )
+            return format_html(
+                (
+                    '<button hx-post="{}" hx-swap="none" '
+                    'hx-confirm="Please confirm to delete the User Invite." '
+                    'class="btn btn-danger btn-sm">Delete</button>'
+                ),
+                invite_delete_url,
+            )
         url = reverse(
             "opportunity:user_profile",
             kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
         )
-        return format_html('<a href="{}">View Profile</a>', url)
+        return format_html('<a class="btn btn-primary btn-sm" href="{}">View Profile</a>', url)
 
     def render_started_learning(self, record, value):
         return date_with_time_popup(self, value)
