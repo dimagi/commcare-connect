@@ -364,7 +364,7 @@
       <div class="tab-pane fade show active" id="user-status-tab-pane" role="tabpanel" aria-labelledby="user-status-tab"
            tabindex="0" hx-on::after-request="refreshTooltips()">
         <div hx-get="{% url "opportunity:user_status_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
-             hx-trigger="load" hx-swap="outerHTML">
+             hx-trigger="load, userStatusReload from:body">
           {% include "tables/table_placeholder.html" with num_cols=4 %}
         </div>
       </div>
@@ -391,6 +391,8 @@
       </div>
     </div>
   </div>
+
+
 {% endblock content %}
 
 {% block modal %}
@@ -567,5 +569,24 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="resendInviteModal" tabindex="-1" aria-labelledby="resendInviteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resendInviteModalLabel">Alert</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="modalBodyContent">
+                <!-- HTMX will inject the response content here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 
 {% endblock modal %}
