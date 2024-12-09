@@ -867,8 +867,9 @@ def visit_verification(request, org_slug=None, pk=None):
 @org_member_required
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
+    old_status = user_visit.status
     user_visit.status = VisitValidationStatus.approved
-    if user_visit.opportunity.managed:
+    if user_visit.opportunity.managed and old_status != VisitValidationStatus.approved:
         user_visit.review_created_on = now()
     user_visit.save()
     opp_id = user_visit.opportunity_id
