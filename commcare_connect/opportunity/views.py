@@ -74,7 +74,6 @@ from commcare_connect.opportunity.tables import (
     DeliverStatusTable,
     LearnStatusTable,
     OpportunityPaymentTable,
-    OpportunityTable,
     PaymentInvoiceTable,
     PaymentReportTable,
     PaymentUnitTable,
@@ -1231,11 +1230,10 @@ def invoice_approve(request, org_slug, pk):
     return HttpResponse(headers={"HX-Trigger": "newInvoice"})
 
 
-class AllOpportunitiesView(SuperUserMixin, SingleTableView):
+class AllOpportunitiesView(SuperUserMixin, ListView):
     model = Opportunity
     paginate_by = 10
     template_name = "opportunity/all_opportunities_view.html"
-    table_class = OpportunityTable
 
     def get_queryset(self):
         search_query = self.request.GET.get("search", "")
@@ -1269,7 +1267,7 @@ class AllOpportunitiesView(SuperUserMixin, SingleTableView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["table"] = self.table_class(self.get_queryset())
+        context["table"] = self.get_queryset()
         return context
 
     def render_to_response(self, context, **response_kwargs):

@@ -6,7 +6,6 @@ from django_tables2 import columns, tables, utils
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
-    Opportunity,
     OpportunityAccess,
     Payment,
     PaymentInvoice,
@@ -16,12 +15,6 @@ from commcare_connect.opportunity.models import (
     UserVisit,
     VisitValidationStatus,
 )
-
-TABLE_TEMPLATE = "django_tables2/bootstrap5.html"
-RESPONSIVE_TABLE_AND_LIGHT_HEADER = {
-    "class": "table border table-responsive",
-    "thead": {"class": "table-light"},
-}
 
 
 class OrgContextTable(tables.Table):
@@ -477,26 +470,3 @@ def date_with_time_popup(table, date):
         date.strftime("%d %b, %Y"),
         date.strftime("%d %b %Y, %I:%M%p"),
     )
-
-
-class OpportunityTable(tables.Table):
-    name = columns.Column()
-    Organization = columns.Column()
-    start_date = columns.DateColumn()
-    end_date = columns.DateColumn()
-    active = columns.Column()
-    program = columns.Column()
-
-    class Meta:
-        model = Opportunity
-        fields = (
-            "name",
-            "organization",
-            "start_date",
-            "end_date",
-            "active",
-            "program",
-        )
-        empty_text = "No visits submitted for review."
-        template_name = TABLE_TEMPLATE
-        attrs = RESPONSIVE_TABLE_AND_LIGHT_HEADER
