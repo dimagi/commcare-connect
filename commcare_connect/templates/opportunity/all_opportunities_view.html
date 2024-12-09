@@ -5,7 +5,7 @@
 
 {% block breadcrumbs_inner %}
   {{ block.super }}
- <li class="breadcrumb-item active" aria-current="page">All-Org View</li>
+ <li class="breadcrumb-item active" aria-current="page">All Opportunities</li>
 {% endblock %}
 
 {% block content %}
@@ -19,20 +19,29 @@
           hx-target="#opportunity-table"
           hx-push-url="true"
           class="mb-3">
-          <div class="row">
-              <div class="col-md-4">
-                  <input type="text" name="search" value="{{ request.GET.search }}" class="form-control" placeholder="Search by name">
-              </div>
-              <div class="col-md-3">
-                  <select name="status" class="form-control">
-                      <option value="">All Statuses</option>
-                      <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
-                      <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
-                  </select>
-              </div>
-              <div class="col-md-1">
-                  <button type="submit" class="btn btn-primary">Search</button>
-              </div>
+          <div class="row g-3 align-items-center">
+            <div class="col-md-4">
+              <input type="text"
+                     name="search"
+                     value="{{ request.GET.search }}"
+                     class="form-control"
+                     placeholder="Search by name"
+                     aria-label="Search opportunities">
+            </div>
+            <div class="col-md-3">
+              <select name="status" class="form-select">
+                <option value="">All Statuses</option>
+                <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>
+                  Active
+                </option>
+                <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>
+                  Inactive
+                </option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-primary">Search</button>
+            </div>
           </div>
         </form>
         <div id="opportunity-table">
