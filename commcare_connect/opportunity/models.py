@@ -108,7 +108,12 @@ class Opportunity(BaseModel):
 
     @property
     def remaining_budget(self) -> int:
-        return self.total_budget - self.claimed_budget
+        if not self.managed:
+            return self.total_budget - self.claimed_budget
+
+        org_pay = self.managedopportunity.org_pay_per_visit * self.allotted_visits
+        total_user_budget = self.total_budget - org_pay
+        return total_user_budget - self.claimed_budget
 
     @property
     def claimed_budget(self):
