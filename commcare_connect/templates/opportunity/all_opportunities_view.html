@@ -1,0 +1,52 @@
+{% extends "opportunity/base.html" %}
+{% load static %}
+{% load i18n %}
+{% block title %}{{ request.org }} - All Opportunities{% endblock %}
+
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+ <li class="breadcrumb-item active" aria-current="page">All Opportunities</li>
+{% endblock %}
+
+{% block content %}
+  <div class="container bg-white shadow">
+      <div class="mt-5 py-3">
+        <h1>All Opportunities</h1>
+      </div>
+      <div class="pb-4">
+         <form method="get"
+          hx-get="{% url 'opportunity:all_opportunities' org_slug=request.org.slug %}"
+          hx-target="#opportunity-table"
+          hx-push-url="true"
+          class="mb-3">
+          <div class="row g-3 align-items-center">
+            <div class="col-md-4">
+              <input type="text"
+                     name="search"
+                     value="{{ request.GET.search }}"
+                     class="form-control"
+                     placeholder="Search by name"
+                     aria-label="Search opportunities">
+            </div>
+            <div class="col-md-3">
+              <select name="status" class="form-select">
+                <option value="">All</option>
+                <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>
+                  Active
+                </option>
+                <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>
+                  Inactive
+                </option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+          </div>
+        </form>
+        <div id="opportunity-table">
+          {% include 'opportunity/partial_opportunity_table.html' %}
+        </div>
+      </div>
+    </div>
+{% endblock content %}
