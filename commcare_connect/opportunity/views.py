@@ -12,6 +12,7 @@ from django.db.models import F, Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -168,28 +169,6 @@ class OpportunityList(OrganizationUserMixin, ListView):
         context["program_invitation_table"] = program_invitation_table
         context["base_template"] = "opportunity/base.html"
         return context
-
-
-class AllOpportunitiesView(SuperUserMixin, SingleTableView):
-    model = Opportunity
-    paginate_by = 15
-    table_class = OpportunityTable
-    template_name = "opportunity/all_opportunities_view.html"
-
-    def get_queryset(self):
-        ordering = self.request.GET.get("sort", "name")
-        if ordering not in [
-            "name",
-            "-name",
-            "start_date",
-            "-start_date",
-            "end_date",
-            "-end_date",
-            "active",
-            "-active",
-        ]:
-            ordering = "name"
-        return Opportunity.objects.all().order_by(ordering)
 
 
 class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):
@@ -1250,3 +1229,51 @@ def invoice_approve(request, org_slug, pk):
         )
         payment.save()
     return HttpResponse(headers={"HX-Trigger": "newInvoice"})
+
+
+class AllOpportunitiesView(SuperUserMixin, SingleTableView):
+    model = Opportunity
+    paginate_by = 10
+    template_name = "opportunity/all_opportunities_view.html"
+    table_class = OpportunityTable
+
+    def get_queryset(self):
+        search_query = self.request.GET.get("search", "")
+        status_filter = self.request.GET.get("status", "")
+        ordering = self.request.GET.get("sort", "name")
+
+        valid_ordering = [
+            "name",
+            "-name",
+            "start_date",
+            "-start_date",
+            "end_date",
+            "-end_date",
+        ]
+
+        if ordering not in valid_ordering:
+            ordering = "name"
+
+        opportunities = Opportunity.objects.all()
+
+        if search_query:
+            opportunities = opportunities.filter(name__icontains=search_query)
+
+        if status_filter:
+            if status_filter == "active":
+                opportunities = opportunities.filter(active=True, end_date__gte=now().date())
+            elif status_filter == "inactive":
+                opportunities = opportunities.filter(end_date__lt=now().date())
+
+        return opportunities.order_by(ordering)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["table"] = self.table_class(self.get_queryset())
+        return context
+
+    def render_to_response(self, context, **response_kwargs):
+        if self.request.htmx:
+            html = render_to_string("opportunity/partial_opportunity_table.html", context, request=self.request)
+            return HttpResponse(html)
+        return super().render_to_response(context, **response_kwargs)

@@ -1,20 +1,43 @@
-{% extends "base.html" %}
+{% extends "opportunity/base.html" %}
 {% load static %}
-{% load sort_link %}
 {% load i18n %}
-{% load django_tables2 %}
+{% block title %}{{ request.org }} - All Opportunities{% endblock %}
 
-{% block title %}{{ request.org }} - Opportunities{% endblock %}
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+ <li class="breadcrumb-item active" aria-current="page">All-Org View</li>
+{% endblock %}
 
 {% block content %}
-  <div class="container">
-    <div class="row">
-      <div class="col">
+  <div class="container bg-white shadow">
+      <div class="mt-5 py-3">
         <h1>All Opportunities</h1>
-        <div class="table-responsive">
-          {% render_table table %}
+      </div>
+      <div class="pb-4">
+         <form method="get"
+          hx-get="{% url 'opportunity:all_opportunities' org_slug=request.org.slug %}"
+          hx-target="#opportunity-table"
+          hx-push-url="true"
+          class="mb-3">
+          <div class="row">
+              <div class="col-md-4">
+                  <input type="text" name="search" value="{{ request.GET.search }}" class="form-control" placeholder="Search by name">
+              </div>
+              <div class="col-md-3">
+                  <select name="status" class="form-control">
+                      <option value="">All Statuses</option>
+                      <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                      <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                  </select>
+              </div>
+              <div class="col-md-1">
+                  <button type="submit" class="btn btn-primary">Search</button>
+              </div>
+          </div>
+        </form>
+        <div id="opportunity-table">
+          {% include 'opportunity/partial_opportunity_table.html' %}
         </div>
       </div>
     </div>
-  </div>
 {% endblock content %}
