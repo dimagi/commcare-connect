@@ -33,7 +33,7 @@
 
   {% endblock javascript %}
 </head>
-<body class="bg-light">
+<body class="bg-light" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
 <div class="mb-1">
   <nav class="navbar navbar-expand-lg bg-primary" data-bs-theme="dark">
     <div class="container">

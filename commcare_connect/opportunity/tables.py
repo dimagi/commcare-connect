@@ -183,12 +183,24 @@ class UserStatusTable(OrgContextTable):
                 "opportunity:user_invite_delete",
                 args=(self.org_slug, record.opportunity.id, record.id),
             )
+            resend_invite_url = reverse(
+                "opportunity:resend_user_invite",
+                args=(self.org_slug, record.opportunity.id, record.id),
+            )
             return format_html(
                 (
-                    '<button hx-post="{}" hx-swap="none" '
-                    'hx-confirm="Please confirm to delete the User Invite." '
-                    'class="btn btn-danger btn-sm">Delete</button>'
+                    """<div class="d-flex gap-1">
+                      <button title="Resend invitation"
+                            hx-post="{}" hx-target="#modalBodyContent" hx-trigger="click"
+                            hx-on::after-request="handleResendInviteResponse(event)"
+                            class="btn btn-sm btn-success">Resend</button>
+                      <button title="Delete invitation"
+                            hx-post="{}" hx-swap="none" hx-confirm="Please confirm to delete the User Invite."
+                            class="btn btn-sm btn-danger" type="button"><i class="bi bi-trash"></i>
+                      </button>
+                    </div>"""
                 ),
+                resend_invite_url,
                 invite_delete_url,
             )
         url = reverse(

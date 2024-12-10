@@ -13,7 +13,7 @@ from django.utils.translation import gettext
 from tablib import Dataset
 
 from commcare_connect.connect_id_client import fetch_users, filter_users, send_message, send_message_bulk
-from commcare_connect.connect_id_client.models import Message
+from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.export import (
     export_catchment_area_table,
@@ -85,16 +85,20 @@ def add_connect_users(
             status=UserInviteStatus.not_found,
         )
     for user in found_users:
-        u, _ = User.objects.update_or_create(
-            username=user.username, defaults={"phone_number": user.phone_number, "name": user.name}
-        )
-        opportunity_access, _ = OpportunityAccess.objects.get_or_create(user=u, opportunity_id=opportunity_id)
-        UserInvite.objects.update_or_create(
-            opportunity_id=opportunity_id,
-            phone_number=user.phone_number,
-            defaults={"opportunity_access": opportunity_access},
-        )
-        invite_user.delay(u.pk, opportunity_access.pk)
+        update_user_and_send_invite(user, opportunity_id)
+
+
+def update_user_and_send_invite(user: ConnectIdUser, opp_id):
+    u, _ = User.objects.update_or_create(
+        username=user.username, defaults={"phone_number": user.phone_number, "name": user.name}
+    )
+    opportunity_access, _ = OpportunityAccess.objects.get_or_create(user=u, opportunity_id=opp_id)
+    UserInvite.objects.update_or_create(
+        opportunity_id=opp_id,
+        phone_number=user.phone_number,
+        defaults={"opportunity_access": opportunity_access},
+    )
+    invite_user.delay(u.pk, opportunity_access.pk)
 
 
 @celery_app.task()
@@ -115,6 +119,7 @@ def invite_user(user_id, opportunity_access_id):
         opportunity_access=opportunity_access,
         defaults={
             "message_sid": sms_status.sid,
+            "notification_date": now() if sms_status.sid else None,
             "status": UserInviteStatus.accepted if opportunity_access.accepted else UserInviteStatus.invited,
         },
     )
