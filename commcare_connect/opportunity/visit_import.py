@@ -261,19 +261,21 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
 
     seen_users = set()
     payment_ids = []
-    with transaction.atomic():
-        usernames = list(payments)
-        users = OpportunityAccess.objects.filter(
-            user__username__in=usernames, opportunity=opportunity, suspended=False
-        ).select_related("user")
-        for access in users:
-            username = access.user.username
-            amount = payments[username]
-            amount_usd = amount / exchange_rate
-            payment = Payment.objects.create(opportunity_access=access, amount=amount, amount_usd=amount_usd)
-            seen_users.add(username)
-            payment_ids.append(payment.pk)
-            update_work_payment_date(access)
+    lock_key = f"bulk_update_payments_opportunity_{opportunity.id}"
+    with cache.lock(lock_key, timeout=600):
+        with transaction.atomic():
+            usernames = list(payments)
+            users = OpportunityAccess.objects.filter(
+                user__username__in=usernames, opportunity=opportunity, suspended=False
+            ).select_related("user")
+            for access in users:
+                username = access.user.username
+                amount = payments[username]
+                amount_usd = amount / exchange_rate
+                payment = Payment.objects.create(opportunity_access=access, amount=amount, amount_usd=amount_usd)
+                seen_users.add(username)
+                payment_ids.append(payment.pk)
+                update_work_payment_date(access)
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
     return PaymentImportStatus(seen_users, missing_users)
