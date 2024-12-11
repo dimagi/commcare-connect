@@ -664,6 +664,7 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+    notification_date = models.DateTimeField(null=True)
 
 
 class FormJsonValidationRules(models.Model):
