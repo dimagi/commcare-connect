@@ -11,7 +11,7 @@ from django.utils.html import format_html
 from commcare_connect.connect_id_client.main import (
     fetch_payment_phone_numbers,
     send_message_bulk,
-    validate_payment_profiles,
+    update_payment_statuses,
 )
 from commcare_connect.connect_id_client.models import Message
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
@@ -35,11 +35,13 @@ class PaymentNumberReportTable(tables.Table):
     def render_status(self, value, record):
         options = ["pending", "approved", "rejected"]
         username = record["username"]
+        phone_number = record["phone_number"]
 
         radio_buttons = [
             f'<input type="radio" name="status_{username}" value="{option}" {"checked" if value == option else ""}> {option.capitalize()}'
             for option in options
         ]
+        radio_buttons.append(f'<input type="hidden" name="phone_{username}" value="{phone_number}">')
         return format_html("<br>".join(radio_buttons))
 
 
@@ -106,10 +108,14 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
 
     def post(self, request, *args, **kwargs):
         user_statuses = defaultdict(dict)
+
         for key, value in request.POST.items():
             if key.startswith("status_"):
                 username = key.split("status_")[1]
                 user_statuses[username].update({"status": value})
+            if key.startswith("phone_"):
+                username = key.split("phone_")[1]
+                user_statuses[username].update({"phone_number": value})
 
         # validate that usernames do belong to this opportunity
         opportunity_id = request.GET.get("opportunity")
@@ -207,7 +213,7 @@ def update_payment_number_statuses(update_data, opportunity):
                     approved_usernames.append("username")
 
         if connectid_updates:
-            response = validate_payment_profiles(connectid_updates)
+            response = update_payment_statuses(connectid_updates)
             if response.status not in [200, 201]:
                 raise Exception("Error sending payment number status updates to ConnectID")
 
