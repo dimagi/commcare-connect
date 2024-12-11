@@ -1,15 +1,24 @@
+import dataclasses
 from collections import defaultdict
 
 import django_filters
 import django_tables2 as tables
+from django.db import transaction
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
-from commcare_connect.connect_id_client.main import fetch_payment_phone_numbers, validate_payment_profiles
+from commcare_connect.connect_id_client.main import (
+    fetch_payment_phone_numbers,
+    send_message_bulk,
+    validate_payment_profiles,
+)
+from commcare_connect.connect_id_client.models import Message
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin
+from commcare_connect.organization.models import OrgUserPaymentNumberStatus
 from commcare_connect.reports.views import NonModelTableBaseView
+from commcare_connect.users.models import User
 
 
 class PaymentNumberReportTable(tables.Table):
@@ -83,7 +92,17 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
         usernames = OpportunityAccess.objects.filter(opportunity_id=opportunity).values_list(
             "user__username", flat=True
         )
-        return fetch_payment_phone_numbers(usernames, status)
+        connecteid_statuses = fetch_payment_phone_numbers(usernames, status)
+        # display local status when its overridden
+        local_statuses = OrgUserPaymentNumberStatus.objects.filter(
+            user__username__in=usernames, organization__name=self.request.org
+        )
+        local_statuses_by_username = {status.username: status for status in local_statuses}
+        for status in connecteid_statuses:
+            local_status = local_statuses_by_username.get(status["username"])
+            if local_status and local_status.phone_number == status["phone_number"]:
+                status["status"] = local_status.status
+        return connecteid_statuses
 
     def post(self, request, *args, **kwargs):
         user_statuses = defaultdict(dict)
@@ -106,7 +125,7 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
             return HttpResponse("Unknown usernames", status=400)
 
         updates = [{"username": username, **values} for username, values in user_statuses.items()]
-        result = validate_payment_profiles(updates)
+        result = update_payment_number_statuses(updates, opportunity)
         return HttpResponse(
             format_html(
                 """<span id="result" class="alert alert-info p-1">{}</span>""".format(
@@ -114,3 +133,88 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
                 )
             )
         )
+
+
+def update_payment_number_statuses(update_data, opportunity):
+    """
+    Updates payment number status in bulk
+    """
+
+    @dataclasses.dataclass
+    class PaymentStatus:
+        user: str
+        phone_number: str
+        current_status: str
+        new_status: str
+        other_org_statuses: set()
+
+    user_obj_by_username = User.objects.filter(username__in=[u["username"] for u in update_data])
+    update_by_username = {
+        u["username"]: PaymentStatus(
+            user=user_obj_by_username["username"],
+            phone_number=u["phone_number"],
+            new_status=u["status"],
+        )
+        for u in update_data
+    }
+
+    existing_statuses = OrgUserPaymentNumberStatus.objects.filter(user__username=update_by_username.keys()).all()
+
+    # remove unchanged updates and gather current-status
+    #   and status set by other orgs
+    for status in existing_statuses:
+        update = update_by_username[status.user.username]
+        if status.organization == opportunity.organization:
+            if update.phone_number == status.phone_number:
+                if update.new_status == status.status:
+                    # No change in status, so remove it
+                    update_by_username.pop(status.user.username)
+                else:
+                    update.current_status = status.status
+            else:
+                # the status is for an updated number, so default to PENDING
+                update.current_status = OrgUserPaymentNumberStatus.PENDING
+        else:
+            if update.phone_number == status.phone_number:
+                update.other_org_statuses.add(status.status)
+
+    with transaction.atomic():
+        objs = [
+            OrgUserPaymentNumberStatus(
+                organization=opportunity.org,
+                user=update_by_username[u["username"]].user,
+                phone_number=u.phone_number,
+                status=u.new_status,
+            )
+            for u in update_by_username.values()
+        ]
+        # Bulk update/create
+        objs.bulk_create(objs, update_conflicts=True)
+
+        # Process connect-id updates and push-notifications
+        connectid_updates = []
+        rejected_usernames = []
+        approved_usernames = []
+        for update in update_by_username.values():
+            if (not update.other_org_statuses) or {update.new_status} == update.other_org_statuses:
+                # only send update on connectid if there is no disaggrement bw orgs
+                # connectid stores status and triggers relevant notifications
+                connectid_updates.append(update)
+            else:
+                if update.new_status == OrgUserPaymentNumberStatus.REJECTED:
+                    rejected_usernames.append("username")
+                else:
+                    approved_usernames.append("username")
+
+        if connectid_updates:
+            response = validate_payment_profiles(connectid_updates)
+            if response.status not in [200, 201]:
+                raise Exception("Error sending payment number status updates to ConnectID")
+
+        rejected_msg = f"{opportunity.name} is unable to send payments to you"
+        send_message_bulk(Message(usernames=rejected_usernames, body=rejected_msg))
+
+        approved_msg = f"{opportunity.name} is now able to send payments to you"
+        send_message_bulk(Message(usernames=approved_usernames, body=approved_msg))
+
+    return {"approved": len(approved_usernames), "rejected": len(rejected_usernames)}

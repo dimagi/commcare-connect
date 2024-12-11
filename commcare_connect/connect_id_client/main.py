@@ -76,7 +76,7 @@ def fetch_payment_phone_numbers(usernames, status):
 
 def validate_payment_profiles(update_data):
     response = _make_request(POST, "/users/validate_payment_phone_numbers", json={"updates": update_data})
-    return response.json()["result"]
+    return response
 
 
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
