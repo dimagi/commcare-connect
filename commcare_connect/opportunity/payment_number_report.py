@@ -141,23 +141,26 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
         )
 
 
+@dataclasses.dataclass
+class PaymentStatus:
+    user: str
+    phone_number: str
+    new_status: str
+    current_status: str = None
+    other_org_statuses: set = dataclasses.field(default_factory=set)
+
+
 def update_payment_number_statuses(update_data, opportunity):
     """
     Updates payment number status in bulk
     """
 
-    @dataclasses.dataclass
-    class PaymentStatus:
-        user: str
-        phone_number: str
-        current_status: str
-        new_status: str
-        other_org_statuses: set()
-
-    user_obj_by_username = User.objects.filter(username__in=[u["username"] for u in update_data])
+    user_obj_by_username = {
+        user.username: user for user in User.objects.filter(username__in=[u["username"] for u in update_data]).all()
+    }
     update_by_username = {
         u["username"]: PaymentStatus(
-            user=user_obj_by_username["username"],
+            user=user_obj_by_username[u["username"]],
             phone_number=u["phone_number"],
             new_status=u["status"],
         )
@@ -188,7 +191,7 @@ def update_payment_number_statuses(update_data, opportunity):
         objs = [
             OrgUserPaymentNumberStatus(
                 organization=opportunity.org,
-                user=update_by_username[u["username"]].user,
+                user=u.user,
                 phone_number=u.phone_number,
                 status=u.new_status,
             )
@@ -205,7 +208,7 @@ def update_payment_number_statuses(update_data, opportunity):
             if (not update.other_org_statuses) or {update.new_status} == update.other_org_statuses:
                 # only send update on connectid if there is no disaggrement bw orgs
                 # connectid stores status and triggers relevant notifications
-                connectid_updates.append(update)
+                connectid_updates.append({"username": update.user.username, "status": update.new_status})
             else:
                 if update.new_status == OrgUserPaymentNumberStatus.REJECTED:
                     rejected_usernames.append("username")
@@ -217,10 +220,12 @@ def update_payment_number_statuses(update_data, opportunity):
             if response.status not in [200, 201]:
                 raise Exception("Error sending payment number status updates to ConnectID")
 
-        rejected_msg = f"{opportunity.name} is unable to send payments to you"
-        send_message_bulk(Message(usernames=rejected_usernames, body=rejected_msg))
+        if rejected_usernames:
+            rejected_msg = f"{opportunity.name} is unable to send payments to you"
+            send_message_bulk(Message(usernames=rejected_usernames, body=rejected_msg))
 
-        approved_msg = f"{opportunity.name} is now able to send payments to you"
-        send_message_bulk(Message(usernames=approved_usernames, body=approved_msg))
+        if approved_usernames:
+            approved_msg = f"{opportunity.name} is now able to send payments to you"
+            send_message_bulk(Message(usernames=approved_usernames, body=approved_msg))
 
     return {"approved": len(approved_usernames), "rejected": len(rejected_usernames)}
