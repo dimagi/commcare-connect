@@ -285,7 +285,7 @@ class DeliveryPerformanceTable(tables.Table):
     start_date = tables.DateColumn()
     total_workers_starting_delivery = tables.Column(verbose_name=_("Workers Starting Delivery"))
     active_workers = tables.Column(verbose_name=_("Active Workers"))
-    deliveries_per_day_per_worker = tables.Column(verbose_name=_("Deliveries per Day per Worker"))
+    deliveries_per_worker = tables.Column(verbose_name=_("Deliveries per Worker"))
     records_flagged_percentage = tables.Column(verbose_name=_("% Records flagged"))
 
     class Meta:
@@ -297,7 +297,7 @@ class DeliveryPerformanceTable(tables.Table):
             "start_date",
             "total_workers_starting_delivery",
             "active_workers",
-            "deliveries_per_day_per_worker",
+            "deliveries_per_worker",
             "records_flagged_percentage",
         )
         orderable = False
