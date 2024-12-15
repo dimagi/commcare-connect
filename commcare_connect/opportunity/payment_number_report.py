@@ -33,13 +33,12 @@ class PaymentNumberReportTable(tables.Table):
         orderable = False
 
     def render_status(self, value, record):
-        options = ["pending", "approved", "rejected"]
         username = record["username"]
         phone_number = record["phone_number"]
 
         radio_buttons = [
-            f'<input type="radio" name="status_{username}" value="{option}" {"checked" if value == option else ""}> {option.capitalize()}'
-            for option in options
+            f'<input type="radio" name="status_{username}" value="{filter_value}" {"checked" if value == filter_value else ""}> {label}'
+            for (filter_value, label) in PaymentFilters.STATUS_CHOICES
         ]
         radio_buttons.append(f'<input type="hidden" name="phone_{username}" value="{phone_number}">')
         return format_html("<br>".join(radio_buttons))
@@ -47,9 +46,9 @@ class PaymentNumberReportTable(tables.Table):
 
 class PaymentFilters(django_filters.FilterSet):
     STATUS_CHOICES = [
-        ("pending", "Pending"),
-        ("approved", "Approved"),
-        ("rejected", "Rejected"),
+        ("pending", "Pending Review"),
+        ("approved", "Working"),
+        ("rejected", "Not working"),
     ]
 
     opportunity = django_filters.ChoiceFilter(method="filter_by_ignore")
@@ -76,7 +75,7 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
     table_class = PaymentNumberReportTable
     filterset_class = PaymentFilters
     htmx_table_template = "opportunity/payment_numbers_table.html"
-    report_title = "Verify Payment Phone Numbers"
+    report_title = "Review Payment Phone Numbers"
 
     @property
     def report_url(self):
@@ -99,7 +98,7 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
         local_statuses = OrgUserPaymentNumberStatus.objects.filter(
             user__username__in=usernames, organization=self.request.org
         )
-        local_statuses_by_username = {status.username: status for status in local_statuses}
+        local_statuses_by_username = {status.user.username: status for status in local_statuses}
         for status in connectid_statuses:
             local_status = local_statuses_by_username.get(status["username"])
             if local_status and local_status.phone_number == status["phone_number"]:

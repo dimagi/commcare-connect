@@ -207,7 +207,7 @@ def test_update_payment_number_statuses(scenario, opportunity):
     ) as mock_update_connectid, patch(
         "commcare_connect.opportunity.payment_number_report.send_message_bulk"
     ) as mock_send_message:
-        mock_update_connectid.return_value = MagicMock(status=200)
+        mock_update_connectid.return_value = MagicMock(status_code=200)
         result = update_payment_number_statuses(scenario["update_data"], opportunity)
 
         if scenario["expect_connectid_update"]:
