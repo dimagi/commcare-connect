@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0062_opportunityaccess_invited_date"),
+        ("opportunity", "0063_userinvite_notification_date"),
     ]
 
     operations = [
