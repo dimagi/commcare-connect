@@ -94,17 +94,17 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
         usernames = OpportunityAccess.objects.filter(opportunity_id=opportunity).values_list(
             "user__username", flat=True
         )
-        connecteid_statuses = fetch_payment_phone_numbers(usernames, status)
+        connectid_statuses = fetch_payment_phone_numbers(usernames, status)
         # display local status when its overridden
         local_statuses = OrgUserPaymentNumberStatus.objects.filter(
             user__username__in=usernames, organization=self.request.org
         )
         local_statuses_by_username = {status.username: status for status in local_statuses}
-        for status in connecteid_statuses:
+        for status in connectid_statuses:
             local_status = local_statuses_by_username.get(status["username"])
             if local_status and local_status.phone_number == status["phone_number"]:
                 status["status"] = local_status.status
-        return connecteid_statuses
+        return connectid_statuses
 
     def post(self, request, *args, **kwargs):
         user_statuses = defaultdict(dict)
@@ -228,7 +228,7 @@ def update_payment_number_statuses(update_data, opportunity):
 
         if connectid_updates:
             response = update_payment_statuses(connectid_updates)
-            if response.status not in [200, 201]:
+            if response.status_code not in [200, 201]:
                 raise Exception("Error sending payment number status updates to ConnectID")
 
         if rejected_usernames:
