@@ -97,7 +97,7 @@ class PaymentNumberReport(tables.SingleTableMixin, OrganizationUserMemberRoleMix
         connecteid_statuses = fetch_payment_phone_numbers(usernames, status)
         # display local status when its overridden
         local_statuses = OrgUserPaymentNumberStatus.objects.filter(
-            user__username__in=usernames, organization__name=self.request.org
+            user__username__in=usernames, organization=self.request.org
         )
         local_statuses_by_username = {status.username: status for status in local_statuses}
         for status in connecteid_statuses:
@@ -167,7 +167,7 @@ def update_payment_number_statuses(update_data, opportunity):
         for u in update_data
     }
 
-    existing_statuses = OrgUserPaymentNumberStatus.objects.filter(user__username=update_by_username.keys()).all()
+    existing_statuses = OrgUserPaymentNumberStatus.objects.filter(user__username__in=update_by_username.keys()).all()
 
     # remove unchanged updates and gather current-status
     #   and status set by other orgs
@@ -190,7 +190,7 @@ def update_payment_number_statuses(update_data, opportunity):
     with transaction.atomic():
         objs = [
             OrgUserPaymentNumberStatus(
-                organization=opportunity.org,
+                organization=opportunity.organization,
                 user=u.user,
                 phone_number=u.phone_number,
                 status=u.new_status,
@@ -198,13 +198,24 @@ def update_payment_number_statuses(update_data, opportunity):
             for u in update_by_username.values()
         ]
         # Bulk update/create
-        objs.bulk_create(objs, update_conflicts=True)
+        OrgUserPaymentNumberStatus.objects.bulk_create(
+            objs,
+            update_conflicts=True,
+            unique_fields=["user", "organization"],
+            update_fields=["phone_number", "status"],
+        )
 
         # Process connect-id updates and push-notifications
         connectid_updates = []
         rejected_usernames = []
         approved_usernames = []
+        result = {
+            OrgUserPaymentNumberStatus.APPROVED: 0,
+            OrgUserPaymentNumberStatus.REJECTED: 0,
+            OrgUserPaymentNumberStatus.PENDING: 0,
+        }
         for update in update_by_username.values():
+            result[update.new_status] += result[update.new_status] + 1
             if (not update.other_org_statuses) or {update.new_status} == update.other_org_statuses:
                 # only send update on connectid if there is no disaggrement bw orgs
                 # connectid stores status and triggers relevant notifications
@@ -228,4 +239,4 @@ def update_payment_number_statuses(update_data, opportunity):
             approved_msg = f"{opportunity.name} is now able to send payments to you"
             send_message_bulk(Message(usernames=approved_usernames, body=approved_msg))
 
-    return {"approved": len(approved_usernames), "rejected": len(rejected_usernames)}
+    return result

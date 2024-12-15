@@ -13,6 +13,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.organization.models import Organization, OrgUserPaymentNumberStatus
 from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory
 
 
 @pytest.mark.django_db
@@ -45,68 +46,180 @@ def test_add_budget_existing_users(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "update_data, existing_statuses, expected_updates",
+    "scenario",
     [
-        # Case 1: Agreement exists, an org disagrees
-        (
-            [{"username": "user1", "phone_number": "123", "status": "REJECTED"}],
-            [OrgUserPaymentNumberStatus(user=User(username="user1"), phone_number="123", status="APPROVED")],
-            [{"username": "user1", "status": "REJECTED"}],
-        ),
-        # Case 2: Disagreement turns into agreement
-        (
-            [{"username": "user2", "phone_number": "456", "status": "APPROVED"}],
-            [OrgUserPaymentNumberStatus(user=User(username="user2"), phone_number="456", status="REJECTED")],
-            [{"username": "user2", "status": "APPROVED"}],
-        ),
-        # Case 3: No other org has any data
-        (
-            [{"username": "user3", "phone_number": "789", "status": "APPROVED"}],
-            [],
-            [{"username": "user3", "status": "APPROVED"}],
-        ),
-        # Case 4: No changes
-        (
-            [{"username": "user4", "phone_number": "101", "status": "APPROVED"}],
-            [OrgUserPaymentNumberStatus(user=User(username="user4"), phone_number="101", status="APPROVED")],
-            [],
-        ),
-        # Case 5: Pending status update
-        (
-            [{"username": "user5", "phone_number": "112", "status": "PENDING"}],
-            [OrgUserPaymentNumberStatus(user=User(username="user5"), phone_number="112", status="REJECTED")],
-            [{"username": "user5", "status": "PENDING"}],
-        ),
+        {
+            "name": "new_entries",
+            "existing_statuses": [],
+            "update_data": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                },
+                {
+                    "username": "test_user2",
+                    "phone_number": "+9876543210",
+                    "status": OrgUserPaymentNumberStatus.REJECTED,
+                },
+            ],
+            "expected_result": {"approved": 1, "rejected": 1, "pending": 0},
+            "expect_connectid_update": True,
+            "expect_message": False,
+        },
+        {
+            "name": "new_entries_partial",
+            "existing_statuses": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.REJECTED,
+                }
+            ],
+            "update_data": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                },
+                {
+                    "username": "test_user2",
+                    "phone_number": "+9876543210",
+                    "status": OrgUserPaymentNumberStatus.REJECTED,
+                },
+            ],
+            "expected_result": {"approved": 1, "rejected": 1, "pending": 0},
+            "expect_connectid_update": True,
+            "expect_message": False,
+        },
+        {
+            "name": "unchanged_status",
+            "existing_statuses": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                }
+            ],
+            "update_data": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                }
+            ],
+            "expected_result": {"approved": 0, "rejected": 0, "pending": 0},
+            "expect_connectid_update": False,
+            "expect_message": False,
+        },
+        {
+            "name": "changed_status",
+            "existing_statuses": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                }
+            ],
+            "update_data": [
+                {"username": "test_user1", "phone_number": "+1234567890", "status": OrgUserPaymentNumberStatus.PENDING}
+            ],
+            "expected_result": {"approved": 0, "rejected": 0, "pending": 1},
+            "expect_connectid_update": True,
+            "expect_message": False,
+        },
+        {
+            "name": "phone_changed",
+            "existing_statuses": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                }
+            ],
+            "update_data": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+2344567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                }
+            ],
+            "expected_result": {"approved": 1, "rejected": 0, "pending": 0},
+            "expect_connectid_update": True,
+            "expect_message": False,
+        },
+        {
+            "name": "inter_org_conflict",
+            "existing_statuses": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.APPROVED,
+                    "organization": "another_org",
+                }
+            ],
+            "update_data": [
+                {
+                    "username": "test_user1",
+                    "phone_number": "+1234567890",
+                    "status": OrgUserPaymentNumberStatus.REJECTED,
+                }
+            ],
+            "expected_result": {"approved": 0, "rejected": 1, "pending": 0},
+            "expect_connectid_update": False,
+            "expect_message": True,
+        },
     ],
 )
-@patch("commcare_connect.opportunity.payment_number_report.send_message_bulk")
-@patch("commcare_connect.opportunity.payment_number_report.update_payment_statuses")
-@patch("commcare_connect.organization.models.OrgUserPaymentNumberStatus.objects.filter")
-@patch("commcare_connect.users.models.User.objects.filter")
-def test_validate_payment_profiles(
-    mock_user_filter,
-    mock_status_filter,
-    mock_update_payment_statuses,
-    mock_send_message_bulk,
-    update_data,
-    existing_statuses,
-    expected_updates,
-):
-    # Setup mocks
-    mock_users = [User(username=u["username"]) for u in update_data]
-    mock_user_filter.return_value = MagicMock(all=MagicMock(return_value=mock_users))
+def test_update_payment_number_statuses(scenario, opportunity):
+    # Prepare existing statuses
+    usernames = {s["username"] for s in scenario["existing_statuses"] + scenario["update_data"]}
+    by_username = {}
+    for username in usernames:
+        by_username[username] = MobileUserFactory(username=username)
 
-    mock_update_payment_statuses.return_value = MagicMock(status=200, json=lambda: {"result": "success"})
+    for status_data in scenario.get("existing_statuses", []):
+        org = (
+            opportunity.organization
+            if status_data.get("organization") != "another_org"
+            else OrganizationFactory(name=status_data["organization"])
+        )
+        user = by_username[status_data["username"]]
 
-    organization = Organization(name="Test Organization")
+        OrgUserPaymentNumberStatus.objects.create(
+            organization=org, user=user, phone_number=status_data["phone_number"], status=status_data["status"]
+        )
 
-    opportunity = MagicMock(name="Test Opportunity", organization=organization)
+    # Mock external service calls
+    with patch(
+        "commcare_connect.opportunity.payment_number_report.update_payment_statuses"
+    ) as mock_update_connectid, patch(
+        "commcare_connect.opportunity.payment_number_report.send_message_bulk"
+    ) as mock_send_message:
+        mock_update_connectid.return_value = MagicMock(status=200)
+        result = update_payment_number_statuses(scenario["update_data"], opportunity)
 
-    # Call the function
-    update_payment_number_statuses(update_data, opportunity)
+        if scenario["expect_connectid_update"]:
+            mock_update_connectid.assert_called_once()
+        else:
+            mock_update_connectid.assert_not_called()
 
-    # Assertions
-    if expected_updates:
-        mock_update_payment_statuses.assert_called_once_with(expected_updates)
-    else:
-        mock_update_payment_statuses.assert_not_called()
+        if scenario["expect_message"]:
+            mock_send_message.assert_called_once()
+        else:
+            mock_send_message.assert_not_called()
+
+        assert result == scenario["expected_result"]
+
+        # Verify database entries
+        for entry in scenario["update_data"]:
+            try:
+                status_obj = OrgUserPaymentNumberStatus.objects.get(
+                    user__username=entry["username"],
+                    organization=opportunity.organization,
+                )
+                assert status_obj.phone_number == entry["phone_number"]
+                assert status_obj.status == entry["status"]
+            except OrgUserPaymentNumberStatus.DoesNotExist:
+                if scenario["expected_result"]["approved"] + scenario["expected_result"]["rejected"] > 0:
+                    pytest.fail(f"Expected status entry not found for {entry}")
