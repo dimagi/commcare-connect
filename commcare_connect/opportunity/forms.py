@@ -88,6 +88,7 @@ class OpportunityChangeForm(
             "short_description",
             "is_test",
             "delivery_type",
+            "payment_info_required",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -102,6 +103,7 @@ class OpportunityChangeForm(
             Row(Field("description")),
             Row(Field("short_description")),
             Row(Field("currency")),
+            Row(Field("payment_info_required")),
             Row(
                 Field("additional_users", wrapper_class="form-group col-md-6 mb-0"),
                 Field("end_date", wrapper_class="form-group col-md-6 mb-0"),
@@ -118,6 +120,9 @@ class OpportunityChangeForm(
             Submit("submit", "Submit"),
         )
 
+        self.fields["payment_info_required"] = forms.BooleanField(
+            label="Require Phone Numbers from users for payments", required=False
+        )
         self.fields["additional_users"] = forms.IntegerField(
             required=False, help_text="Adds budget for additional users."
         )
@@ -147,12 +152,7 @@ class OpportunityInitForm(forms.ModelForm):
 
     class Meta:
         model = Opportunity
-        fields = [
-            "name",
-            "description",
-            "short_description",
-            "currency",
-        ]
+        fields = ["name", "description", "short_description", "currency", "payment_info_required"]
 
     def __init__(self, *args, **kwargs):
         self.domains = kwargs.pop("domains", [])
@@ -180,6 +180,7 @@ class OpportunityInitForm(forms.ModelForm):
                 data_loading_states=True,
             ),
             Row(Field("currency")),
+            Row(Field("payment_info_required")),
             Row(Field("api_key")),
             Submit("submit", "Submit"),
         )
@@ -218,6 +219,10 @@ class OpportunityInitForm(forms.ModelForm):
         self.fields["deliver_app"] = forms.Field(
             widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
         )
+        self.fields["payment_info_required"] = forms.BooleanField(
+            label="Require Phone Numbers from users for payments", required=False
+        )
+
         self.fields["api_key"] = forms.CharField(max_length=50)
 
     def clean(self):
