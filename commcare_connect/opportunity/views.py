@@ -871,16 +871,18 @@ def visit_verification(request, org_slug=None, pk=None):
 @org_member_required
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
-    user_visit.status = VisitValidationStatus.approved
-    if user_visit.opportunity.managed:
-        user_visit.review_created_on = now()
-    user_visit.save()
     opp_id = user_visit.opportunity_id
-    access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=opp_id)
-    update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    if user_visit.status != VisitValidationStatus.approved:
+        user_visit.status = VisitValidationStatus.approved
+        if user_visit.opportunity.managed:
+            user_visit.review_created_on = now()
+        user_visit.save()
+        update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
-    return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity.id, pk=access.id)
+    return redirect(
+        "opportunity:user_visits_list", org_slug=org_slug, opp_id=opp_id, pk=user_visit.opportunity_access_id
+    )
 
 
 @org_member_required

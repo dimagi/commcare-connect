@@ -10,6 +10,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     DeliveryType,
     FormJsonValidationRules,
+    HQApiKey,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -30,6 +31,7 @@ admin.site.register(UserInvite)
 admin.site.register(DeliveryType)
 admin.site.register(DeliverUnitFlagRules)
 admin.site.register(FormJsonValidationRules)
+admin.site.register(HQApiKey)
 
 
 @admin.register(Opportunity)

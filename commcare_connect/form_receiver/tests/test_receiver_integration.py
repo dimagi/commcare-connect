@@ -566,13 +566,17 @@ def test_receiver_visit_review_status(
 
 
 @pytest.mark.parametrize(
-    "paymentunit_options, visit_status",
+    "opportunity, paymentunit_options, visit_status",
     [
-        ({"start_date": now().date()}, VisitValidationStatus.approved),
-        ({"start_date": now() + datetime.timedelta(days=2)}, VisitValidationStatus.trial),
-        ({"end_date": now().date()}, VisitValidationStatus.approved),
-        ({"end_date": now() - datetime.timedelta(days=2)}, VisitValidationStatus.over_limit),
+        ({}, {"start_date": now().date()}, VisitValidationStatus.approved),
+        ({}, {"start_date": now() + datetime.timedelta(days=2)}, VisitValidationStatus.trial),
+        ({}, {"end_date": now().date()}, VisitValidationStatus.approved),
+        ({}, {"end_date": now() - datetime.timedelta(days=2)}, VisitValidationStatus.over_limit),
+        ({"opp_options": {"start_date": now().date()}}, {}, VisitValidationStatus.approved),
+        ({"opp_options": {"start_date": now() + datetime.timedelta(days=2)}}, {}, VisitValidationStatus.trial),
+        ({"opp_options": {"end_date": now().date()}}, {}, VisitValidationStatus.approved),
     ],
+    indirect=["opportunity"],
 )
 def test_receiver_visit_payment_unit_dates(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity, visit_status

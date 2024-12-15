@@ -238,7 +238,7 @@ def get_manage_buttons_html(buttons, request):
 
 class FunnelPerformanceTable(tables.Table):
     organization = tables.Column()
-    opportunity = tables.Column(accessor="name")
+    opportunity = tables.Column(accessor="name", verbose_name="Opportunity")
     start_date = tables.DateColumn()
     workers_invited = tables.Column(verbose_name=_("Workers Invited"))
     workers_passing_assessment = tables.Column(verbose_name=_("Workers Passing Assessment"))
@@ -281,7 +281,7 @@ class FunnelPerformanceTable(tables.Table):
 
 class DeliveryPerformanceTable(tables.Table):
     organization = tables.Column()
-    opportunity = tables.Column(accessor="name")
+    opportunity = tables.Column(accessor="name", verbose_name="Opportunity")
     start_date = tables.DateColumn()
     total_workers_starting_delivery = tables.Column(verbose_name=_("Workers Starting Delivery"))
     active_workers = tables.Column(verbose_name=_("Active Workers"))

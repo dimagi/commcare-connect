@@ -169,7 +169,7 @@ def update_payment_accrued(opportunity: Opportunity, users):
     """Updates payment accrued for completed and approved CompletedWork instances."""
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
     for access in access_objects:
-        with cache.lock(f"update_payment_accrued_lock_{access.id}"):
+        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
             completed_works = access.completedwork_set.exclude(
                 status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
             ).select_related("payment_unit")

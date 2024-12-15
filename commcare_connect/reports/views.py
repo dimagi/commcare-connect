@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Count, Max, Q, Sum
+from django.db.models.functions import TruncDate
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -328,15 +329,43 @@ class DeliveryReportFilters(django_filters.FilterSet):
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
 
 
-class NonModelFilterView(FilterView):
+class NonModelTableBaseView(FilterView):
+    # Inherit this for a tabular report
+    page_template = "reports/report_table.html"
+    htmx_table_template = "reports/htmx_table.html"
+    # Override this
+    report_title = None
+
     def get_queryset(self):
         # Doesn't matter which model it is here
         return CompletedWork.objects.none()
 
+    @cached_property
+    def filter_values(self):
+        if not self.filterset.form.is_valid():
+            return None
+        else:
+            return self.filterset.form.cleaned_data
+
+    def get_template_names(self):
+        if self.request.htmx:
+            return self.htmx_table_template
+        else:
+            return self.page_template
+
     @property
     def object_list(self):
-        # Override this
-        return []
+        raise NotImplementedError()
+
+    @property
+    def report_url(self):
+        raise NotImplementedError()
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["report_url"] = self.report_url
+        context["report_title"] = self.report_title
+        return context
 
     def get(self, request, *args, **kwargs):
         filterset_class = self.get_filterset_class()
@@ -345,29 +374,14 @@ class NonModelFilterView(FilterView):
         return self.render_to_response(context)
 
 
-class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, NonModelFilterView):
+class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, NonModelTableBaseView):
     table_class = AdminReportTable
     filterset_class = DeliveryReportFilters
+    report_title = "Delivery Stats Report"
 
-    def get_template_names(self):
-        if self.request.htmx:
-            template_name = "reports/htmx_table.html"
-        else:
-            template_name = "reports/report_table.html"
-
-        return template_name
-
-    def get_context_data(self, *args, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["report_url"] = reverse("reports:delivery_stats_report")
-        return context
-
-    @cached_property
-    def filter_values(self):
-        if not self.filterset.form.is_valid():
-            return None
-        else:
-            return self.filterset.form.cleaned_data
+    @property
+    def report_url(self):
+        return reverse("reports:delivery_stats_report")
 
     @property
     def object_list(self):
@@ -462,9 +476,12 @@ def _get_time_series_data(queryset, from_date, to_date):
     """
     # Get visits over time by program
     visits_by_program_time = (
-        queryset.values("visit_date", "opportunity__delivery_type__name")
+        queryset.values(
+            "opportunity__delivery_type__name",
+            visit_date_date=TruncDate("visit_date"),
+        )
         .annotate(count=Count("id"))
-        .order_by("visit_date", "opportunity__delivery_type__name")
+        .order_by("visit_date_date", "opportunity__delivery_type__name")
     )
 
     # Process time series data
@@ -473,8 +490,7 @@ def _get_time_series_data(queryset, from_date, to_date):
         program_name = visit["opportunity__delivery_type__name"]
         if program_name not in program_data:
             program_data[program_name] = {}
-        program_data[program_name][visit["visit_date"]] = visit["count"]
-
+        program_data[program_name][visit["visit_date_date"]] = visit["count"]
     # Create labels and datasets for time series
     labels = []
     time_datasets = []
@@ -488,7 +504,9 @@ def _get_time_series_data(queryset, from_date, to_date):
         data = []
         current_date = from_date
         while current_date <= to_date:
-            data.append(program_data[program_name].get(current_date, 0))
+            # Convert current_date to a date object to avoid timezones making comparisons fail
+            current_date_date = current_date.date()
+            data.append(program_data[program_name].get(current_date_date, 0))
             current_date += timedelta(days=1)
 
         time_datasets.append({"name": program_name or "Unknown", "data": data})
