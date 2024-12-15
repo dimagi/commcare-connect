@@ -3,6 +3,7 @@ from copy import deepcopy
 from uuid import uuid4
 
 import pytest
+from django.utils.timezone import now
 from rest_framework.test import APIClient
 
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
@@ -23,6 +24,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import bulk_approve_completed_work
@@ -172,24 +174,14 @@ def test_receiver_deliver_form_daily_visits_reached(
 def test_receiver_deliver_form_max_visits_reached(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
-    def form_json(payment_unit):
-        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
-        stub = DeliverUnitStubFactory(id=deliver_unit.slug)
-        form_json = get_form_json(
-            form_block=stub.json,
-            domain=deliver_unit.app.cc_domain,
-            app_id=deliver_unit.app.cc_app_id,
-        )
-        return form_json
-
     def submit_form_for_random_entity(form_json):
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
         make_request(api_client, duplicate_json, mobile_user_with_connect_link)
 
     payment_units = opportunity.paymentunit_set.all()
-    form_json1 = form_json(payment_units[0])
-    form_json2 = form_json(payment_units[1])
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    form_json2 = get_form_json_for_payment_unit(payment_units[1])
     for _ in range(2):
         submit_form_for_random_entity(form_json1)
         submit_form_for_random_entity(form_json2)
@@ -351,8 +343,11 @@ def test_auto_approve_payments_approved_visit(
     assert access.payment_accrued == completed_work.payment_accrued
 
 
-def test_auto_approve_payments_rejected_visit(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+@pytest.mark.parametrize(
+    "update_func, args_required", [(update_payment_accrued, True), (bulk_approve_completed_work, False)]
+)
+def test_auto_approve_payments_rejected_visit_functions(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity, update_func, args_required
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
@@ -366,17 +361,10 @@ def test_auto_approve_payments_rejected_visit(
     rejected_reason.append(visit.reason)
     visit.save()
 
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    visit.status = VisitValidationStatus.rejected
-    visit.reason = "duplicate"
-    rejected_reason.append(visit.reason)
-    visit.save()
-
     # Payment Approval
-    update_payment_accrued(opportunity, users=[user_with_connectid_link])
+    args = (opportunity, [user_with_connectid_link]) if args_required else ()
+    update_func(*args)
+
     access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.rejected
@@ -406,40 +394,6 @@ def test_auto_approve_payments_approved_visit_task(
     assert access.payment_accrued == completed_work.payment_accrued
 
 
-def test_auto_approve_payments_rejected_visit_task(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
-    opportunity.auto_approve_payments = True
-    opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
-    rejected_reason = []
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    visit.status = VisitValidationStatus.rejected
-    visit.reason = "rejected"
-    rejected_reason.append(visit.reason)
-    visit.save()
-
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    visit.status = VisitValidationStatus.rejected
-    visit.reason = "duplicate"
-    rejected_reason.append(visit.reason)
-    visit.save()
-
-    # Payment Approval
-    bulk_approve_completed_work()
-    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
-    completed_work = CompletedWork.objects.get(opportunity_access=access)
-    assert completed_work.status == CompletedWorkStatus.rejected
-    for reason in rejected_reason:
-        assert reason in completed_work.reason
-    assert access.payment_accrued == completed_work.payment_accrued
-
-
 def test_auto_approve_visits_and_payments(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
@@ -460,58 +414,50 @@ def test_auto_approve_visits_and_payments(
     assert access.payment_accrued == completed_work.payment_accrued
 
 
+@pytest.mark.parametrize(
+    "opportunity",
+    [
+        {
+            "verification_flags": {
+                "form_submission_start": datetime.time(10, 0),
+                "form_submission_end": datetime.time(14, 0),
+            }
+        }
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "submission_time_hour, expected_message",
+    [
+        (11, None),
+        (9, "Form was submitted before the start time"),
+        (15, "Form was submitted after the end time"),
+    ],
+)
 def test_reciever_verification_flags_form_submission(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+    user_with_connectid_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    submission_time_hour,
+    expected_message,
 ):
-    verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.form_submission_start = datetime.time(hour=10, minute=0)
-    verification_flags.form_submission_end = datetime.time(hour=12, minute=0)
-    verification_flags.save()
-
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    time = datetime.datetime(2024, 4, 17, 10, 0, 0)
-    form_json["metadata"]["timeStart"] = time
-    form_json["metadata"]["timeEnd"] = time + datetime.timedelta(minutes=10)
+    submission_time = datetime.datetime(2024, 5, 17, hour=submission_time_hour, minute=0)
+    form_json["metadata"]["timeStart"] = submission_time
+
     make_request(api_client, form_json, user_with_connectid_link)
+
     visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert not visit.flagged
+
+    # Assert based on the expected message
+    if expected_message is None:
+        assert not visit.flagged
+    else:
+        assert visit.flagged
+        assert ["form_submission_period", expected_message] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_form_submission_start(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.form_submission_start = datetime.time(hour=10, minute=0)
-    verification_flags.form_submission_end = datetime.time(hour=12, minute=0)
-    verification_flags.save()
-
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    time = datetime.datetime(2024, 4, 17, 9, 0, 0)
-    form_json["metadata"]["timeStart"] = time
-    make_request(api_client, form_json, user_with_connectid_link)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.flagged
-    assert ["form_submission_period", "Form was submitted before the start time"] in visit.flag_reason.get("flags", [])
-
-
-def test_reciever_verification_flags_form_submission_end(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
-    verification_flags.form_submission_start = datetime.time(hour=10, minute=0)
-    verification_flags.form_submission_end = datetime.time(hour=12, minute=0)
-    verification_flags.save()
-
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    time = datetime.datetime(2024, 4, 17, 13, 0, 0)
-    form_json["metadata"]["timeStart"] = time
-    make_request(api_client, form_json, user_with_connectid_link)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.flagged
-    assert ["form_submission_period", "Form was submitted after the end time"] in visit.flag_reason.get("flags", [])
-
-
-def test_reciever_verification_flags_duration(
+def test_receiver_verification_flags_duration(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -524,7 +470,7 @@ def test_reciever_verification_flags_duration(
     assert ["duration", "The form was completed too quickly."] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_check_attachments(
+def test_receiver_verification_flags_check_attachments(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -537,7 +483,7 @@ def test_reciever_verification_flags_check_attachments(
     assert ["attachment_missing", "Form was submitted without attachements."] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_form_json_rule(
+def test_receiver_verification_flags_form_json_rule(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -555,7 +501,7 @@ def test_reciever_verification_flags_form_json_rule(
     assert not visit.flagged
 
 
-def test_reciever_verification_flags_form_json_rule_flagged(
+def test_receiver_verification_flags_form_json_rule_flagged(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
@@ -577,7 +523,7 @@ def test_reciever_verification_flags_form_json_rule_flagged(
     ] in visit.flag_reason.get("flags", [])
 
 
-def test_reciever_verification_flags_catchment_areas(
+def test_receiver_verification_flags_catchment_areas(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     verification_flags = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
@@ -594,6 +540,63 @@ def test_reciever_verification_flags_catchment_areas(
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize(
+    "visit_status, review_status",
+    [
+        (VisitValidationStatus.approved, VisitReviewStatus.agree),
+        (VisitValidationStatus.pending, VisitReviewStatus.pending),
+    ],
+)
+def test_receiver_visit_review_status(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity, visit_status, review_status
+):
+    assert opportunity.managed
+    form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
+    if visit_status != VisitValidationStatus.approved:
+        form_json["metadata"]["location"] = None
+    make_request(api_client, form_json, mobile_user_with_connect_link)
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    if visit_status != VisitValidationStatus.approved:
+        assert visit.flagged
+    assert visit.status == visit_status
+    assert visit.review_status == review_status
+
+
+@pytest.mark.parametrize(
+    "opportunity, paymentunit_options, visit_status",
+    [
+        ({}, {"start_date": now().date()}, VisitValidationStatus.approved),
+        ({}, {"start_date": now() + datetime.timedelta(days=2)}, VisitValidationStatus.trial),
+        ({}, {"end_date": now().date()}, VisitValidationStatus.approved),
+        ({}, {"end_date": now() - datetime.timedelta(days=2)}, VisitValidationStatus.over_limit),
+        ({"opp_options": {"start_date": now().date()}}, {}, VisitValidationStatus.approved),
+        ({"opp_options": {"start_date": now() + datetime.timedelta(days=2)}}, {}, VisitValidationStatus.trial),
+        ({"opp_options": {"end_date": now().date()}}, {}, VisitValidationStatus.approved),
+    ],
+    indirect=["opportunity"],
+)
+def test_receiver_visit_payment_unit_dates(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity, visit_status
+):
+    form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
+    form_json["metadata"]["timeStart"] = now() - datetime.timedelta(minutes=2)
+    make_request(api_client, form_json, mobile_user_with_connect_link)
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    assert visit.status == visit_status
+
+
+def get_form_json_for_payment_unit(payment_unit):
+    deliver_unit = DeliverUnitFactory(app=payment_unit.opportunity.deliver_app, payment_unit=payment_unit)
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug)
+    form_json = get_form_json(
+        form_block=stub.json,
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+    return form_json
 
 
 def _get_form_json(learn_app, module_id, form_block=None):

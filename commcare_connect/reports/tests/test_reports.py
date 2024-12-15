@@ -40,7 +40,7 @@ def test_delivery_stats(opportunity: Opportunity):
                     status=VisitValidationStatus.approved.value,
                     opportunity_access=access,
                     completed_work=completed_work,
-                    visit_date=Faker("date_this_month"),
+                    visit_date=Faker("date_time_this_month", tzinfo=datetime.UTC),
                 )
 
     quarter = math.ceil(datetime.datetime.utcnow().month / 12 * 4)
@@ -65,19 +65,32 @@ def test_delivery_stats(opportunity: Opportunity):
 
 
 def test_results_to_geojson():
+    class MockQuerySet:
+        def __init__(self, results):
+            self.results = results
+
+        def all(self):
+            return self.results
+
     # Test input
-    results = [
-        {"gps_location_long": "10.123", "gps_location_lat": "20.456", "status": "approved", "other_field": "value1"},
-        {"gps_location_long": "30.789", "gps_location_lat": "40.012", "status": "rejected", "other_field": "value2"},
-        {"gps_location_long": "invalid", "gps_location_lat": "50.678", "status": "unknown", "other_field": "value3"},
-        {"status": "approved", "other_field": "value4"},  # Case where lat/lon are not present
-        {  # Case where lat/lon are null
-            "gps_location_long": None,
-            "gps_location_lat": None,
-            "status": "rejected",
-            "other_field": "value5",
-        },
-    ]
+    results = MockQuerySet(
+        [
+            {"location_str": "20.456 10.123 0 0", "status": "approved", "other_field": "value1"},
+            {"location_str": "40.012 30.789", "status": "rejected", "other_field": "value2"},
+            {"location_str": "invalid location", "status": "unknown", "other_field": "value3"},
+            {"location_str": "bad location", "status": "unknown", "other_field": "value4"},
+            {
+                "location_str": None,
+                "status": "approved",
+                "other_field": "value5",
+            },  # Case where lat/lon are not present
+            {  # Case where lat/lon are null
+                "location_str": None,
+                "status": "rejected",
+                "other_field": "value5",
+            },
+        ]
+    )
 
     # Call the function
     geojson = _results_to_geojson(results)
@@ -93,7 +106,7 @@ def test_results_to_geojson():
     assert feature1["geometry"]["coordinates"] == [10.123, 20.456]
     assert feature1["properties"]["status"] == "approved"
     assert feature1["properties"]["other_field"] == "value1"
-    assert feature1["properties"]["color"] == "#00FF00"
+    assert feature1["properties"]["color"] == "#4ade80"
 
     # Check the second feature
     feature2 = geojson["features"][1]
@@ -102,7 +115,7 @@ def test_results_to_geojson():
     assert feature2["geometry"]["coordinates"] == [30.789, 40.012]
     assert feature2["properties"]["status"] == "rejected"
     assert feature2["properties"]["other_field"] == "value2"
-    assert feature2["properties"]["color"] == "#FF0000"
+    assert feature2["properties"]["color"] == "#f87171"
 
     # Check that the other cases are not included
     assert all(f["properties"]["other_field"] not in ["value3", "value4", "value5"] for f in geojson["features"])

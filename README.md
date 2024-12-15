@@ -146,6 +146,19 @@ For details on how this actions is configured see:
 - https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/
 - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
 
+### Deploying to the staging environment
+
+The project has a staging environment at [https://connect-staging.dimagi.com/](https://connect-staging.dimagi.com/),
+which is connected to the staging environment of CommCare HQ at
+[https://staging.commcarehq.org/](https://staging.commcarehq.org/).
+
+By convention, the `pkv/staging` branch is used for changes that are on the staging environment.
+To put your own changes on the staging environment, you can create merge your own branch into
+`pkv/staging` and then push it to GitHub.
+
+After that, you can deploy to the staging environment by manually running the `deploy`
+[workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
+
 ### Custom Bootstrap Compilation
 
 The generated CSS is set up with automatic Bootstrap recompilation with variables of your choice.

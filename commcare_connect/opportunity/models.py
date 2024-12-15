@@ -161,7 +161,16 @@ class Opportunity(BaseModel):
 
     @property
     def number_of_users(self):
-        return self.total_budget / self.budget_per_user
+        if not self.managed:
+            return self.total_budget / self.budget_per_user
+
+        budget_per_user = 0
+        payment_units = self.paymentunit_set.all()
+        org_pay = self.managedopportunity.org_pay_per_visit
+        for pu in payment_units:
+            budget_per_user += pu.max_total * (pu.amount + org_pay)
+
+        return self.total_budget / budget_per_user
 
     @property
     def allotted_visits(self):
@@ -237,6 +246,7 @@ class OpportunityAccess(models.Model):
     suspended = models.BooleanField(default=False)
     suspension_date = models.DateTimeField(null=True, blank=True)
     suspension_reason = models.CharField(max_length=300, null=True, blank=True)
+    invited_date = models.DateTimeField(auto_now_add=True, editable=False, null=True)
 
     class Meta:
         indexes = [models.Index(fields=["invite_id"])]
@@ -356,6 +366,11 @@ class PaymentUnit(models.Model):
         blank=True,
         null=True,
     )
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return self.name
 
 
 class DeliverUnit(models.Model):
@@ -586,6 +601,7 @@ class OpportunityClaimLimit(models.Model):
     opportunity_claim = models.ForeignKey(OpportunityClaim, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.CASCADE)
     max_visits = models.IntegerField()
+    end_date = models.DateField(null=True, blank=True)
 
     class Meta:
         unique_together = [
@@ -615,6 +631,7 @@ class OpportunityClaimLimit(models.Model):
                 opportunity_claim=claim,
                 payment_unit=payment_unit,
                 defaults={"max_visits": min(remaining, payment_unit.max_total)},
+                end_date=payment_unit.end_date,
             )
 
 

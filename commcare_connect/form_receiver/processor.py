@@ -29,6 +29,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import download_user_visit_attachments
+from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 
 LEARN_MODULE_JSONPATH = parse("$..module")
@@ -242,7 +243,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
         )
     )
+    payment_unit = deliver_unit.payment_unit
     claim = OpportunityClaim.objects.get(opportunity_access=access)
+    claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
     user_visit = UserVisit(
@@ -260,26 +263,23 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         location=xform.metadata.location,
     )
     completed_work_needs_save = False
-    if opportunity.start_date > datetime.date.today():
+    today = datetime.date.today()
+    paymentunit_startdate = payment_unit.start_date if payment_unit else None
+    if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
         completed_work = None
         user_visit.status = VisitValidationStatus.trial
     else:
         completed_work, _ = CompletedWork.objects.get_or_create(
             opportunity_access=access,
             entity_id=entity_id,
-            payment_unit=deliver_unit.payment_unit,
-            defaults={
-                "entity_name": entity_name,
-            },
+            payment_unit=payment_unit,
+            defaults={"entity_name": entity_name},
         )
         user_visit.completed_work = completed_work
-        claim_limit = OpportunityClaimLimit.objects.get(
-            opportunity_claim=claim, payment_unit=completed_work.payment_unit
-        )
         if (
-            counts["daily"] >= deliver_unit.payment_unit.max_daily
+            counts["daily"] >= payment_unit.max_daily
             or counts["total"] >= claim_limit.max_visits
-            or datetime.date.today() > claim.end_date
+            or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
         ):
             user_visit.status = VisitValidationStatus.over_limit
             if not completed_work.status == CompletedWorkStatus.over_limit:
@@ -303,15 +303,13 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         user_visit.status = VisitValidationStatus.approved
         user_visit.review_status = VisitReviewStatus.agree
     user_visit.save()
-    if (
-        completed_work is not None
-        and completed_work.completed_count > 0
-        and completed_work.status == CompletedWorkStatus.incomplete
-    ):
-        completed_work.status = CompletedWorkStatus.pending
-        completed_work_needs_save = True
-    if completed_work_needs_save:
-        completed_work.save()
+    if completed_work is not None:
+        if completed_work.completed_count > 0 and completed_work.status == CompletedWorkStatus.incomplete:
+            completed_work.status = CompletedWorkStatus.pending
+            completed_work_needs_save = True
+        if completed_work_needs_save:
+            completed_work.save()
+    update_payment_accrued(opportunity, [user.id])
     download_user_visit_attachments.delay(user_visit.id)
 
 
