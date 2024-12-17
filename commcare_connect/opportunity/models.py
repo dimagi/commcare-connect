@@ -455,6 +455,9 @@ class CompletedWork(models.Model):
     status_modified_date = models.DateTimeField(null=True)
     payment_date = models.DateTimeField(null=True)
 
+    class Meta:
+        unique_together = ("entity_id", "payment_unit")
+
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
         self.status_modified_date = now()
