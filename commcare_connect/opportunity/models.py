@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.db import models
 from django.db.models import Count, F, Max, Q, Sum
+from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext
@@ -132,15 +133,10 @@ class Opportunity(BaseModel):
 
     @property
     def utilised_budget(self):
-        completed_works = CompletedWork.objects.filter(opportunity_access__opportunity=self)
-        payment_unit_counts = completed_works.values("payment_unit").annotate(
-            completed_count=Count("id"), amount=F("payment_unit__amount")
-        )
+        users = OpportunityAccess.objects.filter(opportunity=self)
         utilised = 0
-        for payment_unit_count in payment_unit_counts:
-            completed_count = payment_unit_count["completed_count"]
-            amount = payment_unit_count["amount"]
-            utilised += completed_count * amount
+        for u in users:
+            utilised += u.payment_accrued
         return utilised
 
     @property
@@ -588,6 +584,18 @@ class UserVisit(XFormBaseModel):
     @property
     def images(self):
         return BlobMeta.objects.filter(parent_id=self.xform_id, content_type__startswith="image/")
+
+    @property
+    def duration(self):
+        duration = None
+        start = self.form_json["metadata"].get("timeStart")
+        end = self.form_json["metatdata"].get("timeEnd")
+        if start and end:
+            try:
+                duration = parse_datetime(end) - parse_datetime(start)
+            except (TypeError, ValueError):
+                pass
+        return duration
 
 
 class OpportunityClaim(models.Model):
