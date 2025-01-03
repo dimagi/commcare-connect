@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div x-data="dashboard()">
+    <div class="filters">
+        <input type="date" x-model="dateStart" @change="fetchData()">
+        <input type="date" x-model="dateEnd" @change="fetchData()">
+
+        <select multiple x-model="selectedOpportunities" @change="fetchData()">
+            <option value="">All Opportunities</option>
+            {% for opp in opportunities %}
+            <option value="{{ opp.id }}">{{ opp.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="results-container">
+        <div class="metric-card">
+            <div class="big-number" x-text="results?.summary?.total_visits || 0"></div>
+            <div class="change">
+                Last day: <span x-text="results?.summary_lastday?.total_visits || 0"></span>
+            </div>
+        </div>
+
+    </div>
+    <div class="results-container">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Total Visits</h6>
+                        <h1 class="display-4 mb-0" x-text="results?.summary?.total_visits || 0"></h1>
+                        <small class="text-muted">
+                            Last day: <span x-text="results?.summary_lastday?.total_visits || 0"></span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Approved Visits</h6>
+                        <h1 class="display-4 mb-0" x-text="results?.summary?.approved_visits || 0"></h1>
+                        <small class="text-muted">
+                            Last day: <span x-text="results?.summary_lastday?.approved_visits || 0"></span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Rejected Visits</h6>
+                        <h1 class="display-4 mb-0" x-text="results?.summary?.rejected_visits || 0"></h1>
+                        <small class="text-muted">
+                            Last day: <span x-text="results?.summary_lastday?.rejected_visits || 0"></span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+function dashboard() {
+    return {
+        dateStart: '',
+        dateEnd: '',
+        selectedOpportunities: [],
+        results: '',
+
+        async fetchData() {
+            const params = new URLSearchParams({
+                date_start: this.dateStart,
+                date_end: this.dateEnd,
+                json: true
+            });
+            if (!this.selectedOpportunities.includes('')) {
+                this.selectedOpportunities.forEach(opp => {
+                    params.append('opportunities', opp);
+                });
+            }
+
+            // Change this line:
+        const response = await fetch(`${window.location.pathname}?${params}`);
+            const data = await response.json();
+            this.results = data;
+        },
+
+        formatResults(data) {
+            // Format your data here for display
+            return JSON.stringify(data);
+        }
+    }
+}
+</script>
+{% endblock %}
