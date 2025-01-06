@@ -3,7 +3,7 @@ import datetime
 from django.db.models import Case, Count, IntegerField, Q, Sum, When
 from django.db.models.functions import TruncDate
 
-from commcare_connect.opportunity.models import UserVisit
+from commcare_connect.opportunity.models import OpportunityAccess, UserVisit
 
 
 class UserVisitData:
@@ -41,28 +41,56 @@ class UserVisitData:
         return queryset
 
     @classmethod
-    def get_data(cls, opportunity_ids=None, date_gte=None, date_lte=None):
-        data = {
-            "summary": cls.get_summary(opportunity_ids, date_gte, date_lte),
-            "time_series": cls.get_time_series(opportunity_ids, date_gte, date_lte),
-        }
-        if date_gte and date_gte == date_lte:
-            data["summary_lastday"] = {}
+    def get_data(cls, filterset):
+        queryset = UserVisit.objects.all()
+        if filterset.is_valid():
+            queryset = filterset.filter_queryset(queryset)
+            from_date = filterset.form.cleaned_data["from_date"]
+            to_date = filterset.form.cleaned_data["to_date"]
         else:
-            last_day = date_lte or datetime.date.today()
-            data["summary_lastday"] = cls.get_summary(opportunity_ids, last_day - datetime.timedelta(days=1), last_day)
+            to_date = datetime.now().date()
+            from_date = to_date - datetime.timedelta(days=30)
+            queryset = queryset.filter(visit_date__gte=from_date, visit_date__lte=to_date)
+
+        data = {
+            "summary": cls.get_summary(queryset),
+            "time_series": cls.get_time_series(queryset),
+            "funnel": cls.get_funnel_data(filterset),
+        }
         return data
 
     @classmethod
-    def get_summary(cls, opportunity_ids=None, date_gte=None, date_lte=None):
-        queryset = cls._get_queryset(opportunity_ids, date_gte, date_lte)
+    def get_summary(cls, queryset):
         return queryset.aggregate(**cls._get_aggregations())
 
     @classmethod
-    def get_time_series(cls, opportunity_ids=None, date_gte=None, date_lte=None):
-        queryset = cls._get_queryset(opportunity_ids, date_gte, date_lte)
+    def get_time_series(cls, queryset):
         return list(
             queryset.annotate(visit_date_only=TruncDate("visit_date"))
             .values("visit_date_only")
             .annotate(**cls._get_aggregations())
         )
+
+    @classmethod
+    def get_funnel_data(cls, filterset):
+        """Gets funnel metrics from OpportunityAccess"""
+        queryset = OpportunityAccess.objects.all()
+
+        # No date filters for funnel data
+        filterset.form.cleaned_data.pop("from_date", None)
+        filterset.form.cleaned_data.pop("to_date", None)
+
+        if filterset.is_valid():
+            queryset = filterset.filter_queryset(queryset)
+
+        metrics = queryset.aggregate(
+            invited=Count("id", filter=Q(invited_date__isnull=False)),
+            is_accepted=Count("id", filter=Q(accepted=True)),
+            started_learning=Count("id", filter=Q(date_learn_started__isnull=False, accepted=True)),
+        )
+
+        return [
+            {"value": metrics["invited"], "name": "Invited"},
+            {"value": metrics["is_accepted"], "name": "Accepted"},
+            {"value": metrics["started_learning"], "name": "Started Learning"},
+        ]
