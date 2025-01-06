@@ -70,6 +70,18 @@ def filter_users(country_code: str, credential: list[str]):
     return [ConnectIdUser(**user_dict) for user_dict in data["found_users"]]
 
 
+def fetch_payment_phone_numbers(usernames, status):
+    response = _make_request(
+        GET, "/users/fetch_payment_phone_numbers", params={"usernames": usernames, "status": status}
+    )
+    return response.json()["found_payment_numbers"]
+
+
+def update_payment_statuses(update_data):
+    response = _make_request(POST, "/users/validate_payment_phone_numbers", json={"updates": update_data})
+    return response
+
+
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
     if json and not method == "POST":
         raise ValueError("json can only be used with POST requests")
