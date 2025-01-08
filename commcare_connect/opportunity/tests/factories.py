@@ -68,6 +68,7 @@ class OpportunityAccessFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.OpportunityAccess"
+        django_get_or_create = ["opportunity", "user"]
 
 
 class OpportunityVerificationFlagsFactory(DjangoModelFactory):
