@@ -182,19 +182,26 @@ class UserStatusTable(OrgContextTable):
             resend_invite_url = reverse(
                 "opportunity:resend_user_invite", args=(self.org_slug, record.opportunity.id, record.id)
             )
-            button_html = f"""<button title="Resend invitation"
-                hx-post="{resend_invite_url}" hx-target="#modalBodyContent" hx-trigger="click"
+            urls = [resend_invite_url]
+            buttons = [
+                """<button title="Resend invitation"
+                hx-post="{}" hx-target="#modalBodyContent" hx-trigger="click"
                 hx-on::after-request="handleResendInviteResponse(event)"
                 class="btn btn-sm btn-success">Resend</button>"""
+            ]
             if record.status == UserInviteStatus.not_found:
                 invite_delete_url = reverse(
                     "opportunity:user_invite_delete", args=(self.org_slug, record.opportunity.id, record.id)
                 )
-                button_html += f"""<button title="Delete invitation"
-                            hx-post="{invite_delete_url}" hx-swap="none"
+                urls.append(invite_delete_url)
+                buttons.append(
+                    """<button title="Delete invitation"
+                            hx-post="{}" hx-swap="none"
                             hx-confirm="Please confirm to delete the User Invite."
                             class="btn btn-sm btn-danger" type="button"><i class="bi bi-trash"></i></button>"""
-            return format_html('<div class="d-flex gap-1">{}</div>', button_html)
+                )
+            button_html = f"""<div class="d-flex gap-1">{"".join(buttons)}</div>"""
+            return format_html(button_html, *urls)
         url = reverse(
             "opportunity:user_profile",
             kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
