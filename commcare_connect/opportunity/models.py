@@ -456,7 +456,7 @@ class CompletedWork(models.Model):
     payment_date = models.DateTimeField(null=True)
 
     class Meta:
-        unique_together = ("entity_id", "payment_unit")
+        unique_together = ("opportunity_access", "entity_id", "payment_unit")
 
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
