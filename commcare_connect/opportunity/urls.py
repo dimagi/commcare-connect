@@ -38,6 +38,7 @@ from commcare_connect.opportunity.views import (
     payment_import,
     payment_report,
     reject_visit,
+    resend_user_invite,
     revoke_user_suspension,
     send_message_mobile_users,
     suspend_user,
@@ -112,4 +113,6 @@ urlpatterns = [
     path("<int:pk>/invoice_table/", views.PaymentInvoiceTableView.as_view(), name="invoice_table"),
     path("<int:pk>/invoice/create/", views.invoice_create, name="invoice_create"),
     path("<int:pk>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
+    path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
+    path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
 ]

@@ -6,6 +6,7 @@ from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils.timezone import now
@@ -168,10 +169,11 @@ def update_payment_accrued(opportunity: Opportunity, users):
     """Updates payment accrued for completed and approved CompletedWork instances."""
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
     for access in access_objects:
-        completed_works = access.completedwork_set.exclude(
-            status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
-        ).select_related("payment_unit")
-        update_status(completed_works, access, True)
+        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
+            completed_works = access.completedwork_set.exclude(
+                status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
+            ).select_related("payment_unit")
+            update_status(completed_works, access, True)
 
 
 def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
@@ -259,19 +261,21 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
 
     seen_users = set()
     payment_ids = []
-    with transaction.atomic():
-        usernames = list(payments)
-        users = OpportunityAccess.objects.filter(
-            user__username__in=usernames, opportunity=opportunity, suspended=False
-        ).select_related("user")
-        for access in users:
-            username = access.user.username
-            amount = payments[username]
-            amount_usd = amount / exchange_rate
-            payment = Payment.objects.create(opportunity_access=access, amount=amount, amount_usd=amount_usd)
-            seen_users.add(username)
-            payment_ids.append(payment.pk)
-            update_work_payment_date(access)
+    lock_key = f"bulk_update_payments_opportunity_{opportunity.id}"
+    with cache.lock(lock_key, timeout=600):
+        with transaction.atomic():
+            usernames = list(payments)
+            users = OpportunityAccess.objects.filter(
+                user__username__in=usernames, opportunity=opportunity, suspended=False
+            ).select_related("user")
+            for access in users:
+                username = access.user.username
+                amount = payments[username]
+                amount_usd = amount / exchange_rate
+                payment = Payment.objects.create(opportunity_access=access, amount=amount, amount_usd=amount_usd)
+                seen_users.add(username)
+                payment_ids.append(payment.pk)
+                update_work_payment_date(access)
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
     return PaymentImportStatus(seen_users, missing_users)

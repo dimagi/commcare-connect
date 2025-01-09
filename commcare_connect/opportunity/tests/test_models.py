@@ -27,18 +27,19 @@ def test_learn_progress(opportunity: Opportunity):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=True)
 def test_opportunity_stats(opportunity: Opportunity, user: User):
-    payment_unit_sub = PaymentUnitFactory(
+    payment_unit_sub = PaymentUnitFactory.create(
         opportunity=opportunity, max_total=100, max_daily=10, amount=5, parent_payment_unit=None
     )
-    payment_unit1 = PaymentUnitFactory(
+    payment_unit1 = PaymentUnitFactory.create(
         opportunity=opportunity,
         max_total=100,
         max_daily=10,
         amount=3,
         parent_payment_unit=payment_unit_sub,
     )
-    payment_unit2 = PaymentUnitFactory(
+    payment_unit2 = PaymentUnitFactory.create(
         opportunity=opportunity, max_total=100, max_daily=10, amount=5, parent_payment_unit=None
     )
     assert set(list(opportunity.paymentunit_set.values_list("id", flat=True))) == {
@@ -46,10 +47,17 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
         payment_unit2.id,
         payment_unit_sub.id,
     }
+    payment_units = [payment_unit_sub, payment_unit1, payment_unit2]
+    budget_per_user = sum(pu.max_total * pu.amount for pu in payment_units)
+    org_pay = 0
+    if opportunity.managed:
+        org_pay = opportunity.managedopportunity.org_pay_per_visit
+        budget_per_user += sum(pu.max_total * org_pay for pu in payment_units)
+    opportunity.total_budget = budget_per_user * 3
 
     payment_units = [payment_unit1, payment_unit2, payment_unit_sub]
     assert opportunity.budget_per_user == sum([p.amount * p.max_total for p in payment_units])
-    assert opportunity.number_of_users == opportunity.total_budget / opportunity.budget_per_user
+    assert opportunity.number_of_users == 3
     assert opportunity.allotted_visits == sum([pu.max_total for pu in payment_units]) * opportunity.number_of_users
     assert opportunity.max_visits_per_user_new == sum([pu.max_total for pu in payment_units])
     assert opportunity.daily_max_visits_per_user_new == sum([pu.max_daily for pu in payment_units])
@@ -61,7 +69,10 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     ocl1 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit1)
     ocl2 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit2)
 
-    opportunity.claimed_budget == (ocl1.max_visits * payment_unit1.amount) + (ocl2.max_visits * payment_unit2.amount)
+    assert opportunity.claimed_budget == (ocl1.max_visits * (payment_unit1.amount + org_pay)) + (
+        ocl2.max_visits * (payment_unit2.amount + org_pay)
+    )
+    assert opportunity.remaining_budget == opportunity.total_budget - opportunity.claimed_budget
 
 
 @pytest.mark.django_db

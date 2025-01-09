@@ -615,7 +615,15 @@ class AddBudgetExistingUsersForm(forms.Form):
 class PaymentUnitForm(forms.ModelForm):
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "max_total", "max_daily"]
+        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        help_texts = {
+            "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
+            "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
+        }
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+        }
 
     def __init__(self, *args, **kwargs):
         deliver_units = kwargs.pop("deliver_units", [])
@@ -627,6 +635,7 @@ class PaymentUnitForm(forms.ModelForm):
             Row(Field("name")),
             Row(Field("description")),
             Row(Field("amount")),
+            Row(Column("start_date"), Column("end_date")),
             Row(Field("required_deliver_units")),
             Row(Field("optional_deliver_units")),
             Row(Field("payment_units")),
@@ -687,6 +696,8 @@ class PaymentUnitForm(forms.ModelForm):
                     "optional_deliver_units",
                     error=f"{deliver_unit_obj.name} cannot be marked both Required and Optional",
                 )
+            if cleaned_data["end_date"] and cleaned_data["end_date"] < now().date():
+                self.add_error("end_date", "Please provide a valid end date.")
         return cleaned_data
 
 

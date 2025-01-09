@@ -159,6 +159,7 @@ class SMSStatusCallbackView(APIView):
         if not user_invite.status == UserInviteStatus.accepted:
             if message_status == "delivered":
                 user_invite.status = UserInviteStatus.sms_delivered
+                user_invite.notification_date = now()
             if message_status == "undelivered":
                 user_invite.status = UserInviteStatus.sms_not_delivered
             user_invite.save()

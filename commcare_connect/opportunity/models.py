@@ -115,6 +115,9 @@ class Opportunity(BaseModel):
         opp_access = OpportunityAccess.objects.filter(opportunity=self)
         opportunity_claim = OpportunityClaim.objects.filter(opportunity_access__in=opp_access)
         claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__in=opportunity_claim)
+        org_pay = 0
+        if self.managed:
+            org_pay = self.managedopportunity.org_pay_per_visit
 
         payment_unit_counts = claim_limits.values("payment_unit").annotate(
             visits_count=Sum("max_visits"), amount=F("payment_unit__amount")
@@ -123,7 +126,7 @@ class Opportunity(BaseModel):
         for count in payment_unit_counts:
             visits_count = count["visits_count"]
             amount = count["amount"]
-            claimed += visits_count * amount
+            claimed += visits_count * (amount + org_pay)
 
         return claimed
 
@@ -244,6 +247,7 @@ class OpportunityAccess(models.Model):
     suspended = models.BooleanField(default=False)
     suspension_date = models.DateTimeField(null=True, blank=True)
     suspension_reason = models.CharField(max_length=300, null=True, blank=True)
+    invited_date = models.DateTimeField(auto_now_add=True, editable=False, null=True)
 
     class Meta:
         indexes = [models.Index(fields=["invite_id"])]
@@ -363,6 +367,11 @@ class PaymentUnit(models.Model):
         blank=True,
         null=True,
     )
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return self.name
 
 
 class DeliverUnit(models.Model):
@@ -445,6 +454,9 @@ class CompletedWork(models.Model):
     reason = models.CharField(max_length=300, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
     payment_date = models.DateTimeField(null=True)
+
+    class Meta:
+        unique_together = ("opportunity_access", "entity_id", "payment_unit")
 
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
@@ -593,6 +605,7 @@ class OpportunityClaimLimit(models.Model):
     opportunity_claim = models.ForeignKey(OpportunityClaim, on_delete=models.CASCADE)
     payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.CASCADE)
     max_visits = models.IntegerField()
+    end_date = models.DateField(null=True, blank=True)
 
     class Meta:
         unique_together = [
@@ -622,6 +635,7 @@ class OpportunityClaimLimit(models.Model):
                 opportunity_claim=claim,
                 payment_unit=payment_unit,
                 defaults={"max_visits": min(remaining, payment_unit.max_total)},
+                end_date=payment_unit.end_date,
             )
 
 
@@ -656,6 +670,7 @@ class UserInvite(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE, null=True, blank=True)
     message_sid = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(max_length=50, choices=UserInviteStatus.choices, default=UserInviteStatus.invited)
+    notification_date = models.DateTimeField(null=True)
 
 
 class FormJsonValidationRules(models.Model):

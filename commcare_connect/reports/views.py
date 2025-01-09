@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Count, Max, Q, Sum
+from django.db.models.functions import TruncDate
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -462,9 +463,12 @@ def _get_time_series_data(queryset, from_date, to_date):
     """
     # Get visits over time by program
     visits_by_program_time = (
-        queryset.values("visit_date", "opportunity__delivery_type__name")
+        queryset.values(
+            "opportunity__delivery_type__name",
+            visit_date_date=TruncDate("visit_date"),
+        )
         .annotate(count=Count("id"))
-        .order_by("visit_date", "opportunity__delivery_type__name")
+        .order_by("visit_date_date", "opportunity__delivery_type__name")
     )
 
     # Process time series data
@@ -473,8 +477,7 @@ def _get_time_series_data(queryset, from_date, to_date):
         program_name = visit["opportunity__delivery_type__name"]
         if program_name not in program_data:
             program_data[program_name] = {}
-        program_data[program_name][visit["visit_date"]] = visit["count"]
-
+        program_data[program_name][visit["visit_date_date"]] = visit["count"]
     # Create labels and datasets for time series
     labels = []
     time_datasets = []
@@ -488,7 +491,9 @@ def _get_time_series_data(queryset, from_date, to_date):
         data = []
         current_date = from_date
         while current_date <= to_date:
-            data.append(program_data[program_name].get(current_date, 0))
+            # Convert current_date to a date object to avoid timezones making comparisons fail
+            current_date_date = current_date.date()
+            data.append(program_data[program_name].get(current_date_date, 0))
             current_date += timedelta(days=1)
 
         time_datasets.append({"name": program_name or "Unknown", "data": data})

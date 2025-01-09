@@ -29,7 +29,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory
+from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MobileUserFactory
 
 
 def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, budget_per_visit=10):
@@ -56,11 +56,37 @@ def test_claim_endpoint_success(mobile_user: User, api_client: APIClient):
     assert claim.exists()
 
 
-def test_claim_endpoint_budget_exhausted(mobile_user: User, api_client: APIClient):
-    opportunity, opportunity_access = _setup_opportunity_and_access(
-        mobile_user, total_budget=0, end_date=datetime.date.today() + datetime.timedelta(days=100)
+@pytest.mark.django_db
+@pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=["opportunity"])
+def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: APIClient):
+    PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
+    opportunity.total_budget = 10 * 100
+    if opportunity.managed:
+        opportunity.total_budget += 100 * opportunity.managedopportunity.org_pay_per_visit
+    opportunity.end_date = datetime.date.today() + datetime.timedelta(days=100)
+    opportunity.save()
+
+    mobile_user_1 = MobileUserFactory()
+    opportunity_access_1 = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_1)
+    ConnectIdUserLinkFactory(
+        user=mobile_user_1,
+        commcare_username="test_1@ccc-test.commcarehq.org",
+        domain=opportunity.deliver_app.cc_domain,
     )
-    api_client.force_authenticate(mobile_user)
+    api_client.force_authenticate(mobile_user_1)
+    response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
+    assert response.status_code == 201
+    claim = OpportunityClaim.objects.filter(opportunity_access=opportunity_access_1)
+    assert claim.exists()
+
+    mobile_user_2 = MobileUserFactory()
+    OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_2)
+    ConnectIdUserLinkFactory(
+        user=mobile_user_2,
+        commcare_username="test_2@ccc-test.commcarehq.org",
+        domain=opportunity.deliver_app.cc_domain,
+    )
+    api_client.force_authenticate(mobile_user_2)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
     assert response.data == "Opportunity cannot be claimed. (Budget Exhausted)"

@@ -24,6 +24,7 @@ from django_tables2 import SingleTableView
 from django_tables2.export import TableExport
 from geopy import distance
 
+from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.forms import (
@@ -64,6 +65,8 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentInvoice,
     PaymentUnit,
+    UserInvite,
+    UserInviteStatus,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -91,8 +94,10 @@ from commcare_connect.opportunity.tasks import (
     generate_user_status_export,
     generate_visit_export,
     generate_work_status_export,
+    invite_user,
     send_push_notification_task,
     send_sms_task,
+    update_user_and_send_invite,
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
@@ -866,16 +871,18 @@ def visit_verification(request, org_slug=None, pk=None):
 @org_member_required
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
-    user_visit.status = VisitValidationStatus.approved
-    if user_visit.opportunity.managed:
-        user_visit.review_created_on = now()
-    user_visit.save()
     opp_id = user_visit.opportunity_id
-    access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=opp_id)
-    update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    if user_visit.status != VisitValidationStatus.approved:
+        user_visit.status = VisitValidationStatus.approved
+        if user_visit.opportunity.managed:
+            user_visit.review_created_on = now()
+        user_visit.save()
+        update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
-    return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity.id, pk=access.id)
+    return redirect(
+        "opportunity:user_visits_list", org_slug=org_slug, opp_id=opp_id, pk=user_visit.opportunity_access_id
+    )
 
 
 @org_member_required
@@ -1112,7 +1119,7 @@ def user_visit_review(request, org_slug, opp_id):
     user_visit_reviews = UserVisit.objects.filter(opportunity=opportunity, review_created_on__isnull=False).order_by(
         "visit_date"
     )
-    table = UserVisitReviewTable(user_visit_reviews)
+    table = UserVisitReviewTable(user_visit_reviews, org_slug=request.org.slug)
     if not is_program_manager:
         table.exclude = ("pk",)
     if request.POST and is_program_manager:
@@ -1222,3 +1229,36 @@ def invoice_approve(request, org_slug, pk):
         )
         payment.save()
     return HttpResponse(headers={"HX-Trigger": "newInvoice"})
+
+
+@org_member_required
+@require_POST
+@csrf_exempt
+def user_invite_delete(request, org_slug, opp_id, pk):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    invite = get_object_or_404(UserInvite, pk=pk, opportunity=opportunity)
+    invite.delete()
+    return HttpResponse(status=200, headers={"HX-Trigger": "userStatusReload"})
+
+
+@org_admin_required
+@require_POST
+def resend_user_invite(request, org_slug, opp_id, pk):
+    user_invite = get_object_or_404(UserInvite, id=pk)
+
+    if user_invite.notification_date and (now() - user_invite.notification_date) < datetime.timedelta(days=1):
+        return HttpResponse("You can only send one invitation per user every 24 hours. Please try again later.")
+
+    if user_invite.status == UserInviteStatus.not_found:
+        found_user_list = fetch_users([user_invite.phone_number])
+        if not found_user_list:
+            return HttpResponse("The user is not registered on Connect ID yet. Please ask them to sign up first.")
+
+        connect_user = found_user_list[0]
+        update_user_and_send_invite(connect_user, opp_id=pk)
+    else:
+        user = User.objects.get(phone_number=user_invite.phone_number)
+        access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity_id=opp_id)
+        invite_user.delay(user.id, access.pk)
+
+    return HttpResponse("The invitation has been successfully resent to the user.")

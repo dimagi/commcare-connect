@@ -10,6 +10,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     DeliveryType,
     FormJsonValidationRules,
+    HQApiKey,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -26,11 +27,11 @@ from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_
 
 
 admin.site.register(CommCareApp)
-admin.site.register(PaymentUnit)
 admin.site.register(UserInvite)
 admin.site.register(DeliveryType)
 admin.site.register(DeliverUnitFlagRules)
 admin.site.register(FormJsonValidationRules)
+admin.site.register(HQApiKey)
 
 
 @admin.register(Opportunity)
@@ -103,6 +104,7 @@ class CompletedModuleAdmin(admin.ModelAdmin):
 @admin.register(UserVisit)
 class UserVisitAdmin(admin.ModelAdmin):
     list_display = ["deliver_unit", "user", "opportunity", "status"]
+    search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
 
 
 @admin.register(Assessment)
@@ -113,6 +115,7 @@ class AssessmentAdmin(admin.ModelAdmin):
 @admin.register(CompletedWork)
 class CompletedWorkAdmin(admin.ModelAdmin):
     list_display = ["get_username", "get_opp_name", "opportunity_access", "payment_unit", "status"]
+    search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
 
     @admin.display(description="Opportunity Name")
     def get_opp_name(self, obj):
@@ -121,3 +124,13 @@ class CompletedWorkAdmin(admin.ModelAdmin):
     @admin.display(description="Username")
     def get_username(self, obj):
         return obj.opportunity_access.user.username
+
+
+@admin.register(PaymentUnit)
+class PaymentUnitAdmin(admin.ModelAdmin):
+    list_display = ["name", "get_opp_name"]
+    search_fields = ["name", "opportunity__name"]
+
+    @admin.display(description="Opportunity Name")
+    def get_opp_name(self, obj):
+        return obj.opportunity.name
