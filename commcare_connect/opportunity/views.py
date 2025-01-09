@@ -1236,7 +1236,9 @@ def invoice_approve(request, org_slug, pk):
 @csrf_exempt
 def user_invite_delete(request, org_slug, opp_id, pk):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
-    invite = get_object_or_404(UserInvite, pk=pk, opportunity=opportunity, status=UserInviteStatus.not_found)
+    invite = get_object_or_404(UserInvite, pk=pk, opportunity=opportunity)
+    if invite.status != UserInviteStatus.not_found:
+        return HttpResponse(status=403, data="User Invite cannot be deleted.")
     invite.delete()
     return HttpResponse(status=200, headers={"HX-Trigger": "userStatusReload"})
 
