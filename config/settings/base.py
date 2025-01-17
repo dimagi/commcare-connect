@@ -125,6 +125,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
+    "commcare_connect.utils.middleware.SentryContextMiddleware",
 ]
 
 # STATIC

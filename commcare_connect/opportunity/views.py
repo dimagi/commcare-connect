@@ -105,6 +105,7 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_completed_work_status,
     bulk_update_payment_status,
     bulk_update_visit_status,
+    get_exchange_rate,
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
@@ -1223,10 +1224,13 @@ def invoice_approve(request, org_slug, pk):
         return redirect("opportunity:detail", org_slug, pk)
     invoice_ids = request.POST.getlist("pk")
     invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)
+    rate = get_exchange_rate(opportunity.currency)
     for invoice in invoices:
+        amount_in_usd = invoice.amount / rate
         payment = Payment(
             amount=invoice.amount,
             organization=opportunity.organization,
+            amount_usd=amount_in_usd,
             invoice=invoice,
         )
         payment.save()
@@ -1239,6 +1243,8 @@ def invoice_approve(request, org_slug, pk):
 def user_invite_delete(request, org_slug, opp_id, pk):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     invite = get_object_or_404(UserInvite, pk=pk, opportunity=opportunity)
+    if invite.status != UserInviteStatus.not_found:
+        return HttpResponse(status=403, data="User Invite cannot be deleted.")
     invite.delete()
     return HttpResponse(status=200, headers={"HX-Trigger": "userStatusReload"})
 

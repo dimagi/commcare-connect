@@ -454,6 +454,7 @@ class CompletedWork(models.Model):
     reason = models.CharField(max_length=300, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
     payment_date = models.DateTimeField(null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ("opportunity_access", "entity_id", "payment_unit")
@@ -576,6 +577,7 @@ class UserVisit(XFormBaseModel):
     )
     review_created_on = models.DateTimeField(blank=True, null=True)
     justification = models.CharField(max_length=300, null=True, blank=True)
+    date_created = models.DateTimeField(auto_now_add=True)
 
     def __init__(self, *args, **kwargs):
         self.status = VisitValidationStatus.pending
@@ -591,6 +593,13 @@ class UserVisit(XFormBaseModel):
     @property
     def images(self):
         return BlobMeta.objects.filter(parent_id=self.xform_id, content_type__startswith="image/")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["xform_id", "entity_id", "deliver_unit"], name="unique_xform_entity_deliver_unit"
+            )
+        ]
 
 
 class OpportunityClaim(models.Model):
@@ -709,3 +718,15 @@ class CatchmentArea(models.Model):
 
     class Meta:
         unique_together = ("site_code", "opportunity")
+
+
+class ExchangeRate(models.Model):
+    currency_code = models.CharField(max_length=3)
+    rate = models.DecimalField(max_digits=10, decimal_places=6)
+    rate_date = models.DateField()
+    fetched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["currency_code", "rate_date"], name="unique_currency_code_date")
+        ]

@@ -1,6 +1,7 @@
 import datetime
 import random
 from copy import deepcopy
+from http import HTTPStatus
 from uuid import uuid4
 
 import pytest
@@ -615,3 +616,16 @@ def make_request(api_client, form_json, user, expected_status_code=200):
     add_credentials(api_client, user)
     response = api_client.post("/api/receiver/", data=form_json, format="json")
     assert response.status_code == expected_status_code, response.data
+
+
+@pytest.mark.django_db
+def test_receiver_same_visit_twice(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    payment_units = opportunity.paymentunit_set.all()
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    form_json2 = deepcopy(form_json1)
+    make_request(api_client, form_json1, mobile_user_with_connect_link)
+    make_request(api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK)
+    user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
+    assert user_visits.count() == 1
