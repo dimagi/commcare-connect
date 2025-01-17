@@ -126,6 +126,12 @@ class CompletedWorkAdmin(admin.ModelAdmin):
         return obj.opportunity_access.user.username
 
 
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ["amount", "date_paid", "opportunity_access", "payment_unit", "confirmed"]
+    search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
+
+
 @admin.register(PaymentUnit)
 class PaymentUnitAdmin(admin.ModelAdmin):
     list_display = ["name", "get_opp_name"]
