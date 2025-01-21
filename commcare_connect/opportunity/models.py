@@ -518,7 +518,11 @@ class CompletedWork(models.Model):
         )
         optional_deliver_units = list(du["id"] for du in filter(lambda du: du.get("optional", False), deliver_units))
         # NOTE: The min unit count is the completed required deliver units for an entity_id
-        number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
+        if required_deliver_units:
+            number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
+        else:
+            # this is an unexpected case, but can show up in old/test data
+            number_completed = 0
         if optional_deliver_units:
             # The sum calculates the number of optional deliver units completed and to process
             # duplicates with extra optional deliver units
