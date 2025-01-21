@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db.models import (
     Avg,
     Case,
@@ -12,7 +14,7 @@ from django.db.models import (
     Value,
     When,
 )
-from django.db.models.functions import Cast, Round
+from django.db.models.functions import Cast, Coalesce, Round
 
 from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
 from commcare_connect.program.models import ManagedOpportunity, Program
@@ -50,7 +52,7 @@ def get_annotated_managed_opportunity(program: Program):
         .annotate(
             workers_invited=Count("opportunityaccess", distinct=True),
             workers_passing_assessment=Count(
-                "opportunityaccess__assessment",
+                "opportunityaccess",
                 filter=Q(
                     opportunityaccess__assessment__passed=True,
                 ),
@@ -62,12 +64,17 @@ def get_annotated_managed_opportunity(program: Program):
                 distinct=True,
             ),
             percentage_conversion=calculate_safe_percentage("workers_starting_delivery", "workers_invited"),
-            average_time_to_convert=Avg(
-                ExpressionWrapper(
-                    Subquery(earliest_visits) - F("opportunityaccess__invited_date"), output_field=DurationField()
+            average_time_to_convert=Coalesce(
+                Avg(
+                    ExpressionWrapper(
+                        earliest_visits - F("opportunityaccess__invited_date"),
+                        output_field=DurationField(),
+                    ),
+                    filter=FILTER_FOR_VALID_VISIT_DATE
+                    & Q(opportunityaccess__invited_date__lte=Subquery(earliest_visits)),
+                    distinct=True,
                 ),
-                filter=FILTER_FOR_VALID_VISIT_DATE,
-                distinct=True,
+                Value(timedelta(seconds=0)),
             ),
         )
     )
@@ -111,7 +118,7 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
                 distinct=True,
                 filter=date_filter & Q(opportunityaccess__uservisit__completed_work__isnull=False),
             ),
-            deliveries_per_day_per_worker=Case(
+            deliveries_per_worker=Case(
                 When(active_workers=0, then=Value(0)),
                 default=Round(F("total_payment_since_start_date") / F("active_workers"), 2),
                 output_field=FloatField(),

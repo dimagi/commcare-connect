@@ -255,6 +255,15 @@ class OpportunityAccess(models.Model):
         indexes = [models.Index(fields=["invite_id"])]
         unique_together = ("user", "opportunity")
 
+    @cached_property
+    def managed_opportunity(self):
+        from commcare_connect.program.models import ManagedOpportunity
+
+        if self.opportunity.managed:
+            return ManagedOpportunity.objects.get(id=self.opportunity.id)
+
+        return None
+
     # TODO: Convert to a field and calculate this property CompletedModule is saved
     @property
     def learn_progress(self):
@@ -456,6 +465,22 @@ class CompletedWork(models.Model):
     reason = models.CharField(max_length=300, null=True, blank=True)
     status_modified_date = models.DateTimeField(null=True)
     payment_date = models.DateTimeField(null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    # these fields are the stored/cached versions of the completed_count and approved_count
+    # and the associated calculations needed to do reporting on payments.
+    # it is expected that they are updated every time the completed_count or approved_count is updated,
+    # but should not be used for real-time display of that information until confirmed to be working.
+    saved_completed_count = models.IntegerField(default=0)
+    saved_approved_count = models.IntegerField(default=0)
+    saved_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the FLW.")
+    saved_payment_accrued_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
+    )
+    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the organization")
+    saved_org_payment_accrued_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
+    )
 
     class Meta:
         unique_together = ("opportunity_access", "entity_id", "payment_unit")
@@ -578,6 +603,7 @@ class UserVisit(XFormBaseModel):
     )
     review_created_on = models.DateTimeField(blank=True, null=True)
     justification = models.CharField(max_length=300, null=True, blank=True)
+    date_created = models.DateTimeField(auto_now_add=True)
 
     def __init__(self, *args, **kwargs):
         self.status = VisitValidationStatus.pending
@@ -593,6 +619,13 @@ class UserVisit(XFormBaseModel):
     @property
     def images(self):
         return BlobMeta.objects.filter(parent_id=self.xform_id, content_type__startswith="image/")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["xform_id", "entity_id", "deliver_unit"], name="unique_xform_entity_deliver_unit"
+            )
+        ]
 
 
 class OpportunityClaim(models.Model):
@@ -711,3 +744,15 @@ class CatchmentArea(models.Model):
 
     class Meta:
         unique_together = ("site_code", "opportunity")
+
+
+class ExchangeRate(models.Model):
+    currency_code = models.CharField(max_length=3)
+    rate = models.DecimalField(max_digits=10, decimal_places=6)
+    rate_date = models.DateField()
+    fetched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["currency_code", "rate_date"], name="unique_currency_code_date")
+        ]

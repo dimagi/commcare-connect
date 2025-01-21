@@ -69,7 +69,7 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
                 66.67,
                 timedelta(days=1),
             ),
-            ("empty_scenario", [], [], 0, 0, 0, 0.0, None),
+            ("empty_scenario", [], [], 0, 0, 0, 0.0, timedelta(days=0)),
             ("multiple_visits_scenario", [VisitValidationStatus.pending], [True], 1, 1, 1, 100.0, timedelta(days=1)),
             (
                 "excluded_statuses",
@@ -79,7 +79,7 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
                 2,
                 0,
                 0.0,
-                None,
+                timedelta(days=0),
             ),
             (
                 "failed_assessments",
@@ -121,16 +121,14 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
         opps = get_annotated_managed_opportunity(self.program)
         assert len(opps) == 1
         annotated_opp = opps[0]
+        print(scenario, annotated_opp.average_time_to_convert, expected_avg_time_to_convert)
         assert annotated_opp.workers_invited == expected_invited
         assert annotated_opp.workers_passing_assessment == expected_passing
         assert annotated_opp.workers_starting_delivery == expected_delivery
         assert pytest.approx(annotated_opp.percentage_conversion, 0.01) == expected_conversion
 
-        if expected_avg_time_to_convert:
-            diff = abs(annotated_opp.average_time_to_convert - expected_avg_time_to_convert)
-            assert diff < timedelta(minutes=1)
-        else:
-            assert annotated_opp.average_time_to_convert is None
+        diff = abs(annotated_opp.average_time_to_convert - expected_avg_time_to_convert)
+        assert diff < timedelta(minutes=1)
 
 
 @pytest.mark.django_db
@@ -141,7 +139,7 @@ class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
     @pytest.mark.parametrize(
         "scenario, visit_statuses, visit_date, flagged_statuses, expected_active_workers, "
         "expected_total_workers, expected_records_flagged_percentage,"
-        "total_payment_units_with_flags,total_payment_since_start_date, delivery_per_day_per_worker",
+        "total_payment_units_with_flags,total_payment_since_start_date, deliveries_per_worker",
         [
             (
                 "basic_scenario",
@@ -226,7 +224,7 @@ class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
         expected_records_flagged_percentage,
         total_payment_units_with_flags,
         total_payment_since_start_date,
-        delivery_per_day_per_worker,
+        deliveries_per_worker,
     ):
         for i, visit_status in enumerate(visit_statuses):
             self.create_user_with_visit(
@@ -246,4 +244,39 @@ class TestDeliveryPerformanceReport(BaseManagedOpportunityTest):
         assert opps[0].records_flagged_percentage == expected_records_flagged_percentage
         assert opps[0].total_payment_units_with_flags == total_payment_units_with_flags
         assert opps[0].total_payment_since_start_date == total_payment_since_start_date
-        assert opps[0].deliveries_per_day_per_worker == delivery_per_day_per_worker
+        assert opps[0].deliveries_per_worker == deliveries_per_worker
+
+
+@pytest.mark.django_db
+def test_average_time_to_convert_for_negative_values():
+    program = ProgramFactory.create()
+    nm_org = OrganizationFactory.create()
+    opp = ManagedOpportunityFactory.create(program=program, organization=nm_org)
+    today = now()
+
+    valid_durations = []
+
+    for r in range(4):
+        user = UserFactory.create()
+        access = OpportunityAccessFactory.create(opportunity=opp, user=user, invited_date=now())
+        AssessmentFactory.create(opportunity=opp, user=user, opportunity_access=access, passed=True)
+
+        if r % 2 == 0:
+            visit_date = today - timedelta(days=1)
+        else:
+            visit_date = today + timedelta(days=4)
+            duration = visit_date - access.invited_date  # Positive duration
+            valid_durations.append(duration)  # Only count valid (positive) durations
+
+        UserVisitFactory.create(
+            user=user,
+            opportunity=opp,
+            opportunity_access=access,
+            visit_date=visit_date,
+            status=VisitValidationStatus.approved,
+        )
+
+    opp = get_annotated_managed_opportunity(program)[0]
+
+    expected_avg = sum(valid_durations, timedelta()) / len(valid_durations)
+    assert opp.average_time_to_convert == expected_avg

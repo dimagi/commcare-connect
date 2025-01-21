@@ -37,7 +37,7 @@ def _increment(quarter):
     return (year, q)
 
 
-def _get_quarters_since_start():
+def get_quarters_since_start():
     today = date.today()
     current_quarter = (today.year, (today.month - 1) // 3 + 1)
     quarters = []
@@ -48,8 +48,8 @@ def _get_quarters_since_start():
     return quarters
 
 
-@quickcache(["quarter", "delivery_type", "group_by_delivery_type"], timeout=12 * 60 * 60)
-def _get_table_data_for_quarter(quarter, delivery_type, group_by_delivery_type=False):
+@quickcache(["quarter", "delivery_type", "group_by_delivery_type"], timeout=23 * 60 * 60)
+def get_table_data_for_quarter(quarter, delivery_type, group_by_delivery_type=False):
     if delivery_type:
         delivery_type_filter = Q(opportunity_access__opportunity__delivery_type__slug=delivery_type)
     else:
@@ -395,7 +395,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
         group_by_delivery_type = self.filter_values["by_delivery_type"]
 
         if not year:
-            quarters = _get_quarters_since_start()
+            quarters = get_quarters_since_start()
         elif year:
             if quarter:
                 quarters = [(year, int(quarter))]
@@ -403,7 +403,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
                 quarters = [(year, q) for q in range(1, 5)]
 
         for q in quarters:
-            data = _get_table_data_for_quarter(q, delivery_type, group_by_delivery_type)
+            data = get_table_data_for_quarter(q, delivery_type, group_by_delivery_type)
             table_data += data
         return table_data
 

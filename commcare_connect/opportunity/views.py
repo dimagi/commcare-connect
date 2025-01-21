@@ -105,6 +105,7 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_completed_work_status,
     bulk_update_payment_status,
     bulk_update_visit_status,
+    get_exchange_rate,
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
@@ -1221,10 +1222,13 @@ def invoice_approve(request, org_slug, pk):
         return redirect("opportunity:detail", org_slug, pk)
     invoice_ids = request.POST.getlist("pk")
     invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)
+    rate = get_exchange_rate(opportunity.currency)
     for invoice in invoices:
+        amount_in_usd = invoice.amount / rate
         payment = Payment(
             amount=invoice.amount,
             organization=opportunity.organization,
+            amount_usd=amount_in_usd,
             invoice=invoice,
         )
         payment.save()

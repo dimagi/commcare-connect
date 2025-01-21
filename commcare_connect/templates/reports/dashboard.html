@@ -161,7 +161,7 @@
 </script>
 <script type="module">
   let map;
-  const minClusterSize = 5;
+  const minClusterSize = 30;
   const mapLoading = document.getElementById('map-loading');
 
   window.refreshMapData = async () => {
@@ -223,7 +223,7 @@
         type: 'geojson',
         data: `{% url "reports:visit_map_data" %}?${queryString}`,
         cluster: true,
-        clusterMaxZoom: 14,
+        clusterMaxZoom: 12,
         clusterRadius: 40,
         clusterMinPoints: minClusterSize,
         clusterProperties: {

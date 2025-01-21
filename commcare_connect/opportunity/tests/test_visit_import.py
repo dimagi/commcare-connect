@@ -31,6 +31,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.tests.helpers import validate_saved_fields
 from commcare_connect.opportunity.utils.completed_work import update_work_payment_date
 from commcare_connect.opportunity.visit_import import (
     ImportException,
@@ -140,6 +141,7 @@ def test_payment_accrued(opportunity: Opportunity):
     for access in access_objects:
         access.refresh_from_db()
         assert access.payment_accrued == sum(payment_unit.amount for payment_unit in payment_units)
+        _validate_saved_fields(access)
 
 
 @pytest.mark.django_db
@@ -167,6 +169,7 @@ def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
     update_payment_accrued(opportunity, {mobile_user.id})
     access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 2
+    _validate_saved_fields(access)
 
 
 @pytest.mark.django_db
@@ -203,6 +206,7 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
     for access in access_objects:
         access.refresh_from_db()
         assert access.payment_accrued == sum(payment_unit.amount for payment_unit in payment_units)
+        _validate_saved_fields(access)
 
 
 @pytest.mark.django_db
@@ -247,6 +251,7 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
     update_payment_accrued(opportunity, {mobile_user.id})
     access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 2
+    _validate_saved_fields(access)
 
 
 @pytest.mark.parametrize(
@@ -602,3 +607,9 @@ def test_review_completed_work_status(
             payment_accrued += cw.payment_accrued
     access.refresh_from_db()
     assert access.payment_accrued == payment_accrued
+    _validate_saved_fields(access)
+
+
+def _validate_saved_fields(opportunity_access: OpportunityAccess):
+    for completed_work in opportunity_access.completedwork_set.all():
+        validate_saved_fields(completed_work)

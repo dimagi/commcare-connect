@@ -1,5 +1,6 @@
 import datetime
 from copy import deepcopy
+from http import HTTPStatus
 from uuid import uuid4
 
 import pytest
@@ -38,6 +39,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     PaymentUnitFactory,
 )
+from commcare_connect.opportunity.tests.helpers import validate_saved_fields
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 
@@ -299,6 +301,7 @@ def test_auto_approve_payments_flagged_visit(
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.pending
     assert access.payment_accrued == 0
+    validate_saved_fields(completed_work)
 
 
 def test_auto_approve_payments_unflagged_visit(
@@ -320,6 +323,7 @@ def test_auto_approve_payments_unflagged_visit(
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.pending
     assert access.payment_accrued == 0
+    validate_saved_fields(completed_work)
 
 
 def test_auto_approve_payments_approved_visit(
@@ -341,6 +345,7 @@ def test_auto_approve_payments_approved_visit(
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.approved
     assert access.payment_accrued == completed_work.payment_accrued
+    validate_saved_fields(completed_work)
 
 
 @pytest.mark.parametrize(
@@ -371,6 +376,7 @@ def test_auto_approve_payments_rejected_visit_functions(
     for reason in rejected_reason:
         assert reason in completed_work.reason
     assert access.payment_accrued == completed_work.payment_accrued
+    validate_saved_fields(completed_work)
 
 
 def test_auto_approve_payments_approved_visit_task(
@@ -392,6 +398,7 @@ def test_auto_approve_payments_approved_visit_task(
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.approved
     assert access.payment_accrued == completed_work.payment_accrued
+    validate_saved_fields(completed_work)
 
 
 def test_auto_approve_visits_and_payments(
@@ -412,6 +419,7 @@ def test_auto_approve_visits_and_payments(
     completed_work = CompletedWork.objects.get(opportunity_access=access)
     assert completed_work.status == CompletedWorkStatus.approved
     assert access.payment_accrued == completed_work.payment_accrued
+    validate_saved_fields(completed_work)
 
 
 @pytest.mark.parametrize(
@@ -612,3 +620,16 @@ def make_request(api_client, form_json, user, expected_status_code=200):
     add_credentials(api_client, user)
     response = api_client.post("/api/receiver/", data=form_json, format="json")
     assert response.status_code == expected_status_code, response.data
+
+
+@pytest.mark.django_db
+def test_receiver_same_visit_twice(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    payment_units = opportunity.paymentunit_set.all()
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    form_json2 = deepcopy(form_json1)
+    make_request(api_client, form_json1, mobile_user_with_connect_link)
+    make_request(api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK)
+    user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
+    assert user_visits.count() == 1

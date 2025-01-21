@@ -3,9 +3,34 @@ from uuid import uuid4
 
 import pytest
 from django.core.management import call_command
+from django.db import connection
 
 from commcare_connect.opportunity.models import UserVisit
 from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, UserVisitFactory
+
+
+@pytest.fixture(scope="module")
+def remove_unique_constraint_module(django_db_setup, django_db_blocker):
+    """
+    Remove unique constraint at module level and restore after all tests are complete.
+    Uses module scope to handle all parameterized tests at once.
+    """
+    with django_db_blocker.unblock():
+        with connection.schema_editor() as schema_editor:
+            schema_editor.execute(
+                "ALTER TABLE opportunity_uservisit DROP CONSTRAINT IF EXISTS unique_xform_entity_deliver_unit;"
+            )
+
+        yield
+
+        # Restore constraint after all tests are complete
+        with connection.schema_editor() as schema_editor:
+            schema_editor.execute(
+                """
+                ALTER TABLE opportunity_uservisit ADD CONSTRAINT unique_xform_entity_deliver_unit
+                UNIQUE (xform_id, entity_id, deliver_unit_id);
+                """
+            )
 
 
 @pytest.fixture
@@ -23,7 +48,8 @@ def setup_opportunity_with_duplicates(db):
     return _setup
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.usefixtures("remove_unique_constraint_module")
 @pytest.mark.parametrize(
     "num_duplicates,expected_remaining,dry_run",
     [
