@@ -253,6 +253,15 @@ class OpportunityAccess(models.Model):
         indexes = [models.Index(fields=["invite_id"])]
         unique_together = ("user", "opportunity")
 
+    @cached_property
+    def managed_opportunity(self):
+        from commcare_connect.program.models import ManagedOpportunity
+
+        if self.opportunity.managed:
+            return ManagedOpportunity.objects.get(id=self.opportunity.id)
+
+        return None
+
     # TODO: Convert to a field and calculate this property CompletedModule is saved
     @property
     def learn_progress(self):
@@ -456,6 +465,21 @@ class CompletedWork(models.Model):
     payment_date = models.DateTimeField(null=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
+    # these fields are the stored/cached versions of the completed_count and approved_count
+    # and the associated calculations needed to do reporting on payments.
+    # it is expected that they are updated every time the completed_count or approved_count is updated,
+    # but should not be used for real-time display of that information until confirmed to be working.
+    saved_completed_count = models.IntegerField(default=0)
+    saved_approved_count = models.IntegerField(default=0)
+    saved_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the FLW.")
+    saved_payment_accrued_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
+    )
+    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the organization")
+    saved_org_payment_accrued_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
+    )
+
     class Meta:
         unique_together = ("opportunity_access", "entity_id", "payment_unit")
 
@@ -492,7 +516,11 @@ class CompletedWork(models.Model):
         )
         optional_deliver_units = list(du["id"] for du in filter(lambda du: du.get("optional", False), deliver_units))
         # NOTE: The min unit count is the completed required deliver units for an entity_id
-        number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
+        if required_deliver_units:
+            number_completed = min(unit_counts[deliver_id] for deliver_id in required_deliver_units)
+        else:
+            # this is an unexpected case, but can show up in old/test data
+            number_completed = 0
         if optional_deliver_units:
             # The sum calculates the number of optional deliver units completed and to process
             # duplicates with extra optional deliver units

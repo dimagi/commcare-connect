@@ -333,7 +333,7 @@ def bulk_approve_completed_work():
         completed_works = access.completedwork_set.exclude(
             status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
         )
-        update_status(completed_works, access, True)
+        update_status(completed_works, access, compute_payment=True)
 
 
 @celery_app.task()

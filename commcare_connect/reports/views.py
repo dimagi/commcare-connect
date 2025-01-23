@@ -37,7 +37,7 @@ def _increment(quarter):
     return (year, q)
 
 
-def _get_quarters_since_start():
+def get_quarters_since_start():
     today = date.today()
     current_quarter = (today.year, (today.month - 1) // 3 + 1)
     quarters = []
@@ -48,8 +48,8 @@ def _get_quarters_since_start():
     return quarters
 
 
-@quickcache(["quarter", "delivery_type", "group_by_delivery_type"], timeout=12 * 60 * 60)
-def _get_table_data_for_quarter(quarter, delivery_type, group_by_delivery_type=False):
+@quickcache(["quarter", "delivery_type", "group_by_delivery_type"], timeout=23 * 60 * 60)
+def get_table_data_for_quarter(quarter, delivery_type, group_by_delivery_type=False):
     if delivery_type:
         delivery_type_filter = Q(opportunity_access__opportunity__delivery_type__slug=delivery_type)
     else:
@@ -240,9 +240,7 @@ def program_dashboard_report(request):
 def visit_map_data(request):
     filterset = DashboardFilters(request.GET)
 
-    # Use the filtered queryset to calculate stats
-
-    queryset = UserVisit.objects.all()
+    queryset = UserVisit.objects.filter(opportunity__is_test=False)
     if filterset.is_valid():
         queryset = filterset.filter_queryset(queryset)
 
@@ -382,7 +380,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
         group_by_delivery_type = self.filter_values["by_delivery_type"]
 
         if not year:
-            quarters = _get_quarters_since_start()
+            quarters = get_quarters_since_start()
         elif year:
             if quarter:
                 quarters = [(year, int(quarter))]
@@ -390,7 +388,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
                 quarters = [(year, q) for q in range(1, 5)]
 
         for q in quarters:
-            data = _get_table_data_for_quarter(q, delivery_type, group_by_delivery_type)
+            data = get_table_data_for_quarter(q, delivery_type, group_by_delivery_type)
             table_data += data
         return table_data
 
@@ -401,15 +399,57 @@ def dashboard_stats_api(request):
     filterset = DashboardFilters(request.GET)
 
     # Use the filtered queryset to calculate stats
-    queryset = UserVisit.objects.all()
+    visit_queryset = UserVisit.objects.filter(opportunity__is_test=False)
+    flw_payment_queryset = Payment.objects.filter(opportunity_access__opportunity__is_test=False)
+    org_payment_queryset = Payment.objects.filter(invoice__opportunity__is_test=False)
+    completed_work_queryset = CompletedWork.objects.filter(opportunity_access__opportunity__is_test=False)
     if filterset.is_valid():
-        queryset = filterset.filter_queryset(queryset)
+        visit_queryset = filterset.filter_queryset(visit_queryset)
+        raw_filters = filterset.form.cleaned_data
+        program = raw_filters.get("program")
+        organization = raw_filters.get("organization")
+        from_date = raw_filters.get("from_date")
+        to_date = raw_filters.get("to_date")
+
+        if program:
+            flw_payment_queryset = flw_payment_queryset.filter(opportunity_access__opportunity__delivery_type=program)
+            org_payment_queryset = org_payment_queryset.filter(invoice__opportunity__delivery_type=program)
+            completed_work_queryset = completed_work_queryset.filter(
+                opportunity_access__opportunity__delivery_type=program
+            )
+        if organization:
+            flw_payment_queryset = flw_payment_queryset.filter(
+                opportunity_access__opportunity__organization=organization
+            )
+            org_payment_queryset = org_payment_queryset.filter(invoice__opportunity__organization=organization)
+            completed_work_queryset = completed_work_queryset.filter(
+                opportunity_access__opportunity__organization=organization
+            )
+        if from_date:
+            flw_payment_queryset = flw_payment_queryset.filter(date_paid__gt=from_date)
+            org_payment_queryset = org_payment_queryset.filter(date_paid__gt=from_date)
+            # todo: is this the right date to use here?
+            completed_work_queryset = completed_work_queryset.filter(status_modified_date__gt=from_date)
+        if to_date:
+            flw_payment_queryset = flw_payment_queryset.filter(date_paid__lte=to_date)
+            org_payment_queryset = org_payment_queryset.filter(date_paid__lte=to_date)
+            completed_work_queryset = completed_work_queryset.filter(status_modified_date__lte=to_date)
 
     # Example stats calculation (adjust based on your needs)
-    active_users = queryset.values("opportunity_access__user").distinct().count()
-    total_visits = queryset.count()
-    verified_visits = queryset.filter(status=CompletedWorkStatus.approved).count()
+    active_users = visit_queryset.values("opportunity_access__user").distinct().count()
+    total_visits = visit_queryset.count()
+    verified_visits = visit_queryset.filter(status=CompletedWorkStatus.approved).count()
     percent_verified = round(float(verified_visits / total_visits) * 100, 1) if total_visits > 0 else 0
+
+    total_flw_earnings_usd = (
+        completed_work_queryset.aggregate(Sum("saved_payment_accrued_usd"))["saved_payment_accrued_usd__sum"] or 0
+    )
+    total_org_earnings_usd = (
+        completed_work_queryset.aggregate(Sum("saved_org_payment_accrued_usd"))["saved_org_payment_accrued_usd__sum"]
+        or 0
+    )
+    total_flw_payments_usd = flw_payment_queryset.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
+    total_org_payments_usd = org_payment_queryset.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
 
     return JsonResponse(
         {
@@ -417,6 +457,10 @@ def dashboard_stats_api(request):
             "active_users": active_users,
             "verified_visits": verified_visits,
             "percent_verified": f"{percent_verified:.1f}%",
+            "total_flw_earnings_usd": f"${total_flw_earnings_usd:.0f}",
+            "total_org_earnings_usd": f"${total_org_earnings_usd:.0f}",
+            "total_flw_payments_usd": f"${total_flw_payments_usd:.0f}",
+            "total_org_payments_usd": f"${total_org_payments_usd:.0f}",
         }
     )
 
@@ -425,7 +469,7 @@ def dashboard_stats_api(request):
 @user_passes_test(lambda u: u.is_superuser)
 def dashboard_charts_api(request):
     filterset = DashboardFilters(request.GET)
-    queryset = UserVisit.objects.all()
+    queryset = UserVisit.objects.filter(opportunity__is_test=False)
     # Use the filtered queryset if available, else use last 30 days
     if filterset.is_valid():
         queryset = filterset.filter_queryset(queryset)

@@ -13,7 +13,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.reports.views import _get_table_data_for_quarter, _results_to_geojson
+from commcare_connect.reports.views import _results_to_geojson, get_table_data_for_quarter
 
 
 @pytest.mark.django_db
@@ -46,19 +46,19 @@ def test_delivery_stats(opportunity: Opportunity):
     quarter = math.ceil(datetime.datetime.utcnow().month / 12 * 4)
 
     # delivery_type filter not applied
-    all_data = _get_table_data_for_quarter((datetime.datetime.utcnow().year, quarter), None)
+    all_data = get_table_data_for_quarter((datetime.datetime.utcnow().year, quarter), None)
     assert all_data[0]["users"] == 5
     assert all_data[0]["services"] == 10
     assert all_data[0]["beneficiaries"] == 10
 
     # test delivery_type filter
-    filtered_data = _get_table_data_for_quarter(
+    filtered_data = get_table_data_for_quarter(
         (datetime.datetime.utcnow().year, quarter), opportunity.delivery_type.slug
     )
     assert filtered_data == all_data
 
     # unknown delivery-type should have no data
-    unknown_delivery_type_data = _get_table_data_for_quarter((datetime.datetime.utcnow().year, quarter), "unknown")
+    unknown_delivery_type_data = get_table_data_for_quarter((datetime.datetime.utcnow().year, quarter), "unknown")
     assert unknown_delivery_type_data[0]["users"] == 0
     assert unknown_delivery_type_data[0]["services"] == 0
     assert unknown_delivery_type_data[0]["beneficiaries"] == 0
