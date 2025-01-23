@@ -453,14 +453,14 @@ def dashboard_stats_api(request):
 
     return JsonResponse(
         {
-            "total_visits": total_visits,
-            "active_users": active_users,
-            "verified_visits": verified_visits,
+            "total_visits": f"{total_visits:,}",
+            "active_users": f"{active_users:,}",
+            "verified_visits": f"{verified_visits:,}",
             "percent_verified": f"{percent_verified:.1f}%",
-            "total_flw_earnings_usd": f"${total_flw_earnings_usd:.0f}",
-            "total_org_earnings_usd": f"${total_org_earnings_usd:.0f}",
-            "total_flw_payments_usd": f"${total_flw_payments_usd:.0f}",
-            "total_org_payments_usd": f"${total_org_payments_usd:.0f}",
+            "total_flw_earnings_usd": f"${'{:,.0f}'.format(total_flw_earnings_usd)}",
+            "total_org_earnings_usd": f"${'{:,.0f}'.format(total_org_earnings_usd)}",
+            "total_flw_payments_usd": f"${'{:,.0f}'.format(total_flw_payments_usd)}",
+            "total_org_payments_usd": f"${'{:,.0f}'.format(total_org_payments_usd)}",
         }
     )
 
