@@ -17,6 +17,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     UserInvite,
     UserVisit,
@@ -130,6 +131,12 @@ class CompletedWorkAdmin(admin.ModelAdmin):
 class PaymentAdmin(admin.ModelAdmin):
     list_display = ["amount", "date_paid", "opportunity_access", "payment_unit", "confirmed"]
     search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
+
+
+@admin.register(PaymentInvoice)
+class PaymentInvoiceAdmin(admin.ModelAdmin):
+    list_display = ["invoice_number", "opportunity", "amount", "date"]
+    search_fields = ["opportunity__name", "invoice_number"]
 
 
 @admin.register(PaymentUnit)
