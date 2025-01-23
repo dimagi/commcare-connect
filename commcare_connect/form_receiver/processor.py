@@ -88,24 +88,24 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
     :param opportunity: The opportunity the app belongs to.
     :param blocks: A list of learn module form blocks."""
     access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
+    completed_modules = []
     for module_data in blocks:
         module = get_or_create_learn_module(app, module_data)
-        completed_module, created = CompletedModule.objects.get_or_create(
+        completed_module = CompletedModule(
             user=user,
             module=module,
             opportunity=opportunity,
             opportunity_access=access,
-            defaults={
-                "xform_id": xform.id,
-                "date": xform.received_on,
-                "duration": xform.metadata.duration,
-                "app_build_id": xform.build_id,
-                "app_build_version": xform.metadata.app_build_version,
-            },
+            xform_id=xform.id,
+            date=xform.received_on,
+            duration=xform.metadata.duration,
+            app_build_id=xform.build_id,
+            app_build_version=xform.metadata.app_build_version,
         )
+        completed_modules.append(completed_module)
 
-        if not created:
-            raise ProcessingError("Learn Module is already completed")
+    if completed_modules:
+        CompletedModule.objects.bulk_create(completed_modules)
 
 
 def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):

@@ -333,6 +333,10 @@ class OpportunityAccess(models.Model):
             status = "Not completed"
         return status
 
+    @property
+    def unique_completed_modules(self):
+        return self.completedmodule_set.order_by("module", "date").distinct("module")
+
 
 class CompletedModule(XFormBaseModel):
     user = models.ForeignKey(

@@ -1,5 +1,6 @@
 import datetime
 from copy import deepcopy
+from datetime import timedelta
 from http import HTTPStatus
 from uuid import uuid4
 
@@ -87,6 +88,50 @@ def test_form_receiver_learn_module_create(
         name=module.name,
         description=module.description,
         time_estimate=module.time_estimate,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_form_receiver_multiple_module_submissions(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    module1 = LearnModuleJsonFactory()
+    module2 = LearnModuleJsonFactory()
+
+    form_json1 = _get_form_json(opportunity.learn_app, module1.id, module1.json)
+    form_json2 = _get_form_json(opportunity.learn_app, module2.id, module2.json)
+    current = now()
+
+    past_date = current - timedelta(days=5)
+    form_json1["received_on"] = past_date
+    form_json2["received_on"] = past_date
+
+    # First submissions for both modules
+    make_request(api_client, form_json1, mobile_user_with_connect_link)
+    make_request(api_client, form_json2, mobile_user_with_connect_link)
+
+    # Subsequent submissions
+    form_json1["received_on"] = current
+    form_json2["received_on"] = current + timedelta(days=2)
+    make_request(api_client, form_json1, mobile_user_with_connect_link)
+    make_request(api_client, form_json2, mobile_user_with_connect_link)
+
+    assert CompletedModule.objects.count() == 4
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user_with_connect_link)
+
+    unique_modules = access.unique_completed_modules
+    assert unique_modules.count() == 2
+
+    for cm in unique_modules:
+        assert cm.date == past_date
+
+    CompletedModule.objects.filter(
+        module__slug=module1.id,
+        date=current,
+    ).exists()
+    CompletedModule.objects.filter(
+        module__slug=module2.id,
+        date=current + timedelta(days=2),
     ).exists()
 
 
