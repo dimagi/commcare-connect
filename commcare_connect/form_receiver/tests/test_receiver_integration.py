@@ -1,4 +1,5 @@
 import datetime
+import random
 from copy import deepcopy
 from http import HTTPStatus
 from uuid import uuid4
@@ -179,6 +180,8 @@ def test_receiver_deliver_form_max_visits_reached(
     def submit_form_for_random_entity(form_json):
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
+        # generate random locations for form submissions
+        duplicate_json["metadata"]["location"] = " ".join([str(random.uniform(-90, 90)) for _ in range(4)])
         make_request(api_client, duplicate_json, mobile_user_with_connect_link)
 
     payment_units = opportunity.paymentunit_set.all()
@@ -193,7 +196,7 @@ def test_receiver_deliver_form_max_visits_reached(
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 5
     # First four are not over-limit
-    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
+    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
 

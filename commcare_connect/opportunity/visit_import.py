@@ -2,6 +2,7 @@ import codecs
 import json
 import textwrap
 import urllib
+from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -9,6 +10,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models import Count
 from django.utils.timezone import now
 from tablib import Dataset
 
@@ -64,6 +66,7 @@ class InvalidValueError(RowDataError):
 class VisitImportStatus:
     seen_visits: set[str]
     missing_visits: set[str]
+    over_limit_count: int = 0
 
     def __len__(self):
         return len(self.seen_visits)
@@ -72,6 +75,9 @@ class VisitImportStatus:
         joined = ", ".join(self.missing_visits)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
         return f"<br>{len(self.missing_visits)} visits were not found:<br>{'<br>'.join(missing)}"
+
+    def get_over_limit_count_message(self):
+        return f"{self.over_limit_count} visits are marked as approved and are over the daily total visits allowed."
 
 
 @dataclass
@@ -135,6 +141,19 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
     missing_visits = set()
     seen_visits = set()
     user_ids = set()
+    deliver_units = opportunity.deliver_app.deliver_units.all().select_related("payment_unit")
+    deliver_unit_limits = {d.id: (d.payment_unit.max_daily, d.payment_unit.max_total) for d in deliver_units}
+    counts = (
+        UserVisit.objects.filter(opportunity=opportunity, status=VisitValidationStatus.approved)
+        .values_list("user_id", "deliver_unit_id", "visit_date")
+        .annotate(count=Count("*"))
+    )
+    daily_approved_count = defaultdict(int)
+    total_approved_count = defaultdict(int)
+    for user_id, deliver_unit_id, visit_date, count in counts:
+        daily_approved_count[(user_id, deliver_unit_id, visit_date)] = count
+        total_approved_count[(user_id, deliver_unit_id)] += count
+    over_limit_count = 0
     with transaction.atomic():
         for visit_batch in batched(visit_ids, 100):
             to_update = []
@@ -146,9 +165,21 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 changed = False
                 if visit.status != status:
                     visit.status = status
-                    if opportunity.managed and status == VisitValidationStatus.approved:
-                        visit.review_created_on = now()
                     changed = True
+                    if status == VisitValidationStatus.approved:
+                        d_counts = deliver_unit_limits.get(visit.deliver_unit_id)
+                        if d_counts is not None:
+                            d_max_daily, d_max_total = d_counts
+                            key = (visit.user_id, visit.deliver_unit_id)
+                            daily_approved_count[(*key, visit.visit_date)] += 1
+                            total_approved_count[key] += 1
+                            if (
+                                daily_approved_count[(*key, visit.visit_date)] > d_max_daily
+                                or total_approved_count[key] > d_max_total
+                            ):
+                                over_limit_count += 1
+                        if opportunity.managed:
+                            visit.review_created_on = now()
                 if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
                     visit.reason = reason
                     changed = True
@@ -163,7 +194,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
             )
             missing_visits |= set(visit_batch) - seen_visits
     update_payment_accrued(opportunity, users=user_ids)
-    return VisitImportStatus(seen_visits, missing_visits)
+    return VisitImportStatus(seen_visits, missing_visits, over_limit_count)
 
 
 def update_payment_accrued(opportunity: Opportunity, users):
