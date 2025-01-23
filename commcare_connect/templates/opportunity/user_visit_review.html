@@ -18,6 +18,9 @@
 {% block content %}
 <h2 class="mb-2">User Visit Review</h2>
 <hr />
+<form method="get" x-data="" x-ref="reviewFilterForm">
+  {% crispy review_filter.form %}
+</form>
 {% if request.org_membership.is_admin and request.org.program_manager %}
 <form method="post"
       x-data="{
@@ -25,10 +28,12 @@
         selected: [],
         toggleSelectAll() {
           this.selectAll = !this.selectAll;
-          if(this.selectAll)
-            this.selected = JSON.parse(document.getElementById('user_visit_ids').textContent);
-          else
-            this.selected = [];
+          const checkboxes = document.querySelectorAll('input[name=pk]');
+          const allSelected = [];
+          checkboxes.forEach(el => {
+            allSelected.push(el.value);
+            this.selected = this.selectAll ? allSelected : [];
+          });
         }
       }"
 >
@@ -39,7 +44,6 @@
   <input type="submit" class="btn btn-primary" name="review_status" value="Agree">
   <input type="submit" class="btn btn-danger" name="review_status" value="Disagree">
 </form>
-{{ user_visit_ids|json_script:"user_visit_ids" }}
 {% else %}
 <div class="table-responsive">
   {% render_table table %}

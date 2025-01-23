@@ -16,5 +16,8 @@
 {% block content %}
   <h2 class="mb-2">User Visits for {{ user_name }}</h2>
   <hr/>
+  <form method="get" x-data="" x-ref="visitFilterForm">
+    {% crispy visit_filter.form %}
+  </form>
   {% render_table table %}
 {% endblock content %}
