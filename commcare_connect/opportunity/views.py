@@ -459,16 +459,43 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
         if form.is_valid():
             selected_users = form.cleaned_data["selected_users"]
             additional_visits = form.cleaned_data["additional_visits"]
-            if form.cleaned_data["end_date"]:
-                OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=form.cleaned_data["end_date"])
-            if additional_visits:
-                OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).update(
-                    max_visits=F("max_visits") + additional_visits
-                )
+            end_date = form.cleaned_data["end_date"]
 
-            for ocl in OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).all():
-                opportunity.total_budget += ocl.payment_unit.amount * additional_visits
-            opportunity.save()
+            if additional_visits:
+                claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
+                org_pay = opportunity.managedopportunity.org_pay_per_visit if opportunity.managed else 0
+
+                for ocl in claims.all():
+                    opportunity.total_budget += (ocl.payment_unit.amount + org_pay) * additional_visits
+
+                if opportunity.managed:
+                    managed_opp = opportunity.managedopportunity
+                    program = managed_opp.program
+                    total_budget_sum = (
+                        ManagedOpportunity.objects.filter(program=program)
+                        .exclude(id=managed_opp.id)
+                        .aggregate(total=Sum("total_budget"))["total"]
+                        or 0
+                    )
+                    if total_budget_sum + opportunity.total_budget > program.budget:
+                        form.add_error("additional_visits", "Additional visits exceed the program budget.")
+                        return render(
+                            request,
+                            "opportunity/add_visits_existing_users.html",
+                            {
+                                "form": form,
+                                "opportunity_claims": opportunity_claims,
+                                "budget_per_visit": opportunity.budget_per_visit_new,
+                                "opportunity": opportunity,
+                            },
+                        )
+
+                claims.update(max_visits=F("max_visits") + additional_visits)
+                opportunity.save()
+
+            if end_date:
+                OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=end_date)
+
             return redirect("opportunity:detail", org_slug, pk)
 
     return render(
