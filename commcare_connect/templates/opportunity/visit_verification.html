@@ -86,6 +86,16 @@
               </span>
             </td>
           </tr>
+          {% if visit.opportunity.managed %}
+          <tr>
+            <th scope="row">Review Status</th>
+            <td>
+              <span class="badge rounded-pill text-bg-{% if visit.review_status == "agree" %}success{% elif visit.status == "disagree" %}danger{% else %}warning{% endif %}">
+                {{ visit.get_review_status_display }}
+              </span>
+            </td>
+          </tr>
+          {% endif %}
           </tbody>
         </table>
       </div>

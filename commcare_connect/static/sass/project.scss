@@ -94,3 +94,24 @@ $red: #b94a48;
   width: 100%;
   height: 2px;
 }
+
+table.table thead th.orderable a {
+  text-decoration: none;
+  color: inherit;
+
+  &::after {
+    @extend .bi;
+    padding-left: 0.3em;
+    content: '\F145';
+    font-family: 'bootstrap-icons';
+    vertical-align: -0.125em;
+  }
+}
+
+table.table thead th.asc.orderable a::after {
+  content: '\F125';
+}
+
+table.table thead th.desc.orderable a::after {
+  content: '\F146';
+}
