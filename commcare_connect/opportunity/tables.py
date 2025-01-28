@@ -59,12 +59,13 @@ def show_warning(record):
 
 class UserVisitReviewFilter(FilterSet):
     review_status = ChoiceFilter(choices=VisitReviewStatus.choices, empty_label="All Reviews")
-    user = ModelChoiceFilter(queryset=User.objects.none(), empty_label="All Users")
+    user = ModelChoiceFilter(queryset=User.objects.none(), empty_label="All Users", to_field_name="username")
     visit_date = DateRangeFilter()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.filters["user"].queryset = User.objects.filter(id__in=self.queryset.values_list("user_id", flat=True))
+        self.filters["user"].field.label_from_instance = lambda obj: obj.name
 
         self.form.helper = FormHelper()
         self.form.helper.disable_csrf = True
