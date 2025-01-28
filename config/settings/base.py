@@ -33,6 +33,14 @@ DATABASES = {
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+SECONDARY_DB_ALIAS = "default"
+
+if env.db("SECONDARY_DATABASE_URL", default=""):
+    SECONDARY_DB_ALIAS = "secondary"
+    DATABASES[SECONDARY_DB_ALIAS] = env.db("SECONDARY_DATABASE_URL")
+    DATABASE_ROUTERS = ["config.db_router.SecondaryDatabaseRouter"]
+
+
 # URLS
 # ------------------------------------------------------------------------------
 ROOT_URLCONF = "config.urls"

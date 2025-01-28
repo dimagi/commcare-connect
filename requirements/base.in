@@ -13,6 +13,7 @@ tablib[xlsx]
 flatten-dict
 twilio
 geopy
+gevent
 
 # Django
 # ------------------------------------------------------------------------------

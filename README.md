@@ -167,3 +167,22 @@ Bootstrap v5 is installed using npm and customised by tweaking your variables in
 You can find a list of available variables [in the bootstrap source](https://github.com/twbs/bootstrap/blob/v5.1.3/scss/_variables.scss), or get explanations on them in the [Bootstrap docs](https://getbootstrap.com/docs/5.1/customize/sass/).
 
 Bootstrap's javascript as well as its dependencies are concatenated into a single file: `static/js/vendors.js`.
+
+### Setting up logical replication
+
+- Create another postgres database (in a seperate cluster)
+- Add `SECONDARY_DATABASE_URL` to the `.env` file
+- Enable replication on the default database (requires restart)
+  ```
+        - "wal_level=logical"
+        - "max_replication_slots=5"
+        - "max_wal_senders=5"
+  ```
+- Create table schemas in the secondary database
+  ```
+  ./manage.py migrate_multi
+  ```
+- Initialize replication
+  ```
+  ./manage.py setup_logical_replication
+  ```
