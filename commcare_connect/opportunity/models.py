@@ -81,7 +81,7 @@ class Opportunity(BaseModel):
     end_date = models.DateField(null=True)
     # to be removed
     budget_per_visit = models.IntegerField(null=True)
-    total_budget = models.IntegerField(null=True)
+    total_budget = models.PositiveBigIntegerField(null=True)
     # Whether users payment phone numbers are required or not
     payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
@@ -428,7 +428,7 @@ class PaymentInvoice(models.Model):
 class Payment(models.Model):
     amount = models.PositiveIntegerField()
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
-    date_paid = models.DateTimeField(auto_now_add=True)
+    date_paid = models.DateTimeField(default=datetime.datetime.utcnow)
     # This is used to indicate payments made to Opportunity Users
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.DO_NOTHING, null=True, blank=True)
     payment_unit = models.ForeignKey(
