@@ -144,7 +144,9 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
     seen_visits = set()
     user_ids = set()
     deliver_units = opportunity.deliver_app.deliver_units.all().select_related("payment_unit")
-    deliver_unit_limits = {d.id: (d.payment_unit.max_daily, d.payment_unit.max_total) for d in deliver_units}
+    deliver_unit_limits = {
+        d.id: (d.payment_unit.max_daily, d.payment_unit.max_total) for d in deliver_units if d.payment_unit is not None
+    }
     counts = (
         UserVisit.objects.filter(opportunity=opportunity, status=VisitValidationStatus.approved)
         .values_list("user_id", "deliver_unit_id", "visit_date")
