@@ -36,7 +36,7 @@ VISIT_ID_COL = "visit id"
 STATUS_COL = "status"
 USERNAME_COL = "username"
 AMOUNT_COL = "payment amount"
-DATE_PAID_COL = "paid date"
+PAYMENT_DATE_COL = "payment date (yyyy-mm-dd)"
 REASON_COL = "rejected reason"
 JUSTIFICATION_COL = "justification"
 WORK_ID_COL = "instance id"
@@ -272,7 +272,7 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
 
     username_col_index = _get_header_index(headers, USERNAME_COL)
     amount_col_index = _get_header_index(headers, AMOUNT_COL)
-    date_paid_col_index = _get_header_index(headers, DATE_PAID_COL)
+    payment_date_col_index = _get_header_index(headers, PAYMENT_DATE_COL)
     invalid_rows = []
     payments = {}
     exchange_rate = get_exchange_rate(opportunity.currency)
@@ -282,7 +282,7 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
         row = list(row)
         username = str(row[username_col_index])
         amount_raw = row[amount_col_index]
-        date_paid_raw = row[date_paid_col_index]
+        payment_date_raw = str(row[payment_date_col_index])
         if amount_raw:
             if not username:
                 invalid_rows.append((row, "username required"))
@@ -293,14 +293,18 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
             else:
                 payments[username] = {"amount": amount}
                 try:
-                    if date_paid_raw:
-                        date_paid = datetime.datetime.strptime(date_paid_raw, "%Y-%m-%d").date()
+                    if payment_date_raw:
+                        if isinstance(payment_date_raw, datetime.datetime):
+                            # Dataset autoparses valid datetime
+                            payment_date = payment_date_raw
+                        else:
+                            payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
                     else:
-                        date_paid = None
+                        payment_date = None
                 except ValueError:
-                    invalid_rows.append((row, "paid date must be in YYYY-MM-DD format"))
+                    invalid_rows.append((row, "Payment Date must be in YYYY-MM-DD format"))
                 else:
-                    payments[username]["date_paid"] = date_paid
+                    payments[username]["payment_date"] = payment_date
 
     if invalid_rows:
         raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
@@ -317,14 +321,14 @@ def _bulk_update_payments(opportunity: Opportunity, imported_data: Dataset) -> P
             for access in users:
                 username = access.user.username
                 amount = payments[username]["amount"]
-                date_paid = payments[username]["date_paid"]
+                payment_date = payments[username]["payment_date"]
                 payment_data = {
                     "opportunity_access": access,
                     "amount": amount,
                     "amount_usd": amount / exchange_rate,
                 }
-                if date_paid:
-                    payment_data["date_paid"] = date_paid
+                if payment_date:
+                    payment_data["date_paid"] = payment_date
                 payment = Payment.objects.create(**payment_data)
                 seen_users.add(username)
                 payment_ids.append(payment.pk)

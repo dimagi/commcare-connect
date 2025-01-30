@@ -103,10 +103,8 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
         "Username",
         "Phone Number",
         "Name",
-        "Payment Accrued",
-        "Payment Completed",
         "Payment Amount",
-        "Paid date",
+        "Payment Date (YYYY-MM-DD)",
     ]
     dataset = Dataset(title="Export", headers=headers)
 
@@ -121,8 +119,6 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
             access.user.username,
             access.user.phone_number,
             access.user.name,
-            access.payment_accrued,
-            access.total_payments or 0,
             "",
             "",
         )

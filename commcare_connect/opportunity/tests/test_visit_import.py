@@ -1,3 +1,4 @@
+import datetime
 import random
 import re
 from datetime import timedelta
@@ -299,12 +300,12 @@ def test_bulk_update_payments(opportunity: Opportunity):
             "Payment Accrued",
             "Payment Completed",
             "Payment Amount",
-            "Paid date",
+            "Payment Date (YYYY-MM-DD)",
         ]
     )
 
     payment_date = "2025-01-15"
-    for mobile_user in chain(mobile_user_seen, mobile_user_missing):
+    for index, mobile_user in enumerate(chain(mobile_user_seen, mobile_user_missing)):
         dataset.append(
             (
                 mobile_user.username,
@@ -313,7 +314,7 @@ def test_bulk_update_payments(opportunity: Opportunity):
                 100,  # Payment Accrued
                 0,  # Payment Completed
                 50,  # Payment Amount
-                payment_date,
+                payment_date if index != 4 else None,
             )
         )
 
@@ -324,10 +325,13 @@ def test_bulk_update_payments(opportunity: Opportunity):
 
     assert Payment.objects.filter(opportunity_access__opportunity=opportunity).count() == 5
 
-    for access in access_objects:
+    for index, access in enumerate(access_objects):
         payment = Payment.objects.get(opportunity_access=access)
         assert payment.amount == 50
-        assert payment.date_paid.strftime("%Y-%m-%d") == payment_date
+        if index == 4:
+            assert payment.date_paid.date() == datetime.date.today()
+        else:
+            assert payment.date_paid.strftime("%Y-%m-%d") == payment_date
 
 
 @pytest.fixture
