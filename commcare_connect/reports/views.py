@@ -301,18 +301,17 @@ class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 
 
 class DeliveryReportFilters(django_filters.FilterSet):
-    delivery_type = django_filters.ChoiceFilter(method="filter_by_ignore", label="Deliver Type")
-    year = django_filters.ChoiceFilter(method="filter_by_ignore", label="Year")
-    month = django_filters.ChoiceFilter(
-        choices=list(enumerate(calendar.month_name))[1:], label="month", method="filter_by_ignore"
+    delivery_type = django_filters.ChoiceFilter(
+        choices=DeliveryType.objects.values_list("slug", "name"), label="Delivery Type"
     )
-    by_delivery_type = django_filters.BooleanFilter(
-        widget=forms.CheckboxInput(), label="Break up by delivery type", method="filter_by_ignore"
+    year = django_filters.ChoiceFilter(
+        choices=[(year, str(year)) for year in range(2023, datetime.now().year + 1)], label="Year"
     )
+    month = django_filters.ChoiceFilter(choices=list(enumerate(calendar.month_name))[1:], label="month")
+    by_delivery_type = django_filters.BooleanFilter(widget=forms.CheckboxInput(), label="Break up by delivery type")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.form.helper = FormHelper()
         self.form.helper.form_class = "form-inline"
         self.form.helper.layout = Layout(
@@ -323,16 +322,6 @@ class DeliveryReportFilters(django_filters.FilterSet):
                 Column("month", css_class="col-md-6"),
             ),
         )
-
-        current_year = datetime.now().year
-        year_choices = [(year, str(year)) for year in range(2023, current_year + 1)]
-        self.filters["year"].choices = year_choices
-
-        delivery_types = DeliveryType.objects.values_list("slug", "name")
-        self.filters["delivery_type"] = django_filters.ChoiceFilter(choices=delivery_types, label="Delivery Type")
-
-    def filter_by_ignore(self, queryset, name, value):
-        return queryset
 
     class Meta:
         model = None
