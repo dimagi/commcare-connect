@@ -326,9 +326,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
 
         current_year = datetime.now().year
         year_choices = [(year, str(year)) for year in range(2023, current_year + 1)]
-        self.filters["year"] = django_filters.ChoiceFilter(
-            choices=year_choices, label="Year", method="filter_by_ignore"
-        )
+        self.filters["year"].choices = year_choices
 
         delivery_types = DeliveryType.objects.values_list("slug", "name")
         self.filters["delivery_type"] = django_filters.ChoiceFilter(choices=delivery_types, label="Delivery Type")
