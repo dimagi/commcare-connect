@@ -13,6 +13,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.views import _results_to_geojson, get_table_data_for_quarter
 
 
@@ -62,6 +63,43 @@ def test_delivery_stats(opportunity: Opportunity):
     assert unknown_delivery_type_data[0]["users"] == 0
     assert unknown_delivery_type_data[0]["services"] == 0
     assert unknown_delivery_type_data[0]["beneficiaries"] == 0
+
+
+@pytest.mark.django_db
+def test_delivery_stats_month(opportunity: Opportunity):
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
+    mobile_users = MobileUserFactory.create_batch(5)
+    for payment_unit in payment_units:
+        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
+    access_objects = []
+    for mobile_user in mobile_users:
+        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True)
+        access_objects.append(access)
+        for payment_unit in payment_units:
+            completed_work = CompletedWorkFactory(
+                opportunity_access=access,
+                payment_unit=payment_unit,
+                status=CompletedWorkStatus.approved.value,
+            )
+            for deliver_unit in payment_unit.deliver_units.all():
+                UserVisitFactory(
+                    opportunity=opportunity,
+                    user=mobile_user,
+                    deliver_unit=deliver_unit,
+                    status=VisitValidationStatus.approved.value,
+                    opportunity_access=access,
+                    completed_work=completed_work,
+                    visit_date=Faker("date_time_this_month", tzinfo=datetime.UTC),
+                )
+
+    year, month = datetime.datetime.utcnow().year, datetime.datetime.utcnow().month
+    all_data = get_table_data_for_year_month(year, month)
+    assert all_data[0]["users"] == 5
+    assert all_data[0]["services"] == 10
+    assert all_data[0]["beneficiaries"] == 10
+
+    filtered_data = get_table_data_for_year_month(year, month, opportunity.delivery_type.slug)
+    assert filtered_data == all_data
 
 
 def test_results_to_geojson():

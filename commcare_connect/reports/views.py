@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, datetime, timedelta
 
 import django_filters
@@ -14,12 +15,14 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.functional import cached_property
+from django.utils.timezone import now
 from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
 
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, DeliveryType, Payment, UserVisit
 from commcare_connect.organization.models import Organization
+from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.queries import get_visit_map_queryset
 
 from .tables import AdminReportTable
@@ -298,10 +301,10 @@ class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 
 
 class DeliveryReportFilters(django_filters.FilterSet):
-    delivery_type = django_filters.ChoiceFilter(method="filter_by_ignore")
-    year = django_filters.ChoiceFilter(method="filter_by_ignore")
-    quarter = django_filters.ChoiceFilter(
-        choices=[(1, "Q1"), (2, "Q2"), (3, "Q3"), (4, "Q4")], label="Quarter", method="filter_by_ignore"
+    delivery_type = django_filters.ChoiceFilter(method="filter_by_ignore", label="Deliver Type")
+    year = django_filters.ChoiceFilter(method="filter_by_ignore", label="Year")
+    month = django_filters.ChoiceFilter(
+        choices=list(enumerate(calendar.month_name))[1:], label="month", method="filter_by_ignore"
     )
     by_delivery_type = django_filters.BooleanFilter(
         widget=forms.CheckboxInput(), label="Break up by delivery type", method="filter_by_ignore"
@@ -309,6 +312,18 @@ class DeliveryReportFilters(django_filters.FilterSet):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.form.helper = FormHelper()
+        self.form.helper.form_class = "form-inline"
+        self.form.helper.layout = Layout(
+            Row("delivery_type"),
+            Row("by_delivery_type"),
+            Row(
+                Column("year", css_class="col-md-6"),
+                Column("month", css_class="col-md-6"),
+            ),
+        )
+
         current_year = datetime.now().year
         year_choices = [(year, str(year)) for year in range(2023, current_year + 1)]
         self.filters["year"] = django_filters.ChoiceFilter(
@@ -323,7 +338,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
 
     class Meta:
         model = None
-        fields = ["delivery_type", "year", "quarter", "by_delivery_type"]
+        fields = ["delivery_type", "year", "month", "by_delivery_type"]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
 
 
@@ -381,29 +396,30 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
     def report_url(self):
         return reverse("reports:delivery_stats_report")
 
+    @cached_property
+    def filter_values(self):
+        if self.filterset.form.is_valid():
+            return self.filterset.form.cleaned_data
+
     @property
     def object_list(self):
-        table_data = []
         if not self.filter_values:
             return []
 
         delivery_type = self.filter_values["delivery_type"]
         year = int(self.filter_values["year"])
-        quarter = self.filter_values["quarter"]
+        month = self.filter_values["month"]
         group_by_delivery_type = self.filter_values["by_delivery_type"]
+        if year and month:
+            return get_table_data_for_year_month(year, month, delivery_type, group_by_delivery_type)
 
-        if not year:
-            quarters = get_quarters_since_start()
-        elif year:
-            if quarter:
-                quarters = [(year, int(quarter))]
-            else:
-                quarters = [(year, q) for q in range(1, 5)]
-
-        for q in quarters:
-            data = get_table_data_for_quarter(q, delivery_type, group_by_delivery_type)
-            table_data += data
-        return table_data
+        data = []
+        for m in range(1, 13):
+            # break if filtering future dates
+            if year == now().year and now().month > m:
+                break
+            data += get_table_data_for_year_month(year, m, delivery_type, group_by_delivery_type)
+        return data
 
 
 @login_required
