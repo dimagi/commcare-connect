@@ -395,7 +395,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
 
         delivery_type = self.filter_values["delivery_type"]
         year = int(self.filter_values["year"])
-        month = self.filter_values["month"]
+        month = int(self.filter_values["month"]) if self.filter_values["month"] else None
         group_by_delivery_type = self.filter_values["by_delivery_type"]
         if year and month:
             return get_table_data_for_year_month(year, month, delivery_type, group_by_delivery_type)
