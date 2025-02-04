@@ -35,7 +35,7 @@ def get_table_data_for_year_month(year, month=None, delivery_type=None, group_by
     )
     for v in visit_data:
         delivery_type_name = "All"
-        if group_by_delivery_type:
+        if group_by_delivery_type and v.opportunity_access.opportunity.delivery_type:
             delivery_type_name = v.opportunity_access.opportunity.delivery_type.name
 
         user_set[delivery_type_name].add(v.opportunity_access.user_id)
@@ -52,10 +52,10 @@ def get_table_data_for_year_month(year, month=None, delivery_type=None, group_by
     approved_payment_data = (
         payment_query.filter(confirmed=True)
         .values("opportunity_access__opportunity__delivery_type__name")
-        .annotate(approved_sum=Sum("amount_usd"))
+        .annotate(approved_sum=Sum("amount_usd", default=0))
     )
     total_payment_data = payment_query.values("opportunity_access__opportunity__delivery_type__name").annotate(
-        total_sum=Sum("amount_usd")
+        total_sum=Sum("amount_usd", default=0)
     )
     approved_payment_dict = {
         item["opportunity_access__opportunity__delivery_type__name"]: item["approved_sum"]
