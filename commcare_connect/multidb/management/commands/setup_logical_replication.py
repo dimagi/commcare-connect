@@ -18,12 +18,13 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
-from commcare_connect.users.models import User
+from commcare_connect.users.models import ConnectIDUserLink, User
 
 REPLICATION_ALLOWED_MODELS = [
     Assessment,
     CompletedModule,
     CompletedWork,
+    ConnectIDUserLink,
     DeliverUnit,
     DeliveryType,
     LearnModule,
