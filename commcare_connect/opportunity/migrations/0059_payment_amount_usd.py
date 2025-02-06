@@ -42,5 +42,9 @@ class Migration(migrations.Migration):
             name="amount_usd",
             field=models.DecimalField(decimal_places=2, max_digits=10, null=True),
         ),
-        migrations.RunPython(populate_amount_usd, migrations.RunPython.noop)
+        migrations.RunPython(
+            populate_amount_usd,
+            migrations.RunPython.noop,
+            hints={"run_on_secondary": False}
+        )
     ]

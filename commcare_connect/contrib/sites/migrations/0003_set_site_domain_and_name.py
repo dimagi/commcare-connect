@@ -60,4 +60,10 @@ class Migration(migrations.Migration):
 
     dependencies = [("sites", "0002_alter_domain_unique")]
 
-    operations = [migrations.RunPython(update_site_forward, update_site_backward)]
+    operations = [
+        migrations.RunPython(
+            update_site_forward,
+            update_site_backward,
+            {"run_on_secondary": False}
+        )
+    ]

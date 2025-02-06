@@ -182,7 +182,7 @@ class DashboardFilters(django_filters.FilterSet):
     )
     to_date = django_filters.DateTimeFilter(
         widget=forms.DateInput(attrs={"type": "date"}),
-        field_name="visit_date",
+        field_name="visit_date__date",
         lookup_expr="lte",
         label="To Date",
         required=False,
@@ -447,9 +447,9 @@ def dashboard_stats_api(request):
             # todo: is this the right date to use here?
             completed_work_queryset = completed_work_queryset.filter(status_modified_date__gt=from_date)
         if to_date:
-            flw_payment_queryset = flw_payment_queryset.filter(date_paid__lte=to_date)
-            org_payment_queryset = org_payment_queryset.filter(date_paid__lte=to_date)
-            completed_work_queryset = completed_work_queryset.filter(status_modified_date__lte=to_date)
+            flw_payment_queryset = flw_payment_queryset.filter(date_paid__date__lte=to_date)
+            org_payment_queryset = org_payment_queryset.filter(date_paid__date__lte=to_date)
+            completed_work_queryset = completed_work_queryset.filter(status_modified_date__date__lte=to_date)
 
     # Example stats calculation (adjust based on your needs)
     active_users = visit_queryset.values("opportunity_access__user").distinct().count()
@@ -460,10 +460,12 @@ def dashboard_stats_api(request):
     total_flw_earnings_usd = (
         completed_work_queryset.aggregate(Sum("saved_payment_accrued_usd"))["saved_payment_accrued_usd__sum"] or 0
     )
-    total_org_earnings_usd = (
+    org_earnings_usd = (
         completed_work_queryset.aggregate(Sum("saved_org_payment_accrued_usd"))["saved_org_payment_accrued_usd__sum"]
         or 0
     )
+    # org earnings include their share and the money they pass through to FLWs
+    total_org_earnings_usd = org_earnings_usd + total_flw_earnings_usd
     total_flw_payments_usd = flw_payment_queryset.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
     total_org_payments_usd = org_payment_queryset.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
 

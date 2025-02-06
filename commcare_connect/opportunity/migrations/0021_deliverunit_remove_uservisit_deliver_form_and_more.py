@@ -49,7 +49,7 @@ class Migration(migrations.Migration):
             name="deliver_unit",
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.deliverunit"),
         ),
-        migrations.RunPython(migrate_deliver_form_to_deliver_unit, reverse_code=migrations.RunPython.noop),
+        migrations.RunPython(migrate_deliver_form_to_deliver_unit, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": False}),
         migrations.AddField(
             model_name="uservisit",
             name="entity_id",

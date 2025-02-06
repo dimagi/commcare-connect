@@ -45,5 +45,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(push_down_payment_limits, migrations.RunPython.noop),
+        migrations.RunPython(push_down_payment_limits, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

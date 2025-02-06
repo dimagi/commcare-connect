@@ -32,5 +32,5 @@ class Migration(migrations.Migration):
                 max_length=50,
             ),
         ),
-        migrations.RunPython(populate_overlimit_work, migrations.RunPython.noop),
+        migrations.RunPython(populate_overlimit_work, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

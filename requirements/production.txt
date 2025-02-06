@@ -45,10 +45,14 @@ django-anymail[amazon-ses]==10.1
     # via -r requirements/production.in
 django-storages[boto3]==1.13.2
     # via -r requirements/production.in
-gevent==24.2.1
-    # via gunicorn
-greenlet==3.1.0
-    # via gevent
+gevent==24.11.1
+    # via
+    #   -c requirements/base.txt
+    #   gunicorn
+greenlet==3.1.1
+    # via
+    #   -c requirements/base.txt
+    #   gevent
 gunicorn[gevent]==21.2.0
     # via -r requirements/production.in
 idna==3.4
@@ -97,9 +101,13 @@ urllib3==1.26.16
     #   requests
     #   sentry-sdk
 zope-event==5.0
-    # via gevent
-zope-interface==7.0.3
-    # via gevent
+    # via
+    #   -c requirements/base.txt
+    #   gevent
+zope-interface==7.2
+    # via
+    #   -c requirements/base.txt
+    #   gevent
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

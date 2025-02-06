@@ -69,5 +69,5 @@ class Migration(migrations.Migration):
                 blank=True, null=True, on_delete=django.db.models.deletion.DO_NOTHING, to="opportunity.completedwork"
             ),
         ),
-        migrations.RunPython(populate_completed_work, migrations.RunPython.noop),
+        migrations.RunPython(populate_completed_work, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

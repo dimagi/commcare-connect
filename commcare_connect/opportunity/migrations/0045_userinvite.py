@@ -63,5 +63,9 @@ class Migration(migrations.Migration):
                 ),
             ],
         ),
-        migrations.RunPython(populate_user_invite, migrations.RunPython.noop),
+        migrations.RunPython(
+            populate_user_invite,
+            migrations.RunPython.noop,
+            hints={"run_on_secondary": False}
+        ),
     ]

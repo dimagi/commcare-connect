@@ -33,6 +33,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(
-            create_send_inactive_notification_periodic_task, delete_send_inactive_notification_periodic_task
+            create_send_inactive_notification_periodic_task, delete_send_inactive_notification_periodic_task,
+            hints={"run_on_secondary": False}
         )
     ]

@@ -46,5 +46,9 @@ class Migration(migrations.Migration):
                 null=True, on_delete=django.db.models.deletion.CASCADE, to="opportunity.opportunityaccess"
             ),
         ),
-        migrations.RunPython(populate_opportunity_access, migrations.RunPython.noop),
+        migrations.RunPython(
+            populate_opportunity_access,
+            migrations.RunPython.noop,
+            hints={"run_on_secondary": False}
+        ),
     ]

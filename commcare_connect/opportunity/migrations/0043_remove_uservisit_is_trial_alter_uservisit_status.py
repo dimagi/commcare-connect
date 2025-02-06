@@ -37,7 +37,8 @@ class Migration(migrations.Migration):
         ),
         migrations.RunPython(
             migrate_trial,
-            migrate_trial_rev
+            migrate_trial_rev,
+            hints={"run_on_secondary": False}
         ),
         migrations.RemoveField(
             model_name="uservisit",
