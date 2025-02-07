@@ -2,16 +2,30 @@ import calendar
 from collections import defaultdict
 from datetime import datetime
 
-from django.db.models import Max, Q, Sum
+from django.db.models import Max, Sum
 from django.utils.timezone import make_aware
 
 from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, Payment
 
 
-def get_table_data_for_year_month(year, month=None, delivery_type=None, group_by_delivery_type=False):
-    delivery_type_filter = Q()
+def get_table_data_for_year_month(
+    year,
+    month=None,
+    delivery_type=None,
+    group_by_delivery_type=False,
+    program=None,
+    network_manager=None,
+    opportunity=None,
+):
+    filter_kwargs = {}
     if delivery_type:
-        delivery_type_filter = Q(opportunity_access__opportunity__delivery_type__slug=delivery_type)
+        filter_kwargs.update({"opportunity_access__opportunity__delivery_type__slug": delivery_type})
+    if program:
+        filter_kwargs.update({"opportunity_access__opportunity__managedopportunity__program": program})
+    if network_manager:
+        filter_kwargs.update({"opportunity_access__opportunity__organization": network_manager})
+    if opportunity:
+        filter_kwargs.update({"opportunity_access__opportunity": opportunity})
 
     _, month_end = calendar.monthrange(year, month or 1)
     start_date = make_aware(datetime(year, month or 1, 1))
@@ -25,7 +39,7 @@ def get_table_data_for_year_month(year, month=None, delivery_type=None, group_by
     visit_data = (
         CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
         .filter(
-            delivery_type_filter,
+            **filter_kwargs,
             opportunity_access__opportunity__is_test=False,
             status=CompletedWorkStatus.approved,
             work_date__gte=start_date,
@@ -43,7 +57,7 @@ def get_table_data_for_year_month(year, month=None, delivery_type=None, group_by
         service_count[delivery_type_name] += v.saved_approved_count
 
     payment_query = Payment.objects.filter(
-        delivery_type_filter,
+        **filter_kwargs,
         opportunity_access__opportunity__is_test=False,
         date_paid__gte=start_date,
         date_paid__lt=end_date,

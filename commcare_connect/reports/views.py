@@ -20,8 +20,16 @@ from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
 
 from commcare_connect.cache import quickcache
-from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStatus, DeliveryType, Payment, UserVisit
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
+    DeliveryType,
+    Opportunity,
+    Payment,
+    UserVisit,
+)
 from commcare_connect.organization.models import Organization
+from commcare_connect.program.models import Program
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.queries import get_visit_map_queryset
 
@@ -302,25 +310,50 @@ class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 
 class DeliveryReportFilters(django_filters.FilterSet):
     delivery_type = django_filters.ChoiceFilter(
-        choices=DeliveryType.objects.values_list("slug", "name"), label="Delivery Type"
+        choices=DeliveryType.objects.values_list("slug", "name"),
+        label="Delivery Type",
     )
     year = django_filters.ChoiceFilter(
-        choices=[(year, str(year)) for year in range(2023, datetime.now().year + 1)], label="Year"
+        choices=[(year, str(year)) for year in range(2023, datetime.now().year + 1)],
+        label="Year",
     )
-    month = django_filters.ChoiceFilter(choices=list(enumerate(calendar.month_name))[1:], label="month")
-    by_delivery_type = django_filters.BooleanFilter(widget=forms.CheckboxInput(), label="Break up by delivery type")
+    month = django_filters.ChoiceFilter(
+        choices=list(enumerate(calendar.month_name))[1:],
+        label="month",
+    )
+    by_delivery_type = django_filters.BooleanFilter(
+        widget=forms.CheckboxInput(),
+        label="Break up by delivery type",
+    )
+    program = django_filters.ModelChoiceFilter(
+        queryset=Program.objects.all(),
+        label="Program",
+    )
+    network_manager = django_filters.ModelChoiceFilter(
+        queryset=Organization.objects.filter(program_manager=False),
+        label="Network Manager",
+    )
+    opportunity = django_filters.ModelChoiceFilter(
+        queryset=Opportunity.objects.filter(is_test=False),
+        label="Opportunity",
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.form.helper = FormHelper()
         self.form.helper.form_class = "form-inline"
         self.form.helper.layout = Layout(
-            Row("delivery_type"),
-            Row("by_delivery_type"),
             Row(
-                Column("year", css_class="col-md-6"),
-                Column("month", css_class="col-md-6"),
+                Column("program", css_class="col-md-4"),
+                Column("network_manager", css_class="col-md-4"),
+                Column("opportunity", css_class="col-md-4"),
             ),
+            Row(
+                Column("delivery_type", css_class="col-md-4"),
+                Column("year", css_class="col-md-4"),
+                Column("month", css_class="col-md-4"),
+            ),
+            Row(Column("by_delivery_type", css_class="col-md-4")),
         )
 
     class Meta:
@@ -394,18 +427,26 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
             return []
 
         delivery_type = self.filter_values["delivery_type"]
-        year = int(self.filter_values["year"])
-        month = int(self.filter_values["month"]) if self.filter_values["month"] else None
         group_by_delivery_type = self.filter_values["by_delivery_type"]
+        year = int(self.filter_values["year"]) if self.filter_values["year"] else None
+        month = int(self.filter_values["month"]) if self.filter_values["month"] else None
+        program = self.filter_values["program"]
+        network_manager = self.filter_values["network_manager"]
+        opportunity = self.filter_values["opportunity"]
+
         if year and month:
-            return get_table_data_for_year_month(year, month, delivery_type, group_by_delivery_type)
+            return get_table_data_for_year_month(
+                year, month, delivery_type, group_by_delivery_type, program, network_manager, opportunity
+            )
 
         data = []
         for m in range(1, 13):
             # break if filtering future dates
             if year == now().year and now().month > m:
                 break
-            data += get_table_data_for_year_month(year, m, delivery_type, group_by_delivery_type)
+            data += get_table_data_for_year_month(
+                year, m, delivery_type, group_by_delivery_type, program, network_manager, opportunity
+            )
         return data
 
 
