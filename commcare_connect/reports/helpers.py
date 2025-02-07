@@ -9,7 +9,7 @@ from commcare_connect.opportunity.models import CompletedWork, CompletedWorkStat
 
 
 def get_table_data_for_year_month(
-    year,
+    year=None,
     month=None,
     delivery_type=None,
     group_by_delivery_type=False,
@@ -18,6 +18,8 @@ def get_table_data_for_year_month(
     opportunity=None,
 ):
     filter_kwargs = {}
+    if year is None:
+        return []
     if delivery_type:
         filter_kwargs.update({"opportunity_access__opportunity__delivery_type__slug": delivery_type})
     if program:
