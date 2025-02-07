@@ -30,8 +30,23 @@ DATABASES = {
         default="postgres:///commcare_connect",
     ),
 }
+
+# DATABASES staging/production
+# ------------------------------------------------------------------------------
+if env("RDS_HOSTNAME"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("RDS_DB_NAME"),
+            "USER": env("RDS_USERNAME"),
+            "PASSWORD": env("RDS_PASSWORD"),
+            "HOST": env("RDS_HOSTNAME"),
+            "PORT": env("RDS_PORT"),
+        }
+    }
+
 SECONDARY_DB_ALIAS = None
-if env.db("SECONDARY_DATABASE_URL", default=""):
+if env("SECONDARY_DATABASE_URL"):
     SECONDARY_DB_ALIAS = "secondary"
     DATABASES[SECONDARY_DB_ALIAS] = env.db("SECONDARY_DATABASE_URL")
     DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
