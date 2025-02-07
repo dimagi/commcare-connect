@@ -1,4 +1,5 @@
 import calendar
+from statistics import mean
 
 from django.urls import reverse
 from django.utils.html import format_html
@@ -7,14 +8,28 @@ from django_tables2 import columns, tables
 from commcare_connect.opportunity.tables import SumColumn
 
 
+class AverageColumn(columns.Column):
+    def render_footer(self, bound_column, table):
+        return mean(bound_column.accessor.resolve(row) or 0 for row in table.data)
+
+
+class MaxColumn(columns.Column):
+    def render_footer(self, bound_column, table):
+        return max(bound_column.accessor.resolve(row) or 0 for row in table.data)
+
+
 class AdminReportTable(tables.Table):
     month = columns.Column(verbose_name="Month", footer="Total")
     delivery_type = columns.Column(verbose_name="Delivery Type")
     users = SumColumn(verbose_name="Active Users")
+    avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
+    max_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
+    flw_amount_earned = SumColumn(verbose_name="FLW Amount Earned")
+    flw_amount_paid = SumColumn(verbose_name="FLW Amount Paid")
+    nm_amount_earned = SumColumn(verbose_name="NM Amount Earned")
+    nm_amount_paid = SumColumn(verbose_name="NM Amount Paid")
     services = SumColumn(verbose_name="Verified Services")
-    approved_payments = SumColumn(verbose_name="Acknowledged Payments")
-    total_payments = SumColumn(verbose_name="Total Payments")
-    beneficiaries = SumColumn(verbose_name="Beneficiaries Served")
+    avg_top_paid_flws = SumColumn(verbose_name="Average paid to Top FLWs")
 
     class Meta:
         empty_text = "No data for this month."
