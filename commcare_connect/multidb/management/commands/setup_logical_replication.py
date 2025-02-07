@@ -111,7 +111,8 @@ class Command(BaseCommand):
                     f"port={default_db_settings['PORT']} "
                     f"dbname={default_db_settings['NAME']} "
                     f"user={default_db_settings['USER']} "
-                    f"password={default_db_settings['PASSWORD']}"
+                    f"password={default_db_settings['PASSWORD']} "
+                    f"sslmode=disable"  # same VPC in AWS
                 )
                 cursor.execute(
                     f"""
