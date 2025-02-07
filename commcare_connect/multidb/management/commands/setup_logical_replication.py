@@ -40,6 +40,10 @@ REPLICATION_ALLOWED_MODELS = [
 ]
 
 
+PUBLICATION_NAME = "tables_for_superset_pub"
+SUBSCRIPTION_NAME = "tables_for_superset_sub"
+
+
 class Command(BaseCommand):
     help = "Create a publication for the default database and a subscription for the secondary database alias."
 
@@ -64,7 +68,6 @@ class Command(BaseCommand):
         # Create publication in the default database
         default_conn = connections[DEFAULT_DB_ALIAS]
         self.stdout.write("Creating publication in the default database...")
-        publication_name = "tables_for_superset_pub"
 
         # Construct publication table list
         table_list = []
@@ -80,28 +83,27 @@ class Command(BaseCommand):
         # Create publication
         with default_conn.cursor() as cursor:
             # Check if publication exists
-            cursor.execute("SELECT pubname FROM pg_publication WHERE pubname = %s;", [publication_name])
+            cursor.execute("SELECT pubname FROM pg_publication WHERE pubname = %s;", [PUBLICATION_NAME])
             if cursor.fetchone():
                 self.stdout.write(
-                    self.style.WARNING(f"Publication '{publication_name}' already exists. Skipping creation.")
+                    self.style.WARNING(f"Publication '{PUBLICATION_NAME}' already exists. Skipping creation.")
                 )
             else:
                 # Create new publication
                 tables = ", ".join([f'"{table}"' for table in table_list])
-                cursor.execute(f"CREATE PUBLICATION {publication_name} FOR TABLE {tables};")
-                self.stdout.write(self.style.SUCCESS(f"Publication '{publication_name}' created successfully."))
+                cursor.execute(f"CREATE PUBLICATION {PUBLICATION_NAME} FOR TABLE {tables};")
+                self.stdout.write(self.style.SUCCESS(f"Publication '{PUBLICATION_NAME}' created successfully."))
 
         # Create subscription in the secondary database
         secondary_conn = connections[secondary_db_alias]
         self.stdout.write("Creating subscription in the secondary database...")
-        subscription_name = "tables_for_superset_sub"
 
         with secondary_conn.cursor() as cursor:
             # Check if subscription exists
-            cursor.execute("SELECT subname FROM pg_subscription WHERE subname = %s;", [subscription_name])
+            cursor.execute("SELECT subname FROM pg_subscription WHERE subname = %s;", [SUBSCRIPTION_NAME])
             if cursor.fetchone():
                 self.stdout.write(
-                    self.style.WARNING(f"Subscription '{subscription_name}' already exists. Skipping creation.")
+                    self.style.WARNING(f"Subscription '{SUBSCRIPTION_NAME}' already exists. Skipping creation.")
                 )
             else:
                 # Create new subscription
@@ -111,16 +113,15 @@ class Command(BaseCommand):
                     f"port={default_db_settings['PORT']} "
                     f"dbname={default_db_settings['NAME']} "
                     f"user={default_db_settings['USER']} "
-                    f"password={default_db_settings['PASSWORD']} "
-                    f"sslmode=disable"  # same VPC in AWS
+                    f"password={default_db_settings['PASSWORD']}"
                 )
                 cursor.execute(
                     f"""
-                    CREATE SUBSCRIPTION {subscription_name}
+                    CREATE SUBSCRIPTION {SUBSCRIPTION_NAME}
                     CONNECTION '{primary_conn_info}'
-                    PUBLICATION {publication_name};
+                    PUBLICATION {PUBLICATION_NAME};
                     """
                 )
-                self.stdout.write(self.style.SUCCESS(f"Subscription '{subscription_name}' created successfully."))
+                self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' created successfully."))
 
         self.stdout.write(self.style.SUCCESS("Publication and subscription setup completed."))
