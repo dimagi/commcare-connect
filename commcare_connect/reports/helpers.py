@@ -1,5 +1,5 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, OuterRef, Subquery, Sum
 from django.utils.timezone import make_aware
@@ -54,7 +54,6 @@ def get_table_data_for_year_month(
         CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
         .filter(
             **filter_kwargs,
-            opportunity_access__opportunity__is_test=False,
             status=CompletedWorkStatus.approved,
             work_date__gte=start_date,
             work_date__lt=end_date,
@@ -62,7 +61,6 @@ def get_table_data_for_year_month(
         .values("opportunity_access__opportunity__delivery_type__name")
         .annotate(
             users=Count("opportunity_access__user_id", distinct=True),
-            beneficiaries=Count("entity_id", distinct=True),
             service_count=Sum("saved_approved_count", default=0),
             flw_amount_earned=Sum("saved_payment_accrued", default=0),
             nm_amount_earned=Sum(
@@ -70,8 +68,8 @@ def get_table_data_for_year_month(
                 * F("opportunity_access__opportunity__managedopportunity__org_pay_per_visit"),
                 default=0,
             ),
-            avg_time_to_payment=Avg(time_to_payment, default=0),
-            max_time_to_payment=Max(time_to_payment, default=0),
+            avg_time_to_payment=Avg(time_to_payment, default=timedelta(days=0)),
+            max_time_to_payment=Max(time_to_payment, default=timedelta(days=0)),
         )
     )
 
@@ -145,8 +143,8 @@ def get_table_data_for_year_month(
                 "month": (month, year),
                 "users": sum(user_count_data.values()),
                 "services": sum(service_count_data.values()),
-                "avg_time_to_payment": sum(avg_time_to_payment_data.values()),
-                "max_time_to_payment": sum(max_time_to_payment_data.values()),
+                "avg_time_to_payment": sum(avg_time_to_payment_data.values(), start=timedelta(days=0)),
+                "max_time_to_payment": sum(max_time_to_payment_data.values(), start=timedelta(days=0)),
                 "flw_amount_earned": sum(flw_amount_earned_data.values()),
                 "flw_amount_paid": sum(flw_amount_paid_data.values()),
                 "nm_amount_earned": nm_amount_earned,
