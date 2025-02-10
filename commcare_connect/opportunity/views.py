@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.storage import storages
-from django.db.models import F, Q, Sum
+from django.db.models import Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -452,51 +452,16 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
-    form = AddBudgetExistingUsersForm(opportunity_claims=opportunity_claims)
 
     if request.method == "POST":
-        form = AddBudgetExistingUsersForm(opportunity_claims=opportunity_claims, data=request.POST)
+        form = AddBudgetExistingUsersForm(
+            opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST
+        )
         if form.is_valid():
-            selected_users = form.cleaned_data["selected_users"]
-            additional_visits = form.cleaned_data["additional_visits"]
-            end_date = form.cleaned_data["end_date"]
-
-            if additional_visits:
-                claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-                org_pay = opportunity.managedopportunity.org_pay_per_visit if opportunity.managed else 0
-
-                for ocl in claims.all():
-                    opportunity.total_budget += (ocl.payment_unit.amount + org_pay) * additional_visits
-
-                if opportunity.managed:
-                    managed_opp = opportunity.managedopportunity
-                    program = managed_opp.program
-                    total_budget_sum = (
-                        ManagedOpportunity.objects.filter(program=program)
-                        .exclude(id=managed_opp.id)
-                        .aggregate(total=Sum("total_budget"))["total"]
-                        or 0
-                    )
-                    if total_budget_sum + opportunity.total_budget > program.budget:
-                        form.add_error("additional_visits", "Additional visits exceed the program budget.")
-                        return render(
-                            request,
-                            "opportunity/add_visits_existing_users.html",
-                            {
-                                "form": form,
-                                "opportunity_claims": opportunity_claims,
-                                "budget_per_visit": opportunity.budget_per_visit_new,
-                                "opportunity": opportunity,
-                            },
-                        )
-
-                claims.update(max_visits=F("max_visits") + additional_visits)
-                opportunity.save()
-
-            if end_date:
-                OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=end_date)
-
+            form.save()
             return redirect("opportunity:detail", org_slug, pk)
+    else:
+        form = AddBudgetExistingUsersForm(opportunity_claims=opportunity_claims, opportunity=opportunity)
 
     return render(
         request,
