@@ -6,7 +6,7 @@ from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import Q, Sum, TextChoices
+from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
 
@@ -19,6 +19,8 @@ from commcare_connect.opportunity.models import (
     HQApiKey,
     Opportunity,
     OpportunityAccess,
+    OpportunityClaim,
+    OpportunityClaimLimit,
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
@@ -606,10 +608,60 @@ class AddBudgetExistingUsersForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         opportunity_claims = kwargs.pop("opportunity_claims", [])
+        self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
 
         choices = [(opp_claim.id, opp_claim.id) for opp_claim in opportunity_claims]
         self.fields["selected_users"] = forms.MultipleChoiceField(choices=choices, widget=forms.CheckboxSelectMultiple)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        selected_users = cleaned_data.get("selected_users")
+        additional_visits = cleaned_data.get("additional_visits")
+
+        if not selected_users and not additional_visits and not cleaned_data.get("end_date"):
+            raise forms.ValidationError("Please select users and specify either additional visits or end date.")
+
+        if additional_visits and selected_users:
+            self.budget_increase = self._validate_budget(selected_users, additional_visits)
+
+        return cleaned_data
+
+    def _validate_budget(self, selected_users, additional_visits):
+        claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
+        org_pay = self.opportunity.managedopportunity.org_pay_per_visit if self.opportunity.managed else 0
+
+        budget_increase = sum((ocl.payment_unit.amount + org_pay) * additional_visits for ocl in claims)
+
+        if self.opportunity.managed:
+            managed_opp = self.opportunity.managedopportunity
+            program = managed_opp.program
+
+            budget_used = (
+                ManagedOpportunity.objects.filter(program=program)
+                .exclude(id=managed_opp.id)
+                .aggregate(total=Sum("total_budget"))["total"]
+                or 0
+            )
+
+            if budget_used + self.opportunity.total_budget + budget_increase > program.budget:
+                raise forms.ValidationError({"additional_visits": "Additional visits exceed the program budget."})
+
+        return budget_increase
+
+    def save(self):
+        selected_users = self.cleaned_data["selected_users"]
+        additional_visits = self.cleaned_data["additional_visits"]
+        end_date = self.cleaned_data["end_date"]
+
+        if additional_visits:
+            claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
+            claims.update(max_visits=F("max_visits") + additional_visits)
+            self.opportunity.total_budget += self.budget_increase
+            self.opportunity.save()
+
+        if end_date:
+            OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=end_date)
 
 
 class PaymentUnitForm(forms.ModelForm):
