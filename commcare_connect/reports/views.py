@@ -442,7 +442,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
         data = []
         for m in range(1, 13):
             # break if filtering future dates
-            if year == now().year and now().month > m:
+            if year == now().year and now().month < m:
                 break
             data += get_table_data_for_year_month(
                 year, m, delivery_type, group_by_delivery_type, program, network_manager, opportunity
