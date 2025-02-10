@@ -1,4 +1,5 @@
 import calendar
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, OuterRef, Subquery, Sum
@@ -98,14 +99,6 @@ def get_table_data_for_year_month(
     nm_amount_earned_data = {
         item["opportunity_access__opportunity__delivery_type__name"]: item["nm_amount_earned"] for item in visit_data
     }
-    flw_amount_paid = (
-        payment_query.filter(**filter_kwargs, confirmed=True)
-        .values("opportunity_access__opportunity__delivery_type__name")
-        .annotate(approved_sum=Sum("amount_usd", default=0))
-    )
-    flw_amount_paid_data = {
-        item["opportunity_access__opportunity__delivery_type__name"]: item["approved_sum"] for item in flw_amount_paid
-    }
     nm_amount_paid = (
         payment_query.filter(**filter_kwargs_nm)
         .values("invoice__opportunity__delivery_type__name")
@@ -114,6 +107,27 @@ def get_table_data_for_year_month(
     nm_amount_paid_data = {
         item["invoice__opportunity__delivery_type__name"]: item["approved_sum"] for item in nm_amount_paid
     }
+
+    flw_amount_paid_data = {}
+    avg_top_flw_amount_paid = (
+        payment_query.filter(**filter_kwargs, confirmed=True)
+        .values("opportunity_access__opportunity__delivery_type__name", "opportunity_access__user_id")
+        .annotate(approved_sum=Sum("amount_usd", default=0))
+    )
+    delivery_type_grouped_users = defaultdict(set)
+    for item in avg_top_flw_amount_paid:
+        delivery_type_grouped_users[item["opportunity_access__opportunity__delivery_type__name"]].add(
+            (item["opportunity_access__user_id"], item["approved_sum"])
+        )
+    avg_top_flw_amount_paid_data = {}
+    for d_name, users in delivery_type_grouped_users.items():
+        sum_total_users = defaultdict(int)
+        for user, amount in users:
+            sum_total_users[user] += amount
+
+        flw_amount_paid_data[d_name] = sum(sum_total_users.values())
+        top_five_percent_len = len(sum_total_users) * 5 // 100
+        avg_top_flw_amount_paid_data[d_name] = sum(sorted(sum_total_users.values())[:top_five_percent_len])
 
     if group_by_delivery_type:
         for delivery_type_name in user_count_data.keys():
@@ -131,6 +145,7 @@ def get_table_data_for_year_month(
                     "flw_amount_paid": flw_amount_paid_data.get(delivery_type_name, 0),
                     "nm_amount_earned": nm_amount_earned,
                     "nm_amount_paid": nm_amount_paid,
+                    "avg_top_paid_flws": avg_top_flw_amount_paid_data.get(delivery_type_name, 0),
                 }
             )
 
@@ -149,6 +164,7 @@ def get_table_data_for_year_month(
                 "flw_amount_paid": sum(flw_amount_paid_data.values()),
                 "nm_amount_earned": nm_amount_earned,
                 "nm_amount_paid": nm_amount_paid,
+                "avg_top_paid_flws": sum(avg_top_flw_amount_paid_data.values()),
             }
         )
     return data
