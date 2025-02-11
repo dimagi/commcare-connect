@@ -55,3 +55,9 @@ class AdminReportTable(tables.Table):
             month=record["month"][0],
             year=record["month"][1],
         )
+
+    def render_avg_time_to_payment(self, record, value):
+        return f"{value} days"
+
+    def render_max_time_to_payment(self, record, value):
+        return f"{value} days"
