@@ -271,7 +271,7 @@ class OpportunityAccess(models.Model):
         learn_modules_count = learn_modules.count()
         if learn_modules_count <= 0:
             return 0
-        completed_modules = self.completedmodule_set.count()
+        completed_modules = self.unique_completed_modules.count()
         percentage = (completed_modules / learn_modules_count) * 100
         return round(percentage, 2)
 
