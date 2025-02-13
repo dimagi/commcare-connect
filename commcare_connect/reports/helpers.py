@@ -2,7 +2,7 @@ import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, OuterRef, Subquery, Sum
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, OuterRef, Q, Subquery, Sum
 from django.utils.timezone import make_aware
 
 from commcare_connect.opportunity.models import (
@@ -23,8 +23,11 @@ def get_table_data_for_year_month(
     network_manager=None,
     opportunity=None,
 ):
-    if year is None:
-        return []
+    year = year or datetime.now().year
+    _, month_end = calendar.monthrange(year, month or 1)
+    start_date = make_aware(datetime(year, month or 1, 1))
+    end_date = make_aware(datetime(year, month or 12, month_end))
+
     filter_kwargs = {"opportunity_access__opportunity__is_test": False}
     filter_kwargs_nm = {"invoice__opportunity__is_test": False}
     if delivery_type:
@@ -40,9 +43,6 @@ def get_table_data_for_year_month(
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})
 
-    _, month_end = calendar.monthrange(year, month or 1)
-    start_date = make_aware(datetime(year, month or 1, 1))
-    end_date = make_aware(datetime(year, month or 12, month_end))
     data = []
 
     max_visit_date = (
@@ -54,21 +54,17 @@ def get_table_data_for_year_month(
     visit_data = (
         CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
         .filter(
+            Q(status_modified_date__gte=start_date, status_modified_date__lt=end_date)
+            | Q(status_modified_date__isnull=True, work_date__gte=start_date, work_date__lt=end_date),
             **filter_kwargs,
             status=CompletedWorkStatus.approved,
-            work_date__gte=start_date,
-            work_date__lt=end_date,
         )
         .values("opportunity_access__opportunity__delivery_type__name")
         .annotate(
             users=Count("opportunity_access__user_id", distinct=True),
             service_count=Sum("saved_approved_count", default=0),
             flw_amount_earned=Sum("saved_payment_accrued", default=0),
-            nm_amount_earned=Sum(
-                F("saved_approved_count")
-                * F("opportunity_access__opportunity__managedopportunity__org_pay_per_visit"),
-                default=0,
-            ),
+            nm_amount_earned=Sum(F("saved_org_payment_accrued") + F("saved_payment_accrued"), default=0),
             avg_time_to_payment=Avg(time_to_payment, default=timedelta(days=0)),
             max_time_to_payment=Max(time_to_payment, default=timedelta(days=0)),
         )
@@ -126,7 +122,8 @@ def get_table_data_for_year_month(
             sum_total_users[user] += amount
 
         flw_amount_paid_data[d_name] = sum(sum_total_users.values())
-        top_five_percent_len = len(sum_total_users) * 5 // 100
+        # take atleast 1 top user in cases where this variable is 0
+        top_five_percent_len = len(sum_total_users) * 5 // 100 or 1
         avg_top_flw_amount_paid_data[d_name] = sum(sorted(sum_total_users.values())[:top_five_percent_len])
 
     if group_by_delivery_type:

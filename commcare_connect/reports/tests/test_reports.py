@@ -80,6 +80,8 @@ def test_delivery_stats_month(opportunity: Opportunity):
                 opportunity_access=access,
                 payment_unit=payment_unit,
                 status=CompletedWorkStatus.approved.value,
+                saved_approved_count=1,
+                saved_payment_accrued=payment_unit.amount,
             )
             for deliver_unit in payment_unit.deliver_units.all():
                 UserVisitFactory(

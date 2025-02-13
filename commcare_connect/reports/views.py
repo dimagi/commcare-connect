@@ -428,7 +428,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
 
         delivery_type = self.filter_values["delivery_type"]
         group_by_delivery_type = self.filter_values["by_delivery_type"]
-        year = int(self.filter_values["year"]) if self.filter_values["year"] else None
+        year = int(self.filter_values["year"]) if self.filter_values["year"] else now().year
         month = int(self.filter_values["month"]) if self.filter_values["month"] else None
         program = self.filter_values["program"]
         network_manager = self.filter_values["network_manager"]

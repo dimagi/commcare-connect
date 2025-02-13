@@ -1,21 +1,10 @@
 import calendar
-from statistics import mean
 
 from django.urls import reverse
 from django.utils.html import format_html
 from django_tables2 import columns, tables
 
 from commcare_connect.opportunity.tables import SumColumn
-
-
-class AverageColumn(columns.Column):
-    def render_footer(self, bound_column, table):
-        return mean(bound_column.accessor.resolve(row) or 0 for row in table.data)
-
-
-class MaxColumn(columns.Column):
-    def render_footer(self, bound_column, table):
-        return max(bound_column.accessor.resolve(row) or 0 for row in table.data)
 
 
 class AdminReportTable(tables.Table):
