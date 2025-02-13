@@ -43,7 +43,7 @@ class UserLearnProgressView(RetrieveAPIView):
             OpportunityAccess, user=self.request.user, opportunity=self.kwargs.get("pk")
         )
         return dict(
-            completed_modules=opportunity_access.completedmodule_set.all(),
+            completed_modules=opportunity_access.unique_completed_modules,
             assessments=opportunity_access.assessment_set.all(),
         )
 
