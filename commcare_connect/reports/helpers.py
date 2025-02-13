@@ -1,6 +1,7 @@
 import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
+from statistics import mean
 
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, OuterRef, Q, Subquery, Sum
 from django.utils.timezone import make_aware
@@ -63,8 +64,8 @@ def get_table_data_for_year_month(
         .annotate(
             users=Count("opportunity_access__user_id", distinct=True),
             service_count=Sum("saved_approved_count", default=0),
-            flw_amount_earned=Sum("saved_payment_accrued", default=0),
-            nm_amount_earned=Sum(F("saved_org_payment_accrued") + F("saved_payment_accrued"), default=0),
+            flw_amount_earned=Sum("saved_payment_accrued_usd", default=0),
+            nm_amount_earned=Sum(F("saved_org_payment_accrued_usd") + F("saved_payment_accrued_usd"), default=0),
             avg_time_to_payment=Avg(time_to_payment, default=timedelta(days=0)),
             max_time_to_payment=Max(time_to_payment, default=timedelta(days=0)),
         )
@@ -82,11 +83,11 @@ def get_table_data_for_year_month(
         item["opportunity_access__opportunity__delivery_type__name"]: item["service_count"] for item in visit_data
     }
     avg_time_to_payment_data = {
-        item["opportunity_access__opportunity__delivery_type__name"]: item["avg_time_to_payment"]
+        item["opportunity_access__opportunity__delivery_type__name"]: item["avg_time_to_payment"].days
         for item in visit_data
     }
     max_time_to_payment_data = {
-        item["opportunity_access__opportunity__delivery_type__name"]: item["max_time_to_payment"]
+        item["opportunity_access__opportunity__delivery_type__name"]: item["max_time_to_payment"].days
         for item in visit_data
     }
     flw_amount_earned_data = {
@@ -123,8 +124,10 @@ def get_table_data_for_year_month(
 
         flw_amount_paid_data[d_name] = sum(sum_total_users.values())
         # take atleast 1 top user in cases where this variable is 0
-        top_five_percent_len = len(sum_total_users) * 5 // 100 or 1
-        avg_top_flw_amount_paid_data[d_name] = sum(sorted(sum_total_users.values())[:top_five_percent_len])
+        top_five_percent_len = len(sum_total_users) // 20 or 1
+        avg_top_flw_amount_paid_data[d_name] = sum(
+            sorted(sum_total_users.values(), reverse=True)[:top_five_percent_len]
+        )
 
     if group_by_delivery_type:
         for delivery_type_name in user_count_data.keys():
@@ -136,8 +139,8 @@ def get_table_data_for_year_month(
                     "month": (month, year),
                     "users": user_count_data[delivery_type_name],
                     "services": service_count_data[delivery_type_name],
-                    "avg_time_to_payment": avg_time_to_payment_data.get(delivery_type_name, timedelta(days=0)).days,
-                    "max_time_to_payment": max_time_to_payment_data.get(delivery_type_name, timedelta(days=0)).days,
+                    "avg_time_to_payment": avg_time_to_payment_data.get(delivery_type_name),
+                    "max_time_to_payment": max_time_to_payment_data.get(delivery_type_name),
                     "flw_amount_earned": flw_amount_earned_data.get(delivery_type_name, 0),
                     "flw_amount_paid": flw_amount_paid_data.get(delivery_type_name, 0),
                     "nm_amount_earned": nm_amount_earned,
@@ -155,8 +158,8 @@ def get_table_data_for_year_month(
                 "month": (month, year),
                 "users": sum(user_count_data.values()),
                 "services": sum(service_count_data.values()),
-                "avg_time_to_payment": sum(avg_time_to_payment_data.values(), start=timedelta(days=0)).days,
-                "max_time_to_payment": sum(max_time_to_payment_data.values(), start=timedelta(days=0)).days,
+                "avg_time_to_payment": mean(avg_time_to_payment_data.values() or [0]),
+                "max_time_to_payment": max(max_time_to_payment_data.values() or [0]),
                 "flw_amount_earned": sum(flw_amount_earned_data.values()),
                 "flw_amount_paid": sum(flw_amount_paid_data.values()),
                 "nm_amount_earned": nm_amount_earned,

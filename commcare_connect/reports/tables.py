@@ -12,7 +12,7 @@ class AdminReportTable(tables.Table):
     delivery_type = columns.Column(verbose_name="Delivery Type")
     users = SumColumn(verbose_name="Active Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
-    max_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
+    max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
     flw_amount_earned = SumColumn(verbose_name="FLW Amount Earned")
     flw_amount_paid = SumColumn(verbose_name="FLW Amount Paid")
     nm_amount_earned = SumColumn(verbose_name="NM Amount Earned")

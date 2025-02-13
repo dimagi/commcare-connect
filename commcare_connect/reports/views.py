@@ -358,7 +358,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
 
     class Meta:
         model = None
-        fields = ["delivery_type", "year", "month", "by_delivery_type"]
+        fields = ["delivery_type", "year", "month", "by_delivery_type", "program", "network_manager", "opportunity"]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
 
 
@@ -418,14 +418,21 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
 
     @cached_property
     def filter_values(self):
+        filters = {
+            "year": now().year,
+            "month": None,
+            "delivery_type": None,
+            "by_delivery_type": None,
+            "program": None,
+            "network_manager": None,
+            "opportunity": None,
+        }
         if self.filterset.form.is_valid():
-            return self.filterset.form.cleaned_data
+            filters.update(self.filterset.form.cleaned_data)
+        return filters
 
     @property
     def object_list(self):
-        if not self.filter_values:
-            return []
-
         delivery_type = self.filter_values["delivery_type"]
         group_by_delivery_type = self.filter_values["by_delivery_type"]
         year = int(self.filter_values["year"]) if self.filter_values["year"] else now().year

@@ -239,3 +239,13 @@ class PaymentFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.Payment"
+
+
+class PaymentInvoiceFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    amount = Faker("pyint", min_value=0, max_value=1000)
+    date = Faker("date_time", tzinfo=timezone.utc)
+    invoice_number = Faker("pystr")
+
+    class Meta:
+        model = "opportunity.PaymentInvoice"
