@@ -40,9 +40,9 @@ def export_user_visit_data(
     user_visits = user_visits.order_by("visit_date")
 
     table = UserVisitTable(user_visits)
-    exclude_columns = ("visit_date", "form_json", "details", "justification")
+    exclude_columns = ("visit_date", "form_json", "details", "justification", "review_status")
     if opportunity.managed:
-        exclude_columns = ("visit_date", "form_json", "details")
+        exclude_columns = ("visit_date", "form_json", "details", "review_status")
     columns = [
         column
         for column in table.columns.iterall()
