@@ -61,6 +61,7 @@ def get_table_data_for_year_month(
             saved_approved_count__gt=0,
             saved_payment_accrued_usd__gt=0,
             saved_org_payment_accrued_usd__gt=0,
+            payment_date__gte=F("date_created"),
         )
         .values("opportunity_access__opportunity__delivery_type__name")
         .annotate(
