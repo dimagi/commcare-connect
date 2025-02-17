@@ -1,6 +1,9 @@
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Column, Layout, Row
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django_filters import ChoiceFilter, DateRangeFilter, FilterSet, ModelChoiceFilter
 from django_tables2 import columns, tables, utils
 
 from commcare_connect.opportunity.models import (
@@ -13,8 +16,10 @@ from commcare_connect.opportunity.models import (
     UserInvite,
     UserInviteStatus,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.users.models import User
 
 
 class OrgContextTable(tables.Table):
@@ -52,6 +57,52 @@ def show_warning(record):
     return ""
 
 
+class UserVisitReviewFilter(FilterSet):
+    review_status = ChoiceFilter(choices=VisitReviewStatus.choices, empty_label="All Reviews")
+    user = ModelChoiceFilter(queryset=User.objects.none(), empty_label="All Users", to_field_name="username")
+    visit_date = DateRangeFilter()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.filters["user"].queryset = User.objects.filter(id__in=self.queryset.values_list("user_id", flat=True))
+        self.filters["user"].field.label_from_instance = lambda obj: obj.name
+
+        self.form.helper = FormHelper()
+        self.form.helper.disable_csrf = True
+        self.form.helper.form_class = "form-inline"
+        self.form.helper.layout = Layout(
+            Row(
+                Column("review_status", css_class="col-md-3"),
+                Column("user", css_class="col-md-3"),
+                Column("visit_date", css_class="col-md-3"),
+            )
+        )
+        for field_name in self.form.fields.keys():
+            self.form.fields[field_name].widget.attrs.update({"@change": "$refs.reviewFilterForm.submit()"})
+
+    class Meta:
+        model = UserVisit
+        fields = ["review_status", "user", "visit_date"]
+
+
+class UserVisitFilter(UserVisitReviewFilter):
+    status = ChoiceFilter(choices=VisitValidationStatus.choices, empty_label="All Visits")
+
+    def __init__(self, *args, **kwargs):
+        managed_opportunity = kwargs.pop("managed_opportunity", False)
+        super().__init__(*args, **kwargs)
+        fields = ["status"]
+        if managed_opportunity:
+            fields.append("review_status")
+        self.form.helper.layout = Layout(Row(*[Column(field, css_class="col-md-3") for field in fields]))
+        for field in fields:
+            self.form.fields[field].widget.attrs.update({"@change": "$refs.visitFilterForm.submit()"})
+
+    class Meta:
+        model = UserVisit
+        fields = ["status", "review_status"]
+
+
 class UserVisitTable(OrgContextTable):
     # export only columns
     visit_id = columns.Column("Visit ID", accessor="xform_id", visible=False)
@@ -62,9 +113,9 @@ class UserVisitTable(OrgContextTable):
     )
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
     justification = columns.Column("Justification", accessor="justification", visible=False)
+    entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
-    entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
     entity_name = columns.Column("Entity Name", accessor="entity_name")
     flag_reason = columns.Column("Flags", accessor="flag_reason", empty_values=({}, None))
     details = columns.Column(verbose_name="", empty_values=())
@@ -82,12 +133,13 @@ class UserVisitTable(OrgContextTable):
 
     class Meta:
         model = UserVisit
-        fields = ("user__name", "username", "visit_date", "status")
+        fields = ("user__name", "username", "visit_date", "status", "review_status")
         sequence = (
             "visit_id",
             "visit_date",
             "visit_date_export",
             "status",
+            "review_status",
             "username",
             "user__name",
             "deliver_unit",
@@ -402,11 +454,11 @@ class UserVisitReviewTable(OrgContextTable):
         },
     )
     username = columns.Column(accessor="user__username", verbose_name="Username")
-    name = columns.Column(accessor="user__name", verbose_name="Name of the User")
+    name = columns.Column(accessor="user__name", verbose_name="Name of the User", orderable=True)
     justification = columns.Column(verbose_name="Justification")
-    visit_date = columns.Column()
+    visit_date = columns.Column(orderable=True)
     created_on = columns.Column(accessor="review_created_on", verbose_name="Review Requested On")
-    review_status = columns.Column(verbose_name="Program Manager Review")
+    review_status = columns.Column(verbose_name="Program Manager Review", orderable=True)
     user_visit = columns.Column(verbose_name="User Visit", empty_values=())
 
     class Meta:
