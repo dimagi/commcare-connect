@@ -8,7 +8,7 @@ from commcare_connect.opportunity.tables import SumColumn
 
 
 class AdminReportTable(tables.Table):
-    month = columns.Column(verbose_name="Month", footer="Total")
+    month = columns.Column(verbose_name="Month", footer="Total", empty_values=())
     delivery_type = columns.Column(verbose_name="Delivery Type")
     users = SumColumn(verbose_name="Eligible Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
@@ -26,8 +26,9 @@ class AdminReportTable(tables.Table):
         orderable = False
         row_attrs = {"id": lambda record: f"row{record['month'][1]}-{record['month'][0]}"}
 
-    def render_month(self, value):
-        return f"{calendar.month_name[value[0]]} {value[1]}"
+    def render_month(self, record):
+        date = record["month_group"]
+        return f"{calendar.month_name[date.month]} {date.year}"
 
     def render_delivery_type(self, record):
         if record["delivery_type"] != "All":
