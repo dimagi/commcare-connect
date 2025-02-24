@@ -364,6 +364,9 @@ def get_exchange_rate(currency_code, date=None):
 
     if currency_code is None:
         raise ImportException("Opportunity must have specified currency to import payments")
+
+    currency_code = currency_code.upper()
+
     if currency_code == "USD":
         return 1
 

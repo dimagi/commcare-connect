@@ -60,6 +60,8 @@ class ProgramForm(forms.ModelForm):
 
         self.instance.modified_by = self.user.email
 
+        self.instance.currency = self.cleaned_data["currency"].upper()
+
         return super().save(commit=commit)
 
 

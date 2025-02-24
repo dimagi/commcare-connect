@@ -1,7 +1,7 @@
 servers:
   web:
     hosts:
-      - 54.158.97.180
+      - 54.91.53.131
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'

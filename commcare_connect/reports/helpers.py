@@ -23,6 +23,7 @@ def get_table_data_for_year_month(
     program=None,
     network_manager=None,
     opportunity=None,
+    country_currency=None,
 ):
     year = year or datetime.now().year
     _, month_end = calendar.monthrange(year, month or 1)
@@ -43,6 +44,9 @@ def get_table_data_for_year_month(
     if opportunity:
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})
+    if country_currency:
+        filter_kwargs.update({"opportunity_access__opportunity__currency": country_currency})
+        filter_kwargs_nm.update({"invoice__opportunity__currency": country_currency})
 
     data = []
 
@@ -53,12 +57,14 @@ def get_table_data_for_year_month(
     )
     time_to_payment = ExpressionWrapper(F("payment_date") - Subquery(max_visit_date), output_field=DurationField())
     visit_data = (
-        CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
-        .filter(
+        CompletedWork.objects.filter(
             Q(status_modified_date__gte=start_date, status_modified_date__lt=end_date)
-            | Q(status_modified_date__isnull=True, work_date__gte=start_date, work_date__lt=end_date),
+            | Q(status_modified_date__isnull=True, date_created__gte=start_date, date_created__lt=end_date),
             **filter_kwargs,
             status=CompletedWorkStatus.approved,
+            saved_approved_count__gt=0,
+            saved_payment_accrued_usd__gt=0,
+            saved_org_payment_accrued_usd__gt=0,
         )
         .values("opportunity_access__opportunity__delivery_type__name")
         .annotate(
@@ -66,8 +72,12 @@ def get_table_data_for_year_month(
             service_count=Sum("saved_approved_count", default=0),
             flw_amount_earned=Sum("saved_payment_accrued_usd", default=0),
             nm_amount_earned=Sum(F("saved_org_payment_accrued_usd") + F("saved_payment_accrued_usd"), default=0),
-            avg_time_to_payment=Avg(time_to_payment, default=timedelta(days=0)),
-            max_time_to_payment=Max(time_to_payment, default=timedelta(days=0)),
+            avg_time_to_payment=Avg(
+                time_to_payment, default=timedelta(days=0), filter=Q(payment_date__gte=F("date_created"))
+            ),
+            max_time_to_payment=Max(
+                time_to_payment, default=timedelta(days=0), filter=Q(payment_date__gte=F("date_created"))
+            ),
         )
     )
 
@@ -97,12 +107,20 @@ def get_table_data_for_year_month(
         item["opportunity_access__opportunity__delivery_type__name"]: item["nm_amount_earned"] for item in visit_data
     }
     nm_amount_paid = (
-        payment_query.filter(**filter_kwargs_nm)
+        payment_query.filter(**filter_kwargs_nm, invoice__service_delivery=True)
         .values("invoice__opportunity__delivery_type__name")
         .annotate(approved_sum=Sum("amount_usd", default=0))
     )
     nm_amount_paid_data = {
         item["invoice__opportunity__delivery_type__name"]: item["approved_sum"] for item in nm_amount_paid
+    }
+    nm_other_amount_paid = (
+        payment_query.filter(**filter_kwargs_nm, invoice__service_delivery=False)
+        .values("invoice__opportunity__delivery_type__name")
+        .annotate(approved_sum=Sum("amount_usd", default=0))
+    )
+    nm_other_amount_paid_data = {
+        item["invoice__opportunity__delivery_type__name"]: item["approved_sum"] for item in nm_other_amount_paid
     }
 
     flw_amount_paid_data = {}
@@ -145,6 +163,7 @@ def get_table_data_for_year_month(
                     "flw_amount_paid": flw_amount_paid_data.get(delivery_type_name, 0),
                     "nm_amount_earned": nm_amount_earned,
                     "nm_amount_paid": nm_amount_paid,
+                    "nm_other_amount_paid": nm_other_amount_paid_data.get(delivery_type_name, 0),
                     "avg_top_paid_flws": avg_top_flw_amount_paid_data.get(delivery_type_name, 0),
                 }
             )
@@ -164,6 +183,7 @@ def get_table_data_for_year_month(
                 "flw_amount_paid": sum(flw_amount_paid_data.values()),
                 "nm_amount_earned": nm_amount_earned,
                 "nm_amount_paid": nm_amount_paid,
+                "nm_other_amount_paid": sum(nm_other_amount_paid_data.values()),
                 "avg_top_paid_flws": sum(avg_top_flw_amount_paid_data.values()),
             }
         )

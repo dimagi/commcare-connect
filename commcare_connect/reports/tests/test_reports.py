@@ -90,7 +90,7 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
             saved_approved_count=1,
             saved_payment_accrued_usd=i * 100,
             saved_org_payment_accrued_usd=100,
-            payment_date=now,
+            payment_date=now + timedelta(minutes=1),
         )
         UserVisitFactory(
             visit_date=now - timedelta(i * 10),
@@ -101,19 +101,22 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
         PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
         inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
         PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
+        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
     data = get_table_data_for_year_month(year, month, delivery_type)
 
     assert len(data)
     for row in data:
         assert row["month"][1] == datetime.now().year
-        assert row["users"] == 10
-        assert row["services"] == 10
-        assert row["avg_time_to_payment"] == 45
+        assert row["users"] == 9
+        assert row["services"] == 9
+        assert row["avg_time_to_payment"] == 50
         assert 0 <= row["max_time_to_payment"] <= 90
         assert row["flw_amount_earned"] == 4500
         assert row["flw_amount_paid"] == 4500
-        assert row["nm_amount_earned"] == 5500
+        assert row["nm_amount_earned"] == 5400
         assert row["nm_amount_paid"] == 1000
+        assert row["nm_other_amount_paid"] == 1000
         assert row["avg_top_paid_flws"] == 1700
 
 
@@ -122,20 +125,21 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
     "year, month, delivery_type",
     [
         (None, None, None),
-        (datetime.now().year, datetime.now().month, "Delivery Type A"),
-        (datetime.now().year, datetime.now().month, "Delivery Type B"),
+        (datetime.now().year, datetime.now().month, "delivery_1"),
+        (datetime.now().year, datetime.now().month, "delivery_2"),
     ],
 )
 def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_type):
     now = datetime.now(UTC)
-    delivery_type_names = ["Delivery Type 1", "Delivery Type 2"]
-    for d_name in delivery_type_names:
+    delivery_type_slugs = ["delivery_1", "delivery_2"]
+    for slug in delivery_type_slugs:
         users = MobileUserFactory.create_batch(5)
         for i, user in enumerate(users):
             access = OpportunityAccessFactory(
                 user=user,
                 opportunity__is_test=False,
-                opportunity__delivery_type__name=d_name,
+                opportunity__delivery_type__slug=slug,
+                opportunity__delivery_type__name=slug,
             )
             cw = CompletedWorkFactory(
                 status_modified_date=now - timedelta(3),
@@ -144,7 +148,7 @@ def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_ty
                 saved_approved_count=1,
                 saved_payment_accrued_usd=i * 100,
                 saved_org_payment_accrued_usd=100,
-                payment_date=now,
+                payment_date=now + timedelta(minutes=1),
             )
             UserVisitFactory(
                 visit_date=now - timedelta(i * 10),
@@ -159,17 +163,66 @@ def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_ty
 
     assert len(data)
     for row in data:
-        assert row["delivery_type"] in delivery_type_names
+        assert row["delivery_type"] in delivery_type_slugs
         assert row["month"][1] == datetime.now().year
-        assert row["users"] == 5
-        assert row["services"] == 5
-        assert row["avg_time_to_payment"] == 20
+        assert row["users"] == 4
+        assert row["services"] == 4
+        assert row["avg_time_to_payment"] == 25
         assert row["max_time_to_payment"] == 40
         assert row["flw_amount_earned"] == 1000
         assert row["flw_amount_paid"] == 1000
-        assert row["nm_amount_earned"] == 1500
+        assert row["nm_amount_earned"] == 1400
         assert row["nm_amount_paid"] == 500
         assert row["avg_top_paid_flws"] == 400
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("opp_currency, filter_currency", [("ETB", "KES"), ("ETB", "ETB")])
+def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_currency):
+    now = datetime.now(UTC)
+    users = MobileUserFactory.create_batch(10)
+    for i, user in enumerate(users):
+        access = OpportunityAccessFactory(
+            user=user,
+            opportunity__is_test=False,
+            opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
+            opportunity__currency=opp_currency,
+        )
+        cw = CompletedWorkFactory(
+            status_modified_date=now - timedelta(3),
+            opportunity_access=access,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+            saved_payment_accrued_usd=i * 100,
+            saved_org_payment_accrued_usd=100,
+            payment_date=now + timedelta(minutes=1),
+        )
+        UserVisitFactory(
+            visit_date=now - timedelta(i * 10),
+            opportunity_access=access,
+            completed_work=cw,
+            status=VisitValidationStatus.approved,
+        )
+        PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
+        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
+        PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
+        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
+    data = get_table_data_for_year_month(country_currency=filter_currency)
+
+    if opp_currency == filter_currency:
+        assert len(data)
+        for row in data:
+            assert row["users"] == 9
+            assert row["services"] == 9
+            assert row["avg_time_to_payment"] == 50
+            assert 0 <= row["max_time_to_payment"] <= 90
+            assert row["flw_amount_earned"] == 4500
+            assert row["flw_amount_paid"] == 4500
+            assert row["nm_amount_earned"] == 5400
+            assert row["nm_amount_paid"] == 1000
+            assert row["nm_other_amount_paid"] == 1000
+            assert row["avg_top_paid_flws"] == 1700
 
 
 def test_results_to_geojson():

@@ -2,43 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from commcare_connect.opportunity.models import (
-    Assessment,
-    CompletedModule,
-    CompletedWork,
-    DeliverUnit,
-    DeliveryType,
-    LearnModule,
-    Opportunity,
-    OpportunityAccess,
-    OpportunityClaim,
-    Payment,
-    PaymentUnit,
-    UserVisit,
-)
-from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import Program
-from commcare_connect.users.models import ConnectIDUserLink, User
-
-REPLICATION_ALLOWED_MODELS = [
-    Assessment,
-    CompletedModule,
-    CompletedWork,
-    ConnectIDUserLink,
-    DeliverUnit,
-    DeliveryType,
-    LearnModule,
-    Opportunity,
-    OpportunityAccess,
-    OpportunityClaim,
-    Organization,
-    Payment,
-    PaymentUnit,
-    Program,
-    User,
-    UserVisit,
-]
-
+from commcare_connect.multidb.constants import REPLICATION_ALLOWED_MODELS
 
 PUBLICATION_NAME = "tables_for_superset_pub"
 SUBSCRIPTION_NAME = "tables_for_superset_sub"
@@ -108,12 +72,15 @@ class Command(BaseCommand):
             else:
                 # Create new subscription
                 default_db_settings = default_conn.settings_dict
+                self.stdout.write("Provide user credentials on primary with only replication privilege")
+                username = input("Enter username: ")
+                password = input("Enter password: ")
                 primary_conn_info = (
                     f"host={default_db_settings['HOST']} "
                     f"port={default_db_settings['PORT']} "
                     f"dbname={default_db_settings['NAME']} "
-                    f"user={default_db_settings['USER']} "
-                    f"password={default_db_settings['PASSWORD']}"
+                    f"user={username} "
+                    f"password={password}"
                 )
                 cursor.execute(
                     f"""

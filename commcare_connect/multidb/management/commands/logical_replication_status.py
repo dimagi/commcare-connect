@@ -2,7 +2,9 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from .setup_logical_replication import PUBLICATION_NAME, REPLICATION_ALLOWED_MODELS, SUBSCRIPTION_NAME
+from commcare_connect.multidb.constants import REPLICATION_ALLOWED_MODELS
+
+from .setup_logical_replication import PUBLICATION_NAME, SUBSCRIPTION_NAME
 
 
 class Command(BaseCommand):

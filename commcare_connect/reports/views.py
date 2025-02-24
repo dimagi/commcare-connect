@@ -36,6 +36,13 @@ from commcare_connect.reports.queries import get_visit_map_queryset
 from .tables import AdminReportTable
 
 ADMIN_REPORT_START = (2023, 1)
+COUNTRY_CURRENCY_CHOICES = [
+    ("ETB", "Ethiopia"),
+    ("KES", "Kenya"),
+    ("MWK", "Malawi"),
+    ("MZN", "Mozambique"),
+    ("NGN", "Nigeria"),
+]
 
 
 def _increment(quarter):
@@ -337,6 +344,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         queryset=Opportunity.objects.filter(is_test=False),
         label="Opportunity",
     )
+    country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -344,9 +352,10 @@ class DeliveryReportFilters(django_filters.FilterSet):
         self.form.helper.form_class = "form-inline"
         self.form.helper.layout = Layout(
             Row(
-                Column("program", css_class="col-md-4"),
-                Column("network_manager", css_class="col-md-4"),
-                Column("opportunity", css_class="col-md-4"),
+                Column("program", css_class="col-md-3"),
+                Column("network_manager", css_class="col-md-3"),
+                Column("opportunity", css_class="col-md-3"),
+                Column("country_currency", css_class="col-md-3"),
             ),
             Row(
                 Column("delivery_type", css_class="col-md-4"),
@@ -426,6 +435,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
             "program": None,
             "network_manager": None,
             "opportunity": None,
+            "country_currency": None,
         }
         if self.filterset.form.is_valid():
             filters.update(self.filterset.form.cleaned_data)
@@ -440,10 +450,18 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
         program = self.filter_values["program"]
         network_manager = self.filter_values["network_manager"]
         opportunity = self.filter_values["opportunity"]
+        country_currency = self.filter_values["country_currency"]
 
         if year and month:
             return get_table_data_for_year_month(
-                year, month, delivery_type, group_by_delivery_type, program, network_manager, opportunity
+                year,
+                month,
+                delivery_type,
+                group_by_delivery_type,
+                program,
+                network_manager,
+                opportunity,
+                country_currency,
             )
 
         data = []
@@ -452,7 +470,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
             if year == now().year and now().month < m:
                 break
             data += get_table_data_for_year_month(
-                year, m, delivery_type, group_by_delivery_type, program, network_manager, opportunity
+                year, m, delivery_type, group_by_delivery_type, program, network_manager, opportunity, country_currency
             )
         return data
 
