@@ -59,9 +59,9 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
 
     assert exporter.export("csv") == (
         "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
-        "Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
-        f",{date1.isoformat()},Pending,{username},{name},{deliver_unit.name},,,,,test_form1,\r\n"
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_unit.name},,abc,A B C,,test_form2,b\r\n"
+        "Duration,Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
+        f",{date1.isoformat()},Pending,{username},{name},{deliver_unit.name},,,,,,test_form1,\r\n"
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_unit.name},,,abc,A B C,,test_form2,b\r\n"
     )
 
 

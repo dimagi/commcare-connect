@@ -113,6 +113,7 @@ class UserVisitTable(OrgContextTable):
     )
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
     justification = columns.Column("Justification", accessor="justification", visible=False)
+    duration = columns.Column("Duration", accessor="duration", visible=False)
     entity_id = columns.Column("Entity ID", accessor="entity_id", visible=False)
 
     deliver_unit = columns.Column("Unit Name", accessor="deliver_unit__name")
@@ -147,6 +148,7 @@ class UserVisitTable(OrgContextTable):
         empty_text = "No forms."
         orderable = False
         row_attrs = {"class": show_warning}
+        template_name = "django_tables2/bootstrap5.html"
 
 
 class OpportunityPaymentTable(OrgContextTable):
@@ -476,6 +478,7 @@ class UserVisitReviewTable(OrgContextTable):
             "user_visit",
         )
         empty_text = "No visits submitted for review."
+        template_name = "django_tables2/bootstrap5.html"
 
     def render_user_visit(self, record):
         url = reverse(

@@ -307,9 +307,9 @@ def test_add_budget_existing_users_for_managed_opportunity(
     max_visits_per_user = 10
 
     budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
-    initial_total_budget = budget_per_user * 1
+    initial_total_budget = budget_per_user * 2
 
-    program = ProgramFactory(organization=program_manager_org, budget=100)
+    program = ProgramFactory(organization=program_manager_org, budget=200)
     opportunity = ManagedOpportunityFactory(
         program=program,
         organization=organization,
@@ -329,11 +329,10 @@ def test_add_budget_existing_users_for_managed_opportunity(
     url = reverse("opportunity:add_budget_existing_users", args=(opportunity.organization.slug, opportunity.pk))
     client.force_login(org_user_admin)
 
-    additional_visits = 6
-    # Budget calculation breakdown: Initial: 60 increase: 36 Final: 96 - Still under program budget of 100
+    additional_visits = 10
+    # Budget calculation breakdown: opp_budget=120 Initial_claimed: 60 increase: 60 Final: 120 - Still under opp_budget
 
     budget_increase = (payment_per_visit + org_pay_per_visit) * additional_visits
-    expected_total_budget = initial_total_budget + budget_increase
     expected_claimed_budget = budget_per_user + budget_increase
 
     response = client.post(url, data={"selected_users": [claim.id], "additional_visits": additional_visits})
@@ -342,16 +341,15 @@ def test_add_budget_existing_users_for_managed_opportunity(
     opportunity.refresh_from_db()
     claim_limit.refresh_from_db()
 
-    assert opportunity.total_budget == expected_total_budget
+    assert opportunity.total_budget == initial_total_budget
     assert opportunity.claimed_budget == expected_claimed_budget
     assert claim_limit.max_visits == max_visits_per_user + additional_visits
 
-    # Second scenario: Adding visits that exceed program budget
     additional_visits = 1
-    # Budget calculation breakdown: Previous: 96 increase: 6 final: 102 - Exceeds program budget of 100
+    # Budget calculation breakdown: Previous: claimed 120 increase: 6 final: 126 - Exceeds opp_budget budget of 120
 
     response = client.post(url, data={"selected_users": [claim.id], "additional_visits": additional_visits})
     assert response.status_code == HTTPStatus.OK
     form = response.context["form"]
     assert "additional_visits" in form.errors
-    assert form.errors["additional_visits"][0] == "Additional visits exceed the program budget."
+    assert form.errors["additional_visits"][0] == "Additional visits exceed the opportunity budget."
