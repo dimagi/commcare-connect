@@ -106,7 +106,10 @@ def get_table_data_for_year_month(
         )
         .order_by("month_group")
     )
-    visit_data_dict = {(item["month_group"], item.get("delivery_type_name", "All")): item for item in visit_data}
+    visit_data_dict = defaultdict(dict)
+    for item in visit_data:
+        group_key = item["month_group"], item.get("delivery_type_name", "All")
+        visit_data_dict[group_key].update(item)
 
     payment_query = Payment.objects.filter(date_paid__date__gte=from_date, date_paid__date__lte=to_date)
     nm_amount_paid_data = (
@@ -123,8 +126,7 @@ def get_table_data_for_year_month(
     )
     for item in nm_amount_paid_data:
         group_key = item["month_group"], item.get("delivery_type_name", "All")
-        if visit_data_dict.get(group_key):
-            visit_data_dict[group_key].update(item)
+        visit_data_dict[group_key].update(item)
 
     avg_top_flw_amount_paid = (
         payment_query.filter(**filter_kwargs, confirmed=True)
@@ -150,11 +152,5 @@ def get_table_data_for_year_month(
         top_five_percent_len = len(sum_total_users) // 20 or 1
         flw_amount_paid = sum(sum_total_users.values())
         avg_top_paid_flws = sum(sorted(sum_total_users.values(), reverse=True)[:top_five_percent_len])
-        if visit_data_dict.get(group_key):
-            visit_data_dict[group_key].update(
-                {
-                    "flw_amount_paid": flw_amount_paid,
-                    "avg_top_paid_flws": avg_top_paid_flws,
-                }
-            )
+        visit_data_dict[group_key].update({"flw_amount_paid": flw_amount_paid, "avg_top_paid_flws": avg_top_paid_flws})
     return list(visit_data_dict.values())
