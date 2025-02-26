@@ -1,5 +1,6 @@
+import calendar
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime
 
 from django.db.models import (
     Avg,
@@ -37,8 +38,10 @@ def get_table_data_for_year_month(
     opportunity=None,
     country_currency=None,
 ):
-    from_date = from_date or now().date() - timedelta(days=30)
-    to_date = to_date or now().date()
+    today = now()
+    from_date = from_date or datetime(year=today.year, month=today.month - 1, day=1).date()
+    _, month_end = calendar.monthrange(today.year, today.month)
+    to_date = to_date or datetime(year=today.year, month=today.month, day=month_end).date()
 
     filter_kwargs = {"opportunity_access__opportunity__is_test": False}
     filter_kwargs_nm = {"invoice__opportunity__is_test": False}

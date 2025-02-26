@@ -335,15 +335,15 @@ class DeliveryReportFilters(django_filters.FilterSet):
         label="Opportunity",
     )
     country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
-    from_date = django_filters.DateTimeFilter(
-        widget=forms.DateInput(attrs={"type": "date"}),
-        label="From Date",
+    from_date = django_filters.DateFilter(
+        label="From Dat/",
         required=False,
+        input_formats=["%Y-%m"],
     )
-    to_date = django_filters.DateTimeFilter(
-        widget=forms.DateInput(attrs={"type": "date"}),
+    to_date = django_filters.DateFilter(
         label="To Date",
         required=False,
+        input_formats=["%Y-%m"],
     )
 
     def __init__(self, *args, **kwargs):
@@ -369,8 +369,8 @@ class DeliveryReportFilters(django_filters.FilterSet):
             self.data = self.data.copy() if self.data else {}
             today = date.today()
             default_from = today - timedelta(days=30)
-            self.data["to_date"] = today.strftime("%Y-%m-%d")
-            self.data["from_date"] = default_from.strftime("%Y-%m-%d")
+            self.data["to_date"] = today.strftime("%Y-%m")
+            self.data["from_date"] = default_from.strftime("%Y-%m")
             self.form.is_bound = True
             self.form.data = self.data
 
