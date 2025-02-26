@@ -26,6 +26,8 @@ class FormReceiver(APIView):
         except IntegrityError as e:
             if "unique_xform_entity_deliver_unit" in str(e):
                 logger.info(f"Duplicate form with ID: {xform.id} received.")
+            elif "unique_xform_completed_module" in str(e):
+                logger.info(f"Learn Module is already completed with form ID: {xform.id}.")
             else:
                 raise
         return Response(status=status.HTTP_200_OK)
