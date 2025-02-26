@@ -106,7 +106,20 @@ def get_table_data_for_year_month(
         )
         .order_by("month_group")
     )
-    visit_data_dict = defaultdict(dict)
+    visit_data_dict = defaultdict(
+        lambda: {
+            "users": 0,
+            "services": 0,
+            "flw_amount_earned": 0,
+            "nm_amount_earned": 0,
+            "avg_time_to_payment": 0,
+            "max_time_to_payment": 0,
+            "nm_amount_paid": 0,
+            "nm_other_amount_paid": 0,
+            "flw_amount_paid": 0,
+            "avg_top_paid_flws": 0,
+        }
+    )
     for item in visit_data:
         group_key = item["month_group"], item.get("delivery_type_name", "All")
         visit_data_dict[group_key].update(item)
