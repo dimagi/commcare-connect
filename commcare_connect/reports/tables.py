@@ -24,7 +24,7 @@ class AdminReportTable(tables.Table):
     class Meta:
         empty_text = "No data for this month."
         orderable = False
-        row_attrs = {"id": lambda record: f"row{record['month'][1]}-{record['month'][0]}"}
+        row_attrs = {"id": lambda record: record.month_group}
 
     def render_month(self, record):
         date = record["month_group"]
