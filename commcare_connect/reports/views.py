@@ -336,7 +336,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
     )
     country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
     from_date = django_filters.DateFilter(
-        label="From Dat/",
+        label="From Date",
         required=False,
         input_formats=["%Y-%m"],
     )
