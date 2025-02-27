@@ -70,6 +70,12 @@ def filter_users(country_code: str, credential: list[str]):
     return [ConnectIdUser(**user_dict) for user_dict in data["found_users"]]
 
 
+def fetch_user_counts() -> dict[str, int]:
+    response = _make_request(GET, "/users/fetch_user_counts")
+    data = response.json()
+    return data
+
+
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
     if json and not method == "POST":
         raise ValueError("json can only be used with POST requests")

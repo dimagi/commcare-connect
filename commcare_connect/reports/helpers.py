@@ -6,6 +6,7 @@ from statistics import mean
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, OuterRef, Q, Subquery, Sum
 from django.utils.timezone import make_aware
 
+from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
@@ -57,9 +58,10 @@ def get_table_data_for_year_month(
     )
     time_to_payment = ExpressionWrapper(F("payment_date") - Subquery(max_visit_date), output_field=DurationField())
     visit_data = (
-        CompletedWork.objects.filter(
+        CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
+        .filter(
             Q(status_modified_date__gte=start_date, status_modified_date__lt=end_date)
-            | Q(status_modified_date__isnull=True, date_created__gte=start_date, date_created__lt=end_date),
+            | Q(status_modified_date__isnull=True, work_date__gte=start_date, work_date__lt=end_date),
             **filter_kwargs,
             status=CompletedWorkStatus.approved,
             saved_approved_count__gt=0,
@@ -86,6 +88,7 @@ def get_table_data_for_year_month(
         date_paid__lt=end_date,
     )
 
+    connectid_user_count_data = fetch_user_counts()
     user_count_data = {
         item["opportunity_access__opportunity__delivery_type__name"]: item["users"] for item in visit_data
     }
@@ -155,6 +158,7 @@ def get_table_data_for_year_month(
                 {
                     "delivery_type": delivery_type_name,
                     "month": (month, year),
+                    "connectid_users": connectid_user_count_data.get(str(start_date.date()), 0),
                     "users": user_count_data[delivery_type_name],
                     "services": service_count_data[delivery_type_name],
                     "avg_time_to_payment": avg_time_to_payment_data.get(delivery_type_name),
@@ -175,6 +179,7 @@ def get_table_data_for_year_month(
             {
                 "delivery_type": "All",
                 "month": (month, year),
+                "connectid_users": connectid_user_count_data.get(str(start_date.date()), 0),
                 "users": sum(user_count_data.values()),
                 "services": sum(service_count_data.values()),
                 "avg_time_to_payment": mean(avg_time_to_payment_data.values() or [0]),
