@@ -9,7 +9,7 @@ from commcare_connect.opportunity.tables import SumColumn
 
 class AdminReportTable(tables.Table):
     month = columns.Column(verbose_name="Month", footer="Total", empty_values=())
-    delivery_type_name = columns.Column(verbose_name="Delivery Type")
+    delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=())
     users = SumColumn(verbose_name="Eligible Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
@@ -24,27 +24,27 @@ class AdminReportTable(tables.Table):
     class Meta:
         empty_text = "No data for this month."
         orderable = False
-        row_attrs = {"id": lambda record: record["month_group"]}
+        row_attrs = {"id": lambda record: f"row{record['month_group'].year}-{record['month_group'].month:02}"}
 
     def render_month(self, record):
         date = record["month_group"]
         return f"{calendar.month_name[date.month]} {date.year}"
 
-    def render_delivery_type(self, record):
-        if record["delivery_type"] != "All":
-            return record["delivery_type"]
+    def render_delivery_type_name(self, record, value):
+        if value is not None and value != "All":
+            return value
         url = reverse("reports:delivery_stats_report")
+        filter_date = record["month_group"].strftime("%Y-%m")
         return format_html(
             """<button type="button" class="btn btn-primary btn-sm"
-                 hx-get='{url}?year={year}&month={month}&by_delivery_type=on&drilldown'
-                 hx-target='#row{year}-{month}'
+                 hx-get='{url}?from_date={filter_date}&to_date={filter_date}&group_by_delivery_type=on&drilldown'
+                 hx-target='#row{filter_date}'
                  hx-swap="outerHTML"
                  hx-select="tbody tr">
                  View all types
                </button>""",
             url=url,
-            month=record["month"][0],
-            year=record["month"][1],
+            filter_date=filter_date,
         )
 
     def render_avg_time_to_payment(self, record, value):

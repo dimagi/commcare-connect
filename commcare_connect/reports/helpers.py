@@ -1,6 +1,4 @@
-import calendar
 from collections import defaultdict
-from datetime import datetime
 
 from django.db.models import (
     Avg,
@@ -38,10 +36,8 @@ def get_table_data_for_year_month(
     opportunity=None,
     country_currency=None,
 ):
-    today = now()
-    from_date = from_date or datetime(year=today.year, month=today.month - 1, day=1).date()
-    _, month_end = calendar.monthrange(today.year, today.month)
-    to_date = to_date or datetime(year=today.year, month=today.month, day=month_end).date()
+    from_date = from_date or now()
+    to_date = to_date or now()
 
     filter_kwargs = {"opportunity_access__opportunity__is_test": False}
     filter_kwargs_nm = {"invoice__opportunity__is_test": False}
@@ -79,8 +75,10 @@ def get_table_data_for_year_month(
             )
         )
         .filter(
-            filter_date__date__gte=from_date,
-            filter_date__date__lte=to_date,
+            filter_date__month__gte=from_date.month,
+            filter_date__year__gte=from_date.year,
+            filter_date__month__lte=to_date.month,
+            filter_date__year__lte=to_date.year,
             **filter_kwargs,
             status=CompletedWorkStatus.approved,
             saved_approved_count__gt=0,
@@ -124,7 +122,12 @@ def get_table_data_for_year_month(
         group_key = item["month_group"], item.get("delivery_type_name", "All")
         visit_data_dict[group_key].update(item)
 
-    payment_query = Payment.objects.filter(date_paid__date__gte=from_date, date_paid__date__lte=to_date)
+    payment_query = Payment.objects.filter(
+        date_paid__month__gte=from_date.month,
+        date_paid__year__gte=from_date.year,
+        date_paid__month__lte=to_date.month,
+        date_paid__year__lte=to_date.year,
+    )
     nm_amount_paid_data = (
         payment_query.filter(**filter_kwargs_nm)
         .annotate(
