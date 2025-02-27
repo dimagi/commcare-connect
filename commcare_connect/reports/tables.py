@@ -1,5 +1,3 @@
-import calendar
-
 from django.urls import reverse
 from django.utils.html import format_html
 from django_tables2 import columns, tables
@@ -24,11 +22,10 @@ class AdminReportTable(tables.Table):
     class Meta:
         empty_text = "No data for this month."
         orderable = False
-        row_attrs = {"id": lambda record: f"row{record['month_group'].year}-{record['month_group'].month:02}"}
+        row_attrs = {"id": lambda record: f"row{record['month_group'].strftime('%Y-%m')}"}
 
     def render_month(self, record):
-        date = record["month_group"]
-        return f"{calendar.month_name[date.month]} {date.year}"
+        return record["month_group"].strftime("%B %Y")
 
     def render_delivery_type_name(self, record, value):
         if value is not None and value != "All":
