@@ -105,6 +105,9 @@ class Opportunity(BaseModel):
         for pu in self.paymentunit_set.all():
             if not (pu.max_total and pu.max_daily):
                 return False
+            if not pu.deliver_units.exists():
+                # Payment unit must have deliver units configured
+                return False
         return True
 
     @property
