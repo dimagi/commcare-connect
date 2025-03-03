@@ -41,7 +41,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
                 )
             ),
             completed_modules_count=Count(
-                "opportunity_access__user__completed_modules",
+                "opportunity_access__user__completed_modules__module",
                 filter=Q(opportunity_access__user__completed_modules__opportunity=opportunity),
                 distinct=True,
             ),

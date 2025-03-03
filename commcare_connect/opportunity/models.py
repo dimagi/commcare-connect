@@ -265,7 +265,7 @@ class OpportunityAccess(models.Model):
         learn_modules_count = learn_modules.count()
         if learn_modules_count <= 0:
             return 0
-        completed_modules = self.completedmodule_set.count()
+        completed_modules = self.unique_completed_modules.count()
         percentage = (completed_modules / learn_modules_count) * 100
         return round(percentage, 2)
 
@@ -329,6 +329,10 @@ class OpportunityAccess(models.Model):
             status = "Not completed"
         return status
 
+    @property
+    def unique_completed_modules(self):
+        return self.completedmodule_set.order_by("module", "date").distinct("module")
+
 
 class CompletedModule(XFormBaseModel):
     user = models.ForeignKey(
@@ -341,6 +345,13 @@ class CompletedModule(XFormBaseModel):
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE, null=True)
     date = models.DateTimeField()
     duration = models.DurationField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["xform_id", "module", "opportunity_access"], name="unique_xform_completed_module"
+            )
+        ]
 
 
 class Assessment(XFormBaseModel):
