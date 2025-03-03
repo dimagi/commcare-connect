@@ -1,5 +1,3 @@
-import calendar
-
 from django.urls import reverse
 from django.utils.html import format_html
 from django_tables2 import columns, tables
@@ -8,8 +6,8 @@ from commcare_connect.opportunity.tables import SumColumn
 
 
 class AdminReportTable(tables.Table):
-    month = columns.Column(verbose_name="Month", footer="Total")
-    delivery_type = columns.Column(verbose_name="Delivery Type")
+    month = columns.Column(verbose_name="Month", footer="Total", empty_values=())
+    delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=())
     users = SumColumn(verbose_name="Eligible Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
@@ -24,26 +22,26 @@ class AdminReportTable(tables.Table):
     class Meta:
         empty_text = "No data for this month."
         orderable = False
-        row_attrs = {"id": lambda record: f"row{record['month'][1]}-{record['month'][0]}"}
+        row_attrs = {"id": lambda record: f"row{record['month_group'].strftime('%Y-%m')}"}
 
-    def render_month(self, value):
-        return f"{calendar.month_name[value[0]]} {value[1]}"
+    def render_month(self, record):
+        return record["month_group"].strftime("%B %Y")
 
-    def render_delivery_type(self, record):
-        if record["delivery_type"] != "All":
-            return record["delivery_type"]
+    def render_delivery_type_name(self, record, value):
+        if value is not None and value != "All":
+            return value
         url = reverse("reports:delivery_stats_report")
+        filter_date = record["month_group"].strftime("%Y-%m")
         return format_html(
             """<button type="button" class="btn btn-primary btn-sm"
-                 hx-get='{url}?year={year}&month={month}&by_delivery_type=on&drilldown'
-                 hx-target='#row{year}-{month}'
+                 hx-get='{url}?from_date={filter_date}&to_date={filter_date}&group_by_delivery_type=on&drilldown'
+                 hx-target='#row{filter_date}'
                  hx-swap="outerHTML"
                  hx-select="tbody tr">
                  View all types
                </button>""",
             url=url,
-            month=record["month"][0],
-            year=record["month"][1],
+            filter_date=filter_date,
         )
 
     def render_avg_time_to_payment(self, record, value):

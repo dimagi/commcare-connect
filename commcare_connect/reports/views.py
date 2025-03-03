@@ -1,4 +1,3 @@
-import calendar
 from datetime import date, datetime, timedelta
 
 import django_filters
@@ -15,7 +14,6 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.functional import cached_property
-from django.utils.timezone import now
 from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
 
@@ -320,15 +318,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         choices=DeliveryType.objects.values_list("slug", "name"),
         label="Delivery Type",
     )
-    year = django_filters.ChoiceFilter(
-        choices=[(year, str(year)) for year in range(2023, datetime.now().year + 1)],
-        label="Year",
-    )
-    month = django_filters.ChoiceFilter(
-        choices=list(enumerate(calendar.month_name))[1:],
-        label="month",
-    )
-    by_delivery_type = django_filters.BooleanFilter(
+    group_by_delivery_type = django_filters.BooleanFilter(
         widget=forms.CheckboxInput(),
         label="Break up by delivery type",
     )
@@ -345,6 +335,16 @@ class DeliveryReportFilters(django_filters.FilterSet):
         label="Opportunity",
     )
     country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
+    from_date = django_filters.DateFilter(
+        label="From Date",
+        required=False,
+        input_formats=["%Y-%m"],
+    )
+    to_date = django_filters.DateFilter(
+        label="To Date",
+        required=False,
+        input_formats=["%Y-%m"],
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -359,15 +359,32 @@ class DeliveryReportFilters(django_filters.FilterSet):
             ),
             Row(
                 Column("delivery_type", css_class="col-md-4"),
-                Column("year", css_class="col-md-4"),
-                Column("month", css_class="col-md-4"),
+                Column("from_date", css_class="col-md-4"),
+                Column("to_date", css_class="col-md-4"),
             ),
-            Row(Column("by_delivery_type", css_class="col-md-4")),
+            Row(Column("group_by_delivery_type", css_class="col-md-4")),
         )
+
+        if not self.data:
+            self.data = self.data.copy() if self.data else {}
+            today = date.today()
+            default_from = today - timedelta(days=30)
+            self.data["to_date"] = today.strftime("%Y-%m")
+            self.data["from_date"] = default_from.strftime("%Y-%m")
+            self.form.is_bound = True
+            self.form.data = self.data
 
     class Meta:
         model = None
-        fields = ["delivery_type", "year", "month", "by_delivery_type", "program", "network_manager", "opportunity"]
+        fields = [
+            "delivery_type",
+            "from_date",
+            "to_date",
+            "group_by_delivery_type",
+            "program",
+            "network_manager",
+            "opportunity",
+        ]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
 
 
@@ -404,52 +421,14 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
 
     @cached_property
     def filter_values(self):
-        filters = {
-            "year": now().year,
-            "month": None,
-            "delivery_type": None,
-            "by_delivery_type": None,
-            "program": None,
-            "network_manager": None,
-            "opportunity": None,
-            "country_currency": None,
-        }
+        filters = {}
         if self.filterset.form.is_valid():
             filters.update(self.filterset.form.cleaned_data)
         return filters
 
     @property
     def object_list(self):
-        delivery_type = self.filter_values["delivery_type"]
-        group_by_delivery_type = self.filter_values["by_delivery_type"]
-        year = int(self.filter_values["year"]) if self.filter_values["year"] else now().year
-        month = int(self.filter_values["month"]) if self.filter_values["month"] else None
-        program = self.filter_values["program"]
-        network_manager = self.filter_values["network_manager"]
-        opportunity = self.filter_values["opportunity"]
-        country_currency = self.filter_values["country_currency"]
-
-        if year and month:
-            return get_table_data_for_year_month(
-                year,
-                month,
-                delivery_type,
-                group_by_delivery_type,
-                program,
-                network_manager,
-                opportunity,
-                country_currency,
-            )
-
-        data = []
-        for m in range(1, 13):
-            # break if filtering future dates
-            if year == now().year and now().month < m:
-                break
-            data += get_table_data_for_year_month(
-                year, m, delivery_type, group_by_delivery_type, program, network_manager, opportunity, country_currency
-            )
-        return data
+        return get_table_data_for_year_month(**self.filter_values)
 
 
 @login_required

@@ -29,7 +29,19 @@
  window.addEventListener("DOMContentLoaded", (e) => {
   $('select').on('select2:select', function (e) {
    $(this).closest('form').get(0).dispatchEvent(new Event('change'));
-});
+  });
+  monthPickr("#id_from_date", {
+    altInput: true,
+  }, {
+    dateFormat: "Y-m",
+    altFormat: "F Y",
+  });
+  monthPickr("#id_to_date", {
+    altInput: true,
+  }, {
+    dateFormat: "Y-m",
+    altFormat: "F Y",
+  });
  })
 </script>
 
