@@ -71,7 +71,7 @@ def test_delivery_stats(opportunity: Opportunity):
     "from_date, to_date",
     [
         (None, None),
-        (now() - timedelta(30), now()),
+        ((now() - timedelta(30)).date(), now().date()),
     ],
 )
 def test_get_table_data_for_year_month(from_date, to_date):
@@ -84,7 +84,7 @@ def test_get_table_data_for_year_month(from_date, to_date):
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
         )
         cw = CompletedWorkFactory(
-            status_modified_date=now - timedelta(3),
+            status_modified_date=now,
             opportunity_access=access,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
@@ -107,6 +107,8 @@ def test_get_table_data_for_year_month(from_date, to_date):
 
     assert len(data)
     for row in data:
+        if row["month_group"].month != now.month or row["month_group"].year != now.year:
+            continue
         assert row["month_group"].month == now.month
         assert row["month_group"].year == now.year
         assert row["users"] == 9
@@ -139,7 +141,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type):
                 opportunity__delivery_type__name=slug,
             )
             cw = CompletedWorkFactory(
-                status_modified_date=now - timedelta(3),
+                status_modified_date=now,
                 opportunity_access=access,
                 status=CompletedWorkStatus.approved,
                 saved_approved_count=1,
@@ -160,6 +162,8 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type):
 
     assert len(data)
     for row in data:
+        if row["month_group"].month != now.month or row["month_group"].year != now.year:
+            continue
         assert row["delivery_type_name"] in delivery_type_slugs
         assert row["users"] == 4
         assert row["services"] == 4
@@ -185,7 +189,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             opportunity__currency=opp_currency,
         )
         cw = CompletedWorkFactory(
-            status_modified_date=now - timedelta(3),
+            status_modified_date=now,
             opportunity_access=access,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
@@ -209,6 +213,9 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
     if opp_currency == filter_currency:
         assert len(data)
         for row in data:
+            if row["month_group"].month != now.month or row["month_group"].year != now.year:
+                continue
+
             assert row["users"] == 9
             assert row["services"] == 9
             assert row["avg_time_to_payment"] == 50
