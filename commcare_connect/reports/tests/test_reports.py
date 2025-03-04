@@ -2,6 +2,7 @@ import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from django.utils.timezone import now
 from factory.faker import Faker
 
 from commcare_connect.conftest import MobileUserFactory
@@ -67,14 +68,13 @@ def test_delivery_stats(opportunity: Opportunity):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "year, month, delivery_type",
+    "from_date, to_date",
     [
-        (None, None, None),
-        (datetime.now().year, None, None),
-        (datetime.now().year, datetime.now().month, None),
+        (None, None),
+        ((now() - timedelta(30)).date(), now().date()),
     ],
 )
-def test_get_table_data_for_year_month(year, month, delivery_type):
+def test_get_table_data_for_year_month(from_date, to_date):
     now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
     for i, user in enumerate(users):
@@ -84,7 +84,7 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
         )
         cw = CompletedWorkFactory(
-            status_modified_date=now - timedelta(3),
+            status_modified_date=now,
             opportunity_access=access,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
@@ -103,11 +103,14 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
         PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
         other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
         PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
-    data = get_table_data_for_year_month(year, month, delivery_type)
+    data = get_table_data_for_year_month(from_date=from_date, to_date=to_date)
 
     assert len(data)
     for row in data:
-        assert row["month"][1] == datetime.now().year
+        if row["month_group"].month != now.month or row["month_group"].year != now.year:
+            continue
+        assert row["month_group"].month == now.month
+        assert row["month_group"].year == now.year
         assert row["users"] == 9
         assert row["services"] == 9
         assert row["avg_time_to_payment"] == 50
@@ -117,19 +120,15 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
         assert row["nm_amount_earned"] == 5400
         assert row["nm_amount_paid"] == 1000
         assert row["nm_other_amount_paid"] == 1000
-        assert row["avg_top_paid_flws"] == 1700
+        assert row["avg_top_paid_flws"] == 900
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "year, month, delivery_type",
-    [
-        (None, None, None),
-        (datetime.now().year, datetime.now().month, "delivery_1"),
-        (datetime.now().year, datetime.now().month, "delivery_2"),
-    ],
+    "delivery_type",
+    [(None), ("delivery_1"), ("delivery_2")],
 )
-def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_type):
+def test_get_table_data_for_year_month_by_delivery_type(delivery_type):
     now = datetime.now(UTC)
     delivery_type_slugs = ["delivery_1", "delivery_2"]
     for slug in delivery_type_slugs:
@@ -142,7 +141,7 @@ def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_ty
                 opportunity__delivery_type__name=slug,
             )
             cw = CompletedWorkFactory(
-                status_modified_date=now - timedelta(3),
+                status_modified_date=now,
                 opportunity_access=access,
                 status=CompletedWorkStatus.approved,
                 saved_approved_count=1,
@@ -159,12 +158,13 @@ def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_ty
             PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
             inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
             PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
-    data = get_table_data_for_year_month(year, month, delivery_type, group_by_delivery_type=True)
+    data = get_table_data_for_year_month(delivery_type=delivery_type, group_by_delivery_type=True)
 
     assert len(data)
     for row in data:
-        assert row["delivery_type"] in delivery_type_slugs
-        assert row["month"][1] == datetime.now().year
+        if row["month_group"].month != now.month or row["month_group"].year != now.year:
+            continue
+        assert row["delivery_type_name"] in delivery_type_slugs
         assert row["users"] == 4
         assert row["services"] == 4
         assert row["avg_time_to_payment"] == 25
@@ -189,7 +189,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             opportunity__currency=opp_currency,
         )
         cw = CompletedWorkFactory(
-            status_modified_date=now - timedelta(3),
+            status_modified_date=now,
             opportunity_access=access,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
@@ -213,6 +213,9 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
     if opp_currency == filter_currency:
         assert len(data)
         for row in data:
+            if row["month_group"].month != now.month or row["month_group"].year != now.year:
+                continue
+
             assert row["users"] == 9
             assert row["services"] == 9
             assert row["avg_time_to_payment"] == 50
@@ -222,7 +225,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             assert row["nm_amount_earned"] == 5400
             assert row["nm_amount_paid"] == 1000
             assert row["nm_other_amount_paid"] == 1000
-            assert row["avg_top_paid_flws"] == 1700
+            assert row["avg_top_paid_flws"] == 900
 
 
 def test_results_to_geojson():
