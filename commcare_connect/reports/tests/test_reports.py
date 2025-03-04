@@ -74,7 +74,7 @@ def test_delivery_stats(opportunity: Opportunity):
         (datetime.now().year, datetime.now().month, None),
     ],
 )
-def test_get_table_data_for_year_month(year, month, delivery_type):
+def test_get_table_data_for_year_month(year, month, delivery_type, httpx_mock):
     now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
     for i, user in enumerate(users):
@@ -103,12 +103,17 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
         PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
         other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
         PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
+
+    httpx_mock.add_response(
+        method="GET", json={str(datetime(year=year or now.year, month=month or 1, day=1).date()): 5}
+    )
     data = get_table_data_for_year_month(year, month, delivery_type)
 
     assert len(data)
     for row in data:
         assert row["month"][1] == datetime.now().year
         assert row["users"] == 9
+        assert row["connectid_users"] == 5
         assert row["services"] == 9
         assert row["avg_time_to_payment"] == 50
         assert 0 <= row["max_time_to_payment"] <= 90
@@ -129,7 +134,7 @@ def test_get_table_data_for_year_month(year, month, delivery_type):
         (datetime.now().year, datetime.now().month, "delivery_2"),
     ],
 )
-def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_type):
+def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_type, httpx_mock):
     now = datetime.now(UTC)
     delivery_type_slugs = ["delivery_1", "delivery_2"]
     for slug in delivery_type_slugs:
@@ -159,6 +164,10 @@ def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_ty
             PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
             inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
             PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
+
+    httpx_mock.add_response(
+        method="GET", json={str(datetime(year=year or now.year, month=month or 1, day=1).date()): 5}
+    )
     data = get_table_data_for_year_month(year, month, delivery_type, group_by_delivery_type=True)
 
     assert len(data)
@@ -166,6 +175,7 @@ def test_get_table_data_for_year_month_by_delivery_type(year, month, delivery_ty
         assert row["delivery_type"] in delivery_type_slugs
         assert row["month"][1] == datetime.now().year
         assert row["users"] == 4
+        assert row["connectid_users"] == 5
         assert row["services"] == 4
         assert row["avg_time_to_payment"] == 25
         assert row["max_time_to_payment"] == 40
