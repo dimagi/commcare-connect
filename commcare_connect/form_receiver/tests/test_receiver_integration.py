@@ -3,10 +3,10 @@ import random
 from copy import deepcopy
 from datetime import timedelta
 from http import HTTPStatus
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError
 from django.utils.timezone import now
 from rest_framework.test import APIClient
 
@@ -93,57 +93,59 @@ def test_form_receiver_learn_module_create(
     ).exists()
 
 
-@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "module_count, initial_date_offset, subsequent_date_offset",
+    [
+        (2, 5, 2),  # Test with 2 modules, initial submission 5 days ago, subsequent submission 2 days after current
+    ],
+)
 def test_form_receiver_multiple_module_submissions(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    module_count: int,
+    initial_date_offset: int,
+    subsequent_date_offset: int,
 ):
-    module1 = LearnModuleJsonFactory()
-    module2 = LearnModuleJsonFactory()
-
-    form_json1 = _get_form_json(opportunity.learn_app, module1.id, module1.json)
-    form_json2 = _get_form_json(opportunity.learn_app, module2.id, module2.json)
-    form_json2["id"] = str(uuid4())
+    modules = [LearnModuleJsonFactory() for _ in range(module_count)]
     current = now()
+    past_date = current - timedelta(days=initial_date_offset)
+    future_date = current + timedelta(days=subsequent_date_offset)
 
-    past_date = current - timedelta(days=5)
-    form_json1["received_on"] = past_date
-    form_json2["received_on"] = past_date
-
-    # First submissions for both modules
-    make_request(api_client, form_json1, mobile_user_with_connect_link)
-    make_request(api_client, form_json2, mobile_user_with_connect_link)
+    # First submissions for all modules
+    for module in modules:
+        form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
+        form_json["received_on"] = past_date
+        make_request(api_client, form_json, mobile_user_with_connect_link)
 
     # Subsequent submissions
-    form_json1["received_on"] = current
-    form_json2["received_on"] = current + timedelta(days=2)
+    for module in modules:
+        form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
+        form_json["received_on"] = future_date
+        form_json["id"] = str(uuid4())  # Change form ID to simulate a new submission
+        make_request(api_client, form_json, mobile_user_with_connect_link)
 
-    # change form ids
-    form_json2["id"] = str(uuid4())
-    form_json1["id"] = str(uuid4())
-    make_request(api_client, form_json1, mobile_user_with_connect_link)
-    make_request(api_client, form_json2, mobile_user_with_connect_link)
-
-    assert CompletedModule.objects.count() == 4
+    assert CompletedModule.objects.count() == module_count * 2  # Initial + subsequent submissions
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user_with_connect_link)
+    assert access.unique_completed_modules.count() == module_count
 
-    unique_modules = access.unique_completed_modules
-    assert unique_modules.count() == 2
+    for module in modules:
+        assert CompletedModule.objects.filter(
+            module__slug=module.id,
+            date=past_date,
+        ).exists()
+        assert CompletedModule.objects.filter(
+            module__slug=module.id,
+            date=future_date,
+        ).exists()
 
-    for cm in unique_modules:
-        assert cm.date == past_date
-
-    CompletedModule.objects.filter(
-        module__slug=module1.id,
-        date=current,
-    ).exists()
-    CompletedModule.objects.filter(
-        module__slug=module2.id,
-        date=current + timedelta(days=2),
-    ).exists()
-
-    with pytest.raises(IntegrityError) as exc:
-        make_request(api_client, form_json1, mobile_user_with_connect_link)
-        assert "unique_xform_completed_module" in exc
+    # Test integrity error for duplicate submissions keeping the id same.
+    with patch("commcare_connect.form_receiver.views.logger") as mock_logger:
+        form_json = _get_form_json(opportunity.learn_app, modules[0].id, modules[0].json)
+        form_json["received_on"] = past_date
+        make_request(api_client, form_json, mobile_user_with_connect_link, HTTPStatus.OK)
+        xform_id = form_json["id"]
+        mock_logger.info.assert_any_call(f"Learn Module is already completed with form ID: {xform_id}.")
 
 
 @pytest.mark.django_db

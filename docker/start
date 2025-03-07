@@ -5,4 +5,4 @@ set -o pipefail
 set -o nounset
 
 
-gunicorn config.wsgi --bind 0.0.0.0:8000 --chdir=/app --timeout 300 -w 5
+gunicorn config.wsgi --bind 0.0.0.0:8000 --chdir=/app --timeout 300 -w 10

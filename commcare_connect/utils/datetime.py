@@ -12,7 +12,7 @@ def is_date_before(date: datetime.datetime, days: int):
 def get_month_series(from_date: datetime.date, to_date: datetime.date):
     series = [from_date]
     current_date = from_date
-    while current_date <= to_date:
+    while current_date < to_date:
         current_date += relativedelta(months=1)
         series.append(current_date)
     return series

@@ -76,8 +76,15 @@ def get_table_data_for_year_month(
     time_to_payment = models.ExpressionWrapper(
         models.F("payment_date") - models.Subquery(max_visit_date), output_field=models.DurationField()
     )
+    base_visit_data_qs = CompletedWork.objects.filter(
+        **filter_kwargs,
+        status=CompletedWorkStatus.approved,
+        saved_approved_count__gt=0,
+        saved_payment_accrued_usd__gt=0,
+        saved_org_payment_accrued_usd__gt=0,
+    )
     visit_data = (
-        CompletedWork.objects.annotate(
+        base_visit_data_qs.annotate(
             filter_date=models.Case(
                 models.When(status_modified_date__isnull=True, then=models.F("date_created")),
                 default=models.F("status_modified_date"),
@@ -88,11 +95,6 @@ def get_table_data_for_year_month(
             filter_date__year__gte=from_date.year,
             filter_date__month__lte=to_date.month,
             filter_date__year__lte=to_date.year,
-            **filter_kwargs,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count__gt=0,
-            saved_payment_accrued_usd__gt=0,
-            saved_org_payment_accrued_usd__gt=0,
         )
         .annotate(
             month_group=TruncMonth("filter_date"),
@@ -106,16 +108,33 @@ def get_table_data_for_year_month(
             nm_amount_earned=models.Sum(
                 models.F("saved_org_payment_accrued_usd") + models.F("saved_payment_accrued_usd"), default=0
             ),
-            avg_time_to_payment=models.Avg(
-                ExtractDay(time_to_payment), default=0, filter=models.Q(payment_date__gte=models.F("date_created"))
-            ),
-            max_time_to_payment=models.Max(
-                ExtractDay(time_to_payment), default=0, filter=models.Q(payment_date__gte=models.F("date_created"))
-            ),
         )
         .order_by("month_group")
     )
     for item in visit_data:
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
+        visit_data_dict[group_key].update(item)
+
+    visit_time_to_payment_data = (
+        base_visit_data_qs.filter(
+            payment_date__month__gte=from_date.month,
+            payment_date__year__gte=from_date.year,
+            payment_date__month__lte=to_date.month,
+            payment_date__year__lte=to_date.year,
+            payment_date__gte=models.F("date_created"),
+        )
+        .annotate(
+            month_group=TruncMonth("payment_date"),
+            delivery_type_name=models.F("opportunity_access__opportunity__delivery_type__name"),
+        )
+        .values(*group_values)
+        .annotate(
+            avg_time_to_payment=models.Avg(ExtractDay(time_to_payment), default=0),
+            max_time_to_payment=models.Max(ExtractDay(time_to_payment), default=0),
+        )
+        .order_by("month_group")
+    )
+    for item in visit_time_to_payment_data:
         group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
         visit_data_dict[group_key].update(item)
 
