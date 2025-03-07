@@ -11,7 +11,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
     VisitValidationStatus,
 )
-from commcare_connect.utils.datetime import get_month_series
+from commcare_connect.utils.datetime import get_month_series, get_start_end_dates_from_month_range
 
 
 def get_table_data_for_year_month(
@@ -27,6 +27,7 @@ def get_table_data_for_year_month(
     from_date = from_date or now().date()
     to_date = to_date if to_date and to_date <= now().date() else now().date()
     timeseries = get_month_series(from_date, to_date)
+    start_date, end_date = get_start_end_dates_from_month_range(from_date, to_date)
     visit_data_dict = defaultdict(
         lambda: {
             "users": 0,
@@ -90,12 +91,7 @@ def get_table_data_for_year_month(
                 default=models.F("status_modified_date"),
             )
         )
-        .filter(
-            filter_date__month__gte=from_date.month,
-            filter_date__year__gte=from_date.year,
-            filter_date__month__lte=to_date.month,
-            filter_date__year__lte=to_date.year,
-        )
+        .filter(filter_date__range=(start_date, end_date))
         .annotate(
             month_group=TruncMonth("filter_date"),
             delivery_type_name=models.F("opportunity_access__opportunity__delivery_type__name"),
@@ -116,13 +112,7 @@ def get_table_data_for_year_month(
         visit_data_dict[group_key].update(item)
 
     visit_time_to_payment_data = (
-        base_visit_data_qs.filter(
-            payment_date__month__gte=from_date.month,
-            payment_date__year__gte=from_date.year,
-            payment_date__month__lte=to_date.month,
-            payment_date__year__lte=to_date.year,
-            payment_date__gte=models.F("date_created"),
-        )
+        base_visit_data_qs.filter(payment_date__range=(start_date, end_date))
         .annotate(
             month_group=TruncMonth("payment_date"),
             delivery_type_name=models.F("opportunity_access__opportunity__delivery_type__name"),
@@ -138,12 +128,7 @@ def get_table_data_for_year_month(
         group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
         visit_data_dict[group_key].update(item)
 
-    payment_query = Payment.objects.filter(
-        date_paid__month__gte=from_date.month,
-        date_paid__year__gte=from_date.year,
-        date_paid__month__lte=to_date.month,
-        date_paid__year__lte=to_date.year,
-    )
+    payment_query = Payment.objects.filter(date_paid__range=(start_date, end_date))
     nm_amount_paid_data = (
         payment_query.filter(**filter_kwargs_nm)
         .annotate(

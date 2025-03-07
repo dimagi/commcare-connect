@@ -1,7 +1,10 @@
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from unittest import mock
 
 import pytest
+from dateutil.relativedelta import relativedelta
+from django.utils import timezone
 from django.utils.timezone import now
 from factory.faker import Faker
 
@@ -18,6 +21,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.views import _results_to_geojson, get_table_data_for_quarter
+from commcare_connect.utils.datetime import get_month_series
 
 
 @pytest.mark.django_db
@@ -66,51 +70,65 @@ def test_delivery_stats(opportunity: Opportunity):
     assert unknown_delivery_type_data[0]["beneficiaries"] == 0
 
 
+def get_month_range_start_end(months=1):
+    """
+    Returns specified months before past before current month.
+    """
+    today = now().date()
+    end = date(today.year, today.month, 1)
+    start = end - relativedelta(months=months)
+    return start, end
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "from_date, to_date",
     [
         (None, None),
-        ((now() - timedelta(30)).date(), now().date()),
+        (get_month_range_start_end(1)),
+        (get_month_range_start_end(13)),
     ],
 )
 def test_get_table_data_for_year_month(from_date, to_date):
-    now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
-    for i, user in enumerate(users):
-        access = OpportunityAccessFactory(
-            user=user,
-            opportunity__is_test=False,
-            opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-        )
-        cw = CompletedWorkFactory(
-            status_modified_date=now,
-            opportunity_access=access,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-            saved_payment_accrued_usd=i * 100,
-            saved_org_payment_accrued_usd=100,
-            payment_date=now + timedelta(minutes=1),
-        )
-        UserVisitFactory(
-            visit_date=now - timedelta(i * 10),
-            opportunity_access=access,
-            completed_work=cw,
-            status=VisitValidationStatus.approved,
-        )
-        PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
-        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-        PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
-        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
-        PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
+    months = get_month_series(
+        from_date or datetime(now().year, now().month, 1).date(),
+        to_date or datetime(now().year, now().month, 1).date(),
+    )
+    for month in months:
+        today = datetime.combine(month, datetime.min.time(), tzinfo=UTC)
+        with mock.patch.object(timezone, "now", return_value=today):
+            for i, user in enumerate(users):
+                access = OpportunityAccessFactory(
+                    user=user,
+                    opportunity__is_test=False,
+                    opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
+                )
+                cw = CompletedWorkFactory(
+                    status_modified_date=today,
+                    opportunity_access=access,
+                    status=CompletedWorkStatus.approved,
+                    saved_approved_count=1,
+                    saved_payment_accrued_usd=i * 100,
+                    saved_org_payment_accrued_usd=100,
+                    payment_date=today + timedelta(minutes=30),
+                )
+                UserVisitFactory(
+                    visit_date=today - timedelta(i * 10),
+                    opportunity_access=access,
+                    completed_work=cw,
+                    status=VisitValidationStatus.approved,
+                )
+                PaymentFactory(opportunity_access=access, date_paid=today, amount_usd=i * 100, confirmed=True)
+                inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
+                PaymentFactory(invoice=inv, date_paid=today, amount_usd=100)
+                other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+                PaymentFactory(invoice=other_inv, date_paid=today, amount_usd=100)
     data = get_table_data_for_year_month(from_date=from_date, to_date=to_date)
 
     assert len(data)
     for row in data:
-        if row["month_group"].month != now.month or row["month_group"].year != now.year:
-            continue
-        assert row["month_group"].month == now.month
-        assert row["month_group"].year == now.year
+        assert date(row["month_group"].year, row["month_group"].month, 1) in months
         assert row["users"] == 9
         assert row["services"] == 9
         assert row["avg_time_to_payment"] == 50
