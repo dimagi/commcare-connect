@@ -2,6 +2,7 @@ import httpx
 from django.conf import settings
 from httpx import BasicAuth, Response
 
+from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client.models import (
     ConnectIdUser,
     Credential,
@@ -68,6 +69,13 @@ def filter_users(country_code: str, credential: list[str]):
     response = _make_request(GET, "/users/filter_users", params=params)
     data = response.json()
     return [ConnectIdUser(**user_dict) for user_dict in data["found_users"]]
+
+
+@quickcache(vary_on=[], timeout=60 * 60)
+def fetch_user_counts() -> dict[str, int]:
+    response = _make_request(GET, "/users/fetch_user_counts")
+    data = response.json()
+    return data
 
 
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:

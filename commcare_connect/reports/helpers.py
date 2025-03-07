@@ -1,9 +1,11 @@
 from collections import defaultdict
+from datetime import datetime
 
 from django.db import models
 from django.db.models.functions import ExtractDay, TruncMonth
 from django.utils.timezone import now
 
+from commcare_connect.connect_id_client import fetch_user_counts
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
@@ -30,6 +32,9 @@ def get_table_data_for_year_month(
     start_date, end_date = get_start_end_dates_from_month_range(from_date, to_date)
     visit_data_dict = defaultdict(
         lambda: {
+            "month_group": from_date,
+            "delivery_type_name": "All",
+            "connectid_users": 0,
             "users": 0,
             "services": 0,
             "flw_amount_earned": 0,
@@ -161,6 +166,7 @@ def get_table_data_for_year_month(
         group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
         delivery_type_grouped_users[group_key].add((item["opportunity_access__user_id"], item["approved_sum"]))
     for group_key, users in delivery_type_grouped_users.items():
+        month_group, delivery_type_name = group_key
         sum_total_users = defaultdict(int)
         for user, amount in users:
             sum_total_users[user] += amount
@@ -169,5 +175,23 @@ def get_table_data_for_year_month(
         top_five_percent_len = len(sum_total_users) // 20 or 1
         flw_amount_paid = sum(sum_total_users.values())
         avg_top_paid_flws = sum(sorted(sum_total_users.values(), reverse=True)[:top_five_percent_len])
-        visit_data_dict[group_key].update({"flw_amount_paid": flw_amount_paid, "avg_top_paid_flws": avg_top_paid_flws})
+        visit_data_dict[group_key].update(
+            {
+                "month_group": datetime.strptime(month_group, "%Y-%m"),
+                "delivery_type_name": delivery_type_name,
+                "flw_amount_paid": flw_amount_paid,
+                "avg_top_paid_flws": avg_top_paid_flws,
+            }
+        )
+
+    connectid_user_count = fetch_user_counts()
+    total_connectid_user_count = 0
+    total_eligible_user_count = 0
+    for group_key in visit_data_dict.keys():
+        month_group = group_key[0]
+        total_connectid_user_count += connectid_user_count.get(month_group, 0)
+        total_eligible_user_count += visit_data_dict[group_key].get("users", 0)
+        visit_data_dict[group_key].update(
+            {"connectid_users": total_connectid_user_count, "total_eligible_users": total_eligible_user_count}
+        )
     return list(visit_data_dict.values())
