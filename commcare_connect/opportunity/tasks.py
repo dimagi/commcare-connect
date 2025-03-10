@@ -360,3 +360,19 @@ def bulk_update_payments_task(self, opportunity_id: int, headers: list[str], row
         messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
 
     set_task_progress(self, f"<br>".join(messages), is_complete=True)
+
+
+@celery_app.task(bind=True)
+def bulk_update_visit_status_task(self, opportunity_id: int, headers: list[str], rows: list[list]):
+    from commcare_connect.opportunity.visit_import import ImportException, bulk_update_visit_status
+
+    set_task_progress(self, "Visit Verification Import is in porgress.")
+    try:
+        status = bulk_update_visit_status(opportunity_id, headers, rows)
+        messages = [f"Visit status updated successfully for {len(status)} visits."]
+        if status.missing_users:
+            messages.append(status.get_missing_message())
+    except ImportException as e:
+        messages = [f"Visit status import failed: {e}"] + getattr(e, "invalid_rows", [])
+
+    set_task_progress(self, f"<br>".join(messages), is_complete=True)

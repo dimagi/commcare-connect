@@ -39,8 +39,8 @@ from commcare_connect.opportunity.visit_import import (
     VisitData,
     _bulk_update_catchments,
     _bulk_update_completed_work_status,
-    _bulk_update_visit_status,
     bulk_update_payments,
+    bulk_update_visit_status,
     get_data_by_visit_id,
     update_payment_accrued,
 )
@@ -61,7 +61,7 @@ def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
     dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
 
     before_update = now()
-    import_status = _bulk_update_visit_status(opportunity, dataset)
+    import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
     after_update = now()
 
     assert not import_status.missing_visits
@@ -106,7 +106,7 @@ def test_bulk_update_reason(opportunity: Opportunity, mobile_user: User):
     reason = "bad form"
     dataset = Dataset(headers=["visit id", "status", "rejected reason"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, reason]])
-    import_status = _bulk_update_visit_status(opportunity, dataset)
+    import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
     assert not import_status.missing_visits
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.rejected
@@ -278,9 +278,9 @@ def test_get_status_by_visit_id(headers, rows, expected):
 
     if isinstance(expected, ImportException):
         with pytest.raises(ImportException, match=re.escape(expected.message)):
-            get_data_by_visit_id(dataset)
+            get_data_by_visit_id(dataset.headers, list(dataset))
     else:
-        actual = get_data_by_visit_id(dataset)
+        actual = get_data_by_visit_id(dataset.headers, list(dataset))
         assert dict(actual) == expected
 
 
@@ -585,7 +585,7 @@ def test_network_manager_flagged_visit_review_status(mobile_user: User, opportun
     dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
     dataset.extend([[visit.xform_id, visit_status.value, "", "justification"] for visit in visits])
     before_update = now()
-    import_status = _bulk_update_visit_status(opportunity, dataset)
+    import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
     after_update = now()
     assert not import_status.missing_visits
     updated_visits = UserVisit.objects.filter(opportunity=opportunity)

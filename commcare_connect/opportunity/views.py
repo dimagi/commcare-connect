@@ -88,6 +88,7 @@ from commcare_connect.opportunity.tables import (
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
     bulk_update_payments_task,
+    bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
     generate_catchment_area_export,
     generate_deliver_status_export,
@@ -104,7 +105,6 @@ from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
     bulk_update_completed_work_status,
-    bulk_update_visit_status,
     get_exchange_rate,
     get_imported_dataset,
     update_payment_accrued,
@@ -429,18 +429,18 @@ def download_export(request, org_slug, task_id):
 def update_visit_status_import(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("visits")
-    try:
-        status = bulk_update_visit_status(opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
+    redirect_url_slug = "opportunity:user_visit_review" if opportunity.managed else "opportunity:detail"
+    redirect_url = reverse(redirect_url_slug, args=(request.org.slug, pk))
+
+    file_format = get_file_extension(file)
+    if file_format not in ("csv", "xlsx"):
+        messages.error(request, f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+        return redirect(redirect_url)
     else:
-        message = f"Visit status updated successfully for {len(status)} visits."
-        if status.missing_visits:
-            message += status.get_missing_message()
-        messages.success(request, mark_safe(message))
-    if opportunity.managed:
-        return redirect("opportunity:user_visit_review", org_slug, pk)
-    return redirect("opportunity:detail", org_slug, pk)
+        imported_data = get_imported_dataset(file, file_format)
+        rows = list(imported_data)
+        result = bulk_update_visit_status_task.delay(opportunity.pk, imported_data.headers or [], rows)
+        return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
