@@ -9,6 +9,7 @@ from django.utils.timezone import now
 from factory.faker import Faker
 
 from commcare_connect.conftest import MobileUserFactory
+from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.models import CompletedWorkStatus, Opportunity, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
@@ -89,14 +90,16 @@ def get_month_range_start_end(months=1):
         (get_month_range_start_end(13)),
     ],
 )
-def test_get_table_data_for_year_month(from_date, to_date):
+def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
     users = MobileUserFactory.create_batch(10)
     months = get_month_series(
         from_date or datetime(now().year, now().month, 1).date(),
         to_date or datetime(now().year, now().month, 1).date(),
     )
-    for month in months:
+    connectid_user_counts = {}
+    for i, month in enumerate(months):
         today = datetime.combine(month, datetime.min.time(), tzinfo=UTC)
+        connectid_user_counts[today.strftime("%Y-%m")] = i
         with mock.patch.object(timezone, "now", return_value=today):
             for i, user in enumerate(users):
                 access = OpportunityAccessFactory(
@@ -124,11 +127,21 @@ def test_get_table_data_for_year_month(from_date, to_date):
                 PaymentFactory(invoice=inv, date_paid=today, amount_usd=100)
                 other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
                 PaymentFactory(invoice=other_inv, date_paid=today, amount_usd=100)
+
+    fetch_user_counts.clear()
+    httpx_mock.add_response(
+        method="GET",
+        json=connectid_user_counts,
+    )
     data = get_table_data_for_year_month(from_date=from_date, to_date=to_date)
 
     assert len(data)
-    for row in data:
+    total_connectid_user_count = 0
+    for i, row in enumerate(data):
         assert date(row["month_group"].year, row["month_group"].month, 1) in months
+        total_connectid_user_count += connectid_user_counts.get(row["month_group"].strftime("%Y-%m"))
+        assert row["connectid_users"] == total_connectid_user_count
+        assert row["total_eligible_users"] == (i + 1) * 9
         assert row["users"] == 9
         assert row["services"] == 9
         assert row["avg_time_to_payment"] == 50
@@ -146,7 +159,7 @@ def test_get_table_data_for_year_month(from_date, to_date):
     "delivery_type",
     [(None), ("delivery_1"), ("delivery_2")],
 )
-def test_get_table_data_for_year_month_by_delivery_type(delivery_type):
+def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_mock):
     now = datetime.now(UTC)
     delivery_type_slugs = ["delivery_1", "delivery_2"]
     for slug in delivery_type_slugs:
@@ -176,6 +189,11 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type):
             PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
             inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
             PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
+    fetch_user_counts.clear()
+    httpx_mock.add_response(
+        method="GET",
+        json={},
+    )
     data = get_table_data_for_year_month(delivery_type=delivery_type, group_by_delivery_type=True)
 
     assert len(data)
@@ -196,7 +214,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("opp_currency, filter_currency", [("ETB", "KES"), ("ETB", "ETB")])
-def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_currency):
+def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_currency, httpx_mock):
     now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
     for i, user in enumerate(users):
@@ -226,8 +244,12 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
         PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
         other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
         PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
+    fetch_user_counts.clear()
+    httpx_mock.add_response(
+        method="GET",
+        json={},
+    )
     data = get_table_data_for_year_month(country_currency=filter_currency)
-
     if opp_currency == filter_currency:
         assert len(data)
         for row in data:

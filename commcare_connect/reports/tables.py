@@ -1,5 +1,3 @@
-from django.urls import reverse
-from django.utils.html import format_html
 from django_tables2 import columns, tables
 
 from commcare_connect.opportunity.tables import SumColumn
@@ -7,7 +5,9 @@ from commcare_connect.opportunity.tables import SumColumn
 
 class AdminReportTable(tables.Table):
     month = columns.Column(verbose_name="Month", footer="Total", empty_values=())
-    delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=())
+    delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=("All"))
+    connectid_users = columns.Column(verbose_name="ConnectID Accounts")
+    total_eligible_users = columns.Column(verbose_name="Total Eligible Users")
     users = SumColumn(verbose_name="Eligible Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
@@ -26,23 +26,6 @@ class AdminReportTable(tables.Table):
 
     def render_month(self, record):
         return record["month_group"].strftime("%B %Y")
-
-    def render_delivery_type_name(self, record, value):
-        if value is not None and value != "All":
-            return value
-        url = reverse("reports:delivery_stats_report")
-        filter_date = record["month_group"].strftime("%Y-%m")
-        return format_html(
-            """<button type="button" class="btn btn-primary btn-sm"
-                 hx-get='{url}?from_date={filter_date}&to_date={filter_date}&group_by_delivery_type=on&drilldown'
-                 hx-target='#row{filter_date}'
-                 hx-swap="outerHTML"
-                 hx-select="tbody tr">
-                 View all types
-               </button>""",
-            url=url,
-            filter_date=filter_date,
-        )
 
     def render_avg_time_to_payment(self, record, value):
         return f"{value} days"
