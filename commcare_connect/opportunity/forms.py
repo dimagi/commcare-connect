@@ -129,8 +129,10 @@ class OpportunityChangeForm(
             required=False,
             help_text="Extends opportunity end date for all users.",
         )
-        self.initial["end_date"] = self.instance.end_date.isoformat()
-        self.currently_active = self.instance.active
+        if self.instance:
+            if self.instance.end_date:
+                self.initial["end_date"] = self.instance.end_date.isoformat()
+            self.currently_active = self.instance.active
 
         if self.instance.managed:
             self.fields["currency"].disabled = True
