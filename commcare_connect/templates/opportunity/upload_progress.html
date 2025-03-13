@@ -9,15 +9,26 @@
     <div class="alert alert-danger" role="alert">
       {{ progress.error }}
     </div>
-  {% elif not progress.complete %}
-    <div class="progress" role="progressbar" aria-label="Animated striped example" aria-valuenow="100"
-         aria-valuemin="0" aria-valuemax="100">
-      <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
-    </div>
-    Preparing export, hang tight... {{ progress.progress.description }}
   {% else %}
-    All done!
-    <a class="link" href="{% url 'opportunity:download_export' request.org.slug task_id %}">Download your
-      export</a>
+    {% if not progress.complete %}
+      <div class="progress" role="progressbar" aria-label="Animated striped example" aria-valuenow="100"
+           aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+      </div>
+      {% if not progress.message %}
+      Preparing export, hang tight... {{ progress.progress.description }}
+      {% endif %}
+    {% else %}
+      {% if not progress.message %}
+      All done!
+      <a class="link" href="{% url 'opportunity:download_export' request.org.slug task_id %}">Download your
+        export</a>
+      {% endif %}
+    {% endif %}
+    {% if progress.message %}
+    <div class="alert alert-info" role="alert">
+    {{ progress.message | safe }}
+    </div>
+    {% endif %}
   {% endif %}
 </div>
