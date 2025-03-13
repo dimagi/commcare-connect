@@ -25,6 +25,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     Payment,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import send_payment_notification
@@ -48,6 +49,7 @@ RADIUS_COL = "radius"
 AREA_NAME_COL = "area name"
 ACTIVE_COL = "active"
 SITE_CODE_COL = "site code"
+REVIEW_STATUS_COL = "program manager review"
 
 
 class ImportException(Exception):
@@ -627,3 +629,91 @@ def _bulk_update_catchments(opportunity: Opportunity, dataset: Dataset):
             raise ImportException(f"{len(invalid_rows)} rows have errors", invalid_rows)
 
     return CatchmentAreaImportStatus(seen_catchments, new_catchments)
+
+
+class ReviewVisitRowData:
+    def __init__(self, row_number: int, row: list[str], headers: list[str]):
+        self.row = row
+        self.row_number = row_number
+        self.headers = headers
+        self.visit_id = self._get_visit_id()
+        self.review_status = self._get_review_status()
+
+    def _get_visit_id(self):
+        index = _get_header_index(self.headers, VISIT_ID_COL)
+        visit_id = self.row[index].strip() if index < len(self.row) and self.row[index] else None
+
+        if not visit_id:
+            raise ImportException(f"Missing visit ID in the dataset at row {self.row_number}.")
+
+        return visit_id
+
+    def _get_review_status(self):
+        index = _get_header_index(self.headers, REVIEW_STATUS_COL)
+        status = self.row[index].strip() if index < len(self.row) and self.row[index] else None
+
+        if not status:
+            raise ImportException(f"Missing review status in the dataset at row {self.row_number}.")
+
+        for choice, label in VisitReviewStatus.choices:
+            if choice.lower() == status.lower() or label.lower() == status.lower():
+                return choice
+
+        raise ImportException(
+            f"Invalid review status '{status}' at row {self.row_number}. Allowed values: {VisitReviewStatus.values}"
+        )
+
+
+def bulk_update_visit_review_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
+    file_format = get_file_extension(file)
+    if not opportunity.managed:
+        raise ImportException("Action is only available for managed opportunity.")
+
+    if file_format not in ("csv", "xlsx"):
+        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+
+    imported_data = get_imported_dataset(file, file_format)
+    return _bulk_update_visit_review_status(opportunity, imported_data)
+
+
+def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset):
+    headers = [header.lower() if header else header for header in dataset.headers or []]
+    if not headers:
+        raise ImportException("The uploaded file did not contain any headers")
+
+    visit_data = {
+        data.visit_id: data.review_status
+        for row_number, row in enumerate(dataset, start=2)  # row 1 is of headers
+        if any(row) and (data := ReviewVisitRowData(row_number, row, headers))
+    }
+
+    if not visit_data:
+        return VisitImportStatus(set(), set())
+
+    visit_ids = set(visit_data.keys())
+    existing_visits = UserVisit.objects.filter(xform_id__in=visit_ids, review_created_on__isnull=False).only(
+        "id", "xform_id", "review_status", "user_id"
+    )
+
+    to_update = []
+    user_ids = set()
+    updated_visit_ids = set()
+
+    with transaction.atomic():
+        for visit in existing_visits:
+            new_status = visit_data.get(visit.xform_id)
+            if new_status and visit.review_status != new_status:
+                visit.review_status = new_status
+                to_update.append(visit)
+                updated_visit_ids.add(visit.xform_id)
+                user_ids.add(visit.user_id)
+
+        if to_update:
+            UserVisit.objects.bulk_update(to_update, fields=["review_status"])
+
+    if user_ids:
+        update_payment_accrued(opportunity=opportunity, users=user_ids)
+
+    missing_visits = visit_ids - {visit.xform_id for visit in existing_visits}
+
+    return VisitImportStatus(updated_visit_ids, missing_visits)

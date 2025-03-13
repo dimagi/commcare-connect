@@ -113,10 +113,34 @@ class AssessmentAdmin(admin.ModelAdmin):
     list_display = ["app", "user", "opportunity", "date", "passed"]
 
 
+class UserVisitTabularInline(admin.TabularInline):
+    """Readonly tabular inline to show related User Visit
+    on completed work object admin page.
+    """
+
+    fields = ["deliver_unit", "status", "visit_date", "status_modified_date", "date_created"]
+    readonly_fields = ["date_created"]
+    model = UserVisit
+    show_change_link = True
+    extra = 0
+    can_delete = False
+
+    def has_change_permission(self, *args, **kwargs) -> bool:
+        return False
+
+    def has_add_permission(self, *args, **kwargs) -> bool:
+        return False
+
+    def has_delete_permission(self, *args, **kwargs) -> bool:
+        return False
+
+
 @admin.register(CompletedWork)
 class CompletedWorkAdmin(admin.ModelAdmin):
     list_display = ["get_username", "get_opp_name", "opportunity_access", "payment_unit", "status"]
     search_fields = ["opportunity_access__user__username", "opportunity_access__opportunity__name"]
+    inlines = [UserVisitTabularInline]
+    readonly_fields = ["date_created"]
 
     @admin.display(description="Opportunity Name")
     def get_opp_name(self, obj):

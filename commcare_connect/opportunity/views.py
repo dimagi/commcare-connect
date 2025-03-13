@@ -43,6 +43,7 @@ from commcare_connect.opportunity.forms import (
     PaymentExportForm,
     PaymentInvoiceForm,
     PaymentUnitForm,
+    ReviewVisitExportForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
 )
@@ -95,6 +96,7 @@ from commcare_connect.opportunity.tasks import (
     generate_catchment_area_export,
     generate_deliver_status_export,
     generate_payment_export,
+    generate_review_visit_export,
     generate_user_status_export,
     generate_visit_export,
     generate_work_status_export,
@@ -108,6 +110,7 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_catchments,
     bulk_update_completed_work_status,
     bulk_update_payment_status,
+    bulk_update_visit_review_status,
     bulk_update_visit_status,
     get_exchange_rate,
     update_payment_accrued,
@@ -308,6 +311,7 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         context["export_task_id"] = self.request.GET.get("export_task_id")
         context["visit_export_form"] = VisitExportForm()
         context["export_form"] = PaymentExportForm()
+        context["review_visit_export_form"] = ReviewVisitExportForm()
         context["user_is_network_manager"] = object.managed and object.organization == self.request.org
         return context
 
@@ -387,6 +391,23 @@ def export_user_visits(request, org_slug, pk):
 
 
 @org_member_required
+def review_visit_export(request, org_slug, pk):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
+    form = ReviewVisitExportForm(data=request.POST)
+    if not form.is_valid():
+        messages.error(request, form.errors)
+        return redirect("opportunity:detail", request.org.slug, pk)
+
+    export_format = form.cleaned_data["format"]
+    date_range = DateRanges(form.cleaned_data["date_range"])
+    status = form.cleaned_data["status"]
+
+    result = generate_review_visit_export.delay(pk, date_range, status, export_format)
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
+
+
+@org_member_required
 @require_GET
 def export_status(request, org_slug, task_id):
     task_meta = AsyncResult(task_id)._get_task_meta()
@@ -443,6 +464,22 @@ def update_visit_status_import(request, org_slug=None, pk=None):
     if opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, pk)
     return redirect("opportunity:detail", org_slug, pk)
+
+
+def review_visit_import(request, org_slug=None, pk=None):
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    file = request.FILES.get("visits")
+    try:
+        status = bulk_update_visit_review_status(opportunity, file)
+    except ImportException as e:
+        messages.error(request, e.message)
+        return redirect("opportunity:detail", org_slug, pk)
+    else:
+        message = f"Visit review updated successfully for {len(status)} visits."
+        if status.missing_visits:
+            message += status.get_missing_message()
+        messages.success(request, mark_safe(message))
+        return redirect("opportunity:user_visit_review", org_slug, pk)
 
 
 @org_member_required

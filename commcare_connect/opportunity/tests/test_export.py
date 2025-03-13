@@ -9,10 +9,11 @@ from commcare_connect.opportunity.export import (
     export_catchment_area_table,
     export_user_status_table,
     export_user_visit_data,
+    export_user_visit_review_data,
     get_flattened_dataset,
 )
 from commcare_connect.opportunity.forms import DateRanges
-from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit
+from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit, VisitReviewStatus
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CatchmentAreaFactory,
@@ -25,6 +26,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 from commcare_connect.users.tests.factories import MobileUserFactory
 
 
@@ -280,3 +282,48 @@ def test_export_catchment_area_table_data(opportunity: Opportunity):
         expected_username = catchment.opportunity_access.user.username if catchment.opportunity_access.user else ""
         assert expected_username == exported_data[data_set.headers.index("Username")]
         assert catchment.site_code == exported_data[data_set.headers.index("Site code")]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("date_range", "expected_count", "review_status"),
+    [
+        (DateRanges.LAST_7_DAYS, 20, [VisitReviewStatus.pending.value]),
+        (
+            DateRanges.ALL,
+            40,
+            [VisitReviewStatus.pending.value, VisitReviewStatus.disagree.value, VisitReviewStatus.agree.value],
+        ),
+    ],
+)
+def test_export_user_visit_review_data(organization, date_range, expected_count, review_status):
+    required_headers = [
+        "Status",
+        "Justification",
+        "Visit date",
+        "Program Manager Review",
+        "Review Requested On",
+        "Visit ID",
+    ]
+    opp = ManagedOpportunityFactory(organization=organization)
+    now_time = now()
+    UserVisitFactory.create_batch(
+        20, opportunity=opp, review_created_on=now_time - timedelta(days=3), status=VisitReviewStatus.pending
+    )
+    UserVisitFactory.create_batch(
+        5, opportunity=opp, review_created_on=now_time - timedelta(days=10), status=VisitReviewStatus.agree
+    )
+    UserVisitFactory.create_batch(
+        15, opportunity=opp, review_created_on=now_time - timedelta(days=15), status=VisitReviewStatus.disagree
+    )
+
+    dataset = export_user_visit_review_data(opp, date_range, review_status)
+
+    assert isinstance(dataset, Dataset)
+    assert len(dataset.dict) == expected_count
+    assert "pk" not in dataset.headers
+    assert set(required_headers).issubset(set(dataset.headers))
+    for row in dataset.dict:
+        assert row["Program Manager Review"] in [
+            status.label for status in VisitReviewStatus if status.value in review_status
+        ]

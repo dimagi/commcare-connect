@@ -194,11 +194,15 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
         method="GET",
         json={},
     )
-    data = get_table_data_for_year_month(delivery_type=delivery_type, group_by_delivery_type=True)
+    data = get_table_data_for_year_month(delivery_type=delivery_type)
 
     assert len(data)
     for row in data:
-        if row["month_group"].month != now.month or row["month_group"].year != now.year:
+        if (
+            row["month_group"].month != now.month
+            or row["month_group"].year != now.year
+            or row["delivery_type_name"] == "All"
+        ):
             continue
         assert row["delivery_type_name"] in delivery_type_slugs
         assert row["users"] == 4

@@ -9,6 +9,7 @@ from commcare_connect.connect_id_client import fetch_user_counts
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
+    DeliveryType,
     Payment,
     UserVisit,
     VisitValidationStatus,
@@ -20,7 +21,6 @@ def get_table_data_for_year_month(
     from_date=None,
     to_date=None,
     delivery_type=None,
-    group_by_delivery_type=False,
     program=None,
     network_manager=None,
     opportunity=None,
@@ -30,10 +30,16 @@ def get_table_data_for_year_month(
     to_date = to_date if to_date and to_date <= now().date() else now().date()
     timeseries = get_month_series(from_date, to_date)
     start_date, end_date = get_start_end_dates_from_month_range(from_date, to_date)
+
+    delivery_type_name = "All"
+    if delivery_type:
+        d_type = DeliveryType.objects.filter(slug=delivery_type).first()
+        delivery_type_name = d_type.name if d_type else "All"
+
     visit_data_dict = defaultdict(
         lambda: {
             "month_group": from_date,
-            "delivery_type_name": "All",
+            "delivery_type_name": delivery_type_name,
             "connectid_users": 0,
             "users": 0,
             "services": 0,
@@ -47,10 +53,9 @@ def get_table_data_for_year_month(
             "avg_top_paid_flws": 0,
         }
     )
-    if not group_by_delivery_type:
-        for date in timeseries:
-            key = date.strftime("%Y-%m"), "All"
-            visit_data_dict[key].update({"month_group": date, "delivery_type_name": "All"})
+    for date in timeseries:
+        key = date.strftime("%Y-%m"), delivery_type_name
+        visit_data_dict[key].update({"month_group": date, "delivery_type_name": delivery_type_name})
 
     filter_kwargs = {"opportunity_access__opportunity__is_test": False}
     filter_kwargs_nm = {"invoice__opportunity__is_test": False}
@@ -71,8 +76,6 @@ def get_table_data_for_year_month(
         filter_kwargs_nm.update({"invoice__opportunity__currency": country_currency})
 
     group_values = ["month_group"]
-    if group_by_delivery_type:
-        group_values.append("delivery_type_name")
 
     max_visit_date = (
         UserVisit.objects.filter(completed_work_id=models.OuterRef("id"), status=VisitValidationStatus.approved)
@@ -113,7 +116,7 @@ def get_table_data_for_year_month(
         .order_by("month_group")
     )
     for item in visit_data:
-        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
         visit_data_dict[group_key].update(item)
 
     visit_time_to_payment_data = (
@@ -130,7 +133,7 @@ def get_table_data_for_year_month(
         .order_by("month_group")
     )
     for item in visit_time_to_payment_data:
-        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
         visit_data_dict[group_key].update(item)
 
     payment_query = Payment.objects.filter(date_paid__range=(start_date, end_date))
@@ -148,7 +151,7 @@ def get_table_data_for_year_month(
         .order_by("month_group")
     )
     for item in nm_amount_paid_data:
-        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
         visit_data_dict[group_key].update(item)
 
     avg_top_flw_amount_paid = (
@@ -163,7 +166,7 @@ def get_table_data_for_year_month(
     )
     delivery_type_grouped_users = defaultdict(set)
     for item in avg_top_flw_amount_paid:
-        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", "All")
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
         delivery_type_grouped_users[group_key].add((item["opportunity_access__user_id"], item["approved_sum"]))
     for group_key, users in delivery_type_grouped_users.items():
         month_group, delivery_type_name = group_key

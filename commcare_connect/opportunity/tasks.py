@@ -21,6 +21,7 @@ from commcare_connect.opportunity.export import (
     export_empty_payment_table,
     export_user_status_table,
     export_user_visit_data,
+    export_user_visit_review_data,
     export_work_status_table,
 )
 from commcare_connect.opportunity.forms import DateRanges
@@ -36,6 +37,7 @@ from commcare_connect.opportunity.models import (
     UserInvite,
     UserInviteStatus,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.utils.completed_work import update_status
@@ -146,6 +148,20 @@ def generate_visit_export(opportunity_id: int, date_range: str, status: list[str
         opportunity, DateRanges(date_range), [VisitValidationStatus(s) for s in status], flatten
     )
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
+    save_export(dataset, export_tmp_name, export_format)
+    return export_tmp_name
+
+
+@celery_app.task()
+def generate_review_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    logger.info(
+        f"Export review visit for {opportunity.name} with date range {date_range} and status {','.join(status)}"
+    )
+    dataset = export_user_visit_review_data(
+        opportunity, DateRanges(date_range), [VisitReviewStatus(s) for s in status]
+    )
+    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
 

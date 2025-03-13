@@ -318,10 +318,6 @@ class DeliveryReportFilters(django_filters.FilterSet):
         choices=DeliveryType.objects.values_list("slug", "name"),
         label="Delivery Type",
     )
-    group_by_delivery_type = django_filters.BooleanFilter(
-        widget=forms.CheckboxInput(),
-        label="Break up by delivery type",
-    )
     program = django_filters.ModelChoiceFilter(
         queryset=Program.objects.all(),
         label="Program",
@@ -362,7 +358,6 @@ class DeliveryReportFilters(django_filters.FilterSet):
                 Column("from_date", css_class="col-md-4"),
                 Column("to_date", css_class="col-md-4"),
             ),
-            Row(Column("group_by_delivery_type", css_class="col-md-4")),
         )
 
         if not self.data:
@@ -380,7 +375,6 @@ class DeliveryReportFilters(django_filters.FilterSet):
             "delivery_type",
             "from_date",
             "to_date",
-            "group_by_delivery_type",
             "program",
             "network_manager",
             "opportunity",

@@ -6,6 +6,7 @@ from decimal import Decimal
 from itertools import chain
 
 import pytest
+from django.db import transaction
 from django.utils import timezone
 from django.utils.timezone import now
 from tablib import Dataset
@@ -35,16 +36,22 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.opportunity.tests.helpers import validate_saved_fields
 from commcare_connect.opportunity.utils.completed_work import update_work_payment_date
 from commcare_connect.opportunity.visit_import import (
+    REVIEW_STATUS_COL,
+    VISIT_ID_COL,
     ImportException,
+    ReviewVisitRowData,
     VisitData,
     _bulk_update_catchments,
     _bulk_update_completed_work_status,
     _bulk_update_payments,
+    _bulk_update_visit_review_status,
     _bulk_update_visit_status,
     get_data_by_visit_id,
     update_payment_accrued,
 )
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 @pytest.mark.django_db
@@ -693,3 +700,176 @@ def test_approved_visits_over_limit_count_total(opportunity: Opportunity):
 def _validate_saved_fields(opportunity_access: OpportunityAccess):
     for completed_work in opportunity_access.completedwork_set.all():
         validate_saved_fields(completed_work)
+
+
+@pytest.mark.django_db
+class TestBulkReviewVisitImport:
+    def setup_method(self):
+        self.organization = OrganizationFactory.create()
+        self.opp = ManagedOpportunityFactory.create(organization=self.organization)
+        self.now_time = now()
+
+    def _prepare_dataset(self, visits, status):
+        dataset = Dataset()
+        dataset.headers = [VISIT_ID_COL, REVIEW_STATUS_COL]
+        for visit in visits:
+            dataset.append([visit.xform_id, status])
+        return dataset
+
+    @pytest.mark.parametrize(
+        "num_agree, num_disagree",
+        [
+            (10, 5),  # Standard update: 10 agree, 5 disagree
+            (0, 5),  # Only disagrees
+            (10, 0),  # Only agrees
+            (0, 0),  # Empty dataset
+        ],
+    )
+    def test_bulk_review_update(self, num_agree, num_disagree):
+        agree_visits = UserVisitFactory.create_batch(
+            num_agree,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitReviewStatus.pending,
+        )
+        disagree_visits = UserVisitFactory.create_batch(
+            num_disagree,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitReviewStatus.pending,
+        )
+
+        expected_agreed_visits = {visit.xform_id for visit in agree_visits}
+        expected_disagreed_visits = {visit.xform_id for visit in disagree_visits}
+
+        dataset = self._prepare_dataset(agree_visits, "agree")
+        dataset.extend(self._prepare_dataset(disagree_visits, "disagree"))
+
+        status = _bulk_update_visit_review_status(self.opp, dataset)
+
+        assert status.seen_visits == expected_agreed_visits | expected_disagreed_visits
+        assert (
+            UserVisit.objects.filter(
+                xform_id__in=expected_agreed_visits, review_status=VisitReviewStatus.agree
+            ).count()
+            == num_agree
+        )
+        assert (
+            UserVisit.objects.filter(
+                xform_id__in=expected_disagreed_visits, review_status=VisitReviewStatus.disagree
+            ).count()
+            == num_disagree
+        )
+
+    @pytest.mark.parametrize(
+        "dataset_data, expected_seen, expected_missing",
+        [
+            # Empty dataset
+            ([], set(), set()),
+            # Nonexistent visits
+            (
+                [["nonexistent_visit_id_1", "agree"], ["nonexistent_visit_id_2", "disagree"]],
+                set(),
+                {"nonexistent_visit_id_1", "nonexistent_visit_id_2"},
+            ),
+        ],
+    )
+    def test_edge_cases(self, dataset_data, expected_seen, expected_missing):
+        dataset = Dataset()
+        dataset.headers = [VISIT_ID_COL, REVIEW_STATUS_COL]
+        for row in dataset_data:
+            dataset.append(row)
+
+        status = _bulk_update_visit_review_status(self.opp, dataset)
+
+        assert status.seen_visits == expected_seen
+        assert status.missing_visits == expected_missing
+
+    @pytest.mark.parametrize(
+        "initial_status, new_status",
+        [
+            (VisitReviewStatus.agree, "agree"),
+            (VisitReviewStatus.disagree, "disagree"),
+        ],
+    )
+    def test_does_not_update_unchanged_statuses(self, initial_status, new_status):
+        visits = UserVisitFactory.create_batch(
+            5,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=initial_status,
+        )
+
+        dataset = self._prepare_dataset(visits, new_status)
+
+        with transaction.atomic():
+            status = _bulk_update_visit_review_status(self.opp, dataset)
+
+        assert status.seen_visits == {visit.xform_id for visit in visits}
+        assert (
+            UserVisit.objects.filter(xform_id__in=[v.xform_id for v in visits], review_status=initial_status).count()
+            == 5
+        )
+
+    def test_handles_duplicate_entries(self):
+        """Ensures that duplicate entries do not cause unintended behavior."""
+        visits = UserVisitFactory.create_batch(
+            3,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitReviewStatus.pending,
+        )
+
+        dataset = Dataset()
+        dataset.headers = [VISIT_ID_COL, REVIEW_STATUS_COL]
+        for visit in visits:
+            dataset.append([visit.xform_id, "agree"])
+            dataset.append([visit.xform_id, "agree"])
+
+        status = _bulk_update_visit_review_status(self.opp, dataset)
+
+        assert status.seen_visits == {visit.xform_id for visit in visits}
+        assert (
+            UserVisit.objects.filter(
+                xform_id__in=[v.xform_id for v in visits], review_status=VisitReviewStatus.agree
+            ).count()
+            == 3
+        )
+
+    @pytest.mark.parametrize(
+        "headers, row, expected_exception, expected_message",
+        [
+            # Missing required column
+            ([VISIT_ID_COL], ["visit_1"], ImportException, "Missing required column(s): 'program manager review'"),
+            ([REVIEW_STATUS_COL], ["agree"], ImportException, "Missing required column(s): 'visit id'"),
+            # Missing visit ID
+            (
+                [VISIT_ID_COL, REVIEW_STATUS_COL],
+                ["", "agree"],
+                ImportException,
+                "Missing visit ID in the dataset at row 2.",
+            ),
+            # Missing review status
+            (
+                [VISIT_ID_COL, REVIEW_STATUS_COL],
+                ["visit_1", ""],
+                ImportException,
+                "Missing review status in the dataset at row 2.",
+            ),
+            # Invalid review status
+            (
+                [VISIT_ID_COL, REVIEW_STATUS_COL],
+                ["visit_1", "not_a_valid_status"],
+                ImportException,
+                f"Invalid review status 'not_a_valid_status' at row 2. Allowed values: {VisitReviewStatus.values}",
+            ),
+        ],
+    )
+    def test_import_exceptions(self, headers, row, expected_exception, expected_message):
+        dataset = Dataset()
+        dataset.headers = headers
+        dataset.append(row)
+
+        with pytest.raises(expected_exception, match=re.escape(expected_message)):
+            for row_number, row in enumerate(dataset, start=2):
+                ReviewVisitRowData(row_number, row, dataset.headers)

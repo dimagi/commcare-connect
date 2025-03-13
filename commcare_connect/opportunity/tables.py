@@ -455,6 +455,7 @@ class UserVisitReviewTable(OrgContextTable):
             "th__input": {"@click": "toggleSelectAll()", "x-bind:checked": "selectAll"},
         },
     )
+    visit_id = columns.Column("Visit ID", accessor="xform_id", visible=False)
     username = columns.Column(accessor="user__username", verbose_name="Username")
     name = columns.Column(accessor="user__name", verbose_name="Name of the User", orderable=True)
     justification = columns.Column(verbose_name="Justification")

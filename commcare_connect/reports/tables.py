@@ -28,7 +28,7 @@ class AdminReportTable(tables.Table):
         return record["month_group"].strftime("%B %Y")
 
     def render_avg_time_to_payment(self, record, value):
-        return f"{value} days"
+        return f"{value:.2f} days"
 
     def render_max_time_to_payment(self, record, value):
         return f"{value} days"
