@@ -141,14 +141,14 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
         assert date(row["month_group"].year, row["month_group"].month, 1) in months
         total_connectid_user_count += connectid_user_counts.get(row["month_group"].strftime("%Y-%m"))
         assert row["connectid_users"] == total_connectid_user_count
-        assert row["total_eligible_users"] == (i + 1) * 9
-        assert row["users"] == 9
-        assert row["services"] == 9
+        assert row["total_eligible_users"] == (i + 1) * 10
+        assert row["users"] == 10
+        assert row["services"] == 10
         assert row["avg_time_to_payment"] == 50
         assert 0 <= row["max_time_to_payment"] <= 90
         assert row["flw_amount_earned"] == 4500
         assert row["flw_amount_paid"] == 4500
-        assert row["nm_amount_earned"] == 5400
+        assert row["nm_amount_earned"] == 5500
         assert row["nm_amount_paid"] == 1000
         assert row["nm_other_amount_paid"] == 1000
         assert row["avg_top_paid_flws"] == 900
@@ -205,13 +205,13 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
         ):
             continue
         assert row["delivery_type_name"] in delivery_type_slugs
-        assert row["users"] == 4
-        assert row["services"] == 4
+        assert row["users"] == 5
+        assert row["services"] == 5
         assert row["avg_time_to_payment"] == 25
         assert row["max_time_to_payment"] == 40
         assert row["flw_amount_earned"] == 1000
         assert row["flw_amount_paid"] == 1000
-        assert row["nm_amount_earned"] == 1400
+        assert row["nm_amount_earned"] == 1500
         assert row["nm_amount_paid"] == 500
         assert row["avg_top_paid_flws"] == 400
 
@@ -260,13 +260,13 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             if row["month_group"].month != now.month or row["month_group"].year != now.year:
                 continue
 
-            assert row["users"] == 9
-            assert row["services"] == 9
+            assert row["users"] == 10
+            assert row["services"] == 10
             assert row["avg_time_to_payment"] == 50
             assert 0 <= row["max_time_to_payment"] <= 90
             assert row["flw_amount_earned"] == 4500
             assert row["flw_amount_paid"] == 4500
-            assert row["nm_amount_earned"] == 5400
+            assert row["nm_amount_earned"] == 5500
             assert row["nm_amount_paid"] == 1000
             assert row["nm_other_amount_paid"] == 1000
             assert row["avg_top_paid_flws"] == 900
