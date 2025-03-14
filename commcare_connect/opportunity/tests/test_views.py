@@ -23,6 +23,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import MembershipFactory
 
 
 @pytest.mark.django_db
@@ -169,3 +170,50 @@ def test_add_budget_existing_users_for_managed_opportunity(
     form = response.context["form"]
     assert "additional_visits" in form.errors
     assert form.errors["additional_visits"][0] == "Additional visits exceed the opportunity budget."
+
+
+@pytest.mark.parametrize(
+    "opportunity",
+    [
+        {"opp_options": {"managed": True}},
+        {"opp_options": {"managed": False}},
+    ],
+    indirect=True,
+)
+@pytest.mark.django_db
+def test_approve_visit(
+    client: Client,
+    organization,
+    opportunity,
+):
+    justification = "Justification test."
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    visit = UserVisitFactory.create(
+        opportunity=opportunity, opportunity_access=access, flagged=True, status=VisitValidationStatus.pending
+    )
+    user = MembershipFactory.create(organization=opportunity.organization).user
+    print("opportunity.organization.slug", opportunity.organization.slug)
+    approve_url = reverse("opportunity:approve_visit", args=(opportunity.organization.slug, visit.id))
+    client.force_login(user)
+    response = client.post(approve_url, {"justification": justification}, follow=True)
+    print(response.status_code)
+    visit.refresh_from_db()
+    assert visit.status == VisitValidationStatus.approved
+    expected_redirect_url = None
+    if opportunity.managed:
+        assert justification == visit.justification
+        expected_redirect_url = reverse(
+            "opportunity:user_visit_review",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.id},
+        )
+    else:
+        expected_redirect_url = reverse(
+            "opportunity:user_visits_list",
+            kwargs={
+                "org_slug": opportunity.organization.slug,
+                "opp_id": opportunity.id,
+                "pk": visit.opportunity_access_id,
+            },
+        )
+    assert response.redirect_chain[-1][0] == expected_redirect_url
+    assert response.status_code == HTTPStatus.OK

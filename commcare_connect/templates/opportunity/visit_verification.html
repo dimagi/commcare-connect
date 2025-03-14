@@ -149,8 +149,15 @@
         <button class="btn btn-success" disabled>Approve</button>
         <button class="btn btn-danger" disabled>Reject</button>
       {% else %}
-        <a class="btn btn-success" href="{% url 'opportunity:approve_visit' org_slug=request.org.slug pk=visit.id  %}" role="button">Approve</a>
-        <button class="btn btn-danger" role="button" data-bs-toggle="modal" data-bs-target="#user-visit-reject-modal">Reject</a>
+        {% if visit.flagged and visit.opportunity.managed %}
+          <button class="btn btn-success" role="button" data-bs-toggle="modal" data-bs-target="#justification-modal">Approve</button>
+        {% else %}
+          <form method="POST" class="d-inline-block" action="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=visit.id %}">
+            {% csrf_token %}
+             <button class="btn btn-success">Approve</button>
+          </form>
+        {% endif %}
+        <button class="btn btn-danger" role="button" data-bs-toggle="modal" data-bs-target="#user-visit-reject-modal">Reject</button>
       {% endif %}
     </div>
   </div>
@@ -180,7 +187,33 @@
     </div>
   </div>
 </div>
+
+
+<div class="modal" tabindex="-1" id="justification-modal">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Approve Visit</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url 'opportunity:approve_visit' org_slug=request.org.slug pk=visit.id  %}" method="post">
+        <div class="modal-body">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label for="justification" class="form-label">Justification</label>
+              <textarea required class="form-control" id="justification" rows="3" name="justification">{{ justification }}</textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-success">Approve</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock modal %}
+
 
 {% block inline_javascript %}
 {{ block.super }}

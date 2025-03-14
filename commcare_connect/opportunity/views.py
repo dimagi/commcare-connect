@@ -907,6 +907,7 @@ def visit_verification(request, org_slug=None, pk=None):
 
 
 @org_member_required
+@require_POST
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
     opp_id = user_visit.opportunity_id
@@ -914,10 +915,19 @@ def approve_visit(request, org_slug=None, pk=None):
         user_visit.status = VisitValidationStatus.approved
         if user_visit.opportunity.managed:
             user_visit.review_created_on = now()
+
+            if user_visit.flagged:
+                justification = request.POST.get("justification")
+                if not justification:
+                    messages.error(request, "Justification is mandatory for flagged visits.")
+                user_visit.justification = justification
+
         user_visit.save()
         update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
+
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
+
     return redirect(
         "opportunity:user_visits_list", org_slug=org_slug, opp_id=opp_id, pk=user_visit.opportunity_access_id
     )

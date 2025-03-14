@@ -450,10 +450,17 @@
             <input class="form-control" type="file" id="importFile" name="visits" required>
             <div class="col-auto">
               <span id="importFileHelp" class="form-text">
-                {% blocktrans %}
-                  The file must contain at least the "Visit ID" and "Status" column.
-                  The import is case-insensitive.
-                {% endblocktrans %}
+                {% if opportunity.managed %}
+                  {% blocktrans %}
+                      The file must contain at least the "Visit ID", "Justification", and "Status" column.
+                      The import is case-insensitive.
+                  {% endblocktrans %}
+                {% else %}
+                  {% blocktrans %}
+                      The file must contain at least the "Visit ID" and "Status" column.
+                      The import is case-insensitive.
+                  {% endblocktrans %}
+                {% endif %}
               </span>
             </div>
           </div>

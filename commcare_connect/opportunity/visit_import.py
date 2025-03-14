@@ -140,6 +140,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
     seen_visits = set()
     user_ids = set()
     with transaction.atomic():
+        missing_justifications = []
         for visit_batch in batched(visit_ids, 100):
             to_update = []
             visits = UserVisit.objects.filter(xform_id__in=visit_batch, opportunity=opportunity)
@@ -152,6 +153,9 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                     visit.status = status
                     if opportunity.managed and status == VisitValidationStatus.approved:
                         visit.review_created_on = now()
+                        if visit.flagged and not justification:
+                            missing_justifications.append(visit.xform_id)
+                            continue
                     changed = True
                 if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
                     visit.reason = reason
@@ -159,15 +163,25 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 if justification and justification != visit.justification:
                     visit.justification = justification
                     changed = True
+
                 if changed:
                     to_update.append(visit)
                 user_ids.add(visit.user_id)
+
+            if missing_justifications:
+                raise ImportException(get_missing_justification_message(missing_justifications))
+
             UserVisit.objects.bulk_update(
                 to_update, fields=["status", "reason", "review_created_on", "justification", "status_modified_date"]
             )
             missing_visits |= set(visit_batch) - seen_visits
     update_payment_accrued(opportunity, users=user_ids)
     return VisitImportStatus(seen_visits, missing_visits)
+
+
+def get_missing_justification_message(visits_ids):
+    id_list = ", ".join(str(v_id) for v_id in visits_ids)
+    return f"Justification is required for flagged visits: {id_list}"
 
 
 def update_payment_accrued(opportunity: Opportunity, users):
