@@ -277,3 +277,37 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
         start_date = self.request.GET.get("start_date") or None
         end_date = self.request.GET.get("end_date") or None
         return get_delivery_performance_report(program, start_date, end_date)
+
+
+from django.contrib.auth.decorators import login_required, user_passes_test
+
+
+# @login_required
+# @user_passes_test(lambda u: u.is_superuser)
+def program_home(request, org_slug):
+    from django.db.models import F
+
+    # Fetch the organization by slug
+    org = Organization.objects.get(slug=org_slug)
+
+    # Get ProgramApplications with related Program details
+    apps = (
+        ProgramApplication.objects.filter(organization=org)
+        .select_related("program", "program__organization", "program__delivery_type")
+        .order_by("-date_created")
+        .values(
+            "program__name",
+            "program__start_date",
+            "program__end_date",
+            "program__description",
+            "status",
+            "program__organization__name",
+            "program__delivery_type__name",
+            "date_created",
+        )
+    )
+
+    # Sort by ProgramApplication date first, then Program start_date
+    results = sorted(apps, key=lambda x: (x["date_created"], x["program__start_date"]), reverse=True)
+    context = {"program_apps": results}  # The queryset from the ORM query
+    return render(request, "program/home.html", context)

@@ -1,0 +1,49 @@
+{% load static i18n %}
+
+<!DOCTYPE html>
+{% get_current_language as LANGUAGE_CODE %}
+<html lang="{{ LANGUAGE_CODE }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CommCare Connect{% endblock title %}</title>
+    {% block css %}
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% endblock %}
+    {% block javascript %}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org"></script>
+    <script src="src/scripts/main.js" defer></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'work-sans': ['Work Sans', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    {% endblock javascript %}
+</head>
+<body class="bg-gray-100 flex overflow-x-hidden font-work-sans">
+
+    <!-- Sidebar -->
+    {% include 'sidebar.html' %}
+
+    <!-- Main Content -->
+    <div class="flex-1">
+        <!-- Header -->
+        {% include 'header.html' %}
+        <!-- Content Area (Two Columns) -->
+        {% block content %}
+        <div class="mt-4">
+          <h1>CommCare Connect</h1>
+          <p class="lead">Unlocking more impact from Frontline Workers</p>
+        </div>
+        {% endblock content %}
+    </div>
+
+</body>
+</html>

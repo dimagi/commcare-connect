@@ -1,0 +1,191 @@
+{% extends "program/new_base.html" %}
+
+{% block content %}
+<div class="p-6 lg:px-[10px] flex mt-[60px] ml-[68px] flex-col lg:flex-row gap-[20px]">
+   <!-- Left Column (Wider) -->
+   <div class="lg:flex-[70%]" >
+      <h2 class="text-lg font-semibold text-indigo-900 mb-3">Programs</h2>
+      <div class="h-screen bg-gray-100 rounded-lg">
+         <div class="flex flex-col gap-4">
+          {% for app in program_apps %}
+          <div class="bg-white shadow-md p-6 rounded-lg lg relative">
+              <div class="absolute -top-1 left-4 h-[8px] w-[26px] bg-orange-400 rounded z-[50]"></div>
+
+              <!-- Header Section -->
+              <div class="flex justify-between items-center text-gray-500 text-sm mb-3">
+                  <div class="flex items-center gap-3">
+                      <span>{{ app.date_created|date:"d M, Y" }}</span>
+                      <span class="flex items-center">
+                          <span class="text-orange-400 text-lg mx-1">•</span>
+                          {{ app.program__organization__name }}
+                      </span>
+                  </div>
+                  <span class="bg-[#FEAF31] text-[#16006D] text-sm px-3 py-1 rounded-full">
+                      {{ app.status|title }}
+                  </span>
+              </div>
+
+              <!-- Program Name -->
+              <h3 class="text-xl font-bold text-indigo-900">{{ app.program__name }}</h3>
+
+              <p class="text-gray-500 text-sm mt-2">
+                  <!-- You can add program description here if available -->
+                  {{ app.program__description|default:"No description available." }}
+              </p>
+
+              <!-- Details & Apply Button -->
+              <div class="flex items-center justify-between w-full mt-4 text-gray-500 text-sm">
+
+                  <!-- Left Side: Delivery Type & Dates -->
+                  <div class="flex items-center gap-8">
+
+                      <!-- Delivery Type -->
+                      <div>
+                          <p class="text-gray-400">Delivery Type</p>
+                          <p class="font-bold text-blue-900">{{ app.program__delivery_type__name }}</p>
+                      </div>
+
+                      <!-- Vertical Divider -->
+                      <div class="w-0.5 h-10 bg-gray-300"></div>
+
+                      <!-- Start Date -->
+                      <div class="flex items-center gap-2">
+                          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                          </svg>
+                          <div>
+                              <p class="text-gray-400">Start Date</p>
+                              <p class="font-bold text-blue-900">{{ app.program__start_date|date:"d-M-Y" }}</p>
+                          </div>
+                      </div>
+
+                      <!-- End Date -->
+                      <div class="flex items-center gap-2">
+                          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                          </svg>
+                          <div>
+                              <p class="text-gray-400">End Date</p>
+                              <p class="font-bold text-blue-900">{{ app.program__end_date|date:"d-M-Y" }}</p>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- Right Side: Apply Button -->
+                  <button class="bg-[#3843D0] text-white px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">
+                      Apply
+                  </button>
+              </div>
+          </div>
+          {% empty %}
+          <p class="text-gray-500">No programs found.</p>
+          {% endfor %}
+         </div>
+      </div>
+   </div>
+   <!-- Right Column -->
+   <div class="lg:w-[30%]">
+      <div class="mb-4 text-[#16006D] font-[500] text-sm">Recent Activities</div>
+      <div class="max-h-[400px] bg-gray-100 rounded-lg">
+         <div class="flex flex-col gap-4">
+            <div class="p-6 shadow bg-white rounded-lg">
+               <div class="flex items-center gap-5 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" class='h-4 w-4 text-[#16006D]' viewBox="0 0 512 512">
+                     <path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9L0 168c0 13.3 10.7 24 24 24l110.1 0c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24l0 104c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65 0-94.1c0-13.3-10.7-24-24-24z" fill="currentColor"/>
+                  </svg>
+                  <p class="text-[#0F172A] font-[400] text-sm">Visits Pending Review</p>
+               </div>
+               <div class="flex justify-between items-center">
+                  <div>
+                     <p class="text-[#0F172A] font-[500] text-sm">Opportunity Name</p>
+                     <p class="text-[#94A3B8] font-[400] text-[11px]">Network Manager Organization Name</p>
+                  </div>
+                  <div class="flex gap-5 border border-[#E2E8F0] px-4 py-1 rounded-3xl items-center">
+                     <p class="text-[#0F172A] font-[400] text-[20px]">11</p>
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#3843D0] h-4 w-4">
+                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" fill="currentColor"/>
+                     </svg>
+                  </div>
+               </div>
+               <div class="flex justify-between items-center mt-5">
+                  <div>
+                     <p class="text-[#0F172A] font-[500] text-sm">Opportunity Name</p>
+                     <p class="text-[#94A3B8] font-[400] text-[11px]">Network Manager Organization Name</p>
+                  </div>
+                  <div class="flex gap-5 border border-[#E2E8F0] px-4 py-1 rounded-3xl items-center">
+                     <p class="text-[#0F172A] font-[400] text-[20px]">11</p>
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#3843D0] h-4 w-4">
+                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" fill="currentColor"/>
+                     </svg>
+                  </div>
+               </div>
+            </div>
+            <div class="p-6 shadow bg-white rounded-lg mt-1">
+               <div class="flex items-center gap-5 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" class='h-4 w-4 text-[#16006D]' viewBox="0 0 576 512">
+                     <path d="M312 24l0 10.5c6.4 1.2 12.6 2.7 18.2 4.2c12.8 3.4 20.4 16.6 17 29.4s-16.6 20.4-29.4 17c-10.9-2.9-21.1-4.9-30.2-5c-7.3-.1-14.7 1.7-19.4 4.4c-2.1 1.3-3.1 2.4-3.5 3c-.3 .5-.7 1.2-.7 2.8c0 .3 0 .5 0 .6c.2 .2 .9 1.2 3.3 2.6c5.8 3.5 14.4 6.2 27.4 10.1l.9 .3s0 0 0 0c11.1 3.3 25.9 7.8 37.9 15.3c13.7 8.6 26.1 22.9 26.4 44.9c.3 22.5-11.4 38.9-26.7 48.5c-6.7 4.1-13.9 7-21.3 8.8l0 10.6c0 13.3-10.7 24-24 24s-24-10.7-24-24l0-11.4c-9.5-2.3-18.2-5.3-25.6-7.8c-2.1-.7-4.1-1.4-6-2c-12.6-4.2-19.4-17.8-15.2-30.4s17.8-19.4 30.4-15.2c2.6 .9 5 1.7 7.3 2.5c13.6 4.6 23.4 7.9 33.9 8.3c8 .3 15.1-1.6 19.2-4.1c1.9-1.2 2.8-2.2 3.2-2.9c.4-.6 .9-1.8 .8-4.1l0-.2c0-1 0-2.1-4-4.6c-5.7-3.6-14.3-6.4-27.1-10.3l-1.9-.6c-10.8-3.2-25-7.5-36.4-14.4c-13.5-8.1-26.5-22-26.6-44.1c-.1-22.9 12.9-38.6 27.7-47.4c6.4-3.8 13.3-6.4 20.2-8.2L264 24c0-13.3 10.7-24 24-24s24 10.7 24 24zM568.2 336.3c13.1 17.8 9.3 42.8-8.5 55.9L433.1 485.5c-23.4 17.2-51.6 26.5-80.7 26.5L192 512 32 512c-17.7 0-32-14.3-32-32l0-64c0-17.7 14.3-32 32-32l36.8 0 44.9-36c22.7-18.2 50.9-28 80-28l78.3 0 16 0 64 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-64 0-16 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l120.6 0 119.7-88.2c17.8-13.1 42.8-9.3 55.9 8.5zM193.6 384c0 0 0 0 0 0l-.9 0c.3 0 .6 0 .9 0z" fill="currentColor"/>
+                  </svg>
+                  <p class="text-[#0F172A] font-[400] text-sm">Pending Payment</p>
+               </div>
+               <div class="flex justify-between items-center">
+                  <div>
+                     <p class="text-[#0F172A] font-[500] text-sm">Opportunity Name</p>
+                     <p class="text-[#94A3B8] font-[400] text-[11px]">Network Manager Organization Name</p>
+                  </div>
+                  <div class="flex gap-5 border border-[#E2E8F0] px-4 py-1 rounded-3xl items-center">
+                     <p class="text-[#0F172A] font-[400] text-[20px]">11</p>
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#3843D0] h-4 w-4">
+                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" fill="currentColor"/>
+                     </svg>
+                  </div>
+               </div>
+               <div class="flex justify-between items-center mt-5">
+                  <div>
+                     <p class="text-[#0F172A] font-[500] text-sm">Opportunity Name</p>
+                     <p class="text-[#94A3B8] font-[400] text-[11px]">Network Manager Organization Name</p>
+                  </div>
+                  <div class="flex gap-5 border border-[#E2E8F0] px-4 py-1 rounded-3xl items-center">
+                     <p class="text-[#0F172A] font-[400] text-[20px]">11</p>
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#3843D0] h-4 w-4">
+                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" fill="currentColor"/>
+                     </svg>
+                  </div>
+               </div>
+            </div>
+            <div class="p-6 shadow bg-white rounded-lg mt-1">
+               <div class="flex items-center gap-5 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#16006D] h-4 w-4">
+                     <path d="M304 128a80 80 0 1 0 -160 0 80 80 0 1 0 160 0zM96 128a128 128 0 1 1 256 0A128 128 0 1 1 96 128zM49.3 464l349.5 0c-8.9-63.3-63.3-112-129-112l-91.4 0c-65.7 0-120.1 48.7-129 112zM0 482.3C0 383.8 79.8 304 178.3 304l91.4 0C368.2 304 448 383.8 448 482.3c0 16.4-13.3 29.7-29.7 29.7L29.7 512C13.3 512 0 498.7 0 482.3z" fill="currentColor"/>
+                  </svg>
+                  <p class="text-[#0F172A] font-[400] text-sm">Inactive Workers</p>
+               </div>
+               <div class="flex justify-between items-center">
+                  <div>
+                     <p class="text-[#0F172A] font-[500] text-sm">Opportunity Name</p>
+                     <p class="text-[#94A3B8] font-[400] text-[11px]">Network Manager Organization Name</p>
+                  </div>
+                  <div class="flex gap-5 border border-[#E2E8F0] px-4 py-1 rounded-3xl items-center">
+                     <p class="text-[#0F172A] font-[400] text-[20px]">11</p>
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#3843D0] h-4 w-4">
+                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" fill="currentColor"/>
+                     </svg>
+                  </div>
+               </div>
+               <div class="flex justify-between items-center mt-5">
+                  <div>
+                     <p class="text-[#0F172A] font-[500] text-sm">Opportunity Name</p>
+                     <p class="text-[#94A3B8] font-[400] text-[11px]">Network Manager Organization Name</p>
+                  </div>
+                  <div class="flex gap-5 border border-[#E2E8F0] px-4 py-1 rounded-3xl items-center">
+                     <p class="text-[#0F172A] font-[400] text-[20px]">11</p>
+                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="text-[#3843D0] h-4 w-4">
+                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" fill="currentColor"/>
+                     </svg>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </div>
+   </div>
+</div>
+{% endblock %}
