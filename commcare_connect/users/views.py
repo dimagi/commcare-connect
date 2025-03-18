@@ -1,6 +1,6 @@
 from allauth.account.models import transaction
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse
@@ -142,7 +142,7 @@ def accept_invite(request, invite_id):
 
 
 @login_required
-@user_passes_test(lambda user: user.is_superuser)
+@permission_required("users.demo_users_access")
 @require_GET
 def demo_user_tokens(request):
     users = fetch_demo_user_tokens()
