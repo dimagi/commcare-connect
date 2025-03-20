@@ -241,7 +241,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     if not payment_unit:
         raise ProcessingError(
-            f"Payment unit is not configured for the deliver app: {app.name} in opportunity: {opportunity.name}"
+            f"Payment unit is not configured for the deliver unit: "
+            f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
     access = None
