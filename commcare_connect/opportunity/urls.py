@@ -52,6 +52,10 @@ from commcare_connect.opportunity.views import (
     user_visits_list,
     verification_flags_config,
     visit_verification,
+    worker_deliver,
+    worker_learn,
+    worker_list,
+    worker_verify,
 )
 
 app_name = "opportunity"
@@ -108,6 +112,10 @@ urlpatterns = [
     path("<int:opp_id>/suspend_user/<int:pk>/", view=suspend_user, name="suspend_user"),
     path("<int:opp_id>/revoke_user_suspension/<int:pk>/", view=revoke_user_suspension, name="revoke_user_suspension"),
     path("<int:opp_id>/delete_form_json_rule/<int:pk>/", view=delete_form_json_rule, name="delete_form_json_rule"),
+    path("<int:opp_id>/workers/list/", view=worker_list, name="worker_list"),
+    path("<int:opp_id>/workers/learn/", view=worker_learn, name="worker_learn"),
+    path("<int:opp_id>/workers/deliver/", view=worker_deliver, name="worker_deliver"),
+    path("<int:opp_id>/workers/verify/", view=worker_verify, name="worker_verify"),
     path("<int:pk>/catchment_area_export/", view=export_catchment_area, name="catchment_area_export"),
     path("<int:pk>/catchment_area_import/", view=import_catchment_area, name="catchment_area_import"),
     path("<int:pk>/payment_report/", payment_report, name="payment_report"),

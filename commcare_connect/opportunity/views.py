@@ -1321,3 +1321,19 @@ def resend_user_invite(request, org_slug, opp_id, pk):
         invite_user.delay(user.id, access.pk)
 
     return HttpResponse("The invitation has been successfully resent to the user.")
+
+
+def worker_list(request, org_slug=None, opp_id=None):
+    return render(request, "opportunity/tailwind/workers.html")
+
+
+def worker_learn(request, org_slug=None, opp_id=None):
+    return render(request, "opportunity/tailwind/learn.html")
+
+
+def worker_deliver(request, org_slug=None, opp_id=None):
+    return render(request, "opportunity/tailwind/deliver.html")
+
+
+def worker_verify(request, org_slug=None, opp_id=None):
+    return render(request, "opportunity/tailwind/verify.html")
