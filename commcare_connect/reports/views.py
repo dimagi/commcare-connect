@@ -8,7 +8,7 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Sum
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -17,7 +17,6 @@ from django.utils.functional import cached_property
 from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
 
-from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
@@ -33,7 +32,6 @@ from commcare_connect.reports.queries import get_visit_map_queryset
 
 from .tables import AdminReportTable
 
-ADMIN_REPORT_START = (2023, 1)
 COUNTRY_CURRENCY_CHOICES = [
     ("ETB", "Ethiopia"),
     ("KES", "Kenya"),
@@ -41,134 +39,6 @@ COUNTRY_CURRENCY_CHOICES = [
     ("MZN", "Mozambique"),
     ("NGN", "Nigeria"),
 ]
-
-
-def _increment(quarter):
-    year, q = quarter
-    if q < 4:
-        q += 1
-    else:
-        year += 1
-        q = 1
-    return (year, q)
-
-
-def get_quarters_since_start():
-    today = date.today()
-    current_quarter = (today.year, (today.month - 1) // 3 + 1)
-    quarters = []
-    q = ADMIN_REPORT_START
-    while q <= current_quarter:
-        quarters.append(q)
-        q = _increment(q)
-    return quarters
-
-
-@quickcache(["quarter", "delivery_type", "group_by_delivery_type"], timeout=23 * 60 * 60)
-def get_table_data_for_quarter(quarter, delivery_type, group_by_delivery_type=False):
-    if delivery_type:
-        delivery_type_filter = Q(opportunity_access__opportunity__delivery_type__slug=delivery_type)
-    else:
-        delivery_type_filter = Q()
-    quarter_start = date(quarter[0], (quarter[1] - 1) * 3 + 1, 1)
-    next_quarter = _increment(quarter)
-    quarter_end = date(next_quarter[0], (next_quarter[1] - 1) * 3 + 1, 1)
-    data = []
-
-    if group_by_delivery_type:
-        from collections import defaultdict
-
-        user_set = defaultdict(set)
-        beneficiary_set = defaultdict(set)
-        service_count = defaultdict(int)
-    else:
-        user_set = set()
-        beneficiary_set = set()
-        service_count = 0
-
-    last_pk = 0
-    more = True
-    while more:
-        visit_data = (
-            CompletedWork.objects.annotate(work_date=Max("uservisit__visit_date"))
-            .filter(
-                delivery_type_filter,
-                opportunity_access__opportunity__is_test=False,
-                status=CompletedWorkStatus.approved,
-                work_date__gte=quarter_start,
-                work_date__lt=quarter_end,
-                id__gt=last_pk,
-            )
-            .select_related("opportunity_access__opportunity__delivery_type")
-        ).order_by("id")[:100]
-        if len(visit_data) < 100:
-            more = False
-        for v in visit_data:
-            delivery_type_name = v.opportunity_access.opportunity.delivery_type.name
-            if group_by_delivery_type:
-                user_set[delivery_type_name].add(v.opportunity_access.user_id)
-                beneficiary_set[delivery_type_name].add(v.entity_id)
-                service_count[delivery_type_name] += v.approved_count
-            else:
-                user_set.add(v.opportunity_access.user_id)
-                beneficiary_set.add(v.entity_id)
-                service_count += v.approved_count
-
-            last_pk = v.id
-
-    payment_query = Payment.objects.filter(
-        delivery_type_filter,
-        opportunity_access__opportunity__is_test=False,
-        date_paid__gte=quarter_start,
-        date_paid__lt=quarter_end,
-    )
-
-    if group_by_delivery_type:
-        approved_payment_data = (
-            payment_query.filter(confirmed=True)
-            .values("opportunity_access__opportunity__delivery_type__name")
-            .annotate(approved_sum=Sum("amount_usd"))
-        )
-        total_payment_data = payment_query.values("opportunity_access__opportunity__delivery_type__name").annotate(
-            total_sum=Sum("amount_usd")
-        )
-        approved_payment_dict = {
-            item["opportunity_access__opportunity__delivery_type__name"]: item["approved_sum"]
-            for item in approved_payment_data
-        }
-        total_payment_dict = {
-            item["opportunity_access__opportunity__delivery_type__name"]: item["total_sum"]
-            for item in total_payment_data
-        }
-        for delivery_type_name in user_set.keys():
-            data.append(
-                {
-                    "delivery_type": delivery_type_name,
-                    "quarter": quarter,
-                    "users": len(user_set[delivery_type_name]),
-                    "services": service_count[delivery_type_name],
-                    "approved_payments": approved_payment_dict.get(delivery_type_name, 0),
-                    "total_payments": total_payment_dict.get(delivery_type_name, 0),
-                    "beneficiaries": len(beneficiary_set[delivery_type_name]),
-                }
-            )
-    else:
-        approved_payment_amount = (
-            payment_query.filter(confirmed=True).aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
-        )
-        total_payment_amount = payment_query.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
-        data.append(
-            {
-                "delivery_type": "All",
-                "quarter": quarter,
-                "users": len(user_set),
-                "services": service_count,
-                "approved_payments": approved_payment_amount,
-                "total_payments": total_payment_amount,
-                "beneficiaries": len(beneficiary_set),
-            }
-        )
-    return data
 
 
 class DashboardFilters(django_filters.FilterSet):
