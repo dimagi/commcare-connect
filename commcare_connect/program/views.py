@@ -9,6 +9,7 @@ from django_tables2 import SingleTableView
 from commcare_connect.opportunity.views import OpportunityInit
 from commcare_connect.organization.decorators import org_admin_required, org_program_manager_required
 from commcare_connect.organization.models import Organization
+from commcare_connect.opportunity.models import UserVisit
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
 from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
@@ -285,7 +286,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 # @login_required
 # @user_passes_test(lambda u: u.is_superuser)
 def program_home(request, org_slug):
-    from django.db.models import F
+    from django.db.models import F, Count
 
     # Fetch the organization by slug
     org = Organization.objects.get(slug=org_slug)
@@ -309,5 +310,14 @@ def program_home(request, org_slug):
 
     # Sort by ProgramApplication date first, then Program start_date
     results = sorted(apps, key=lambda x: (x["date_created"], x["program__start_date"]), reverse=True)
-    context = {"program_apps": results}  # The queryset from the ORM query
+    pending_counts = (
+        UserVisit.objects
+        .filter(status="pending")
+        .values('opportunity__name', 'opportunity__organization__name')  # Separate field names
+        .annotate(count=Count('id'))
+    )
+    context = {
+        "program_apps": results,
+        "pending_counts": pending_counts,
+        }  # The queryset from the ORM query
     return render(request, "program/home.html", context)
