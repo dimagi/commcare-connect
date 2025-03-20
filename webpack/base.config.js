@@ -8,11 +8,9 @@ module.exports = {
   context: path.join(__dirname, '../'),
   entry: {
     project: path.resolve(__dirname, '../commcare_connect/static/js/project'),
-    dashboard: path.resolve(
-      __dirname,
-      '../commcare_connect/static/js/dashboard',
-    ),
+    dashboard: path.resolve(__dirname, '../commcare_connect/static/js/dashboard'),
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
+    tailwind: path.resolve(__dirname, '../commcare_connect/static/js/tailwind'),  // Tailwind entry
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
@@ -30,7 +28,6 @@ module.exports = {
   ],
   module: {
     rules: [
-      // we pass the output from babel loader to react-hot loader
       {
         test: /\.js$/,
         loader: 'babel-loader',
@@ -41,10 +38,13 @@ module.exports = {
           MiniCssExtractPlugin.loader,
           'css-loader',
           {
-            loader: 'postcss-loader',
+            loader: 'postcss-loader',  // Inline Tailwind config
             options: {
               postcssOptions: {
-                plugins: ['postcss-preset-env', 'autoprefixer', 'pixrem'],
+                plugins: [
+                  require('@tailwindcss/postcss'),  // Use the new Tailwind plugin
+                  require('autoprefixer')
+                ],
               },
             },
           },
