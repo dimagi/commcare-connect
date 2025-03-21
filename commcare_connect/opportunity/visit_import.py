@@ -26,8 +26,8 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import send_payment_notification
-from commcare_connect.opportunity.utils.completed_work import update_status, update_work_payment_date
+from commcare_connect.opportunity.tasks import send_payment_notification, update_payment_accrued
+from commcare_connect.opportunity.utils.completed_work import update_work_payment_date
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.itertools import batched
 
@@ -184,17 +184,6 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
 def get_missing_justification_message(visits_ids):
     id_list = ", ".join(str(v_id) for v_id in visits_ids)
     return f"Justification is required for flagged visits: {id_list}"
-
-
-def update_payment_accrued(opportunity: Opportunity, users):
-    """Updates payment accrued for completed and approved CompletedWork instances."""
-    access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
-    for access in access_objects:
-        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
-            completed_works = access.completedwork_set.exclude(status=CompletedWorkStatus.rejected).select_related(
-                "payment_unit"
-            )
-            update_status(completed_works, access, compute_payment=True)
 
 
 def get_data_by_visit_id(dataset) -> dict[int, VisitData]:

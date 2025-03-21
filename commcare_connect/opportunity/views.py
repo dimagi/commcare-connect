@@ -102,6 +102,7 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_push_notification_task,
     send_sms_task,
+    update_payment_accrued,
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.visit_import import (
@@ -112,7 +113,6 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     bulk_update_visit_status,
     get_exchange_rate,
-    update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
 from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
