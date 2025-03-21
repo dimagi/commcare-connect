@@ -1,0 +1,24 @@
+<div class="bg-white shadow-sm p-4 rounded-lg  flex flex-col gap-4">
+ <div class="flex justify-between items-center text-gray-400 text-sm">
+    <h3 class="text-base font-medium  text-deep-purple">User Status Details</h3>
+    <i class="fa-regular fa-xmark cursor-pointer"></i>
+ </div>
+ <div class="flex items-center bg-marigold bg-opacity-30 text-deep-purple px-3 py-2 mt-2 rounded-lg border border-marigold">
+    <span class="flex-1 text-sm text-marigold">User has yellow status</span>
+    <div id="cancel" hx-get="src/components/buttons/suspend-button.htmx" hx-trigger="load"></div>  
+  </div>
+  <div>
+    <div class="flex items-center justify-between">
+        <p class="text-deep-purple text-sm">Data Points</p>
+        <p class="text-deep-purple text-sm">Score</p>
+    </div>
+     <div class="flex items-center justify-between mt-3">
+        <p class="text-dark-grey text-xs">Data Points 1</p>
+        <p class="text-dark-grey text-xs">45</p>
+    </div>
+     <div class="flex items-center justify-between mt-3">
+        <p class="text-dark-grey text-xs">Data Points 1</p>
+        <p class="text-dark-grey text-xs">45</p>
+    </div>
+  </div>
+</div>

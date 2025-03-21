@@ -1,0 +1,20 @@
+<div class="space-y-4 w-full">
+  <div hx-get="src/components/breadcrumb.htmx" hx-trigger="load"></div>
+  <!-- Profile & Statistic Cards Container -->
+  <div class="flex flex-wrap p-2 items-center profile-bg rounded-2xl">
+    <div hx-get="src/components/worker-profile.htmx" hx-trigger="load"></div>
+    <div hx-get="src/components/cards/worker-dashboard-card.htmx" hx-trigger="load"></div>
+  </div>
+
+  <div class="flex w-full justify-center">
+    <div class="flex w-full flex-col lg:grid grid-cols-10 gap-2">
+      <div class="col-span-6">
+        <!-- Tabs -->
+        <div hx-get="src/components/tabs/tabs.ejs" hx-trigger="load"></div>
+      </div>
+      <div class="col-span-4 w-full">
+        <div hx-get="src/components/details.ejs" hx-trigger="load"></div>
+      </div>
+    </div>
+  </div>
+</div>

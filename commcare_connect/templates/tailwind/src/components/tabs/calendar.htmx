@@ -1,0 +1,10 @@
+<!-- calendar.htmx -->
+<div class="flex items-center space-x-2 tab-calender rounded-lg px-2 py-1">
+    <button class="tab-calender-left-icon">
+        <i class="fas fa-chevron-left"></i>
+    </button>
+    <span class="today-date">24 Aug, 2024</span>
+    <button class="tab-calender-right-icon">
+        <i class="fas fa-chevron-right"></i>
+    </button>
+</div>

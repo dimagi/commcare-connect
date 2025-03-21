@@ -1,0 +1,19 @@
+<!-- tabs.htmx -->
+<div class="flex items-center justify-between tab-header mb-4 space-x-4"> 
+    <!-- Tabs Section -->
+    <div hx-get="src/components/tabs/tabs-header.htmx" hx-trigger="load"></div>
+
+    <!-- Calendar Section -->
+    <div hx-get="src/components/tabs/calendar.htmx" hx-trigger="load"></div>
+
+    <!-- Filter Icon Section -->
+    <div>
+          <div hx-get="src/components/filter/table-filter.htmx" hx-trigger="load"></div>
+    </div>
+</div>
+
+<!-- Tabs Content -->
+<div id="tab-content">
+    <!-- Default Tab Content -->
+    <div hx-get="src/components/tabs/tab-contents/flagged.htmx" hx-trigger="load"></div>
+</div>

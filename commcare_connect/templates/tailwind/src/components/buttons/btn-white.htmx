@@ -1,0 +1,3 @@
+<button class="hover:bg-[#3843D0] hover:text-white border text-deep-purple px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">
+View Opportunities
+</button>
