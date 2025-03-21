@@ -1,0 +1,23 @@
+<!-- <thead class="block">
+  <tr class="bg-[#e2e8f0] rounded-lg flex w-full gap-x-4">
+    <th class="text-center p-3"><i class="fa-regular fa-square-minus"></i></th>
+    <th class="p-3">Time</th>
+    <th class="p-3">Entity Name</th>
+    <th class="p-3">Flags</th>
+    <th class="p-3"></th>
+  </tr>
+</thead> -->
+
+<thead class="block mb-2">
+    <tr class="custom-table <%= trStyles %> bg-[#e2e8f0] rounded-lg flex w-full gap-x-4">
+      <% headers.forEach(header => { %>
+        <th class="<%= header.styles %>">
+          <% if (header.name === '') { %>
+            <i class="fa-regular fa-square-minus"></i>
+          <% } else { %>
+            <%= header.name %>
+          <% } %>
+        </th>
+      <% }); %>
+    </tr>
+  </thead>

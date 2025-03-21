@@ -1,0 +1,301 @@
+/* :root{
+    --deep-purple:#16006D;
+    --indigo:#3843D0;
+    --cornflower-blue:#5D70D2;
+    --sky:#8EA1FF;
+    --sunset:#E44434;
+    --mango:#FC5F36;
+    --marigold:#FEAF31;
+    --black-grey:#0F172A;
+    --blue-light:#94A3B8;
+    --sunset-light:#FC5F3633;
+    --border-light: #E2E8F0;
+}
+
+
+.bg-deep-purple { background-color: var(--deep-purple); }
+.bg-indigo { background-color: var(--indigo); }
+.bg-cornflower-blue { background-color: var(--cornflower-blue); }
+.bg-sky { background-color: var(--sky); }
+.bg-sunset { background-color: var(--sunset); }
+.bg-mango { background-color: var(--mango); }
+.bg-marigold { background-color: var(--marigold); }
+.bg-sunset-light { background-color: var(--sunset-light); }
+.hover\:bg-sunset-light:hover {
+    background-color: var(--sunset-light);
+}
+.hover\:bg-indigo:hover {
+    background-color: var(--indigo);
+}
+
+
+.text-deep-purple { color: var(--deep-purple); }
+.text-indigo { color: var(--indigo); }
+.text-cornflower-blue { color: var(--cornflower-blue); }
+.text-sky { color: var(--sky); }
+.text-sunset { color: var(--sunset); }
+.text-mango { color: var(--mango); }
+.text-marigold { color: var(--marigold); }
+.text-black-grey { color: var(--black-grey); }
+.text-blue-light { color: var(--blue-light); }
+.text-sunset-light { color: var(--sunset-light); }
+.border-light { border-color: var(--border-light); } */
+
+#sidebar.expanded .tooltip {
+  display: none !important;
+}
+.tooltip {
+  display: none;
+}
+#sidebar:not(.expanded) .group:hover .tooltip {
+  display: block;
+}
+.custom-header {
+  z-index: 99;
+  margin-left: 64px;
+}
+.right-side-pad {
+  margin-right: 52px;
+}
+.heading {
+  margin-left: -8px;
+}
+#dropdown-container {
+  position: absolute;
+  z-index: 9999;
+}
+#dropdown-container .block {
+  display: block !important;
+}
+.dropdown-menu {
+  font-size: 12px;
+  background-color: white;
+  box-shadow: 0px 0px 4px 0px #00000026;
+  border-radius: 8px;
+  width: auto;
+  min-width: 200px;
+  position: absolute;
+  z-index: 9999;
+}
+.dropdown-menu .flag {
+  color: #94a3b8;
+  padding: 10px;
+}
+.dropdown-menu ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.dropdown-menu li {
+  padding: 8px;
+  cursor: pointer;
+  color: #16006d;
+}
+.dropdown-menu li:hover {
+  background-color: #f3f4f6;
+  color: #16006d;
+}
+
+/* Breadcrumb Styles */
+.breadcrumb-link {
+  color: #94a3b8;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.breadcrumb-link:hover {
+  color: #16006d;
+}
+.breadcrumb-active {
+  color: #16006d;
+  font-weight: 600;
+}
+
+/* Profile Card Styles */
+.profile-card {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  border-radius: 1rem;
+  margin-right: 30px;
+  background-color: #3843d0;
+  color: white;
+}
+.profile-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.profile-right-side p:first-of-type {
+  font-size: 11px;
+}
+.profile-right-side p:last-of-type {
+  font-size: 12px;
+  padding-top: 5px;
+}
+.profile-border {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 8px;
+  background-color: red;
+  border-radius: 0 0 50% 50%;
+}
+.share-icon {
+  position: absolute;
+  left: 45%;
+  transform: translateX(-50%);
+  bottom: -20px;
+  color: white;
+  font-size: 1.25rem;
+}
+.profile-bg {
+  background-color: #3843d0;
+}
+.profile-details {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Dashboard Cards */
+.dashboard-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem;
+  border-radius: 1rem;
+  background-color: #8ea1ff2b;
+}
+.dashboard-card-content {
+  font-size: 1.75rem;
+  color: white;
+}
+.dashboard-card-icon {
+  font-size: 1.25rem;
+  align-self: start;
+}
+
+/* custom Table */
+/* .custom-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: white;
+  border-radius: 8px;
+  overflow: visible !important;
+} */
+.custom-table td {
+  padding: 12px;}
+.custom-table th,
+  .custom-table td {
+  /* padding: 8px; */
+  text-align: left;
+  font-size: 12px;
+  color: #16006d;
+  font-weight: normal;
+  position: relative;
+}
+.custom-table th {
+  /* background-color: #e2e8f0; */
+  color: #16006d;
+  font-size: 14px;
+  font-weight: 500;
+  /* border-radius: 12px; */
+}
+.custom-table tbody tr {
+  background-color: white;
+  display: flex;
+  /* justify-content: space-between; */
+  /* justify-content: start; */
+  width: 100%;
+  position: relative;
+  transition: background-color 0.3s;
+}
+.custom-table tbody tr:hover {
+  background-color: #f4f4f4;
+}
+/* .custom-table tbody {
+  border-top: 10px solid #f8fafc;
+} */
+.custom-table tbody tr:hover::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 24px;
+  width: 4px;
+  background-color: #fc5f36;
+  /* border-radius: 8px; */
+  transition: all 0.3s;
+}
+.table-footer button {
+  color: #16006d;
+}
+.custom-table i {
+  color: #16006d;
+}
+.table-footer select {
+  color: #16006d;
+  background-color: transparent;
+  outline: none;
+}
+.table-footer i {
+  color: #16006d;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 14px;
+  background-color: #f1f5f9;
+  color: #16006d;
+  border-radius: 32px;
+  font-size: 12px;
+}
+
+/* Tabs */
+.tab-calender {
+  background-color: #f1f5f9;
+  font-size: 14px;
+}
+.tab-calender .today-date {
+  color: #16006d;
+}
+.tab-calender-left-icon,
+.tab-calender-right-icon {
+  color: black;
+}
+.tab-header {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  border-radius: 8px;
+  box-shadow: 0px 0px 2px 0px #0000001a;
+  padding: 10px;
+}
+.tab-item {
+  position: relative;
+  font-size: 14px;
+  cursor: pointer;
+  color: #94a3b8;
+  padding-bottom: 5px;
+}
+.tab-item:hover::after,
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 4px;
+  background-color: #fc5f36;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  transition: width 0.3s;
+}
+.tab-item.active {
+  color: #16006d;
+}

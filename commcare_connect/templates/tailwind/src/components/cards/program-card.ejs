@@ -1,0 +1,91 @@
+<div class="program-comp relative flex flex-col p-6 rounded-lg shadow-sm bg-white gap-5">
+  <% if (status === 'invited' ) { %>
+  <div class="absolute -top-1 left-4 h-2 w-7 bg-orange-400 rounded z-1"></div>
+  <% } %>
+  <div class="flex w-full justify-between">
+    <div class="flex items-center gap-2 font-normal">
+      <p class="text-xs text-blue-light">06 May, 2024</p>
+      <!-- <div
+        class="h-[6px] w-[6px] bg-<%= status === 'invited' ? '#FEAF31' : status === 'applied' ? '#16006D' : '#16A34A' %> rounded-full"
+      ></div> -->
+      <span class="text-marigold text-xl mx-1 <%= status === 'invited' ? '#FEAF31' : status === 'applied' ? '#16006D' : '#16A34A' %>">•</span>
+      <p class="text-xs text-blue-light">Program Manager Organization Name</p>
+    </div>
+    <div class="flex items-center justify-end gap-6">
+      <% if (status === 'applied' || status === 'accepted') { %>
+        <button><i class="fa-light fa-download"></i></button>
+      <% } %>
+      <div
+        class="rounded-full py-1 px-4 bg-[<%= status === 'invited' ? '#FEAF31' : status === 'applied' ? '#16006D' : '#16A34A' %>] text-xs text-[<%= status === 'invited' ? '#16006D' : 'white' %>]"
+      >
+        <%= status %>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="font-normal text-xl text-deep-purple">Program Name</p>
+    <p class="font-normal text-xs text-gray-400">Lorem ipsum dolor sit amet, consectetur adipisicing elit.</p>
+  </div>
+  <div class="flex justify-between items-center">
+    <div class="flex items-center gap-6">
+      <div>
+        <p class="font-normal text-xs text-gray-400">Delivery Type</p>
+        <p class="text-sm font-medium text-deep-purple">Name of the Delivery Type</p>
+      </div>
+      <div class="line my-2 w-0.5 h-9 bg-gray-300"></div>
+      <div class="flex items-center gap-4">
+        <i class="fa-light fa-calendar text-gray-400"></i>
+        <div>
+          <p class="font-normal text-xs text-gray-400">Start Date</p>
+          <p class="text-sm font-medium text-deep-purple">12-Jul-2024</p>
+        </div>
+        <i class="fa-light fa-arrow-right text-mango"></i>
+        <div>
+          <p class="font-normal text-xs text-gray-400">End Date</p>
+          <p class="text-sm font-medium text-deep-purple">21-Dec-2024</p>
+        </div>
+      </div>
+    </div>
+    <% if (status === 'invited') { %>
+    <button
+      type="button"
+      hx-trigger="none"
+      hx-get=""
+      hx-target="#opportunity-container"
+      hx-swap="innerHTML"
+      hx-on::after-request="document.getElementById('opportunity-container').classList.remove('hidden')"
+      class="py-1 px-4 rounded-[8px] min-w-[100px] h-[40px] font-medium text-sm text-white bg-[#3843D0] relative overflow-hidden before:content-[''] before:absolute before:top-0 before:left-0 before:w-0 before:h-full before:bg-[#16006D] before:transition-all before:duration-300 before:ease-in-out before:z-0 hover:before:w-full"
+    >
+      <span class="relative z-10">Apply</span>
+    </button>
+    <% } %> <% if (status === 'applied') { %>
+    <button
+      type="button"
+      hx-trigger="none"
+      hx-get=""
+      hx-target="#opportunity-container"
+      hx-swap="innerHTML"
+      hx-on::after-request="document.getElementById('opportunity-container').classList.remove('hidden')"
+      class="py-1 px-4 rounded-[8px] min-w-[100px] h-[40px] font-medium text-sm text-[#CBD5E1] bg-[#F1F5F9]"
+      disabled
+    >
+      Apply
+    </button>
+    <% } %> <% if (status === 'accepted') { %>
+    <button
+      type="button"
+      hx-trigger="click"
+      hx-get="/partials/opportunities"
+      hx-target="#opportunity-container"
+      hx-swap="innerHTML"
+      hx-on::after-request="document.getElementById('opportunity-container').classList.remove('hidden')"
+      class="py-1 px-4 rounded-[8px] min-w-[100px] h-[40px] font-medium text-sm border text-deep-purple bg-[#F8FAFC] hover:border-none hover:text-white hover:bg-[#3843D0]"
+    >
+      View Opportunities
+    </button>
+    <% } %>
+  </div>
+  <% if (status === 'accepted') { %>
+  <div id="opportunity-container" class="flex flex-col gap-y-4 py-4"></div>
+  <% } %>
+</div>

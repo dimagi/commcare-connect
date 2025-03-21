@@ -1,0 +1,29 @@
+
+
+<!-- The following code is to create table colums dynamically -->
+<tr class="<%= trStyles %> bg-white flex w-full gap-x-4 p-2">
+    <% cells.forEach(cell => { %>
+      <td class="<%= cell.styles %>">
+        <% if (cell.content === 'flag') { %>
+          <i class="fa-regular fa-flag"></i>
+        <% } else if (cell.badges) { %>
+          <% cell.badges.forEach(badge => { %>
+            <span 
+              hx-get="<%= badge.url %>"
+              hx-swap="outerHTML" 
+              hx-trigger="load"
+            ></span>
+          <% }); %>
+          <% if (cell.dropdown) { %>
+            <span
+              class="<%= cell.dropdown.styles %>"
+              hx-get="<%= cell.dropdown.url %>"
+              hx-target="#dropdown-container"
+            ><%= cell.dropdown.text %></span>
+          <% } %>
+        <% } else { %>
+          <%= cell.content %>
+        <% } %>
+      </td>
+    <% }); %>
+  </tr>

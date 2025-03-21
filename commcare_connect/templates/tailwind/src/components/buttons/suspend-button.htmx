@@ -1,0 +1,3 @@
+<button class="bg-indigo text-white text-sm text-regular px-2 py-1 rounded-lg shadow-md hover:bg-blue-800 transition">
+        Suspend
+</button>

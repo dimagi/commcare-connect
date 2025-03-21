@@ -1,0 +1,9 @@
+ <div  class="dropdown-menu">
+    <div class="flag">All Flags</div>
+     <ul>
+        <li>Location</li>
+        <li>Form Duration</li>
+        <li>Photos</li>
+        <li>Flag Name 1</li>
+    </ul>
+</div>

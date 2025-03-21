@@ -1,0 +1,68 @@
+<!-- flagged.ejs -->
+<div class="table-container">
+  <table class="custom-table flex flex-col gap-2 w-full border-separate border-spacing-0">
+
+
+    <div hx-post="/src/components/table/table-head-row" hx-trigger="load"></div>
+    <div hx-post="/src/components/table/table-body-row" hx-trigger="load"></div>
+    <div hx-post="/src/components/table/table-body-row" hx-trigger="load"></div>
+    <div hx-post="/src/components/table/table-body-row" hx-trigger="load"></div>
+    <div hx-post="/src/components/table/table-body-row" hx-trigger="load"></div>
+  </table>
+</div>
+
+<!-- Popup Container for displaying dynamic content -->
+<div id="popup-container"></div>
+
+<!-- Table Footer -->
+<div hx-get="src/components/table/table-footer.ejs" hx-trigger="load"></div>
+
+<!-- Dropdown container -->
+<div id="dropdown-container"></div>
+
+<!-- Script to Render Table Data -->
+<script>
+  document.addEventListener('htmx:afterSettle', () => {
+    const tableBody = document.getElementById('table-body')
+
+    // Open/Close dropdown on clicking + flag
+    document.querySelectorAll('.clickable-badge').forEach((badge) => {
+      badge.addEventListener('click', function (event) {
+        event.stopPropagation()
+
+        const dropdown = document.getElementById('dropdown-container')
+
+        if (dropdown) {
+          // If the dropdown is already visible, hide it
+          if (dropdown.classList.contains('block')) {
+            dropdown.classList.add('hidden')
+            dropdown.classList.remove('block')
+          } else {
+            // Otherwise, show the dropdown
+            dropdown.classList.remove('hidden')
+            dropdown.classList.add('block')
+
+            // Position the dropdown near the + icon (badge)
+            const rect = event.target.getBoundingClientRect()
+            dropdown.style.top = `${rect.bottom + window.scrollY + 5}px` // 5px offset for spacing
+            dropdown.style.left = `${rect.left + window.scrollX}px`
+          }
+        }
+      })
+    })
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (event) => {
+      const isClickInsideDropdown = event.target.closest('#dropdown-container')
+      const isClickOnBadge = event.target.classList.contains('clickable-badge')
+
+      if (!isClickInsideDropdown && !isClickOnBadge) {
+        const dropdown = document.getElementById('dropdown-container')
+        if (dropdown) {
+          dropdown.classList.add('hidden')
+          dropdown.classList.remove('block')
+        }
+      }
+    })
+  })
+</script>
