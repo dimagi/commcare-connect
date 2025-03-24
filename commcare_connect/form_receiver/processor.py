@@ -1,6 +1,7 @@
 import datetime
 from functools import partial
 
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils.timezone import now
@@ -30,8 +31,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments
-from commcare_connect.opportunity.visit_import import update_payment_accrued
+from commcare_connect.opportunity.tasks import download_user_visit_attachments, process_payment_accrued
 from commcare_connect.users.models import User
 
 LEARN_MODULE_JSONPATH = parse("$..module")
@@ -236,7 +236,19 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
-    access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    payment_unit = deliver_unit.payment_unit
+
+    if not payment_unit:
+        raise ProcessingError(
+            f"Payment unit is not configured for the deliver unit: "
+            f"{deliver_unit.name} in opportunity: {opportunity.name}"
+        )
+
+    access = None
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise PermissionDenied(f'Sorry, {user.name}, you do not have access to the opportunity "{opportunity.name}".')
 
     counts = (
         UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
@@ -247,7 +259,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
         )
     )
-    payment_unit = deliver_unit.payment_unit
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
     entity_id = deliver_unit_block.get("entity_id")
@@ -318,7 +329,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued(opportunity, [user.id])
+    transaction.on_commit(partial(process_payment_accrued.delay, opp_id=opportunity.id, user_ids=[user.id]))
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 

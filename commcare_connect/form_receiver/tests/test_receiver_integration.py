@@ -30,7 +30,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import bulk_approve_completed_work
+from commcare_connect.opportunity.tasks import bulk_approve_completed_work, update_payment_accrued
 from commcare_connect.opportunity.tests.factories import (
     CatchmentAreaFactory,
     DeliverUnitFactory,
@@ -42,7 +42,6 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.opportunity.tests.helpers import validate_saved_fields
-from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 
 
@@ -690,3 +689,23 @@ def test_receiver_same_visit_twice(
     make_request(api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK)
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)  # Used transaction=True for TransactionTestCase behavior
+def test_form_processor_callbacks_called(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    with (
+        patch("commcare_connect.form_receiver.processor.process_payment_accrued.delay") as mock_process_task,
+        patch("commcare_connect.form_receiver.processor.download_user_visit_attachments.delay") as mock_download_task,
+    ):
+        payment_units = opportunity.paymentunit_set.all()
+        form_json1 = get_form_json_for_payment_unit(payment_units[0])
+
+        make_request(api_client, form_json1, mobile_user_with_connect_link)
+
+        user_visit = UserVisit.objects.filter(user=mobile_user_with_connect_link).first()
+        assert user_visit is not None
+
+        mock_process_task.assert_called_once_with(opp_id=opportunity.id, user_ids=[mobile_user_with_connect_link.id])
+        mock_download_task.assert_called_once_with(user_visit.id)

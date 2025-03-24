@@ -24,6 +24,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.tasks import update_payment_accrued
 from commcare_connect.opportunity.tests.factories import (
     CatchmentAreaFactory,
     CompletedWorkFactory,
@@ -48,7 +49,6 @@ from commcare_connect.opportunity.visit_import import (
     _bulk_update_visit_status,
     get_data_by_visit_id,
     get_missing_justification_message,
-    update_payment_accrued,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 from commcare_connect.users.models import User
