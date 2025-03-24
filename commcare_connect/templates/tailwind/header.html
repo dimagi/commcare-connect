@@ -52,30 +52,16 @@
             <div id="dropdown-menu"
                 class="absolute left-0 mt-2 w-[180px] bg-white shadow-lg rounded-lg transition-all duration-300 transform scale-95 opacity-0 invisible">
                 <ul class="py-2">
-                <div class="px-3">
+                  {% for membership in request.memberships %}
+                  <div class="px-3">
                     <li class="py-2 px-3 hover:bg-gray-100 rounded cursor-pointer">
-                        <p class="text-[#16006D] text-[14px] font-[400]">Meca Healthcare</p>
-                        <p class="text-[13px] font-[300] text-[#94A3B8]">Program Manager</p>
+                      <p class="text-[#16006D] text-[14px] font-[400]">{{ membership.organization.name }}</p>
+                      <p class="text-[13px] font-[300] text-[#94A3B8]">
+                        {% if membership.organization.program_manager %}Program Manager{% else %}Network Manager{% endif %}
+                      </p>
                     </li>
-                    </div>
-                     <div class="px-4">
-                    <li class="px-3 py-2 hover:bg-gray-100 rounded cursor-pointer">
-                        <p class="text-[#16006D] text-[14px] font-[400]">Ecma Education</p>
-                        <p class="text-[13px] font-[300] text-[#94A3B8]">Network Manager</p>
-                    </li>
-                    </div>
-                     <div class="px-4">
-                    <li class="px-3 py-2 hover:bg-gray-100 rounded cursor-pointer">
-                        <p class="text-[#16006D] text-[14px] font-[400]">Cmea Kindheart</p>
-                        <p class="text-[13px] font-[300] text-[#94A3B8]">Program Manager</p>
-                    </li>
-                    </div>
-                     <div class="px-4">
-                    <li class="px-3 py-2 hover:bg-gray-100 rounded cursor-pointer">
-                        <p class="text-[#16006D] text-[14px] font-[400]">Acme Venture</p>
-                        <p class="text-[13px] font-[300] text-[#94A3B8]">Network Manager</p>
-                    </li>
-                    </div>
+                  </div>
+                  {% endfor %}
                 </ul>
             </div>
         </div>
