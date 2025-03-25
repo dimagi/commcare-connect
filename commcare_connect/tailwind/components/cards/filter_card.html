@@ -1,0 +1,61 @@
+<div class="bg-white shadow-sm p-4 rounded-lg flex flex-col gap-4 w-fit">
+    <div class="flex items-center text-gray-400 text-sm">
+      <h3 class="flex-1 text-base font-normal text-deep-purple">Filter</h3>
+      <i class="fa-regular fa-bars-staggered text-black mr-6"></i>
+      <i class="fa-regular fa-xmark cursor-pointer"></i>
+    </div>
+    <div>
+      <span class="text-sm text-deep-purple font-medium"
+        >Delivery Status Filters</span
+      >
+    </div>
+    <div class="flex flex-row gap-4">
+      <div
+        class="flex h-8 bg-gray-white w-fit rounded-full px-4 items-center justify-center"
+      >
+        <h3 class="text-sm font-normal text-deep-purple">Overlimit</h3>
+      </div>
+      <div
+        class="flex h-8 bg-gray-white w-fit rounded-full px-4 items-center justify-center"
+      >
+        <h3 class="text-sm font-normal text-deep-purple">Duplicate</h3>
+      </div>
+    </div>
+    <div>
+      <span class="text-sm text-deep-purple font-medium">Flags</span>
+    </div>
+    {% include "ccc_app/components/cards/filter_flag_row.html" with flags=flags %}
+
+    <div class="flex flex-row mt-32">
+      <div class="flex items-center mb-4">
+        <input
+          id="default-checkbox"
+          type="checkbox"
+          value=""
+          hx-get="/checkbox-toggle" 
+          class="w-4 h-4 border-gray-300 rounded-sm dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 checked:bg-transparent checked:border-transparent"
+        />
+      </div>
+      <p class="flex-1 text-xs font-normal text-blue-light ml-2">
+        <span class="block">Select Filtered Pending Visits for</span>
+        Approval or Rejection
+      </p>
+      {% include "ccc_app/components/buttons/button_primary.html" with text='Accept' %}
+    </div>
+  
+  
+    <script>
+      document.querySelectorAll(".toggle-icon").forEach(icon => {
+        icon.addEventListener("click", function () {
+          const targetId = this.getAttribute("data-target");
+          const targetElement = document.getElementById(targetId);
+          if (targetElement) {
+            targetElement.classList.toggle("hidden");
+            this.classList.toggle("fa-angle-down");
+            this.classList.toggle("fa-angle-up");
+          }
+        });
+      });
+    </script>
+  </div>
+  

@@ -1,0 +1,34 @@
+<!-- dashbaord.html -->
+{% extends 'ccc_app/base.html' %}
+
+{% block content %}
+
+<div id="content-area" class="flex mt-15 justify-center flex-col lg:flex-row gap-5 min-h-screen"> 
+   
+    <!-- Left Column -->
+    <div class="lg:w-2/3 lg:max-w-[888px]" >
+       <h2 class="mb-4 text-deep-purple font-medium text-sm">Programs</h2>
+       <div class="mt-4 bg-gray-100 rounded-lg">
+          <div class="flex flex-col gap-4">
+           {% for program in data.programs %}
+           {% include 'ccc_app/components/cards/program_card.html' with name=program.name description=program.description date=program.date organization_name=program.organization_name status=program.status delievery_type=program.delievery_type start_date=program.start_date end_date=program.end_date  %}
+           {% endfor %}
+          </div>
+       </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="lg:w-1/3  lg:max-w-[440px]">
+       <div class="mb-4 text-deep-purple font-medium text-sm">Recent Activities</div>
+      <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
+          <div class="flex flex-col gap-4">
+             {% for activity in data.recent_activities %}
+               {% include 'ccc_app/components/cards/activity_card.html' with name=activity.name icon=activity.icon rows=activity.rows %}
+             {% endfor %}
+          </div>
+       </div>
+    </div>
+ </div>
+
+
+{% endblock %}

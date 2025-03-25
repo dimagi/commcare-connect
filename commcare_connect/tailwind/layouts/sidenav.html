@@ -1,0 +1,84 @@
+<div x-data="{ sidebarOpen: false }" id="sidebar" class="bg-deep-purple z-[9999] h-screen text-white flex flex-col top-0 left-0 fixed transition-all duration-300"
+    :class="sidebarOpen ? 'w-64' : 'w-16'">
+    <div class="relative flex flex-col items-start justify-center mb-20">
+        <div class="fixed flex gap-3 pl-4 mb-10 top-4">
+            <img src="../static/images/logo.svg" class="border-gray-300 rounded-full w-7 h-7" />
+            <div x-show="sidebarOpen" x-cloak id="commcareText" class="text-xl font-normal text-white">
+                <p class='text-lg'>CommCare</p>
+                <p class='ml-6 -mt-2 text-lg'>Connect</p>
+            </div>
+        </div>
+        <button @click="sidebarOpen = !sidebarOpen" class="absolute w-screen mt-8 focus:outline-none top-12">
+            <div class='flex items-center justify-start w-screen gap-3 pl-6'>
+                <i :class="sidebarOpen ? 'fa-solid fa-xmark' : 'fa-regular fa-bars'" id="menuIcon"></i>
+                <span x-show="sidebarOpen" x-cloak id="menuText" class="ml-2 text-xs">Menu</span>
+            </div>
+        </button>
+    </div>
+
+    <div class="flex flex-col flex-grow mt-16">
+        <nav class="flex flex-col px-2 transition-all duration-300" id="navItems">
+            <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+                <a href="/dashboard" class="flex items-center justify-start">
+                    <i class="fa-light fa-table-cells-large"></i>
+                    <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text">Dashboard</span>
+                </a>
+                {% if header_title == 'Dashboard' %}
+                <div class="absolute right-0 block w-1 rounded-lg top-1/4 h-1/2 bg-mango"></div>
+                {% endif %}
+                <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Dashboard</div>
+            </div>
+            <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+                <a href="#" class="flex items-center justify-start">
+                    <i class="fa-light fa-table-columns"></i>
+                    <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text">Programs</span>
+                </a>
+                <div class="absolute right-0 hidden w-1 rounded-lg top-1/4 h-1/2 bg-mango group-hover:block"></div>
+                <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Programs</div>
+            </div>
+            <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+                <a href="#" class="flex items-center justify-start">
+                    <i class="fa-light fa-sidebar"></i>
+                    <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text">Opportunities</span>
+                </a>
+                <div class="absolute right-0 hidden w-1 rounded-lg top-1/4 h-1/2 bg-mango group-hover:block"></div>
+                <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Opportunities</div>
+            </div>
+            <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+                <a href="#" class="flex items-center justify-start">
+                    <i class="fa-light fa-chart-pie"></i>
+                    <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text">Analytics</span>
+                </a>
+                <div class="absolute right-0 hidden w-1 rounded-lg top-1/4 h-1/2 bg-mango group-hover:block"></div>
+                <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Analytics</div>
+            </div>
+            <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+                <a href="#" class="flex items-center justify-start">
+                    <i class="fa-light fa-buildings"></i>
+                    <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text text-nowrap">My Organization</span>
+                </a>
+                <div class="absolute right-0 hidden w-1 rounded-lg top-1/4 h-1/2 bg-mango group-hover:block"></div>
+                <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Organization</div>
+            </div>
+        </nav>
+    </div>
+
+    <div class="flex flex-col px-2 pb-4 ">
+        <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+            <a href="#" class="flex items-center justify-start">
+                <i class="fa-light fa-circle-question"></i>
+                <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text text-nowrap">Help & FAQ</span>
+            </a>
+            <div class="absolute right-0 hidden w-1 rounded-lg top-1/4 h-1/2 bg-mango group-hover:block"></div>
+            <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Help</div>
+        </div>
+        <div class="relative p-3 rounded-lg group hover:bg-sunset-light" :class="sidebarOpen ? 'w-full' : 'w-10'">
+            <a href="#" class="flex items-center justify-start">
+                <i class="fa-light fa-gear"></i>
+                <span x-show="sidebarOpen" x-cloak class="ml-4 text-xs sidebar-text">Settings</span>
+            </a>
+            <div class="absolute right-0 hidden w-1 rounded-lg top-1/4 h-1/2 bg-mango group-hover:block hover:h-1/4 hover:top-3/8"></div>
+            <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-deep-purple group-hover:block whitespace-nowrap">Settings</div>
+        </div>
+    </div>
+</div>

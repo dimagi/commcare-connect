@@ -1,0 +1,33 @@
+<div>
+    {% for flag in flags %}
+    <div class="flex flex-row pt-4 pb-2">
+        <div class="flex-1">
+            <h3 class="text-sm font-normal text-deep-purple">{{ flag.title }}</h3>
+            <p class="text-xs font-normal text-blue-light">
+                {{ flag.desc }}
+            </p>
+        </div>
+        <div>
+            <h3 class="text-xl font-normal text-deep-purple ml-24 mr-4">{{ flag.value }}</h3>
+        </div>
+        {% if flag.title == "Location" or flag.title == "Form Duration" %}
+        <div class="flex flex-col items-end justify-end">
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="checkbox" value="" class="sr-only peer" />
+                <div
+                    class="relative w-11 h-6 bg-border-light peer-focus:outline-none dark:peer-focus:indigo rounded-full peer dark:bg-border-light peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo dark:peer-checked:bg-indigo"
+                ></div>
+            </label>
+            <i class="fa-light fa-angle-down cursor-pointer text-black mt-2 toggle-icon" data-target="{{ flag.title|slugify }}"></i>
+        </div>
+        {% endif %}
+    </div>
+    <div id="{{ flag.title|slugify }}" class="hidden p-10 text-sm text-gray-600">
+    </div>
+
+    {% if flag.title != "GPS location" %}
+    <div class="border-t border-border-light w-full"></div>
+    {% endif %}
+    
+    {% endfor %}
+</div>

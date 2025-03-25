@@ -1,0 +1,26 @@
+<!-- Worker Dashboard Card -->
+<div class="dashboard-card w-60 bg-[#8ea1ff2b] text-white relativ flex flex-col justify-between p-4 rounded-2xl">
+    <div class="flex justify-between items-start">
+        <!-- Number Content -->
+        <div class="dashboard-card-content text-2xl">{{count|default:"128"}}</div>
+        <!-- Icon -->
+        <div class="dashboard-card-icon text-xl"><i class="fa-light fa-{{icon|default:"file"}}"></i></div>
+    </div>
+    <div class="pt-4 text-sm flex items-center justify-between cursor-pointer">
+        <span>{{text|default:"Total Delieveries"}}</span>
+        {% if dropdown %}
+        <i class="fa-solid fa-caret-down ml-2 cursor-pointer" onclick="dashboardCartOpen()"></i>
+        {% endif %}
+    </div>
+    
+    {% if dropdown %}
+    <div id="dropdown-content" class="hidden absolute top-full mt-2 right-0 w-40 rounded-md bg-white text-black shadow-lg p-2">
+        <ul>
+            <li class="p-1 cursor-pointer hover:bg-gray-200">Option 1</li>
+            <li class="p-1 cursor-pointer hover:bg-gray-200">Option 2</li>
+            <li class="p-1 cursor-pointer hover:bg-gray-200">Option 3</li>
+        </ul>
+    </div>
+    {% endif %}
+</div>
+ 

@@ -1,0 +1,144 @@
+{% comment %} <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Page</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js CDN -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class=""> {% endcomment %}
+    <div class="w-full" x-data="{
+        table: {{ table|safe }},
+        selectedRows: [],
+        init() {
+            console.log('Table data:', this.table);
+        },
+        toggleRow(index) {
+            const rowIndex = this.selectedRows.indexOf(index);
+            if (rowIndex === -1) {
+                this.selectedRows.push(index);
+            } else {
+                this.selectedRows.splice(rowIndex, 1);
+            }
+            console.log('Selected rows:', this.selectedRows);
+        },
+        toggleAll() {
+            if (this.isAllSelected()) {
+                this.selectedRows = []; // Deselect all
+            } else {
+                // Select all - get all indices from the table
+                this.selectedRows = this.table.map(row => row.index);
+            }
+            console.log('Selected rows after toggleAll:', this.selectedRows);
+        },
+        isAllSelected() {
+            return this.table.length > 0 && this.selectedRows.length === this.table.length;
+        },
+        isRowSelected(index) {
+            return this.selectedRows.includes(index);
+        }
+    }">
+        <!-- Table -->
+        <table class="w-full max-w-full">
+            <!-- Table Header -->
+            <thead class="block mb-2">
+                <tr class="flex w-full justify-between items-center gap-x-4 p-3 bg-gray-200 rounded-lg">
+                    <th class="flex justify-center text-sm font-medium text-deep-purple w-12">
+                        <i 
+                            x-on:click="toggleAll()" 
+                            :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'" 
+                            class="text-xl text-deep-purple cursor-pointer"
+                        ></i>
+                    </th>
+                    <th class="flex justify-start items-center text-sm font-medium text-deep-purple w-28">Time</th>
+                    <th class="flex justify-start items-center text-sm font-medium text-deep-purple w-28">Entity Name</th>
+                    <th class="flex justify-start items-center text-sm font-medium text-deep-purple w-72">Flags</th>
+                    <th class="flex justify-start items-center text-sm font-medium text-deep-purple w-4"></th>
+                </tr>
+            </thead>
+
+            <!-- Table Body -->
+            <div class="overflow-auto rounded-lg w-full">
+                <tbody class="block w-full bg-gray-200 rounded-lg h-[400px] overflow-y-auto">
+                    <div class="w-full h-fit">
+                        {% if table %}
+                            {% for row in table %}
+                                <tr 
+                                    class="flex w-full justify-between gap-x-4 p-3 bg-white hover:bg-gray-100 relative transition-colors duration-300 group" 
+                                    x-data="{ hovered: false }"
+                                    @mouseenter="hovered = true"
+                                    @mouseleave="hovered = false"
+                                >
+                                    <td class="flex justify-center text-sm text-deep-purple font-normal w-12">
+                                        <span 
+                                            x-show="!hovered && !isRowSelected({{ row.index }})"
+                                        >{{ row.index }}</span>
+                                        <i 
+                                            x-show="hovered || isRowSelected({{ row.index }})"
+                                            :class="isRowSelected({{ row.index }}) ? 'fa-regular fa-square-check' : 'fa-regular fa-square'" 
+                                            class="text-deep-purple cursor-pointer" 
+                                            x-on:click="hovered && toggleRow({{ row.index }})"
+                                        ></i>
+                                    </td>
+                                    <td class="flex justify-start text-sm text-deep-purple font-normal w-28">{{ row.time }}</td>
+                                    <td class="flex justify-start text-sm text-deep-purple font-normal w-28">{{ row.entityName }}</td>
+                                    <td class="flex relative justify-start text-sm text-deep-purple font-normal w-72">
+                                        {% if row.flags and row.flags|length > 0 %}
+                                            {% for flag in row.flags|slice:":2" %}
+                                                {% include "ccc_app/components/badges/badge_sm.html" with text=flag %}
+                                            {% endfor %}
+                                            {% if row.flags|length > 2 %}
+                                            {% include "ccc_app/components/badges/badge_sm_dropdown.html" with list=row.flags %}
+
+                                                {% comment %} {% include "ccc_app/components/badges/badge_sm.html" with text=row.flags.0 %} {% endcomment %}
+                                            {% endif %}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-sm text-deep-purple font-normal w-4">
+                                        <i class="fa-light fa-flag-swallowtail text-deep-purple"></i>
+                                    </td>
+                                    <span class="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-mango rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300"></span>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="5" class="p-3 text-center text-gray-800 text-sm">No data available</td>
+                            </tr>
+                        {% endif %}
+                    </div>
+                </tbody>
+            </div>
+        </table>
+        <div class="table-footer flex bg-white items-center justify-between bg-blue-sky text-xs text-deep-purple p-2 rounded-lg mt-2">
+            <div class="flex items-center space-x-4">
+              <button><i class="fa-solid fa-rotate-left"></i></button>
+              <button><i class="fa-solid fa-rotate-right"></i></button>
+              <button class="bg-indigo-700 p-2 rounded-lg"><i class="fa-solid fa-map"></i></button>
+              <button><i class="fa-solid fa-table"></i></button>
+            </div>
+            <div>
+              <button class="border border-gray-300 rounded-full px-4 py-1">Flags 9 <i class="fa-solid fa-chevron-down"></i></button>
+            </div>
+            <div class="flex items-center space-x-2">
+              <div class="flex items-center border border-gray-300 rounded-full px-4 py-1">
+                <span>Rows per page</span>
+                <select>
+                  <option>12</option>
+                  <option>24</option>
+                  <option>36</option>
+                </select>
+              </div>
+              <button><i class="fa-solid fa-chevron-left"></i></button>
+              <span>10</span>
+              <span>of 12</span>
+              <button><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+          </div>
+          
+    </div>
+{% comment %} </body>
+</html> {% endcomment %}

@@ -1,0 +1,6 @@
+<button 
+    class="{{ btn_style|default:"" }}" 
+    @click="$dispatch('button-clicked')"
+>
+    <i class="fa-regular fa-{{ icon }} text-{{ icon_color }}"></i>
+</button>
