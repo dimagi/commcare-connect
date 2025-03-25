@@ -1,0 +1,26 @@
+{% extends 'ccc_app/base.html' %} {% block content %}
+<div class="flex justify-center">
+  <div class="w-full space-y-4 lg:max-w-[1344px]">
+    {% comment %} <div hx-get="src/components/breadcrumb.htmx" hx-trigger="load"></div> {% endcomment %}
+    <!-- Profile & Statistic Cards Container -->
+    <div class="flex flex-wrap items-center h-32 p-2 profile-bg bg-brand-indigo rounded-2xl">
+        {% include "ccc_app/components/worker_page/profile.html" %}
+        {% include "ccc_app/components/cards/worker_page/worker_dashboard_card.html" %}
+      {% comment %} <div hx-get="src/components/worker-profile.htmx" hx-trigger="load"></div>
+      <div hx-get="src/components/cards/worker-dashboard-card.htmx" hx-trigger="load"></div> {% endcomment %}
+    </div>
+  
+    <div class="flex justify-center w-full">
+      <div class="flex flex-col w-full grid-cols-10 gap-2 lg:grid">
+        <div class="col-span-6">
+          <!-- Tabs -->
+           {% include "ccc_app/components/tabs/tabs.html" with tabs=tabs %}
+        </div>
+        <div class="col-span-4">
+          {% include "ccc_app/components/worker_page/detail_panel.html" %}
+        </div>
+
+      </div>
+    </div> 
+</div>
+{% endblock %}
