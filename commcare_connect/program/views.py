@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -280,18 +281,13 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
         return get_delivery_performance_report(program, start_date, end_date)
 
 
-from django.contrib.auth.decorators import login_required, user_passes_test
-
-
-# @login_required
-# @user_passes_test(lambda u: u.is_superuser)
+@login_required
+@user_passes_test(lambda u: u.is_superuser)
 def program_home(request, org_slug):
     from django.db.models import Count, F
 
-    # Fetch the organization by slug
     org = Organization.objects.get(slug=org_slug)
 
-    # Get ProgramApplications with related Program details
     apps = (
         ProgramApplication.objects.filter(organization=org)
         .select_related("program", "program__organization", "program__delivery_type")
@@ -308,7 +304,6 @@ def program_home(request, org_slug):
         )
     )
 
-    # Sort by ProgramApplication date first, then Program start_date
     results = sorted(apps, key=lambda x: (x["date_created"], x["program__start_date"]), reverse=True)
     pending_counts = (
         UserVisit.objects.filter(status="pending")
@@ -318,5 +313,5 @@ def program_home(request, org_slug):
     context = {
         "program_apps": results,
         "pending_counts": pending_counts,
-    }  # The queryset from the ORM query
+    }
     return render(request, "program/tailwind/home.html", context)
