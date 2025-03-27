@@ -12,10 +12,12 @@ from commcare_connect.program.views import (
     dashboard,
     invite_organization,
     manage_application,
+    program_home,
 )
 
 app_name = "program"
 urlpatterns = [
+    path("home", view=program_home, name="home"),
     path("", view=ProgramList.as_view(), name="list"),
     path("init/", view=ProgramCreateOrUpdate.as_view(), name="init"),
     path("<int:pk>/edit", view=ProgramCreateOrUpdate.as_view(), name="edit"),

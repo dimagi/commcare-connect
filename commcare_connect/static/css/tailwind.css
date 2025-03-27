@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+
+@theme {
+  --color-brand-deep-purple: #16006D;
+  --color-brand-indigo: #3843D0;
+  --color-brand-cornflower-blue: #5D70D2;
+  --color-brand-sky: #8EA1FF;
+  --color-brand-sunset: #E44434;
+  --color-brand-mango: #FC5F36;
+  --color-brand-marigold: #FEAF31;
+  --color-brand-blue-light: #94A3B8;
+  --color-brand-sunset-light: #FC5F3633;
+  --color-brand-border-light: #E2E8F0;
+}
