@@ -139,8 +139,4 @@ def is_org_manages_opportunity_via_program(current_org_slug, opp_id: int):
     Check if the current organization manages the given managed opportunity
     through any of its programs.
     """
-    programs = Program.objects.filter(organization__slug=current_org_slug)
-    if programs:
-        return ManagedOpportunity.objects.filter(program__in=programs, id=opp_id).exists()
-
-    return False
+    return ManagedOpportunity.objects.filter(program__organization__slug=current_org_slug, id=opp_id).exists()
