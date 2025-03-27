@@ -6,11 +6,11 @@
       <p class="text-xs text-gray-400">{{ organization_name }}</p>
     </div>
     <div class="flex items-center justify-end gap-6">
-      {% if status == 'invited' %} {% include "ccc_app/components/badges/badge_md.html" with text='invited' color='brand-deep-purple'
-      bg_color='marigold' %} {% elif status == 'applied' %} {% include "ccc_app/components/buttons/icon_button.html" with style='h-5'
-      icon='download' icon_color='blue-light' %} {% include "ccc_app/components/badges/badge_md.html" with text='applied' color='white'
-      bg_color='brand-deep-purple'%} {% elif status == 'accepted' %} {% include "ccc_app/components/buttons/icon_button.html" with
-      style='h-5' icon='download' icon_color='brand-deep-purple' %} {% include "ccc_app/components/badges/badge_md.html" with
+      {% if status == 'invited' %} {% include "tailwind/components/badges/badge_md.html" with text='invited' color='brand-deep-purple'
+      bg_color='marigold' %} {% elif status == 'applied' %} {% include "tailwind/components/buttons/icon_button.html" with style='h-5'
+      icon='download' icon_color='blue-light' %} {% include "tailwind/components/badges/badge_md.html" with text='applied' color='white'
+      bg_color='brand-deep-purple'%} {% elif status == 'accepted' %} {% include "tailwind/components/buttons/icon_button.html" with
+      style='h-5' icon='download' icon_color='brand-deep-purple' %} {% include "tailwind/components/badges/badge_md.html" with
       text='accepted' color='white' bg_color='green-600'%} {% endif %}
     </div>
   </div>
@@ -40,9 +40,9 @@
         </div>
       </div>
     </div>
-    {% if status == 'invited' %} {% include 'ccc_app/components/buttons/button_primary.html' with text='Apply' %} {% elif status ==
-    'applied' %} {% include 'ccc_app/components/buttons/button_disabled.html' with text='Apply' %} {% elif status == 'accepted' %} {%
-    include 'ccc_app/components/buttons/button_secondary.html' with text='View Opportunities' %} {% endif %}
+    {% if status == 'invited' %} {% include 'tailwind/components/buttons/button_primary.html' with text='Apply' %} {% elif status ==
+    'applied' %} {% include 'tailwind/components/buttons/button_disabled.html' with text='Apply' %} {% elif status == 'accepted' %} {%
+    include 'tailwind/components/buttons/button_secondary.html' with text='View Opportunities' %} {% endif %}
   </div>
   {% if status == 'accepted' %}
   <div id="opportunity-container" class="flex flex-col gap-y-4 py-4"></div>

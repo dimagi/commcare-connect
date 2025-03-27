@@ -10,9 +10,9 @@ x-data="{ message: '' }"
     <div class="card-buttons space-x-2">
         {% for button in card.data.buttons %}
             {% if button.variant == 'button-primary' %}
-                {% include 'ccc_app/components/buttons/button_primary.html' with text=button.text size=button.size %}
+                {% include 'tailwind/components/buttons/button_primary.html' with text=button.text size=button.size %}
             {% elif button.variant == 'button-secondary' %}
-                {% include 'ccc_app/components/buttons/button_secondary.html' with text=button.text size=button.size icon=button.icon %}
+                {% include 'tailwind/components/buttons/button_secondary.html' with text=button.text size=button.size icon=button.icon %}
             {% endif %}
         {% endfor %}
     </div>

@@ -317,6 +317,8 @@ def program_home(request, org_slug):
     )
     context = {
         "program_apps": results,
-        "pending_counts": pending_counts,
+        "review_counts": pending_counts,
+        "pending_payments": pending_counts, # Todo
+        "inactive_workers": pending_counts, # Todo
     }  # The queryset from the ORM query
     return render(request, "program/tailwind/home.html", context)

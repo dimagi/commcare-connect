@@ -10,7 +10,7 @@ module.exports = {
     project: path.resolve(__dirname, '../commcare_connect/static/js/project'),
     dashboard: path.resolve(__dirname, '../commcare_connect/static/js/dashboard'),
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
-    tailwind: path.resolve(__dirname, '../commcare_connect/static/js/tailwind'),  // Tailwind entry
+    tailwind: path.resolve(__dirname, '../commcare_connect/static/css/tailwind.css'),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
@@ -30,6 +30,7 @@ module.exports = {
     rules: [
       {
         test: /\.js$/,
+        exclude: /node_modules/,
         loader: 'babel-loader',
       },
       {
@@ -38,12 +39,12 @@ module.exports = {
           MiniCssExtractPlugin.loader,
           'css-loader',
           {
-            loader: 'postcss-loader',  // Inline Tailwind config
+            loader: 'postcss-loader',
             options: {
               postcssOptions: {
                 plugins: [
-                  require('@tailwindcss/postcss'),  // Use the new Tailwind plugin
-                  require('autoprefixer')
+                  require('@tailwindcss/postcss'),
+                  require('autoprefixer'),
                 ],
               },
             },

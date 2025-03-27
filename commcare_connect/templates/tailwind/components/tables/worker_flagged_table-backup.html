@@ -89,9 +89,9 @@
                 <td class="flex justify-start text-sm text-brand-deep-purple font-normal w-28">{{ row.entityName }}</td>
                 <td class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
                   {% if row.flags and row.flags|length > 0 %} {% for flag in row.flags|slice:":2" %} {% include
-                  "ccc_app/components/badges/badge_sm.html" with text=flag %} {% endfor %} {% if row.flags|length > 2 %} {% include
-                  "ccc_app/components/badges/badge_sm_dropdown.html" with list=row.flags %} {% comment %} {% include
-                  "ccc_app/components/badges/badge_sm.html" with text=row.flags.0 %} {% endcomment %} {% endif %} {% endif %}
+                  "tailwind/components/badges/badge_sm.html" with text=flag %} {% endfor %} {% if row.flags|length > 2 %} {% include
+                  "tailwind/components/badges/badge_sm_dropdown.html" with list=row.flags %} {% comment %} {% include
+                  "tailwind/components/badges/badge_sm.html" with text=row.flags.0 %} {% endcomment %} {% endif %} {% endif %}
                 </td>
                 <td class="text-sm text-brand-deep-purple font-normal w-4">
                   <i class="fa-light fa-flag-swallowtail text-brand-deep-purple"></i>

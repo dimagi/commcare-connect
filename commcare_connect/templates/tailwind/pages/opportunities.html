@@ -1,14 +1,14 @@
 <!-- opportunities.html -->
-{% extends 'ccc_app/base.html' %}
+{% extends 'tailwind/base.html' %}
 
 {% block content %}
     <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
-        {% include "ccc_app/components/opportunity-dashboard/detials.html" with data=data totalinfo=totalinfo %}
+        {% include "tailwind/components/opportunity-dashboard/detials.html" with data=data totalinfo=totalinfo %}
         <div>
-            {% include "ccc_app/components/opportunity-dashboard/workers_activity.html"%}
-            {% include 'ccc_app/components/opportunity-dashboard/progress-view.html' with title='Daily Active Worker' data_a_title='maximum' data_a_value='50' %}
+            {% include "tailwind/components/opportunity-dashboard/workers_activity.html"%}
+            {% include 'tailwind/components/opportunity-dashboard/progress-view.html' with title='Daily Active Worker' data_a_title='maximum' data_a_value='50' %}
         </div> 
-        {% include 'ccc_app/components/opportunity-dashboard/workers-funnelview.html' %}  
+        {% include 'tailwind/components/opportunity-dashboard/workers-funnelview.html' %}  
     </div>
 {% endblock %}
 
