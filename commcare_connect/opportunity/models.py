@@ -195,7 +195,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_active(self):
-        return self.active and self.end_date and self.end_date >= now().date()
+        return bool(self.active and self.end_date and self.end_date >= now().date())
 
 
 class OpportunityVerificationFlags(models.Model):

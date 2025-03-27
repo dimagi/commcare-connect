@@ -37,6 +37,7 @@ FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Afri
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
+        self.opportunity = kwargs.pop("opportunity", None)
         credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
@@ -73,6 +74,10 @@ class OpportunityUserInviteForm(forms.Form):
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
+
+        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+            raise ValidationError("Please finish setting up the opportunity before inviting users.")
+
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
 
@@ -94,6 +99,9 @@ class OpportunityChangeForm(
         ]
 
     def __init__(self, *args, **kwargs):
+        kwargs["opportunity"] = kwargs.get(
+            "instance", None
+        )  # passing the opportunity instance to OpportunityUserInviteForm
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
