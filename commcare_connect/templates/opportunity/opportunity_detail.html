@@ -102,7 +102,7 @@
             </a>
           </li>
           {% endif %}
-          {% if request|is_program_manager_for_opportunity:opportunity.id %}
+          {% if opportunity.managed and request|is_program_manager_for_opportunity:opportunity.id %}
             <li class="dropdown-divider"></li>
             <li>
               <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPMReviewModal">
