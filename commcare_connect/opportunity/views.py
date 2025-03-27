@@ -1272,7 +1272,7 @@ def invoice_create(request, org_slug, pk):
 @require_POST
 def invoice_approve(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if is_program_manager_for_opportunity(request, opportunity.id):
+    if not is_program_manager_for_opportunity(request, opportunity.id):
         return redirect("opportunity:detail", org_slug, pk)
     invoice_ids = request.POST.getlist("pk")
     invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)
