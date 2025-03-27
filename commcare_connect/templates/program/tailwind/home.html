@@ -71,9 +71,9 @@
       <div class="mb-4 text-brand-deep-purple font-medium text-sm">Recent Activities</div>
       <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
          <div class="flex flex-col gap-4">
-            {% include 'tailwind/components/cards/activity_card.html' with title="Visits Pending Review" rows=review_counts icon="file" %}
-            {% include 'tailwind/components/cards/activity_card.html' with title="Pending Payment" rows=pending_payments icon="file" %}
-            {% include 'tailwind/components/cards/activity_card.html' with title="Inactive Workers" rows=inactive_workers icon="file" %}
+            {% include 'tailwind/components/cards/activity_card.html' with title="Visits Pending Review" rows=review_counts icon="fa-clock-rotate-left" %}
+            {% include 'tailwind/components/cards/activity_card.html' with title="Pending Payment" rows=pending_payments icon="fa-hand-holding-dollar" %}
+            {% include 'tailwind/components/cards/activity_card.html' with title="Inactive Workers" rows=inactive_workers icon="fa-user-slash" %}
          </div>
       </div>
    </div>
