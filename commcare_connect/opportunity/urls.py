@@ -1,6 +1,6 @@
 from django.urls import path
 
-from commcare_connect.opportunity import views
+from commcare_connect.opportunity import views, tw_views
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -127,4 +127,10 @@ urlpatterns = [
     path("<int:pk>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
+    # New tailwind based views
+    path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_dashboard"),
+    path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
+    path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
+    path("<int:opp_id>/tw/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
+    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),
 ]
