@@ -11,6 +11,7 @@ from django.core.files.storage import storages
 from django.db.models import Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import format_html
@@ -30,6 +31,7 @@ from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
+    AddBudgetNewUsersForm,
     DateRanges,
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
@@ -238,10 +240,6 @@ class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
         if users or filter_country or filter_credential:
             add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
 
-        additional_users = form.cleaned_data["additional_users"]
-        if additional_users:
-            for payment_unit in opportunity.paymentunit_set.all():
-                opportunity.total_budget += payment_unit.amount * payment_unit.max_total * additional_users
         end_date = form.cleaned_data["end_date"]
         if end_date:
             opportunity.end_date = end_date
@@ -492,9 +490,14 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
+    program_manager = (
+        getattr(request, "org_membership", None) and request.org_membership.is_program_manager
+    ) or request.user.is_superuser
 
     form = AddBudgetExistingUsersForm(
-        opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST or None
+        opportunity_claims=opportunity_claims,
+        opportunity=opportunity,
+        data=request.POST or None,
     )
     if form.is_valid():
         form.save()
@@ -508,8 +511,43 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
             "opportunity_claims": opportunity_claims,
             "budget_per_visit": opportunity.budget_per_visit_new,
             "opportunity": opportunity,
+            "disable_add_budget_for_new_users": opportunity.managed and not program_manager,
         },
     )
+
+
+@org_member_required
+def add_budget_new_users(request, org_slug=None, pk=None):
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    program_manager = (
+        getattr(request, "org_membership", None) and request.org_membership.is_program_manager
+    ) or request.user.is_superuser
+
+    form = AddBudgetNewUsersForm(
+        opportunity=opportunity,
+        program_manager=program_manager,
+        data=request.POST or None,
+    )
+
+    if form.is_valid():
+        form.save()
+        redirect_url = reverse("opportunity:detail", args=[org_slug, pk])
+        response = HttpResponse()
+        response["HX-Redirect"] = redirect_url
+        return response
+
+    csrf_token = get_token(request)
+    form_html = f"""
+        <form id="form-content"
+              hx-post="{reverse('opportunity:add_budget_new_users', args=[org_slug, pk])}"
+              hx-trigger="submit"
+              hx-headers='{{"X-CSRFToken": "{csrf_token}"}}'>
+            <input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}">
+            {render_crispy_form(form)}
+        </form>
+        """
+
+    return HttpResponse(mark_safe(form_html))
 
 
 class OpportunityUserStatusTableView(OrganizationUserMixin, OrgContextSingleTableView):
