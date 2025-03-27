@@ -1,6 +1,6 @@
 from django.urls import path
 
-from commcare_connect.opportunity import views, tw_views
+from commcare_connect.opportunity import tw_views, views
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
