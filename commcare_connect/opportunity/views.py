@@ -775,7 +775,7 @@ def user_profile(request, org_slug=None, opp_id=None, pk=None):
         [
             cw
             for cw in CompletedWork.objects.filter(opportunity_access=access, status=CompletedWorkStatus.pending)
-            if cw.approved_count
+            if cw.saved_approved_count
         ]
     )
     user_catchment_data = [
@@ -928,7 +928,7 @@ def approve_visit(request, org_slug=None, pk=None):
                 user_visit.justification = justification
 
         user_visit.save()
-        update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
+        update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user], incremental=True)
 
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
@@ -947,7 +947,7 @@ def reject_visit(request, org_slug=None, pk=None):
     user_visit.reason = reason
     user_visit.save()
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=user_visit.opportunity_id)
-    update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    update_payment_accrued(opportunity=access.opportunity, users=[access.user], incremental=True)
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity_id, pk=access.id)
 
 
@@ -1182,7 +1182,9 @@ def user_visit_review(request, org_slug, opp_id):
         user_visits = UserVisit.objects.filter(pk__in=updated_reviews)
         if review_status in [VisitReviewStatus.agree.value, VisitReviewStatus.disagree.value]:
             user_visits.update(review_status=review_status)
-            update_payment_accrued(opportunity=opportunity, users=[visit.user for visit in user_visits])
+            update_payment_accrued(
+                opportunity=opportunity, users=[visit.user for visit in user_visits], incremental=True
+            )
     RequestConfig(request, paginate={"per_page": 15}).configure(table)
     return render(
         request,

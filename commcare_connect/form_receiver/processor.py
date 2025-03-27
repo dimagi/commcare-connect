@@ -318,7 +318,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued(opportunity, [user.id])
+    update_payment_accrued(opportunity, [user.id], incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 

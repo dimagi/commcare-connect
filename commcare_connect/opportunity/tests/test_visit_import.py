@@ -146,7 +146,7 @@ def test_payment_accrued(opportunity: Opportunity):
                     opportunity_access=access,
                     completed_work=completed_work,
                 )
-    update_payment_accrued(opportunity, {mobile_user.id for mobile_user in mobile_users})
+    update_payment_accrued(opportunity, [mobile_user.id for mobile_user in mobile_users])
     for access in access_objects:
         access.refresh_from_db()
         assert access.payment_accrued == sum(payment_unit.amount for payment_unit in payment_units)
@@ -175,7 +175,7 @@ def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
         opportunity_access=access,
         completed_work=completed_work,
     )
-    update_payment_accrued(opportunity, {mobile_user.id})
+    update_payment_accrued(opportunity, [mobile_user.id])
     access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 2
     _validate_saved_fields(access)
@@ -211,7 +211,7 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
                 status=VisitValidationStatus.approved.value,
                 completed_work=completed_work,
             )
-    update_payment_accrued(opportunity, {access.user.id for access in access_objects})
+    update_payment_accrued(opportunity, [access.user.id for access in access_objects])
     for access in access_objects:
         access.refresh_from_db()
         assert access.payment_accrued == sum(payment_unit.amount for payment_unit in payment_units)
@@ -245,7 +245,7 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
         status=VisitValidationStatus.approved.value,
         completed_work=completed_work,
     )
-    update_payment_accrued(opportunity, {mobile_user.id})
+    update_payment_accrued(opportunity, [mobile_user.id])
     access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 1
     optional_deliver_unit_2 = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=True)
@@ -257,7 +257,7 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
         status=VisitValidationStatus.approved.value,
         completed_work=completed_work,
     )
-    update_payment_accrued(opportunity, {mobile_user.id})
+    update_payment_accrued(opportunity, [mobile_user.id])
     access.refresh_from_db()
     assert access.payment_accrued == payment_unit.amount * 2
     _validate_saved_fields(access)
@@ -670,7 +670,7 @@ def test_review_completed_work_status(
         deliver_unit=deliver_unit,
     )
     assert access.payment_accrued == 0
-    update_payment_accrued(opportunity, {mobile_user_with_connect_link.id})
+    update_payment_accrued(opportunity, [mobile_user_with_connect_link.id])
     completed_works = CompletedWork.objects.filter(opportunity_access=access)
     payment_accrued = 0
     for cw in completed_works:
