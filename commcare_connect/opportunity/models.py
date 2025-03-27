@@ -451,6 +451,8 @@ class Payment(models.Model):
     # This is used to indicate Payments made to Network Manager organizations
     organization = models.ForeignKey(Organization, on_delete=models.DO_NOTHING, null=True, blank=True)
     invoice = models.OneToOneField(PaymentInvoice, on_delete=models.DO_NOTHING, null=True, blank=True)
+    payment_method = models.CharField(max_length=50, null=True, blank=True)
+    payment_operator = models.CharField(max_length=50, null=True, blank=True)
 
 
 class CompletedWorkStatus(models.TextChoices):

@@ -18,6 +18,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import now
+from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
@@ -120,6 +121,7 @@ from commcare_connect.program.models import ManagedOpportunity, ProgramApplicati
 from commcare_connect.program.tables import ProgramInvitationTable
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
+from commcare_connect.web.templatetags.permissions import is_program_manager_for_opportunity
 
 
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -313,6 +315,10 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         context["export_form"] = PaymentExportForm()
         context["review_visit_export_form"] = ReviewVisitExportForm()
         context["user_is_network_manager"] = object.managed and object.organization == self.request.org
+        import_visit_helper_text = _(
+            'The file must contain at least the "Visit ID"{extra} and "Status" column. The import is case-insensitive.'
+        ).format(extra=_(', "Justification"') if object.managed else "")
+        context["import_visit_helper_text"] = import_visit_helper_text
         return context
 
 
@@ -947,6 +953,7 @@ def visit_verification(request, org_slug=None, pk=None):
 
 
 @org_member_required
+@require_POST
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
     opp_id = user_visit.opportunity_id
@@ -954,10 +961,19 @@ def approve_visit(request, org_slug=None, pk=None):
         user_visit.status = VisitValidationStatus.approved
         if user_visit.opportunity.managed:
             user_visit.review_created_on = now()
+
+            if user_visit.flagged:
+                justification = request.POST.get("justification")
+                if not justification:
+                    messages.error(request, "Justification is mandatory for flagged visits.")
+                user_visit.justification = justification
+
         user_visit.save()
         update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
+
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
+
     return redirect(
         "opportunity:user_visits_list", org_slug=org_slug, opp_id=opp_id, pk=user_visit.opportunity_access_id
     )
@@ -1189,11 +1205,9 @@ def user_visit_review(request, org_slug, opp_id):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, opp_id)
-    is_program_manager = (
-        request.org_membership != None  # noqa: E711
-        and request.org_membership.is_admin
-        and request.org.program_manager
-    )
+
+    is_program_manager = is_program_manager_for_opportunity(request, opportunity.id)
+
     user_visit_reviews = UserVisit.objects.filter(opportunity=opportunity, review_created_on__isnull=False).order_by(
         "visit_date"
     )
@@ -1252,14 +1266,16 @@ class PaymentInvoiceTableView(OrganizationUserMixin, SingleTableView):
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
-        if self.request.org_membership != None and not self.request.org_membership.is_program_manager:  # noqa: E711
+        if self.request.org_membership != None and not is_program_manager_for_opportunity(  # noqa: E711
+            self.request, self.opportunity.id
+        ):
             kwargs["exclude"] = ("pk",)
         return kwargs
 
     def get_queryset(self):
         opportunity_id = self.kwargs["pk"]
-        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
-        filter_kwargs = dict(opportunity=opportunity)
+        self.opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        filter_kwargs = dict(opportunity=self.opportunity)
         table_filter = self.request.GET.get("filter")
         if table_filter is not None and table_filter in ["paid", "pending"]:
             filter_kwargs["payment__isnull"] = table_filter == "pending"
@@ -1282,7 +1298,7 @@ def invoice_list(request, org_slug, pk):
 @org_member_required
 def invoice_create(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or request.org_membership.is_program_manager:
+    if not opportunity.managed or is_program_manager_for_opportunity(request, opportunity.id):
         return redirect("opportunity:detail", org_slug, pk)
     form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
     if request.POST and form.is_valid():
@@ -1296,7 +1312,7 @@ def invoice_create(request, org_slug, pk):
 @require_POST
 def invoice_approve(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or not request.org_membership.is_program_manager:
+    if not is_program_manager_for_opportunity(request, opportunity.id):
         return redirect("opportunity:detail", org_slug, pk)
     invoice_ids = request.POST.getlist("pk")
     invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)

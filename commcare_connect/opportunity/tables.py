@@ -173,7 +173,7 @@ class OpportunityPaymentTable(OrgContextTable):
 class UserPaymentsTable(tables.Table):
     class Meta:
         model = Payment
-        fields = ("amount", "date_paid")
+        fields = ("amount", "date_paid", "payment_method", "payment_operator")
         orderable = False
         empty_text = "No payments made for this user"
         template_name = "django_tables2/bootstrap5.html"
@@ -339,6 +339,7 @@ class DeliverStatusTable(OrgContextTable):
 class CompletedWorkTable(tables.Table):
     id = columns.Column("Instance Id", visible=False)
     username = columns.Column(accessor="opportunity_access__user__username", visible=False)
+    phone_number = columns.Column(accessor="opportunity_access__user__phone_number", visible=False)
     entity_id = columns.Column(visible=False)
     reason = columns.Column("Rejected Reason", accessor="reason", visible=False)
     display_name = columns.Column("Name of the User", accessor="opportunity_access__display_name")
@@ -359,6 +360,7 @@ class CompletedWorkTable(tables.Table):
         sequence = (
             "id",
             "username",
+            "phone_number",
             "display_name",
             "entity_id",
             "entity_name",

@@ -346,9 +346,7 @@ def bulk_approve_completed_work():
         suspended=False,
     )
     for access in access_objects:
-        completed_works = access.completedwork_set.exclude(
-            status__in=[CompletedWorkStatus.rejected, CompletedWorkStatus.over_limit]
-        )
+        completed_works = access.completedwork_set.exclude(status=CompletedWorkStatus.rejected)
         update_status(completed_works, access, compute_payment=True)
 
 
