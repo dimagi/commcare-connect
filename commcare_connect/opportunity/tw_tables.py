@@ -1,4 +1,3 @@
-# tables.py
 import django_tables2 as tables
 from django.utils.html import format_html
 from django_tables2.utils import A
@@ -15,10 +14,10 @@ class WorkerFlaggedTable(tables.Table):
             <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
                 {% if value %}
                     {% for flag in value|slice:":2" %}
-                        {% include "ccc_app/components/badges/badge_sm.html" with text=flag %}
+                        {% include "tailwind/components/badges/badge_sm.html" with text=flag %}
                     {% endfor %}
                     {% if value|length > 2 %}
-                        {% include "ccc_app/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
+                        {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
                     {% endif %}
                 {% endif %}
             </div>

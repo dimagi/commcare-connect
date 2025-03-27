@@ -1,16 +1,15 @@
-{% load static i18n %}
 <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5">
     <div class="flex gap-4 items-center">
         <i class="fa-light fa-{{ icon }}"></i>
         <p class="text-base">
-            {{ title }}
+            {{ name }}
         </p>
     </div>
     {% for row in rows %}
     <div class="flex justify-between">
         <div>
-            <p class="font-medium text-gray-900">{{ row.opportunity__name }}</p>
-            <p class="font-normal text-xs text-gray-400">{{ row.opportunity__name }}</p>
+            <p class="font-medium text-gray-900">{{ row.title }}</p>
+            <p class="font-normal text-xs text-gray-400">{{ row.subtitle }}</p>
         </div>
         {% include 'tailwind/components/buttons/button_secondary_rounded.html' with text=row.count %}
         

@@ -34,7 +34,7 @@
 }"
 >
       <div class="w-full max-w-full">
-        <div class="block mb-2">
+        <div class="flex flex-col gap-1">
           <div class="flex w-full justify-between items-center gap-x-4 p-3 bg-gray-200 rounded-lg mb-2">
             <span class="flex justify-center text-sm font-medium text-brand-deep-purple w-12">
               <i
@@ -52,10 +52,10 @@
         <div class="overflow-auto rounded-lg w-full">{% render_table table %}</div>
       </table>
     </div>
-    <div class="table-footer flex bg-white items-center justify-between bg-slate-50 text-xs text-brand-deep-purple p-2 rounded-lg mt-2">
+    <div class="flex bg-white shadow-sm items-center justify-between text-brand-deep-purple px-4 rounded-lg h-14">
       <div class="flex items-center space-x-4">
-        <button><i class="fa-solid fa-rotate-left"></i></button>
-        <button><i class="fa-solid fa-rotate-right"></i></button>
+        <button><i class="fa-light fa-arrow-rotate-left"></i></button>
+        <button><i class="fa-light fa-arrow-rotate-right"></i></button>
         <button class="bg-indigo-700 p-2 rounded-lg"><i class="fa-solid fa-map"></i></button>
         <button><i class="fa-solid fa-table"></i></button>
       </div>
