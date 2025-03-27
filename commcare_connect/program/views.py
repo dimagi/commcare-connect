@@ -312,7 +312,7 @@ def program_home(request, org_slug):
     results = sorted(apps, key=lambda x: (x["date_created"], x["program__start_date"]), reverse=True)
     pending_counts = (
         UserVisit.objects.filter(status="pending")
-        .values("opportunity__name", "opportunity__organization__name")  # Separate field names
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")  # Separate field names
         .annotate(count=Count("id"))
     )
     context = {

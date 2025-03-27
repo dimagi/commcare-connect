@@ -21,7 +21,8 @@
     <div class="flex flex-col flex-grow mt-16">
         <nav class="flex flex-col px-2 transition-all duration-300" id="navItems">
             <nav class="flex flex-col px-2 transition-all duration-300" id="navItems">
-                {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns' state='sidebarOpen' target='/dashboard' %}
+                {% url 'program:home' request.org.slug as program_home_url %}
+                {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns' state='sidebarOpen' target=program_home_url %}
                 {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large' state='sidebarOpen' target='/opportunities' %}
                 {% include "tailwind/components/sidenav-items.html" with name='Analytics' icon='chart-pie' state='sidebarOpen' target='/analytics' %}
                 {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings' state='sidebarOpen' target='/organization' %}

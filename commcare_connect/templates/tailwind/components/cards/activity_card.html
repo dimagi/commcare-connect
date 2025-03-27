@@ -9,7 +9,11 @@
     {% for row in rows %}
     <div class="flex justify-between">
         <div>
-            <p class="font-medium text-gray-900">{{ row.opportunity__name }}</p>
+            <p class="font-medium text-gray-900">
+                <a href="{% url 'opportunity:tw_opportunities' org_slug=request.org.slug opp_id=row.opportunity__id %}" class="hover:underline">
+                    {{ row.opportunity__name }}
+                </a>
+            </p>
             <p class="font-normal text-xs text-gray-400">{{ row.opportunity__name }}</p>
         </div>
         {% include 'tailwind/components/buttons/button_secondary_rounded.html' with text=row.count %}
