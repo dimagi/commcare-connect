@@ -119,6 +119,7 @@ from commcare_connect.program.models import ManagedOpportunity, ProgramApplicati
 from commcare_connect.program.tables import ProgramInvitationTable
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
+from commcare_connect.web.templatetags.permissions import can_user_manage_opportunity
 
 
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -1164,11 +1165,9 @@ def user_visit_review(request, org_slug, opp_id):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, opp_id)
-    is_program_manager = (
-        request.org_membership != None  # noqa: E711
-        and request.org_membership.is_admin
-        and request.org.program_manager
-    )
+
+    is_program_manager = can_user_manage_opportunity(request, opportunity)
+
     user_visit_reviews = UserVisit.objects.filter(opportunity=opportunity, review_created_on__isnull=False).order_by(
         "visit_date"
     )
