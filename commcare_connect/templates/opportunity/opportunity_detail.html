@@ -52,7 +52,7 @@
              {% translate "Review User Visits" %}
             </a>
           </li>
-            {% if request.org_membership.is_program_manager or request.user.is_superuser %}
+            {% if request|is_program_manager_for_opportunity:opportunity.id %}
               <li>
                 <a class="dropdown-item"
                    href="{% url "opportunity:payment_report" org_slug=request.org.slug pk=opportunity.pk %}">
@@ -92,7 +92,7 @@
               {% translate "Suspended Users" %}
             </a>
           </li>
-          {% if not object.managed or request.org_membership.is_program_manager %}
+          {% if not object.managed or request|is_program_manager_for_opportunity:opportunity.id %}
           <li>
             <a class="dropdown-item"
                href="{% url 'opportunity:verification_flags_config' org_slug=request.org.slug pk=opportunity.id %}">
@@ -101,7 +101,7 @@
             </a>
           </li>
           {% endif %}
-          {% if object.managed and request.org_membership.is_program_manager %}
+          {% if request|is_program_manager_for_opportunity:opportunity.id %}
             <li class="dropdown-divider"></li>
             <li>
               <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPMReviewModal">

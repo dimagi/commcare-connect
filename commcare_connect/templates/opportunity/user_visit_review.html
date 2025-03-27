@@ -22,7 +22,7 @@
 <form method="get" x-data="" x-ref="reviewFilterForm">
   {% crispy review_filter.form %}
 </form>
-{% if request|can_user_manage_opportunity:opportunity %}
+{% if request|is_program_manager_for_opportunity:opportunity.id %}
 <form method="post"
       x-data="{
         selectAll: false,
