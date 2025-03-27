@@ -2,6 +2,7 @@
 {% load static %}
 {% load crispy_forms_tags %}
 {% load django_tables2 %}
+{% load permissions %}
 
 {% block title %}{{ request.org }} - User Visit Review{% endblock %}
 
@@ -21,7 +22,7 @@
 <form method="get" x-data="" x-ref="reviewFilterForm">
   {% crispy review_filter.form %}
 </form>
-{% if request.org_membership.is_admin and request.org.program_manager %}
+{% if request|can_user_manage_opportunity:opportunity %}
 <form method="post"
       x-data="{
         selectAll: false,
