@@ -1,0 +1,30 @@
+{% extends 'ccc_app/base.html' %} {% block content %}
+<div class="md:max-w-screen-2xl mx-auto flex items-center">
+  <div class="w-full space-y-4">
+    {% comment %} <div hx-get="src/components/breadcrumb.htmx" hx-trigger="load"></div> {% endcomment %}
+    <!-- Profile & Statistic Cards Container -->
+    <div class="flex gap-4  items-center h-32 p-4 profile-bg bg-brand-indigo rounded-2xl">
+        {% include "ccc_app/components/worker_page/profile.html" %}
+        {% include "ccc_app/components/cards/worker_page/worker_dashboard_card.html" with count='234' text='Total Delieveries' icon='memo' %} 
+        {% include "ccc_app/components/cards/worker_page/worker_dashboard_card.html" with count='234' text='Flagged Delieveries' icon='flag-swallowtail' dropdown='true' %} 
+        {% include "ccc_app/components/cards/worker_page/worker_dashboard_card.html" with count='234' text='Rejected Delieveries' icon='thumbs-down' dropdown='true'  %} 
+        {% include "ccc_app/components/cards/worker_page/worker_dashboard_card.html" with count='234' text='Accrued Payments' icon='money-bill-simple-wave' %} 
+        {% include "ccc_app/components/cards/worker_page/worker_dashboard_card.html" with count='234' text='Paid Payments' icon='hand-holding-dollar' dropdown='true' %} 
+      {% comment %} <div hx-get="src/components/worker-profile.htmx" hx-trigger="load"></div>
+      <div hx-get="src/components/cards/worker-dashboard-card.htmx" hx-trigger="load"></div> {% endcomment %}
+    </div>
+  
+    <div class="flex justify-center w-full">
+      <div class="flex flex-col w-full grid-cols-10 gap-2 lg:grid">
+        <div class="col-span-6">
+          <!-- Tabs -->
+           {% include "ccc_app/components/tabs/tabs.html" with tabs=tabs %}
+        </div>
+        <div class="col-span-4">
+          {% include "ccc_app/components/worker_page/detail_panel.html" %}
+        </div>
+
+      </div>
+    </div> 
+</div>
+{% endblock %}

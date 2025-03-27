@@ -1,0 +1,12 @@
+<div class="flex flex-col gap-8 w-full p-8 shadow-sm rounded-xl bg-white">
+    <h4 class="text-brand-deep-purple font-medium">Worker Progress Funnel</h4>
+    <div class="flex flex-col md:flex-row gap-4 justify-between">
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Invited" icon="envelope" count="25" %}
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Accepted" icon="circle-check" count="25" %}
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Started Learning" icon="book-open-cover" count="25" %}
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Completed Learning" icon="book-blank" count="25" %}
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Complted Assesment" icon="award-simple" count="25" %}
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Claimed Job" icon="user-check" count="25" %}
+        {% include 'ccc_app/components/opportunity-dashboard/workers-stage.html' with text="Started Delivery" icon="house-chimney-user" count="25" visibility='hidden' %}
+    </div>
+</div>

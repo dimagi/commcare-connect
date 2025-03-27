@@ -1,0 +1,11 @@
+<div class="flex flex-col p-2  bg-indigo-50 rounded-xl w-full">
+    <h4 class="text-sm font-medium py-2">{{title}}</h4>
+    <div class="bg-white p-4 rounded-xl flex flex-col gap-4">
+        <!-- progressbar  1 -->
+        {% include 'ccc_app/components/opportunity-dashboard/progress.html' with title='Total' value='70' progress='70' percentage='' visibility='hidden' %} 
+        <!-- progressbar  2 -->
+        {% include 'ccc_app/components/opportunity-dashboard/progress.html' with title='Maximum' value='30' progress='30' percentage='' visibility='' %} 
+        <!-- progressbar  3 -->
+        {% include 'ccc_app/components/opportunity-dashboard/progress.html' with title='Avg' value='14' progress='14' percentage='' visibility='' %}
+    </div>
+</div>

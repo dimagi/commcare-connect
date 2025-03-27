@@ -1,0 +1,19 @@
+<!-- dashbaord.html -->
+{% extends 'ccc_app/base.html' %}
+
+{% block content %} 
+<div class="md:max-w-screen-lg mx-auto flex flex-col gap-4 min-h-screen"> 
+   <div class="flex justify-between w-full gap-4 items-center">
+      {% for data in data.stage %} 
+         <div class="flex gap-2 items-center">
+            <!-- circle -->
+            <div class="rounded-full p-2  grid place-content-center w-8 h-8 border border-brand-indigo text-brand-deep-purple {% if data.status %} bg-brand-indigo border-none text-white {% endif %}">{{data.index}}</div>
+            <!-- label -->
+            <div class="text-sm whitespace-nowrap text-gray-400 {% if data.status %} text-brand-deep-purple font-medium {% endif %}">{{data.label}}</div>
+         </div> 
+         <hr class="border-t-2 border-dashed border-gray-300 w-full  {% if  forloop.last  %} hidden {% endif %}"> 
+      {% endfor %}
+   </div>
+   {% include "ccc_app/components/create/details-form.html" %}
+</div>  
+{% endblock %}

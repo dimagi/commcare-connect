@@ -1,0 +1,57 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+db.sqlite3
+*.sqlite3
+*.log
+
+# Django
+*.log
+*.pot
+*.pyc
+*.pyo
+__pycache__/
+media/
+# static/
+env/
+venv/
+.env
+*.db
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Django-specific file locations
+*.sqlite3
+*.log
+local_settings.py
+
+# HTMX
+.htmx/
+
+# Tailwind CSS (if compiled locally)
+dist/
+build/
+
+# VS Code
+.vscode/
+
+# JetBrains IDEs
+.idea/
+
+# MacOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# Environment variables files
+.env
+
+# Docker
+docker-compose.override.yml
+.dockerignore

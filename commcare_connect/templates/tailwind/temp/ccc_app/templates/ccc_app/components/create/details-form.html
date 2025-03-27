@@ -1,0 +1,30 @@
+<div class="flex flex-col gap-4 py-8">
+    <h2>{{data.selected}}</h2>
+    <div id="opportunities-details" class="w-full rounded-lg shadow-sm bg-white p-6 grid grid-cols-2 gap-4">
+        <div class="col-span-2">
+            <h6 class="font-medium text-brand-deep-purple">Opportunity Details</h6>
+            <span class="text-sm text-gray-400">Add the details of the opportunity. All fields are mandatory.</span>
+        </div>
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/cards/card-toggle.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        
+    </div>
+    <div id="opportunity-apps" class="w-full rounded-lg shadow-sm bg-white p-6 grid grid-cols-2 gap-4">
+        <div class="col-span-2">
+            <h6 class="font-medium text-brand-deep-purple">Apps</h6>
+            <span class="text-sm text-gray-400">Add the details of the opportunity. All fields are mandatory.</span>
+        </div>
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+        {% include "ccc_app/components/inputs/text-input.html" with title='Make this test opportunity' description='Test opportunities are hidden from users.' selected='True'  %}
+    </div>
+    <div class="bg-white rounded-lg shadow-sm flex justify-end p-2">
+        {% include "ccc_app/components/buttons/button_primary.html" with text='Next' %}
+    </div>
+</div>

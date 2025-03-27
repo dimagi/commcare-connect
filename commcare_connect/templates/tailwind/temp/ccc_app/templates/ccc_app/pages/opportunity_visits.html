@@ -1,0 +1,36 @@
+{% extends 'ccc_app/base.html' %}
+{% load render_table from django_tables2 %}
+
+{% block content %}
+    {# Main container #}
+    <div class="md:max-w-screen-lg h-[calc(100vh-90px)] mx-auto flex flex-col gap-4 w-full">
+        {# Opportunity Name Component #}
+        <p class="text-brand-deep-purple font-medium title-sm">Opportunity Name</p>
+        {# Content Container #}
+        <div class="flex flex-col gap-2 min-h-screen">
+            {# Header Panel #}
+            <div class=" w-full h-12 shadow-sm flex items-center rounded-lg bg-slate-50 px-4">
+                <p class="text-brand-deep-purple font-medium text-sm">Adding Budget</p>
+            </div>
+                {# Table Header Component #}
+            <thead class="bg-gray-500 rounded-lg shadow-sm">
+                <!-- {% include "ccc_app/components/opportunity-visits/table_header.html" %} -->
+                <tr>
+                    <th>Test</th>
+                </tr>
+            </thead>
+            <tbody>
+                {# Scrollable Table Body #}
+                {% load render_table from django_tables2 %}
+                <div class="flex-1 overflow-y-auto bg-white rounded-lg shadow-sm ">
+                    {% render_table table %}
+                </div>
+            </tbody>
+            <tfoot>
+                {# Footer Section #}
+                {% include "ccc_app/components/opportunity-visits/opportunity_footer.html" %}
+            </tfoot>
+            </table>
+        </div>
+    </div>
+{% endblock %}
