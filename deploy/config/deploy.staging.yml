@@ -5,6 +5,10 @@ servers:
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
+    logging:
+      options:
+        awslogs-group: 'commcare-connect-staging-web'
+        tag: 'web-{{.ID}}'
   celery:
     hosts:
       - 54.172.148.144
@@ -14,3 +18,7 @@ servers:
     cmd: /start_celery
     labels:
       traefik.enable: false
+    logging:
+      options:
+        awslogs-group: 'commcare-connect-staging-celery'
+        tag: 'celery-{{.ID}}'
