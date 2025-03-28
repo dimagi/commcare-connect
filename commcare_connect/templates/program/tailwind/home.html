@@ -7,7 +7,7 @@
       <h2 class="mb-4 text-test-red font-medium text-sm">Programs</h2>
       <div class="flex flex-col gap-4">
          {% for app in program_apps %}
-         <div class="bg-white p-6 rounded-lg shadow-lg relative">
+         {% comment %} <div class="bg-white p-6 rounded-lg shadow-lg relative">
             <div class="absolute -top-1 left-4 h-[8px] w-[26px] bg-orange-400 rounded z-[50]"></div>
 
             <!-- Header Section -->
@@ -59,7 +59,8 @@
                   Apply
                </button>
             </div>
-         </div>
+         </div> {% endcomment %}
+         {% include "program/tailwind/program_card.html" %}
          {% empty %}
          <p class="text-gray-500">No programs found.</p>
          {% endfor %}
