@@ -130,26 +130,11 @@ urlpatterns = [
     # New tailwind based views
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
     path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
-    path("<int:opp_id>/tw/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"), # TODO
+    path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
+    path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.opportunity_visits, name="tw_visits"), # TODO
+    path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
+    path("<int:opp_id>/tw/tables/opputunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
+    path("<int:opp_id>/tw/tables/worker_payments/", tw_views.worker_payments_table, name="tw_flagged_workers"), # TODO
 ]
-
-# TODO: The following should be added
-
-# from django.urls import path
-# from . import views
-
-# urlpatterns = [
-#     path('', views.home, name='home'),        # Root URL for home
-#     path('dashboard/', views.dashboard, name='dashboard'),
-#     path('worker/', views.worker, name='worker'), #
-#     path('opportunities/', views.opportunities, name='opportunities'), #
-#     path('tables/', views.table_view, name='tables'),
-#     path('visits/', views.opportunity_visits, name='visits'),
-#     path('opportunities_list_table/', views.opportunities_list_table_view, name='opportunities_list_table'),
-#     path('opportunities_list/', views.opportunities_list, name='opportunities_list'),
-#     path('worker_payments/', views.worker_payments, name='worker_payments'),
-#     path('worker_payments_table/', views.worker_payments_table, name='worker_payments_table'),
-#     path('get_worker_last_payment/', views.get_worker_last_payment, name='get_worker_last_payment'),
-# ]
