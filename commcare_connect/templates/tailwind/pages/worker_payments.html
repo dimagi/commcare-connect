@@ -1,4 +1,4 @@
-{% extends "ccc_app/base.html" %} {% block content %}
+{% extends "tailwind/base.html" %} {% block content %}
 <p class="px-4 mb-5 text-sm font-medium text-brand-deep-purple">Opportunity Name</p>
 <div
   class="flex flex-col w-full gap-2"
@@ -72,7 +72,8 @@
 
   <!--Table Body-->
   <div class="w-[1344px] mx-auto h-[700px] overflow-y-auto bg-white border rounded-lg shadow-xs">
-    <div hx-get="/worker_payments_table" hx-trigger="load"></div>
+    {% comment %} TODO {% endcomment %}
+    <div hx-get="/a/test-1/opportunity/1/tw/tables/worker_payments/" hx-trigger="load"></div>
   </div>
 
   <!--Table Footer-->
@@ -104,13 +105,13 @@
     </button>
   </div>
 
-  {% comment %} <!-- Pay workers -->
+  {% comment %}
+  <!-- Pay workers -->
   <div class="fixed top-14 bottom-4 right-4 w-[844px] p-4 z-50 bg-white rounded-lg border shadow-sm">
     <div
       class="flex mx-auto w-[1344px] bg-slate-200 rounded-lg h-14 px-3 text-brand-deep-purple auto-cols-min font-medium py-2 items-center justify-between text-sm"
-    >
-
+    ></div>
   </div>
-  </div> {% endcomment %}
+  {% endcomment %}
 </div>
 {% endblock content %}

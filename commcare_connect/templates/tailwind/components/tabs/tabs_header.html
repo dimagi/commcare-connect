@@ -1,4 +1,9 @@
-<div x-data="{ activeTab: 0 }" class="h-14 flex gap-x-4 bg-white text-gray-400 rounded-lg shadow-sm px-4 mb-2 w-full items-center">
+<div x-data="{ activeTab: 0 }" class="h-14 flex gap-x-4 bg-white text-gray-400 rounded-lg shadow-sm px-4 mb-2 w-full items-center"
+hx-get="/a/test-1/opportunity/1/tw/tables/flagged_workers"
+hx-target="#flagged-worker-table-container"
+hx-swap="innerHTML"
+hx-trigger="load"
+>
   {% for tab in tabs %}
   <div
     class="relative cursor-pointer text-sm h-full flex items-center"
@@ -7,7 +12,7 @@
     hx-get="{{tab.url}}"
     hx-target="#flagged-worker-table-container"
     hx-swap="innerHTML"
-    hx-trigger="click, load"
+    hx-trigger="click"
   >
     <span>{{ tab.name }}</span>
     <span x-show="activeTab === {{ forloop.counter0 }}" class="ml-1">({{ tab.count }})</span>
@@ -22,6 +27,6 @@
       x-transition:leave-start="opacity-100 translate-y-0"
       x-transition:leave-end="opacity-0 translate-y-1"
     ></div>
-</div>
+  </div>
   {% endfor %}
 </div>
