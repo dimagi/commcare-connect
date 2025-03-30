@@ -1184,6 +1184,18 @@ def get_worker_last_payment(request):
     return HttpResponse(html)
 
 
+def create_opportunity(request, org_slug=None, opp_id=None):
+    step = {
+        "selected": "Details",
+        "stage": [
+            {"index": 1, "label": "Details", "status": True},
+            {"index": 2, "label": "Payment Unit", "status": False},
+            {"index": 3, "label": "Verification Flags", "status": False},
+            {"index": 4, "label": "Budgets", "status": False},
+        ],
+    }
+    return render(request, "tailwind/pages/create_opportunity.html", {"data": step})
+
 # views.py
 
 '''
