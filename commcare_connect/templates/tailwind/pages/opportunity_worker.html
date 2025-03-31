@@ -4,7 +4,7 @@
 <div 
     class="flex flex-col w-full gap-2"
     x-data="{
-        selectedTab: 'payments',
+        selectedTab: 'learn',
         selectedOption: '',
     }"
 >
@@ -42,7 +42,7 @@
                 'text-brand-deep-purple font-medium': selectedTab === 'learn',
                 'text-gray-500': selectedTab !== 'learn'
             }"
-            hx-get="/a/test-1/opportunity/1/tw/learn_content/" 
+            hx-get="/a/test-1/opportunity/1/tw/worker_learn/" 
             hx-swap="innerHTML" 
             hx-trigger="loadLearn" 
             hx-target="#opportunity_worker_container"
@@ -128,10 +128,31 @@
                 <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
             </button>
         </div>
+        <div x-show="selectedTab === 'learn'" class="flex gap-x-1">
+         
+          <button 
+              type="button" 
+              class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
+          >
+              <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
+          </button>
+          <button 
+              type="button" 
+              class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
+          >
+              <i class="fa-light fa-download text-brand-deep-purple"></i>
+          </button>
+          <button 
+              type="button" 
+              class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
+          >
+              <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+          </button>
+      </div>
     </div>
 
     <!-- Tab Content Container -->
-    <div id="opportunity_worker_container" class="w-[1344px] mx-auto" hx-get="/a/test-1/opportunity/1/tw/worker_payments/" hx-swap="innerHTML" hx-trigger="load">
+    <div id="opportunity_worker_container" class="w-[1344px] mx-auto" hx-get="/a/test-1/opportunity/1/tw/worker_learn/" hx-swap="innerHTML" hx-trigger="load">
     </div>
 </div>
 {% endblock content %}
