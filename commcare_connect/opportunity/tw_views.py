@@ -1,7 +1,29 @@
 from django.http import HttpResponse
 from django.shortcuts import render
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable,CustomTable
+
+
+def custom_table(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            "index": i + 1,
+            "name": f"User {i+1}",
+            "user_id": f"U{i+10000}",
+            "phone_number": f"+1 {i%900+100}-{(i*3)%900+100}-{(i*7)%900+100}",
+            "status": ["Active", "Inactive", "Pending"][i % 3],
+            "visits": (i * 2) % 15 + 1,
+            "last_visit": f"2025-03-{31 - (i % 10):02d}",
+            "visit_status": ["Completed", "Missed", "Pending"][i % 3],
+            "visit_date": f"2025-03-{30 - (i % 10):02d}",
+            "visit_time": f"{8 + (i % 10)}:{30 if i % 2 == 0 else 00}",
+            "visit_location": ["New York, USA", "Los Angeles, USA", "Chicago, USA", "Houston, USA", "San Francisco, USA"][i % 5],
+        }
+        for i in range(30)
+    ]
+
+    table = CustomTable(data)
+    return render(request, "tailwind/pages/custom_table.html", {"table": table})
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -1195,7 +1217,6 @@ def create_opportunity(request, org_slug=None, opp_id=None):
         ],
     }
     return render(request, "tailwind/pages/create_opportunity.html", {"data": step})
-
 
 def worker_learn(request, org_slug=None, opp_id=None):
     data = [
