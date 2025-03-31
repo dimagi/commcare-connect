@@ -3,7 +3,15 @@ from django.utils.html import format_html
 from django_tables2.utils import A
 
 
-class WorkerFlaggedTable(tables.Table):
+class BaseTailwindTable(tables.Table):
+    """Base table using Tailwind styling and custom template."""
+
+    class Meta:
+        template_name = "tailwind/base_table.html"  # Use your custom template
+        attrs = {"class": "w-full text-left text-sm text-gray-600"}
+
+
+class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
     time = tables.Column(verbose_name="Time")
     entityName = tables.Column(verbose_name="Entity Name")
@@ -83,7 +91,7 @@ class WorkerFlaggedTable(tables.Table):
         )
 
 
-class VisitsTable(tables.Table):
+class VisitsTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     user_id = tables.Column(verbose_name="User ID")
     name = tables.Column(verbose_name="Name")
