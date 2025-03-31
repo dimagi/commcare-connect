@@ -480,7 +480,7 @@ class WorkerPaymentsTable(tables.Table):
                     <p class="text-xs text-slate-400">Payment History</p>
                     <!-- TODO: @apply -->
                     <button  class="flex items-center px-2 py-2 mt-3 mb-6 text-sm font-medium border border-gray-300 rounded-lg text-brand-deep-purple hover:bg-brand-indigo-100">Rollback lastPayment</button>
-                    <div hx-get='/get_worker_last_payment' hx-trigger='load' hx-swap='outerHTML'></div>
+                    <div hx-get='/a/test-1/opportunity/1/tw/get_worker_last_payment/' hx-trigger='load' hx-swap='outerHTML'></div>
                 </div>
             </div>
         """,

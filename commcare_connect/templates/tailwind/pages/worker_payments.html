@@ -1,7 +1,5 @@
-{% extends "tailwind/base.html" %} {% block content %}
-<p class="px-4 mb-5 text-sm font-medium text-brand-deep-purple">Opportunity Name</p>
 <div
-  class="flex flex-col w-full gap-2"
+  class="flex flex-col gap-2"
   x-data="{
     selectedRows: [],
     // Toggle single row selection
@@ -29,25 +27,6 @@
     }
 }"
 >
-  <!--Tabs-->
-  <div class="flex mx-auto items-center justify-between w-[1344px] px-4 py-2 border bg-slate-50 rounded-lg shadow-sm h-14">
-    <p class="text-sm text-brand-deep-purple">Payments</p>
-    <div class="flex gap-x-6">
-      <button type="button">
-        <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
-      </button>
-      <button type="button">
-        <i class="fa-light fa-upload text-brand-deep-purple"></i>
-      </button>
-      <button type="button">
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
-      </button>
-      <button type="button">
-        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-      </button>
-    </div>
-  </div>
-
   <!--Table Header-->
   <div
     class="flex mx-auto w-[1344px] bg-slate-200 rounded-lg h-14 px-3 text-brand-deep-purple auto-cols-min font-medium py-2 items-center justify-between text-sm"
@@ -99,19 +78,52 @@
 
     <!-- TODO: @apply -->
     <button
+      @click="selectedOption = 'payWorker'"
       class="flex items-center px-2 py-2 text-sm font-medium border border-gray-300 rounded-lg text-brand-deep-purple hover:bg-brand-indigo-100"
     >
       Pay Worker
     </button>
   </div>
 
-  {% comment %}
   <!-- Pay workers -->
-  <div class="fixed top-14 bottom-4 right-4 w-[844px] p-4 z-50 bg-white rounded-lg border shadow-sm">
+  <div
+    x-cloak
+    x-show="selectedOption == 'payWorker'"
+    class="fixed top-14 bottom-4 right-4 w-[844px] p-4 z-50 bg-neutral-100 rounded-lg border shadow-sm"
+  >
     <div
-      class="flex mx-auto w-[1344px] bg-slate-200 rounded-lg h-14 px-3 text-brand-deep-purple auto-cols-min font-medium py-2 items-center justify-between text-sm"
-    ></div>
+      class="flex items-center justify-between px-3 py-2 mx-auto text-sm font-medium rounded-lg bg-slate-50 h-14 text-brand-deep-purple auto-cols-min"
+    >
+      <p class="px-4 text-sm font-medium text-brand-deep-purple">Pay Worker</p>
+      <div class="flex gap-x-1">
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20">
+          <i class="fa-light fa-upload text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20">
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
+          <i class="fa-light fa-x text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </div>
   </div>
-  {% endcomment %}
+
+  <!-- History -->
+  <div
+    x-cloak
+    x-show="selectedOption == 'paymentHistory'"
+    class="fixed z-50 px-4 py-2 bg-white border rounded-lg shadow-sm top-40 bottom-4 right-4 w-70"
+  >
+    <div
+      class="flex items-center justify-between mx-auto text-sm font-medium rounded-lg text-brand-deep-purple auto-cols-min"
+    >
+      <p class="text-sm font-medium  text-brand-deep-purple">Payment History</p>
+      <div class="flex gap-x-1">
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
+          <i class="fa-light fa-x text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
-{% endblock content %}
