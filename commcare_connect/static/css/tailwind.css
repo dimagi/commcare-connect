@@ -12,6 +12,10 @@
   --color-brand-sunset-light: #fc5f3633;
   --color-brand-border-light: #e2e8f0;
 }
+/* 
+button, input:where([type=button]), input:where([type=reset]), input:where([type=submit]) {
+  background-color: unset;
+} */
 
 .badge-md {
   @apply inline-block py-1 px-4 mx-1 text-nowrap rounded-3xl text-xs;

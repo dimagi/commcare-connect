@@ -983,6 +983,8 @@ def opportunities_list(request, org_slug=None, opp_id=None):
 def worker_payments(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/worker_payments.html")
 
+def opportunity_worker(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/opportunity_worker.html")
 
 def worker_payments_table(request, org_slug=None, opp_id=None):
     data = [
