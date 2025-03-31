@@ -48,11 +48,11 @@
                 </div>
             </div>
             </div>
-        {% if status == 'invited' %}
+        {% if app.status == 'invited' %}
         {% include 'tailwind/components/buttons/button_primary.html' with text='Apply' %}
-        {% elif status == 'applied' %}
+        {% elif app.status == 'applied' %}
         {% include 'tailwind/components/buttons/button_disabled.html' with text='Apply' %}
-        {% elif status == 'accepted' %}
+        {% elif app.status == 'accepted' %}
         {% include 'tailwind/components/buttons/button_secondary.html' with text='View Opportunities' %}
         {% endif %}
     </div>
