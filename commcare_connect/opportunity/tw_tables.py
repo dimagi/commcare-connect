@@ -490,3 +490,187 @@ class WorkerPaymentsTable(tables.Table):
     def render_confirmed(self, value):
         return format_html('<div class="w-[108px]">{}</div>', value)
 
+class WorkerLearnTable(tables.Table):
+    index = tables.Column(
+        verbose_name="#",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    worker = tables.Column(
+        verbose_name="Worker",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    indicator = tables.TemplateColumn(
+        verbose_name="Indicator",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+        orderable=False,
+        template_code="""
+            {% if value %}
+            <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+            {% else %}
+                <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+            {% endif %}
+            """,
+    )
+    lastActive = tables.Column(
+        verbose_name="Last Active",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    start_learning = tables.Column(
+        verbose_name="Start Learning",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    modules_completed = tables.Column(
+        verbose_name="Modules Completed",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    completed_learning = tables.Column(
+        verbose_name="Completed Learning",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    assessment = tables.Column(
+        verbose_name="Assessment",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    attempts = tables.Column(
+        verbose_name="Attempts",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    learning_hours = tables.Column(
+        verbose_name="Learning Hours",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    class Meta:
+        attrs = {
+            "class": "w-full max-w-full",
+            "thead": {"class": "hidden"},
+            "tbody": {"class": "block w-full h-full"},
+        }
+        row_attrs = {
+            "class": "flex text-slate-900 items-center text-xs justify-between h-14 px-3 w-full  hover:bg-gray-100 relative transition-colors duration-300"
+        }
+        sequence = (
+            "index",
+            "worker",
+            "indicator",
+            "lastActive",
+            "start_learning",
+            "modules_completed",
+            "completed_learning",
+            "assessment",
+            "attempts",
+            "learning_hours",
+        )
+        
+    def render_index(self, value, record):
+        # Use 1-based indexing for display and storage
+        display_index = value
+
+        return format_html(
+            """
+            <div class="w-[40px] text-brand-deep-purple relative flex items-center justify-start h-full"
+                x-data="{{
+                    'hovering': false
+                }}"
+                x-on:mouseenter="hovering = true"
+                x-on:mouseleave="hovering = false">
+
+                <!-- Show empty square when hovering and not selected -->
+                <i x-show="!isRowSelected({0}) && hovering"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show checked square when selected -->
+                <i x-show="isRowSelected({0})"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show number when not hovering and not selected -->
+                <span x-show="!isRowSelected({0}) && !hovering"
+                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
+            </div>
+        """,
+            display_index,
+        )
+
+    def render_worker(self, value):
+        return format_html(
+            """
+        <div class="flex w-[168px] flex-col items-start">
+            <p class="text-sm text-slate-900 ">{}</p>
+            <p class="text-xs text-slate-400">{}</p>
+        </div>
+        """,
+            value["name"],
+            value["id"],
+        )
+
+    def render_lastActive(self, value):
+        return format_html('<div class="w-[104px]">{}</div>', value) 
+
+    def render_start_learning(self, value):
+        return format_html('<div class="w-[144px]">{}</div>', value)
+    def render_modules_completed(self, value):
+        progress_percentage = int(value)  # Assuming `value` is a percentage (e.g., 70)
+        return format_html(
+            """
+            <div class="flex items-center w-[184px]">
+                <!-- Container for the progress bar -->
+                <div class="relative w-[96px] h-[9px] bg-gray-200 rounded-full overflow-hidden mr-[14px]">
+                    <!-- Progress bar fill -->
+                    <div class="absolute top-0 left-0 h-full bg-blue-600" style="width: {}%; max-width: 96px;"></div>
+                </div>
+                <!-- Percentage text -->
+                <span class="w-[74px] text-sm text-gray-700">{}</span>
+            </div>
+            """,
+            progress_percentage,
+            f"{progress_percentage}%",
+        )
+    def render_completed_learning(self, value):
+        return format_html('<div class="w-[216px]">{}</div>', value)
+    def render_assessment(self, value):
+        return format_html('<div class="w-[152px]">{}</div>', value)
+    def render_attempts(self, value):
+        return format_html('<div class="w-[158px]">{}</div>', value)
+    def render_learning_hours(self, value):
+        return format_html('<div class="w-[136px]">{}</div>', value)

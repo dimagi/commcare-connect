@@ -1,7 +1,7 @@
 from django.http import HttpResponse
 from django.shortcuts import render
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -1195,3 +1195,132 @@ def create_opportunity(request, org_slug=None, opp_id=None):
         ],
     }
     return render(request, "tailwind/pages/create_opportunity.html", {"data": step})
+
+
+def worker_learn(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            "index": 1,
+            "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"},
+            "indicator": "orange-600",
+            "lastActive": "9hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+            
+        },
+        {
+            "index": 2,
+            "worker": {"id": "OP45QR67ST89", "name": "Alexander Nelson"},
+            "indicator": "green-600",
+            "lastActive": "9hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 3,
+            "worker": {"id": "IJ78KL12MN34", "name": "Evelyn Adams"},
+            "indicator": "red-600",
+            "lastActive": "95 hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 4,
+            "worker": {"id": "GH56IJ78KL90", "name": "Olivia Robinson"},
+            "indicator": "yellow-600",
+            "lastActive": "12hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 5,
+            "worker": {"id": "MN23OP45QR67", "name": "Noah Martinez"},
+            "indicator": "gray-600",
+            "lastActive": "24hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 6,
+            "worker": {"id": "ST89UV12WX34", "name": "Emma Wilson"},
+            "lastActive": "48hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 7,
+            "worker": {"id": "YZ12AB34CD56", "name": "James Smith"},
+            "indicator": "red-600",
+            "lastActive": "72hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 8,
+            "worker": {"id": "EF78GH90IJ12", "name": "Sophia Johnson"},
+            "indicator": "orange-600",
+            "lastActive": "24hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 9,
+            "worker": {"id": "KL34MN56OP78", "name": "Mason Taylor"},
+            "indicator": "green-600",
+            "lastActive": "96hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        {
+            "index": 10,
+            "worker": {"id": "QR12ST34UV56", "name": "Amelia Brown"},
+            "indicator": "yellow-600",
+            "lastActive": "30hr ago",
+            "start_learning": "12-Aug-2025",
+            "modules_completed": "50",
+            "completed_learning": "12-Aug-2025",
+            "assessment":"Passed",
+            "attempts":"4",
+            "learning_hours":"10h 19m"
+        },
+        
+    ]
+
+    table = WorkerLearnTable(data)
+    return render(request, "tailwind/pages/worker_learn.html",{ "table": table})
