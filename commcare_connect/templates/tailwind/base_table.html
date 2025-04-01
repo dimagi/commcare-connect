@@ -1,60 +1,160 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block table-wrapper %}
-<div class="table-container my-2">
-    {% block table %}
-        <table class="w-full border-collapse">
-            {% block table.thead %}
-            {% if table.show_header %}
-                <thead class="bg-slate-200 h-14 rounded-lg block mb-2">
-                    <tr>
-                    {% for column in table.columns %}
-                        <th class="text-sm font-medium px-4 py-2 text-left">
-                            {% if column.orderable %}
-                                <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}">
-                                    {{ column.header }}
-                                </a>
-                            {% else %}
-                                {{ column.header }}
-                            {% endif %}
-                        </th>
-                    {% endfor %}
-                    </tr>
-                </thead>
+<div class="scrollable-table-wrapper">
+  {% block table %}
+  <div class="scrollable-table-container">
+    <table class="scrollable-table">
+      {% block table.thead %}
+      {% if table.show_header %}
+      <thead>
+        <tr>
+          {% for column in table.columns %}
+          <th>
+            {% if column.orderable %}
+            <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" class="text-white hover:text-gray-200">
+              {{ column.header }}
+            </a>
+            {% else %}
+            <span class="text-white">{{ column.header }}</span>
             {% endif %}
-            {% endblock table.thead %}
-            
-            {% block table.tbody %}
-        <tbody class="bg-white rounded-lg block overflow-y-auto h-20">
-                {% for row in table.paginated_rows %}
-                    {% block table.tbody.row %}
-                    <tr class="border-b">
-                        {% for column, cell in row.items %}
-                            <td class="px-4 py-2 text-left">
-                                {% if column.localize == None %}
-                                    {{ cell }}
-                                {% else %}
-                                    {% if column.localize %}
-                                        {{ cell|localize }}
-                                    {% else %}
-                                        {{ cell|unlocalize }}
-                                    {% endif %}
-                                {% endif %}
-                            </td>
-                        {% endfor %}
-                    </tr>
-                    {% endblock table.tbody.row %}
-                {% empty %}
-                    {% if table.empty_text %}
-                    {% block table.tbody.empty_text %}
-                    <tr><td colspan="{{ table.columns|length }}" class="text-center py-4">{{ table.empty_text }}</td></tr>
-                    {% endblock table.tbody.empty_text %}
-                    {% endif %}
-                {% endfor %}
-            </tbody>
-            {% endblock table.tbody %}
-        </table>
-      
-    {% endblock table %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      {% endif %}
+      {% endblock table.thead %}
+
+      {% block table.tbody %}
+      <tbody>
+            <div style="overflow:hidden; border-radius:8px;">
+          {% for row in table.paginated_rows %}
+          {% block table.tbody.row %}
+          <tr>
+            {% for column, cell in row.items %}
+            <td>
+              {% if column.localize == None %}
+                {{ cell }}
+              {% else %}
+                {% if column.localize %}
+                  {{ cell|localize }}
+                {% else %}
+                  {{ cell|unlocalize }}
+                {% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endblock table.tbody.row %}
+          {% empty %}
+          {% if table.empty_text %}
+          {% block table.tbody.empty_text %}
+          <tr>
+            <td colspan="{{ table.columns|length }}" class="text-center py-4">
+              {{ table.empty_text }}
+            </td>
+          </tr>
+          {% endblock table.tbody.empty_text %}
+          {% endif %}
+          {% endfor %}
+        </div>
+        </tbody>
+        {% endblock table.tbody %}
+
+    </table>
+  </div>
+  {% endblock table %}
 </div>
+<style>
+    .scrollable-table-wrapper {
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: .5rem;
+      margin-bottom: .5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+  
+    .scrollable-table-container {
+      width: 100%;
+      overflow-x: auto;
+      max-height: 300px;
+      display: block;
+    }
+  
+    .scrollable-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+  
+    .scrollable-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+  
+    .scrollable-table thead th {
+      background: #007880;
+      color: white;
+      font-weight: 600;
+      position: relative;
+    }
+  
+    /* Add the visual gap using a pseudo-element */
+    .scrollable-table thead::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -8px; /* Adjust this value to control the gap size */
+      width: 100%;
+      height: 9px; /* Adjust this value to control the gap size */
+      background: #f3f4f6;
+      pointer-events: none;
+    }
+  
+    .scrollable-table tbody {
+      padding-top: 2rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+  
+    .scrollable-table th,
+    .scrollable-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+      white-space: nowrap;
+    }
+  
+    /* Use first and last-child to round first and last header cells */
+    .scrollable-table thead th:first-child {
+      border-top-left-radius: 8px;
+      border-bottom-left-radius: 8px;
+    }
+  
+    .scrollable-table thead th:last-child {
+      border-top-right-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }
+
+    .scrollable-table tbody{
+        margin-top: 8px;
+    }
+    .scrollable-table tbody tr {
+        background: white;
+        height: 44px;
+    }
+    
+    .scrollable-table tbody tr:first-child {
+        background: white;
+        height: 54px;
+    }
+    
+    .scrollable-table tbody tr:first-child td {
+        padding-top: 18px;
+    }
+    .scrollable-table tbody tr:hover {
+      background-color: #f5f5f5;
+    }
+  </style>
 {% endblock table-wrapper %}
