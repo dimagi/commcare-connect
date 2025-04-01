@@ -1,5 +1,7 @@
+{% load render_table from django_tables2 %}
+
 <div
-  class="flex flex-col gap-2"
+  class="flex flex-col w-full gap-2"
   x-data="{
     selectedRows: [],
     // Toggle single row selection
@@ -27,37 +29,8 @@
     }
 }"
 >
-  <!--Table Header-->
- <div
-    class="flex mx-auto w-[1344px] bg-slate-200 rounded-lg h-14 px-3 text-brand-deep-purple auto-cols-min font-medium py-2 items-center justify-between text-sm"
-  >
-    <div class="flex justify-start text-sm font-medium text-brand-deep-purple w-[32px]">
-      <i
-        x-on:click="toggleAll()"
-        :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
-        class="text-xl cursor-pointer text-brand-deep-purple"
-      ></i>
-    </div>
-    <div class="w-[168px]">Name</div>
-    <div class="w-[40px]">
-      <div class="w-4 h-2 bg-black rounded"></div>
-    </div>
-    <div class="w-[100px]">Last Active</div>
-    <div class="w-[300px]">Accrued</div>
-    <div class="w-[296px]">Total Paid</div>
-    <div class="w-[272px]">Last Paid</div>
-    <div class="w-[108px]">Confirmed</div>
-  </div> 
 
-  <!--Table Body-->
-  {% comment %} <div class="w-[1344px] mx-auto h-[700px] overflow-y-auto bg-white border rounded-lg shadow-xs"> {% endcomment %}
-    {% comment %} TODO {% endcomment %}
-     <div class="max-h-[80vh]">
-
-       <div hx-get="/a/test-1/opportunity/1/tw/tables/worker_payments/" hx-trigger="load"></div>
-     </div>
-  {% comment %} </div> {% endcomment %}
-
+     {% render_table table %}
   <!--Table Footer-->
   <div
     class="table-footer w-[1344px] mx-auto flex items-center justify-between h-14 py-2 px-4 bg-slate-50 text-xs text-brand-deep-purple p-2 rounded-lg mb-8"

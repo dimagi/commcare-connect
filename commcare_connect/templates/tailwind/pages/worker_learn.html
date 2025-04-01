@@ -1,5 +1,3 @@
-<!-- work-in progress -->
-
 {% load render_table from django_tables2 %}
 
 <div
@@ -32,34 +30,7 @@
 }"
 >
 
-  <!--Table Header-->
- {% comment %} <div
-    class="flex mx-auto w-[1344px] bg-slate-200 rounded-lg h-14 px-3 text-brand-deep-purple auto-cols-min font-medium py-4 items-center justify-between text-sm"
-  >
-    <div class="flex justify-start text-sm font-medium text-brand-deep-purple w-[40px]">
-      <i
-        x-on:click="toggleAll()"
-        :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
-        class="text-xl cursor-pointer text-brand-deep-purple"
-      ></i>
-    </div>
-    <div class="w-[168px]">Name</div>
-    <div class="w-[40px]">
-      <div class="w-4 h-2 bg-black rounded"></div>
-    </div>
-    <div class="w-[104px]">Last Active</div>
-    <div class="w-[144px]">Started Learning</div>
-    <div class="w-[184px]">Modules Completed</div>
-    <div class="w-[216px]">Completed Learning</div>
-    <div class="w-[152px]">Assessment</div>
-    <div class="w-[158px]">Attempts</div>
-    <div class="w-[136px]">Learning Hours</div>
-  </div> {% endcomment %}
-
- <!--Table Body-->
-  {% comment %} <div class="w-[1344px] mx-auto h-[700px] overflow-y-auto bg-white border rounded-lg shadow-xs"> {% endcomment %}
      {% render_table table %}
-  {% comment %} </div>  {% endcomment %}
 
   <!--Table Footer-->
   <div

@@ -979,14 +979,7 @@ def opportunities_list(request, org_slug=None, opp_id=None):
         {"headers": headers, "data": data, "header_title": "Opportunities List"},
     )
 
-
 def worker_payments(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/worker_payments.html")
-
-def opportunity_worker(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/opportunity_worker.html")
-
-def worker_payments_table(request, org_slug=None, opp_id=None):
     data = [
         {
             "index": 1,
@@ -1185,8 +1178,11 @@ def worker_payments_table(request, org_slug=None, opp_id=None):
     ]
 
     table = WorkerPaymentsTable(data)
-    return render(request, "tailwind/components/tables/worker_payments_table.html", {"table": table})
+    return render(request, "tailwind/pages/worker_payments.html", {"table": table})
 
+
+def opportunity_worker(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/opportunity_worker.html")
 
 def get_worker_last_payment(request, org_slug=None, opp_id=None):
     payments = [
