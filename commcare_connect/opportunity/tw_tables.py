@@ -1,7 +1,13 @@
 import django_tables2 as tables
 from django.utils.html import format_html
 from django_tables2.utils import A
+from django.utils.safestring import mark_safe
 
+class BaseTailwindTable(tables.Table):
+    """Base table using Tailwind styling and custom template."""
+    class Meta:
+        template_name = "tailwind/base_table.html"
+        attrs = {"class": "w-full text-left text-sm text-gray-600"}
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
@@ -165,3 +171,641 @@ class VisitsTable(BaseTailwindTable):
             """,
             value,
         )
+
+
+class OpportunitiesListTable(tables.Table):
+    index = tables.Column(verbose_name="")
+    opportunity = tables.Column(verbose_name="Opportunity", orderable=False)
+    entityType = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start w-[60px] text-sm font-normal text-brand-deep-purple w-fit"
+                 x-data="{
+                   showTooltip: false,
+                   tooltipStyle: '',
+                   positionTooltip(el) {
+                     const rect = el.getBoundingClientRect();
+                     const top = rect.top - 30;  /* 30px above the icon */
+                     const left = rect.left + rect.width/2;
+                     this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
+                   }
+                 }">
+              {% if value %}
+                {% if value == 'test' %}
+                    <div class="relative">
+                        <i class="fa-light fa-file-dashed-line"
+                           @mouseenter="showTooltip = true; positionTooltip($el)"
+                           @mouseleave="showTooltip = false
+                           "></i>
+                        <span x-show="showTooltip"
+                              :style="tooltipStyle"
+                              class="fixed z-50 border bg-white text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+                            Test
+                        </span>
+                    </div>
+                {% else %}
+                    <span class="relative">
+                        <i class="invisible fa-light fa-file-dashed-line"></i>
+                    </span>
+                {% endif %}
+              {% endif%}
+            </div>
+        """,
+    )
+    entityStatus = tables.TemplateColumn(
+        verbose_name="Status",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-center w-[178px] text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+               {% if value %}
+              {% if value == 'active' %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600' bg_opacity='20' text='active' text_color='green-600' %}
+              {% elif value == 'inactive' %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600' bg_opacity='25' text='inactive' text_color='orange-600' %}
+              {% elif value == 'ended' %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100' bg_opacity='100' text='ended' text_color='slate-400' %}
+              {% endif %}
+              {% endif%}
+            </div>
+        """,
+    )
+    program = tables.Column(verbose_name="Program", orderable=False)
+    startDate = tables.Column(verbose_name="Start Date", orderable=False)
+    endDate = tables.Column(verbose_name="End Date", orderable=False)
+
+    pendingInvites = tables.TemplateColumn(
+        verbose_name="Pending Invites",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis w-[126px]">
+            {% if value %}
+              {% include "tailwind/components/dropdowns/text_button_dropdown.html" with text=value.count list=value.list styles='text-sm' %}
+            {% endif%}
+            </div>
+        """,
+    )
+    inactiveWorkers = tables.TemplateColumn(
+        verbose_name="Inactive Workers",
+        orderable=False,
+        template_code="""
+          <div class="flex justify-center w-40 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+               {% if value %}
+              {% include "tailwind/components/dropdowns/text_button_dropdown.html" with text=value.count list=value.list styles='text-sm' %}
+          {% endif%}
+          </div>
+        """,
+    )
+    pendingApprovals = tables.TemplateColumn(
+        verbose_name="Pending Approvals",
+        orderable=False,
+        template_code="""
+          <div class="flex justify-center w-40 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+               {% if value %}
+              {% include "tailwind/components/dropdowns/text_button_dropdown.html" with text=value.count list=value.list styles='text-sm' %}
+          {% endif%}
+          </div>
+        """,
+    )
+    paymentsDue = tables.TemplateColumn(
+        verbose_name="Payments Due",
+        orderable=False,
+        template_code="""
+          <div class="flex justify-center w-40 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+               {% if value %}
+              {% include "tailwind/components/dropdowns/text_button_dropdown.html" with text=value.amount list=value.list styles='text-sm' %}
+          {% endif%}
+          </div>
+        """,
+    )
+
+    class Meta:
+        attrs = {"class": "w-full max-w-full", "thead": {"class": "hidden"}, "tbody": {"class": "block w-full h-full"}}
+        row_attrs = {
+            "class": "flex w-full justify-between gap-x-4 p-3 bg-white hover:bg-gray-100 relative transition-colors duration-300",
+        }
+        sequence = (
+            "index",
+            "opportunity",
+            "entityType",
+            "entityStatus",
+            "program",
+            "startDate",
+            "endDate",
+            "pendingInvites",
+            "inactiveWorkers",
+            "pendingApprovals",
+            "paymentsDue",
+        )
+
+    def render_index(self, value):
+        return format_html(
+            '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis w-9">{}</div>',
+            value,
+        )
+
+    def render_opportunity(self, value):
+        return format_html(
+            '<div class="flex justify-start w-40 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+
+    def render_program(self, value):
+        return format_html(
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis w-36">{}</div>',
+            value,
+        )
+
+    def render_startDate(self, value):
+        return format_html(
+            '<div class="flex justify-center w-24 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+
+    def render_endDate(self, value):
+        return format_html(
+            '<div class="flex justify-center w-24 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+
+
+class WorkerPaymentsTable(tables.Table):
+    index = tables.Column(
+        orderable=False,
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    worker = tables.Column(
+        verbose_name="Name",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    indicator = tables.TemplateColumn(
+        verbose_name="Indicator",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+        orderable=False,
+        template_code="""
+                                    {% if value %}
+                                       <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+                                    {% else %}
+                                        <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+                                    {% endif %}
+                                    """,
+    )
+    lastActive = tables.Column(
+        verbose_name="Last Active",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    accrued = tables.Column(
+        verbose_name="Accrued",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    totalPaid = tables.Column(
+        verbose_name="Total Paid",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    lastPaid = tables.Column(
+        verbose_name="Last Paid",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    confirmed = tables.Column(
+        verbose_name="Confirmed",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Custom HTML for 'select' header (your toggle button)
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
+                <i
+                    x-on:click="toggleAll()"
+                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
+                    class="text-xl cursor-pointer text-brand-deep-purple"
+                ></i>
+            </div>
+            '''
+        )
+
+        self.base_columns['indicator'].verbose_name = mark_safe(
+            '''
+                <div class="w-[40px]">
+                    <div class="w-4 h-2 bg-black rounded"></div>
+                </div>
+            '''
+        )
+
+
+    class Meta:
+        attrs = {
+            "class": "w-full max-w-full",
+            "thead": {"class": "hidden"},
+            "tbody": {"class": "block w-full h-full"},
+        }
+        row_attrs = {
+            "class": "flex text-slate-900 items-center text-xs justify-between h-14 px-3 w-full  hover:bg-gray-100 relative transition-colors duration-300"
+        }
+        sequence = ("index", "worker", "indicator", "lastActive", "accrued", "totalPaid", "lastPaid", "confirmed")
+
+    def render_index(self, value, record):
+        # Use 1-based indexing for display and storage
+        display_index = value
+
+        return format_html(
+            """
+            <div class="text-brand-deep-purple relative flex items-center justify-start h-full mt-6"
+                x-data="{{
+                    'hovering': false
+                }}"
+                x-on:mouseenter="hovering = true"
+                x-on:mouseleave="hovering = false">
+
+                <!-- Show empty square when hovering and not selected -->
+                <i x-show="!isRowSelected({0}) && hovering"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show checked square when selected -->
+                <i x-show="isRowSelected({0})"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show number when not hovering and not selected -->
+                <span x-show="!isRowSelected({0}) && !hovering"
+                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
+            </div>
+        """,
+            display_index,
+        )
+
+    def render_worker(self, value):
+        return format_html(
+            """
+        <div class="flex flex-col items-start">
+            <p class="text-sm text-slate-900 ">{}</p>
+            <p class="text-xs text-slate-400">{}</p>
+        </div>
+        """,
+            value["name"],
+            value["id"],
+        )
+
+    def render_lastActive(self, value):
+        return format_html('<div class="">{}</div>', value)
+
+    def render_accrued(self, value):
+        return format_html('<div class="">{}</div>', value)
+
+    def render_totalPaid(self, value):
+        return format_html('<div class="">{}</div>', value)
+
+    def render_lastPaid(self, value):
+        return format_html(
+            """
+            <div class="relative"
+                x-data="{{
+                    isOpen: false,
+                    positionMenu() {{
+                        const rect = this.$el.getBoundingClientRect();
+                        const menu = this.$refs.menu;
+                        const top = rect.bottom + 5;  // Position below the element
+                        const left = rect.left + rect.width/2 - menu.offsetWidth/2;
+                        menu.style.top = top + 'px';
+                        menu.style.left = left + 'px';
+                    }}
+                }}"
+                x-on:click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionMenu() }})"
+                x-on:click.outside="isOpen = false">
+                <span class="px-3 py-1 rounded-lg cursor-pointer hover:bg-slate-200">
+                    {}
+                </span>
+                <div x-ref="menu"
+                    x-show="isOpen"
+                    x-transition
+                    class="fixed z-50 p-5 text-sm bg-white border rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
+                    style="display: none">
+                    <p class="text-xs text-slate-400">Payment History</p>
+                    <!-- TODO: @apply -->
+                    <button  class="flex items-center px-2 py-2 mt-3 mb-6 text-sm font-medium border border-gray-300 rounded-lg text-brand-deep-purple hover:bg-brand-indigo-100">Rollback lastPayment</button>
+                    <div hx-get='/a/test-1/opportunity/1/tw/get_worker_last_payment/' hx-trigger='load' hx-swap='outerHTML'></div>
+                </div>
+            </div>
+        """,
+            value,
+        )
+
+    def render_confirmed(self, value):
+        return format_html('<div class="">{}</div>', value)
+
+class WorkerLearnTable(tables.Table):
+    index = tables.Column(
+        orderable=False,
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    worker = tables.Column(
+        verbose_name="Name",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    indicator = tables.TemplateColumn(
+        verbose_name="Indicator",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+        orderable=False,
+        template_code="""
+            {% if value %}
+            <div class=""><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+            {% else %}
+                <div class=""><div class=" h-2"></div></div>
+            {% endif %}
+            """,
+    )
+    lastActive = tables.Column(
+        verbose_name="Last Active",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    start_learning = tables.Column(
+        verbose_name="Start Learning",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    modules_completed = tables.Column(
+        verbose_name="Modules Completed",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    completed_learning = tables.Column(
+        verbose_name="Completed Learning",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    assessment = tables.Column(
+        verbose_name="Assessment",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    attempts = tables.Column(
+        verbose_name="Attempts",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    learning_hours = tables.Column(
+        verbose_name="Learning Hours",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Custom HTML for 'select' header (your toggle button)
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
+                <i
+                    x-on:click="toggleAll()"
+                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
+                    class="text-xl cursor-pointer text-brand-deep-purple"
+                ></i>
+            </div>
+            '''
+        )
+
+        self.base_columns['indicator'].verbose_name = mark_safe(
+            '''
+                <div class="w-[40px]">
+                    <div class="w-4 h-2 bg-black rounded"></div>
+                </div>
+            '''
+        )
+
+    class Meta:
+        attrs = {
+            "class": "w-full max-w-full",
+            # "thead": {"class": "hidden"},
+            "tbody": {"class": "block w-full h-full"},
+        }
+        row_attrs = {
+            "class": "flex text-slate-900 items-center text-xs justify-between h-14 px-3 w-full  hover:bg-gray-100 relative transition-colors duration-300"
+        }
+        sequence = (
+            "index",
+            "worker",
+            "indicator",
+            "lastActive",
+            "start_learning",
+            "modules_completed",
+            "completed_learning",
+            "assessment",
+            "attempts",
+            "learning_hours",
+        )
+        
+    def render_index(self, value, record):
+        # Use 1-based indexing for display and storage
+        display_index = value
+
+        return format_html(
+            """
+            <div class="text-brand-deep-purple relative flex items-center justify-start w-full h-full mt-6"
+                x-data="{{
+                    'hovering': false
+                }}"
+                x-on:mouseenter="hovering = true"
+                x-on:mouseleave="hovering = false">
+
+                <!-- Show empty square when hovering and not selected -->
+                <i x-show="!isRowSelected({0}) && hovering"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show checked square when selected -->
+                <i x-show="isRowSelected({0})"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show number when not hovering and not selected -->
+                <span x-show="!isRowSelected({0}) && !hovering"
+                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
+            </div>
+        """,
+            display_index,
+        )
+
+    def render_worker(self, value):
+        return format_html(
+            """
+        <div class="flex flex-col items-start">
+            <p class="text-sm text-slate-900 ">{}</p>
+            <p class="text-xs text-slate-400">{}</p>
+        </div>
+        """,
+            value["name"],
+            value["id"],
+        )
+
+    def render_lastActive(self, value):
+        return format_html('<div">{}</div>', value) 
+
+    def render_start_learning(self, value):
+        return format_html('<div>{}</div>', value)
+    def render_modules_completed(self, value):
+        progress_percentage = int(value)  # Assuming `value` is a percentage (e.g., 70)
+        return format_html(
+            """
+            <div class="flex items-center w-[184px]">
+                <!-- Container for the progress bar -->
+                <div class="relative w-[96px] h-[9px] bg-gray-200 rounded-full overflow-hidden mr-[14px]">
+                    <!-- Progress bar fill -->
+                    <div class="absolute top-0 left-0 h-full bg-blue-600" style="width: {}%; max-width: 96px;"></div>
+                </div>
+                <!-- Percentage text -->
+                <span class="w-[74px] text-sm text-gray-700">{}</span>
+            </div>
+            """,
+            progress_percentage,
+            f"{progress_percentage}%",
+        )
+    def render_completed_learning(self, value):
+        return format_html('<div class="">{}</div>', value)
+    def render_assessment(self, value):
+        return format_html('<div class="">{}</div>', value)
+    def render_attempts(self, value):
+        return format_html('<div class="">{}</div>', value)
+    def render_learning_hours(self, value):
+        return format_html('<div class="">{}</div>', value)
+
+class CustomTable(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    name = tables.Column(verbose_name="Name")
+    user_id = tables.Column(verbose_name="User ID")
+    phone_number = tables.Column(verbose_name="Phone Number")
+    status = tables.Column(verbose_name="Status")
+    visits = tables.Column(verbose_name="Visits")
+    last_visit = tables.Column(verbose_name="Last Visit")
+    visit_status = tables.Column(verbose_name="Visit Status")
+    visit_date = tables.Column(verbose_name="Visit Date")
+    visit_time = tables.Column(verbose_name="Visit Time")
+    visit_location = tables.Column(verbose_name="Visit Location")
+    
+    
+    class Meta:
+        attrs = {
+            "class": "w-full max-w-full",
+            "thead": {"class": "w-full"},
+            "tbody": {"class": "w-full h-full overflow-y-auto"},
+        }
+        row_attrs = {
+            "class": "",
+        }
+        sequence = ("index", "name", "user_id", "phone_number", "status", "visits", "last_visit", "visit_status", "visit_date", "visit_time", "visit_location")
+        
+    def render_index(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_name(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_user_id(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_phone_number(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_status(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_visits(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )        
+    def render_last_visit(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_visit_status(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_visit_date(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )        
+    def render_visit_time(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_visit_location(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+                    

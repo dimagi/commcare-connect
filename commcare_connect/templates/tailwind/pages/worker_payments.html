@@ -1,0 +1,105 @@
+{% load render_table from django_tables2 %}
+
+<div
+  class="flex flex-col w-full gap-2"
+  x-data="{
+    selectedRows: [],
+    // Toggle single row selection
+    toggleRow(index) {
+        const rowIndex = this.selectedRows.indexOf(index);
+        if (rowIndex === -1) {
+            this.selectedRows.push(index);
+        } else {
+            this.selectedRows.splice(rowIndex, 1);
+        }
+    },
+    toggleAll() {
+        if (this.isAllSelected()) {
+            this.selectedRows = [];
+        } else {
+            // Get all row indices from the table data
+            this.selectedRows = Array.from({ length: {{ table.rows|length }} }, (_, i) => i + 1);
+        }
+    },
+    isAllSelected() {
+        return {{ table.rows|length }} > 0 && this.selectedRows.length === {{ table.rows|length }};
+    },
+    isRowSelected(index) {
+        return this.selectedRows.includes(index);
+    }
+}"
+>
+
+     {% render_table table %}
+  <!--Table Footer-->
+  <div
+    class="table-footer w-[1344px] mx-auto flex items-center justify-between h-14 py-2 px-4 bg-slate-50 text-xs text-brand-deep-purple p-2 rounded-lg mb-8"
+  >
+    <div class="flex items-center gap-4">
+      <label class="flex items-center px-4 py-1">
+        <span class="mr-2">Rows per page</span>
+        <select class="px-1 py-1 text-sm bg-transparent border rounded-lg outline-none">
+          <option>12</option>
+          <option>24</option>
+          <option>36</option>
+        </select>
+      </label>
+      <div>
+        <button><i class="fa-solid fa-chevron-left"></i></button>
+        <span>10</span>
+        <span>of 12</span>
+        <button><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+    </div>
+
+    <!-- TODO: @apply -->
+    <button
+      @click="selectedOption = 'payWorker'"
+      class="flex items-center px-2 py-2 text-sm font-medium border border-gray-300 rounded-lg text-brand-deep-purple hover:bg-brand-indigo-100"
+    >
+      Pay Worker
+    </button>
+  </div>
+
+  <!-- Pay workers -->
+  <div
+    x-cloak
+    x-show="selectedOption == 'payWorker'"
+    class="fixed top-14 bottom-4 right-4 w-[844px] p-4 z-50 bg-neutral-100 rounded-lg border shadow-sm"
+  >
+    <div
+      class="flex items-center justify-between px-3 py-2 mx-auto text-sm font-medium rounded-lg bg-slate-50 h-14 text-brand-deep-purple auto-cols-min"
+    >
+      <p class="px-4 text-sm font-medium text-brand-deep-purple">Pay Worker</p>
+      <div class="flex gap-x-1">
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20">
+          <i class="fa-light fa-upload text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20">
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
+          <i class="fa-light fa-x text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div
+    x-cloak
+    x-show="selectedOption == 'paymentHistory'"
+    class="fixed z-50 px-4 py-2 bg-white border rounded-lg shadow-sm top-40 bottom-4 right-4 w-70"
+  >
+    <div
+      class="flex items-center justify-between mx-auto text-sm font-medium rounded-lg text-brand-deep-purple auto-cols-min"
+    >
+      <p class="text-sm font-medium  text-brand-deep-purple">Payment History</p>
+      <div class="flex gap-x-1">
+        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
+          <i class="fa-light fa-x text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
