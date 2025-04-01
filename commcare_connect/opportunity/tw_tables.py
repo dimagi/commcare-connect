@@ -445,7 +445,7 @@ class WorkerPaymentsTable(tables.Table):
 
         return format_html(
             """
-            <div class="text-brand-deep-purple relative flex items-center justify-start h-full mt-6"
+            <div class="text-brand-deep-purple relative flex items-center justify-start h-full"
                 x-data="{{
                     'hovering': false
                 }}"
@@ -671,7 +671,7 @@ class WorkerLearnTable(tables.Table):
 
         return format_html(
             """
-            <div class="text-brand-deep-purple relative flex items-center justify-start w-full h-full mt-6"
+            <div class="text-brand-deep-purple relative flex items-center justify-start w-full h-full"
                 x-data="{{
                     'hovering': false
                 }}"

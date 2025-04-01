@@ -9,7 +9,7 @@
     }"
 >
     <!-- Tabs -->
-    <div class="flex mx-auto items-center justify-between w-[1344px] px-4 border bg-slate-50 rounded-lg shadow-sm h-14">
+    <div class="flex mx-auto items-center justify-between w-[1344px] px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <div class="flex h-full gap-x-6">
         <div 
             @click="selectedTab = 'workers'; selectedRows = []; $nextTick(() => { 
@@ -28,7 +28,7 @@
         >
             <span>Workers</span>
             <div 
-                class="absolute bottom-0 -right-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
                 x-show="selectedTab === 'workers'"
             ></div>
         </div>
@@ -49,7 +49,7 @@
         >
             <span>Learn</span>
             <div 
-                class="absolute bottom-0 -right-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
                 x-show="selectedTab === 'learn'"
             ></div>
         </div>
@@ -70,7 +70,7 @@
         >
             <span>Delivery</span>
             <div 
-                class="absolute bottom-0 -right-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
                 x-show="selectedTab === 'delivery'"
             ></div>
         </div>
@@ -91,7 +91,7 @@
         >
             <span>Payments</span>
             <div 
-                class="absolute bottom-0 -right-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
                 x-show="selectedTab === 'payments'"
             ></div>
         </div>
