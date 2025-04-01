@@ -28,7 +28,7 @@
 }"
 >
   <!--Table Header-->
-  <div
+ <div
     class="flex mx-auto w-[1344px] bg-slate-200 rounded-lg h-14 px-3 text-brand-deep-purple auto-cols-min font-medium py-2 items-center justify-between text-sm"
   >
     <div class="flex justify-start text-sm font-medium text-brand-deep-purple w-[32px]">
@@ -47,13 +47,16 @@
     <div class="w-[296px]">Total Paid</div>
     <div class="w-[272px]">Last Paid</div>
     <div class="w-[108px]">Confirmed</div>
-  </div>
+  </div> 
 
   <!--Table Body-->
-  <div class="w-[1344px] mx-auto h-[700px] overflow-y-auto bg-white border rounded-lg shadow-xs">
+  {% comment %} <div class="w-[1344px] mx-auto h-[700px] overflow-y-auto bg-white border rounded-lg shadow-xs"> {% endcomment %}
     {% comment %} TODO {% endcomment %}
-    <div hx-get="/a/test-1/opportunity/1/tw/tables/worker_payments/" hx-trigger="load"></div>
-  </div>
+     <div class="max-h-[80vh]">
+
+       <div hx-get="/a/test-1/opportunity/1/tw/tables/worker_payments/" hx-trigger="load"></div>
+     </div>
+  {% comment %} </div> {% endcomment %}
 
   <!--Table Footer-->
   <div

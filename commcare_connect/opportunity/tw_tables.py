@@ -1,6 +1,7 @@
 import django_tables2 as tables
 from django.utils.html import format_html
 from django_tables2.utils import A
+from django.utils.safestring import mark_safe
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
@@ -497,7 +498,7 @@ class WorkerPaymentsTable(tables.Table):
 
 class WorkerLearnTable(tables.Table):
     index = tables.Column(
-        verbose_name="#",
+        orderable=False,
         attrs={
             "td": {
                 "class": "p-0",
@@ -505,7 +506,7 @@ class WorkerLearnTable(tables.Table):
         },
     )
     worker = tables.Column(
-        verbose_name="Worker",
+        verbose_name="Name",
         attrs={
             "td": {
                 "class": "p-0",
@@ -522,9 +523,9 @@ class WorkerLearnTable(tables.Table):
         orderable=False,
         template_code="""
             {% if value %}
-            <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+            <div class=""><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
             {% else %}
-                <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+                <div class=""><div class=" h-2"></div></div>
             {% endif %}
             """,
     )
@@ -584,10 +585,35 @@ class WorkerLearnTable(tables.Table):
             }
         },
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Custom HTML for 'select' header (your toggle button)
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
+                <i
+                    x-on:click="toggleAll()"
+                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
+                    class="text-xl cursor-pointer text-brand-deep-purple"
+                ></i>
+            </div>
+            '''
+        )
+
+        self.base_columns['indicator'].verbose_name = mark_safe(
+            '''
+                <div class="w-[40px]">
+                    <div class="w-4 h-2 bg-black rounded"></div>
+                </div>
+            '''
+        )
+
     class Meta:
         attrs = {
             "class": "w-full max-w-full",
-            "thead": {"class": "hidden"},
+            # "thead": {"class": "hidden"},
             "tbody": {"class": "block w-full h-full"},
         }
         row_attrs = {
@@ -612,7 +638,7 @@ class WorkerLearnTable(tables.Table):
 
         return format_html(
             """
-            <div class="w-[40px] text-brand-deep-purple relative flex items-center justify-start h-full"
+            <div class="text-brand-deep-purple relative flex items-center justify-start w-full h-full mt-6"
                 x-data="{{
                     'hovering': false
                 }}"
@@ -640,7 +666,7 @@ class WorkerLearnTable(tables.Table):
     def render_worker(self, value):
         return format_html(
             """
-        <div class="flex w-[168px] flex-col items-start">
+        <div class="flex flex-col items-start">
             <p class="text-sm text-slate-900 ">{}</p>
             <p class="text-xs text-slate-400">{}</p>
         </div>
@@ -650,10 +676,10 @@ class WorkerLearnTable(tables.Table):
         )
 
     def render_lastActive(self, value):
-        return format_html('<div class="w-[104px]">{}</div>', value) 
+        return format_html('<div">{}</div>', value) 
 
     def render_start_learning(self, value):
-        return format_html('<div class="w-[144px]">{}</div>', value)
+        return format_html('<div>{}</div>', value)
     def render_modules_completed(self, value):
         progress_percentage = int(value)  # Assuming `value` is a percentage (e.g., 70)
         return format_html(
@@ -672,13 +698,13 @@ class WorkerLearnTable(tables.Table):
             f"{progress_percentage}%",
         )
     def render_completed_learning(self, value):
-        return format_html('<div class="w-[216px]">{}</div>', value)
+        return format_html('<div class="">{}</div>', value)
     def render_assessment(self, value):
-        return format_html('<div class="w-[152px]">{}</div>', value)
+        return format_html('<div class="">{}</div>', value)
     def render_attempts(self, value):
-        return format_html('<div class="w-[158px]">{}</div>', value)
+        return format_html('<div class="">{}</div>', value)
     def render_learning_hours(self, value):
-        return format_html('<div class="w-[136px]">{}</div>', value)
+        return format_html('<div class="">{}</div>', value)
 
 class CustomTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
