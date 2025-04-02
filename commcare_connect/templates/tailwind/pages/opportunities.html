@@ -2,13 +2,129 @@
 {% extends 'tailwind/base.html' %}
 
 {% block content %}
+    {% include 'tailwind/components/breadcrumbs.html' with path=path %}
     <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
-        {% include "tailwind/components/opportunity-dashboard/detials.html" with data=data totalinfo=totalinfo %}
+        <div class="flex flex-col gap-8 w-full bg-brand-deep-purple {% if type == 'test ty vbvbt' %} !text-brand-mango {% endif %} rounded-lg p-4">
+            <div class="flex items-center">
+                <h3 class="text-sm font-medium text-brand-sky flex-1">Program Name</h3>
+                <i class="fa-light fa-bars text-white"></i>
+            </div>
+            <div class="flex justify-between items-end">
+                <div class="flex flex-col gap-2">
+                    <h1 class="text-2xl font-medium text-white block">Opportunity Name</h3>
+                    <p class="text-xs font-regular text-gray-100 w-6/12">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididuni   ipsum dolor m ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididuni </p>
+                </div>
+                <div class="flex mt-6">
+                    <div class="flex gap-4">
+                        <!-- apps list -->
+                        {% for app in data %}
+                        <div class="min-w-48 flex flex-row items-center justify-between px-4 h-10 bg-brand-indigo rounded">
+                            <div class="flex items-center">
+                                <i class="fa-light {{app.icon}} text-white text-sm"></i>
+                                <h3 class="text-sm font-normal text-white flex-1 pl-2 whitespace-nowrap">{{app.name}}</h3>
+                            </div>
+                            <h3 class="text-sm font-medium text-white">{{app.count}}</h3>
+                        </div>  
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <!-- opportunity info -->
+            <div class="p-4 rounded-lg bg-black/20  w-full">
+                <div class="flex gap-2 w-full items-center justify-between">
+                    {% for data in totalinfo %}
+                    <div class="flex gap-2 items-start"> 
+                        {% include 'tailwind/components/cards/info.html' with icon=data.icon head=data.name data=data.count id=forloop.counter|stringformat:"s" classname="infocard-light"%}  
+                    </div>
+                    {% if not forloop.last and forloop.counter != 2 %}
+                    <div class="w-0.5 h-10 bg-white bg-opacity-30"></div>
+                    {% endif %}
+                    {% endfor %} 
+                    <div class="">
+                        <span class="badge badge-md positive-dark">
+                            active
+                        </span> 
+                    </div>
+                </div>
+            </div>
+        </div>
         <div>
-            {% include "tailwind/components/opportunity-dashboard/workers_activity.html"%}
-            {% include 'tailwind/components/opportunity-dashboard/progress-view.html' with title='Daily Active Worker' data_a_title='maximum' data_a_value='50' %}
+            <!-- Recent Activities -->
+            <div class="flex flex-row flex-wrap gap-4 p-4 rounded-t-lg bg-white">
+                {% for op in opList %}
+                <div class="w-fit flex-1 flex flex-col gap-4">
+                    <div class="flex flex-row items-center">
+                        <h3 class="flex-1 text-base font-medium text-brand-deep-purple">{{op.opName}}</h3>
+                        <p class="text-brand-deep-purple text-xs font-medium"><span class="font-normal">{{op.opLabel}}</span> {{op.opValue}}</p>
+                    </div>
+                    {% for data in op.ops %}
+                        <div class="flex gap-2 rounded-lg p-4 items-center bg-brand-indigo {% if data.type == '2' %} bg-brand-marigold/10 border border-brand-marigold {% endif %}">
+                            <div class="w-10 h-10 flex flex-row items-center justify-center text-white {% if data.type == '2' %} !bg-orange-300{% endif %} rounded-md">
+                                <i class="fa-light {{data.icon}} "></i>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-xs text-white {% if data.type == '2' %} !text-orange-500  {% endif %}">{{data.name}}</h3>
+                                <p class="text-sm text-white {% if data.type == '2' %} !text-orange-500 {% endif %}">{{data.status}}</p>
+                            </div>
+                            <h3 class="text-2xl font-medium text-white {% if data.type == '2' %} !text-orange-500{% endif %}">{{data.value}}</h3>
+                            {% if data.incr %} 
+                            <span class="badge badge-md positive-dark">
+                                +6 ↑
+                            </span>  
+                            {% endif %}
+                            <div>
+                                <i class="fa-light fa-arrow-up-right text-brand-sky text-lg {% if data.type == '2' %} !text-orange-500{% endif %}"></i>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endfor %}
+            </div>
+            <!-- Worker Progress -->
+            <div class="flex gap-4 w-full justify-between p-4 rounded-b-xl bg-white"> 
+                {% for data in workerporgress %}
+                <div class="flex flex-col p-2  bg-indigo-50 rounded-xl w-full">
+                    <h4 class="text-sm font-medium py-2">{{data.title}}</h4>
+                    {% for progress in data.progress %}
+                    <div class="flex gap-8 w-full items-end rounded-lg">
+                        <div class="flex flex-col gap-1 w-full">
+                            <div class="flex gap-4 items-center">
+                                <span class="text-sm block">{{progress}}</span> <span class="rounded-full px-3 py-0.5 bg-indigo-100 text-brand-indigo text-xs">{{progress}}%</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div class="bg-brand-indigo h-2.5 rounded-full" style="width: {{56}}%"></div>
+                            </div>
+                        </div>
+                        <span class="text-lg">{{56}}</span> 
+                    </div> 
+                    {% endfor %}   
+                </div>
+                {% endfor %}   
+            </div>
         </div> 
-        {% include 'tailwind/components/opportunity-dashboard/workers-funnelview.html' %}  
+        <!-- worker progress funnel view -->
+        <div class="flex flex-col gap-8 w-full p-8 shadow-sm rounded-xl bg-white">
+            <h4 class="text-brand-deep-purple font-medium">Worker Progress Funnel</h4>
+            <div class="flex flex-col md:flex-row gap-4 justify-between">
+                {% for data in funnel%}
+                    <div class="flex flex-col gap-2"> 
+                        <div class="flex items-center gap-2">
+                        <div class="text-brand-indigo text-lg p-2 rounded bg-indigo-100 aspect-square text-center h-12 w-12 place-content-center">
+                            <i class="fa-light fa-{{ data.icon }}"></i>
+                        </div> 
+                        {% if not forloop.last %}
+                        <div class="relative w-32 h-0.5 bg-transparent border-dashed border-t-2 border-gray-400 my-6">
+                            <!-- Left part of the open arrow -->
+                            <div class="absolute -right-1 -top-[6.5px] w-2.5 h-2.5 border-t-2 border-r-2 border-gray-400 rotate-45"></div> 
+                        </div>
+                        {% endif %}
+                    </div>
+                        <p class="text-xl font-semibold text-brand-deep-purple">{{ data.count }}</p>
+                        <p class="text-xs font-normal text-gray-500 whitespace-nowrap">{{ data.stage }}</p>
+                </div>
+                {% endfor %}  
+            </div>
+        </div>
     </div>
 {% endblock %}
 

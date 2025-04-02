@@ -1,0 +1,196 @@
+<div class="flex flex-col gap-4">
+    <h6>Verification Flags</h6>
+
+    <!-- Location Flags -->
+    <h6 class="text-sm font-medium text-brand-deep-purple">Location Flags</h6>
+    <div id="main-flags" class="w-full rounded-lg shadow-sm bg-white p-6 grid grid-cols-2 gap-x-16">  
+        <!-- Location Flags -->
+        <div class="flex flex-col gap-4">
+            <div class="w-full flex justify-between rounded-lg h-12" >
+                <div>
+                    <spna class="font-medium text-sm text-gray-700 block">Check Duplicates</span>
+                    <span class="text-xs text-gray-400 block font-normal">Flag duplicate forms submission for an entity</span>
+                </div>
+                <!-- toggle switch -->
+                <input id="switch" type="checkbox" class="simple-toggle" /> 
+            </div> 
+            <div class="w-full flex justify-between rounded-lg h-12" >
+                <div>
+                    <spna class="font-medium text-sm text-gray-700 block">Check GPS</span>
+                    <span class="text-xs text-gray-400 block font-normal">Flag form with no location information</span>
+                </div>
+                <!-- toggle switch -->
+                <input id="switch" type="checkbox" class="simple-toggle" /> 
+            </div> 
+            <div class="w-full flex justify-between rounded-lg h-12" >
+                <div>
+                    <spna class="font-medium text-sm text-gray-700 block">Check Catchments Area</span>
+                    <span class="text-xs text-gray-400 block font-normal">Flag forms outside a user’s assigned catchment area</span>
+                </div>
+                <!-- toggle switch -->
+                <input id="switch" type="checkbox" class="simple-toggle" /> 
+            </div> 
+        </div>
+
+        <!-- dates -->
+        <!-- please define your date format -->
+        <div class="grid grid-cols-2 gap-4"> 
+            <div class="col-span-2">
+                <h6 class="font-medium text-brand-indigo text-sm">Location Distance</h6>
+                <span class="text-sm text-gray-400 leading-snug">Minimum distance between from location (meters).</span>
+            </div>  
+            <div class="simple-input col-span-2">
+                <input type="text" placeholder="Location Distance"/>
+                <i class="fa-light fa-location-dot"></i>
+            </div>
+            <div class="col-span-2">
+                <h6 class="font-medium text-brand-indigo text-sm">Form Submission Hours</h6>
+                <span class="text-sm text-gray-400 leading-snug">Timings to submit the forms.</span>
+            </div>  
+            <div class="start-date simple-date-picker">
+                <input type="datetime-local" id="start-date" placeholder="mm/dd/yy">
+                <i class="fa-light fa-calendar-arrow-up"></i>
+            </div>
+            <div class="end-date simple-date-picker">
+                <input type="datetime-local" id="end-date" placeholder="mm/dd/yy">
+                <i class="fa-light fa-calendar-arrow-down"></i>
+            </div> 
+        </div> 
+    </div>
+
+    <!-- Delviery Flags -->
+    <h6 class="text-sm font-medium text-brand-deep-purple">Delivery Unit Flags</h6>
+    <div id="delivery-unit-flags" class="w-full rounded-lg shadow-sm bg-white p-6 flex flex-col gap-x-16 gap-y-4">
+        <div class="grid grid-cols-4 gap-4 ">
+            <h6 class="text-sm text-gray-700 font-medium col-span-2">Delivey Units</h6> 
+            <h6 class="text-sm text-gray-700 font-medium">Attachments</h6> 
+            <div>
+                <h6 class="text-sm text-gray-700 font-medium">Duration</h6>
+                <span class="text-xs text-gray-400">Minimum  time to complete the form</span>
+            </div> 
+        </div>
+        <div class="grid grid-cols-4 gap-4 items-center">
+            <div class="simple-dropdown col-span-2">
+                <select required>
+                    <option value="Select an option" selected="selected" disabled hidden>Delivery Unit Name</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                </select>    
+                <i class="fa-light fa-memo"></i>
+            </div>
+            <div class="flex items-center gap-4 h-12 px-4">
+                <input id="switch" type="checkbox" class="simple-toggle" />
+                <span class="text-sm text-gray-400">Required</span>
+            </div>
+            <div class="simple-input">
+                <input type="text" placeholder="Time (minutes)"/>
+                <i class="fa-light fa-clock"></i>
+            </div> 
+        </div>
+        <div class="grid grid-cols-4 gap-4 items-center">
+            <div class="simple-dropdown col-span-2">
+                <select required>
+                    <option value="Select an option" selected="selected" disabled hidden>Delivery Unit Name</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                </select>    
+                <i class="fa-light fa-memo"></i>
+            </div>
+            <div class="flex items-center gap-4 h-12 px-4">
+                <input id="switch" type="checkbox" class="simple-toggle" />
+                <span class="text-sm text-gray-400">Required</span>
+            </div>
+            <div class="simple-input">
+                <input type="text" placeholder="Time (minutes)"/>
+                <i class="fa-light fa-clock"></i>
+            </div> 
+        </div>
+        <div class="grid grid-cols-4 gap-4 items-center">
+            <div class="simple-dropdown col-span-2">
+                <select required>
+                    <option value="Select an option" selected="selected" disabled hidden>Delivery Unit Name</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                </select>    
+                <i class="fa-light fa-memo"></i>
+            </div>
+            <div class="flex items-center gap-4 h-12 px-4">
+                <input id="switch" type="checkbox" class="simple-toggle" />
+                <span class="text-sm text-gray-400">Required</span>
+            </div>
+            <div class="simple-input">
+                <input type="text" placeholder="Time (minutes)"/>
+                <i class="fa-light fa-clock"></i>
+            </div> 
+        </div>
+    </div>
+
+    <!-- Form Valdiation Flags -->
+    <h6 class="text-sm font-medium text-brand-deep-purple">Form Valdiation Flags</h6>
+    <div id="from-validation-rule" class="w-full rounded-lg shadow-sm bg-white p-6 grid grid-cols-2 gap-x-16 gap-y-4">
+        <div class="col-span-1 space-y-4">
+            <div class="simple-dropdown">
+                <select required>
+                    <option value="Select an option" selected="selected" disabled hidden>Delivery Unit Name</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                </select>    
+                <i class="fa-light fa-memo"></i>
+            </div>
+            <div class="simple-dropdown">
+                <select required>
+                    <option value="Select an option" selected="selected" disabled hidden>Question Path</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                </select>    
+                <i class="fa-light fa-circle-question"></i>
+            </div>
+            <div class="simple-dropdown">
+                <select required>
+                    <option value="Select an option" selected="selected" disabled hidden>Question Value</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                    <option value="">Option A</option>
+                </select>    
+                <i class="fa-light fa-table-list"></i>
+            </div>
+        </div>
+        <ul>
+           <h6 class="text-sm">Delviery Units</h6>
+            <li class="py-2 flex gap-4 items-center">
+                <input id="input-1" type="checkbox" class="simple-checkbox">
+                <label class="text-sm" for="input-1">Delivery Unit 1</label>
+            </li>
+            <li class="py-2 flex gap-4 items-center">
+                <input id="input-2" type="checkbox" class="simple-checkbox">
+                <label class="text-sm" for="input-2">Delivery Unit 2</label>
+            </li>
+            <li class="py-2 flex gap-4 items-center">
+                <input id="input-3" type="checkbox" class="simple-checkbox">
+                <label class="text-sm" for="input-3">Delivery Unit 3</label>
+            </li>
+            <li class="py-2 flex gap-4 items-center">
+                <input id="input-4" type="checkbox" class="simple-checkbox">
+                <label class="text-sm" for="input-4">Delivery Unit 4</label>
+            </li>
+         </ul>
+    </div>
+</div>
+
+<script> 
+    document.addEventListener("DOMContentLoaded", function() {
+        flatpickr("#start-date", {});
+        flatpickr("#end-date", {});
+    });
+</script>
