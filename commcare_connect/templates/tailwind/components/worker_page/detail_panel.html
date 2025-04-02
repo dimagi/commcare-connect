@@ -1,7 +1,7 @@
 <div class="flex flex-col gap-2" x-data="{
   slideIndex: 1,
   slides: [
-      { src: '../static/images/checkup.webp', alt: 'Checkup Image 1' },
+      { src: '../static/images/checkup.jpg', alt: 'Checkup Image 1' },
       { src: '../static/images/checkup.jpg', alt: 'Checkup Image 2' },
       { src: '../static/images/checkup.webp', alt: 'Checkup Image 3' },
       { src: '../static/images/checkup.jpg', alt: 'Checkup Image 4' },
@@ -32,30 +32,32 @@
       }
   }
 }">
-  <div class="px-4 rounded-lg bg-white h-14 shadow-sm flex items-center">
-    <p class="text-brand-deep-purple font-normal text-sm">Details</p>
+  <div class="flex items-center px-4 bg-white rounded-lg shadow-sm h-14">
+    <p class="text-sm font-normal text-brand-deep-purple">Details</p>
   </div>
 
-  <div class="p-4 rounded-lg bg-white mt-2 overflow-y-auto h-[500px]">
+  <div class="p-4 rounded-lg shadow-sm h-[500px] bg-white overflow-y-auto">
+
     <div class="flex flex-col gap-6">
+
       <!-- Message Section -->
       <template x-for="(message, index) in messages" :key="index">
         <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
           <div class="flex items-center gap-4">
-            <i class="fa-light fa-message-lines text-brand-deep-purple text-lg"></i>
+            <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
             <div class="flex items-center gap-1">
-              <span class="text-brand-blue-light text-xs">06 May, 2024</span>
+              <span class="text-xs text-brand-blue-light">06 May, 2024</span>
               <span class="flex items-center text-xs text-brand-blue-light">
-                <span class="text-brand-indigo text-2xl mr-1">•</span>
+                <span class="mr-1 text-2xl text-brand-indigo">•</span>
                 Program Manager Organization Names
               </span>
             </div>
           </div>
           <div>
             <div class="flex items-center gap-4 mt-2">
-              <i class="fa-light fa-arrows-from-dotted-line text-lg text-brand-blue-light cursor-pointer"
+              <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
                 @click="message.expanded = !message.expanded"></i>
-              <p class="text-brand-deep-purple text-xs">
+              <p class="text-xs text-brand-deep-purple">
                 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus
                 venenatis.
               </p>
@@ -64,13 +66,13 @@
               <div></div>
               <div>
                 <div class="flex items-center gap-1 ml-4">
-                  <span class="text-brand-blue-light text-xs">06 May, 2024</span>
+                  <span class="text-xs text-brand-blue-light">06 May, 2024</span>
                   <span class="flex items-center text-xs text-brand-blue-light">
-                    <span class="text-brand-indigo text-2xl mr-1">•</span>
+                    <span class="mr-1 text-2xl text-brand-indigo">•</span>
                     Network Manager Organization Names
                   </span>
                 </div>
-                <p class="text-brand-deep-purple text-xs ml-5">
+                <p class="ml-5 text-xs text-brand-deep-purple">
                   Lorems ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus
                   venenatis.
                 </p>
@@ -82,129 +84,135 @@
 
       <!-- Media Section -->
       <div class="flex justify-between">
-        <p class="text-brand-deep-purple font-medium text-sm">Media</p>
+        <p class="text-sm font-medium text-brand-deep-purple">Media</p>
         <div class="flex gap-2">
           <div @click="plusDivs(-1)">
-            <i class="fa-light fa-arrow-left text-slate-400 cursor-pointer"></i>
+            <i class="cursor-pointer fa-light fa-arrow-left text-slate-400"></i>
           </div>
           <div @click="plusDivs(1)">
-            <i class="fa-light fa-arrow-right text-slate-400 cursor-pointer"></i>
-          </div>
-        </div>
-        <div class="grid grid-cols-9 gap-4 cursor-pointer values">
-          <template x-for="(slide, index) in slides" :key="index">
-            <img :src="slide.src" :alt="slide.alt" class="imageopen object-cover rounded-2xl aspect-square col-span-3"
-              x-show="index + 1 >= slideIndex && index + 1 < slideIndex + visibleSlides"
-              @click="openPopup(slide.src)" />
-          </template>
-        </div>
-
-        <hr class="h-px bg-gray-200 border-0">
-
-        <!-- Information -->
-        <div class="grid grid-cols-3 gap-4">
-          <p class="text-sm font-medium text-brand-deep-purple col-span-3">Information</p>
-          <div>
-            <div class="text-sm text-brand-blue-light">Payment Unit</div>
-            <div class="text-sm font-normal text-brand-deep-purple">Name of Payment Unit</div>
-          </div>
-          <div>
-            <div class="text-sm text-brand-blue-light">Entity Name</div>
-            <div class="text-sm font-normal text-brand-deep-purple">Name of Entity</div>
-          </div>
-          <div>
-            <div class="text-sm text-brand-blue-light">Entity ID</div>
-            <div class="text-sm font-normal text-brand-deep-purple">1A34TTY</div>
-          </div>
-        </div>
-
-        <hr class="h-px bg-gray-200 border-0">
-
-        <!-- Verification Flags -->
-        <div class="grid grid-cols-3 gap-4">
-          <p class="text-brand-deep-purple font-medium text-sm col-span-3">Verification flags</p>
-          <div>
-            <div class="text-brand-blue-light text-sm">Location</div>
-            <div class="text-brand-deep-purple font-normal text-sm">Less than 2m</div>
-          </div>
-          <div>
-            <div class="text-brand-blue-light text-sm">Form Duration</div>
-            <div class="text-brand-deep-purple font-normal text-sm">4.6min</div>
-          </div>
-          <div>
-            <div class="text-brand-blue-light text-sm">Photos</div>
-            <div class="text-brand-deep-purple font-normal text-sm">Yes</div>
-          </div>
-          <div>
-            <div class="text-sm text-brand-blue-light">Duplicate</div>
-            <div class="text-sm font-normal text-brand-deep-purple">Yes</div>
-          </div>
-          <div>
-            <div class="text-sm text-brand-blue-light">Flag Name</div>
-            <div class="text-sm font-normal text-brand-deep-purple">Flag Value</div>
-          </div>
-          <div>
-            <div class="text-sm text-brand-blue-light">Flag Name</div>
-            <div class="text-sm font-normal text-brand-deep-purple">Flag Value</div>
-          </div>
-        </div>
-        <hr class="h-px bg-gray-200 border-0">
-
-        <!-- Delivery Timestamp -->
-        <div class="w-full rounded-lg bg-slate-100 p-4 h-40 grid grid-cols-2 grid-rows-2">
-          <p class="text-brand-deep-purple text-sm">Delivery Time-stamp</p>
-          <div class="justify-self-end">
-            <span class="badge badge-md primary-dark">
-              12 Jul, 2024
-            </span>
-          </div>
-        </div>
-
-        <!-- Map -->
-        <div class="flex flex-col gap-2 h-64">
-          <p class="text-brand-deep-purple font-medium text-sm mb-3">Map</p>
-          <div class="bg-slate-50 w-full rounded-lg p-4 h-full">
+            <i class="cursor-pointer fa-light fa-arrow-right text-slate-400"></i>
           </div>
         </div>
       </div>
 
-      <!-- Buttons -->
-      <div class="flex justify-end gap-4 items-center p-2 bg-white rounded-lg shadow-sm">
-        <button class="button button-md outline-style">Back</button>
-        <button class="button button-md primary-dark">Accept</button>
+      <div class="grid grid-cols-9 gap-4cursor-pointer values">
+        <template x-for="(slide, index) in slides" :key="index">
+          <img :src="slide.src" :alt="slide.alt" class="object-cover col-span-3 imageopen rounded-2xl aspect-square"
+            x-show="index + 1 >= slideIndex && index + 1 < slideIndex + visibleSlides" @click="openPopup(slide.src)" />
+        </template>
       </div>
 
-      <!-- Popup Modal -->
-      <div x-cloak class="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center" x-show="popupOpen"
-        @click="closePopup($event)" x-transition.opacity>
-        <div class="bg-white rounded-lg overflow-y-auto relative p-4 max-w-lg popup-content">
-          <div class="flex justify-between mb-2">
-            <p class="text-brand-deep-purple font-medium text-sm">Media</p>
-            <div class="cursor-pointer" @click="closePopup($event)">
-              <i class="fa-light fa-xmark"></i>
-            </div>
-          </div>
-          <div class="relative inline-block">
-            <img :src="popupImageSrc" alt="Modal Image" class="w-full rounded-lg max-w-full h-1/2 object-contain" />
-            <a :href="popupImageSrc" download="downloaded-image.jpg" class="absolute bottom-2 right-2"
-              aria-label="Download Image">
-              <i class="fa-light fa-download text-brand-deep-purple"></i>
-            </a>
-          </div>
-          <div class="values grid grid-cols-12 mt-4 gap-3 items-center border-b border-gray-200 w-full">
-            <div class="col-span-1 aspect-square flex justify-center items-center cursor-pointer" @click="plusDivs(-1)">
-              <i class="fa-light fa-arrow-left text-black text-lg"></i>
-            </div>
-            {% for slide in slides %}
-            <img src="{{ slide.src }}" alt="{{ slide.alt }}"
-              class="imageopen object-cover rounded-2xl aspect-square col-span-3"
-              x-show=" {{ forloop.counter }} >= slideIndex && {{ forloop.counter }} < slideIndex + visibleSlides"
-              @click="openPopup('{{ slide.src }}')" />
-            {% endfor %}
-            <div class="col-span-1 aspect-square flex justify-center items-center cursor-pointer" @click="plusDivs(1)">
-              <i class="fa-light fa-arrow-right text-black text-lg"></i>
-            </div>
-          </div>
+      <hr class="h-px bg-gray-200 border-0">
+
+      <!-- Information -->
+      <div class="grid grid-cols-3 gap-4">
+        <p class="text-sm font-medium text-brand-deep-purple col-span-3">Information</p>
+        <div>
+          <div class="text-sm text-brand-blue-light">Payment Unit</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Name of Payment Unit</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Entity Name</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Name of Entity</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Entity ID</div>
+          <div class="text-sm font-normal text-brand-deep-purple">1A34TTY</div>
+        </div>
+      </div>
+
+      <hr class="h-px bg-gray-200 border-0">
+
+      <!-- Verification Flags -->
+      <div class="grid grid-cols-3 gap-4">
+        <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
+        <div>
+          <div class="text-sm text-brand-blue-light">Location</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Less than 2m</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Form Duration</div>
+          <div class="text-sm font-normal text-brand-deep-purple">4.6min</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Photos</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Yes</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Duplicate</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Yes</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Flag Name</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Flag Value</div>
+        </div>
+        <div>
+          <div class="text-sm text-brand-blue-light">Flag Name</div>
+          <div class="text-sm font-normal text-brand-deep-purple">Flag Value</div>
+        </div>
+      </div>
+
+      <hr class="h-px bg-gray-200 border-0">
+
+      <!-- Delivery Timestamp -->
+      <div class="w-full rounded-lg bg-slate-100 p-4 h-40 grid grid-cols-2 grid-rows-2">
+        <p class="text-sm text-brand-deep-purple">Delivery Time-stamp</p>
+        <div class="justify-self-end">
+          <span
+            class="badge badge-md primary-dark">
+            12 Jul, 2024
+      </span>
+        </div>
+      </div>
+
+      <!-- Map -->
+      <div class="flex flex-col gap-2 h-64">
+        <p class="mb-3 text-sm font-medium text-brand-deep-purple">Map</p>
+        <div class="w-full p-4 rounded-lg bg-slate-50 h-full"> 
         </div>
       </div>
     </div>
+  </div>
+  
+
+    <!-- Buttons -->
+    <div class="flex justify-end gap-4 items-center p-2 bg-white rounded-lg shadow-sm">
+      <button class="button button-md outline-style">Back</button>
+      <button
+        class="button button-md primary-dark">Accept</button>
+    </div>
+
+    <!-- Popup Modal -->
+    <div x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80" x-show="popupOpen"
+      @click="closePopup($event)" x-transition.opacity>
+      <div class="relative max-w-lg p-4 overflow-y-auto bg-white rounded-lg popup-content">
+        <div class="flex justify-between mb-2">
+          <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+          <div class="cursor-pointer" @click="closePopup($event)">
+            <i class="fa-light fa-xmark"></i>
+          </div>
+        </div>
+        <div class="relative inline-block">
+          <img :src="popupImageSrc" alt="Modal Image" class="object-contain w-full max-w-full rounded-lg h-1/2" />
+          <a :href="popupImageSrc" download="downloaded-image.jpg" class="absolute bottom-2 right-2"
+            aria-label="Download Image">
+            <i class="fa-light fa-download text-brand-deep-purple"></i>
+          </a>
+        </div>
+        <div class="grid items-center w-full grid-cols-12 gap-3 mt-4 border-b border-gray-200 values">
+          <div class="flex items-center justify-center col-span-1 cursor-pointer aspect-square" @click="plusDivs(-1)">
+            <i class="text-lg text-black fa-light fa-arrow-left"></i>
+          </div>
+          {% for slide in slides %}
+          <img src="{{ slide.src }}" alt="{{ slide.alt }}"
+            class="object-cover col-span-3 imageopen rounded-2xl aspect-square"
+            x-show=" {{ forloop.counter }} >= slideIndex && {{ forloop.counter }} < slideIndex + visibleSlides"
+            @click="openPopup('{{ slide.src }}')" />
+          {% endfor %}
+          <div class="flex items-center justify-center col-span-1 cursor-pointer aspect-square" @click="plusDivs(1)">
+            <i class="text-lg text-black fa-light fa-arrow-right"></i>
+          </div>
+        </div>
+      </div> 
+    </div>
+</div>
