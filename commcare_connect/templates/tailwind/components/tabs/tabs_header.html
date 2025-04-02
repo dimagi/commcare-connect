@@ -12,8 +12,7 @@ hx-trigger="load"
     hx-get="{{tab.url}}"
     hx-target="#flagged-worker-table-container"
     hx-swap="innerHTML"
-    hx-trigger="click"
-  >
+    hx-trigger="click">
     <span>{{ tab.name }}</span>
     <span x-show="activeTab === {{ forloop.counter0 }}" class="ml-1">({{ tab.count }})</span>
     <div

@@ -1,30 +1,7 @@
 from django.http import HttpResponse
 from django.shortcuts import render
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable,CustomTable
-
-
-def custom_table(request, org_slug=None, opp_id=None):
-    data = [
-        {
-            "index": i + 1,
-            "name": f"User {i+1}",
-            "user_id": f"U{i+10000}",
-            "phone_number": f"+1 {i%900+100}-{(i*3)%900+100}-{(i*7)%900+100}",
-            "status": ["Active", "Inactive", "Pending"][i % 3],
-            "visits": (i * 2) % 15 + 1,
-            "last_visit": f"2025-03-{31 - (i % 10):02d}",
-            "visit_status": ["Completed", "Missed", "Pending"][i % 3],
-            "visit_date": f"2025-03-{30 - (i % 10):02d}",
-            "visit_time": f"{8 + (i % 10)}:{30 if i % 2 == 0 else 00}",
-            "visit_location": ["New York, USA", "Los Angeles, USA", "Chicago, USA", "Houston, USA", "San Francisco, USA"][i % 5],
-        }
-        for i in range(30)
-    ]
-
-    table = CustomTable(data)
-    return render(request, "tailwind/pages/custom_table.html", {"table": table})
-
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable
 
 def home(request, org_slug=None, opp_id=None):
     # Static data for the cards
@@ -62,6 +39,13 @@ def about(request, org_slug=None, opp_id=None):
 
 
 def worker(request, org_slug=None, opp_id=None):
+    user_kpi = [
+           {"name":"Total Delieveries", "icon":"memo","count":234,"dropdown":'false' },
+           {"name":"Flagged Delieveries", "icon":"flag-swallowtail","count":234,"dropdown":'false' },
+           {"name":"Rejected Delieveries", "icon":"thumbs-down","count":234,"dropdown":'true' },
+           {"name":"Accrued Payments", "icon":"money-bill-simple-wave","count":234,"dropdown":'false' },
+           {"name":"Paid Payments", "icon":"hand-holding-dollar","count":234,"dropdown":'true' },
+        ]
     data = [
         {"name": "Flagged", "count": "45", "url": "/tables"},
         {"name": "PM Review", "count": "45", "url": "/tables"},
@@ -71,10 +55,11 @@ def worker(request, org_slug=None, opp_id=None):
         {"name": "All", "count": "45", "url": "/tables"},
     ]
 
-    return render(request, "tailwind/pages/worker.html", {"header_title": "Worker", "tabs": data})
+    return render(request, "tailwind/pages/worker.html", {"header_title": "Worker", "tabs": data, "kpi":user_kpi })
 
 
 def opportunities(request, org_slug=None, opp_id=None):
+    path = ['programs','opportunities','opportunity name' ]
     data = [
         {"name": "Learn App", "count": "2", "icon": "fa-book-open-cover"},
         {"name": "Delivery App", "count": "2", "icon": "fa-clipboard-check"},
@@ -84,37 +69,37 @@ def opportunities(request, org_slug=None, opp_id=None):
         {
             "name": "Delivery Type",
             "count": "Early Childhood Development",
-            "icon": "fa-file-check",
+            "icon": "file-check",
             "color": "",
         },
         {
             "name": "Start Date",
             "count": "21-Dec-2024",
-            "icon": "fa-calendar-range",
+            "icon": "calendar-range",
             "color": "",
         },
         {
             "name": "End Date",
             "count": "21-Dec-2024",
-            "icon": "fa-arrow-right",
+            "icon": "arrow-right",
             "color": "",
         },
         {
             "name": "Total Workers",
             "count": "248",
-            "icon": "fa-users",
+            "icon": "users",
             "color": "brand-mango",
         },
         {
             "name": "Total Service Deliveries",
             "count": "350",
-            "icon": "fa-gears",
+            "icon": "gears",
             "color": "",
         },
         {
             "name": "Worker Budget",
             "count": "₹250,000",
-            "icon": "fa-money-bill",
+            "icon": "money-bill",
             "color": "",
         },
     ]
@@ -171,10 +156,33 @@ def opportunities(request, org_slug=None, opp_id=None):
             ],
         },
     ]
+    workerporgress = [
+        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+    ]
+
+    funnel = [
+        {"index": 1, "stage": "invited", "count": "100","icon":"envelope"},
+        {"index": 2, "stage": "Accepted", "count": "98","icon":"circle-check"},
+        {"index": 3, "stage": "Started Learning", "count": "87","icon":"book-open-cover"},
+        {"index": 4, "stage": "Completed Learning", "count": "82","icon":"book-blank"},
+        {"index": 5, "stage": "Complted Assesment", "count": "81","icon":"award-simple"},
+        {"index": 6, "stage": "Claimed Job", "count": "100","icon":"user-check"},
+        {"index": 6, "stage": "Started Delivery", "count": "100","icon":"house-chimney-user"},
+    ]
     return render(
         request,
         "tailwind/pages/opportunities.html",
-        {"data": data, "totalinfo": totalinfo, "opList": opList, "header_title": "Opportunities"},
+        {
+            "data": data,
+            "totalinfo": totalinfo,
+            "opList": opList,
+            "header_title": "Opportunities",
+            "funnel":funnel,
+            "workerprogress":workerporgress,
+            'path':path
+        },
     )
 
 
