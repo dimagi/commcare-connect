@@ -1,7 +1,8 @@
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.template import Template, Context
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable,CustomTable
+from .tw_tables import OpportunitiesListTable, PayWorker, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable,CustomTable
 
 
 def custom_table(request, org_slug=None, opp_id=None):
@@ -1343,3 +1344,152 @@ def worker_learn(request, org_slug=None, opp_id=None):
 
     table = WorkerLearnTable(data)
     return render(request, "tailwind/pages/worker_learn.html",{ "table": table})
+
+def pay_worker(request, org_slug=None, opp_id=None):
+
+    data = [
+    {
+        "index": 1,
+        "worker": "Worker 1",
+        "unpaid": "$ 4,780",
+        "toBePaid": "4,780",
+        "paymentDate": "2025-08-12"
+    },
+    {
+        "index": 2,
+        "worker": "Worker 2",
+        "unpaid": "$ 3,500",
+        "toBePaid": "3,500",
+        "paymentDate": "15-Aug-2025"
+    },
+    {
+        "index": 3,
+        "worker": "Worker 3",
+        "unpaid": "$ 2,950",
+        "toBePaid": "2,950",
+        "paymentDate": "18-Aug-2025"
+    },
+    {
+        "index": 4,
+        "worker": "Worker 4",
+        "unpaid": "$ 5,600",
+        "toBePaid": "5,600",
+        "paymentDate": "20-Aug-2025"
+    },
+    {
+        "index": 5,
+        "worker": "Worker 5",
+        "unpaid": "$ 6,120",
+        "toBePaid": "6,120",
+        "paymentDate": "22-Aug-2025"
+    },
+    {
+        "index": 6,
+        "worker": "Worker 6",
+        "unpaid": "$ 4,300",
+        "toBePaid": "4,300",
+        "paymentDate": "25-Aug-2025"
+    },
+    {
+        "index": 7,
+        "worker": "Worker 7",
+        "unpaid": "$ 3,950",
+        "toBePaid": "3,950",
+        "paymentDate": "28-Aug-2025"
+    },
+    {
+        "index": 8,
+        "worker": "Worker 8",
+        "unpaid": "$ 2,800",
+        "toBePaid": "2,800",
+        "paymentDate": "30-Aug-2025"
+    },
+    {
+        "index": 9,
+        "worker": "Worker 9",
+        "unpaid": "$ 3,600",
+        "toBePaid": "3,600",
+        "paymentDate": "02-Sep-2025"
+    },
+    {
+        "index": 10,
+        "worker": "Worker 10",
+        "unpaid": "$ 4,200",
+        "toBePaid": "4,200",
+        "paymentDate": "05-Sep-2025"
+    },
+    {
+        "index": 11,
+        "worker": "Worker 11",
+        "unpaid": "$ 7,000",
+        "toBePaid": "7,000",
+        "paymentDate": "08-Sep-2025"
+    },
+    {
+        "index": 12,
+        "worker": "Worker 12",
+        "unpaid": "$ 5,500",
+        "toBePaid": "5,500",
+        "paymentDate": "10-Sep-2025"
+    },
+    {
+        "index": 13,
+        "worker": "Worker 13",
+        "unpaid": "$ 6,900",
+        "toBePaid": "6,900",
+        "paymentDate": "12-Sep-2025"
+    },
+    {
+        "index": 14,
+        "worker": "Worker 14",
+        "unpaid": "$ 8,100",
+        "toBePaid": "8,100",
+        "paymentDate": "15-Sep-2025"
+    },
+    {
+        "index": 15,
+        "worker": "Worker 15",
+        "unpaid": "$ 3,300",
+        "toBePaid": "3,300",
+        "paymentDate": "18-Sep-2025"
+    },
+    {
+        "index": 16,
+        "worker": "Worker 16",
+        "unpaid": "$ 4,500",
+        "toBePaid": "4,500",
+        "paymentDate": "20-Sep-2025"
+    },
+    {
+        "index": 17,
+        "worker": "Worker 17",
+        "unpaid": "$ 5,300",
+        "toBePaid": "5,300",
+        "paymentDate": "22-Sep-2025"
+    },
+    {
+        "index": 18,
+        "worker": "Worker 18",
+        "unpaid": "$ 6,000",
+        "toBePaid": "6,000",
+        "paymentDate": "25-Sep-2025"
+    },
+    {
+        "index": 19,
+        "worker": "Worker 19",
+        "unpaid": "$ 7,800",
+        "toBePaid": "7,800",
+        "paymentDate": "28-Sep-2025"
+    },
+    {
+        "index": 20,
+        "worker": "Worker 20",
+        "unpaid": "$ 9,000",
+        "toBePaid": "9,000",
+        "paymentDate": "30-Sep-2025"
+    }
+]
+
+    table = PayWorker(data)
+    
+    return render(request, "tailwind/components/tables/table.html",{ "table": table})
