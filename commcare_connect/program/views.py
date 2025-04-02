@@ -6,6 +6,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 from django_tables2 import SingleTableView
 
+from commcare_connect.opportunity.models import UserVisit
 from commcare_connect.opportunity.views import OpportunityInit
 from commcare_connect.organization.decorators import org_admin_required, org_program_manager_required
 from commcare_connect.organization.models import Organization
@@ -277,3 +278,47 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
         start_date = self.request.GET.get("start_date") or None
         end_date = self.request.GET.get("end_date") or None
         return get_delivery_performance_report(program, start_date, end_date)
+
+
+from django.contrib.auth.decorators import login_required, user_passes_test
+
+
+# @login_required
+# @user_passes_test(lambda u: u.is_superuser)
+def program_home(request, org_slug):
+    from django.db.models import Count, F
+
+    # Fetch the organization by slug
+    org = Organization.objects.get(slug=org_slug)
+
+    # Get ProgramApplications with related Program details
+    apps = (
+        ProgramApplication.objects.filter(organization=org)
+        .select_related("program", "program__organization", "program__delivery_type")
+        .order_by("-date_created")
+        .values(
+            "program__name",
+            "program__start_date",
+            "program__end_date",
+            "program__description",
+            "status",
+            "program__organization__name",
+            "program__delivery_type__name",
+            "date_created",
+        )
+    )
+
+    # Sort by ProgramApplication date first, then Program start_date
+    results = sorted(apps, key=lambda x: (x["date_created"], x["program__start_date"]), reverse=True)
+    pending_counts = (
+        UserVisit.objects.filter(status="pending")
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")  # Separate field names
+        .annotate(count=Count("id"))
+    )
+    context = {
+        "program_apps": results,
+        "review_counts": pending_counts,
+        "pending_payments": pending_counts, # Todo
+        "inactive_workers": pending_counts, # Todo
+    }  # The queryset from the ORM query
+    return render(request, "program/tailwind/home.html", context)

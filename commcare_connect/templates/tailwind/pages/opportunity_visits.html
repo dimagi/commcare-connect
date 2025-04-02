@@ -1,0 +1,25 @@
+{% extends 'tailwind/base.html' %}
+{% load django_tables2 %}
+
+{% block content %}
+    {# Main container with the table #}
+    <div class="md:max-w-screen-lg h-[calc(100vh-90px)] mx-auto flex flex-col gap-4 w-full">
+
+        {# Opportunity Name Component #}
+        <p class="text-brand-deep-purple font-medium title-sm">Opportunity Name</p>
+
+        {# Content Container #}
+        <div class="flex flex-col gap-2 min-h-screen">
+
+            {# Header Panel #}
+            <div class="w-full h-12 shadow-sm flex items-center rounded-lg bg-slate-50 px-4">
+                <p class="text-brand-deep-purple font-medium text-sm">Adding Budget</p>
+            </div>
+
+            <div class="flex-1 overflow-y-auto bg-white rounded-lg shadow-sm">
+                {% render_table table %}
+            </div>
+
+        </div>
+    </div>
+{% endblock %}

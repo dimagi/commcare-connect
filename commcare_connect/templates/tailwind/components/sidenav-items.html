@@ -1,0 +1,10 @@
+<div class="relative p-3 rounded-lg group hover:bg-brand-sunset-light" :class="{{state}} ? 'w-full' : 'w-10'">
+    <a href={{target}} class="flex items-center justify-start">
+        <i class="fa-light fa-{{icon}}"></i>
+        <span x-show="{{state}}" x-cloak class="ml-4 text-xs">{{name}}</span>
+    </a>
+    {% if name == 'Dashboard' %}
+    <div class="absolute right-0 block w-1 rounded-lg top-1/4 h-1/2 bg-brand-mango"></div>
+    {% endif %}
+    <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-brand-deep-purple group-hover:block whitespace-nowrap">{{name}}</div>
+</div>
