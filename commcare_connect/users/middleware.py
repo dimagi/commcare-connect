@@ -25,7 +25,16 @@ def _get_org_membership(request):
     return request._cached_org_membership
 
 
+def _get_all_memberships(request):
+    if not hasattr(request, "_cached_memberships"):
+        org = request.org
+        membership = Membership.objects.filter(user=request.user).exclude(organization=org)
+        request._cached_memberships = membership
+    return request._cached_memberships
+
+
 class OrganizationMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
         request.org = SimpleLazyObject(lambda: _get_organization(request, view_kwargs))
         request.org_membership = SimpleLazyObject(lambda: _get_org_membership(request))
+        request.memberships = SimpleLazyObject(lambda: _get_all_memberships(request))
