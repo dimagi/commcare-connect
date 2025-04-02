@@ -809,3 +809,76 @@ class CustomTable(BaseTailwindTable):
             '<div class="">{}</div>', value
         )
                     
+class PayWorker(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    worker = tables.Column(verbose_name="Worker")
+    unpaid = tables.Column(verbose_name="Unpaid")
+    toBePaid = tables.Column(verbose_name="To Be Paid")
+    paymentDate = tables.Column(verbose_name="Payment Date")
+
+    class Meta:
+        attrs = {
+            "class": "w-full max-w-full",
+            "thead": {"class": "hidden"},
+            "tbody": {"class": "block w-full h-full"},
+        }
+        row_attrs = {
+            "class": "flex text-slate-900 items-center text-xs justify-between h-14 px-3 w-full  hover:bg-gray-100 relative transition-colors duration-300"
+        }
+        sequence = ("index", "worker", "unpaid", "toBePaid", "paymentDate")
+
+    def render_index(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_worker(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_unpaid(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_toBePaid(self, value):
+        return format_html(
+            """
+            <div x-data='{{"originalValue": "{}", "currentValue": "{}", "hasChanged": false, "isValid": true}}'
+                x-init="$watch('currentValue', value => {{
+                    if (value === '') {{
+                        currentValue = '0';
+                        return;
+                    }}
+                    hasChanged = value !== originalValue;
+                    isValid = !isNaN(value) && parseInt(value) >= 0;
+                }})">
+                <div class="flex items-center">
+                    <input
+                        type="text"
+                        x-model="currentValue"
+                        x-on:input="currentValue = $event.target.value.replace(/[^0-9]/g, '')"
+                        :class="{{
+                            'border border-transparent focus:border focus:border-slate-300 focus:outline-none rounded p-1.5 text-start': true,
+                            '': !(hasChanged && isValid),
+                            'bg-indigo-100 border-none rounded-2xl w-fit': hasChanged && isValid,
+                        }}"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        value="{}">
+                </div>
+            </div>
+            """,
+            value,
+            value,
+            value,
+        )
+    def render_paymentDate(self, value):
+        return format_html(
+            """
+            <div>
+                <input type="date"
+                class="border focus:border-slate-300 focus:outline-none rounded w-28 p-2"
+                value="{}">
+            </div>
+            """,
+            value,
+        )

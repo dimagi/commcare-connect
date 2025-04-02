@@ -4,9 +4,10 @@
 <div 
     class="flex flex-col w-full gap-2"
     x-data="{
-        selectedTab: 'learn',
+        selectedTab: '',
         selectedOption: '',
     }"
+    x-init="selectedTab='payments';selectedOption=''" 
 >
     <!-- Tabs -->
     <div class="flex mx-auto items-center justify-between w-[1344px] px-4 bg-slate-50 rounded-lg shadow-sm h-14">
@@ -152,7 +153,7 @@
     </div>
 
     <!-- Tab Content Container -->
-    <div id="opportunity_worker_container" class="w-[1344px] mx-auto" hx-get="/a/test-1/opportunity/1/tw/worker_learn/" hx-swap="innerHTML" hx-trigger="load">
+    <div id="opportunity_worker_container" class="max-w-screen mx-auto" hx-get="/a/test-1/opportunity/1/tw/worker_payments/" hx-swap="innerHTML" hx-trigger="load">
     </div>
 </div>
 {% endblock content %}
