@@ -1,9 +1,11 @@
 import datetime
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal
 from itertools import chain
+from unittest.mock import patch
 
 import pytest
 from django.db import transaction
@@ -16,6 +18,7 @@ from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
     CompletedWorkStatus,
+    ExchangeRate,
     Opportunity,
     OpportunityAccess,
     Payment,
@@ -47,6 +50,7 @@ from commcare_connect.opportunity.visit_import import (
     _bulk_update_visit_review_status,
     _bulk_update_visit_status,
     get_data_by_visit_id,
+    get_exchange_rate,
     get_missing_justification_message,
     update_payment_accrued,
 )
@@ -858,3 +862,31 @@ class TestBulkReviewVisitImport:
         with pytest.raises(expected_exception, match=re.escape(expected_message)):
             for row_number, row in enumerate(dataset, start=2):
                 ReviewVisitRowData(row_number, row, dataset.headers)
+
+
+@pytest.mark.django_db(transaction=True)
+@patch("commcare_connect.opportunity.visit_import.fetch_exchange_rates")
+def test_exchange_rate_race_condition(mock_fetch_exchange_rates):
+    currency_code = "INR"
+    rate = 85.6300
+    rate_date = now().date()
+    ExchangeRate.objects.filter(currency_code=currency_code, rate_date=rate_date).delete()
+
+    mock_fetch_exchange_rates.return_value = {currency_code: rate}
+
+    def get_rate():
+        return get_exchange_rate(currency_code, rate_date)
+
+    # Create a ThreadPoolExecutor to simulate concurrent requests
+    results = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(get_rate) for _ in range(3)]
+
+        for future in futures:
+            results.append(future.result())
+
+    assert all(r == Decimal(rate) for r in results)
+
+    records = ExchangeRate.objects.filter(currency_code=currency_code, rate_date=rate_date)
+    assert records.count() == 1
+    assert mock_fetch_exchange_rates.call_count == 3
