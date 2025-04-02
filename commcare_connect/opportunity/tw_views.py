@@ -1,7 +1,17 @@
+from django import forms
 from django.http import HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable,CustomTable
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+
+from .tw_tables import (
+    CustomTable,
+    OpportunitiesListTable,
+    VisitsTable,
+    WorkerFlaggedTable,
+    WorkerLearnTable,
+    WorkerPaymentsTable,
+)
 
 
 def custom_table(request, org_slug=None, opp_id=None):
@@ -246,7 +256,55 @@ def flagged_workers(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/components/tables/worker_flagged_table.html", {"table": table})
 
 
+class TWAddBudgetExistingUsersForm(AddBudgetExistingUsersForm):
+    additional_visits = forms.IntegerField(
+        widget=forms.NumberInput(
+            attrs={
+                "class": "w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                "x-model": "additionalVisits",
+            }
+        ),
+        required=False,
+    )
+
+    end_date = forms.DateField(
+        widget=forms.DateInput(
+            attrs={
+                "type": "date",
+                "class": "w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500",
+                "x-model": "end_date",
+            }
+        ),
+        label="Extended Opportunity End date",
+        required=False,
+    )
+
+    def __init__(self, *args, **kwargs):
+        opportunity_claims = kwargs.pop("opportunity_claims", [])
+        self.opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+
+        choices = [(opp_claim.id, opp_claim.id) for opp_claim in opportunity_claims]
+        self.fields["selected_users"] = forms.MultipleChoiceField(
+            choices=choices, widget=forms.CheckboxSelectMultiple(attrs={"class": "block space-y-2"})
+        )
+
+
 def opportunity_visits(request, org_slug=None, opp_id=None):
+    from commcare_connect.opportunity.models import OpportunityAccess, OpportunityClaim
+    from commcare_connect.opportunity.views import get_opportunity_or_404
+
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
+    opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
+    opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
+
+    form = TWAddBudgetExistingUsersForm(
+        opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST or None
+    )
+    if form.is_valid():
+        form.save()
+        return redirect("opportunity:detail", org_slug, opp_id)
+
     data = [
         {
             "index": 1,
@@ -411,7 +469,17 @@ def opportunity_visits(request, org_slug=None, opp_id=None):
     ]
 
     table = VisitsTable(data)
-    return render(request, "tailwind/pages/opportunity_visits.html", {"table": table})
+    return render(
+        request,
+        "tailwind/pages/opportunity_visits.html",
+        {
+            "table": table,
+            "form": form,
+            "opportunity_claims": opportunity_claims,
+            "budget_per_visit": opportunity.budget_per_visit_new,
+            "opportunity": opportunity,
+        },
+    )
 
 
 def opportunities_list_table_view(request, org_slug=None, opp_id=None):
@@ -978,6 +1046,7 @@ def opportunities_list(request, org_slug=None, opp_id=None):
         "tailwind/pages/opportunities_list.html",
         {"headers": headers, "data": data, "header_title": "Opportunities List"},
     )
+
 
 def worker_payments(request, org_slug=None, opp_id=None):
     data = [
