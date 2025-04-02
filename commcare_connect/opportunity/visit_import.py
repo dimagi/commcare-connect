@@ -376,7 +376,8 @@ def get_exchange_rate(currency_code, date=None):
         rate = rates.get(currency_code)
         if not rate:
             raise ImportException("Rate not found for opportunity currency")
-        ExchangeRate.objects.create(currency_code=currency_code, rate=rate, rate_date=rate_date)
+        # get_or_create to avoid race condition.
+        ExchangeRate.objects.get_or_create(currency_code=currency_code, rate=rate, rate_date=rate_date)
 
     return rate
 
