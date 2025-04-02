@@ -1,27 +1,26 @@
-{% load static i18n %}
 <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5">
     <div class="flex gap-4 items-center">
-        <i class="fa-light {{ icon }}"></i>
+        <i class="fa-light fa-{{ icon }}"></i>
         <p class="text-base">
-            {{ title }}
+            {{ name }}
         </p>
     </div>
     {% for row in rows %}
-    <div class="flex justify-between">
+    <div class="flex justify-between items-center">
         <div>
-            <p class="font-medium text-gray-900">
-                {% comment %} TODO: Some error in the below line {% endcomment %}
-                {% comment %} <a href="{% url 'opportunity:tw_opportunities' org_slug=request.org.slug opp_id=row.opportunity__id %}" class="hover:underline">
-                    {{ row.opportunity__name }}
-                </a> {% endcomment %}
-            </p>
-            <p class="font-normal text-xs text-gray-400">{{ row.opportunity__name }}</p>
-        </div>
-        {% include 'tailwind/components/buttons/button_secondary_rounded.html' with text=row.count %}
-
+            <p class="font-medium text-gray-900">{{ row.title }}</p>
+            <p class="font-normal text-xs text-gray-400">{{ row.subtitle }}</p>
+        </div> 
+        <button class="rounded-full px-4 py-1 flex items-center gap-4 border border-gray-200 hover:bg-gray-100 cursor-pointer">
+            <span class="text-2xl">11</span>
+            <i class="fa-light fa-arrow-right"></i>
+        </button>
     </div>
     {% endfor %}
     <div class="flex justify-end">
-        {% include 'tailwind/components/buttons/button_text.html' with text='more' %}
+        <button class="button-text">
+            <span>more</span> 
+            <i class="fa-light fa-chevron-down"></i>
+        </button>
     </div>
 </div>
