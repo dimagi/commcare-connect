@@ -332,51 +332,26 @@ class OpportunitiesListTable(tables.Table):
 class WorkerPaymentsTable(tables.Table):
     index = tables.Column(
         orderable=False,
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     worker = tables.Column(
         verbose_name="Name",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     indicator = tables.TemplateColumn(
         verbose_name="Indicator",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
         orderable=False,
         template_code="""
                                     {% if value %}
-                                       <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+                                       <div class="status-active"></div>
                                     {% else %}
-                                        <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+                                        <div class="status-error"></div> 
                                     {% endif %}
                                     """,
     )
     lastActive = tables.Column(
         verbose_name="Last Active",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     accrued = tables.Column(
         verbose_name="Accrued",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     totalPaid = tables.Column(
         verbose_name="Total Paid",
@@ -388,19 +363,9 @@ class WorkerPaymentsTable(tables.Table):
     )
     lastPaid = tables.Column(
         verbose_name="Last Paid",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     confirmed = tables.Column(
         verbose_name="Confirmed",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
 
     def __init__(self, *args, **kwargs):
@@ -532,27 +497,12 @@ class WorkerPaymentsTable(tables.Table):
 class WorkerLearnTable(tables.Table):
     index = tables.Column(
         orderable=False,
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     worker = tables.Column(
         verbose_name="Name",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     indicator = tables.TemplateColumn(
         verbose_name="Indicator",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
         orderable=False,
         template_code="""
             {% if value %}
@@ -564,59 +514,27 @@ class WorkerLearnTable(tables.Table):
     )
     lastActive = tables.Column(
         verbose_name="Last Active",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     start_learning = tables.Column(
         verbose_name="Start Learning",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
-    modules_completed = tables.Column(
+    modules_completed = tables.TemplateColumn(
         verbose_name="Modules Completed",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
+        template_code=""" 
+                            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value %}
+                        """,
     )
     completed_learning = tables.Column(
         verbose_name="Completed Learning",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     assessment = tables.Column(
         verbose_name="Assessment",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     attempts = tables.Column(
         verbose_name="Attempts",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
     learning_hours = tables.Column(
         verbose_name="Learning Hours",
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
     )
 
     def __init__(self, *args, **kwargs):
@@ -712,24 +630,7 @@ class WorkerLearnTable(tables.Table):
         return format_html('<div">{}</div>', value) 
 
     def render_start_learning(self, value):
-        return format_html('<div>{}</div>', value)
-    def render_modules_completed(self, value):
-        progress_percentage = int(value)  # Assuming `value` is a percentage (e.g., 70)
-        return format_html(
-            """
-            <div class="flex items-center w-[184px]">
-                <!-- Container for the progress bar -->
-                <div class="relative w-[96px] h-[9px] bg-gray-200 rounded-full overflow-hidden mr-[14px]">
-                    <!-- Progress bar fill -->
-                    <div class="absolute top-0 left-0 h-full bg-blue-600" style="width: {}%; max-width: 96px;"></div>
-                </div>
-                <!-- Percentage text -->
-                <span class="w-[74px] text-sm text-gray-700">{}</span>
-            </div>
-            """,
-            progress_percentage,
-            f"{progress_percentage}%",
-        )
+        return format_html('<div>{}</div>', value) 
     def render_completed_learning(self, value):
         return format_html('<div class="">{}</div>', value)
     def render_assessment(self, value):
