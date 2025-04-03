@@ -398,34 +398,61 @@
 } 
 
 
-/* In your CSS file */
-.scrollbar-hide {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;     /* Firefox */
-  }
-  
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;  /* Chrome, Safari and Opera */
-  }
+/*---- table class -----------*/
 
-  /* Container with hover detection */
-.scrollbar-container {
-    position: relative;
-  }
-  
-  /* When container is hovered, remove the scrollbar hiding from the scrollable element */
-  .scrollbar-container:hover .scrollbar-default {
-    -ms-overflow-style: auto;
-    scrollbar-width: auto;
-  }
-  
-  .scrollbar-container:hover .scrollbar-default::-webkit-scrollbar {
-    width: 8px;  /* Set width explicitly */
-    display: block;
-  }
-  
-  /* Style the scrollbar when visible */
-  .scrollbar-container:hover .scrollbar-default::-webkit-scrollbar-thumb {
-    background-color: rgba(156, 163, 175, 0.5);  /* gray-400 with opacity */
-    border-radius: 4px;
-  }
+@layer components {
+    .base-table{
+        @apply w-full table-auto border-collapse text-gray-700;
+    }
+
+    .base-table thead {
+        @apply sticky top-0 z-10 text-sm text-brand-deep-purple;
+    }
+
+    .base-table thead th {
+        @apply bg-gray-200 font-medium h-10 relative p-4 text-left whitespace-nowrap;
+    }
+
+    .base-table thead::after {
+        content: ' ';
+        @apply absolute left-0 -bottom-1.5 w-full h-1.5 bg-stone-100;
+    }
+
+    .base-table thead th:first-child{
+        @apply rounded-l-lg;
+    }
+
+    .base-table thead th:last-child{
+        @apply rounded-r-lg;
+    }
+
+    .base-table tbody{
+        @apply pt-4 text-sm relative;
+    } 
+
+    .base-table tbody::before{
+        content: '';
+        @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow-lg -z-20;
+    }
+
+    .base-table tbody tr{
+        @apply relative;
+    }
+
+    .base-table tbody tr::after{
+        content: '';
+        @apply bg-gray-100 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
+    }
+
+    .base-table tbody tr:hover::after{
+        @apply opacity-100;
+    }
+    
+    /* .base-table tbody tr:hover{
+        @apply bg-gray-100 rounded-lg;
+    }  */
+
+    .base-table tbody td{
+        @apply p-4 text-left border-b-[1px] border-gray-100 whitespace-nowrap;
+    }  
+}
