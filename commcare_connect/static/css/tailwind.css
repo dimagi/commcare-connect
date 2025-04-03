@@ -89,6 +89,25 @@
 .description-text{
     @apply text-xs text-gray-400;   
 }
+
+/*-- status ----------------------------------*/
+.status-active{
+    @apply bg-green-600  w-4 h-2 rounded-full;
+}
+
+.status-inactive{
+    @apply bg-gray-200  w-4 h-2 rounded-full;
+}
+
+.status-error{
+    @apply bg-brand-sunset w-4 h-2 rounded-full;
+}
+
+.status-warning{
+    @apply bg-brand-marigold  w-4 h-2 rounded-full;
+}
+
+
  
 /*-- badges --------------------------------------*/
 .badge {
@@ -457,7 +476,7 @@
 
     .base-table tbody tr::after{
         content: '';
-        @apply bg-gray-100 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
+        @apply bg-gray-150 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
     }
 
     .base-table tbody tr:hover::after{
@@ -471,4 +490,16 @@
     .base-table tbody td{
         @apply p-4 text-left border-b-[1px] border-gray-100 whitespace-nowrap;
     }  
+}
+
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }
