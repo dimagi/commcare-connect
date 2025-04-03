@@ -32,26 +32,9 @@
 
      {% render_table table %}
 
-  <!--Table Footer-->
-  <div
-    class="table-footer w-[1344px] mx-auto flex items-center justify-between h-14 py-2 px-4 bg-slate-50 text-xs text-brand-deep-purple p-2 rounded-lg mb-8"
-  >
-    <div class="flex items-center gap-4">
-      <label class="flex items-center px-4 py-1">
-        <span class="mr-2">Rows per page</span>
-        <select class="px-1 py-1 text-sm bg-transparent rounded-lg outline-none">
-          <option>12</option>
-          <option>24</option>
-          <option>36</option>
-        </select>
-      </label>
-      <div>
-        <button><i class="fa-solid fa-chevron-left"></i></button>
-        <span>10</span>
-        <span>of 12</span>
-        <button><i class="fa-solid fa-chevron-right"></i></button>
-      </div>
-    </div>
-  </div>
+<!--Table Footer-->
+<div
+    class="table-footer w-full flex items-center justify-between h-14  bg-white  text-brand-deep-purple py-2 px-4 rounded-lg">
+    {% include "tailwind/components/pagination.html" %}
 </div>
 

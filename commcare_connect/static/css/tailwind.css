@@ -271,7 +271,23 @@
     }
 }
 
-/*--- dropdown select list ------------------------- */
+
+/*--- base select  list ------------------------- */
+@layer components {
+    .base-dropdown {
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+    }
+    
+    .base-dropdown:focus{
+        @apply outline-1 outline-brand-indigo
+    }
+
+    .base-dropdown option {
+        @apply text-gray-900 w-full px-2;
+    }  
+}
+
+/*--- simple select list ------------------------- */
 @layer components {
     .simple-dropdown {
         @apply relative h-12;
@@ -291,7 +307,18 @@
  
 }
 
-/*--- simple input list ------------------------- */
+/*--- based input ------------------------- */
+@layer components{
+    .base-input{
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+    }
+
+    .base-input:focus{
+        @apply outline-1 outline-brand-indigo
+    }
+}
+
+/*--- simple input  ------------------------- */
 @layer components{
     .simple-input{
         @apply relative h-12;
@@ -339,6 +366,8 @@
     }
 }
 
+
+/*--- simple date picker ------------------------- */ 
 @layer components{
     .simple-date-picker{
         @apply relative h-12
@@ -353,6 +382,7 @@
     }
 }
 
+/*--- simple checbox ------------------------- */ 
 @layer components {
     .simple-checkbox {
         @apply w-4 h-4 appearance-none border-2 border-gray-400 cursor-pointer transition-all duration-200;
@@ -365,4 +395,37 @@
         @apply text-gray-600 text-xs flex items-center justify-center;
         display: flex;
     }
-}
+} 
+
+
+/* In your CSS file */
+.scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;     /* Firefox */
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+
+  /* Container with hover detection */
+.scrollbar-container {
+    position: relative;
+  }
+  
+  /* When container is hovered, remove the scrollbar hiding from the scrollable element */
+  .scrollbar-container:hover .scrollbar-default {
+    -ms-overflow-style: auto;
+    scrollbar-width: auto;
+  }
+  
+  .scrollbar-container:hover .scrollbar-default::-webkit-scrollbar {
+    width: 8px;  /* Set width explicitly */
+    display: block;
+  }
+  
+  /* Style the scrollbar when visible */
+  .scrollbar-container:hover .scrollbar-default::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.5);  /* gray-400 with opacity */
+    border-radius: 4px;
+  }

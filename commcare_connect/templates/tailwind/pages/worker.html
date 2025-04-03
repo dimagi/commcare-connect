@@ -6,7 +6,7 @@
     <div class="flex gap-4  items-center h-32 p-4 profile-bg bg-brand-indigo rounded-2xl">
         {% include "tailwind/components/worker_page/profile.html" %} 
         {% for data in kpi %}
-        {% include "tailwind/components/cards/worker_page/worker_kpi.html" with count=data.count text=data.name icon=data.icon drodown=data.dropdown %}  
+        {% include "tailwind/components/cards/kpi.html" with count=data.count text=data.name icon=data.icon drodown=data.dropdown %}  
         {% endfor %} 
     </div>
     <div class="flex justify-center w-full">
