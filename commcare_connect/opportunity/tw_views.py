@@ -2,29 +2,8 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.template import Template, Context
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMain, WorkerPaymentsTable, WorkerLearnTable,PayWorker
 
-
-def custom_table(request, org_slug=None, opp_id=None):
-    data = [
-        {
-            "index": i + 1,
-            "name": f"User {i+1}",
-            "user_id": f"U{i+10000}",
-            "phone_number": f"+1 {i%900+100}-{(i*3)%900+100}-{(i*7)%900+100}",
-            "status": ["Active", "Inactive", "Pending"][i % 3],
-            "visits": (i * 2) % 15 + 1,
-            "last_visit": f"2025-03-{31 - (i % 10):02d}",
-            "visit_status": ["Completed", "Missed", "Pending"][i % 3],
-            "visit_date": f"2025-03-{30 - (i % 10):02d}",
-            "visit_time": f"{8 + (i % 10)}:{30 if i % 2 == 0 else 00}",
-            "visit_location": ["New York, USA", "Los Angeles, USA", "Chicago, USA", "Houston, USA", "San Francisco, USA"][i % 5],
-        }
-        for i in range(30)
-    ]
-
-    table = CustomTable(data)
-    return render(request, "tailwind/pages/custom_table.html", {"table": table})
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -1524,3 +1503,162 @@ def pay_worker(request, org_slug=None, opp_id=None):
     table = PayWorker(data)
     
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
+
+def worker_main(request, org_slug=None, opp_id=None):
+    data = [
+        {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600", "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025", "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025"},
+        {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500", "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025", "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025"},
+        {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700", "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025", "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025"},
+        {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300", "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025", "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025"},
+        {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500", "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025", "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025"},
+        {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700", "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025", "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025"},
+        {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400", "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025", "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025"},
+        {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400", "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025", "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025"},
+        {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500", "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025", "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025"},
+        {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600", "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025", "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025"},
+        {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700", "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025", "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025"},
+        {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500", "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025", "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025"},
+        {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400", "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025", "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025"},
+        {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500", "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025", "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025"},
+        {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025"}
+    ]
+
+    table = WorkerMain(data)
+    return render(request, "tailwind/pages/worker_main.html",{ "table": table})
+
+
+def payment_history(request, org_slug=None, opp_id=None):
+
+    data = [
+  {
+    "date": "01-Mar-2024",
+    "time": "08:30 AM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$3,500",
+    "workers": 50
+  },
+  {
+    "date": "02-Mar-2024",
+    "time": "09:15 AM",
+    "title": "By Network Manager",
+    "status": "Failed",
+    "amount": "$1,200",
+    "workers": 30
+  },
+  {
+    "date": "03-Mar-2024",
+    "time": "10:00 AM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$4,000",
+    "workers": 60
+  },
+  {
+    "date": "04-Mar-2024",
+    "time": "11:45 AM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$2,800",
+    "workers": 40
+  },
+  {
+    "date": "05-Mar-2024",
+    "time": "12:30 PM",
+    "title": "By Network Manager",
+    "status": "Failed",
+    "amount": "$1,000",
+    "workers": 20
+  },
+  {
+    "date": "06-Mar-2024",
+    "time": "01:00 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$5,000",
+    "workers": 75
+  },
+  {
+    "date": "07-Mar-2024",
+    "time": "02:45 PM",
+    "title": "By Network Manager",
+    "status": "Failed",
+    "amount": "$900",
+    "workers": 15
+  },
+  {
+    "date": "08-Mar-2024",
+    "time": "03:30 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$6,200",
+    "workers": 90
+  },
+  {
+    "date": "09-Mar-2024",
+    "time": "04:15 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$3,800",
+    "workers": 55
+  },
+  {
+    "date": "10-Mar-2024",
+    "time": "05:00 PM",
+    "title": "By Network Manager",
+    "status": "Failed",
+    "amount": "$1,500",
+    "workers": 25
+  },
+  {
+    "date": "08-Mar-2024",
+    "time": "03:30 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$6,200",
+    "workers": 90
+  },
+  {
+    "date": "09-Mar-2024",
+    "time": "04:15 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$3,800",
+    "workers": 55
+  },
+  {
+    "date": "10-Mar-2024",
+    "time": "05:00 PM",
+    "title": "By Network Manager",
+    "status": "Failed",
+    "amount": "$1,500",
+    "workers": 25
+  },
+  {
+    "date": "08-Mar-2024",
+    "time": "03:30 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$6,200",
+    "workers": 90
+  },
+  {
+    "date": "09-Mar-2024",
+    "time": "04:15 PM",
+    "title": "By Network Manager",
+    "status": "Paid",
+    "amount": "$3,800",
+    "workers": 55
+  },
+  {
+    "date": "10-Mar-2024",
+    "time": "05:00 PM",
+    "title": "By Network Manager",
+    "status": "Failed",
+    "amount": "$1,500",
+    "workers": 25
+  }
+]
+
+    return render(request, "opportunity/tailwind/components/payment_history.html", {"data": data})
+

@@ -812,3 +812,128 @@ class PayWorker(BaseTailwindTable):
             """,
             value,
         )
+    
+class WorkerMain(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    worker = tables.Column(verbose_name="Name", orderable=False)
+    indicator = tables.TemplateColumn(
+        verbose_name="Indicator",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+        orderable=False,
+        template_code="""
+                                    {% if value %}
+                                       <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+                                    {% else %}
+                                        <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+                                    {% endif %}
+                                    """,
+    )
+    lastActive = tables.Column(
+        verbose_name="Last Active",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    inviteDate = tables.Column(
+        verbose_name="Invite Date",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    startedLearn = tables.Column(
+        verbose_name="Started Learn",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    completedLearn = tables.Column(
+        verbose_name="Completed Learn",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+    daysToCompleteLearn = tables.Column(
+        verbose_name="Days to complete Learn",
+        attrs={
+            "td": {
+                "class": "p-0",
+            }
+        },
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
+                <i
+                    x-on:click="toggleAll()"
+                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
+                    class="text-xl cursor-pointer text-brand-deep-purple"
+                ></i>
+            </div>
+            '''
+        )
+
+        self.base_columns['indicator'].verbose_name = mark_safe(
+            '''
+                <div class="w-[40px]">
+                    <div class="w-4 h-2 bg-black rounded"></div>
+                </div>
+            '''
+        )
+
+    def render_index(self, value, record):
+        display_index = value
+
+        return format_html(
+            """
+            <div class="text-brand-deep-purple relative flex items-center justify-start h-full"
+                x-data="{{
+                    'hovering': false
+                }}"
+                x-on:mouseenter="hovering = true"
+                x-on:mouseleave="hovering = false">
+
+                <!-- Show empty square when hovering and not selected -->
+                <i x-show="!isRowSelected({0}) && hovering"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show checked square when selected -->
+                <i x-show="isRowSelected({0})"
+                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
+                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                <!-- Show number when not hovering and not selected -->
+                <span x-show="!isRowSelected({0}) && !hovering"
+                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
+            </div>
+        """,
+            display_index,
+        )
+
+    def render_worker(self, value):
+        return format_html(
+            """
+        <div class="flex flex-col items-start">
+            <p class="text-sm text-slate-900 ">{}</p>
+            <p class="text-xs text-slate-400">{}</p>
+        </div>
+        """,
+            value["name"],
+            value["id"],
+        )

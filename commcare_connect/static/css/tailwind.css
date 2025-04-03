@@ -84,6 +84,11 @@
 .text-label-sm{
     @apply text-6xl;   
 }
+
+/* Description text */
+.description-text{
+    @apply text-xs text-gray-400;   
+}
  
 /*-- badges --------------------------------------*/
 .badge {
@@ -104,7 +109,9 @@
 
 .button {
     @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer;
-} 
+}
+
+
 
 .button-hover {
     @apply bg-red-400;
@@ -181,6 +188,9 @@
     @apply border border-gray-200 rounded-lg text-brand-deep-purple;
 }
 
+.button-outline-rounded {
+    @apply border border-gray-200 rounded-full text-brand-deep-purple;
+} 
  
 /*-- chips ---------------------------------------*/ 
 .chips{

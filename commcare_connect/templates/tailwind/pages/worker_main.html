@@ -1,0 +1,69 @@
+{% load render_table from django_tables2 %}
+
+<div
+  class="flex flex-col w-full gap-2"
+  x-data="{
+    selectedRows: [],
+    // Toggle single row selection
+    toggleRow(index) {
+        const rowIndex = this.selectedRows.indexOf(index);
+        if (rowIndex === -1) {
+            this.selectedRows.push(index);
+        } else {
+            this.selectedRows.splice(rowIndex, 1);
+        }
+    },
+    toggleAll() {
+        if (this.isAllSelected()) {
+            this.selectedRows = [];
+        } else {
+            // Get all row indices from the table data
+            this.selectedRows = Array.from({ length: {{ table.rows|length }} }, (_, i) => i + 1);
+        }
+    },
+    isAllSelected() {
+        return {{ table.rows|length }} > 0 && this.selectedRows.length === {{ table.rows|length }};
+    },
+    isRowSelected(index) {
+        return this.selectedRows.includes(index);
+    }
+}"
+>
+
+     {% render_table table %}
+
+  <!--Table Footer-->
+  <div
+    class="table-footer w-[1344px] mx-auto flex items-center justify-between h-14 py-2 px-4 bg-slate-50 text-xs text-brand-deep-purple p-2 rounded-lg mb-8"
+  >
+    <div class="flex items-center gap-4">
+      <label class="flex items-center px-4 py-1">
+        <span class="mr-2">Rows per page</span>
+        <select class="px-1 py-1 text-sm bg-transparent rounded-lg outline-none">
+          <option>12</option>
+          <option>24</option>
+          <option>36</option>
+        </select>
+      </label>
+      <div>
+        <button><i class="fa-solid fa-chevron-left"></i></button>
+        <span>10</span>
+        <span>of 12</span>
+        <button><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <div>
+        <p>Pending Invitation</p>
+        <p class="description-text">3 Days ago</p>
+      </div>
+      <button class="button button-sm button-outline-rounded flex"><div class="flex gap-2"><p>39</p><p>Resend</p></div></button>
+    </div>
+    <div class="flex items-center gap-4">
+      <p>Connect ID Not Found</p>
+      <button class="button button-sm button-outline-rounded flex"><div class="flex gap-2"><p>15</p><p>Delete</p></div></button>
+    </div>
+    <div class="badge badge-md bg-brand-blue-light/10">Avg 17.8</div>
+  </div>
+</div>
+
