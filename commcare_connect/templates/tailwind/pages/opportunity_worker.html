@@ -9,7 +9,7 @@
   x-init="selectedTab='workers';selectedOption=''"
 >
     <!-- Tabs -->
-    <div class="flex mx-auto items-center justify-between w-[1344px] px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+    <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <div class="flex h-full gap-x-8 px-2">
         <div 
             @click="selectedTab = 'workers'; selectedRows = []; $nextTick(() => { 
@@ -133,57 +133,30 @@
       </button>
     </div>
 
-        <!-- Payment Options -->
-        <div x-show="selectedTab === 'payments'" class="flex gap-x-4 text-brand-deep-purple">
-            <button 
-                type="button" 
-                class="button-icon"
-                @click="selectedOption = 'paymentHistory'; console.log(selectedOption)"
-                :class="{ 'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory' }"
-            >
-                <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
-            </button>
-            <button 
-                type="button" 
-                class="button-icon"
-            >
-                <i class="fa-light fa-upload text-brand-deep-purple"></i>
-            </button>
-            <button 
-                type="button" 
-                class="button-icon"
-            >
-                <i class="fa-light fa-download text-brand-deep-purple"></i>
-            </button>
-            <button 
-                type="button" 
-                class="button-icon"
-            >
-                <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-            </button>
-        </div>
-        <div x-show="selectedTab === 'learn'" class="flex gap-x-1">
-         
-          <button 
-              type="button" 
-              class="button-icon"
-          >
-              <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
-          </button>
-          <button 
-              type="button" 
-              class="button-icon"
-          >
-              <i class="fa-light fa-download text-brand-deep-purple"></i>
-          </button>
-          <button 
-              type="button" 
-              class="button-icon"
-          >
-              <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-          </button>
-      </div>
+    <!-- Payment Options -->
+    <div x-show="selectedTab === 'payments'" class="flex gap-x-1">
+      <button
+        type="button"
+        class="button-icon"
+        @click="selectedOption = 'paymentHistory'; console.log(selectedOption)"
+        :class="{ 
+          'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
+          'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory' 
+        }"
+      >
+        <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-upload text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
     </div>
+  </div>
 
     <!-- Tab Content Container -->
     <div id="opportunity_worker_container" class="w-full" hx-get="/a/test-1/opportunity/1/tw/worker_payments/" hx-swap="innerHTML" hx-trigger="load">

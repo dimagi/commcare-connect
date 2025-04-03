@@ -99,22 +99,4 @@
       {% include "tailwind/components/buttons/button_primary.html" with text="Update" %}
     </div>
   </div>
-
-  <!-- History -->
-  <div
-    x-init="console.log('Default selectedOption:', selectedOption)"
-    x-cloak
-    x-show="selectedOption == 'paymentHistory'"
-    class="fixed z-50 px-4 pt-2 bg-white rounded-lg shadow-sm bottom-4 right-4 w-70"
-  >
-    <div class="flex items-center justify-between mx-auto text-sm font-medium rounded-lg text-brand-deep-purple auto-cols-min">
-      <p class="text-sm font-medium text-brand-deep-purple">Payment History</p>
-      <div class="flex gap-x-1">
-        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
-          <i class="fa-light fa-x text-brand-deep-purple"></i>
-        </button>
-      </div>
-    </div>
-    <div id="payment-history-container" hx-get="/a/test-1/opportunity/1/tw/api/payment_history/" hx-swap="outerHTML" hx-trigger="load"></div>
-  </div>
 </div>

@@ -2,7 +2,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.template import Template, Context
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMain, WorkerPaymentsTable, WorkerLearnTable,PayWorker
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
 
 
 
@@ -1523,7 +1523,7 @@ def worker_main(request, org_slug=None, opp_id=None):
         {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025"}
     ]
 
-    table = WorkerMain(data)
+    table = WorkerMainTable(data)
     return render(request, "tailwind/pages/worker_main.html",{ "table": table})
 
 

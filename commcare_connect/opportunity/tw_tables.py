@@ -813,7 +813,7 @@ class PayWorker(BaseTailwindTable):
             value,
         )
     
-class WorkerMain(BaseTailwindTable):
+class WorkerMainTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     worker = tables.Column(verbose_name="Name", orderable=False)
     indicator = tables.TemplateColumn(
@@ -937,3 +937,23 @@ class WorkerMain(BaseTailwindTable):
             value["name"],
             value["id"],
         )
+
+# class WorkerDeliveryTable(BaseTailwindTable):
+#     index = tables.Column(verbose_name="#", orderable=False)
+#     worker = tables.Column(verbose_name="Name", orderable=False)
+#     indicator = tables.TemplateColumn(
+#         verbose_name="Indicator",
+#         attrs={
+#             "td": {
+#                 "class": "p-0",
+#             }
+#         },
+#         orderable=False,
+#         template_code="""
+#                                     {% if value %}
+#                                        <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+#                                     {% else %}
+#                                         <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+#                                     {% endif %}
+#                                     """,
+#     )
