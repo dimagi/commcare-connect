@@ -92,7 +92,8 @@
  
 /*-- badges --------------------------------------*/
 .badge {
-    @apply inline-block text-nowrap rounded-full text-xs;
+    /* @apply inline-block text-nowrap rounded-full text-xs; */
+    @apply inline-block text-nowrap rounded-full;
 }
 
 /* Size Variants */
@@ -119,6 +120,11 @@
 
 .button-icon{
     @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple hover:bg-slate-100 cursor-pointer;
+    /* @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer; */
+}
+
+.button-icon-activatable{
+    @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
 }
 
 @layer components{

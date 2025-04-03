@@ -5,11 +5,11 @@
         <option value="">{{i|add:"0"}}</option>
         {% endfor %}
     </select>
-    <div>
+    <div class="flex items-center gap-2">
         <button class="button-icon">
             <i class="fa-light fa-chevron-left"></i>
         </button>
-        <input type="number" class="base-input w-16">
+        <input type="number" min="1" value="1" class="base-input w-16">
         <span class="whitespace-nowrap ml-2">of 12</span>
         <button class="button-icon">
             <i class="fa-light fa-chevron-right"></i>
