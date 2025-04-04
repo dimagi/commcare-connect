@@ -21,74 +21,21 @@
 
 /* ------ Typography------ */
 
-/* display */
-.text-display-lg{
-    @apply text-6xl;   
-}
-.text-display-md{
-    @apply text-6xl;   
-}
-.text-display-sm{
-    @apply text-6xl;   
+.card_title{
+    @apply font-medium text-lg text-brand-deep-purple
 }
 
-/* headline */
-.text-headline-lg{
-    @apply text-6xl;   
-}
-.text-headline-md{
-    @apply text-6xl;   
-}
-.text-headline-sm{
-    @apply text-6xl;   
+.card_description{
+    @apply font-normal text-sm text-gray-600 w-1/2
+} 
+.title{
+    @apply font-medium text-gray-900;
 }
 
-/* title */
-.text-title-lg{
-    @apply text-6xl;   
-}
-.text-title-md{
-    @apply text-6xl;   
-}
-.text-title-sm{
-    @apply text-6xl;   
-}
-/* body */
-.text-body-lg{
-    @apply text-6xl;   
-}
-.text-body-md{
-    @apply text-6xl;   
-}
-.text-body-sm{
-    @apply text-6xl;   
-}
-/* label */
-
-.text-label-lg{
-    @apply text-6xl;   
+.hint{
+    @apply text-gray-400 text-xs
 }
 
-.text-label-lg-heavy{
-    @apply text-6xl;   
-}
-
-.text-label-md{
-    @apply text-6xl;   
-}
-
-.text-label-md-heavy{
-    @apply text-6xl;   
-}
-
-.text-label-sm{
-    @apply text-6xl;   
-}
-
-/* Description text */
-.description-text{
-    @apply text-xs text-gray-400;   
-}
 
 /*-- status ----------------------------------*/
 .status-active{
@@ -127,21 +74,26 @@
 /*-- buttons -------------------------------------*/ 
 
 .button {
-    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer;
+    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2 min-w-24;
 }
 
-
-
-.button-hover {
-    @apply bg-red-400;
+.button:hover::after {
+    content: '';
+    @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-lg top-0 left-0 z-0;
 }  
 
-.button-icon{
-    @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple hover:bg-slate-100 cursor-pointer;
-}
+@layer components {
+    .button-icon{
+        @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
+    }
 
-.button-icon-activatable{
-    @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
+    .button-icon:hover{
+        @apply bg-slate-100;
+    }
+
+    .button-icon:focus{
+        @apply bg-brand-mango/10;
+    }
 }
 
 @layer components{
@@ -165,7 +117,7 @@
 }
 
 .button-md{
-    @apply py-3 px-8; 
+    @apply py-3 px-4; 
 }
 
 /* Dark Theme */

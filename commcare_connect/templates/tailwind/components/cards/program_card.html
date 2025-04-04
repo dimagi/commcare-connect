@@ -10,7 +10,7 @@
       {% elif status == 'accepted' %}
       <div class="h-2 w-2 bg-green-600 rounded-full"></div>
       {% endif %}
-      <p class="text-xs text-gray-400">{{ organization_name }}</p>
+      <p class="hint">{{ organization_name }}</p>
     </div>
 
     <!-- invitataion status -->
@@ -31,8 +31,8 @@
     </div>
   </div>
   <div>
-    <p class="font-medium text-lg text-brand-deep-purple">{{ name }}</p>
-    <p class="font-normal text-sm text-gray-600 w-2/4">{{ description }}</p>
+    <p class="card_title">{{ name }}</p>
+    <p class="card_description">{{ description }}</p>
   </div>
   <div class="flex justify-between items-center">
     <!-- program info -->
@@ -40,7 +40,7 @@
       {% include 'tailwind/components/cards/info.html' with icon="file-check" head="Delivery Type" data=delivery_type classname="infocard-dark" %}
       <div class="line my-2 h-8 w-1 bg-gray-200"></div>
       {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=start_date classname="infocard-dark" %} 
-      {% include 'tailwind/components/cards/info.html' with icon="arrow-right" head="End Date" data=end_date id='1' classname="infocard-dark" %}
+      {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=end_date id='1' classname="infocard-dark" %}
     </div>
 
     <!-- button -->
@@ -55,6 +55,7 @@
     {% elif status == 'accepted' %}
     <button class="button button-md outline-style"  hx-get="/a/test-1/opportunity/1/tw/api/opportunities/" hx-target="#opportunity-container" hx-trigger="click" hx-swap="innerHTML">
       <span class="relative z-20">View Opportunities</span>
+            <i class="fa-light fa-chevron-down text-xs"></i>
     </button>
     {% endif %}
   </div>
