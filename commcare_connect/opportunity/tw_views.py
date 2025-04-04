@@ -1255,7 +1255,7 @@ def worker_payments(request, org_slug=None, opp_id=None):
 
 
 def opportunity_worker(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/opportunity_worker.html")
+    return render(request, "tailwind/pages/opportunity_worker.html", {"header_title": "Workers"})
 
 def get_worker_last_payment(request, org_slug=None, opp_id=None):
     payments = [
