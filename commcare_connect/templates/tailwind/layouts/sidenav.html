@@ -2,28 +2,25 @@
 
 <div x-data="{ sidebarOpen: false }"
     @click.outside="sidebarOpen = false"
-    class="fixed top-0 left-0 h-screen bg-brand-deep-purple pb-6 pt-3 z-50 text-white flex flex-col justify-between transition-all duration-300"
+    class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-50 text-white flex flex-col justify-between transition-all duration-300 px-2"
     :class="sidebarOpen ? 'w-64' : 'w-16'">
 
     <!-- Top Section -->
     <div>
         <!-- Logo Section -->
         <div class="">
-            <div class="flex pl-3">
-                <!-- Logo Container with Fixed Width -->
-                <div class="">
-                    <img src="{% static 'images/logo.svg' %}" class="w-10 h-10 " />
+            <div class="flex p-2 justify-start">
+                <!-- Logo Container with Fixed Width --> 
+                <div x-show.immediate="!sidebarOpen" class="w-10 h-12" > 
+                    <img  src={% static 'images/logo.svg' %} alt="First Image">
                 </div>
-                <!-- Brand Name Container -->
-                <div class="transition-all duration-300 overflow-hidden"
-                     :class="sidebarOpen ? 'w-40 ml-3 opacity-100' : 'w-0 opacity-0'">
-                    <p class="text-lg whitespace-nowrap">CommCare</p>
-                    <p class="text-lg ml-5 whitespace-nowrap">Connect</p>
-                </div>
+                <div x-show.immediate="sidebarOpen" class="h-12">
+                    <img  src={% static 'images/logo-full.svg' %} class="h-full w-auto" alt="Second Image"> 
+                </div> 
             </div>
         </div>
 
-        <div class="flex rounded-lg items-center m-2 p-2 transition-all duration-300">
+        <div class="flex rounded-lg items-center p-2 transition-all duration-300 cursor-pointer">
             <div class="flex items-center justify-center w-8 h-8">
                 <i class="fa-light text-lg text-brand-sky"
                     :class="sidebarOpen ? 'fa-xmark-large': 'fa-bars'"
@@ -38,7 +35,7 @@
         </div>
 
         <!-- Navigation Items -->
-        <div class="mt-16">
+        <div class="mt-5">
             {% url 'program:home' request.org.slug as program_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target='/opportunities' %}
