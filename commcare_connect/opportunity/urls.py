@@ -145,4 +145,5 @@ urlpatterns = [
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
     # API
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
+    path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
 ]

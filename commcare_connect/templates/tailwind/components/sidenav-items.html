@@ -15,4 +15,9 @@
          x-show="!sidebarOpen">
         {{ name }}
     </div>
+
+    <!-- Selected -->
+     {% if sidenav_active == name %}
+     <div class="absolute right-0 w-1 h-1/2 top-1/2 -translate-y-1/2 bg-brand-mango rounded-2xl"></div>
+     {% endif %}
 </a>

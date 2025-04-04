@@ -52,7 +52,7 @@ def dashboard(request, org_slug=None, opp_id=None):
                 'date': '06 May, 2024',
                 'organization_name': 'Program Manager Organization Name',
                 'status': 'invited',
-                'delievery_type': 'Name of the delivery type',
+                'delivery_type': 'Name of the delivery type',
                 'start_date': '12-Jul-2024',
                 'end_date': '12-Jul-2024',
             },
@@ -62,7 +62,7 @@ def dashboard(request, org_slug=None, opp_id=None):
                 'date': '06 May, 2024',
                 'organization_name': 'Program Manager Organization Name',
                 'status': 'applied',
-                'delievery_type': 'Name of the delivery type',
+                'delivery_type': 'Name of the delivery type',
                 'start_date': '12-Jul-2024',
                 'end_date': '12-Jul-2024',
             }
@@ -73,73 +73,10 @@ def dashboard(request, org_slug=None, opp_id=None):
                 'date': '06 May, 2024',
                 'organization_name': 'Program Manager Organization Name',
                 'status': 'accepted',
-                'delievery_type': 'Name of the delivery type',
+                'delivery_type': 'Name of the delivery type',
                 'start_date': '12-Jul-2024',
                 'end_date': '12-Jul-2024',
-                'opportunities': [
-                    {
-                        'name': 'Oppurtunity Name',
-                        'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
-                        'date': '06 May, 2024',
-                        'organization_name': 'Program Manager Organization Name',
-                        'status': 'invited',
-                        'delievery_type': 'Name of the delivery type',
-                        'start_date': '12-Jul-2024',
-                        'end_date': '12-Jul-2024',
-                        'labels':{
-                            'name': 'Delieveries',
-                            'count': '100/150',
-                            'tags': [
-                                {
-                                    'name': 'Approved',
-                                    'count': '70',
-                                    'color': 'green-600'
-                                },
-                                {
-                                    'name': 'Flagged',
-                                    'count': '15',
-                                    'color': 'sunset'
-                                },
-                                {
-                                    'name': 'Rejected',
-                                    'count': '70',
-                                    'color': 'blue-light'
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        'name': 'Oppurtunity Name',
-                        'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
-                        'date': '06 May, 2024',
-                        'organization_name': 'Program Manager Organization Name',
-                        'status': 'invited',
-                        'delievery_type': 'Name of the delivery type',
-                        'start_date': '12-Jul-2024',
-                        'end_date': '12-Jul-2024',
-                        'labels':{
-                            'name': 'Workers',
-                            'count': '256',
-                            'tags': [
-                                {
-                                    'name': 'Learning',
-                                    'count': '23',
-                                    'color': 'mango'
-                                },
-                                {
-                                    'name': 'Claimed Job',
-                                    'count': '120',
-                                    'color': 'indigo'
-                                },
-                                {
-                                    'name': 'Assessed',
-                                    'count': '124',
-                                    'color': 'green-600'
-                                }
-                            ]
-                        }
-                    }
-                ]
+                'opportunities_url': '/a/test-1/opportunity/1/tw/api/opportunities/'
             }
         ],
         'recent_activities': [
@@ -205,8 +142,74 @@ def dashboard(request, org_slug=None, opp_id=None):
         ]
     }
 
-    return render(request, 'tailwind/pages/dashboard.html', {'data': data, 'header_title': 'Dashboard'})
+    return render(request, 'tailwind/pages/dashboard.html', {'data': data, 'header_title': 'Dashboard', 'sidenav_active': 'Programs'})
 
+def opportunities_card(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            'name': 'Oppurtunity Name',
+            'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+            'date': '06 May, 2024',
+            'organization_name': 'Program Manager Organization Name',
+            'status': 'invited',
+            'delivery_type': 'Name of the delivery type',
+            'start_date': '12-Jul-2024',
+            'end_date': '12-Jul-2024',
+            'labels':{
+                'name': 'Delieveries',
+                'count': '100/150',
+                'tags': [
+                    {
+                        'name': 'Approved',
+                        'count': '70',
+                        'color': 'green-600'
+                    },
+                    {
+                        'name': 'Flagged',
+                        'count': '15',
+                        'color': 'brand-sunset'
+                    },
+                    {
+                        'name': 'Rejected',
+                        'count': '70',
+                        'color': 'slate-400'
+                    }
+                ]
+            }
+        },
+        {
+            'name': 'Oppurtunity Name',
+            'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+            'date': '06 May, 2024',
+            'organization_name': 'Program Manager Organization Name',
+            'status': 'invited',
+            'delivery_type': 'Name of the delivery type',
+            'start_date': '12-Jul-2024',
+            'end_date': '12-Jul-2024',
+            'labels':{
+                'name': 'Workers',
+                'count': '256',
+                'tags': [
+                    {
+                        'name': 'Learning',
+                        'count': '23',
+                        'color': 'brand-mango'
+                    },
+                    {
+                        'name': 'Claimed Job',
+                        'count': '120',
+                        'color': 'brand-indigo'
+                    },
+                    {
+                        'name': 'Assessed',
+                        'count': '124',
+                        'color': 'green-600'
+                    }
+                ]
+            }
+        }
+    ]
+    return render(request, 'tailwind/components/cards/opportunity_card.html', {'data': data})
 
 def worker(request, org_slug=None, opp_id=None):
     user_kpi = [
