@@ -60,7 +60,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
 class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
-        fields = ["id", "name", "max_total", "max_daily", "amount"]
+        fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):

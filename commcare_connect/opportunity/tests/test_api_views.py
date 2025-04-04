@@ -210,6 +210,10 @@ def test_opportunity_list_endpoint(
         verification_flags.form_submission_start
     )
     assert response.data[0]["verification_flags"]["form_submission_end"] == str(verification_flags.form_submission_end)
+    payment_units = response.data[0]["payment_units"]
+
+    payment_unit_fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
+    assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
 
 
 def test_delivery_progress_endpoint(
