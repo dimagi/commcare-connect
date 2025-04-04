@@ -1,6 +1,6 @@
 from django.urls import path
 
-from commcare_connect.opportunity import tw_views, views
+from commcare_connect.opportunity import tw_form_views, tw_views, views
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -143,4 +143,6 @@ urlpatterns = [
     # Tables 
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
+
+    path("<int:pk>/tw/verification_flags_config/", view=tw_form_views.verification_flags_config, name="tw_verification_flags_config"),
 ]

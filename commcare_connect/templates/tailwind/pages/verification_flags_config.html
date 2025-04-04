@@ -1,0 +1,123 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+{% load tailwind_filters %}
+
+
+
+{% block content %}
+  <h2 class="text-xl font-semibold mb-4">Verification Flags Configuration</h2>
+  <div class="border-b border-gray-300 mb-4"></div>
+
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+    <div>
+      {% crispy form %}
+    </div>
+
+    <div>
+      <h3 class="text-lg font-semibold mb-2">Deliver Unit Flags</h3>
+      {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+    </div>
+
+    <div x-data="form_json_formset" class="space-y-4">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        Form Validation Rules
+        <button type="button" class="inline-flex items-center text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm font-medium" @click="addForm()">
+          <i class="bi bi-plus-circle-fill pe-1"></i> Add
+        </button>
+      </h3>
+
+      {{ form_json_formset.management_form|crispy }}
+
+      <template>
+        <div class="border border-gray-300 rounded shadow-sm" id="form_json_form">
+          <div class="p-4">
+            {% crispy form_json_formset.empty_form form_json_formset.empty_form.helper %}
+          </div>
+          <div class="bg-gray-100 px-4 py-2 flex justify-end">
+            <button type="button" class="inline-flex items-center text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium" aria-label="Delete" @click="deleteForm()">
+              <i class="bi bi-trash-fill pe-1"></i> Delete
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <div id="form_json_forms" class="space-y-4">
+        {% for form in form_json_formset %}
+          <div class="border border-gray-300 rounded shadow-sm" id="form_json_form">
+            <div class="p-4">
+              {% crispy form form.helper %}
+            </div>
+            <div class="bg-gray-100 px-4 py-2 flex justify-end">
+              {% if not form.instance.id %}
+                <button type="button" class="inline-flex items-center text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium" aria-label="Delete" @click="deleteForm()">
+              {% else %}
+                <button type="button" class="inline-flex items-center text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium"
+                        aria-label="Delete"
+                        hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.pk pk=form.instance.id %}"
+                        hx-target="closest #form_json_form"
+                        hx-swap="outerHTML"
+                        @click="decrementFormCount()">
+              {% endif %}
+                  <i class="bi bi-trash-fill pe-1"></i> Delete
+                </button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <button type="submit" class="inline-flex items-center text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm font-medium">
+        Save
+      </button>
+    </div>
+  </form>
+{% endblock content %}
+
+{% block inline_javascript %}
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("form_json_formset", () => ({
+      init() {
+        this.template = this.$root.querySelector("template");
+        this.formsContainer = this.$root.querySelector("#form_json_forms");
+        this.totalFormsInput = this.$root.querySelector(`input[name$='-TOTAL_FORMS']`);
+        this.initialFormsInput = this.$root.querySelector(`input[name$='-INITIAL_FORMS']`);
+      },
+      addForm() {
+        const newForm = this.template.content.cloneNode(true);
+        const elements = newForm.querySelectorAll("div, input, select, textarea, label");
+        for (let el of elements) {
+          if (el.name && el.name.includes("__prefix__"))
+            el.name = el.name.replace("__prefix__", this.formsContainer.children.length);
+          if (el.id && el.id.includes("__prefix__"))
+            el.id = el.id.replace("__prefix__", this.formsContainer.children.length);
+          if (el.htmlFor && el.htmlFor.includes("__prefix__"))
+            el.htmlFor = el.htmlFor.replace("__prefix__", this.formsContainer.children.length);
+        }
+        this.formsContainer.appendChild(newForm);
+        this.totalFormsInput.value = parseInt(this.totalFormsInput.value) + 1;
+      },
+      deleteForm() {
+        this.$el.closest("#form_json_form").remove();
+        for (let i = 0; i < this.formsContainer.children.length; i++) {
+          const form = this.formsContainer.children[i];
+          const elements = form.querySelectorAll("div, input, select, textarea, label");
+          for (let el of elements) {
+            if (el.name) el.name = el.name.replace(/\d+/, i);
+            if (el.id) el.id = el.id.replace(/\d+/, i);
+            if (el.htmlFor) el.htmlFor = el.htmlFor.replace(/\d+/, i);
+          }
+        }
+        this.decrementFormCount();
+      },
+      decrementFormCount() {
+        this.totalFormsInput.value = Math.max(0, parseInt(this.totalFormsInput.value) - 1);
+      }
+    }));
+  });
+</script>
+{% endblock inline_javascript %}
