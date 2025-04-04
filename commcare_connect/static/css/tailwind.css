@@ -111,8 +111,7 @@
  
 /*-- badges --------------------------------------*/
 .badge {
-    /* @apply inline-block text-nowrap rounded-full text-xs; */
-    @apply inline-block text-nowrap rounded-full;
+    @apply inline-block text-nowrap rounded-full text-xs;
 }
 
 /* Size Variants */
@@ -139,7 +138,6 @@
 
 .button-icon{
     @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple hover:bg-slate-100 cursor-pointer;
-    /* @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer; */
 }
 
 .button-icon-activatable{
@@ -218,8 +216,12 @@
 } 
  
 /*-- chips ---------------------------------------*/ 
-.chips{
+.chip{
     @apply inline-block text-nowrap text-sm font-medium rounded-full transition-all duration-300 cursor-pointer;
+}
+
+.chip-md{
+    @apply py-1 px-4;
 }
 
 /*-- tooltips ---------------------------------------*/ 
