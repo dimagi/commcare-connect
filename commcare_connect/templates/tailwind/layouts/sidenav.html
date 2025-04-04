@@ -10,13 +10,18 @@
         <!-- Logo Section -->
         <div class="">
             <div class="flex p-2 justify-start">
-                <!-- Logo Container with Fixed Width --> 
-                <div x-show.immediate="!sidebarOpen" class="w-10 h-12" > 
-                    <img  src={% static 'images/logo.svg' %} alt="First Image">
+                <div 
+                    x-show.immediate="!sidebarOpen" 
+                    class=" h-12 transition-none" 
+                >
+                    <img src="{% static 'images/logo.svg' %}" alt="Compact Logo" class="w-8 h-8">
                 </div>
-                <div x-show.immediate="sidebarOpen" class="h-12">
-                    <img  src={% static 'images/logo-full.svg' %} class="h-full w-auto" alt="Second Image"> 
-                </div> 
+                <div 
+                    x-show.immediate="sidebarOpen" 
+                    class="h-12 pl-1"
+                >
+                    <img src="{% static 'images/logo-full.svg' %}" alt="Full Logo" class="h-12 w-auto">
+                </div>
             </div>
         </div>
 

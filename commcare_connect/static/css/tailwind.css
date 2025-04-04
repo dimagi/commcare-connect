@@ -82,6 +82,16 @@
     @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-lg top-0 left-0 z-0;
 }  
 
+.button-outline-rounded {
+    @apply border border-gray-200 rounded-full text-brand-deep-purple;
+} 
+
+.button-outline-rounded:not(:disabled):hover::after {
+    content: '';
+    @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-full top-0 left-0 z-0;
+}  
+ 
+
 @layer components {
     .button-icon{
         @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
@@ -163,10 +173,7 @@
     @apply border border-gray-200 rounded-lg text-brand-deep-purple;
 }
 
-.button-outline-rounded {
-    @apply border border-gray-200 rounded-full text-brand-deep-purple;
-} 
- 
+
 /*-- chips ---------------------------------------*/ 
 .chip{
     @apply inline-block text-nowrap text-sm font-medium rounded-full transition-all duration-300 cursor-pointer;
