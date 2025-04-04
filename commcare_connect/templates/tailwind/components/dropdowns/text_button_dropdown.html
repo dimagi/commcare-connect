@@ -1,0 +1,73 @@
+<span
+  x-data="{
+    open: false,
+    dropdownStyle: '',
+    originalOverflow: '',
+    calculatePosition() {
+      const badge = this.$el;
+      const badgeRect = badge.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      
+      // Calculate available space
+      const spaceBelow = viewportHeight - badgeRect.bottom;
+      const shouldShowAbove = spaceBelow < 200 && badgeRect.top > 200;
+      
+      // Position calculation
+      let top = shouldShowAbove 
+        ? badgeRect.top + window.scrollY - 200
+        : badgeRect.bottom + window.scrollY;
+      
+      // Adjust for right edge
+      let left = Math.min(
+        badgeRect.left, 
+        viewportWidth - 220
+        );
+      
+      
+
+      this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
+    },
+    toggleDropdown() {
+      if (!this.open) {
+        this.originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        this.calculatePosition();
+      } else {
+        document.body.style.overflow = this.originalOverflow || '';
+      }
+      this.open = !this.open;
+    }
+  }"
+  @click="toggleDropdown()"
+  @click.outside="open = false; document.body.style.overflow = originalOverflow || '';"
+  :class="{
+    '': open,
+    '': !open
+  }"
+  class="cursor-pointer underline underline-offset-2 {{styles}}"
+>
+  {{text}}
+
+  <!-- Dropdown -->
+  <div
+    x-show="open"
+    x-cloak
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0 scale-95"
+    x-transition:enter-end="opacity-100 scale-100"
+    x-transition:leave="transition ease-in duration-75"
+    x-transition:leave-start="opacity-100 scale-100"
+    x-transition:leave-end="opacity-0 scale-95"
+    :style="dropdownStyle"
+    class="z-[9999] w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
+  >
+    <p class="text-blue-light text-xs mb-1">{{ title|default:'' }}</p>
+    <div class="" >
+      {% for item in list %}
+     <div> <button type="button" class="bg-transparent  border-0 px-2 my-2">
+        {{item}}
+      </button></div>
+      {% endfor %}
+  </div>
+</span>

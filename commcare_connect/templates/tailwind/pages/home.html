@@ -1,35 +1,38 @@
-{% extends 'tailwind/base.html' %} {% block content %}
+{% extends 'tailwind/base.html' %}
+{% block content %}
 <div class="w-full space-y-4">
-    {% comment %} <div hx-get="src/components/breadcrumb.htmx" hx-trigger="load"></div> {% endcomment %}
-    <!-- Profile & Statistic Cards Container -->
-    <div class="flex flex-wrap items-center h-32 p-2 profile-bg bg-brand-indigo rounded-2xl">
-        {% include "tailwind/components/worker_page/profile.html" %}
-        {% include "tailwind/components/cards/worker_page/worker_dashboard_card.html" %}
-      {% comment %} <div hx-get="src/components/worker-profile.htmx" hx-trigger="load"></div>
-      <div hx-get="src/components/cards/worker-dashboard-card.htmx" hx-trigger="load"></div> {% endcomment %}
-    </div>
-  
-    {% comment %} <div class="flex justify-center w-full">
-      <div class="flex flex-col w-full grid-cols-10 gap-2 lg:grid">
-        <div class="col-span-6">
-          <!-- Tabs -->
-          <div hx-get="src/components/tabs/tabs.ejs" hx-trigger="load"></div>
-        </div>
-        <div class="w-full col-span-4">
-          <div hx-get="src/components/details.ejs" hx-trigger="load"></div>
-        </div>
-      </div>
-    </div> {% endcomment %}
+  <div hx-get="src/components/breadcrumb.htmx" hx-trigger="load"></div>
+  <!-- Profile & Statistic Cards Container -->
+  <div class="flex flex-wrap items-center h-32 p-2 profile-bg bg-brand-indigo rounded-2xl">
+    {% include "tailwind/components/worker_page/profile.html" %}
+    {% for data in kpi %}
+    {% include "tailwind/components/cards/worker_page/worker_kpi.html" with count='255' text='Dummy' icon='thumbdown'
+    drodown='false' %}
+    {% endfor %}
+  </div>
+</div>
 
-    <div class="flex flex-row gap-4">
-    {% include "tailwind/components/cards/user_status_card.html" with rows=rows %}
-    {% include "tailwind/components/cards/user_timeline_card.html" with timeline=timeline%}
-    <div class="flex flex-col gap-4">
-      {% include "tailwind/components/cards/approval_card.html" %}
-      {% include "tailwind/components/cards/rejection_card.html" %}
+{% comment %} <div class="flex justify-center w-full">
+  <div class="flex flex-col w-full grid-cols-10 gap-2 lg:grid">
+    <div class="col-span-6">
+      <!-- Tabs -->
+      <div hx-get="src/components/tabs/tabs.ejs" hx-trigger="load"></div>
+    </div>
+    <div class="w-full col-span-4">
+      <div hx-get="src/components/details.ejs" hx-trigger="load"></div>
     </div>
   </div>
-  {% include "tailwind/components/cards/filter_card.html" with flags=flags %}
+</div> {% endcomment %}
+
+<div class="flex flex-row gap-4">
+  {% include "tailwind/components/cards/user_status_card.html" with rows=rows %}
+  {% include "tailwind/components/user_timeline.html" with timeline=timeline%}
+  <div class="flex flex-col gap-4">
+    {% include "tailwind/components/cards/approval_card.html" %}
+    {% include "tailwind/components/cards/rejection_card.html" %}
   </div>
-  
+</div>
+{% include "tailwind/components/cards/filter_card.html" with flags=flags %}
+</div>
+
 {% endblock %}
