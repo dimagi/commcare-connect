@@ -1,14 +1,14 @@
 {% for item in data %}
-<div class="relative flex flex-col gap-5 p-6 bg-white shadow-sm program-comp rounded-xl border-brand-blue-light">
+<div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
     <div class="flex justify-between w-full">
-        <div class="flex flex-col w-1/2 gap-5">
+        <div class="flex flex-col gap-5 w-1/2">
           <div class="flex items-center gap-2 font-normal">
             <div class="w-2 h-2 bg-green-600 rounded-full"></div>
-            <p class="text-xs text-gray-400">{{ item.organization_name }}</p>
+            <p class="hint">{{ item.organization_name }}</p>
         </div>
         <div>
-          <p class="text-lg font-medium text-brand-deep-purple">{{ item.name }}</p>
-          <p class="text-sm font-normal text-gray-600">{{ item.description }}</p>
+          <p class="card_title">{{ item.name }}</p>
+          <p class="card_description">{{ item.description }}</p>
         </div>
     </div>
         <div class="flex items-start rounded py-2 px-4 h-fit bg-slate-50 w-2/5 gap-6">
@@ -30,7 +30,7 @@
     <div class="flex items-center justify-between">
         <div class="flex items-center gap-6">
             {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=item.start_date classname="infocard-dark" %}
-            {% include 'tailwind/components/cards/info.html' with icon="arrow-right" head="End Date" data=item.end_date id='1' classname="infocard-dark" %}
+            {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=item.end_date id='1' classname="infocard-dark" %}
         </div>
         <button class="button button-md button-outline-rounded">
             <div class="flex items-center justify-between gap-4">

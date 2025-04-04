@@ -26,7 +26,7 @@
 }
 
 .card_description{
-    @apply font-normal text-sm text-gray-600 w-1/2
+    @apply font-normal text-sm text-gray-600
 } 
 .title{
     @apply font-medium text-gray-900;
