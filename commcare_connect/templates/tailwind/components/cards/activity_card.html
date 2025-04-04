@@ -10,8 +10,8 @@
         {% if forloop.counter <= 2 %}
             <div class="flex justify-between items-center">
                 <div>
-                    <p class="font-medium text-gray-900">{{ row.title }}</p>
-                    <p class="font-normal text-xs text-gray-400">{{ row.subtitle }}</p>
+                    <p class="title">{{ row.title }}</p>
+                    <p class="hint">{{ row.subtitle }}</p>
                 </div> 
                 <button class="rounded-full px-4 py-1 flex items-center gap-4 border border-gray-200 hover:bg-gray-100 cursor-pointer">
                     <span class="text-2xl">11</span>
@@ -21,8 +21,8 @@
         {% else %}
             <div class="flex justify-between items-center" x-cloak x-show="expanded">
                 <div>
-                    <p class="font-medium text-gray-900">{{ row.title }}</p>
-                    <p class="font-normal text-xs text-gray-400">{{ row.subtitle }}</p>
+                    <p class="title">{{ row.title }}</p>
+                    <p class="hint">{{ row.subtitle }}</p>
                 </div> 
                 <button class="rounded-full px-4 py-1 flex items-center gap-4 border border-gray-200 hover:bg-gray-100 cursor-pointer">
                     <span class="text-2xl">11</span>
