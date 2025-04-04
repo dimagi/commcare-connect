@@ -1,6 +1,7 @@
 from django import forms
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.test.utils import override_settings
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 
@@ -290,6 +291,7 @@ class TWAddBudgetExistingUsersForm(AddBudgetExistingUsersForm):
         )
 
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def opportunity_visits(request, org_slug=None, opp_id=None):
     from commcare_connect.opportunity.models import OpportunityAccess, OpportunityClaim
     from commcare_connect.opportunity.views import get_opportunity_or_404

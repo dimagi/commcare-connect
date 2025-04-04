@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.forms import modelformset_factory
 from django.shortcuts import render
+from django.test.utils import override_settings
 
 from commcare_connect.opportunity.models import (
     DeliverUnit,
@@ -16,6 +17,7 @@ from commcare_connect.opportunity.tw_forms import (
 from commcare_connect.opportunity.views import get_opportunity_or_404
 
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def verification_flags_config(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(pk=pk, org_slug=org_slug)
     verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=opportunity).first()
