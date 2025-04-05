@@ -633,6 +633,13 @@ class WorkerPaymentsTable(tables.Table):
             </div>
         ''')
 
+        self.base_columns['indicator'].verbose_name = mark_safe(f'''
+             <div class="w-[40px]">
+                            <div class="w-4 h-2 bg-black rounded"></div>
+                        </div>
+        ''')
+                
+
 
     class Meta:
         sequence = ("index", "worker", "indicator", "lastActive", "accrued", "totalPaid", "lastPaid", "confirmed")
@@ -809,6 +816,12 @@ class WorkerLearnTable(tables.Table):
             <div class="flex items-center cursor-pointer">
                 {last_active_dropdown_html}
             </div>
+        ''')
+
+        self.base_columns['indicator'].verbose_name = mark_safe(f'''
+             <div class="w-[40px]">
+                            <div class="w-4 h-2 bg-black rounded"></div>
+                        </div>
         ''')
 
 
@@ -1034,7 +1047,12 @@ class WorkerMainTable(BaseTailwindTable):
                 {last_active_dropdown_html}
             </div>
         ''')
-
+        
+        self.base_columns['indicator'].verbose_name = mark_safe(f'''
+             <div class="w-[40px]">
+                            <div class="w-4 h-2 bg-black rounded"></div>
+                        </div>
+        ''')
     def render_index(self, value, record):
         display_index = value
 
