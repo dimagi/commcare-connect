@@ -1,0 +1,38 @@
+{% extends 'tailwind/base.html' %}
+{% load django_tables2 %}
+
+{% block content %}
+    {# Main container #}
+    <div class="md:max-w-screen-lg mx-auto flex flex-col gap-4 w-full mb-4">
+        {# Opportunity Name Component #}
+        <p class="text-brand-deep-purple font-medium title-sm">{{opportunity_name}}</p>
+
+        {# Content Container #}
+        <div class="flex flex-col gap-2">
+            {# Header Panel #}
+            <div class="w-full h-14 shadow-sm flex items-center rounded-lg bg-slate-50 px-4">
+                <p class="text-brand-deep-purple font-medium text-sm">{{title}}</p>
+            </div>
+
+            {# Table Container #}
+            <div class="bg-white rounded-lg shadow-sm overflow-auto">
+                {% render_table table %}
+            </div>
+
+            {# Footer #}
+            <div class="table-footer w-full flex items-center justify-between h-14 bg-slate-50 text-brand-deep-purple py-2 px-4 rounded-lg ">
+                <div>
+                    <div class="flex items-center gap-x-5">
+                        <i class="fa-light fa-arrow-rotate-left text-2xl"></i>
+                        <i class="fa-light fa-arrow-rotate-right text-2xl"></i>
+                        {% include "tailwind/components/pagination.html" %}
+                    </div>
+                </div>
+                <div class="flex gap-x-4">
+                    <button class="button button-md outline-style">Reset</button>
+                    <button class="button button-md primary-dark">Update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

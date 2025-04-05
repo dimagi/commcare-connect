@@ -5,7 +5,7 @@ from django.template import Template, Context
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable
 
 
 
@@ -141,8 +141,69 @@ def dashboard(request, org_slug=None, opp_id=None):
 
         ]
     }
+    return render(
+        request, 'tailwind/pages/dashboard.html', 
+        {
+            'data': data, 
+            'header_title': 'Dashboard', 
+            'sidenav_active': 'Programs'
+            }
+        )
+    
+def learn_app_table(request, org_slug=None, opp_id=None):
+    data = [
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
+        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
+        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
+        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
+    ]
+    table = LearnAppTable(data)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table,'app_name':'Learn App Name'})
+def delivery_app_table(request, org_slug=None, opp_id=None):
+    data = [
+        {"index": 1, "unit_name": "Unit Name 1", "unit_id": "Unit ID 1"},
+        {"index": 2, "unit_name": "Unit Name 2", "unit_id": "Unit ID 2"},
+        {"index": 3, "unit_name": "Unit Name 3", "unit_id": "Unit ID 3"},
+        {"index": 4, "unit_name": "Unit Name 4", "unit_id": "Unit ID 4"},
+    ]
+    table = DeliveryAppTable(data)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table,'app_name':'Delivery App Name'})
 
-    return render(request, 'tailwind/pages/dashboard.html', {'data': data, 'header_title': 'Dashboard', 'sidenav_active': 'Programs'})
+def payment_app_table(request,org_slug=None, opp_id=None):
+    data = [
+        {"index":1, "unit_name":"Payment Unit Name 1", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":2, "unit_name":"Payment Unit Name 2", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":3, "unit_name":"Payment Unit Name 3", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":4, "unit_name":"Payment Unit Name 4", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":5, "unit_name":"Payment Unit Name 5", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":6, "unit_name":"Payment Unit Name 6", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+    ]
+    table = PaymentAppTable(data)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
 
 def opportunities_card(request, org_slug=None, opp_id=None):
     data = [
@@ -229,8 +290,7 @@ def worker(request, org_slug=None, opp_id=None):
     ]
 
     return render(request, "tailwind/pages/worker.html", {"header_title": "Worker", "tabs": data, "kpi":user_kpi })
-
-
+  
 def opportunities(request, org_slug=None, opp_id=None):
     path = ['programs','opportunities','opportunity name' ]
     data = [
@@ -652,7 +712,180 @@ def opportunity_visits(request, org_slug=None, opp_id=None):
         },
     )
 
+def add_budget(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            "index": 1,
+            "user_id": "AB12CD34EF56",
+            "name": "John Doe",
+            "max_visit": 120,
+            "used_visits": 89,
+            "end_date": "2025-07-12",
+        },
+        {
+            "index": 2,
+            "user_id": "XY98GH76IJ54",
+            "name": "Alice Smith",
+            "max_visit": 150,
+            "used_visits": 45,
+            "end_date": "2025-09-30",
+        },
+        {
+            "index": 3,
+            "user_id": "MN45KL89OP12",
+            "name": "Bob Johnson",
+            "max_visit": 100,
+            "used_visits": 72,
+            "end_date": "2026-02-15",
+        },
+        {
+            "index": 4,
+            "user_id": "QR23ST56UV78",
+            "name": "Emma Wilson",
+            "max_visit": 180,
+            "used_visits": 160,
+            "end_date": "2025-11-20",
+        },
+        {
+            "index": 5,
+            "user_id": "WX67YZ12AB34",
+            "name": "Michael Brown",
+            "max_visit": 90,
+            "used_visits": 25,
+            "end_date": "2026-05-10",
+        },
+        {
+            "index": 6,
+            "user_id": "KL34MN78OP56",
+            "name": "Sophia Martinez",
+            "max_visit": 130,
+            "used_visits": 98,
+            "end_date": "2025-08-21",
+        },
+        {
+            "index": 7,
+            "user_id": "UV12WX34YZ56",
+            "name": "James Anderson",
+            "max_visit": 170,
+            "used_visits": 140,
+            "end_date": "2026-04-05",
+        },
+        {
+            "index": 8,
+            "user_id": "CD78EF12GH34",
+            "name": "Olivia Taylor",
+            "max_visit": 200,
+            "used_visits": 180,
+            "end_date": "2025-12-25",
+        },
+        {
+            "index": 9,
+            "user_id": "IJ45KL67MN89",
+            "name": "William Harris",
+            "max_visit": 95,
+            "used_visits": 50,
+            "end_date": "2025-06-18",
+        },
+        {
+            "index": 10,
+            "user_id": "OP23QR45ST67",
+            "name": "Charlotte White",
+            "max_visit": 160,
+            "used_visits": 130,
+            "end_date": "2026-07-01",
+        },
+        {
+            "index": 11,
+            "user_id": "EF12GH34IJ56",
+            "name": "Benjamin Lewis",
+            "max_visit": 110,
+            "used_visits": 85,
+            "end_date": "2025-10-11",
+        },
+        {
+            "index": 12,
+            "user_id": "ST78UV12WX34",
+            "name": "Mia Scott",
+            "max_visit": 140,
+            "used_visits": 95,
+            "end_date": "2026-03-30",
+        },
+        {
+            "index": 13,
+            "user_id": "YZ45AB67CD89",
+            "name": "Elijah Hall",
+            "max_visit": 180,
+            "used_visits": 170,
+            "end_date": "2025-09-09",
+        },
+        {
+            "index": 14,
+            "user_id": "GH23IJ45KL67",
+            "name": "Amelia Young",
+            "max_visit": 125,
+            "used_visits": 110,
+            "end_date": "2026-01-25",
+        },
+        {
+            "index": 15,
+            "user_id": "MN78OP12QR34",
+            "name": "Lucas King",
+            "max_visit": 190,
+            "used_visits": 150,
+            "end_date": "2025-11-15",
+        },
+        {
+            "index": 16,
+            "user_id": "WX45YZ67AB89",
+            "name": "Harper Wright",
+            "max_visit": 105,
+            "used_visits": 70,
+            "end_date": "2026-06-20",
+        },
+        {
+            "index": 17,
+            "user_id": "CD12EF34GH56",
+            "name": "Henry Green",
+            "max_visit": 175,
+            "used_visits": 160,
+            "end_date": "2025-12-01",
+        },
+        {
+            "index": 18,
+            "user_id": "IJ78KL12MN34",
+            "name": "Evelyn Adams",
+            "max_visit": 115,
+            "used_visits": 90,
+            "end_date": "2026-05-17",
+        },
+        {
+            "index": 19,
+            "user_id": "OP45QR67ST89",
+            "name": "Alexander Nelson",
+            "max_visit": 145,
+            "used_visits": 120,
+            "end_date": "2025-08-05",
+        },
+        {
+            "index": 20,
+            "user_id": "UV23WX45YZ67",
+            "name": "Isabella Carter",
+            "max_visit": 135,
+            "used_visits": 100,
+            "end_date": "2026-02-22",
+        },
+    ]
 
+    table = AddBudgetTable(data)
+    return render(
+        request,
+        "tailwind/pages/add_budget.html",
+        {
+            "title": "Add Budget",
+            "table": table,
+            "opportunity_name": "Opportunity Name"
+        },
+    )
 def opportunities_list_table_view(request, org_slug=None, opp_id=None):
     data = [
         {

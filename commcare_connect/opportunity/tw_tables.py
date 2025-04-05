@@ -5,18 +5,120 @@ from django.utils.safestring import mark_safe
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
-    class Meta:
-        template_name = "tailwind/base_table.html"
-        attrs = {"class": "w-full text-left text-sm text-gray-600"}
-
-class BaseTailwindTable(tables.Table):
-    """Base table using Tailwind styling and custom template."""
 
     class Meta:
         template_name = "tailwind/base_table.html"  # Use your custom template
-        attrs = {"class": "w-full text-left text-sm text-gray-600"}
+        attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
 
+class LearnAppTable(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    name = tables.Column(verbose_name="Name")
+    description = tables.Column(verbose_name="Description")
+    estimated_time = tables.Column(verbose_name="Estimated Time")
+    
+    class Meta:
+        sequence = ("index", "name", "description", "estimated_time")
+    
+    def render_index(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_name(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_description(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    def render_estimated_time(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )                
+        
+class DeliveryAppTable(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    unit_name = tables.Column(verbose_name="Deliver Unit Name")
+    unit_id = tables.Column(verbose_name="Deliver Unit ID")
+    
+    class Meta:
+        sequence = ("index", "unit_name", "unit_id")
+    
+    def render_index(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    
+    def render_unit_name(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )        
+    def render_unit_id(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
 
+class PaymentAppTable(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    unit_name = tables.Column(verbose_name="Payment Unit Name")
+    start_date = tables.Column(verbose_name="Start Date")
+    end_date = tables.Column(verbose_name="End Date")
+    amount = tables.Column(verbose_name="Amount")
+    total_deliveries = tables.Column(verbose_name="Total Deliveries")
+    max_daily = tables.Column(verbose_name="Max Daily")
+    delivery_units = tables.Column(verbose_name="Delivery Units")
+    
+    class Meta:
+        sequence = ("index", "unit_name", "start_date", "end_date", "amount", "total_deliveries", "max_daily", "delivery_units")
+    
+    def render_index(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    
+    def render_unit_name(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    
+    def render_start_date(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    
+    def render_end_date(self, value):
+        return format_html(
+            """
+            <div>
+                {}
+            </div>
+            """,
+            value,
+        )    
+    def render_amount(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+        
+    def render_total_deliveries(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    
+    def render_max_daily(self, value):
+        return format_html(
+            '<div class="">{}</div>', value
+        )
+    
+    def render_delivery_units(self, value):
+        return format_html(
+            '''<div class="flex justify-between">
+                    <span>{}</span>
+                    <i class="fa-light fa-chevron-down"></i>
+                </div>
+            ''', value
+        )
+       
 class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
     time = tables.Column(verbose_name="Time")
@@ -172,7 +274,77 @@ class VisitsTable(BaseTailwindTable):
             value,
         )
 
+class AddBudgetTable(BaseTailwindTable):
+    index = tables.Column(verbose_name="#", orderable=False)
+    user_id = tables.Column(verbose_name="User ID")
+    name = tables.Column(verbose_name="Name")
+    max_visit = tables.Column(verbose_name="Max Visits")
+    used_visits = tables.Column(verbose_name="Used Visits")
+    end_date = tables.Column(verbose_name="End Date")
 
+    class Meta:
+        sequence = ("index", "user_id", "name", "max_visit", "used_visits", "end_date")
+
+    def render_index(self, value):
+        return format_html('<div class="text-brand-deep-purple">{}</div>', value)
+
+    def render_user_id(self, value):
+        return format_html("<div>{}</div>", value)
+
+    def render_name(self, value):
+        return format_html("<div>{}</div>", value)
+
+    def render_max_visit(self, value):
+        return format_html(
+            """
+            <div x-data='{{"originalValue": "{}", "currentValue": "{}", "hasChanged": false, "isValid": true, "isEditing": false}}'
+                x-init="$watch('currentValue', value => {{
+                    if (value === '') {{
+                        currentValue = '0';
+                        return;
+                    }}
+                    isValid = !isNaN(value) && parseInt(value) >= 0;
+                }})">
+                <div class="flex items-center">
+                    <input
+                        type="text"
+                        x-model="currentValue"
+                        x-on:input="currentValue = $event.target.value.replace(/[^0-9]/g, '')"
+                        x-on:focus="isEditing = true"
+                        x-on:blur="isEditing = false; hasChanged = currentValue !== originalValue"
+                        class="w-15"
+                        :class="{{
+                            'border rounded p-1.5 text-center': true,
+                            'border-brand-border-light focus:border-brand-border-light focus:outline-none': isEditing,
+                            'border-transparent': !isEditing,
+                            'bg-brand-indigo/10 text-brand-indigo border-none  rounded-full': !isEditing && hasChanged && isValid,
+                        }}"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        value="{}">
+                </div>
+            </div>
+            """,
+            value,
+            value,
+            value,
+        )
+
+    def render_used_visits(self, value):
+        return format_html("<div>{}</div>", value)
+
+    def render_end_date(self, value):
+        return format_html(
+            """
+            
+                <input type="date"
+                class="border w-32 border-brand-border-light focus:outline-none rounded p-2"
+                value="{}">
+            
+            """,
+            value,
+        )
+        
 class OpportunitiesListTable(tables.Table):
     index = tables.Column(verbose_name="")
     opportunity = tables.Column(verbose_name="Opportunity", orderable=False)
@@ -839,22 +1011,3 @@ class WorkerMainTable(BaseTailwindTable):
             value["id"],
         )
 
-# class WorkerDeliveryTable(BaseTailwindTable):
-#     index = tables.Column(verbose_name="#", orderable=False)
-#     worker = tables.Column(verbose_name="Name", orderable=False)
-#     indicator = tables.TemplateColumn(
-#         verbose_name="Indicator",
-#         attrs={
-#             "td": {
-#                 "class": "p-0",
-#             }
-#         },
-#         orderable=False,
-#         template_code="""
-#                                     {% if value %}
-#                                        <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
-#                                     {% else %}
-#                                         <div class="w-[40px]"><div class="w-4 h-2"></div></div>
-#                                     {% endif %}
-#                                     """,
-#     )
