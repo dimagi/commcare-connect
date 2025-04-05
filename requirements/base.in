@@ -24,6 +24,7 @@ django-allauth
 django-celery-beat
 django-crispy-forms
 crispy-bootstrap5
+crispy-tailwind
 django-redis
 # Django REST Framework
 djangorestframework

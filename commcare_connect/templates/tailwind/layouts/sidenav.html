@@ -1,37 +1,57 @@
 {% load static i18n %}
 
-<div x-data="{ sidebarOpen: false }" id="sidebar" class="bg-brand-deep-purple z-50 h-screen text-white flex flex-col top-0 left-0 fixed transition-all duration-300"
+<div x-data="{ sidebarOpen: false }"
+    @click.outside="sidebarOpen = false"
+    class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-50 text-white flex flex-col justify-between transition-all duration-300 px-2"
     :class="sidebarOpen ? 'w-64' : 'w-16'">
-    <div class="relative flex flex-col items-start justify-center mb-20">
-        <div class="fixed flex gap-3 pl-4 mb-10 top-4">
-            <img src="{% static 'images/logo.svg' %}" class="w-8 h-8 rounded-full   border-gray-300" />
-            <div x-show="sidebarOpen" x-cloak id="commcareText" class="text-xl font-normal text-white">
-                <p class='text-lg'>CommCare</p>
-                <p class='ml-6 -mt-2 text-lg'>Connect</p>
+
+    <!-- Top Section -->
+    <div>
+        <!-- Logo Section -->
+        <div class="">
+            <div class="flex p-2 justify-start">
+                <div 
+                    x-show.immediate="!sidebarOpen" 
+                    class=" h-12 transition-none" 
+                >
+                    <img src="{% static 'images/logo.svg' %}" alt="Compact Logo" class="w-8 h-8">
+                </div>
+                <div 
+                    x-show.immediate="sidebarOpen" 
+                    class="h-12 pl-1"
+                >
+                    <img src="{% static 'images/logo-full.svg' %}" alt="Full Logo" class="h-12 w-auto">
+                </div>
             </div>
         </div>
-        <button @click="sidebarOpen = !sidebarOpen" class="absolute w-screen mt-8 focus:outline-none top-12">
-            <div class='flex items-center justify-start w-screen gap-3 pl-6'>
-                <i :class="sidebarOpen ? 'fa-solid fa-xmark' : 'fa-regular fa-bars'" id="menuIcon"></i>
-                <span x-show="sidebarOpen" x-cloak id="menuText" class="ml-2 text-xs">Menu</span>
+
+        <div class="flex rounded-lg items-center p-2 transition-all duration-300 cursor-pointer">
+            <div class="flex items-center justify-center w-8 h-8">
+                <i class="fa-light text-lg text-brand-sky"
+                    :class="sidebarOpen ? 'fa-xmark-large': 'fa-bars'"
+                    @click="sidebarOpen = !sidebarOpen"></i>
+                
             </div>
-        </button>
+    
+            <div class="transition-all duration-300 overflow-hidden flex items-center"
+                 :class="sidebarOpen ? 'w-40 ml-4 opacity-100' : 'w-0 opacity-0'">
+                <span class="text-xs whitespace-nowrap">Menu</span>
+            </div>
+        </div>
+
+        <!-- Navigation Items -->
+        <div class="mt-5">
+            {% url 'program:home' request.org.slug as program_home_url %}
+            {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
+            {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target='/opportunities' %}
+            {% include "tailwind/components/sidenav-items.html" with name='Analytics' icon='chart-pie'  target='/analytics' %}
+            {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target='/organization' %}
+        </div>
     </div>
 
-    <div class="flex flex-col flex-grow mt-16">
-        <nav class="flex flex-col px-2 transition-all duration-300" id="navItems">
-            <nav class="flex flex-col px-2 transition-all duration-300" id="navItems">
-                {% url 'program:home' request.org.slug as program_home_url %}
-                {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns' state='sidebarOpen' target=program_home_url %}
-                {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large' state='sidebarOpen' target='/opportunities' %}
-                {% include "tailwind/components/sidenav-items.html" with name='Analytics' icon='chart-pie' state='sidebarOpen' target='/analytics' %}
-                {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings' state='sidebarOpen' target='/organization' %}
-            </nav>
-        </nav>
-    </div>
-
-    <div class="flex flex-col px-2 pb-4 ">
-        {% include "tailwind/components/sidenav-items.html" with name='Help & FAQ' icon='circle-question' state='sidebarOpen' target='/help &  FAQ' %}
-        {% include "tailwind/components/sidenav-items.html" with name='Settings' icon='buildings' state='sidebarOpen' target='/settings' %}
+    <!-- Bottom Section -->
+    <div>
+        {% include "tailwind/components/sidenav-items.html" with name='Help & FAQ' icon='circle-question'  target='/help & FAQ' %}
+        {% include "tailwind/components/sidenav-items.html" with name='Settings' icon='gear'  target='/settings' %}
     </div>
 </div>

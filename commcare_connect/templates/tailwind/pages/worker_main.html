@@ -1,0 +1,53 @@
+{% load render_table from django_tables2 %}
+
+<div
+  class="flex flex-col w-full gap-2"
+  x-data="{
+    selectedRows: [],
+    // Toggle single row selection
+    toggleRow(index) {
+        const rowIndex = this.selectedRows.indexOf(index);
+        if (rowIndex === -1) {
+            this.selectedRows.push(index);
+        } else {
+            this.selectedRows.splice(rowIndex, 1);
+        }
+    },
+    toggleAll() {
+        if (this.isAllSelected()) {
+            this.selectedRows = [];
+        } else {
+            // Get all row indices from the table data
+            this.selectedRows = Array.from({ length: {{ table.rows|length }} }, (_, i) => i + 1);
+        }
+    },
+    isAllSelected() {
+        return {{ table.rows|length }} > 0 && this.selectedRows.length === {{ table.rows|length }};
+    },
+    isRowSelected(index) {
+        return this.selectedRows.includes(index);
+    }
+}"
+>
+
+     {% render_table table %}
+
+  <!--Table Footer-->
+  <div
+  class="table-footer w-full flex items-center justify-between h-14  overflow-auto bg-white  text-brand-deep-purple py-2 px-4 rounded-lg gap-6">
+  {% include "tailwind/components/pagination.html" %}
+    <div class="flex items-center gap-4">
+      <div>
+        <p class="text-xs text-nowrap">Pending Invitation</p>
+        <p class="description-text text-xs  text-nowrap text-slate-400">3 Days ago</p>
+      </div>
+      <button class="button button-sm button-outline-rounded text-sm"><div class="flex gap-2"><p>39</p><p>Resend</p></div></button>
+    </div>
+    <div class="flex items-center gap-4">
+      <p class="text-xs text-nowrap">Connect ID Not Found</p>
+      <button class="button button-sm button-outline-rounded text-sm"><div class="flex gap-2"><p>15</p><p>Delete</p></div></button>
+    </div>
+    <div class="chip chip-md bg-brand-blue-light/10 text-sm">Avg 17.8</div>
+  </div>
+</div>
+

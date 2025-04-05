@@ -42,7 +42,7 @@ certifi==2023.7.22
     #   httpcore
     #   httpx
     #   requests
-cffi==1.15.1
+cffi
     # via
     #   argon2-cffi-bindings
     #   cryptography
@@ -64,6 +64,8 @@ click-repl==0.3.0
     # via celery
 crispy-bootstrap5==0.7
     # via -r requirements/base.in
+crispy-tailwind==1.0.3
+    # via -r requirements/base.in
 cron-descriptor==1.4.0
     # via django-celery-beat
 cryptography==41.0.2
@@ -80,6 +82,7 @@ django==4.2.5
     # via
     #   -r requirements/base.in
     #   crispy-bootstrap5
+    #   crispy-tailwind
     #   django-allauth
     #   django-autocomplete-light
     #   django-celery-beat
@@ -106,6 +109,7 @@ django-crispy-forms==2.0
     # via
     #   -r requirements/base.in
     #   crispy-bootstrap5
+    #   crispy-tailwind
 django-environ==0.10.0
     # via -r requirements/base.in
 django-filter==24.3

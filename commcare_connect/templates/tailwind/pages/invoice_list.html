@@ -1,0 +1,103 @@
+{% extends "tailwind/base.html" %} {% block content %}
+<p class="my-5 text-sm font-medium text-brand-deep-purple">Opportunity Name</p>
+<div
+  class="flex flex-col w-full gap-2"
+  x-data="{
+        selectedTab: '',
+        selectedOption: '',
+    }"
+  x-init="selectedTab='invoices';selectedOption=''"
+>
+  <!-- Tabs -->
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+    <div class="flex h-full gap-x-8 px-2">
+      <div
+        @click="selectedTab = 'invoices'; selectedRows = []; $nextTick(() => { 
+                htmx.trigger('#invoices-tab', 'loadInvoices');
+            })"
+        id="invoices-tab"
+        class="relative cursor-pointer text-sm h-full flex items-center"
+        :class="{
+                'text-brand-deep-purple font-medium': selectedTab === 'invoices',
+                'text-gray-500': selectedTab !== 'invoices'
+            }"
+        hx-get="/a/test-org-managed/opportunity/8/tw/tables/all_invoice"
+        hx-swap="innerHTML"
+        hx-trigger="loadInvoices"
+        hx-target="#invoice_report_container"
+      >
+        <span>All Invoices</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'invoices'"
+        ></div>
+      </div>
+      <div
+        @click="selectedTab = 'report'; selectedRows = []; $nextTick(() => { 
+                htmx.trigger('#report-tab', 'loadLearn');
+            })"
+        id="report-tab"
+        class="relative cursor-pointer text-sm h-full flex items-center"
+        :class="{
+                'text-brand-deep-purple font-medium': selectedTab === 'report',
+                'text-gray-500': selectedTab !== 'report'
+            }"
+        hx-get="/a/test-org-managed/opportunity/8/tw/tables/all_invoice"
+        hx-swap="innerHTML"
+        hx-trigger="loadLearn"
+        hx-target="#invoice_report_container"
+      >
+        <span>Payment Report</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'report'"
+        ></div>
+      </div>
+    </div>
+
+    <!-- All Invoices Options -->
+    <div x-show="selectedTab === 'invoices'" class="flex gap-x-4 items-center">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button class="button button-md primary-dark">Add Invoice</button>
+    </div>
+
+    <!-- Payment Report Options -->
+    <div x-show="selectedTab === 'report'" class="flex gap-x-4">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Payment Report Card -->
+  <div
+    x-show="selectedTab === 'report'"
+    id="invoice_report_card_container"
+    hx-get="/a/test-1/opportunity/1/tw/api/invoice_report_card/"
+    hx-swap="innerHTML"
+    hx-trigger="fetchReport"
+    x-init="$watch('selectedTab', value => {
+        if (value === 'report') {
+            htmx.trigger('#invoice_report_card_container', 'fetchReport');
+        }
+    })"
+    class="my-4"
+  ></div>
+
+  <p x-show="selectedTab === 'report'" class="mb-4 text-sm font-medium text-brand-deep-purple">All Invoices</p>
+
+  <!-- Tab Content Container -->
+  <div
+    id="invoice_report_container"
+    class="w-full"
+    hx-get="/a/test-org-managed/opportunity/8/tw/tables/all_invoice"
+    hx-swap="innerHTML"
+    hx-trigger="load"
+  ></div>
+  <div class="table-footer w-full flex items-center justify-between h-14 bg-white text-brand-deep-purple py-2 px-4 rounded-lg">
+    {% include "tailwind/components/pagination.html" %}
+  </div>
+</div>
+{% endblock content %}

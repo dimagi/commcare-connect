@@ -1,0 +1,6 @@
+<!-- tailwind/components/cards/invoice_report_card.html -->
+<div class="flex gap-4 w-full items-center min-h-32 p-4 profile-bg bg-brand-indigo rounded-2xl overflow-x-auto">
+    {% for item in data %}
+        {% include "tailwind/components/cards/kpi.html" with count=item.count text=item.name|safe icon=item.icon dropdown=item.dropdown %}
+    {% endfor %}
+</div>

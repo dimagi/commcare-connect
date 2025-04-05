@@ -1,0 +1,13 @@
+text-green-600
+text-slate-100
+text-orange-600
+text-violet-500
+text-orange-600
+text-indigo-700
+
+bg-violet-500/20
+bg-orange-600/20
+bg-indigo-700/20
+bg-green-600/20
+bg-slate-100/20
+bg-orange-600/20
