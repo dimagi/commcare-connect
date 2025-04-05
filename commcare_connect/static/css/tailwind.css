@@ -106,6 +106,17 @@
     }
 }
 
+@layer components {
+    .button-icon-activatable{
+        @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
+    }
+
+
+    .button-icon-activatable:focus{
+      @apply bg-brand-mango/10;
+    }
+}
+
 @layer components{
     .button-text{
         @apply text-brand-deep-purple flex gap-2 items-center cursor-pointer py-1 px-4 rounded-full;
