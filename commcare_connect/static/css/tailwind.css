@@ -18,6 +18,10 @@
     --color-brand-sunset-light : #FC5F3633;
     --color-brand-border-light : #E2E8F0; 
 }
+/* ----- background -------*/
+.card_bg{
+    @apply bg-white rounded-lg shadow-sm p-6
+}
 
 /* ------ Typography------ */
 
@@ -30,6 +34,10 @@
 } 
 .title{
     @apply font-medium text-gray-900;
+}
+
+.title-sm{
+    @apply font-medium text-gray-900 text-sm;
 }
 
 .hint{
@@ -74,7 +82,7 @@
 /*-- buttons -------------------------------------*/ 
 
 .button {
-    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2 min-w-24;
+    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2;
 }
 
 .button:hover::after {
@@ -134,11 +142,11 @@
 /* Size Variants */
 
 .button-sm{
-    @apply py-1 px-4;
+    @apply py-1 px-4 min-w-16;
 }
 
 .button-md{
-    @apply py-3 px-4; 
+    @apply py-3 px-4 min-w-24; 
 }
 
 /* Dark Theme */
@@ -389,7 +397,7 @@
     }
 }
 
-/*--- simple checbox ------------------------- */ 
+/*--- simple checkbox ------------------------- */ 
 @layer components {
     .simple-checkbox {
         @apply w-4 h-4 appearance-none border-2 border-gray-400 cursor-pointer transition-all duration-200;

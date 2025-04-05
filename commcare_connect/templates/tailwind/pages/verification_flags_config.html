@@ -7,38 +7,47 @@
 
 
 {% block content %}
-  <h2 class="text-xl font-semibold mb-4">Verification Flags Configuration</h2>
-  <div class="border-b border-gray-300 mb-4"></div>
+
+<div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
+  <h2 class="title">Verification Flags Configuration</h2> 
 
   <form method="post" class="space-y-6">
     {% csrf_token %}
-    <div>
-      {% crispy form 'tailwind' %}
+
+    <div class="space-y-2">
+      <h3 class="title-sm">Location Flags</h3> 
+      <div class="card_bg">
+        <div class="flex flex-col gap-4">
+          {% crispy form 'tailwind' %}
+        </div>
+      </div>
     </div>
 
-    <div>
-      <h3 class="text-lg font-semibold mb-2">Deliver Unit Flags</h3>
-      {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+    <div class="space-y-2">
+      <h3 class="title-sm">Deliver Unit Flags</h3> 
+      <div class="card_bg">
+        {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+      </div> 
     </div>
-
     <div x-data="form_json_formset" class="space-y-4">
-      <h3 class="text-lg font-semibold flex items-center gap-2">
-        Form Validation Rules
-        <button type="button" class="inline-flex items-center text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm font-medium" @click="addForm()">
-          <i class="bi bi-plus-circle-fill pe-1"></i> Add
+      <div class="flex justify-between">
+        <h3 class="title-sm">Form Validation Rules</h3>  
+        <button type="button" class="button-icon" @click="addForm()">
+          <i class="fa-light fa-plus-circle"></i>
         </button>
-      </h3>
-
-      {{ form_json_formset.management_form|crispy }}
+      </div>
+      <div>
+        {{ form_json_formset.management_form|crispy }}
+      </div>
 
       <template>
-        <div class="border border-gray-300 rounded shadow-sm" id="form_json_form">
+        <div class="card_bg" id="form_json_form">
           <div class="p-4">
             {% crispy form_json_formset.empty_form form_json_formset.empty_form.helper %}
           </div>
-          <div class="bg-gray-100 px-4 py-2 flex justify-end">
-            <button type="button" class="inline-flex items-center text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium" aria-label="Delete" @click="deleteForm()">
-              <i class="bi bi-trash-fill pe-1"></i> Delete
+          <div class="flex justify-end">
+            <button type="button" class="button-icon text-brand-mango" aria-label="Delete" @click="deleteForm()">
+              <i class="fa-light fa-trash"></i>
             </button>
           </div>
         </div>
@@ -46,22 +55,19 @@
 
       <div id="form_json_forms" class="space-y-4">
         {% for form in form_json_formset %}
-          <div class="border border-gray-300 rounded shadow-sm" id="form_json_form">
-            <div class="p-4">
-              {% crispy form form.helper %}
-            </div>
-            <div class="bg-gray-100 px-4 py-2 flex justify-end">
+          <div class="card_bg" id="form_json_form"> 
+              {% crispy form form.helper %} 
+            <div class="flex justify-end">
               {% if not form.instance.id %}
-                <button type="button" class="inline-flex items-center text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium" aria-label="Delete" @click="deleteForm()">
+                <button type="button" class="button-icon text-brand-mango" aria-label="Delete" @click="deleteForm()">
               {% else %}
-                <button type="button" class="inline-flex items-center text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium"
+                <button type="button" class="button-icon text-brand-mango"
                         aria-label="Delete"
                         hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.pk pk=form.instance.id %}"
                         hx-target="closest #form_json_form"
                         hx-swap="outerHTML"
                         @click="decrementFormCount()">
-              {% endif %}
-                  <i class="bi bi-trash-fill pe-1"></i> Delete
+              {% endif %} <i class="fa-light fa-trash"></i>
                 </button>
             </div>
           </div>
@@ -69,12 +75,16 @@
       </div>
     </div>
 
-    <div>
-      <button type="submit" class="inline-flex items-center text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm font-medium">
-        Save
+    <div class="text-right space-x-4">
+      <button type="submit" class="button button-md outline-style">
+        Prev
+      </button>
+      <button type="submit" class="button button-md primary-dark">
+        Next
       </button>
     </div>
   </form>
+</div>
 {% endblock content %}
 
 {% block inline_javascript %}
