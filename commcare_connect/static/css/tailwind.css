@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @tailwind utilities;
 
+@source "./safelist.txt";
+
 [x-cloak] {
     display: none !important;
 }

@@ -7,7 +7,7 @@
     <table class="base-table">
       {% block table.thead %}
       {% if table.show_header %}
-      <thead>
+      <thead {{ table.attrs.thead.as_html }}>
         <tr>
           {% for column in table.columns %}
           <th>
@@ -69,9 +69,6 @@
     .scrollable-table-wrapper {
       border-radius: 8px;
       overflow: hidden;
-      {% comment %} margin-top: .5rem;
-      margin-bottom: .5rem; {% endcomment %}
-      {% comment %} box-shadow: 0 2px 4px rgba(0,0,0,0.1); {% endcomment %}
     }
   
     .scrollable-table-container {
@@ -80,80 +77,6 @@
       overflow-x: auto;
       display: block;
     }
-  
-    {% comment %} .scrollable-table {
-      width: 100%;
-      border-collapse: collapse;
-      table-layout: auto;
-    }
-  
-    .scrollable-table thead {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      font-size: 0.875rem;
-      color:#16006d; 
-    }
-  
-    .scrollable-table thead th {
-      background: #e2e8f0;
-      font-weight: 500;
-      height: 56px; 
-      position: relative;
-    }
-  
-    /* Add the visual gap using a pseudo-element */
-    .scrollable-table thead::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      bottom: -8px; /* Adjust this value to control the gap size */
-      width: 100%;
-      height: 9px; /* Adjust this value to control the gap size */
-      background: #f3f4f6;
-      pointer-events: none;
-    }
-  
-    .scrollable-table tbody {
-      padding-top: 2rem;
-      font-size: 0.875rem; 
-    }
-  
-    .scrollable-table th,
-    .scrollable-table td {
-      padding: 12px;
-      text-align: left;
-      border-bottom: 1px solid #ddd;
-      white-space: nowrap;
-    }
-  
-    /* Use first and last-child to round first and last header cells */
-    .scrollable-table thead th:first-child {
-      border-top-left-radius: 8px;
-      border-bottom-left-radius: 8px;
-    }
-  
-    .scrollable-table thead th:last-child {
-      border-top-right-radius: 8px;
-      border-bottom-right-radius: 8px;
-    }
 
-    .scrollable-table tbody{
-        margin-top: 8px;
-    }
-    .scrollable-table tbody tr {
-        background: white; 
-    }
-    
-    .scrollable-table tbody tr:first-child {
-        background: white; 
-    }
-    
-    .scrollable-table tbody tr:first-child td {
-        padding-top: 22px;
-    }
-    .scrollable-table tbody tr:hover {
-      background-color: #f5f5f5;
-    } {% endcomment %}
   </style>
 {% endblock table-wrapper %}

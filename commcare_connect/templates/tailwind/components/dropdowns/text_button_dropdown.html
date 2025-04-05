@@ -8,25 +8,25 @@
       const badgeRect = badge.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
+      const dropdown = this.$el.querySelector('.dropdown-content');
       
-      // Calculate available space
-      const spaceBelow = viewportHeight - badgeRect.bottom;
-      const shouldShowAbove = spaceBelow < 200 && badgeRect.top > 200;
-      
-      // Position calculation
-      let top = shouldShowAbove 
-        ? badgeRect.top + window.scrollY - 200
-        : badgeRect.bottom + window.scrollY;
-      
-      // Adjust for right edge
-      let left = Math.min(
-        badgeRect.left, 
-        viewportWidth - 220
+      setTimeout(() => {
+        const dropdownHeight = dropdown ? dropdown.offsetHeight : 0;
+        
+        const spaceBelow = viewportHeight - badgeRect.bottom;
+        const shouldShowAbove = spaceBelow < dropdownHeight && badgeRect.top > dropdownHeight;
+        
+        let top = shouldShowAbove 
+          ? badgeRect.top + window.scrollY - dropdownHeight
+          : badgeRect.bottom + window.scrollY;
+        
+        let left = Math.min(
+          badgeRect.left, 
+          viewportWidth -  dropdown.offsetWidth - 20
         );
-      
-      
-
-      this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
+        
+        this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
+      }, 0); 
     },
     toggleDropdown() {
       if (!this.open) {
@@ -45,7 +45,7 @@
     '': open,
     '': !open
   }"
-  class="cursor-pointer underline underline-offset-2 {{styles}}"
+  class="cursor-pointer {{styles}}"
 >
   {{text}}
 
@@ -60,14 +60,15 @@
     x-transition:leave-start="opacity-100 scale-100"
     x-transition:leave-end="opacity-0 scale-95"
     :style="dropdownStyle"
-    class="z-[9999] w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
+    class="dropdown-content z-50 w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
   >
     <p class="text-blue-light text-xs mb-1">{{ title|default:'' }}</p>
     <div class="" >
       {% for item in list %}
-     <div> <button type="button" class="bg-transparent  border-0 px-2 my-2">
+      <div> <button type="button" class="bg-transparent border-0 px-2 my-2">
         {{item}}
       </button></div>
       {% endfor %}
+    </div>
   </div>
 </span>

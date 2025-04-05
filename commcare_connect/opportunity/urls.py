@@ -137,13 +137,17 @@ urlpatterns = [
     path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),
     path("<int:opp_id>/tw/get_worker_last_payment/", tw_views.get_worker_last_payment, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
+    path("<int:opp_id>/tw/invoice_list/", tw_views.invoice_list, name="tw_invoice_list"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
     # Tables 
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
+    path("<int:opp_id>/tw/tables/all_invoice", tw_views.all_invoice_table, name="tw_all_invoice"),
+    path("<int:opp_id>/tw/tables/invoice_report", tw_views.invoice_report_table, name="tw_invoice_report"),
     # API
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
+    path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_opportunities_card"),
 ]

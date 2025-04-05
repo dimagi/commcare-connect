@@ -48,9 +48,10 @@
   {% comment %}  This section not needed right now {% endcomment %}
   <div
     x-cloak
-    x-show="selectedOption == 'payWorker'"
+    x-show="false"
     class="fixed max-h-[80vh] min-h-fit bottom-4 right-4 w-[844px] p-4 z-50 bg-neutral-100 rounded-lg shadow-sm"
-  >
+    >
+    {% comment %} x-show="selectedOption == 'payWorker'" {% endcomment %}
     <div
       class="flex items-center justify-between px-3 py-2 mx-auto mb-2 text-sm font-medium rounded-lg bg-slate-50 h-14 text-brand-deep-purple auto-cols-min"
     >

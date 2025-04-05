@@ -4,7 +4,7 @@
 {% block content %}
 <div class="flex items-center justify-center">
   <div
-    class="flex flex-col gap-2 w-full lg:w-[1344px]"
+    class="flex flex-col gap-2 w-full"
     x-data="{
     sortColumn: '',
     sortDirection: 'asc',
@@ -21,188 +21,31 @@
     }
   }"
   >
-    <div class="flex items-center justify-between w-full px-4 py-2 border rounded-lg shadow-sm bg-slate-50 h-14">
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <p class="text-sm text-brand-deep-purple">Opportunities List</p>
       <div class="flex gap-x-6">
         <button type="button"><i class="fa-light fa-sliders-simple"></i></button>
-        {% include "tailwind/components/buttons/button_primary_sm.html" with text='Add New' %}
+        <button
+        class="button button-md primary-dark"
+      >
+        Add Opportunity
+      </button>
       </div>
     </div>
 
     <!-- Table Header -->
     <div class="flex flex-col w-full gap-2">
-      <div class="flex items-center justify-between max-w-[1344px] p-3 bg-slate-200 rounded-lg h-14 gap-x-4">
-        <div
-          class="flex items-center justify-center text-sm font-medium text-brand-deep-purple w-[36px] group cursor-pointer"
-          @click="sortBy('#')"
-        >
-          #
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('#') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('#'),
-                 'opacity-100': isSorted('#'),
-                 'animate-fade-in': isSorted('#') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
 
-        <div class="flex items-center justify-start w-[232px] group cursor-pointer" @click="sortBy('opportunity')">
-          {% comment %} {% include "tailwind/components/dropdowns/multi_type_dropdown.html" with text='Opportunity' list=headers.opportunities styles='text-sm font-medium text-brand-deep-purple' %} {% endcomment %}
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('opportunity') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('opportunity'),
-                 'opacity-100': isSorted('opportunity'),
-                 'animate-fade-in': isSorted('opportunity') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div class="flex items-center justify-start text-sm font-medium text-brand-deep-purple w-[60px] group cursor-pointer">&nbsp;</div>
-
-        <div
-          class="flex items-center justify-center text-sm font-medium text-brand-deep-purple w-[178px] group cursor-pointer"
-          @click="sortBy('status')"
-        >
-          {% include "tailwind/components/dropdowns/multi_type_dropdown.html" with text='Status' list=headers.status styles='text-sm font-medium text-brand-deep-purple' %}
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('status') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('status'),
-                 'opacity-100': isSorted('status'),
-                 'animate-fade-in': isSorted('status') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center justify-start text-sm font-medium text-brand-deep-purple w-[174px] group cursor-pointer"
-          @click="sortBy('program')"
-        >
-          Program
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('program') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('program'),
-                 'opacity-100': isSorted('program'),
-                 'animate-fade-in': isSorted('program') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center justify-center text-sm font-medium text-brand-deep-purple w-[144px] group cursor-pointer"
-          @click="sortBy('start_date')"
-        >
-          Start Date
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('start_date') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('start_date'),
-                 'opacity-100': isSorted('start_date'),
-                 'animate-fade-in': isSorted('start_date') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center justify-center text-sm font-medium text-brand-deep-purple w-[144px] group cursor-pointer"
-          @click="sortBy('end_date')"
-        >
-          End Date
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('end_date') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('end_date'),
-                 'opacity-100': isSorted('end_date'),
-                 'animate-fade-in': isSorted('end_date') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center lg:text-nowrap justify-center text-sm font-medium text-brand-deep-purple text-nowrap w-[126px] group cursor-pointer"
-          @click="sortBy('pending_invites')"
-        >
-          Pending Invites
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('pending_invites') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('pending_invites'),
-                 'opacity-100': isSorted('pending_invites'),
-                 'animate-fade-in': isSorted('pending_invites') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center lg:text-nowrap justify-center text-sm font-medium text-brand-deep-purple w-[176px] group cursor-pointer"
-          @click="sortBy('inactive_workers')"
-        >
-          Inactive Workers
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('inactive_workers') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('inactive_workers'),
-                 'opacity-100': isSorted('inactive_workers'),
-                 'animate-fade-in': isSorted('inactive_workers') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center lg:text-nowrap justify-center text-sm font-medium text-brand-deep-purple w-[140px] group cursor-pointer"
-          @click="sortBy('pending_approvals')"
-        >
-          Pending Approvals
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('pending_approvals') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('pending_approvals'),
-                 'opacity-100': isSorted('pending_approvals'),
-                 'animate-fade-in': isSorted('pending_approvals') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-
-        <div
-          class="flex items-center lg:text-nowrap justify-center text-sm font-medium text-brand-deep-purple w-[144px] group cursor-pointer"
-          @click="sortBy('payments_due')"
-        >
-          Payments Due
-          <i
-            class="w-2 ml-2 transition-all duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-            :class="{
-                 'rotate-180': isSorted('payments_due') && sortDirection === 'desc',
-                 'opacity-0 group-hover:opacity-100': !isSorted('payments_due'),
-                 'opacity-100': isSorted('payments_due'),
-                 'animate-fade-in': isSorted('payments_due') && sortDirection === 'asc'
-               }"
-          ></i>
-        </div>
-      </div>
-
-      <div class="min-w-[1344px] h-[700px] overflow-y-auto bg-white border rounded-lg shadow-xs">
-        {% comment %} TODO {% endcomment %}
-        <div hx-get="/a/test-1/opportunity/1/tw/tables/opputunities_list/" hx-trigger="load" hx-swap="outerHTML"></div>
+      <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
+        <div hx-get="/a/test-1/opportunity/1/tw/tables/opportunities_list/" hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
     </div>
 
-    <div
-      class="flex items-center justify-between p-2 px-4 py-2 mb-8 text-xs rounded-lg table-footer h-14 bg-slate-50 text-brand-deep-purple"
-    >
-      <span>Rows per page</span>
-    </div>
+    <!--Table Footer-->
+<div
+class="table-footer w-full flex items-center justify-between h-14  bg-white  text-brand-deep-purple py-2 px-4 rounded-lg">
+{% include "tailwind/components/pagination.html" %}
+</div>
   </div>
 </div>
 {% endblock %}

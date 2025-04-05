@@ -47,7 +47,9 @@
   }"
   class="{{styles}}"
 >
-  {{text}}
+  {% autoescape off %}
+  {{ text }}
+  {% endautoescape %}
 
   <!-- Dropdown -->
   <div
