@@ -128,8 +128,26 @@ urlpatterns = [
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
     # New tailwind based views
+    path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
     path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
-    path("<int:opp_id>/tw/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
-    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),
+    path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
+    path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"),
+    path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),
+    path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),
+    path("<int:opp_id>/tw/get_worker_last_payment/", tw_views.get_worker_last_payment, name="tw_opportunities"),
+    path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
+    path("<int:opp_id>/tw/add_budget/", tw_views.add_budget, name="tw_add_budget"),
+    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
+    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
+    # Tables 
+    path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
+    path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
+    path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
+    path("<int:opp_id>/tw/tables/learn_app",tw_views.learn_app_table, name="tw_learn_app"),
+    path("<int:opp_id>/tw/tables/delivery_app",tw_views.delivery_app_table, name="tw_delivery_app"),
+    path("<int:opp_id>/tw/tables/payment_app",tw_views.payment_app_table, name="tw_payment_app"),
+    # API
+    path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
+    path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
 ]

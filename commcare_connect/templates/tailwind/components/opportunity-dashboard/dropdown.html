@@ -1,0 +1,44 @@
+<div
+  x-show="isOpen"
+  @click.away="isOpen = false"
+  x-transition:enter="transition ease-out duration-200"
+  x-transition:enter-start="opacity-0 scale-95"
+  x-transition:enter-end="opacity-100 scale-100"
+  x-transition:leave="transition ease-in duration-150"
+  x-transition:leave-start="opacity-100 scale-100"
+  x-transition:leave-end="opacity-0 scale-95"
+  class="absolute right-0 top-8 w-50 py-2 bg-white rounded-lg shadow-xl z-20"
+>
+  <ul class="">
+    <li>
+      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+        >View Invoices</a
+      >
+    </li>
+    <li>
+      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+        >Catchment Areas</a
+      >
+    </li>
+    <li>
+      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+        >Add Workers</a
+      >
+    </li>
+    <li>
+      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+        >Add Worker Budget</a
+      >
+    </li>
+    <li>
+      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+        >Verification Flags</a
+      >
+    </li>
+    <li>
+      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+        >Send Message</a
+      >
+    </li>
+  </ul>
+</div>

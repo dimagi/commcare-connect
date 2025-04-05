@@ -15,7 +15,12 @@
             <div class="w-full h-12 shadow-sm flex items-center rounded-lg bg-slate-50 px-4">
                 <p class="text-brand-deep-purple font-medium text-sm">Adding Budget</p>
             </div>
+            {% load crispy_forms_tags %}
 
+            <form method="post">
+                {% csrf_token %}
+                {{ form|crispy:"tailwind" }}
+            </form>
             <div class="flex-1 overflow-y-auto bg-white rounded-lg shadow-sm">
                 {% render_table table %}
             </div>

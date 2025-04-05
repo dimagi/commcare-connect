@@ -1,0 +1,104 @@
+<div x-show="showModal" 
+    x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="fixed inset-0 z-50 overflow-y-auto"
+    style="display: none;">
+    
+    <!-- Background overlay -->
+    <div class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity"
+            @click="showModal = false"></div>
+
+    <!-- Modal content -->
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="relative rounded-2xl bg-gray-100 shadow-xl w-[952px] h-[554px] mx-auto overflow-hidden p-3"
+                @click.away="showModal = false">
+            <!-- Modal header with tabs -->
+            <div class="flex flex-col w-full"
+                    x-init="selectedTab='Learn App'">
+                <!-- Tabs -->
+                <div class="flex relative mx-auto items-center shadow rounded-lg justify-between w-full px-3 mb-3 bg-slate-50 h-14">
+                    <div class="flex h-full gap-x-8 px-2">
+                        <div @click="selectedTab = 'Learn App'" 
+                                class="relative cursor-pointer text-sm h-full flex items-center"
+                                :class="{
+                                'text-brand-deep-purple font-medium': selectedTab === 'Learn App',
+                                'text-gray-500': selectedTab !== 'Learn App'
+                                }">
+                            <span>Learn App</span>
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                                x-show="selectedTab === 'Learn App'"></div>
+                        </div>
+                        <!-- Delivery App Tab -->
+                        <div @click="selectedTab = 'Delivery App'" 
+                                class="relative cursor-pointer text-sm h-full flex items-center"
+                                :class="{
+                                'text-brand-deep-purple font-medium': selectedTab === 'Delivery App',
+                                'text-gray-500': selectedTab !== 'Delivery App'
+                                }">
+                            <span>Delivery App</span>
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                                    x-show="selectedTab === 'Delivery App'"></div>
+                        </div>
+                        <!-- Payment Units Tab -->
+                        <div @click="selectedTab = 'Payments Units'" 
+                                class="relative cursor-pointer text-sm h-full flex items-center"
+                                :class="{
+                                'text-brand-deep-purple font-medium': selectedTab === 'Payments Units',
+                                'text-gray-500': selectedTab !== 'Payments Units'
+                                }">
+                            <span>Payment Units</span>
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                                    x-show="selectedTab === 'Payments Units'"></div>
+                        </div>
+                    </div>
+
+                    <!-- Close button -->
+                    <button @click="showModal = false" id="button" class="button-icon" >
+                        <i class="fa-light fa-xmark-large text-brand-deep-purple"></i>
+                    </button>
+                </div>
+
+                <!-- Modal body / Tab content -->
+                <div class="z-50 bg-white ">
+                    <!-- Learn App Content -->
+                    <div x-show="selectedTab === 'Learn App'"
+                            hx-get="/a/test-1/opportunity/1/tw/tables/learn_app"
+                            hx-trigger="load"
+                            hx-swap="innerHTML"
+                            class=" rounded-lg h-full w-full">
+                        <div class="flex justify-center items-center h-full">
+                            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
+                        </div>
+                    </div>
+
+                    <!-- Delivery App Content -->
+                    <div x-show="selectedTab === 'Delivery App'"
+                            hx-get="/a/test-1/opportunity/1/tw/tables/delivery_app"
+                            hx-trigger="load"
+                            hx-swap="innerHTML"
+                            class="rounded-lg h-full w-full">
+                        <div class="flex justify-center items-center h-full">
+                            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Units Content -->
+                    <div x-show="selectedTab === 'Payments Units'"
+                            hx-get="/a/test-1/opportunity/1/tw/tables/payment_app"
+                            hx-trigger="load"
+                            hx-swap="innerHTML"
+                            class="rounded-lg h-full w-full">
+                        <div class="flex justify-center items-center h-full">
+                            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
+                        </div>
+                    </div>
+                </div>
+               
+            </div>
+        </div>
+    </div>
+</div>

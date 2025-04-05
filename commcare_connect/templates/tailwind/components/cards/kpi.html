@@ -1,10 +1,10 @@
 <!-- Worker Dashboard Card -->
-<div class="w-full h-full bg-white bg-opacity-10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+<div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
     <div class="flex justify-between items-start">
         <!-- Number Content -->
-        <div class="text-2xl">{{count|default:"128"}}</div>
+        <div class="text-2xl">{{count|default:"0"}}</div>
         <!-- Icon -->
-        <i class="fa-light fa-{{icon|default:"file"}}"></i>
+        <i class="fa-light fa-{{icon|default:"gem"}}"></i>
     </div>
     <div class="pt-4 text-sm flex items-center justify-between">
         <span>{{text|default:"Total Delieveries"}}</span>
