@@ -1,0 +1,31 @@
+<!-- dashbaord.html -->
+{% extends 'tailwind/base.html' %}
+
+{% block content %}
+
+<div id="content-area" class="md:max-w-screen-2xl mx-auto flex flex-col lg:flex-row gap-4 min-h-screen"> 
+    <!-- Left Column -->
+    <div class="w-full lg:w-2/3" >
+       <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
+       <div class="flex flex-col gap-4">
+         {% for program in data.programs %}
+         {% include 'tailwind/components/cards/program_card.html' with name=program.name description=program.description date=program.date organization_name=program.organization_name status=program.status delivery_type=program.delivery_type start_date=program.start_date end_date=program.end_date  %}
+         {% endfor %}
+        </div>
+    </div>
+    <!-- Right Column -->
+    
+    <div class="w-full lg:w-1/3">
+       <div class="mb-4 text-brand-deep-purple font-medium text-sm">Recent Activities</div>
+      <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
+          <div class="flex flex-col gap-4">
+             {% for activity in data.recent_activities %}
+               {% include 'tailwind/components/cards/activity_card.html' with name=activity.name icon=activity.icon rows=activity.rows %}
+             {% endfor %}
+          </div>
+       </div>
+    </div>
+ </div>
+
+
+{% endblock %}
