@@ -21,79 +21,44 @@
 
 /* ------ Typography------ */
 
-/* display */
-.text-display-lg{
-    @apply text-6xl;   
-}
-.text-display-md{
-    @apply text-6xl;   
-}
-.text-display-sm{
-    @apply text-6xl;   
+.card_title{
+    @apply font-medium text-lg text-brand-deep-purple
 }
 
-/* headline */
-.text-headline-lg{
-    @apply text-6xl;   
-}
-.text-headline-md{
-    @apply text-6xl;   
-}
-.text-headline-sm{
-    @apply text-6xl;   
+.card_description{
+    @apply font-normal text-sm text-gray-600
+} 
+.title{
+    @apply font-medium text-gray-900;
 }
 
-/* title */
-.text-title-lg{
-    @apply text-6xl;   
-}
-.text-title-md{
-    @apply text-6xl;   
-}
-.text-title-sm{
-    @apply text-6xl;   
-}
-/* body */
-.text-body-lg{
-    @apply text-6xl;   
-}
-.text-body-md{
-    @apply text-6xl;   
-}
-.text-body-sm{
-    @apply text-6xl;   
-}
-/* label */
-
-.text-label-lg{
-    @apply text-6xl;   
+.hint{
+    @apply text-gray-400 text-xs
 }
 
-.text-label-lg-heavy{
-    @apply text-6xl;   
+
+/*-- status ----------------------------------*/
+.status-active{
+    @apply bg-green-600  w-4 h-2 rounded-full;
 }
 
-.text-label-md{
-    @apply text-6xl;   
+.status-inactive{
+    @apply bg-gray-200  w-4 h-2 rounded-full;
 }
 
-.text-label-md-heavy{
-    @apply text-6xl;   
+.status-error{
+    @apply bg-brand-sunset w-4 h-2 rounded-full;
 }
 
-.text-label-sm{
-    @apply text-6xl;   
+.status-warning{
+    @apply bg-brand-marigold  w-4 h-2 rounded-full;
 }
 
-/* Description text */
-.description-text{
-    @apply text-xs text-gray-400;   
-}
+
  
 /*-- badges --------------------------------------*/
 .badge {
-    /* @apply inline-block text-nowrap rounded-full text-xs; */
-    @apply inline-block text-nowrap rounded-full;
+    @apply inline-block text-nowrap rounded-full text-xs;
 }
 
 /* Size Variants */
@@ -109,22 +74,36 @@
 /*-- buttons -------------------------------------*/ 
 
 .button {
-    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer;
+    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2 min-w-24;
 }
 
-
-
-.button-hover {
-    @apply bg-red-400;
+.button:hover::after {
+    content: '';
+    @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-lg top-0 left-0 z-0;
 }  
 
-.button-icon{
-    @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple hover:bg-slate-100 cursor-pointer;
-    /* @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer; */
-}
+.button-outline-rounded {
+    @apply border border-gray-200 rounded-full text-brand-deep-purple;
+} 
 
-.button-icon-activatable{
-    @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
+.button-outline-rounded:not(:disabled):hover::after {
+    content: '';
+    @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-full top-0 left-0 z-0;
+}  
+ 
+
+@layer components {
+    .button-icon{
+        @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
+    }
+
+    .button-icon:hover{
+        @apply bg-slate-100;
+    }
+
+    .button-icon:focus{
+        @apply bg-brand-mango/10;
+    }
 }
 
 @layer components{
@@ -148,7 +127,7 @@
 }
 
 .button-md{
-    @apply py-3 px-8; 
+    @apply py-3 px-4; 
 }
 
 /* Dark Theme */
@@ -194,13 +173,14 @@
     @apply border border-gray-200 rounded-lg text-brand-deep-purple;
 }
 
-.button-outline-rounded {
-    @apply border border-gray-200 rounded-full text-brand-deep-purple;
-} 
- 
+
 /*-- chips ---------------------------------------*/ 
-.chips{
+.chip{
     @apply inline-block text-nowrap text-sm font-medium rounded-full transition-all duration-300 cursor-pointer;
+}
+
+.chip-md{
+    @apply py-1 px-4;
 }
 
 /*-- tooltips ---------------------------------------*/ 
@@ -457,7 +437,12 @@
 
     .base-table tbody tr::after{
         content: '';
-        @apply bg-gray-100 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
+        @apply bg-gray-200 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
+    }
+
+    .base-table tbody tr:first-child::after{
+        content: '';
+        @apply absolute w-[99%] bg-gray-200 h-[80%] left-1/2 -translate-1/2 top-[53.8%] -translate-y-1/2 rounded-lg opacity-0 -z-10;
     }
 
     .base-table tbody tr:hover::after{
@@ -471,4 +456,16 @@
     .base-table tbody td{
         @apply p-4 text-left border-b-[1px] border-gray-100 whitespace-nowrap;
     }  
+}
+
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
 }

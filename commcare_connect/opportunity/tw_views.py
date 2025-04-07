@@ -43,6 +43,173 @@ def home(request, org_slug=None, opp_id=None):
 def about(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/about.html")
 
+def dashboard(request, org_slug=None, opp_id=None): 
+    data = {
+        'programs': [
+            {
+                'name': 'Program Name',
+                'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+                'date': '06 May, 2024',
+                'organization_name': 'Program Manager Organization Name',
+                'status': 'invited',
+                'delivery_type': 'Name of the delivery type',
+                'start_date': '12-Jul-2024',
+                'end_date': '12-Jul-2024',
+            },
+            {
+                'name': 'Program Name',
+                'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+                'date': '06 May, 2024',
+                'organization_name': 'Program Manager Organization Name',
+                'status': 'applied',
+                'delivery_type': 'Name of the delivery type',
+                'start_date': '12-Jul-2024',
+                'end_date': '12-Jul-2024',
+            }
+            ,
+            {
+                'name': 'Program Name',
+                'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+                'date': '06 May, 2024',
+                'organization_name': 'Program Manager Organization Name',
+                'status': 'accepted',
+                'delivery_type': 'Name of the delivery type',
+                'start_date': '12-Jul-2024',
+                'end_date': '12-Jul-2024',
+                'opportunities_url': '/a/test-1/opportunity/1/tw/api/opportunities/'
+            }
+        ],
+        'recent_activities': [
+            {
+                'name': 'Visit Pending Review',
+                'icon': 'clock-rotate-left',
+                'rows': [
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                ]
+            },
+            {
+                'name': 'Visit Pending Review',
+                'icon': 'hand-holding-dollar',
+                'rows': [
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    }
+                ]
+            },
+            {
+                'name': 'Inactive Workers',
+                'icon': 'user-slash',
+                'rows': [
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                    {
+                        'title': 'Opportunity Name',
+                        'subtitle': 'Network Manager Organization Name',
+                        'count': '11',
+                    },
+                ]
+            },
+
+        ]
+    }
+
+    return render(request, 'tailwind/pages/dashboard.html', {'data': data, 'header_title': 'Dashboard', 'sidenav_active': 'Programs'})
+
+def opportunities_card(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            'name': 'Oppurtunity Name',
+            'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+            'date': '06 May, 2024',
+            'organization_name': 'Program Manager Organization Name',
+            'status': 'invited',
+            'delivery_type': 'Name of the delivery type',
+            'start_date': '12-Jul-2024',
+            'end_date': '12-Jul-2024',
+            'labels':{
+                'name': 'Delieveries',
+                'count': '100/150',
+                'tags': [
+                    {
+                        'name': 'Approved',
+                        'count': '70',
+                        'color': 'green-600'
+                    },
+                    {
+                        'name': 'Flagged',
+                        'count': '15',
+                        'color': 'brand-sunset'
+                    },
+                    {
+                        'name': 'Rejected',
+                        'count': '70',
+                        'color': 'slate-400'
+                    }
+                ]
+            }
+        },
+        {
+            'name': 'Oppurtunity Name',
+            'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+            'date': '06 May, 2024',
+            'organization_name': 'Program Manager Organization Name',
+            'status': 'invited',
+            'delivery_type': 'Name of the delivery type',
+            'start_date': '12-Jul-2024',
+            'end_date': '12-Jul-2024',
+            'labels':{
+                'name': 'Workers',
+                'count': '256',
+                'tags': [
+                    {
+                        'name': 'Learning',
+                        'count': '23',
+                        'color': 'brand-mango'
+                    },
+                    {
+                        'name': 'Claimed Job',
+                        'count': '120',
+                        'color': 'brand-indigo'
+                    },
+                    {
+                        'name': 'Assessed',
+                        'count': '124',
+                        'color': 'green-600'
+                    }
+                ]
+            }
+        }
+    ]
+    return render(request, 'tailwind/components/cards/opportunity_card.html', {'data': data})
 
 def worker(request, org_slug=None, opp_id=None):
     user_kpi = [
@@ -1255,7 +1422,7 @@ def worker_payments(request, org_slug=None, opp_id=None):
 
 
 def opportunity_worker(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/opportunity_worker.html")
+    return render(request, "tailwind/pages/opportunity_worker.html", {"header_title": "Workers"})
 
 def get_worker_last_payment(request, org_slug=None, opp_id=None):
     payments = [
