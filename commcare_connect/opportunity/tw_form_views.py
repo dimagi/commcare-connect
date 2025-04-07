@@ -2,19 +2,24 @@ from django.contrib import messages
 from django.forms import modelformset_factory
 from django.shortcuts import render
 from django.test.utils import override_settings
+from django.urls import reverse
+from django.views.generic import UpdateView
 
 from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
+    Opportunity,
     OpportunityVerificationFlags,
 )
+from commcare_connect.opportunity.tasks import add_connect_users
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
+    OpportunityChangeForm,
     OpportunityVerificationFlagsConfigForm,
 )
-from commcare_connect.opportunity.views import get_opportunity_or_404
+from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -80,3 +85,40 @@ def verification_flags_config(request, org_slug=None, pk=None):
             form_json_formset=form_json_formset,
         ),
     )
+
+
+class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
+    model = Opportunity
+    template_name = "tailwind/pages/opportunity_edit.html"
+    form_class = OpportunityChangeForm
+
+    @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_success_url(self):
+        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.id))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
+
+    def form_valid(self, form):
+        opportunity = form.instance
+        opportunity.modified_by = self.request.user.email
+        users = form.cleaned_data["users"]
+        filter_country = form.cleaned_data["filter_country"]
+        filter_credential = form.cleaned_data["filter_credential"]
+        if users or filter_country or filter_credential:
+            add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
+
+        additional_users = form.cleaned_data["additional_users"]
+        if additional_users:
+            for payment_unit in opportunity.paymentunit_set.all():
+                opportunity.total_budget += payment_unit.amount * payment_unit.max_total * additional_users
+        end_date = form.cleaned_data["end_date"]
+        if end_date:
+            opportunity.end_date = end_date
+        response = super().form_valid(form)
+        return response
