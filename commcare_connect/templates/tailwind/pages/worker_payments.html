@@ -32,35 +32,20 @@
   {% render_table table %}
   <!--Table Footer-->
   <div
-    class="table-footer w-[1344px] mx-auto flex items-center justify-between h-14 py-2 px-4 bg-slate-50 text-xs text-brand-deep-purple p-2 rounded-lg mb-8"
-  >
-    <div class="flex items-center gap-4">
-      <label class="flex items-center px-4 py-1">
-        <span class="mr-2">Rows per page</span>
-        <select class="px-1 py-1 text-sm bg-transparent rounded-lg outline-none">
-          <option>12</option>
-          <option>24</option>
-          <option>36</option>
-        </select>
-      </label>
-      <div>
-        <button><i class="fa-solid fa-chevron-left"></i></button>
-        <span>10</span>
-        <span>of 12</span>
-        <button><i class="fa-solid fa-chevron-right"></i></button>
-      </div>
-    </div>
+    class="table-footer w-full flex items-center justify-between h-14 bg-slate-50  text-brand-deep-purple py-2 px-4 rounded-lg"
+  > 
+    {% include "tailwind/components/pagination.html" %} 
 
-    <!-- TODO: @apply -->
     <button
       @click="selectedOption = 'payWorker'"
-      class="flex items-center px-2 py-2 text-sm font-medium border border-gray-300 rounded-lg text-brand-deep-purple hover:bg-brand-indigo-100"
+      class="button button-md outline-style"
     >
       Pay Worker
     </button>
   </div>
 
   <!-- Pay workers -->
+  {% comment %}  This section not needed right now {% endcomment %}
   <div
     x-cloak
     x-show="selectedOption == 'payWorker'"
@@ -71,13 +56,13 @@
     >
       <p class="px-4 text-sm font-medium text-brand-deep-purple">Pay Worker</p>
       <div class="flex gap-x-1">
-        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20">
+        <button type="button" class="button-icon">
           <i class="fa-light fa-upload text-brand-deep-purple"></i>
         </button>
-        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20">
+        <button type="button" class="button-icon">
           <i class="fa-light fa-download text-brand-deep-purple"></i>
         </button>
-        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
+        <button type="button" class="button-icon" @click="selectedOption = ''">
           <i class="fa-light fa-x text-brand-deep-purple"></i>
         </button>
       </div>
@@ -111,90 +96,6 @@
 
       <!-- TODO: @apply -->
       {% include "tailwind/components/buttons/button_primary.html" with text="Update" %}
-    </div>
-  </div>
-
-  <!-- History -->
-   <!-- TODO: Include as Component -->
-  <div
-    x-init="console.log('Default selectedOption:', selectedOption)"
-    x-cloak
-    x-show="selectedOption == 'paymentHistory'"
-    class="fixed z-50 px-4 pt-2 bg-white rounded-lg shadow-sm max-h-[80vh] min-h-fit bottom-4 right-4 w-70"
-  >
-    <div class="flex items-center justify-between mx-auto text-sm font-medium rounded-lg text-brand-deep-purple auto-cols-min">
-      <p class="text-sm font-medium text-brand-deep-purple">Payment History</p>
-      <div class="flex gap-x-1">
-        <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
-          <i class="fa-light fa-x text-brand-deep-purple"></i>
-        </button>
-      </div>
-    </div>
-    <div class="overflow-auto">
-      <div class="flex gap-2">
-        <div class="pt-3">
-          <div class="w-4 flex flex-col items-center">
-            <div class="w-2 h-2 rounded-full bg-brand-deep-purple"></div>
-            <div class="h-18 w-[1px] rounded-lg border-[.5px] border-solid"></div>
-          </div>
-          <div class="w-4 flex flex-col items-center">
-            <div class="w-2 h-2 rounded-full bg-brand-deep-purple"></div>
-            <div class="h-18 w-[1px] rounded-lg border-[.5px] border-dashed"></div>
-          </div>
-          <div class="w-4 flex flex-col items-center">
-            <div class="w-2 h-2 rounded-full bg-brand-deep-purple"></div>
-            <div class="h-18 w-[1px] rounded-lg border-[.5px] border-dashed"></div>
-          </div>
-        </div>
-        <div>
-          <div class="h-20 flex flex-col gap-y-1.5 justify-center px-2">
-            <div class="flex text-xs font-normal text-slate-400 gap-2 items-center">
-              <p class="">28-Feb-2024</p>
-              <div class="h-3 w-[1px] rounded-lg bg-slate-400"></div>
-              <p class="">12:34 PM</p>
-            </div>
-            <p class="text-brand-deep-purple text-xs font-normal">By Network Manager</p>
-            <div class="flex items-center text-sm font-medium text-brand-deep-purple gap-2">
-              <p class="">Paid $4,780</p>
-              <div class="w-2 h-2 rounded-full bg-brand-deep-purple"></div>
-              <p class="">124 Workers</p>
-            </div>
-          </div>
-          <div class="h-20 flex flex-col gap-y-1.5 justify-center px-2">
-            <div class="flex text-xs font-normal text-slate-400 gap-2 items-center">
-              <p class="">28-Feb-2024</p>
-              <div class="h-3 w-[1px] rounded-lg bg-slate-400"></div>
-              <p class="">12:34 PM</p>
-            </div>
-            <p class="text-brand-deep-purple text-xs font-normal">By Network Manager</p>
-            <div class="flex items-center text-sm font-medium text-brand-deep-purple gap-2">
-              <p class="">Paid $4,780</p>
-              <div class="w-2 h-2 rounded-full bg-brand-deep-purple"></div>
-              <p class="">124 Workers</p>
-            </div>
-          </div>
-          <div class="h-20 flex flex-col gap-y-1.5 justify-center rounded-lg bg-neutral-100 px-2">
-            <div class="flex justify-between">
-              <div>
-                <div class="flex text-xs font-normal text-slate-400 gap-2 items-center">
-                  <p class="">28-Feb-2024</p>
-                  <div class="h-3 w-[1px] rounded-lg bg-slate-400"></div>
-                  <p class="">12:34 PM</p>
-                </div>
-                <p class="text-brand-deep-purple text-xs font-normal">By Network Manager</p>
-              </div>
-              <div>
-                <i class="fa-light fa-arrow-rotate-left text-xl text-slate-400"></i>
-              </div>
-            </div>
-            <div class="flex items-center text-sm font-medium text-brand-deep-purple gap-2">
-              <p class="">Paid $4,780</p>
-              <div class="w-2 h-2 rounded-full bg-brand-deep-purple"></div>
-              <p class="">124 Workers</p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </div>

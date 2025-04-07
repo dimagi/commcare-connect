@@ -19,12 +19,12 @@
        <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
       {% endblock javascript %}
   </head>
-  <body id="content-body" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-gray-100 font-work-sans">
+  <body id="content-body" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
     {% include 'tailwind/layouts/sidenav.html'%}
     <div class="flex-1  px-4">
       {% include 'tailwind/layouts/header.html'%}
       <div class="h-5 w-full mt-16"></div>
-      <main id="content" class="">
+      <main id="content" class="md:max-w-screen-2xl mx-auto">
         {% block content %}
         {% endblock %}
       </main>

@@ -84,10 +84,16 @@
 .text-label-sm{
     @apply text-6xl;   
 }
+
+/* Description text */
+.description-text{
+    @apply text-xs text-gray-400;   
+}
  
 /*-- badges --------------------------------------*/
 .badge {
-    @apply inline-block text-nowrap rounded-full text-xs;
+    /* @apply inline-block text-nowrap rounded-full text-xs; */
+    @apply inline-block text-nowrap rounded-full;
 }
 
 /* Size Variants */
@@ -104,7 +110,9 @@
 
 .button {
     @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer;
-} 
+}
+
+
 
 .button-hover {
     @apply bg-red-400;
@@ -112,6 +120,11 @@
 
 .button-icon{
     @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple hover:bg-slate-100 cursor-pointer;
+    /* @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer; */
+}
+
+.button-icon-activatable{
+    @apply rounded-full inline-flex items-center justify-center p-2 size-8 text-brand-deep-purple cursor-pointer;
 }
 
 @layer components{
@@ -181,6 +194,9 @@
     @apply border border-gray-200 rounded-lg text-brand-deep-purple;
 }
 
+.button-outline-rounded {
+    @apply border border-gray-200 rounded-full text-brand-deep-purple;
+} 
  
 /*-- chips ---------------------------------------*/ 
 .chips{
@@ -271,7 +287,23 @@
     }
 }
 
-/*--- dropdown select list ------------------------- */
+
+/*--- base select  list ------------------------- */
+@layer components {
+    .base-dropdown {
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+    }
+    
+    .base-dropdown:focus{
+        @apply outline-1 outline-brand-indigo
+    }
+
+    .base-dropdown option {
+        @apply text-gray-900 w-full px-2;
+    }  
+}
+
+/*--- simple select list ------------------------- */
 @layer components {
     .simple-dropdown {
         @apply relative h-12;
@@ -291,7 +323,18 @@
  
 }
 
-/*--- simple input list ------------------------- */
+/*--- based input ------------------------- */
+@layer components{
+    .base-input{
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+    }
+
+    .base-input:focus{
+        @apply outline-1 outline-brand-indigo
+    }
+}
+
+/*--- simple input  ------------------------- */
 @layer components{
     .simple-input{
         @apply relative h-12;
@@ -339,6 +382,8 @@
     }
 }
 
+
+/*--- simple date picker ------------------------- */ 
 @layer components{
     .simple-date-picker{
         @apply relative h-12
@@ -353,6 +398,7 @@
     }
 }
 
+/*--- simple checbox ------------------------- */ 
 @layer components {
     .simple-checkbox {
         @apply w-4 h-4 appearance-none border-2 border-gray-400 cursor-pointer transition-all duration-200;
@@ -365,4 +411,64 @@
         @apply text-gray-600 text-xs flex items-center justify-center;
         display: flex;
     }
+} 
+
+
+/*---- table class -----------*/
+
+@layer components {
+    .base-table{
+        @apply w-full table-auto border-collapse text-gray-700;
+    }
+
+    .base-table thead {
+        @apply sticky top-0 z-10 text-sm text-brand-deep-purple;
+    }
+
+    .base-table thead th {
+        @apply bg-gray-200 font-medium h-10 relative p-4 text-left whitespace-nowrap;
+    }
+
+    .base-table thead::after {
+        content: ' ';
+        @apply absolute left-0 -bottom-1.5 w-full h-1.5 bg-stone-100;
+    }
+
+    .base-table thead th:first-child{
+        @apply rounded-l-lg;
+    }
+
+    .base-table thead th:last-child{
+        @apply rounded-r-lg;
+    }
+
+    .base-table tbody{
+        @apply pt-4 text-sm relative;
+    } 
+
+    .base-table tbody::before{
+        content: '';
+        @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow-lg -z-20;
+    }
+
+    .base-table tbody tr{
+        @apply relative;
+    }
+
+    .base-table tbody tr::after{
+        content: '';
+        @apply bg-gray-100 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
+    }
+
+    .base-table tbody tr:hover::after{
+        @apply opacity-100;
+    }
+    
+    /* .base-table tbody tr:hover{
+        @apply bg-gray-100 rounded-lg;
+    }  */
+
+    .base-table tbody td{
+        @apply p-4 text-left border-b-[1px] border-gray-100 whitespace-nowrap;
+    }  
 }

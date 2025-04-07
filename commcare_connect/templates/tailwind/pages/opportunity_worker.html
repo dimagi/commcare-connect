@@ -1,159 +1,198 @@
-{% extends "tailwind/base.html" %} 
-{% block content %}
-<p class="px-4 mb-5 text-sm font-medium text-brand-deep-purple">Opportunity Name</p>
-<div 
-    class="flex flex-col w-full gap-2"
-    x-data="{
+{% extends "tailwind/base.html" %} {% block content %}
+<p class="py-2 text-sm font-medium text-brand-deep-purple">Opportunity Name</p>
+<div
+  class="flex flex-col w-full gap-2"
+  x-data="{
         selectedTab: '',
         selectedOption: '',
     }"
-    x-init="selectedTab='payments';selectedOption=''" 
+  x-init="selectedTab='workers';selectedOption=''"
 >
-    <!-- Tabs -->
-    <div class="flex mx-auto items-center justify-between w-[1344px] px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-      <div class="flex h-full gap-x-6">
-        <div 
-            @click="selectedTab = 'workers'; selectedRows = []; $nextTick(() => { 
+  <!-- Tabs -->
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+    <div class="flex h-full gap-x-8 px-2">
+      <div
+        @click="selectedTab = 'workers'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#workers-tab', 'loadWorkers');
             })"
-            id="workers-tab"
-            class="relative cursor-pointer text-sm h-full flex items-center"
-            :class="{
+        id="workers-tab"
+        class="relative cursor-pointer text-sm h-full flex items-center"
+        :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'workers',
                 'text-gray-500': selectedTab !== 'workers'
             }"
-            hx-get="/a/test-1/opportunity/1/tw/worker_list/" 
-            hx-swap="innerHTML" 
-            hx-trigger="loadWorkers" 
-            hx-target="#opportunity_worker_container"
-        >
-            <span>Workers</span>
-            <div 
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                x-show="selectedTab === 'workers'"
-            ></div>
-        </div>
-        <div 
-            @click="selectedTab = 'learn'; selectedRows = []; $nextTick(() => { 
+        hx-get="/a/test-1/opportunity/1/tw/worker_main/"
+        hx-swap="innerHTML"
+        hx-trigger="loadWorkers"
+        hx-target="#opportunity_worker_container"
+      >
+        <span>Workers</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'workers'"
+        ></div>
+      </div>
+      <div
+        @click="selectedTab = 'learn'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#learn-tab', 'loadLearn');
             })"
-            id="learn-tab"
-            class="relative cursor-pointer text-sm h-full flex items-center"
-            :class="{
+        id="learn-tab"
+        class="relative cursor-pointer text-sm h-full flex items-center"
+        :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'learn',
                 'text-gray-500': selectedTab !== 'learn'
             }"
-            hx-get="/a/test-1/opportunity/1/tw/worker_learn/" 
-            hx-swap="innerHTML" 
-            hx-trigger="loadLearn" 
-            hx-target="#opportunity_worker_container"
-        >
-            <span>Learn</span>
-            <div 
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                x-show="selectedTab === 'learn'"
-            ></div>
-        </div>
-        <div 
-            @click="selectedTab = 'delivery'; selectedRows = []; $nextTick(() => { 
+        hx-get="/a/test-1/opportunity/1/tw/worker_learn/"
+        hx-swap="innerHTML"
+        hx-trigger="loadLearn"
+        hx-target="#opportunity_worker_container"
+      >
+        <span>Learn</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'learn'"
+        ></div>
+      </div>
+      <div
+        @click="selectedTab = 'delivery'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#delivery-tab', 'loadDelivery');
             })"
-            id="delivery-tab"
-            class="relative cursor-pointer text-sm h-full flex items-center"
-            :class="{
+        id="delivery-tab"
+        class="relative cursor-pointer text-sm h-full flex items-center"
+        :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'delivery',
                 'text-gray-500': selectedTab !== 'delivery'
             }"
-            hx-get="/a/test-1/opportunity/1/tw/worker_delivery/" 
-            hx-swap="innerHTML" 
-            hx-trigger="loadDelivery" 
-            hx-target="#opportunity_worker_container"
-        >
-            <span>Delivery</span>
-            <div 
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                x-show="selectedTab === 'delivery'"
-            ></div>
-        </div>
-        <div 
-            @click="selectedTab = 'payments'; selectedRows = []; $nextTick(() => { 
+        hx-get="/a/test-1/opportunity/1/tw/worker_delivery/"
+        hx-swap="innerHTML"
+        hx-trigger="loadDelivery"
+        hx-target="#opportunity_worker_container"
+      >
+        <span>Delivery</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'delivery'"
+        ></div>
+      </div>
+      <div
+        @click="selectedTab = 'payments'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#payments-tab', 'loadPayments');
             })"
-            id="payments-tab"
-            class="relative cursor-pointer text-sm h-full flex items-center"
-            :class="{
+        id="payments-tab"
+        class="relative cursor-pointer text-sm h-full flex items-center"
+        :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'payments',
                 'text-gray-500': selectedTab !== 'payments'
             }"
-            hx-get="/a/test-1/opportunity/1/tw/worker_payments/" 
-            hx-swap="innerHTML" 
-            hx-trigger="loadPayments" 
-            hx-target="#opportunity_worker_container"
-        >
-            <span>Payments</span>
-            <div 
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                x-show="selectedTab === 'payments'"
-            ></div>
-        </div>
-    </div>
-    
-    
-
-        <!-- Payment Options -->
-        <div x-show="selectedTab === 'payments'" class="flex gap-x-1">
-            <button 
-                type="button" 
-                class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-                @click="selectedOption = 'paymentHistory'; console.log(selectedOption)"
-                :class="{ 'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory' }"
-            >
-                <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
-            </button>
-            <button 
-                type="button" 
-                class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-            >
-                <i class="fa-light fa-upload text-brand-deep-purple"></i>
-            </button>
-            <button 
-                type="button" 
-                class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-            >
-                <i class="fa-light fa-download text-brand-deep-purple"></i>
-            </button>
-            <button 
-                type="button" 
-                class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-            >
-                <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-            </button>
-        </div>
-        <div x-show="selectedTab === 'learn'" class="flex gap-x-1">
-         
-          <button 
-              type="button" 
-              class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-          >
-              <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
-          </button>
-          <button 
-              type="button" 
-              class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-          >
-              <i class="fa-light fa-download text-brand-deep-purple"></i>
-          </button>
-          <button 
-              type="button" 
-              class="w-10 aspect-square hover:bg-gray-200/20 rounded-full"
-          >
-              <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-          </button>
+        hx-get="/a/test-1/opportunity/1/tw/worker_payments/"
+        hx-swap="innerHTML"
+        hx-trigger="loadPayments"
+        hx-target="#opportunity_worker_container"
+      >
+        <span>Payments</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'payments'"
+        ></div>
       </div>
     </div>
 
-    <!-- Tab Content Container -->
-    <div id="opportunity_worker_container" class="max-w-screen mx-auto" hx-get="/a/test-1/opportunity/1/tw/worker_payments/" hx-swap="innerHTML" hx-trigger="load">
+    <!-- Workers Options -->
+    <div x-show="selectedTab === 'workers'" class="flex gap-x-1 items-center">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+      <button
+      class="button button-md outline-style"
+    >
+      Add Worker
+    </button>
     </div>
+
+    <!-- Learn Options -->
+    <div x-show="selectedTab === 'learn'" class="flex gap-x-1">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+    </div>
+
+    <!-- Delivery Options -->
+    <div x-show="selectedTab === 'delivery'" class="flex gap-x-1">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-upload text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+    </div>
+
+    <!-- Payment Options -->
+    <div x-show="selectedTab === 'payments'" class="flex gap-x-1">
+      <button
+        type="button"
+        class="button-icon-activatable"
+        @click="selectedOption = 'paymentHistory'; console.log(selectedOption)"
+        :class="{ 
+          'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
+          'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory' 
+        }"
+      >
+        <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-upload text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+    </div>
+
+    <!-- History -->
+    <div
+      x-init="console.log('Default selectedOption:', selectedOption)"
+      x-cloak
+      x-show="selectedOption == 'paymentHistory'"
+      class="absolute z-50 px-4 pt-2 bg-white rounded-lg shadow-sm top-0 mt-16 right-0 w-70"
+    >
+      <div class="flex items-center justify-between mx-auto text-sm font-medium rounded-lg text-brand-deep-purple auto-cols-min">
+        <p class="text-sm font-medium text-brand-deep-purple">Payment History</p>
+        <div class="flex gap-x-1">
+          <button type="button" class="w-10 rounded-full aspect-square hover:bg-gray-200/20" @click="selectedOption = ''">
+            <i class="fa-light fa-x text-brand-deep-purple"></i>
+          </button>
+        </div>
+      </div>
+      <div
+        id="payment-history-container"
+        hx-get="/a/test-1/opportunity/1/tw/api/payment_history/"
+        hx-swap="outerHTML"
+        hx-trigger="load"
+      ></div>
+    </div>
+  </div>
+
+  <!-- Tab Content Container -->
+  <div
+    id="opportunity_worker_container"
+    class="w-full"
+    hx-get="/a/test-1/opportunity/1/tw/worker_main/"
+    hx-swap="innerHTML"
+    hx-trigger="load"
+  ></div>
 </div>
 {% endblock content %}

@@ -4,7 +4,7 @@
 <div class="scrollable-table-wrapper">
   {% block table %}
   <div class="scrollable-table-container">
-    <table class="scrollable-table">
+    <table class="base-table">
       {% block table.thead %}
       {% if table.show_header %}
       <thead>
@@ -30,7 +30,7 @@
             <div style="overflow:hidden; border-radius:8px;">
           {% for row in table.paginated_rows %}
           {% block table.tbody.row %}
-          <tr>
+          <tr class="group">
             {% for column, cell in row.items %}
             <td>
               {% if column.localize == None %}
@@ -81,7 +81,7 @@
       display: block;
     }
   
-    .scrollable-table {
+    {% comment %} .scrollable-table {
       width: 100%;
       border-collapse: collapse;
       table-layout: auto;
@@ -92,16 +92,13 @@
       top: 0;
       z-index: 10;
       font-size: 0.875rem;
-      color:#16006d;
-      {% comment %} box-shadow: 0 2px 4px rgba(0,0,0,0.1); {% endcomment %}
+      color:#16006d; 
     }
   
     .scrollable-table thead th {
       background: #e2e8f0;
       font-weight: 500;
-      height: 56px;
-      {% comment %} color: white; {% endcomment %}
-      {% comment %} font-weight: 600; {% endcomment %}
+      height: 56px; 
       position: relative;
     }
   
@@ -119,8 +116,7 @@
   
     .scrollable-table tbody {
       padding-top: 2rem;
-      font-size: 0.875rem;
-      {% comment %} box-shadow: 0 2px 4px rgba(0,0,0,0.1); {% endcomment %}
+      font-size: 0.875rem; 
     }
   
     .scrollable-table th,
@@ -146,13 +142,11 @@
         margin-top: 8px;
     }
     .scrollable-table tbody tr {
-        background: white;
-        {% comment %} height: 44px; {% endcomment %}
+        background: white; 
     }
     
     .scrollable-table tbody tr:first-child {
-        background: white;
-        {% comment %} height: 54px; {% endcomment %}
+        background: white; 
     }
     
     .scrollable-table tbody tr:first-child td {
@@ -160,6 +154,6 @@
     }
     .scrollable-table tbody tr:hover {
       background-color: #f5f5f5;
-    }
+    } {% endcomment %}
   </style>
 {% endblock table-wrapper %}
