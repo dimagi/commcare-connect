@@ -1,0 +1,18 @@
+<div class="flex items-center gap-2 max-w-fit text-brand-deep-purple">
+    <span class="whitespace-nowrap">Items per page</span>
+    <select type="number" class="dropdown w-16">
+        {% for i in "0123456789"|make_list %}
+        <option value="">{{i|add:"0"}}</option>
+        {% endfor %}
+    </select>
+    <div>
+        <button class="button-icon">
+            <i class="fa-light fa-chevron-left"></i>
+        </button>
+        <input type="number" class="simple-input w-16">
+        <span class="whitespace-nowrap ml-2">of 12</span>
+        <button class="button-icon">
+            <i class="fa-light fa-chevron-right"></i>
+        </button>
+    </div>
+</div>
