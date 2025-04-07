@@ -1,0 +1,11 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+{% load tailwind_filters %}
+{% if title %}
+    {% block title %}{{ title }}{% endblock %}
+{% endif %}
+{% block content %}
+    {% include "partial_form.html" %}
+{% endblock content %}

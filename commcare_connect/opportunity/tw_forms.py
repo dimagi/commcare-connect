@@ -3,7 +3,9 @@ from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Subm
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q
+from django.utils.timezone import now
 
+from commcare_connect.connect_id_client.models import Credential
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES
 
 from .models import (
@@ -12,6 +14,7 @@ from .models import (
     FormJsonValidationRules,
     Opportunity,
     OpportunityVerificationFlags,
+    PaymentUnit,
 )
 
 BASE_INPUT_CLASS = "w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -164,8 +167,8 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
-        # org_slug = kwargs.pop("org_slug", None)
-        credentials = []  # connect_id_client.fetch_credentials(org_slug)
+        org_slug = kwargs.pop("org_slug", None)
+        credentials = [Credential(org_slug, org_slug)]  # connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -273,3 +276,92 @@ class OpportunityChangeForm(
             ):
                 raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
         return active
+
+
+class PaymentUnitForm(forms.ModelForm):
+    class Meta:
+        model = PaymentUnit
+        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        help_texts = {
+            "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
+            "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
+        }
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date", "class": BASE_INPUT_CLASS}),
+            "end_date": forms.DateInput(attrs={"type": "date", "class": BASE_INPUT_CLASS}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        deliver_units = kwargs.pop("deliver_units", [])
+        payment_units = kwargs.pop("payment_units", [])
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("name", css_class=BASE_INPUT_CLASS)),
+            Row(Field("description")),
+            Row(Field("amount", css_class=BASE_INPUT_CLASS)),
+            Row(Column("start_date"), Column("end_date")),
+            Row(Field("required_deliver_units", css_class=CHECKBOX_CLASS)),
+            Row(Field("optional_deliver_units", css_class=CHECKBOX_CLASS)),
+            Row(Field("payment_units", css_class=CHECKBOX_CLASS)),
+            Field("max_total", css_class=BASE_INPUT_CLASS),
+            Field("max_daily", css_class=BASE_INPUT_CLASS),
+            Submit(name="submit", value="Submit"),
+        )
+        deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
+        payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
+        self.fields["required_deliver_units"] = forms.MultipleChoiceField(
+            choices=deliver_unit_choices,
+            widget=forms.CheckboxSelectMultiple,
+            help_text="All of the selected Deliver Units are required for payment accrual.",
+        )
+        self.fields["optional_deliver_units"] = forms.MultipleChoiceField(
+            choices=deliver_unit_choices,
+            widget=forms.CheckboxSelectMultiple,
+            help_text=(
+                "Any one of these Deliver Units combined with all the required "
+                "Deliver Units will accrue payment. Multiple Deliver Units can be selected."
+            ),
+            required=False,
+        )
+        self.fields["payment_units"] = forms.MultipleChoiceField(
+            choices=payment_unit_choices,
+            widget=forms.CheckboxSelectMultiple,
+            help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
+            required=False,
+        )
+        if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
+            deliver_units = self.instance.deliver_units.all()
+            self.fields["required_deliver_units"].initial = [
+                deliver_unit.pk for deliver_unit in filter(lambda x: not x.optional, deliver_units)
+            ]
+            self.fields["optional_deliver_units"].initial = [
+                deliver_unit.pk for deliver_unit in filter(lambda x: x.optional, deliver_units)
+            ]
+            payment_units_initial = []
+            for payment_unit in payment_units:
+                if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
+                    payment_units_initial.append(payment_unit.pk)
+            self.fields["payment_units"].initial = payment_units_initial
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data:
+            if cleaned_data["max_daily"] > cleaned_data["max_total"]:
+                self.add_error(
+                    "max_daily",
+                    "Daily max visits per user cannot be greater than total Max visits per user",
+                )
+            common_deliver_units = set(cleaned_data.get("required_deliver_units", [])) & set(
+                cleaned_data.get("optional_deliver_units", [])
+            )
+            for deliver_unit in common_deliver_units:
+                deliver_unit_obj = DeliverUnit.objects.get(pk=deliver_unit)
+                self.add_error(
+                    "optional_deliver_units",
+                    error=f"{deliver_unit_obj.name} cannot be marked both Required and Optional",
+                )
+            if cleaned_data["end_date"] and cleaned_data["end_date"] < now().date():
+                self.add_error("end_date", "Please provide a valid end date.")
+        return cleaned_data

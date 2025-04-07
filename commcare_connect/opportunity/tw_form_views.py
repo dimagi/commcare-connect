@@ -1,6 +1,7 @@
 from django.contrib import messages
+from django.db.models import Q
 from django.forms import modelformset_factory
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.views.generic import UpdateView
@@ -10,7 +11,10 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     FormJsonValidationRules,
     Opportunity,
+    OpportunityClaim,
+    OpportunityClaimLimit,
     OpportunityVerificationFlags,
+    PaymentUnit,
 )
 from commcare_connect.opportunity.tasks import add_connect_users
 from commcare_connect.opportunity.tw_forms import (
@@ -18,8 +22,10 @@ from commcare_connect.opportunity.tw_forms import (
     FormJsonValidationRulesForm,
     OpportunityChangeForm,
     OpportunityVerificationFlagsConfigForm,
+    PaymentUnitForm,
 )
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
+from commcare_connect.organization.decorators import org_member_required
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -122,3 +128,98 @@ class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
             opportunity.end_date = end_date
         response = super().form_valid(form)
         return response
+
+
+@org_member_required
+def add_payment_unit(request, org_slug=None, pk=None):
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    deliver_units = DeliverUnit.objects.filter(
+        Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=opportunity.deliver_app
+    )
+    form = PaymentUnitForm(
+        deliver_units=deliver_units,
+        data=request.POST or None,
+        payment_units=opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
+    )
+    if form.is_valid():
+        form.instance.opportunity = opportunity
+        form.save()
+        required_deliver_units = form.cleaned_data["required_deliver_units"]
+        DeliverUnit.objects.filter(id__in=required_deliver_units, payment_unit__isnull=True).update(
+            payment_unit=form.instance.id
+        )
+        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
+        DeliverUnit.objects.filter(id__in=optional_deliver_units, payment_unit__isnull=True).update(
+            payment_unit=form.instance.id, optional=True
+        )
+        sub_payment_units = form.cleaned_data["payment_units"]
+        PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
+            parent_payment_unit=form.instance.id
+        )
+        messages.success(request, f"Payment unit {form.instance.name} created.")
+        claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=opportunity)
+        for claim in claims:
+            OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=opportunity.id)
+    elif request.POST:
+        messages.error(request, "Invalid Data")
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=opportunity.id)
+    return render(
+        request,
+        "partial_form.html" if request.GET.get("partial") == "True" else "tailwind/pages/form.html",
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Create", form=form),
+    )
+
+
+@org_member_required
+def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
+    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
+    payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=opportunity)
+    deliver_units = DeliverUnit.objects.filter(
+        Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
+        app=opportunity.deliver_app,
+    )
+    exclude_payment_units = [payment_unit.pk]
+    if payment_unit.parent_payment_unit_id:
+        exclude_payment_units.append(payment_unit.parent_payment_unit_id)
+    payment_unit_deliver_units = {deliver_unit.pk for deliver_unit in payment_unit.deliver_units.all()}
+    opportunity_payment_units = (
+        opportunity.paymentunit_set.filter(
+            Q(parent_payment_unit=payment_unit.pk) | Q(parent_payment_unit__isnull=True)
+        )
+        .exclude(pk__in=exclude_payment_units)
+        .all()
+    )
+    form = PaymentUnitForm(
+        deliver_units=deliver_units,
+        instance=payment_unit,
+        data=request.POST or None,
+        payment_units=opportunity_payment_units,
+    )
+    if form.is_valid():
+        form.save()
+        required_deliver_units = form.cleaned_data["required_deliver_units"]
+        DeliverUnit.objects.filter(id__in=required_deliver_units).update(payment_unit=form.instance.id, optional=False)
+        optional_deliver_units = form.cleaned_data["optional_deliver_units"]
+        DeliverUnit.objects.filter(id__in=optional_deliver_units).update(payment_unit=form.instance.id, optional=True)
+        sub_payment_units = form.cleaned_data["payment_units"]
+        PaymentUnit.objects.filter(id__in=sub_payment_units, parent_payment_unit__isnull=True).update(
+            parent_payment_unit=form.instance.id
+        )
+        # Remove deliver units which are not selected anymore
+        deliver_units = required_deliver_units + optional_deliver_units
+        removed_deliver_units = payment_unit_deliver_units - {int(deliver_unit) for deliver_unit in deliver_units}
+        DeliverUnit.objects.filter(id__in=removed_deliver_units).update(payment_unit=None, optional=False)
+        removed_payment_units = {payment_unit.id for payment_unit in opportunity_payment_units} - {
+            int(payment_unit_id) for payment_unit_id in sub_payment_units
+        }
+        PaymentUnit.objects.filter(id__in=removed_payment_units, parent_payment_unit=form.instance.id).update(
+            parent_payment_unit=None
+        )
+        messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
+        return redirect("opportunity:finalize", org_slug=request.org.slug, pk=opportunity.id)
+    return render(
+        request,
+        "tailwind/pages/form.html",
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form),
+    )

@@ -149,5 +149,9 @@ urlpatterns = [
         view=tw_form_views.verification_flags_config,
         name="tw_verification_flags_config",
     ),
-    path("<int:pk>/tw/edit", view=tw_form_views.OpportunityEdit.as_view(), name="edit"),
+    path("<int:pk>/tw/edit", view=tw_form_views.OpportunityEdit.as_view(), name="tw_edit"),
+    path("<int:pk>/tw/payment_unit/create", view=tw_form_views.add_payment_unit, name="tw_add_payment_unit"),
+    path(
+        "<int:opp_id>/tw/payment_unit/<int:pk>/edit", view=tw_form_views.edit_payment_unit, name="tw_edit_payment_unit"
+    ),
 ]
