@@ -11,21 +11,24 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     FormJsonValidationRules,
     Opportunity,
+    OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     PaymentUnit,
 )
-from commcare_connect.opportunity.tasks import add_connect_users
+from commcare_connect.opportunity.tasks import add_connect_users, send_push_notification_task, send_sms_task
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     OpportunityChangeForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentUnitForm,
+    SendMessageMobileUsersForm,
 )
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
-from commcare_connect.organization.decorators import org_member_required
+from commcare_connect.organization.decorators import org_admin_required, org_member_required
+from commcare_connect.users.models import User
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -222,4 +225,35 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         request,
         "tailwind/pages/form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form),
+    )
+
+
+@org_admin_required
+def send_message_mobile_users(request, org_slug=None, pk=None):
+    opportunity = get_opportunity_or_404(pk=pk, org_slug=org_slug)
+    user_ids = OpportunityAccess.objects.filter(opportunity=opportunity).values_list("user_id", flat=True)
+    users = User.objects.filter(pk__in=user_ids)
+    form = SendMessageMobileUsersForm(users=users, data=request.POST or None)
+
+    if form.is_valid():
+        selected_user_ids = form.cleaned_data["selected_users"]
+        title = form.cleaned_data["title"]
+        body = form.cleaned_data["body"]
+        message_type = form.cleaned_data["message_type"]
+        if "notification" in message_type:
+            send_push_notification_task.delay(selected_user_ids, title, body)
+        if "sms" in message_type:
+            send_sms_task.delay(selected_user_ids, body)
+        return redirect("opportunity:detail", org_slug=request.org.slug, pk=pk)
+
+    return render(
+        request,
+        "tailwind/pages/send_message.html",
+        context=dict(
+            title=f"{request.org.slug} - {opportunity.name}",
+            form_title="Send Message",
+            form=form,
+            users=users,
+            user_ids=list(user_ids),
+        ),
     )

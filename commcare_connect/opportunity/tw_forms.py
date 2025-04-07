@@ -365,3 +365,31 @@ class PaymentUnitForm(forms.ModelForm):
             if cleaned_data["end_date"] and cleaned_data["end_date"] < now().date():
                 self.add_error("end_date", "Please provide a valid end date.")
         return cleaned_data
+
+
+class SendMessageMobileUsersForm(forms.Form):
+    title = forms.CharField(
+        empty_value="Notification from CommCare Connect",
+        required=False,
+    )
+    body = forms.CharField(widget=forms.Textarea)
+    message_type = forms.MultipleChoiceField(
+        choices=[("notification", "Push Notification"), ("sms", "SMS")],
+        widget=forms.CheckboxSelectMultiple,
+    )
+
+    def __init__(self, *args, **kwargs):
+        users = kwargs.pop("users", [])
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("selected_users", css_class=CHECKBOX_CLASS)),
+            Row(Field("title", css_class=BASE_INPUT_CLASS)),
+            Row(Field("body", css_class=TEXTAREA_CLASS)),
+            Row(Field("message_type", css_class=SELECT_CLASS)),
+            Submit(name="submit", value="Submit"),
+        )
+
+        choices = [(user.pk, user.username) for user in users]
+        self.fields["selected_users"] = forms.MultipleChoiceField(choices=choices)
