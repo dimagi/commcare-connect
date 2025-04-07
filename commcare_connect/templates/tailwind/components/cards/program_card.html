@@ -1,59 +1,65 @@
-<div class="program-comp flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative">
-    <div id="new-status" class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+<div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative" x-data="{showOpp: false}">
+    <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
     <div class="flex w-full justify-between">
-        <!-- program details -->
-        <div class="flex items-center gap-2 font-normal">
-            <p class="text-xs text-gray-400 hidden">{{ date }}</p>
-            <div class="h-2 w-2 bg-brand-marigold rounded-full"></div>
-            <p class="text-xs text-gray-400">{{ organization_name }}</p>
-        </div>
-        
-        <!-- invitataion status -->
-        <div class="flex items-center justify-end gap-6">
-            {% if status == 'invited' %}
-            <span class="badge badge-md warning-dark">invited</span>
-            {% elif status == 'applied' %}
-            <button class="button-icon">
-                <i class="fa-light fa-download"></i>
-            </button>
-            <span class="badge badge-md primary-dark">applied</span>
-            {% elif status == 'accepted' %}
-            <button class="button-icon">
-                <i class="fa-light fa-download"></i>
-            </button> 
-            <span class="badge badge-md positive-dark">accepted</span>
-            {% endif %}
-        </div>
+      <!-- program details -->
+      <div class="flex items-center gap-2 font-normal">
+        {% if status == 'invited' %}
+        <div class="h-2 w-2 bg-brand-marigold rounded-full"></div>
+        {% elif status == 'applied' %}
+        <div class="h-2 w-2 bg-brand-deep-purple rounded-full"></div>
+        {% elif status == 'accepted' %}
+        <div class="h-2 w-2 bg-green-600 rounded-full"></div>
+        {% endif %}
+        <p class="hint">{{ organization_name }}</p>
+      </div>
+  
+      <!-- invitataion status -->
+      <div class="flex items-center justify-end gap-6">
+        {% if status == 'invited' %}
+        <span class="badge badge-md warning-dark">invited</span>
+        {% elif status == 'applied' %}
+        <button class="button-icon">
+          <i class="fa-light fa-download"></i>
+        </button>
+        <span class="badge badge-md primary-dark">applied</span>
+        {% elif status == 'accepted' %}
+        <button class="button-icon">
+          <i class="fa-light fa-download"></i>
+        </button>
+        <span class="badge badge-md positive-dark">accepted</span>
+        {% endif %}
+      </div>
     </div>
     <div>
-        <p class="font-medium text-lg text-brand-deep-purple">{{ name }}</p>
-        <p class="font-normal text-sm text-gray-600 w-2/4">{{ description }}</p>
+      <p class="card_title">{{ name }}</p>
+      <p class="card_description w-1/2">{{ description }}</p>
     </div>
     <div class="flex justify-between items-center">
-        <!-- program info --> 
-        <div class="flex items-center gap-6">
-            {% include 'tailwind/components/cards/info.html' with icon="file-check" head="Delivery Type" data=delievery_type classname="infocard-dark" %}
-            <div class="line my-2 h-8 w-1 bg-gray-200"></div>
-            {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=start_date classname="infocard-dark" %}
-            {% include 'tailwind/components/cards/info.html' with icon="arrow-right" head="End Date" data=end_date id='1' classname="infocard-dark" %}
-        </div>
-
-        <!-- button -->
-        {% if status == 'invited' %}
-        <button class="button button-md primary-dark">
-            Apply
-        </button>
-        {% elif status == 'applied' %}
-        <button class="button button-md neutral disabled">
-            <span class="relative z-20">Apply</span>
-        </button>
-        {% elif status == 'accepted' %}
-        <button class="button button-md outline-style">
-            <span class="relative z-20">View Opportunities</span>
-        </button>
-        {% endif %}
+      <!-- program info -->
+      <div class="flex items-center gap-6">
+        {% include 'tailwind/components/cards/info.html' with icon="file-check" head="Delivery Type" data=delivery_type classname="infocard-dark" %}
+        <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+        {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=start_date classname="infocard-dark" %} 
+        {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=end_date id='1' classname="infocard-dark" %}
+      </div>
+  
+      <!-- button -->
+      {% if status == 'invited' %}
+      <button class="button button-md primary-dark">
+        <span class="relative z-20">Apply</span>
+      </button>
+      {% elif status == 'applied' %}
+      <button class="button button-md neutral disabled">
+        <span class="relative z-20">Apply</span>
+      </button>
+      {% elif status == 'accepted' %}
+      <button class="button button-md outline-style" @click="showOpp = !showOpp; if(showOpp) { htmx.ajax('GET', '/a/test-1/opportunity/1/tw/api/opportunities/', '#opportunity-container') } else { document.getElementById('opportunity-container').innerHTML = '' }">
+        <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
+        <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </button>
+      {% endif %}
     </div>
     {% if status == 'accepted' %}
     <div id="opportunity-container" class="flex flex-col gap-y-4 py-4"></div>
     {% endif %}
-</div>
+  </div>
