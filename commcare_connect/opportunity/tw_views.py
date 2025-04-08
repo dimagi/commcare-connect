@@ -1,12 +1,15 @@
+from datetime import timedelta
+
 from django import forms
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
-from django.template import Template, Context
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
-
-from .tw_tables import InvoicesListTable, OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
-
+from .models import Opportunity, UserInviteStatus, VisitValidationStatus
+from .tw_tables import InvoicesListTable, OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, \
+    WorkerPaymentsTable, WorkerLearnTable, PayWorker
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -43,7 +46,7 @@ def home(request, org_slug=None, opp_id=None):
 def about(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/about.html")
 
-def dashboard(request, org_slug=None, opp_id=None): 
+def dashboard(request, org_slug=None, opp_id=None):
     data = {
         'programs': [
             {
@@ -330,9 +333,9 @@ def opportunities(request, org_slug=None, opp_id=None):
         },
     ]
     workerporgress = [
-        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}},
+        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}},
+        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}},
     ]
 
     funnel = [
@@ -654,277 +657,43 @@ def opportunity_visits(request, org_slug=None, opp_id=None):
 
 
 def opportunities_list_table_view(request, org_slug=None, opp_id=None):
-    data = [
-    {
-        "index": 1,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "active",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]},
-    },
-    {
-        "index": 2,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "active",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 3,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "inactive",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 4,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 5,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "inactive",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 6,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "active",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 7,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 8,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 9,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "inactive",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 10,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "active",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 11,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 12,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "inactive",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 13,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "inactive",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 14,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "active",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 15,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 16,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 17,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "active",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 18,
-        "opportunity": "Opportunity Name",
-        "entityType": "test",
-        "entityStatus": "inactive",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    },
-    {
-        "index": 19,
-        "opportunity": "Opportunity Name",
-        "entityType": "live",
-        "entityStatus": "ended",
-        "program": "Program Name",
-        "startDate": "12 Jul, 2025",
-        "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
-    }
-]
+    three_days_ago = now() - timedelta(days=3)
+
+    EXCLUDED_STATUS = [
+        VisitValidationStatus.over_limit,
+        VisitValidationStatus.trial,
+    ]
 
 
-    table = OpportunitiesListTable(data)
+    opps = Opportunity.objects.all().annotate(
+        pending_invites=Count(
+            "userinvite",
+            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            distinct=True,
+        ),
+        pending_approvals=Count(
+            "uservisit",
+            filter=Q(uservisit__status=VisitValidationStatus.pending),
+            distinct=True,
+        ),
+        total_usd_confirmed=Sum(
+            "opportunityaccess__payment__amount_usd",
+            filter=Q(opportunityaccess__payment__confirmed=True),
+            distinct=True,
+        ),
+        inactive_workers=Count(
+            "opportunityaccess",
+            filter=Q(opportunityaccess__accepted=True) & ~Q(
+                opportunityaccess__uservisit__visit_date__gte=three_days_ago,
+                opportunityaccess__uservisit__status__in=EXCLUDED_STATUS
+            ),
+            distinct=True,
+        )
+    )
+
+
+    table = OpportunitiesListTable(opps)
+    table.paginate(page=request.GET.get("page", 1), per_page=request.GET.get("per_page", 15))
     return render(request, "tailwind/components/tables/opportunities_list_table-backup.html", {"table": table})
 
 
@@ -1446,7 +1215,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "assessment":"Passed",
             "attempts":"4",
             "learning_hours":"10h 19m"
-            
+
         },
         {
             "index": 2,
@@ -1555,7 +1324,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "attempts":"4",
             "learning_hours":"10h 19m"
         },
-        
+
     ]
 
     table = WorkerLearnTable(data)
@@ -1707,7 +1476,7 @@ def pay_worker(request, org_slug=None, opp_id=None):
 ]
 
     table = PayWorker(data)
-    
+
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
 def worker_main(request, org_slug=None, opp_id=None):

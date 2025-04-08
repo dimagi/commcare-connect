@@ -33,19 +33,14 @@
       </div>
     </div>
 
+    {% url 'opportunity:opportunities_list_table' request.org.slug as opportunities_list_url %}
     <!-- Table Header -->
-    <div class="flex flex-col w-full gap-2">
-
+    <div class="flex flex-col w-full gap-2 mb-8">
       <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
-        <div hx-get="/a/test-1/opportunity/1/tw/tables/opportunities_list/" hx-trigger="load" hx-swap="outerHTML"></div>
+        <div hx-get="{{opportunities_list_url}}" hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
     </div>
 
-    <!--Table Footer-->
-<div
-class="table-footer w-full flex items-center justify-between h-14  bg-white  text-brand-deep-purple py-2 px-4 rounded-lg">
-{% include "tailwind/components/pagination.html" %}
-</div>
   </div>
 </div>
 {% endblock %}

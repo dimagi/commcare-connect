@@ -1,18 +1,82 @@
+
+{% with target_url=target_url|default:request.path container_selector=container_selector|default:"closest .w-full.overflow-y-auto" current_per_page=request.GET.per_page|default:'15' %}
 <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
     <span class="whitespace-nowrap">Items per page</span>
-    <select type="number" class="base-dropdown w-16">
-        {% for i in "0123456789"|make_list %}
-        <option value="">{{i|add:"0"}}</option>
-        {% endfor %}
+    <select class="base-dropdown w-16 pagination-per-page"
+            hx-get="{{ target_url }}"
+            hx-target="{{ container_selector }}"
+            hx-swap="outerHTML"
+            hx-trigger="change"
+            name="per_page">
+        <option value="10" {% if current_per_page == '10' %}selected{% endif %}>10</option>
+        <option value="15" {% if current_per_page == '15' %}selected{% endif %}>15</option>
+        <option value="20" {% if current_per_page == '20' %}selected{% endif %}>20</option>
+        <option value="50" {% if current_per_page == '50' %}selected{% endif %}>50</option>
     </select>
     <div class="flex items-center gap-2">
-        <button class="button-icon">
+        <button class="button-icon pagination-prev"
+                {% if table.page.has_previous %}
+                hx-get="{{ target_url }}?page={{ table.page.previous_page_number }}&per_page={{ current_per_page }}"
+                hx-target="{{ container_selector }}"
+                hx-swap="outerHTML"
+                {% else %}
+                disabled
+                {% endif %}>
             <i class="fa-light fa-chevron-left"></i>
         </button>
-        <input type="number" min="1" value="1" class="base-input w-16">
-        <span class="whitespace-nowrap ml-2">of 12</span>
-        <button class="button-icon">
+        <input type="number"
+               min="1"
+               max="{{ table.paginator.num_pages }}"
+               value="{{ table.page.number }}"
+               class="base-input w-16 pagination-page-input"
+               hx-get="{{ target_url }}"
+               hx-target="{{ container_selector }}"
+               hx-swap="outerHTML"
+               hx-trigger="change"
+               name="page">
+        <span class="whitespace-nowrap ml-2">of {{ table.paginator.num_pages|default:'1' }}</span>
+        <button class="button-icon pagination-next"
+                {% if table.page.has_next %}
+                hx-get="{{ target_url }}?page={{ table.page.next_page_number }}&per_page={{ current_per_page }}"
+                hx-target="{{ container_selector }}"
+                hx-swap="outerHTML"
+                {% else %}
+                disabled
+                {% endif %}>
             <i class="fa-light fa-chevron-right"></i>
         </button>
     </div>
 </div>
+
+<script>
+  function initPaginationScripts() {
+    document.querySelectorAll('.pagination-page-input').forEach(function(input) {
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const maxPage = parseInt(input.getAttribute('max')) || 1;
+          const page = Math.max(1, Math.min(maxPage, parseInt(this.value) || 1));
+          this.value = page;
+          this.dispatchEvent(new Event('change'));
+        }
+      });
+
+      input.addEventListener('blur', function() {
+        const maxPage = parseInt(input.getAttribute('max')) || 1;
+        const page = Math.max(1, Math.min(maxPage, parseInt(this.value) || 1));
+        if (this.value != page) {
+          this.value = page;
+          this.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+  }
+
+  document.addEventListener('htmx:afterSettle', function(evt) {
+    initPaginationScripts();
+  });
+
+  // Init on first load
+  initPaginationScripts();
+</script>
+{% endwith %}
