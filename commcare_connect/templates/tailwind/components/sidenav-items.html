@@ -1,10 +1,24 @@
-<div class="relative p-3 rounded-lg group hover:bg-brand-sunset-light" :class="{{state}} ? 'w-full' : 'w-10'">
-    <a href={{target}} class="flex w-full h-full items-center justify-start">
-        <i class="fa-light fa-{{icon}}"></i>
-        <span x-show="{{state}}" x-cloak class="ml-4 text-xs">{{name}}</span>
-    </a>
-    {% if name == 'Dashboard' %}
-    <div class="absolute right-0 block w-1 rounded-lg top-1/4 h-1/2 bg-brand-mango"></div>
-    {% endif %}
-    <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-brand-deep-purple group-hover:block whitespace-nowrap">{{name}}</div>
-</div>
+<a href="{{ target }}" class="flex rounded-lg items-center p-2 hover:bg-brand-sunset-light transition-all duration-300 relative group">
+    <!-- Icon Container with Fixed Width -->
+    <div class="flex items-center justify-center w-8 h-8">
+        <i class="fa-light fa-{{ icon }}"></i>
+    </div>
+
+    <!-- Text Container with Fixed Width -->
+    <div class="transition-all duration-300 overflow-hidden flex items-center"
+         :class="sidebarOpen ? 'w-40 ml-4 opacity-100' : 'w-0 opacity-0'">
+        <span class="text-xs whitespace-nowrap">{{ name }}</span>
+    </div>
+
+    <!-- Hover Tooltip -->
+    <div class="absolute hidden px-2 py-1 ml-4 text-sm transform -translate-y-1/2 bg-white rounded top-1/2 left-full text-brand-deep-purple group-hover:block whitespace-nowrap z-50 shadow-lg"
+         x-show="!sidebarOpen">
+        {{ name }}
+    </div>
+
+    <!-- Selected -->
+     {% if sidenav_active == name %}
+     <div class="absolute left-0 top-0 w-full h-full bg-brand-mango/20 rounded-lg"></div>
+     <div class="absolute right-0 w-1 h-1/2 top-1/2 -translate-y-1/2 bg-brand-mango rounded-2xl"></div>
+     {% endif %}
+</a>
