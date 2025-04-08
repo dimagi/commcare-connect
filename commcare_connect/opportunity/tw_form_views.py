@@ -133,6 +133,7 @@ class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
         return response
 
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
 def add_payment_unit(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
@@ -174,6 +175,7 @@ def add_payment_unit(request, org_slug=None, pk=None):
     )
 
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
@@ -228,6 +230,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     )
 
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_admin_required
 def send_message_mobile_users(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(pk=pk, org_slug=org_slug)
