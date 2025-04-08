@@ -14,6 +14,7 @@ from .models import (
     FormJsonValidationRules,
     Opportunity,
     OpportunityVerificationFlags,
+    PaymentInvoice,
     PaymentUnit,
 )
 
@@ -387,9 +388,42 @@ class SendMessageMobileUsersForm(forms.Form):
             Row(Field("selected_users", css_class=CHECKBOX_CLASS)),
             Row(Field("title", css_class=BASE_INPUT_CLASS)),
             Row(Field("body", css_class=TEXTAREA_CLASS)),
-            Row(Field("message_type", css_class=SELECT_CLASS)),
+            Row(Field("message_type", css_class=CHECKBOX_CLASS)),
             Submit(name="submit", value="Submit"),
         )
 
         choices = [(user.pk, user.username) for user in users]
         self.fields["selected_users"] = forms.MultipleChoiceField(choices=choices)
+
+
+class PaymentInvoiceForm(forms.ModelForm):
+    class Meta:
+        model = PaymentInvoice
+        fields = ("amount", "date", "invoice_number", "service_delivery")
+        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": BASE_INPUT_CLASS})}
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("amount", css_class=BASE_INPUT_CLASS)),
+            Row(Field("date", css_class=BASE_INPUT_CLASS)),
+            Row(Field("invoice_number", css_class=BASE_INPUT_CLASS)),
+            Row(Field("service_delivery", css_class=CHECKBOX_CLASS)),
+        )
+        self.helper.form_tag = False
+
+    def clean_invoice_number(self):
+        invoice_number = self.cleaned_data["invoice_number"]
+        if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
+            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
+        return invoice_number
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.opportunity = self.opportunity
+        if commit:
+            instance.save()
+        return instance

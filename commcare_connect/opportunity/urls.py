@@ -157,4 +157,5 @@ urlpatterns = [
     path(
         "<int:pk>/tw/send_message", view=tw_form_views.send_message_mobile_users, name="tw_send_message_mobile_users"
     ),
+    path("<int:pk>/tw/invoice/create/", tw_form_views.invoice_create, name="tw_invoice_create"),
 ]

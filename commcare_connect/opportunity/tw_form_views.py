@@ -3,30 +3,29 @@ from django.db.models import Q
 from django.forms import modelformset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
-from django.urls import reverse
-from django.views.generic import UpdateView
 
+from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
-    Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     PaymentUnit,
 )
-from commcare_connect.opportunity.tasks import add_connect_users, send_push_notification_task, send_sms_task
+from commcare_connect.opportunity.tasks import send_push_notification_task, send_sms_task
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     OpportunityChangeForm,
     OpportunityVerificationFlagsConfigForm,
+    PaymentInvoiceForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
 )
-from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
+from commcare_connect.opportunity.views import get_opportunity_or_404
 from commcare_connect.organization.decorators import org_admin_required, org_member_required
 from commcare_connect.users.models import User
 
@@ -96,41 +95,13 @@ def verification_flags_config(request, org_slug=None, pk=None):
     )
 
 
-class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
-    model = Opportunity
+class OpportunityEdit(views.OpportunityEdit):
     template_name = "tailwind/pages/opportunity_edit.html"
     form_class = OpportunityChangeForm
 
     @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
-
-    def get_success_url(self):
-        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
-
-    def form_valid(self, form):
-        opportunity = form.instance
-        opportunity.modified_by = self.request.user.email
-        users = form.cleaned_data["users"]
-        filter_country = form.cleaned_data["filter_country"]
-        filter_credential = form.cleaned_data["filter_credential"]
-        if users or filter_country or filter_credential:
-            add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
-
-        additional_users = form.cleaned_data["additional_users"]
-        if additional_users:
-            for payment_unit in opportunity.paymentunit_set.all():
-                opportunity.total_budget += payment_unit.amount * payment_unit.max_total * additional_users
-        end_date = form.cleaned_data["end_date"]
-        if end_date:
-            opportunity.end_date = end_date
-        response = super().form_valid(form)
-        return response
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -259,4 +230,20 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             users=users,
             user_ids=list(user_ids),
         ),
+    )
+
+
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
+@org_member_required
+def invoice_create(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed or request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
+    form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
+    if request.POST and form.is_valid():
+        form.save()
+    return render(
+        request,
+        "tailwind/pages/form.html",
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Invoice Create", form=form),
     )
