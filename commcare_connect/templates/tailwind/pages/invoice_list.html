@@ -9,14 +9,14 @@
   x-init="selectedTab='invoices';selectedOption=''"
 >
   <!-- Tabs -->
-  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-    <div class="flex h-full gap-x-8 px-2">
+  <div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
+    <div class="flex h-full px-2 gap-x-8">
       <div
         @click="selectedTab = 'invoices'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#invoices-tab', 'loadInvoices');
             })"
         id="invoices-tab"
-        class="relative cursor-pointer text-sm h-full flex items-center"
+        class="relative flex items-center h-full text-sm cursor-pointer"
         :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'invoices',
                 'text-gray-500': selectedTab !== 'invoices'
@@ -34,17 +34,17 @@
       </div>
       <div
         @click="selectedTab = 'report'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#report-tab', 'loadLearn');
+                htmx.trigger('#report-tab', 'loadReport');
             })"
         id="report-tab"
-        class="relative cursor-pointer text-sm h-full flex items-center"
+        class="relative flex items-center h-full text-sm cursor-pointer"
         :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'report',
                 'text-gray-500': selectedTab !== 'report'
             }"
-        hx-get="/a/test-org-managed/opportunity/8/tw/tables/all_invoice"
+        hx-get="/a/test-org-managed/opportunity/8/tw/tables/invoice_report"
         hx-swap="innerHTML"
-        hx-trigger="loadLearn"
+        hx-trigger="loadReport"
         hx-target="#invoice_report_container"
       >
         <span>Payment Report</span>
@@ -56,7 +56,7 @@
     </div>
 
     <!-- All Invoices Options -->
-    <div x-show="selectedTab === 'invoices'" class="flex gap-x-4 items-center">
+    <div x-show="selectedTab === 'invoices'" class="flex items-center gap-x-4">
       <button type="button" class="button-icon">
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
@@ -96,8 +96,22 @@
     hx-swap="innerHTML"
     hx-trigger="load"
   ></div>
-  <div class="table-footer w-full flex items-center justify-between h-14 bg-white text-brand-deep-purple py-2 px-4 rounded-lg">
+  <div class="flex items-center justify-between w-full px-4 py-2 bg-white rounded-lg table-footer h-14 text-brand-deep-purple">
     {% include "tailwind/components/pagination.html" %}
+    <div x-show="selectedTab === 'report'" class="flex items-center justify-between w-2/3 h-10 gap-4 px-4 py-2 rounded-lg bg-brand-deep-purple/10 text-slate-900">
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-nowrap">Approved Unit:</p>
+        <p class="text-sm text-nowrap">10,456</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-nowrap">User Payment Accrued:</p>
+        <p class="text-sm text-nowrap">10,456</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <p class="text-xs text-nowrap">Network Manager Payment Accrued:</p>
+        <p class="text-sm text-nowrap">10,456</p>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock content %}

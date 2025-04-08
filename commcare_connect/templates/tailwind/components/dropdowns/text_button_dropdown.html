@@ -60,14 +60,12 @@
     x-transition:leave-start="opacity-100 scale-100"
     x-transition:leave-end="opacity-0 scale-95"
     :style="dropdownStyle"
-    class="dropdown-content z-50 w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
+    class="dropdown-content z-40 w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
   >
     <p class="text-blue-light text-xs mb-1">{{ title|default:'' }}</p>
-    <div class="" >
+    <div class="">
       {% for item in list %}
-      <div> <button type="button" class="bg-transparent border-0 px-2 my-2">
-        {{item}}
-      </button></div>
+      <div><button type="button" class="bg-transparent border-0 px-2 my-2">{{item}}</button></div>
       {% endfor %}
     </div>
   </div>

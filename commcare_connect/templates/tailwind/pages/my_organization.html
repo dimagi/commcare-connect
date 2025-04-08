@@ -1,0 +1,89 @@
+{% extends "tailwind/base.html" %} {% block content %}
+<p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">My Organization</p>
+<div
+class="flex flex-col max-w-screen-lg mx-auto gap-2"
+x-data="{
+  selectedTab: '',
+  selectedOption: '',
+  }"
+  x-init="selectedTab='members';selectedOption=''"
+  >
+  <!-- Tabs -->
+  <div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
+    <div class="flex h-full px-2 gap-x-8">
+      <div
+        @click="selectedTab = 'details'; selectedRows = []; $nextTick(() => { 
+                htmx.trigger('#details-tab', 'loadDetails');
+            })"
+        id="details-tab"
+        class="relative flex items-center h-full text-sm cursor-pointer"
+        :class="{
+                'text-brand-deep-purple font-medium': selectedTab === 'details',
+                'text-gray-500': selectedTab !== 'details'
+            }"
+        hx-get="/a/test-org-managed/opportunity/8/tw/tables/"
+        hx-swap="innerHTML"
+        hx-trigger="loadDetails"
+        hx-target="#invoice_members_container"
+      >
+        <span>Details</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'details'"
+        ></div>
+      </div>
+      <div
+        @click="selectedTab = 'members'; selectedRows = []; $nextTick(() => { 
+                htmx.trigger('#members-tab', 'loadMembers');
+            })"
+        id="members-tab"
+        class="relative flex items-center h-full text-sm cursor-pointer"
+        :class="{
+                'text-brand-deep-purple font-medium': selectedTab === 'members',
+                'text-gray-500': selectedTab !== 'members'
+            }"
+        hx-get="/a/test-org-managed/opportunity/8/tw/tables/my_organization_members"
+        hx-swap="innerHTML"
+        hx-trigger="loadMembers"
+        hx-target="#invoice_members_container"
+      >
+        <span>Members</span>
+        <div
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+          x-show="selectedTab === 'members'"
+        ></div>
+      </div>
+    </div>
+
+    <!-- All Details Options -->
+    <div x-show="selectedTab === 'details'" class="flex items-center gap-x-4">
+    </div>
+    
+    <!-- Members Options -->
+    <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-pen-line"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-user-slash"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-trash"></i>
+      </button>
+      <button class="button button-md outline-style">Add Members</button>
+    </div>
+  </div>
+
+
+  <!-- Tab Content Container -->
+  <div
+    id="invoice_members_container"
+    class="w-full"
+    hx-get="/a/test-org-managed/opportunity/8/tw/tables/my_organization_members"
+    hx-swap="innerHTML"
+    hx-trigger="load"
+  ></div>
+  <div class="flex items-center justify-between w-full px-4 py-2 bg-white rounded-lg table-footer h-14 text-brand-deep-purple">
+    {% include "tailwind/components/pagination.html" %}
+</div>
+{% endblock content %}

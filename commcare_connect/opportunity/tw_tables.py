@@ -423,7 +423,7 @@ class OpportunitiesListTable(BaseTailwindTable):
                            "></i>
                         <span x-show="showTooltip"
                               :style="tooltipStyle"
-                              class="fixed z-50 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+                              class="fixed z-40 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
                             Test Opportunity
                         </span>
                     </div>
@@ -719,7 +719,7 @@ class WorkerPaymentsTable(tables.Table):
                 <div x-ref="menu"
                     x-show="isOpen"
                     x-transition
-                    class="fixed z-50 p-5 text-sm bg-white border rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
+                    class="fixed z-40 p-5 text-sm bg-white border rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
                     style="display: none">
                     <p class="text-xs text-slate-400">Payment History</p>
                     <!-- TODO: @apply -->
@@ -1209,22 +1209,229 @@ class InvoicesListTable(BaseTailwindTable):
 
 
 
-# class WorkerDeliveryTable(BaseTailwindTable):
-#     index = tables.Column(verbose_name="#", orderable=False)
-#     worker = tables.Column(verbose_name="Name", orderable=False)
-#     indicator = tables.TemplateColumn(
-#         verbose_name="Indicator",
-#         attrs={
-#             "td": {
-#                 "class": "p-0",
-#             }
-#         },
-#         orderable=False,
-#         template_code="""
-#                                     {% if value %}
-#                                        <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
-#                                     {% else %}
-#                                         <div class="w-[40px]"><div class="w-4 h-2"></div></div>
-#                                     {% endif %}
-#                                     """,
-#     )
+class InvoicePaymentReportTable(BaseTailwindTable):
+    index = tables.Column(orderable=False)
+    paymentUnit = tables.Column(
+        verbose_name="Payment Unit",
+        orderable=False,
+    )
+    approvedUnit = tables.Column(
+        verbose_name="Approved Unit",
+        orderable=False,
+    )
+    userPaymentAccrued = tables.Column(
+        verbose_name="User Payment Accrued",
+        orderable=False,
+    )
+    networkManagerPaymentAccrued = tables.Column(
+        verbose_name="Network Manager Payment Accrued",
+        orderable=False,
+    )
+
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
+                <i
+                    x-on:click="toggleAll()"
+                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
+                    class="text-xl cursor-pointer text-brand-deep-purple"
+                ></i>
+            </div>
+            '''
+        )
+
+    class Meta:
+        
+        sequence = (
+            "index",
+            "paymentUnit",
+            "approvedUnit",
+            "userPaymentAccrued",
+            "networkManagerPaymentAccrued",
+        )
+
+    def render_index(self, value, record):
+            display_index = value
+
+            return format_html(
+                """
+                <div class="text-brand-deep-purple relative flex items-center justify-start h-full"
+                    x-data="{{
+                        'hovering': false
+                    }}"
+                    x-on:mouseenter="hovering = true"
+                    x-on:mouseleave="hovering = false">
+
+                    <!-- Show empty square when hovering and not selected -->
+                    <i x-show="!isRowSelected({0}) && hovering"
+                    class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
+                    x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                    <!-- Show checked square when selected -->
+                    <i x-show="isRowSelected({0})"
+                    class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
+                    x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                    <!-- Show number when not hovering and not selected -->
+                    <span x-show="!isRowSelected({0}) && !hovering"
+                        class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
+                </div>
+            """,
+                display_index,
+            )
+
+class MyOrganizationMembersTable(BaseTailwindTable):
+    index = tables.Column(orderable=False)
+    member = tables.Column(
+        verbose_name="Members",
+        orderable=False,
+    )
+    status = tables.TemplateColumn(
+        verbose_name="Status",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+               {% if value %}
+              {% if value == 'active' %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
+              {% elif value == 'inactive' %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
+              {% elif value == 'ended' %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
+              {% endif %}
+              {% endif%}
+            </div>
+        """,
+    )
+    email = tables.Column(
+        verbose_name="Email",
+        orderable=False,
+    )
+    addedOn = tables.Column(
+        verbose_name="Added On",
+        orderable=False,
+    )
+    role = tables.TemplateColumn(
+        verbose_name="Roles",
+        orderable=False,
+        template_code="""
+        <a href="#" class="underline underline-offset-4">{{value}}</a>
+        """
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
+                <i
+                    x-on:click="toggleAll()"
+                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
+                    class="text-xl cursor-pointer text-brand-deep-purple"
+                ></i>
+            </div>
+            '''
+        )
+
+    class Meta:
+        
+        sequence = (
+            "index",
+            "member",
+            "status",
+            "email",
+            "addedOn",
+            "role",
+        )
+
+    def render_index(self, value, record):
+            display_index = value
+
+            return format_html(
+                """
+                <div class="text-brand-deep-purple relative flex items-center justify-start h-full"
+                    x-data="{{
+                        'hovering': false
+                    }}"
+                    x-on:mouseenter="hovering = true"
+                    x-on:mouseleave="hovering = false">
+
+                    <!-- Show empty square when hovering and not selected -->
+                    <i x-show="!isRowSelected({0}) && hovering"
+                    class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
+                    x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                    <!-- Show checked square when selected -->
+                    <i x-show="isRowSelected({0})"
+                    class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
+                    x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
+
+                    <!-- Show number when not hovering and not selected -->
+                    <span x-show="!isRowSelected({0}) && !hovering"
+                        class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
+                </div>
+            """,
+                display_index,
+            )
+
+class OpportunityWorkerLearnProgressTable(BaseTailwindTable):
+    index = tables.Column(
+        verbose_name="#",
+        orderable=False
+    )
+    moduleName = tables.Column(
+        verbose_name="Module Name",
+        orderable=False,
+    )
+    dateCompleted = tables.Column(
+        verbose_name="Date Completed",
+        orderable=False,
+    )
+    timeCompleted = tables.Column(
+        verbose_name="Time Completed",
+        orderable=False,
+    )
+    duration = tables.Column(
+        verbose_name="Duration",
+        orderable=False,
+    )
+
+    class Meta:
+        sequence = (
+            "index",
+            "moduleName",
+            "dateCompleted",
+            "timeCompleted",
+            "duration",
+        )
+
+class OpportunityWorkerPaymentTable(BaseTailwindTable):
+    index = tables.Column(
+        verbose_name="#",
+        orderable=False
+    )
+    moduleName = tables.Column(
+        verbose_name="Module Name",
+        orderable=False,
+    )
+    dateCompleted = tables.Column(
+        verbose_name="Date Completed",
+        orderable=False,
+    )
+    timeCompleted = tables.Column(
+        verbose_name="Time Completed",
+        orderable=False,
+    )
+
+    class Meta:
+        sequence = (
+            "index",
+            "moduleName",
+            "dateCompleted",
+            "timeCompleted",
+        )

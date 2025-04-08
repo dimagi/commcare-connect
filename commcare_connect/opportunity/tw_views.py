@@ -5,7 +5,7 @@ from django.template import Template, Context
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 
-from .tw_tables import InvoicesListTable, OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
+from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
 
 
 
@@ -1372,25 +1372,150 @@ def all_invoice_table(request, org_slug=None, opp_id=None):
 
 def invoice_report_table(request, org_slug=None, opp_id=None):
     data = [
-    {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600", "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025", "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025"},
-    {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500", "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025", "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025"},
-    {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700", "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025", "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025"},
-    {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300", "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025", "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025"},
-    {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500", "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025", "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025"},
-    {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700", "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025", "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025"},
-    {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400", "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025", "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025"},
-    {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400", "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025", "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025"},
-    {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500", "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025", "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025"},
-    {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600", "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025", "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025"},
-    {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700", "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025", "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025"},
-    {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500", "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025", "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025"},
-    {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400", "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025", "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025"},
-    {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500", "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025", "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025"},
-    {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025"}
-    ]
+    {
+        "index": 1,
+        "paymentUnit": "1AFF2023062678899",
+        "approvedUnit": "10,495",
+        "userPaymentAccrued": "$2,350,495",
+        "networkManagerPaymentAccrued": "$2,350,495",
+    },
+    {
+        "index": 2,
+        "paymentUnit": "1AFF2023062678900",
+        "approvedUnit": "10,600",
+        "userPaymentAccrued": "$2,360,500",
+        "networkManagerPaymentAccrued": "$2,360,500",
+    },
+    {
+        "index": 3,
+        "paymentUnit": "1AFF2023062678901",
+        "approvedUnit": "10,750",
+        "userPaymentAccrued": "$2,370,750",
+        "networkManagerPaymentAccrued": "$2,370,750",
+    },
+    {
+        "index": 4,
+        "paymentUnit": "1AFF2023062678902",
+        "approvedUnit": "10,800",
+        "userPaymentAccrued": "$2,380,800",
+        "networkManagerPaymentAccrued": "$2,380,800",
+    },
+    {
+        "index": 5,
+        "paymentUnit": "1AFF2023062678903",
+        "approvedUnit": "11,000",
+        "userPaymentAccrued": "$2,400,000",
+        "networkManagerPaymentAccrued": "$2,400,000",
+    },
+    {
+        "index": 6,
+        "paymentUnit": "1AFF2023062678904",
+        "approvedUnit": "11,100",
+        "userPaymentAccrued": "$2,410,100",
+        "networkManagerPaymentAccrued": "$2,410,100",
+    },
+    {
+        "index": 7,
+        "paymentUnit": "1AFF2023062678905",
+        "approvedUnit": "11,200",
+        "userPaymentAccrued": "$2,420,200",
+        "networkManagerPaymentAccrued": "$2,420,200",
+    },
+    {
+        "index": 8,
+        "paymentUnit": "1AFF2023062678906",
+        "approvedUnit": "11,300",
+        "userPaymentAccrued": "$2,430,300",
+        "networkManagerPaymentAccrued": "$2,430,300",
+    },
+    {
+        "index": 9,
+        "paymentUnit": "1AFF2023062678907",
+        "approvedUnit": "11,500",
+        "userPaymentAccrued": "$2,450,500",
+        "networkManagerPaymentAccrued": "$2,450,500",
+    },
+    {
+        "index": 10,
+        "paymentUnit": "1AFF2023062678908",
+        "approvedUnit": "11,600",
+        "userPaymentAccrued": "$2,460,600",
+        "networkManagerPaymentAccrued": "$2,460,600",
+    },
+    {
+        "index": 11,
+        "paymentUnit": "1AFF2023062678909",
+        "approvedUnit": "11,800",
+        "userPaymentAccrued": "$2,480,800",
+        "networkManagerPaymentAccrued": "$2,480,800",
+    },
+    {
+        "index": 12,
+        "paymentUnit": "1AFF2023062678910",
+        "approvedUnit": "11,900",
+        "userPaymentAccrued": "$2,490,900",
+        "networkManagerPaymentAccrued": "$2,490,900",
+    },
+    {
+        "index": 13,
+        "paymentUnit": "1AFF2023062678911",
+        "approvedUnit": "12,000",
+        "userPaymentAccrued": "$2,500,000",
+        "networkManagerPaymentAccrued": "$2,500,000",
+    },
+    {
+        "index": 14,
+        "paymentUnit": "1AFF2023062678912",
+        "approvedUnit": "12,100",
+        "userPaymentAccrued": "$2,510,100",
+        "networkManagerPaymentAccrued": "$2,510,100",
+    },
+    {
+        "index": 15,
+        "paymentUnit": "1AFF2023062678913",
+        "approvedUnit": "12,300",
+        "userPaymentAccrued": "$2,530,300",
+        "networkManagerPaymentAccrued": "$2,530,300",
+    },
+    {
+        "index": 16,
+        "paymentUnit": "1AFF2023062678914",
+        "approvedUnit": "12,400",
+        "userPaymentAccrued": "$2,540,400",
+        "networkManagerPaymentAccrued": "$2,540,400",
+    },
+    {
+        "index": 17,
+        "paymentUnit": "1AFF2023062678915",
+        "approvedUnit": "12,600",
+        "userPaymentAccrued": "$2,560,600",
+        "networkManagerPaymentAccrued": "$2,560,600",
+    },
+    {
+        "index": 18,
+        "paymentUnit": "1AFF2023062678916",
+        "approvedUnit": "12,700",
+        "userPaymentAccrued": "$2,570,700",
+        "networkManagerPaymentAccrued": "$2,570,700",
+    },
+    {
+        "index": 19,
+        "paymentUnit": "1AFF2023062678917",
+        "approvedUnit": "12,900",
+        "userPaymentAccrued": "$2,590,900",
+        "networkManagerPaymentAccrued": "$2,590,900",
+    },
+    {
+        "index": 20,
+        "paymentUnit": "1AFF2023062678918",
+        "approvedUnit": "13,000",
+        "userPaymentAccrued": "$2,600,000",
+        "networkManagerPaymentAccrued": "$2,600,000",
+    }
+]
 
-    table = WorkerMainTable(data)
-    return render(request, "tailwind/pages/worker_main.html",{ "table": table})
+    table = InvoicePaymentReportTable(data)
+    return render(request, "tailwind/components/tables/index_selectable_table.html",{ "table": table})
 
 def invoice_report_card(request, org_slug=None, opp_id=None):
     data = [
@@ -1868,3 +1993,105 @@ def payment_history(request, org_slug=None, opp_id=None):
 
     return render(request, "opportunity/tailwind/components/payment_history.html", {"data": data})
 
+def my_organization(request, org_slug=None, opp_id=None):
+     return render(request, "tailwind/pages/my_organization.html", {"header_title": "My Organization"})
+
+def my_organization_members_table(request, org_slug=None, opp_id=None):
+    data = [
+        {"index": 1, "member": "John Doe", "status": "active", "email": "5A0oR@example.com", "addedOn": "12-Jul-2025", "addedBy": "John Doe", "role": "Admin"},
+        {"index": 2, "member": "Jane Smith", "status": "inactive", "email": "jane.smith@example.com", "addedOn": "15-Jul-2025", "addedBy": "John Doe", "role": "User"},
+        {"index": 3, "member": "Alice Brown", "status": "active", "email": "alice.brown@example.com", "addedOn": "20-Jul-2025", "addedBy": "John Doe", "role": "Manager"},
+        {"index": 4, "member": "Bob Johnson", "status": "active", "email": "bob.johnson@example.com", "addedOn": "21-Jul-2025", "addedBy": "Jane Smith", "role": "User"},
+        {"index": 5, "member": "Charlie Davis", "status": "inactive", "email": "charlie.davis@example.com", "addedOn": "22-Jul-2025", "addedBy": "Alice Brown", "role": "Admin"},
+        {"index": 6, "member": "David Lee", "status": "active", "email": "david.lee@example.com", "addedOn": "23-Jul-2025", "addedBy": "Bob Johnson", "role": "Manager"},
+        {"index": 7, "member": "Eva Green", "status": "inactive", "email": "eva.green@example.com", "addedOn": "25-Jul-2025", "addedBy": "David Lee", "role": "User"},
+        {"index": 8, "member": "Frank White", "status": "active", "email": "frank.white@example.com", "addedOn": "28-Jul-2025", "addedBy": "Eva Green", "role": "Admin"},
+        {"index": 9, "member": "Grace King", "status": "active", "email": "grace.king@example.com", "addedOn": "30-Jul-2025", "addedBy": "Frank White", "role": "Manager"},
+        {"index": 10, "member": "Hannah Scott", "status": "inactive", "email": "hannah.scott@example.com", "addedOn": "01-Aug-2025", "addedBy": "Grace King", "role": "User"},
+        {"index": 11, "member": "Ian Harris", "status": "active", "email": "ian.harris@example.com", "addedOn": "05-Aug-2025", "addedBy": "Hannah Scott", "role": "Admin"},
+        {"index": 12, "member": "Jack Thomas", "status": "inactive", "email": "jack.thomas@example.com", "addedOn": "07-Aug-2025", "addedBy": "Ian Harris", "role": "User"},
+        {"index": 13, "member": "Katherine Adams", "status": "active", "email": "katherine.adams@example.com", "addedOn": "10-Aug-2025", "addedBy": "Jack Thomas", "role": "Manager"},
+        {"index": 14, "member": "Liam Carter", "status": "inactive", "email": "liam.carter@example.com", "addedOn": "12-Aug-2025", "addedBy": "Katherine Adams", "role": "Admin"},
+        {"index": 15, "member": "Monica Clark", "status": "active", "email": "monica.clark@example.com", "addedOn": "15-Aug-2025", "addedBy": "Liam Carter", "role": "User"},
+        {"index": 16, "member": "Nathaniel Walker", "status": "active", "email": "nathaniel.walker@example.com", "addedOn": "17-Aug-2025", "addedBy": "Monica Clark", "role": "Manager"},
+        {"index": 17, "member": "Olivia Hall", "status": "inactive", "email": "olivia.hall@example.com", "addedOn": "20-Aug-2025", "addedBy": "Nathaniel Walker", "role": "User"},
+        {"index": 18, "member": "Paul Allen", "status": "active", "email": "paul.allen@example.com", "addedOn": "22-Aug-2025", "addedBy": "Olivia Hall", "role": "Admin"},
+        {"index": 19, "member": "Quincy Adams", "status": "active", "email": "quincy.adams@example.com", "addedOn": "25-Aug-2025", "addedBy": "Paul Allen", "role": "Manager"},
+        {"index": 20, "member": "Rachel Young", "status": "inactive", "email": "rachel.young@example.com", "addedOn": "28-Aug-2025", "addedBy": "Quincy Adams", "role": "User"}
+    ]
+    
+    table = MyOrganizationMembersTable(data)
+    return render(request, "tailwind/components/tables/index_selectable_table.html",{ "table": table})
+
+def opportunity_worker_learn_progress(request, org_slug=None, opp_id=None):
+    user_kpi = [
+           {"name":"<span class='font-medium'>Total Time</span> Learning", "icon":"book-open-cover","count":"19hr 12min" },
+    ]
+    data = [
+        {
+            "index": 1,
+            "moduleName": "Module 1",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+            "duration": "19hr 12min",
+        },
+        {
+            "index": 2,
+            "moduleName": "Module 2",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+            "duration": "19hr 12min",
+        },
+        {
+            "index": 3,
+            "moduleName": "Module 3",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+            "duration": "19hr 12min",
+        },
+        {
+            "index": 4,
+            "moduleName": "Module 4",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+            "duration": "19hr 12min",
+        },
+    ]
+    table = OpportunityWorkerLearnProgressTable(data)
+    return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Learn Progress", "table": table })    
+
+
+def opportunity_worker_payment(request, org_slug=None, opp_id=None):
+    user_kpi = [
+           {"name":"<span class='font-medium'>Accrued</span> Payment", "icon":"money-bill-wave","count":"$4,780" },
+           {"name":"<span class='font-medium'>Due</span> Payment", "icon":"timer","count":"$1,780", "dropdown":"True" },
+           {"name":"<span class='font-medium'>Paid</span> Payment", "icon":"hand-holding-dollar","count":"$3,000", "dropdown":"True" },
+    ]
+    data = [
+        {
+            "index": 1,
+            "moduleName": "Module 1",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+        },
+        {
+            "index": 2,
+            "moduleName": "Module 2",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+        },
+        {
+            "index": 3,
+            "moduleName": "Module 3",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+        },
+        {
+            "index": 4,
+            "moduleName": "Module 4",
+            "dateCompleted": "12-Aug-2025",
+            "timeCompleted": "14:56",
+        },
+    ]
+    table = OpportunityWorkerPaymentTable(data)
+    return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Payment", "table": table })    

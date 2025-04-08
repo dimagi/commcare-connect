@@ -132,12 +132,15 @@ urlpatterns = [
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
     path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
-    path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"),
-    path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),
-    path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),
+    path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"), # TABLE
+    path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),  # TABLE
+    path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),  # TABLE
     path("<int:opp_id>/tw/get_worker_last_payment/", tw_views.get_worker_last_payment, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
+    path("<int:opp_id>/tw/opportunity_worker/learn_progress", tw_views.opportunity_worker_learn_progress, name="tw_opportunity_worker_learn_progress"),
+    path("<int:opp_id>/tw/opportunity_worker/payments", tw_views.opportunity_worker_payment, name="tw_opportunity_worker_learn_progress"),
     path("<int:opp_id>/tw/invoice_list/", tw_views.invoice_list, name="tw_invoice_list"),
+    path("<int:opp_id>/tw/my_organization/", tw_views.my_organization, name="tw_my_organization"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
     # Tables 
@@ -146,8 +149,9 @@ urlpatterns = [
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
     path("<int:opp_id>/tw/tables/all_invoice", tw_views.all_invoice_table, name="tw_all_invoice"),
     path("<int:opp_id>/tw/tables/invoice_report", tw_views.invoice_report_table, name="tw_invoice_report"),
+    path("<int:opp_id>/tw/tables/my_organization_members", tw_views.my_organization_members_table, name="tw_my_organization_members_table"),
     # API
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
-    path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_opportunities_card"),
+    path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),
 ]
