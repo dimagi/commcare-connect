@@ -331,15 +331,15 @@ class OpportunitiesListTable(BaseTailwindTable):
         orderable=False,
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
-               {% if value %}
-              {% if value == 'active' %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
-              {% elif value == 'inactive' %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
-              {% elif value == 'ended' %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
-              {% endif %}
-              {% endif%}
+                {% if value %}
+                {% if value == 'active' %}
+                    <span class="badge badge-sm bg-green-600/20 text-green-600">{{value}}</span>
+                {% elif value == 'inactive' %}
+                    <span class="badge badge-sm bg-orange-600/20 text-orange-600">{{value}}</span>
+                {% elif value == 'ended' %}
+                    <span class="badge badge-sm bg-slate-100 text-slate-400">{{value}}</span>
+                {% endif %}
+               {% endif%}
             </div>
         """,
     )
@@ -426,26 +426,26 @@ class OpportunitiesListTable(BaseTailwindTable):
     
     def render_pendingInvites(self, value):
         return format_html(
-            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
-            value['count'],
+            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+            value['link'], value['count'],
         )
     
     def render_inactiveWorkers(self, value):
         return format_html(
-            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
-             value['count'],
+            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+            value['link'],  value['count'],
         )
     
     def render_pendingApprovals(self, value):
         return format_html(
-            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
-            value['count'],
+            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+            value['link'], value['count'],
         )
     
     def render_paymentsDue(self, value):
         return format_html(
-            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
-             value['amount'],
+            '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+            value['link'], value['amount'],
         )
 
 class WorkerPaymentsTable(tables.Table):
@@ -609,11 +609,10 @@ class WorkerPaymentsTable(tables.Table):
                 <div x-ref="menu"
                     x-show="isOpen"
                     x-transition
-                    class="fixed z-40 p-5 text-sm bg-white border rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
+                    class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
                     style="display: none">
                     <p class="text-xs text-slate-400">Payment History</p>
-                    <!-- TODO: @apply -->
-                    <button  class="flex items-center px-2 py-2 mt-3 mb-6 text-sm font-medium border border-gray-300 rounded-lg text-brand-deep-purple hover:bg-brand-indigo-100">Rollback lastPayment</button>
+                    <button  class="button button-md mt-3 mb-6 outline-style">Rollback Last Payment</button>
                     <div hx-get='/a/test-1/opportunity/1/tw/get_worker_last_payment/' hx-trigger='load' hx-swap='outerHTML'></div>
                 </div>
             </div>
@@ -876,9 +875,9 @@ class WorkerMainTable(BaseTailwindTable):
         orderable=False,
         template_code="""
         {% if value %}
-            <div class="w-[40px]"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
+            <div class="w-10"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
         {% else %}
-            <div class="w-[40px]"><div class="w-4 h-2"></div></div>
+            <div class="w-10"><div class="w-4 h-2"></div></div>
         {% endif %}
         """,
     )
@@ -888,15 +887,27 @@ class WorkerMainTable(BaseTailwindTable):
     )
     inviteDate = tables.Column(
         verbose_name="Invite Date",
+        orderable=False
     )
     startedLearn = tables.Column(
         verbose_name="Started Learn",
+        orderable=False
     )
     completedLearn = tables.Column(
         verbose_name="Completed Learn",
+        orderable=False
     )
     daysToCompleteLearn = tables.Column(
         verbose_name="Days to complete Learn",
+        orderable=False
+    )
+    firstDeliveryDate=tables.Column(
+        verbose_name="First Delivery Date",
+        orderable=False
+    )
+    daysToStartDelivery=tables.Column(
+        verbose_name="Days to Start Delivery",
+        orderable=False
     )
 
     def __init__(self, *args, **kwargs):
@@ -948,7 +959,7 @@ class WorkerMainTable(BaseTailwindTable):
 
         return format_html(
             """
-            <div class="text-brand-deep-purple relative flex items-center justify-start h-full"
+            <div class="text-brand-deep-purple relative flex items-center justify-start h-full w-4"
                 x-data="{{
                     'hovering': false
                 }}"
@@ -974,15 +985,26 @@ class WorkerMainTable(BaseTailwindTable):
         )
 
     def render_worker(self, value):
+        
         return format_html(
             """
-        <div class="flex flex-col items-start">
+        <div class="flex flex-col items-start w-40">
             <p class="text-sm text-slate-900 ">{}</p>
             <p class="text-xs text-slate-400">{}</p>
         </div>
         """,
             value["name"],
             value["id"],
+        )
+    
+    def render_lastActive(self, value):
+        return format_html(
+            """
+            <div class="flex flex-col items-start">
+                <p class="text-sm text-slate-900 ">{}</p>
+            </div>
+            """,
+            value
         )
 
 class InvoicesListTable(BaseTailwindTable):
@@ -1005,16 +1027,9 @@ class InvoicesListTable(BaseTailwindTable):
         verbose_name="Added By",
         orderable=False,
     )
-    status = tables.TemplateColumn(
+    status = tables.Column(
         verbose_name="Status",
         orderable=False,
-        template_code="""
-            <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
-               {% if value %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color=value.bgColor text=value.text text_color=value.color %}
-              {% endif%}
-            </div>
-        """,
     )
     paymentDate = tables.Column(
         verbose_name="Payment Date",
@@ -1097,6 +1112,11 @@ class InvoicesListTable(BaseTailwindTable):
                 display_index,
             )
 
+    def render_status(self, value, record=None):
+        return format_html(
+            '<span class="badge badge-sm bg-{0} text-{1}">{2}</span>',
+            value['bgColor'], value['color'], value['text']
+        )
 
 
 class InvoicePaymentReportTable(BaseTailwindTable):
@@ -1185,15 +1205,15 @@ class MyOrganizationMembersTable(BaseTailwindTable):
         orderable=False,
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
-               {% if value %}
-              {% if value == 'active' %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
-              {% elif value == 'inactive' %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
-              {% elif value == 'ended' %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
-              {% endif %}
-              {% endif%}
+                {% if value %}
+                {% if value == 'active' %}
+                    <span class="badge badge-sm bg-green-600/20 text-green-600">{{value}}</span>
+                {% elif value == 'inactive' %}
+                    <span class="badge badge-sm bg-orange-600/20 text-orange-600">{{value}}</span>
+                {% elif value == 'ended' %}
+                    <span class="badge badge-sm bg-slate-100 text-slate-400">{{value}}</span>
+                {% endif %}
+               {% endif%}
             </div>
         """,
     )
@@ -1204,6 +1224,10 @@ class MyOrganizationMembersTable(BaseTailwindTable):
     addedOn = tables.Column(
         verbose_name="Added On",
         orderable=False,
+    )
+    addedBy = tables.Column(
+        verbose_name="Added By",
+        orderable=False
     )
     role = tables.TemplateColumn(
         verbose_name="Roles",
@@ -1236,6 +1260,7 @@ class MyOrganizationMembersTable(BaseTailwindTable):
             "status",
             "email",
             "addedOn",
+            "addedBy",
             "role",
         )
 
@@ -1305,8 +1330,8 @@ class OpportunityWorkerPaymentTable(BaseTailwindTable):
         verbose_name="#",
         orderable=False
     )
-    moduleName = tables.Column(
-        verbose_name="Module Name",
+    amountPaid = tables.Column(
+        verbose_name="Amount Paid",
         orderable=False,
     )
     dateCompleted = tables.Column(
@@ -1321,7 +1346,7 @@ class OpportunityWorkerPaymentTable(BaseTailwindTable):
     class Meta:
         sequence = (
             "index",
-            "moduleName",
+            "amountPaid",
             "dateCompleted",
             "timeCompleted",
         )

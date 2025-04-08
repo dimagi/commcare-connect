@@ -663,10 +663,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]},
     },
     {
@@ -677,10 +677,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -691,10 +691,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -705,10 +705,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -719,10 +719,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -733,10 +733,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -747,10 +747,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -761,10 +761,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -775,10 +775,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -789,10 +789,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -803,10 +803,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -817,10 +817,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -831,10 +831,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -845,10 +845,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -859,10 +859,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -873,10 +873,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link":"#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -887,10 +887,10 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
@@ -901,29 +901,85 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     },
     {
         "index": 19,
         "opportunity": "Opportunity Name",
         "entityType": "live",
+        "entityStatus": "active",
+        "program": "Program Name",
+        "startDate": "12 Jul, 2025",
+        "endDate": "12 Aug, 2025",
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
+    },
+    {
+        "index": 20,
+        "opportunity": "Opportunity Name",
+        "entityType": "test",
         "entityStatus": "ended",
         "program": "Program Name",
         "startDate": "12 Jul, 2025",
         "endDate": "12 Aug, 2025",
-        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"]},
-        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"]},
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
+    },
+    {
+        "index": 21,
+        "opportunity": "Opportunity Name",
+        "entityType": "live",
+        "entityStatus": "inactive",
+        "program": "Program Name",
+        "startDate": "12 Jul, 2025",
+        "endDate": "12 Aug, 2025",
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
+    },
+    {
+        "index": 22,
+        "opportunity": "Opportunity Name",
+        "entityType": "test",
+        "entityStatus": "active",
+        "program": "Program Name",
+        "startDate": "12 Jul, 2025",
+        "endDate": "12 Aug, 2025",
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
+    },
+    {
+        "index": 23,
+        "opportunity": "Opportunity Name",
+        "entityType": "live",
+        "entityStatus": "ended",
+        "program": "Program Name",
+        "startDate": "12 Jul, 2025",
+        "endDate": "12 Aug, 2025",
+        "pendingInvites": {"count": 76, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "inactiveWorkers": {"count": 44, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "pendingApprovals": {"count": 56, "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
+        "paymentsDue": {"amount": "$123", "list": ["View Opportunity", "View Worker", "View Invoices"], "link": "#"},
         "actions": {"list": ["View Opportunity", "View Worker", "View Invoices"]}
     }
 ]
 
-    data = []
+    # data = []
     if len(data) == 0:
         return render(request, "tailwind/components/placeholders/opportunities_list_table_placeholder.html")
 
@@ -1377,140 +1433,140 @@ def invoice_report_table(request, org_slug=None, opp_id=None):
     data = [
     {
         "index": 1,
-        "paymentUnit": "1AFF2023062678899",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "10,495",
         "userPaymentAccrued": "$2,350,495",
         "networkManagerPaymentAccrued": "$2,350,495",
     },
     {
         "index": 2,
-        "paymentUnit": "1AFF2023062678900",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "10,600",
         "userPaymentAccrued": "$2,360,500",
         "networkManagerPaymentAccrued": "$2,360,500",
     },
     {
         "index": 3,
-        "paymentUnit": "1AFF2023062678901",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "10,750",
         "userPaymentAccrued": "$2,370,750",
         "networkManagerPaymentAccrued": "$2,370,750",
     },
     {
         "index": 4,
-        "paymentUnit": "1AFF2023062678902",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "10,800",
         "userPaymentAccrued": "$2,380,800",
         "networkManagerPaymentAccrued": "$2,380,800",
     },
     {
         "index": 5,
-        "paymentUnit": "1AFF2023062678903",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,000",
         "userPaymentAccrued": "$2,400,000",
         "networkManagerPaymentAccrued": "$2,400,000",
     },
     {
         "index": 6,
-        "paymentUnit": "1AFF2023062678904",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,100",
         "userPaymentAccrued": "$2,410,100",
         "networkManagerPaymentAccrued": "$2,410,100",
     },
     {
         "index": 7,
-        "paymentUnit": "1AFF2023062678905",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,200",
         "userPaymentAccrued": "$2,420,200",
         "networkManagerPaymentAccrued": "$2,420,200",
     },
     {
         "index": 8,
-        "paymentUnit": "1AFF2023062678906",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,300",
         "userPaymentAccrued": "$2,430,300",
         "networkManagerPaymentAccrued": "$2,430,300",
     },
     {
         "index": 9,
-        "paymentUnit": "1AFF2023062678907",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,500",
         "userPaymentAccrued": "$2,450,500",
         "networkManagerPaymentAccrued": "$2,450,500",
     },
     {
         "index": 10,
-        "paymentUnit": "1AFF2023062678908",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,600",
         "userPaymentAccrued": "$2,460,600",
         "networkManagerPaymentAccrued": "$2,460,600",
     },
     {
         "index": 11,
-        "paymentUnit": "1AFF2023062678909",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,800",
         "userPaymentAccrued": "$2,480,800",
         "networkManagerPaymentAccrued": "$2,480,800",
     },
     {
         "index": 12,
-        "paymentUnit": "1AFF2023062678910",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "11,900",
         "userPaymentAccrued": "$2,490,900",
         "networkManagerPaymentAccrued": "$2,490,900",
     },
     {
         "index": 13,
-        "paymentUnit": "1AFF2023062678911",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,000",
         "userPaymentAccrued": "$2,500,000",
         "networkManagerPaymentAccrued": "$2,500,000",
     },
     {
         "index": 14,
-        "paymentUnit": "1AFF2023062678912",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,100",
         "userPaymentAccrued": "$2,510,100",
         "networkManagerPaymentAccrued": "$2,510,100",
     },
     {
         "index": 15,
-        "paymentUnit": "1AFF2023062678913",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,300",
         "userPaymentAccrued": "$2,530,300",
         "networkManagerPaymentAccrued": "$2,530,300",
     },
     {
         "index": 16,
-        "paymentUnit": "1AFF2023062678914",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,400",
         "userPaymentAccrued": "$2,540,400",
         "networkManagerPaymentAccrued": "$2,540,400",
     },
     {
         "index": 17,
-        "paymentUnit": "1AFF2023062678915",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,600",
         "userPaymentAccrued": "$2,560,600",
         "networkManagerPaymentAccrued": "$2,560,600",
     },
     {
         "index": 18,
-        "paymentUnit": "1AFF2023062678916",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,700",
         "userPaymentAccrued": "$2,570,700",
         "networkManagerPaymentAccrued": "$2,570,700",
     },
     {
         "index": 19,
-        "paymentUnit": "1AFF2023062678917",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "12,900",
         "userPaymentAccrued": "$2,590,900",
         "networkManagerPaymentAccrued": "$2,590,900",
     },
     {
         "index": 20,
-        "paymentUnit": "1AFF2023062678918",
+        "paymentUnit": "Payment Unit Name",
         "approvedUnit": "13,000",
         "userPaymentAccrued": "$2,600,000",
         "networkManagerPaymentAccrued": "$2,600,000",
@@ -1540,7 +1596,7 @@ def get_worker_last_payment(request, org_slug=None, opp_id=None):
     html = ""
     for payment in payments:
         html += f"""
-            <div class="flex justify-between py-1 items-center">
+            <div class="flex justify-between py-1 my-1 items-center">
                 <p class="text-xs text-brand-deep-purple">{payment['date']}</p>
                 <p class="text-sm text-slate-900">{payment['amount']}</p>
             </div>
@@ -1840,22 +1896,24 @@ def pay_worker(request, org_slug=None, opp_id=None):
 
 def worker_main(request, org_slug=None, opp_id=None):
     data = [
-        {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600", "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025", "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025"},
-        {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500", "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025", "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025"},
-        {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700", "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025", "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025"},
-        {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300", "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025", "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025"},
-        {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500", "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025", "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025"},
-        {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700", "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025", "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025"},
-        {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400", "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025", "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025"},
-        {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400", "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025", "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025"},
-        {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500", "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025", "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025"},
-        {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600", "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025", "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025"},
-        {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700", "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025", "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025"},
-        {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500", "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025", "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025"},
-        {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400", "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025", "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025"},
-        {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500", "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025", "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025"},
-        {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025"}
+        {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600", "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025", "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025", "firstDeliveryDate": "25-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500", "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025", "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025", "firstDeliveryDate": "26-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700", "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025", "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025", "firstDeliveryDate": "27-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300", "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025", "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025", "firstDeliveryDate": "28-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500", "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025", "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025", "firstDeliveryDate": "29-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700", "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025", "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025", "firstDeliveryDate": "30-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400", "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025", "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025", "firstDeliveryDate": "31-Aug-2025", "daysToStartDelivery": "3 days"},
+        {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400", "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025", "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025", "firstDeliveryDate": "01-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500", "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025", "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025", "firstDeliveryDate": "02-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600", "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025", "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025", "firstDeliveryDate": "03-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700", "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025", "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025", "firstDeliveryDate": "04-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500", "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025", "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025", "firstDeliveryDate": "05-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400", "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025", "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025", "firstDeliveryDate": "06-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500", "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025", "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025", "firstDeliveryDate": "07-Sep-2025", "daysToStartDelivery": "3 days"},
+        {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025", "firstDeliveryDate": "08-Sep-2025", "daysToStartDelivery": "3 days"}
     ]
+
+
 
     table = WorkerMainTable(data)
     return render(request, "tailwind/pages/worker_main.html",{ "table": table})
@@ -2073,25 +2131,25 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
     data = [
         {
             "index": 1,
-            "moduleName": "Module 1",
+            "amountPaid": "$4,800",
             "dateCompleted": "12-Aug-2025",
             "timeCompleted": "14:56",
         },
         {
             "index": 2,
-            "moduleName": "Module 2",
+            "amountPaid": "$4,800",
             "dateCompleted": "12-Aug-2025",
             "timeCompleted": "14:56",
         },
         {
             "index": 3,
-            "moduleName": "Module 3",
+            "amountPaid": "$4,800",
             "dateCompleted": "12-Aug-2025",
             "timeCompleted": "14:56",
         },
         {
             "index": 4,
-            "moduleName": "Module 4",
+            "amountPaid": "$4,800",
             "dateCompleted": "12-Aug-2025",
             "timeCompleted": "14:56",
         },

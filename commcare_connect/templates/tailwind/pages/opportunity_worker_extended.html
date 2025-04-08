@@ -3,7 +3,7 @@
   <!-- KPI Section -->
   <div class="flex items-center w-full gap-4 p-4 overflow-x-auto min-h-32 profile-bg bg-brand-indigo rounded-2xl">
     {% include "tailwind/components/worker_page/profile.html" %} 
-    <div class="flex items-center gap-4 {% if kpi|length == 1 %}w-1/4{% else %}w-full{% endif %}">
+    <div class="flex items-center gap-4 {% if kpi|length == 1 %}w-1/5{% else %}w-full{% endif %}">
       {% for item in kpi %}
         {% include "tailwind/components/cards/kpi.html" with count=item.count text=item.name|safe icon=item.icon dropdown=item.dropdown %}
       {% endfor %}
@@ -16,7 +16,7 @@
 
   <!-- Tabs -->
   <div class="relative flex items-center justify-between w-full px-4 mx-auto mb-2 rounded-lg shadow-sm bg-slate-50 h-14">
-    <p class="text-sm font-medium text-brand-deep-purple">Learn Progress</p>
+    <p class="text-sm font-medium text-brand-deep-purple">{{tab_name}}</p>
   </div>
 
 </div>
