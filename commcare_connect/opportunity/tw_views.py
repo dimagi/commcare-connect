@@ -923,6 +923,9 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
     }
 ]
 
+    data = []
+    if len(data) == 0:
+        return render(request, "tailwind/components/placeholders/opportunities_list_table_placeholder.html")
 
     table = OpportunitiesListTable(data)
     return render(request, "tailwind/components/tables/opportunities_list_table-backup.html", {"table": table})

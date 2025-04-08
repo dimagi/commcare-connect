@@ -181,18 +181,8 @@ class OpportunitiesListTable(BaseTailwindTable):
         
         self.base_columns['index'].verbose_name = mark_safe(
             '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('#')">
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer">
                 #
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('#') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('#'),
-                        'opacity-100': isSorted('#'),
-                        'animate-fade-in': isSorted('#') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
             '''
         )
@@ -244,158 +234,58 @@ class OpportunitiesListTable(BaseTailwindTable):
         )
 
         self.base_columns['opportunity'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-                @click="sortBy('opportunity')">
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 {opp_dropdown_html}
-                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
-                    :class="{{
-                        'rotate-180': isSorted('opportunity') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('opportunity'),
-                        'opacity-100': isSorted('opportunity'),
-                        'animate-fade-in': isSorted('opportunity') && sortDirection === 'asc'
-                    }}"></i>
             </div>
         ''')
 
         self.base_columns['entityStatus'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-                @click="sortBy('entityStatus')">
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple "">
                 {status_dropdown_html}
-                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
-                    :class="{{
-                        'rotate-180': isSorted('entityStatus') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('entityStatus'),
-                        'opacity-100': isSorted('entityStatus'),
-                        'animate-fade-in': isSorted('entityStatus') && sortDirection === 'asc'
-                    }}"></i>
             </div>
         ''')
 
-        self.base_columns['program'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('program')">
+        self.base_columns['program'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 Program
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('program') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('program'),
-                        'opacity-100': isSorted('program'),
-                        'animate-fade-in': isSorted('program') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
-        self.base_columns['startDate'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('startDate')">
+        self.base_columns['startDate'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple ">
                 Start Date
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('startDate') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('startDate'),
-                        'opacity-100': isSorted('startDate'),
-                        'animate-fade-in': isSorted('startDate') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
-        self.base_columns['endDate'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('endDate')">
+        self.base_columns['endDate'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 End Date
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('endDate') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('endDate'),
-                        'opacity-100': isSorted('endDate'),
-                        'animate-fade-in': isSorted('endDate') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
-        self.base_columns['pendingInvites'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('pendingInvites')">
+        self.base_columns['pendingInvites'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 Pending Invites
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('pendingInvites') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('pendingInvites'),
-                        'opacity-100': isSorted('pendingInvites'),
-                        'animate-fade-in': isSorted('pendingInvites') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
-        self.base_columns['inactiveWorkers'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('inactiveWorkers')">
+        self.base_columns['inactiveWorkers'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 Inactive Workers
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('inactiveWorkers') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('inactiveWorkers'),
-                        'opacity-100': isSorted('inactiveWorkers'),
-                        'animate-fade-in': isSorted('inactiveWorkers') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
-        self.base_columns['pendingApprovals'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('pendingApprovals')">
+        self.base_columns['pendingApprovals'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 Pending Approvals
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('pendingApprovals') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('pendingApprovals'),
-                        'opacity-100': isSorted('pendingApprovals'),
-                        'animate-fade-in': isSorted('pendingApprovals') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
-        self.base_columns['paymentsDue'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('paymentsDue')">
+        self.base_columns['paymentsDue'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
                 Payments Due
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('paymentsDue') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('paymentsDue'),
-                        'opacity-100': isSorted('paymentsDue'),
-                        'animate-fade-in': isSorted('paymentsDue') && sortDirection === 'asc'
-                    }"
-                ></i>
             </div>
-            '''
-        )
+        ''')
 
     index = tables.Column(orderable=False)
     opportunity = tables.Column( orderable=False)

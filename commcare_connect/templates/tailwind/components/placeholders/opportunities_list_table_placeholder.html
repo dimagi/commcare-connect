@@ -1,0 +1,15 @@
+{% load static i18n %}
+<div class="w-full h-[70vh] bg-white flex items-center justify-center">
+    <div class="flex flex-col max-w-3/10 text-center items-center gap-8">
+        <p class="text-sm text-slate-400">
+            You don't have any opportunities. Join aprogram or create new opportunity.
+        </p>
+        <img src="{% static "images/empty_box.png" %}" class="w-36" alt="Empty Box">
+        <button class="button button-md button-outline-rounded">
+            <div class="flex items-center justify-between gap-4">
+              <p class="text-sm">Create Opportunity</p>
+              <i class="fa-light fa-arrow-right"></i>
+            </div>
+          </button>
+    </div>
+</div>

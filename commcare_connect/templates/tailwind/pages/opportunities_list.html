@@ -5,21 +5,7 @@
 <div class="flex items-center justify-center">
   <div
     class="flex flex-col gap-2 w-full"
-    x-data="{
-    sortColumn: '',
-    sortDirection: 'asc',
-    sortBy(column) {
-      if (this.sortColumn === column) {
-        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-      } else {
-        this.sortColumn = column;
-        this.sortDirection = 'asc';
-      }
-    },
-    isSorted(column) {
-      return this.sortColumn === column;
-    }
-  }"
+    
   >
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <p class="text-sm text-brand-deep-purple">Opportunities List</p>
