@@ -60,7 +60,7 @@
       <button type="button" class="button-icon">
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
-      <button class="button button-md primary-dark">Add Invoice</button>
+      <button class="button button-sm primary-dark">Add Invoice</button>
     </div>
 
     <!-- Payment Report Options -->
@@ -83,10 +83,12 @@
             htmx.trigger('#invoice_report_card_container', 'fetchReport');
         }
     })"
-    class="my-4"
   ></div>
 
-  <p x-show="selectedTab === 'report'" class="mb-4 text-sm font-medium text-brand-deep-purple">All Invoices</p>
+
+  <div x-show="selectedTab === 'report'" class="relative flex items-center justify-between w-full px-4 mx-auto  rounded-lg shadow-sm bg-slate-50 h-14">
+    <p class="text-sm font-medium text-brand-deep-purple">All Invoices</p>
+  </div>
 
   <!-- Tab Content Container -->
   <div
@@ -96,7 +98,7 @@
     hx-swap="innerHTML"
     hx-trigger="load"
   ></div>
-  <div class="flex items-center justify-between w-full px-4 py-2 bg-white rounded-lg table-footer h-14 text-brand-deep-purple">
+  <div class="flex items-center justify-between w-full px-4 py-2 bg-slate-50 rounded-lg table-footer h-14 text-brand-deep-purple">
     {% include "tailwind/components/pagination.html" %}
     <div x-show="selectedTab === 'report'" class="flex items-center justify-between w-2/3 h-10 gap-4 px-4 py-2 rounded-lg bg-brand-deep-purple/10 text-slate-900">
       <div class="flex items-center gap-2">
