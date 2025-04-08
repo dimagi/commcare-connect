@@ -461,6 +461,7 @@ def prepare_opportunity_payment_test_data(opportunity):
             payment_unit=payment_unit,
             status=CompletedWorkStatus.approved.value,
             payment_date=None,
+            status_modified_date=now(),
         )
         completed_works.append(completed_work)
         for deliver_unit in payment_unit.deliver_units.all():
@@ -471,6 +472,7 @@ def prepare_opportunity_payment_test_data(opportunity):
                 status=VisitValidationStatus.approved.value,
                 opportunity_access=access,
                 completed_work=completed_work,
+                status_modified_date=now(),
             )
     return user, access, payment_units, completed_works
 

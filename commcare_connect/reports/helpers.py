@@ -170,7 +170,7 @@ def get_table_data_for_year_month(
         visit_data_dict[group_key].update(item)
 
     avg_top_flw_amount_paid = (
-        payment_query.filter(**filter_kwargs, confirmed=True)
+        payment_query.filter(**filter_kwargs)
         .annotate(month_group=TruncMonth("date_paid"))
         .values("month_group", "opportunity_access__user_id")
         .annotate(approved_sum=models.Sum("amount_usd", default=0))

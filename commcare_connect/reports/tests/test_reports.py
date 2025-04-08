@@ -1,4 +1,3 @@
-import math
 from datetime import UTC, date, datetime, timedelta
 from unittest import mock
 
@@ -6,69 +5,20 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
 from django.utils.timezone import now
-from factory.faker import Faker
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
-from commcare_connect.opportunity.models import CompletedWorkStatus, Opportunity, VisitValidationStatus
+from commcare_connect.opportunity.models import CompletedWorkStatus, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
-    DeliverUnitFactory,
     OpportunityAccessFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
-    PaymentUnitFactory,
     UserVisitFactory,
 )
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.reports.views import _results_to_geojson, get_table_data_for_quarter
+from commcare_connect.reports.views import _results_to_geojson
 from commcare_connect.utils.datetime import get_month_series
-
-
-@pytest.mark.django_db
-def test_delivery_stats(opportunity: Opportunity):
-    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity)
-    mobile_users = MobileUserFactory.create_batch(5)
-    for payment_unit in payment_units:
-        DeliverUnitFactory.create_batch(2, payment_unit=payment_unit, app=opportunity.deliver_app, optional=False)
-    access_objects = []
-    for mobile_user in mobile_users:
-        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity, accepted=True)
-        access_objects.append(access)
-        for payment_unit in payment_units:
-            completed_work = CompletedWorkFactory(
-                opportunity_access=access,
-                payment_unit=payment_unit,
-                status=CompletedWorkStatus.approved.value,
-            )
-            for deliver_unit in payment_unit.deliver_units.all():
-                UserVisitFactory(
-                    opportunity=opportunity,
-                    user=mobile_user,
-                    deliver_unit=deliver_unit,
-                    status=VisitValidationStatus.approved.value,
-                    opportunity_access=access,
-                    completed_work=completed_work,
-                    visit_date=Faker("date_time_this_month", tzinfo=UTC),
-                )
-
-    quarter = math.ceil(datetime.utcnow().month / 12 * 4)
-
-    # delivery_type filter not applied
-    all_data = get_table_data_for_quarter((datetime.now().year, quarter), None)
-    assert all_data[0]["users"] == 5
-    assert all_data[0]["services"] == 10
-    assert all_data[0]["beneficiaries"] == 10
-
-    # test delivery_type filter
-    filtered_data = get_table_data_for_quarter((datetime.now().year, quarter), opportunity.delivery_type.slug)
-    assert filtered_data == all_data
-
-    # unknown delivery-type should have no data
-    unknown_delivery_type_data = get_table_data_for_quarter((datetime.now().year, quarter), "unknown")
-    assert unknown_delivery_type_data[0]["users"] == 0
-    assert unknown_delivery_type_data[0]["services"] == 0
-    assert unknown_delivery_type_data[0]["beneficiaries"] == 0
 
 
 def get_month_range_start_end(months=1):

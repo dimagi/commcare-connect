@@ -37,6 +37,7 @@ FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Afri
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
+        self.opportunity = kwargs.pop("opportunity", None)
         credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
@@ -73,6 +74,10 @@ class OpportunityUserInviteForm(forms.Form):
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
+
+        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+            raise ValidationError("Please finish setting up the opportunity before inviting users.")
+
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
 
@@ -95,6 +100,9 @@ class OpportunityChangeForm(
         ]
 
     def __init__(self, *args, **kwargs):
+        kwargs["opportunity"] = kwargs.get(
+            "instance", None
+        )  # passing the opportunity instance to OpportunityUserInviteForm
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -697,12 +705,13 @@ class AddBudgetNewUsersForm(forms.Form):
     add_users = forms.IntegerField(
         required=False,
         label="Number Of Users",
-        help_text="New Budget = Existing Budget + ∑ (Amount × Max Total × No. of Users) across all payment units.",
+        help_text="New Budget = Existing Budget + sum of (Amount × Max Total × Number of Users) "
+        "for all payment units.",
     )
     total_budget = forms.IntegerField(
         required=False,
         label="Opportunity Total Budget",
-        help_text="Set a new total budget or leave empty if adding users.",
+        help_text="Set a new total budget or leave it unchanged when using Number of Users.",
     )
 
     def __init__(self, *args, **kwargs):
@@ -732,7 +741,7 @@ class AddBudgetNewUsersForm(forms.Form):
 
         if add_users and total_budget and total_budget != self.opportunity.total_budget:
             raise forms.ValidationError(
-                "Only one field can be updated at a time: either 'Numbeclear of Users' or 'Total Budget'."
+                "Only one field can be updated at a time: either 'Number of Users' or 'Total Budget'."
             )
 
         self.budget_increase = self._validate_budget(add_users, total_budget)
@@ -797,6 +806,9 @@ class PaymentUnitForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         deliver_units = kwargs.pop("deliver_units", [])
         payment_units = kwargs.pop("payment_units", [])
+        org_slug = kwargs.pop("org_slug")
+        opportunity_id = kwargs.pop("opportunity_id")
+
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -807,6 +819,20 @@ class PaymentUnitForm(forms.ModelForm):
             Row(Column("start_date"), Column("end_date")),
             Row(Field("required_deliver_units")),
             Row(Field("optional_deliver_units")),
+            HTML(
+                f"""
+                <button type="button" class="btn btn-sm btn-outline-info mb-3" id="sync-button"
+                hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
+                hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
+                event.detail.successful && location.reload();
+                this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
+                hx-disabled-elt="this"
+                hx-on:click="this.innerHTML=&quot;<span class=\\
+                'spinner-border spinner-border-sm'></span> Syncing...&quot;;">
+                <span id="sync-text">Sync Deliver Units</span>
+                </button>
+                """
+            ),
             Row(Field("payment_units")),
             Field("max_total", wrapper_class="form-group col-md-4 mb-0"),
             Field("max_daily", wrapper_class="form-group col-md-4 mb-0"),
