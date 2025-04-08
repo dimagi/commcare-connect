@@ -2,6 +2,7 @@ import itertools
 
 import django_tables2 as tables
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.timezone import now
@@ -471,15 +472,7 @@ class OpportunitiesListTable(BaseTailwindTable):
     payments_due = tables.Column(
         orderable=False,
     )
-    actions = tables.TemplateColumn(
-        verbose_name="",
-        orderable=False,
-        template_code="""
-          <div class="flex justify-center w-4 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
-              {% include "tailwind/components/dropdowns/text_button_dropdown.html" with text='...' list=value.list styles='text-sm' %}
-          </div>
-        """,
-    )
+
 
     class Meta:
         sequence = (
@@ -544,6 +537,35 @@ class OpportunitiesListTable(BaseTailwindTable):
 
     def render_payments_due(self, value):
         return self.render_div(value, extra_classes=self.stats_style)
+
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+
+    def render_actions(self, record):
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Pending Reviews",
+                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Pending Invoices",
+                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+            }
+        ]
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            }
+        )
+        return mark_safe(html)
 
 
 class WorkerPaymentsTable(tables.Table):

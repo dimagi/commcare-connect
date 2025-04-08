@@ -37,7 +37,7 @@
     <!-- Table Header -->
     <div class="flex flex-col w-full gap-2 mb-8">
       <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
-        <div hx-get="{{opportunities_list_url}}" hx-trigger="load" hx-swap="outerHTML"></div>
+        <div hx-get="{% url 'opportunity:opportunities_list_table' request.org.slug %}" hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
     </div>
 

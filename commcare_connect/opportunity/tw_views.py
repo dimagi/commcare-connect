@@ -690,8 +690,6 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
             distinct=True,
         )
     )
-
-
     table = OpportunitiesListTable(opps)
     table.paginate(page=request.GET.get("page", 1), per_page=request.GET.get("per_page", 15))
     return render(request, "tailwind/components/tables/opportunities_list_table-backup.html", {"table": table})
