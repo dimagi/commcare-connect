@@ -135,14 +135,26 @@ urlpatterns = [
     path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),
     path("<int:opp_id>/tw/get_worker_last_payment/", tw_views.get_worker_last_payment, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
-    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
-    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
-    
-    # Custom Tailwind Table 
+    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),  # TODO
+    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"),  # TODO
+    # Custom Tailwind Table
     path("<int:opp_id>/tw/custom_table/", tw_views.custom_table, name="tw_custom_table"),
-    # Tables 
+    # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
-    path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
-
-    path("<int:pk>/tw/verification_flags_config/", view=tw_form_views.verification_flags_config, name="tw_verification_flags_config"),
+    path(
+        "<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"
+    ),  # TODO
+    path(
+        "<int:pk>/tw/verification_flags_config/",
+        view=tw_form_views.verification_flags_config,
+        name="tw_verification_flags_config",
+    ),
+    path("<int:pk>/tw/edit", view=tw_form_views.OpportunityEdit.as_view(), name="tw_edit"),
+    path("<int:pk>/tw/payment_unit/create", view=tw_form_views.add_payment_unit, name="tw_add_payment_unit"),
+    path(
+        "<int:opp_id>/tw/payment_unit/<int:pk>/edit", view=tw_form_views.edit_payment_unit, name="tw_edit_payment_unit"
+    ),
+    path(
+        "<int:pk>/tw/send_message", view=tw_form_views.send_message_mobile_users, name="tw_send_message_mobile_users"
+    ),
 ]
