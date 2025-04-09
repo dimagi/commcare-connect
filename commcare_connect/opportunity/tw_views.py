@@ -1,8 +1,7 @@
 from datetime import timedelta
 
 from django import forms
-from django.db.models import Count, Q, Sum, F, Case, When, Value, IntegerField, DecimalField
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.timezone import now
@@ -10,6 +9,7 @@ from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+from .helpers import get_opportunity_list_data
 from .models import Opportunity, UserInviteStatus, VisitValidationStatus
 from .tw_tables import InvoicesListTable, OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, \
     WorkerPaymentsTable, WorkerLearnTable, PayWorker
@@ -723,52 +723,7 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
     ]
 
     def get_table_data(self):
-        today = now().date()
-        three_days_ago = now() - timedelta(days=3)
-
-        EXCLUDED_STATUS = [
-            VisitValidationStatus.over_limit,
-            VisitValidationStatus.trial,
-        ]
-        queryset = Opportunity.objects.filter().annotate(
-            program=F("managedopportunity__program__name"),
-            pending_invites=Count(
-                "userinvite",
-                filter=~Q(userinvite__status=UserInviteStatus.accepted),
-                distinct=True,
-            ),
-            pending_approvals=Count(
-                "uservisit",
-                filter=Q(uservisit__status=VisitValidationStatus.pending),
-                distinct=True,
-            ),
-            payments_due=Coalesce(
-                Sum(
-                    "opportunityaccess__payment__amount_usd",
-                    filter=Q(opportunityaccess__payment__confirmed=True),
-                    distinct=True,
-                ),
-                Value(0),
-                output_field=DecimalField(),
-            ),
-
-            inactive_workers=Count(
-                "opportunityaccess",
-                filter=Q(opportunityaccess__accepted=True) & ~Q(
-                    opportunityaccess__uservisit__visit_date__gte=three_days_ago,
-                    opportunityaccess__uservisit__status__in=EXCLUDED_STATUS
-                ),
-                distinct=True,
-            ),
-            status=Case(
-                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-                default=Value(2),  # Inactive
-                output_field=IntegerField()
-            )
-        )
-
-        return queryset
+        return get_opportunity_list_data()
 
     def get_validated_order_by(self):
         requested_order = self.request.GET.get('sort', 'start_date')
