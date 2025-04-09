@@ -253,24 +253,10 @@ def invoice_create(request, org_slug, pk):
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
 def add_budget_existing_users(request, org_slug=None, pk=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
-    opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
-    opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
-
-    form = TWAddBudgetExistingUsersForm(
-        opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST or None
-    )
-    if form.is_valid():
-        form.save()
-        return redirect("opportunity:detail", org_slug, pk)
-
-    return render(
+    return views.add_budget_existing_users(
         request,
-        "tailwind/pages/add_visits_existing_users.html",
-        {
-            "form": form,
-            "opportunity_claims": opportunity_claims,
-            "budget_per_visit": opportunity.budget_per_visit_new,
-            "opportunity": opportunity,
-        },
+        org_slug,
+        pk,
+        form_class=TWAddBudgetExistingUsersForm,
+        template_name="tailwind/pages/add_visits_existing_users.html",
     )
