@@ -6,28 +6,28 @@
     dropdownStyle: '',
     originalOverflow: '',
     calculatePosition() {
-      const badge = this.$el;
-      const badgeRect = badge.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
-      
-      // Calculate available space
-      const spaceBelow = viewportHeight - badgeRect.bottom;
-      const shouldShowAbove = spaceBelow < 200 && badgeRect.top > 200;
-      
-      // Position calculation
-      let top = shouldShowAbove 
-        ? badgeRect.top + window.scrollY - 200
-        : badgeRect.bottom + window.scrollY;
-      
-      // Adjust for right edge
-      let left = Math.min(
-        badgeRect.left, 
-        viewportWidth - 220
-      );
-      
-      this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
-    },
+    const badge = this.$el;
+    const badgeRect = badge.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Calculate available space
+    const spaceBelow = viewportHeight - badgeRect.bottom;
+    const shouldShowAbove = spaceBelow < 70 && badgeRect.top > 200;
+
+    // Corrected: remove window.scrollY
+    let top = shouldShowAbove 
+      ? badgeRect.top - 115
+      : badgeRect.bottom;
+
+    // Adjust for right edge
+    let left = Math.min(
+      badgeRect.left,
+      viewportWidth - 220
+    );
+
+    this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
+  },
     toggleDropdown() {
       if (!this.open) {
         this.originalOverflow = document.body.style.overflow;

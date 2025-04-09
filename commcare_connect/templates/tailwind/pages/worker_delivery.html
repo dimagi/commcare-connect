@@ -1,0 +1,60 @@
+{% load render_table from django_tables2 %}
+
+<div
+  class="flex flex-col w-full gap-2"
+  x-data="{
+    selectedRows: [],
+    // Toggle single row selection
+    toggleRow(index) {
+        const rowIndex = this.selectedRows.indexOf(index);
+        if (rowIndex === -1) {
+            this.selectedRows.push(index);
+        } else {
+            this.selectedRows.splice(rowIndex, 1);
+        }
+    },
+    toggleAll() {
+        if (this.isAllSelected()) {
+            this.selectedRows = [];
+        } else {
+            // Get all row indices from the table data
+            this.selectedRows = Array.from({ length: {{ table.rows|length }} }, (_, i) => i + 1);
+        }
+    },
+    isAllSelected() {
+        return {{ table.rows|length }} > 0 && this.selectedRows.length === {{ table.rows|length }};
+    },
+    isRowSelected(index) {
+        return this.selectedRows.includes(index);
+    }
+}"
+>
+
+     {% render_table table %}
+
+<!--Table Footer-->
+<div
+    class="table-footer w-full flex items-center justify-between h-14  bg-white  text-brand-deep-purple py-2 px-4 rounded-lg">
+    {% include "tailwind/components/pagination.html" %}
+    <div class="flex flex-row gap-x-12 w-1/2 items-center justify-center">
+        <span class="text-slate-900">Total</span>
+        <div class="flex flex-row gap-x-2 items-center">
+            <span>Delivered</span>
+            <span class="bg-brand-indigo/10 text-brand-indigo border-none px-2 py-1 rounded-full">189</span>
+        </div>
+        <div class="flex flex-row gap-x-2 items-center">
+            <span>Pending</span>
+            <span class="bg-brand-indigo/10 text-brand-indigo border-none px-2 py-1 rounded-full">189</span>
+        </div>
+        <div class="flex flex-row gap-x-2 items-center">
+            <span>Approved</span>
+            <span class="bg-brand-indigo/10 text-brand-indigo border-none px-2 py-1 rounded-full">189</span>
+        </div>
+        <div class="flex flex-row gap-x-2 items-center">
+            <span>Rejected</span>
+            <span class="bg-brand-indigo/10 text-brand-indigo border-none px-2 py-1 rounded-full">189</span>
+        </div>        
+    </div>
+</div>
+</div>
+

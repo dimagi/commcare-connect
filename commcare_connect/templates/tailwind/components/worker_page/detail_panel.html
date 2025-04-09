@@ -1,42 +1,82 @@
 <div class="flex flex-col gap-2" x-data="{
-  slideIndex: 1,
-  slides: [
-      { src: '../static/images/checkup.jpg', alt: 'Checkup Image 1' },
-      { src: '../static/images/checkup.jpg', alt: 'Checkup Image 2' },
-      { src: '../static/images/checkup.webp', alt: 'Checkup Image 3' },
-      { src: '../static/images/checkup.jpg', alt: 'Checkup Image 4' },
-      { src: '../static/images/checkup.webp', alt: 'Checkup Image 5' },
-      { src: '../static/images/checkup.jpg', alt: 'Checkup Image 6' }
-  ],
-  popupOpen: false,
-  popupImageSrc: '',
-  messages: [{ expanded: false }],
-  visibleSlides: 3,
-  showDivs(n) {
-      if (n > this.slides.length - this.visibleSlides + 1) this.slideIndex = 1;
-      if (n < 1) this.slideIndex = this.slides.length - this.visibleSlides + 1;
-  },
-  plusDivs(n) {
-      this.showDivs(this.slideIndex += n);
-      if (this.popupOpen) {
-          this.popupImageSrc = this.slides[this.slideIndex - 1].src;
-      }
-  },
-  openPopup(src) {
-      this.popupImageSrc = src;
-      this.popupOpen = true;
-  },
-  closePopup(event) {
-      if (event.target === event.currentTarget || !event.target.closest('.popup-content')) {
-          this.popupOpen = false;
-      }
-  }
+    slides: [
+        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 1' },
+        { src: 'https://tinyurl.com/checks-image', alt: 'Checkup Image 2' },
+        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 3' },
+        { src: 'https://tinyurl.com/checks-image', alt: 'Checkup Image 4' },
+        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 5' },
+        { src: 'https://tinyurl.com/checks-image', alt: 'Checkup Image 4' },
+        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 5' }
+    ],
+    currentIndex: 0,
+    modalCurrentIndex: 0,
+    visibleSlides: 3,
+    modalVisibleSlides: 5,
+    popupOpen: false,
+    messages: [{ expanded: false }],
+
+    get visibleImages() {
+        const start = this.currentIndex;
+        return this.slides.slice(start, start + this.visibleSlides);
+    },
+
+    get modalThumbnails() {
+        const totalSlides = this.slides.length;
+        const halfVisible = Math.floor(this.modalVisibleSlides / 2);
+        let start = this.modalCurrentIndex - halfVisible;
+        
+        if (start < 0) start = 0;
+        if (start + this.modalVisibleSlides > totalSlides) {
+            start = Math.max(0, totalSlides - this.modalVisibleSlides);
+        }
+        
+        return this.slides.slice(start, Math.min(start + this.modalVisibleSlides, totalSlides));
+    },
+
+    // Carousel navigation
+    nextSlide() {
+        if (this.currentIndex + this.visibleSlides < this.slides.length) {
+            this.currentIndex++;
+        }
+    },
+
+    prevSlide() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+        }
+    },
+
+    // Modal navigation
+    nextModal() {
+        if (this.modalCurrentIndex < this.slides.length - 1) {
+            this.modalCurrentIndex++;
+        }
+    },
+
+    prevModal() {
+        if (this.modalCurrentIndex > 0) {
+            this.modalCurrentIndex--;
+        }
+    },
+
+    openPopup(index) {
+        this.modalCurrentIndex = index;
+        this.popupOpen = true;
+    },
+
+    closePopup() {
+        this.popupOpen = false;
+    },
+
+    setModalImage(index) {
+        this.modalCurrentIndex = index;
+    }
 }">
   <div class="flex items-center px-4 bg-white rounded-lg shadow-sm h-14">
     <p class="text-sm font-normal text-brand-deep-purple">Details</p>
   </div>
 
-  <div class="p-4 rounded-lg shadow-sm h-[500px] bg-white overflow-y-auto sscrollbar-hide scrollbar-default">
+  <div class="p-4 rounded-lg shadow-sm bg-white h-160 overflow-y-auto scrollbar-hide scrollbar-default">
 
     <div class="flex flex-col gap-6">
 
@@ -86,19 +126,21 @@
       <div class="flex justify-between">
         <p class="text-sm font-medium text-brand-deep-purple">Media</p>
         <div class="flex gap-2">
-          <div @click="plusDivs(-1)">
-            <i class="cursor-pointer fa-light fa-arrow-left text-slate-400"></i>
-          </div>
-          <div @click="plusDivs(1)">
-            <i class="cursor-pointer fa-light fa-arrow-right text-slate-400"></i>
-          </div>
+            <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
+                <i class="cursor-pointer fa-light fa-arrow-left" :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+            </button>
+            <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
+                <i class="cursor-pointer fa-light fa-arrow-right" :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+            </button>
         </div>
       </div>
 
-      <div class="grid grid-cols-9 gap-4cursor-pointer values">
-        <template x-for="(slide, index) in slides" :key="index">
-          <img :src="slide.src" :alt="slide.alt" class="object-cover col-span-3 imageopen rounded-2xl aspect-square"
-            x-show="index + 1 >= slideIndex && index + 1 < slideIndex + visibleSlides" @click="openPopup(slide.src)" />
+      <div class="grid grid-cols-9 gap-4 cursor-pointer values">
+        <template x-for="(slide, index) in visibleImages" :key="index">
+            <img :src="slide.src" 
+                 :alt="slide.alt" 
+                 class="object-cover col-span-3 imageopen rounded-2xl aspect-square hover:opacity-90 transition-opacity"
+                 @click="openPopup(index + currentIndex)" />
         </template>
       </div>
 
@@ -176,43 +218,81 @@
   
 
     <!-- Buttons -->
-    <div class="flex justify-end gap-4 items-center p-2 bg-white rounded-lg shadow-sm">
-      <button class="button button-md outline-style">Back</button>
-      <button
-        class="button button-md primary-dark">Accept</button>
-    </div>
+    <!-- Buttons -->
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+x-data="{ selectedRows: [] }"
+@selection-changed.window="selectedRows = $event.detail.selected">
+<template x-if="selectedRows.length === 0">
+<div class="flex gap-4">
+ <button class="button button-md outline-style">Reject</button>
+ <button class="button button-md primary-dark">Accept</button>
+</div>
+</template>
+</div>
 
     <!-- Popup Modal -->
-    <div x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80" x-show="popupOpen"
-      @click="closePopup($event)" x-transition.opacity>
-      <div class="relative max-w-lg p-4 overflow-y-auto bg-white rounded-lg popup-content">
-        <div class="flex justify-between mb-2">
-          <p class="text-sm font-medium text-brand-deep-purple">Media</p>
-          <div class="cursor-pointer" @click="closePopup($event)">
-            <i class="fa-light fa-xmark"></i>
-          </div>
+    <div x-cloak 
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" 
+         x-show="popupOpen"
+         @click.self="closePopup()"
+         x-transition.opacity>
+        <div class="relative max-w-lg p-4 bg-white rounded-lg popup-content">
+            <div class="flex justify-between mb-2">
+                <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+                <button class="button-icon cursor-pointer" @click="closePopup()">
+                    <i class="fa-light fa-xmark-large"></i>
+                </button>
+            </div>
+            
+            <!-- Main Image -->
+            <div class="relative">
+                <img :src="slides[modalCurrentIndex].src" 
+                     :alt="slides[modalCurrentIndex].alt" 
+                     class="object-contain w-full rounded-lg max-h-[60vh]" />
+                <button
+                class="absolute bottom-2 right-2 button-icon">
+                  <a :href="slides[modalCurrentIndex].src" 
+                   download="downloaded-image.jpg" 
+                   
+                   aria-label="Download Image">
+                    <i class="fa-light fa-download text-brand-deep-purple"></i>
+                  </a>
+                </button>
+            </div>
+
+            <!-- Thumbnails -->
+            <div class="relative w-full flex items-center justify-center gap-4 mt-4">
+                <button class="absolute -left-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light" 
+                        @click="prevModal()" 
+                        :disabled="modalCurrentIndex === 0"
+                        :class="{'opacity-50': modalCurrentIndex === 0}">
+                    <i class="fa-light fa-arrow-left"></i>
+                </button>
+
+                <div class="flex justify-center gap-2 px-16 overflow-hidden">
+                  <template x-for="(slide, idx) in modalThumbnails" :key="idx">
+                      <div class="relative w-16 h-16 flex-shrink-0 cursor-pointer" @click="setModalImage(slides.indexOf(slide))">
+                          <img 
+                              :src="slide.src" 
+                              :alt="slide.alt"
+                              class="object-cover w-full h-full rounded-lg" 
+                          />
+                          <div 
+                              x-show="slides.indexOf(slide) === modalCurrentIndex" 
+                              class="absolute inset-0 bg-black/40 rounded-lg pointer-events-none transition-all duration-300">
+                          </div>
+                      </div>
+                  </template>
+              </div>
+              
+
+                <button class="absolute -right-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light" 
+                        @click="nextModal()" 
+                        :disabled="modalCurrentIndex >= slides.length - 1"
+                        :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">
+                    <i class="fa-light fa-arrow-right"></i>
+                </button>
+            </div>
         </div>
-        <div class="relative inline-block">
-          <img :src="popupImageSrc" alt="Modal Image" class="object-contain w-full max-w-full rounded-lg h-1/2" />
-          <a :href="popupImageSrc" download="downloaded-image.jpg" class="absolute bottom-2 right-2"
-            aria-label="Download Image">
-            <i class="fa-light fa-download text-brand-deep-purple"></i>
-          </a>
-        </div>
-        <div class="grid items-center w-full grid-cols-12 gap-3 mt-4 border-b border-gray-200 values">
-          <div class="flex items-center justify-center col-span-1 cursor-pointer aspect-square" @click="plusDivs(-1)">
-            <i class="text-lg text-black fa-light fa-arrow-left"></i>
-          </div>
-          {% for slide in slides %}
-          <img src="{{ slide.src }}" alt="{{ slide.alt }}"
-            class="object-cover col-span-3 imageopen rounded-2xl aspect-square"
-            x-show=" {{ forloop.counter }} >= slideIndex && {{ forloop.counter }} < slideIndex + visibleSlides"
-            @click="openPopup('{{ slide.src }}')" />
-          {% endfor %}
-          <div class="flex items-center justify-center col-span-1 cursor-pointer aspect-square" @click="plusDivs(1)">
-            <i class="text-lg text-black fa-light fa-arrow-right"></i>
-          </div>
-        </div>
-      </div> 
     </div>
 </div>

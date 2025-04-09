@@ -1,27 +1,30 @@
-<div class="bg-white shadow-sm rounded-lg flex flex-col w-[30%]">
-    <div class="flex items-center text-gray-400 text-sm p-4">
-      <i class="fa-solid fa-code-merge text-brand-deep-purple cursor-pointer"></i>
-      <h3 class="flex-1 pl-4 text-base font-medium text-brand-deep-purple">User Journey Timeline</h3>
-      <i class="fa-light fa-xmark cursor-pointer"></i>
-    </div>
-    <div class="p-4 pb-0">
-      {% for data in timeline %}
-      <div class="">
-        <div class="flex flex-row justify-between">
-          <span class="text-brand-indigo text-xs font-normal">{{data.date}}</span>
-          <div class="flex flex-col items-center">
-            <div class="w-2 h-2 rounded bg-brand-indigo"></div>
-            <div class="w-0.5 h-16 bg-brand-border-light"></div>
-          </div>
-          <div>
-            <h3 class="text-brand-deep-purple text-sm font-medium">{{data.title}}</h3>
-            <p class="text-brand-blue-light text-xs font-normal">{{data.desc}}</p>
-          </div>
+<div class="bg-white shadow-sm rounded-2xl flex flex-col w-110">
+  <div class="flex items-center text-gray-400 text-sm p-4">
+    <i class="fa-solid fa-code-merge text-brand-deep-purple cursor-pointer"></i>
+    <h3 class="flex-1 pl-4 text-base font-medium text-brand-deep-purple">User Journey Timeline</h3>
+    <button class="button-icon"
+      @click="isTimelineModalOpen = false">
+      <i class="fa-regular fa-xmark cursor-pointer"></i>
+    </button>
+  </div>
+  <div class="p-4 pb-0">
+    {% for data in timeline %}
+    <div class="">
+      <div class="flex flex-row justify-between">
+        <span class="text-brand-indigo text-xs font-normal">{{data.date}}</span>
+        <div class="flex flex-col items-center">
+          <div class="w-2 h-2 rounded bg-brand-indigo"></div>
+          <div class="w-0.5 h-16 bg-brand-border-light"></div>
+        </div>
+        <div>
+          <h3 class="text-brand-deep-purple text-sm font-medium">{{data.title}}</h3>
+          <p class="text-brand-blue-light text-xs font-normal">{{data.desc}}</p>
         </div>
       </div>
-      {% endfor %}
     </div>
-    <div class="flex h-12 bg-slate-100 items-center p-4">
-      <h3 class="text-brand-deep-purple text-xs font-medium">March 2024</h3>
-    </div> 
+    {% endfor %}
   </div>
+  <div class="flex h-12 bg-slate-100 items-center p-4">
+    <h3 class="text-brand-deep-purple text-xs font-medium">March 2024</h3>
+  </div> 
+</div>

@@ -1,5 +1,6 @@
 <!-- Worker Dashboard Card -->
-<div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+<div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg" 
+     x-data="{ isOpen: false }">
     <div class="flex justify-between items-start">
         <!-- Number Content -->
         <div class="text-2xl">{{count|default:"0"}}</div>
@@ -8,19 +9,73 @@
     </div>
     <div class="pt-4 text-sm flex items-center justify-between">
         <span>{{text|default:"Total Delieveries"}}</span>
-        {% if dropdown %}
-        <i class="fa-solid fa-caret-down ml-2 cursor-pointer" onclick="dashboardCartOpen()"></i>
+        {% if dropdown != 'nil' %}
+        <i class="fa-solid ml-2 cursor-pointer" 
+        :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+        @click="isOpen = !isOpen"></i>
         {% endif %}
     </div>
+   
+    {% if dropdown == 'flagged' %}
+    <div x-show="isOpen" 
+         x-cloak
+         @click.outside="isOpen = false"
+         x-transition
+         class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+         <span class="text-sm font-medium text-brand-deep-purple">Flagged Info</span>
+         <!-- Options -->
+         <div class="py-2">
+            <div class="flex justify-between items-center py-3">
+                <span class="text-xs w-27">Name</span>
+                <i class="fa-light fa-circle-check text-green-600"></i>
+                <i class="fa-light fa-circle-xmark text-brand-sunset "></i>
+            </div>
+            {% for data in flagged_info%}
+            <div class="flex justify-between items-center py-3 pr-1">
+                <span class="text-xs w-25">{{data.name}}</span>
+                <span class="text-xs">{{data.correct}}</span>
+                <span class="text-xs">{{data.wrong}}</span>
+
+            </div>
+            {% endfor %}              
+         </div>
+    </div>
+    {% endif %} 
     
-    {% if dropdown %}
-    <div id="dropdown-content" class="hidden absolute top-full mt-2 right-0 w-full rounded-md bg-white text-black shadow-lg p-2">
-        <ul>
-            <li class="p-1 cursor-pointer hover:bg-gray-200">Option 1</li>
-            <li class="p-1 cursor-pointer hover:bg-gray-200">Option 2</li>
-            <li class="p-1 cursor-pointer hover:bg-gray-200">Option 3</li>
-        </ul>
+    
+    {% if dropdown == 'rejected' %}
+    <div x-show="isOpen" 
+         x-cloak
+         @click.outside="isOpen = false"
+         x-transition
+         class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+         <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
+         <!-- Details -->
+         <div class="py-2">
+            {% for data in rejected_details%}
+            <div class="flex justify-between items-center py-3">
+                <span class="text-xs w-27">{{data.name}}</span>
+                <span class="text-xs">{{data.count}}</span>
+            </div>
+            {% endfor %} 
+         </div>
     </div>
     {% endif %}
+    
+    {% if dropdown == 'paid' %}
+    <div x-show="isOpen" 
+         x-cloak
+         @click.outside="isOpen = false"
+         x-transition
+         class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+         <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
+         <!-- Options -->
+         <div class="flex flex-col py-5 gap-1.5">
+            <span class="text-xs text-brand-blue-light">Last Paid</span>
+            <span class="text-xs text-brand-deep-purple">{{payment_details.date}}</span>
+            <span class="text-xl text-green-600">{{payment_details.amount}}</span>
+         </div>
+    </div>
+    {% endif %} 
+    
 </div>
- 

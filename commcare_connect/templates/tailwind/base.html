@@ -8,6 +8,7 @@
     <title>CommCareConnect</title>
     {% load static %}
     {% block css %}
+       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
        <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
        <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/aquawolf04/font-awesome-pro@5cd1511/css/all.css" />
@@ -17,6 +18,7 @@
        <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
        <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
        <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
+       <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
       {% endblock javascript %}
   </head>
   <body id="content-body" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">

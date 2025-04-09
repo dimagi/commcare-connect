@@ -1,8 +1,12 @@
-<div class="bg-white shadow-sm p-4 rounded-lg flex flex-col gap-4 w-fit">
+<div class="bg-white shadow-sm p-4 rounded-lg flex flex-col gap-4 w-full h-192">
   <div class="flex items-center text-gray-400 text-sm">
     <h3 class="flex-1 text-base font-normal text-brand-deep-purple">Filter</h3>
-    <i class="fa-regular fa-bars-staggered text-black mr-6"></i>
-    <i class="fa-regular fa-xmark cursor-pointer"></i>
+    <button class="button-icon">
+      <i class="fa-light fa-bars-staggered text-black text-lg"></i>
+    </button>
+    <button class="button-icon" @click="showFilter = false">
+      <i class="fa-regular fa-xmark-large cursor-pointer"></i>
+    </button>
   </div>
   <div>
     <span class="text-sm text-brand-deep-purple font-medium">Delivery Status Filters</span>
@@ -18,7 +22,8 @@
   <div>
     <span class="text-sm text-brand-deep-purple font-medium">Flags</span>
   </div>
-  {% include "tailwind/components/cards/filter_flag_row.html" with flags=flags %}
+  <div class="flex flex-col justify-between h-full">
+    {% include "tailwind/components/cards/filter_flag_row.html" with flags=flags %}
 
   <div class="flex flex-row mt-32">
     <div class="flex items-center mb-4">
@@ -26,7 +31,6 @@
         id="default-checkbox"
         type="checkbox"
         value=""
-        hx-get="/checkbox-toggle"
         class="w-4 h-4 border-gray-300 rounded-sm dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 checked:bg-transparent checked:border-transparent"
       />
     </div>
@@ -34,7 +38,8 @@
       <span class="block">Select Filtered Pending Visits for</span>
       Approval or Rejection
     </p>
-    {% include "tailwind/components/buttons/button_primary.html" with text='Accept' %}
+    <button class="button button-md primary-dark">Accept</button>
+  </div>
   </div>
 
   <script>

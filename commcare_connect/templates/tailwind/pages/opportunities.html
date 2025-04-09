@@ -5,9 +5,11 @@
     {% include 'tailwind/components/breadcrumbs.html' with path=path %}
     <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
         <div class="flex flex-col gap-8 w-full bg-brand-deep-purple {% if type == 'test ty vbvbt' %} !text-brand-mango {% endif %} rounded-lg p-4">
-            <div class="flex items-center">
+            <div class="flex items-center relative" x-data="{ isOpen: false }">
                 <h3 class="text-sm font-medium text-brand-sky flex-1">Program Name</h3>
-                <i class="fa-light fa-bars text-white"></i>
+                <i class="fa-light text-white cursor-pointer" :class="isOpen ? 'fa-xmark-large' : 'fa-bars'" @click="isOpen = !isOpen"></i>       
+                <!-- Dropdown Menu -->
+                {% include "tailwind/components/opportunity-dashboard/dropdown.html"%}
             </div>
             <div class="flex justify-between items-end">
                 <div class="flex flex-col gap-2">
@@ -15,10 +17,19 @@
                     <p class="text-xs font-regular text-gray-100 w-6/12">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididuni   ipsum dolor m ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididuni </p>
                 </div>
                 <div class="flex mt-6">
-                    <div class="flex gap-4">
+                    <div class="flex gap-4" x-data="{ 
+                        showModal: false,
+                        selectedTab: '',
+                        selectedOption: '',
+                        toggleModal() {
+                            this.showModal = !this.showModal;
+                            document.body.style.overflow = this.showModal ? 'hidden' : 'auto';
+                        }
+                    }">
                         <!-- apps list -->
                         {% for app in data %}
-                        <div class="min-w-48 flex flex-row items-center justify-between px-4 h-10 bg-brand-indigo rounded">
+                        <div class="min-w-48 flex flex-row items-center justify-between px-4 h-10 bg-brand-indigo rounded cursor-pointer"
+                             @click="toggleModal() ; selectedTab = '{{app.name}}'; selectedOption = '{{app.name}}'">
                             <div class="flex items-center">
                                 <i class="fa-light {{app.icon}} text-white text-sm"></i>
                                 <h3 class="text-sm font-normal text-white flex-1 pl-2 whitespace-nowrap">{{app.name}}</h3>
@@ -26,6 +37,9 @@
                             <h3 class="text-sm font-medium text-white">{{app.count}}</h3>
                         </div>  
                         {% endfor %}
+
+                        <!-- Modal -->
+                        {% include "tailwind/components/opportunity-dashboard/app_modal.html" %}
                     </div>
                 </div>
             </div>

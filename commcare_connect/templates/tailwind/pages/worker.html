@@ -1,24 +1,45 @@
 {% extends 'tailwind/base.html' %} {% block content %}
 <div class="md:max-w-screen-2xl mx-auto flex items-center">
   <div class="w-full space-y-4">
-    {% comment %} <div hx-get="src/components/breadcrumb.htmx" hx-trigger="load"></div> {% endcomment %}
     <!-- Profile & Statistic Cards Container -->
     <div class="flex gap-4  items-center h-32 p-4 profile-bg bg-brand-indigo rounded-2xl">
         {% include "tailwind/components/worker_page/profile.html" %} 
         {% for data in kpi %}
-        {% include "tailwind/components/cards/kpi.html" with count=data.count text=data.name icon=data.icon drodown=data.dropdown %}  
+        {% include "tailwind/components/cards/kpi.html" with count=data.count text=data.name icon=data.icon dropdown=data.dropdown %}  
         {% endfor %} 
     </div>
     <div class="flex justify-center w-full">
-      <div class="w-full grid grid-cols-10 gap-2 ">
-        <div class="col-span-6 ">
-          <!-- Tabs -->
-           {% include "tailwind/components/tabs/tabs.html" with tabs=tabs %}
+      <div class="w-full grid grid-cols-10 gap-2">
+        <div class="col-span-6">
+          {% include "tailwind/components/worker_page/table_panel.html" %}
         </div>
-        <div class="col-span-4">
-          {% include "tailwind/components/worker_page/detail_panel.html" %}
+        <div class="col-span-4 relative"
+             x-cloak 
+             x-data="{ showFilter: false }"
+             @toggle-filter.window="showFilter = !showFilter">
+          <div x-show="!showFilter" 
+               x-transition:enter="transition ease-out duration-200"
+               x-transition:enter-start="opacity-0"
+               x-transition:enter-end="opacity-100"
+               x-transition:leave="transition ease-in duration-200"
+               x-transition:leave-start="opacity-100"
+               x-transition:leave-end="opacity-0"
+               class="absolute inset-0">
+            {% include "tailwind/components/worker_page/detail_panel.html" with flag_details=flag_details %}
+          </div>
+          <div x-show="showFilter"
+               x-transition:enter="transition ease-out duration-200"
+               x-transition:enter-start="opacity-0"
+               x-transition:enter-end="opacity-100"
+               x-transition:leave="transition ease-in duration-200"
+               x-transition:leave-start="opacity-100"
+               x-transition:leave-end="opacity-0"
+               class="absolute inset-0">
+            {% include "tailwind/components/cards/filter_card.html" with flags=flags %}
+          </div>
         </div>
       </div>
     </div> 
+  </div>
 </div>
 {% endblock %}

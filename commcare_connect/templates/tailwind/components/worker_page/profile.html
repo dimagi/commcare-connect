@@ -1,7 +1,8 @@
-<div class="profile-card w=full h-full flex gap-4 text-white">
+<div x-data="{ isStatusModalOpen: false, isTimelineModalOpen: false }" class="profile-card w=full h-full flex gap-4 text-white relative">
   <div class="profile-left flex flex-col justify-center items-center">
     <div class="h-12 w-12 rounded-full overflow-hidden relative">
-      <div class="absolute z-10 top-0 left-0 w-full h-full">
+      <div class="absolute z-10 top-0 left-0 w-full h-full"
+            @click="isStatusModalOpen = true">
         <svg viewBox="-600 -600 1200 1200" xmlns="http://www.w3.org/2000/svg">
           <g transform="rotate(45)">
             <circle r="500" stroke="red" stroke-width="200" stroke-linecap="round" pathLength="360" stroke-dasharray="90 270" fill="none"/> 
@@ -14,7 +15,37 @@
       />
     </div>
     <div class="share-icon flex justify-center mt-4">
-      <i class="fa-light fa-code-merge"></i>
+      <div class="relative">
+        <i class="fa-light fa-code-merge cursor-pointer" @click="isTimelineModalOpen = true"></i>
+        
+        <!-- Timeline Modal -->
+        <div x-show="isTimelineModalOpen" 
+         x-cloak
+         class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity z-40"
+         @click="isTimelineModalOpen = false">
+        </div>
+        
+        <div x-show="isTimelineModalOpen" 
+         x-cloak
+         class="absolute top-15 -left-8 w-110 h-120 bg-white rounded-2xl shadow-xl z-50"
+         @click.stop>
+           {% include "tailwind/components/user_timeline.html"%}
+        </div>
+        
+        <!-- Status Modal -->
+        <div x-show="isStatusModalOpen" 
+         x-cloak
+         class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity z-40"
+         @click="isStatusModalOpen = false">
+        </div>
+        
+        <div x-show="isStatusModalOpen" 
+         x-cloak
+         class="absolute top-15 -left-8  bg-white rounded-2xl shadow-xl z-50"
+         @click.stop>
+           {% include "tailwind/components/cards/user_status_card.html" %}
+        </div>
+      </div>
     </div>
   </div>
   

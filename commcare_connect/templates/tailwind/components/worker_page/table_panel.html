@@ -1,0 +1,261 @@
+<div
+  class="flex flex-col w-full gap-2"
+  {% comment %} dynamically load these tings {% endcomment %}
+  x-data="{
+        selectedTab: 'flagged',
+        selectedOption: '',
+        isLoading: true,
+        tabConfig: {
+            flagged: { icons: ['sliders-simple'], count: 45 },
+            review: { icons: ['sliders-simple'], count: 45 },
+            revalidate: { icons: ['sliders-simple'], count: 45 },
+            approved: { icons: ['sliders-simple'], count: 45 },
+            rejected: { icons: ['sliders-simple'], count: 45 },
+            all: { icons: ['sliders-simple'], count: 45 },
+        },
+        tabs: [
+            { id: 'flagged', label: 'Flagged', url: '/a/test-1/opportunity/1/tw/tables/worker_flagged_table' },
+            { id: 'review', label: 'Review', url: '/a/test-1/opportunity/1/tw/tables/worker_review_table' },
+            { id: 'revalidate', label: 'Revalidate', url: '/a/test-1/opportunity/1/tw/tables/worker_revalidate_table' },
+            { id: 'approved', label: 'Approved', url: '/a/test-1/opportunity/1/tw/tables/worker_approved_table' },
+            { id: 'rejected', label: 'Rejected', url: '/a/test-1/opportunity/1/tw/tables/worker_rejected_table' },
+            { id: 'all', label: 'All', url: '/a/test-1/opportunity/1/tw/tables/worker_all_table' }
+        ],
+        init() {
+            // Load initial worker content
+            const workerTab = this.tabs.find(t => t.id === 'flagged');
+            htmx.ajax('GET', workerTab.url, '#opportunity_worker_container');
+            
+            // Global handler to hide loading spinner after content swap
+            document.body.addEventListener('htmx:afterSwap', (e) => {
+                this.isLoading = false;
+                
+                // Check if the response contains count data
+                if (e.detail.elt.id === 'opportunity_worker_container' && e.detail.xhr.response) {
+                    try {
+                        const response = JSON.parse(e.detail.xhr.response);
+                        if (response.count !== undefined) {
+                            this.tabConfig[this.selectedTab].count = response.count;
+                        }
+                    } catch (error) {
+                        console.log('Response is not JSON or missing count');
+                    }
+                }
+            });
+        },
+        switchTab(tabId) {
+            this.isLoading = true;
+            this.selectedTab = tabId;
+            this.selectedOption = '';
+            const tab = this.tabs.find(t => t.id === tabId);
+            htmx.ajax('GET', tab.url, '#opportunity_worker_container');
+            this.$dispatch('selection-changed', {selected: []});
+        }
+    }"
+>
+  <!-- Tabs -->
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+    <div class="flex h-full gap-x-8 px-2">
+      <template x-for="tab in tabs" :key="tab.id">
+        <div
+          :id="`${tab.id}-tab`"
+          @click="switchTab(tab.id)"
+          class="relative cursor-pointer text-sm h-full flex items-center gap-1"
+          :class="{
+            'text-brand-deep-purple font-medium': selectedTab === tab.id,
+            'text-gray-500': selectedTab !== tab.id
+          }"
+        >
+          <span x-text="tab.label"></span>
+          <span 
+            x-show="selectedTab === tab.id && tabConfig[tab.id].count > 0">(<span x-text="tabConfig[tab.id].count"></span>)
+          </span>
+          <div
+            class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+            x-show="selectedTab === tab.id"
+          ></div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Dynamic Tab Options -->
+    <template x-for="(tab, id) in tabConfig" :key="id">
+      <div x-show="selectedTab === id" class="flex gap-x-4 items-center">
+        <div x-data="datePicker(id)" class="flex gap-x-4 items-center">
+          <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
+            <!-- Chevron Left -->
+            <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
+            
+            <!-- Date Input with dynamic ID -->
+            <input 
+              type="text" 
+              :id="`date-picker-${id}`"
+              class="text-center w-32 focus:outline-none text-sm"
+              placeholder="Select Date"
+            >
+            
+            <!-- Chevron Right -->
+            <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
+          </div>
+        </div>
+        <template x-for="(icon, index) in tab.icons" :key="index">
+          <button type="button" 
+            @click="$dispatch('toggle-filter')"
+            :class="{'button-icon': true}">
+            <i :class="`fa-light fa-${icon} text-brand-deep-purple`"></i>
+          </button>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  <!-- Tab Content Container with Loading Animation -->
+  <div class="w-full h-160 bg-white z-10 relative rounded-lg">
+    <div 
+      id="loading-spinner"
+      x-show="isLoading"
+      class="absolute inset-0 flex items-center justify-center z-10">
+      <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+    </div>
+    <div 
+      id="opportunity_worker_container" 
+      class="w-full h-160 overflow-hidden rounded-lg shadow-sm">
+      <!-- Content loaded via htmx will be injected here -->
+    </div>
+    <!-- Table Footer -->
+    <div class="table-footer w-full flex items-center justify-between h-14 mt-2 bg-[#F8FAFC] shadow-sm text-brand-deep-purple py-2 px-4 rounded-lg"
+         x-data="{ selectedRows: [] }"
+         @selection-changed.window="selectedRows = $event.detail.selected; console.log('Selected rows:', selectedRows)">
+        
+        <div class="flex items-center justify-between w-full">
+            <!-- Left side content -->
+            <div class="flex items-center justify-between w-1/2">
+                <div class="flex gap-x-3 items-center justify-between w-1/2">
+                    <div class="flex items-center">
+                        <button class="button-icon"><i class="fa-light fa-arrow-rotate-left text-xl"></i></button>
+                        <button class="button-icon"><i class="fa-light fa-arrow-rotate-right text-xl"></i></button>
+                    </div>
+                    <div class="">
+                        {% include "tailwind/components/toggle-view.html" %}
+                    </div>            
+                </div>
+                <div class="relative" x-data="{ isOpen: false }">
+                  <!-- Flags dropdown -->
+                  <span class="inline-block text-nowrap text-sm font-medium rounded-full border border-gray-300 px-4 py-1 text-gray-700 cursor-pointer" @click="isOpen = !isOpen">
+                      Flags 9 
+                      <i class="fa-solid fa-chevron-down transition-transform duration-200"></i>
+                  </span>
+                  <div x-show="isOpen" 
+                       @click.outside="isOpen = false"
+                       x-transition:enter="transition ease-out duration-200"
+                       x-transition:enter-start="opacity-0 transform scale-95"
+                       x-transition:enter-end="opacity-100 transform scale-100"
+                       x-transition:leave="transition ease-in duration-150"
+                       x-transition:leave-start="opacity-100 transform scale-100"
+                       x-transition:leave-end="opacity-0 transform scale-95"
+                       class="absolute bottom-full mb-2  w-50 bg-white rounded-lg shadow-lg p-4 text-brand-deep-purple">
+                      <!-- Dropdown content goes here -->
+                      <div class="space-y-2">
+                        <span class="text-sm font-medium">Flags Type</span>
+                        <div class="pt-3 simple-overflow">
+                          {% for data in flag_details%}
+                            <div class="flex justify-between items-center py-2.5">
+                                <span class="text-xs w-27">{{data.name}}</span>
+                                <span class="text-xs">{{data.count}}</span>
+                            </div>
+                          {% endfor %}
+                        </div>
+                      </div>
+                  </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                
+
+                <!-- Conditional buttons/pagination -->
+                <div x-show="selectedRows?.length === 0">
+                    {% include "tailwind/components/pagination.html" %}
+                </div>
+
+                <div x-show="selectedRows?.length > 0"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0"
+                     x-transition:enter-end="opacity-100">
+                    <div class="flex items-center gap-4">
+                        <button class="button button-md outline-style">Reject</button>
+                        <button class="button button-md primary-dark">Accept</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('datePicker', (tabId) => ({
+    selectedDate: null,
+    flatpickrInstance: null,
+    init() {
+      this.$nextTick(() => {
+        // Use dynamic ID based on tab
+        const input = document.getElementById(`date-picker-${tabId}`);
+        if (!input) {
+          console.error(`Date picker input not found for tab ${tabId}`);
+          return;
+        }
+
+        try {
+          // Initialize Flatpickr
+          this.flatpickrInstance = flatpickr(input, {
+            defaultDate: new Date(),
+            dateFormat: 'd M, Y',
+            enableTime: false,
+            onChange: (selectedDates) => {
+              if (selectedDates?.[0]) {
+                this.selectedDate = selectedDates[0];
+                this.$dispatch('date-changed', { 
+                  date: selectedDates[0],
+                  tabId: tabId 
+                });
+              }
+            }
+          });
+
+          // Set initial date
+          this.selectedDate = new Date();
+          this.flatpickrInstance.setDate(this.selectedDate);
+        } catch (error) {
+          console.error('Error initializing flatpickr:', error);
+        }
+      });
+    },
+    navigateDate(direction) {
+      if (!this.flatpickrInstance) {
+        console.error('Flatpickr not initialized');
+        return;
+      }
+
+      try {
+        const currentDate = this.selectedDate || new Date();
+        const newDate = new Date(currentDate);
+        newDate.setDate(newDate.getDate() + direction);
+
+        // Update the date
+        this.selectedDate = newDate;
+        this.flatpickrInstance.setDate(newDate);
+        
+        // Dispatch the date change event
+        this.$dispatch('date-changed', { 
+          date: newDate,
+          tabId: tabId 
+        });
+      } catch (error) {
+        console.error('Error navigating date:', error);
+      }
+    }
+  }));
+});
+</script>

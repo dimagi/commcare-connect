@@ -430,7 +430,6 @@
     .base-table thead th:first-child{
         @apply rounded-l-lg;
     }
-
     .base-table thead th:last-child{
         @apply rounded-r-lg;
     }
@@ -450,12 +449,12 @@
 
     .base-table tbody tr::after{
         content: '';
-        @apply bg-gray-200 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
+        @apply bg-gray-100 absolute w-[99%] h-[90%] left-1/2 -translate-1/2 top-1/2 -translate-y-1/2 rounded-lg opacity-0 -z-10;
     }
 
     .base-table tbody tr:first-child::after{
         content: '';
-        @apply absolute w-[99%] bg-gray-200 h-[80%] left-1/2 -translate-1/2 top-[53.8%] -translate-y-1/2 rounded-lg opacity-0 -z-10;
+        @apply absolute w-[99%] bg-gray-100 h-[80%] left-1/2 -translate-1/2 top-[53.8%] -translate-y-1/2 rounded-lg opacity-0 -z-10;
     }
 
     .base-table tbody tr:hover::after{
