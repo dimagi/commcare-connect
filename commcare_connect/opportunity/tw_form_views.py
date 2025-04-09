@@ -3,6 +3,7 @@ from django.db.models import Q
 from django.forms import modelformset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
+from django.urls import reverse
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
@@ -20,6 +21,8 @@ from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     OpportunityChangeForm,
+    OpportunityFinalizeForm,
+    OpportunityInitForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentInvoiceForm,
     PaymentUnitForm,
@@ -260,3 +263,31 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
         form_class=TWAddBudgetExistingUsersForm,
         template_name="tailwind/pages/add_visits_existing_users.html",
     )
+
+
+class OpportunityInit(views.OpportunityInit):
+    template_name = "tailwind/pages/opportunity_init.html"
+    form_class = OpportunityInitForm
+
+    def get_success_url(self):
+        return reverse("opportunity:tw_add_payment_units", args=(self.request.org.slug, self.object.id))
+
+
+@org_member_required
+def add_payment_units(request, org_slug=None, pk=None):
+    if request.POST:
+        return add_payment_unit(request, org_slug=org_slug, pk=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    return render(request, "tailwind/pages/add_payment_units.html", dict(opportunity=opportunity))
+
+
+class OpportunityFinalize(views.OpportunityFinalize):
+    template_name = "tailwind/pages/opportunity_finalize.html"
+    form_class = OpportunityFinalizeForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.paymentunit_set.count() == 0:
+            messages.warning(request, "Please configure payment units before setting budget")
+            return redirect("opportunity:tw_add_payment_units", org_slug=request.org.slug, pk=self.object.id)
+        return super().dispatch(request, *args, **kwargs)
