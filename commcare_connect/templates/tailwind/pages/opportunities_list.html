@@ -1,28 +1,11 @@
 <!-- opportunities_list.html -->
-
 {% extends 'tailwind/base.html' %}
 {% block content %}
+{% load i18n %}
 <div class="flex items-center justify-center">
-  <div
-    class="flex flex-col gap-2 w-full"
-    x-data="{
-    sortColumn: '',
-    sortDirection: 'asc',
-    sortBy(column) {
-      if (this.sortColumn === column) {
-        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-      } else {
-        this.sortColumn = column;
-        this.sortDirection = 'asc';
-      }
-    },
-    isSorted(column) {
-      return this.sortColumn === column;
-    }
-  }"
-  >
+  <div class="flex flex-col gap-2 w-full">
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-      <p class="text-sm text-brand-deep-purple">Opportunities List</p>
+      <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
       <div class="flex gap-x-6">
         <button type="button"><i class="fa-light fa-sliders-simple"></i></button>
         <button
@@ -33,13 +16,7 @@
       </div>
     </div>
 
-    {% url 'opportunity:opportunities_list_table' request.org.slug as opportunities_list_url %}
-    <!-- Table Header -->
-    <div class="flex flex-col w-full gap-2 mb-8">
-      <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
-        <div hx-get="{% url 'opportunity:opportunities_list_table' request.org.slug %}" hx-trigger="load" hx-swap="outerHTML"></div>
-      </div>
-    </div>
+   {% include "tailwind/components/tables/opportunities_list_table-backup.html" %}
 
   </div>
 </div>

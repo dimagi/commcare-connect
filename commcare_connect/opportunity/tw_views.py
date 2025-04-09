@@ -1,15 +1,19 @@
 from datetime import timedelta
 
 from django import forms
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q, Sum, F, Case, When, Value, IntegerField, DecimalField
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.timezone import now
+from django.views.generic import TemplateView
+from django_tables2 import SingleTableMixin
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from .models import Opportunity, UserInviteStatus, VisitValidationStatus
 from .tw_tables import InvoicesListTable, OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, \
     WorkerPaymentsTable, WorkerLearnTable, PayWorker
+from .views import OrganizationUserMixin
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -656,6 +660,14 @@ def opportunity_visits(request, org_slug=None, opp_id=None):
     )
 
 
+def opportunities_list(request, org_slug=None, opp_id=None):
+    return render(
+        request,
+        "tailwind/pages/opportunities_list.html",
+        {"header_title": "Opportunities List"},
+    )
+
+
 def opportunities_list_table_view(request, org_slug=None, opp_id=None):
     three_days_ago = now() - timedelta(days=3)
 
@@ -663,7 +675,6 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         VisitValidationStatus.over_limit,
         VisitValidationStatus.trial,
     ]
-
 
     opps = Opportunity.objects.all().annotate(
         pending_invites=Count(
@@ -690,17 +701,94 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
             distinct=True,
         )
     )
-    table = OpportunitiesListTable(opps)
+    table = OpportunitiesListTable(opps, request=request)
     table.paginate(page=request.GET.get("page", 1), per_page=request.GET.get("per_page", 15))
     return render(request, "tailwind/components/tables/opportunities_list_table-backup.html", {"table": table})
 
 
-def opportunities_list(request, org_slug=None, opp_id=None):
-    return render(
-        request,
-        "tailwind/pages/opportunities_list.html",
-        {"header_title": "Opportunities List"},
-    )
+class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
+    template_name = "tailwind/pages/opportunities_list.html"
+    table_class = OpportunitiesListTable
+    paginate_by = 15
+
+    allowed_sort_columns = [
+        'program',
+        'start_date',
+        'end_date',
+        'pending_invites',
+        'inactive_workers',
+        'pending_approvals',
+        'payments_due',
+        'status'
+    ]
+
+    def get_table_data(self):
+        today = now().date()
+        three_days_ago = now() - timedelta(days=3)
+
+        EXCLUDED_STATUS = [
+            VisitValidationStatus.over_limit,
+            VisitValidationStatus.trial,
+        ]
+        queryset = Opportunity.objects.filter().annotate(
+            program=F("managedopportunity__program__name"),
+            pending_invites=Count(
+                "userinvite",
+                filter=~Q(userinvite__status=UserInviteStatus.accepted),
+                distinct=True,
+            ),
+            pending_approvals=Count(
+                "uservisit",
+                filter=Q(uservisit__status=VisitValidationStatus.pending),
+                distinct=True,
+            ),
+            payments_due=Coalesce(
+                Sum(
+                    "opportunityaccess__payment__amount_usd",
+                    filter=Q(opportunityaccess__payment__confirmed=True),
+                    distinct=True,
+                ),
+                Value(0),
+                output_field=DecimalField(),
+            ),
+
+            inactive_workers=Count(
+                "opportunityaccess",
+                filter=Q(opportunityaccess__accepted=True) & ~Q(
+                    opportunityaccess__uservisit__visit_date__gte=three_days_ago,
+                    opportunityaccess__uservisit__status__in=EXCLUDED_STATUS
+                ),
+                distinct=True,
+            ),
+            status=Case(
+                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+                default=Value(2),  # Inactive
+                output_field=IntegerField()
+            )
+        )
+
+        return queryset
+
+    def get_validated_order_by(self):
+        requested_order = self.request.GET.get('sort', 'start_date')
+
+        is_descending = requested_order.startswith('-')
+        column = requested_order[1:] if is_descending else requested_order
+        return requested_order if column in self.allowed_sort_columns else 'start_date'
+
+    def get_table(self, **kwargs):
+        table = super().get_table(**kwargs)
+
+        validated_order = self.get_validated_order_by()
+
+        if validated_order:
+            table.order_by = validated_order
+        else:
+            table.order_by = ("-status", "start_date", "end_date")
+
+        return table
+
 
 def worker_payments(request, org_slug=None, opp_id=None):
     data = [

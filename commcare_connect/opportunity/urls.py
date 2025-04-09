@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.opportunity import tw_views, views
+from commcare_connect.opportunity.tw_views import OpportunityListView
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -131,7 +132,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
     path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
-    path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
+    path("tw/opportunities_list/", OpportunityListView.as_view(), name="tw_opportunities"),
     path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"),
     path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),
     path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),

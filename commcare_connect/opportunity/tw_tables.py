@@ -105,7 +105,7 @@ class WorkerFlaggedTable(BaseTailwindTable):
 
 
 class VisitsTable(BaseTailwindTable):
-    index = tables.Column(verbose_name="#", orderable=False)
+    index = tables.Column(verbose_name="#", orderable=False, )
     user_id = tables.Column(verbose_name="User ID")
     name = tables.Column(verbose_name="Name")
     max_visit = tables.Column(verbose_name="Max Visits")
@@ -186,24 +186,6 @@ class OpportunitiesListTable(BaseTailwindTable):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.base_columns['index'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('#')">
-                #
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('#') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('#'),
-                        'opacity-100': isSorted('#'),
-                        'animate-fade-in': isSorted('#') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
         HEADERS = {
             "opportunities": [
                 {"type": "radio", "name": "All"},
@@ -277,133 +259,7 @@ class OpportunitiesListTable(BaseTailwindTable):
             </div>
         ''')
 
-        self.base_columns['program'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('program')">
-                Program
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('program') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('program'),
-                        'opacity-100': isSorted('program'),
-                        'animate-fade-in': isSorted('program') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-        self.base_columns['start_date'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('startDate')">
-                Start Date
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('startDate') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('startDate'),
-                        'opacity-100': isSorted('startDate'),
-                        'animate-fade-in': isSorted('startDate') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-        self.base_columns['end_date'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('endDate')">
-                End Date
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('endDate') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('endDate'),
-                        'opacity-100': isSorted('endDate'),
-                        'animate-fade-in': isSorted('endDate') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-        self.base_columns['pending_invites'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('pendingInvites')">
-                Pending Invites
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('pendingInvites') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('pendingInvites'),
-                        'opacity-100': isSorted('pendingInvites'),
-                        'animate-fade-in': isSorted('pendingInvites') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-        self.base_columns['inactive_workers'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('inactiveWorkers')">
-                Inactive Workers
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('inactiveWorkers') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('inactiveWorkers'),
-                        'opacity-100': isSorted('inactiveWorkers'),
-                        'animate-fade-in': isSorted('inactiveWorkers') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-        self.base_columns['pending_approvals'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('pendingApprovals')">
-                Pending Approvals
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('pendingApprovals') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('pendingApprovals'),
-                        'opacity-100': isSorted('pendingApprovals'),
-                        'animate-fade-in': isSorted('pendingApprovals') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-        self.base_columns['payments_due'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-            @click="sortBy('paymentsDue')">
-                Payments Due
-                <i
-                    class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-solid fa-caret-down"
-                    :class="{
-                        'rotate-180': isSorted('paymentsDue') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('paymentsDue'),
-                        'opacity-100': isSorted('paymentsDue'),
-                        'animate-fade-in': isSorted('paymentsDue') && sortDirection === 'asc'
-                    }"
-                ></i>
-            </div>
-            '''
-        )
-
-    index = tables.Column(verbose_name="#", empty_values=())
+    index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
     opportunity = tables.Column(accessor="name", orderable=False)
     entityType = tables.TemplateColumn(
         verbose_name="",
@@ -445,9 +301,9 @@ class OpportunitiesListTable(BaseTailwindTable):
         orderable=False,
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
-              {% if record.is_active %}
+              {% if value == 0 %}
                   {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
-              {% elif record.end_date and record_end_date < now %}
+              {% elif value == 1 %}
                     {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
               {% else %}
                    {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
@@ -456,23 +312,14 @@ class OpportunitiesListTable(BaseTailwindTable):
         """,
         extra_context={"now": now()},
     )
-    program = tables.Column(orderable=False)
-    start_date = tables.Column(orderable=False)
-    end_date = tables.Column(orderable=False)
-
-    pending_invites = tables.Column(
-        orderable=False,
-    )
-    inactive_workers = tables.Column(
-        orderable=False,
-    )
-    pending_approvals = tables.Column(
-        orderable=False,
-    )
-    payments_due = tables.Column(
-        orderable=False,
-    )
-
+    program = tables.Column()
+    start_date = tables.Column()
+    end_date = tables.Column()
+    pending_invites = tables.Column()
+    inactive_workers = tables.Column()
+    pending_approvals = tables.Column()
+    payments_due = tables.Column()
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
 
     class Meta:
         sequence = (
@@ -514,11 +361,8 @@ class OpportunitiesListTable(BaseTailwindTable):
     def render_opportunity(self, value):
         return self.render_div(value, extra_classes="justify-start")
 
-    def render_program(self, record):
-        value = "--"
-        if record.managed:
-            value = record.managedopportunity.program.name
-        return self.render_div(value, extra_classes="justify-start")
+    def render_program(self, value):
+        return self.render_div(value if value else "--", extra_classes="justify-start")
 
     def render_start_date(self, value):
         return self.render_div(value, extra_classes="justify-center")
@@ -536,12 +380,12 @@ class OpportunitiesListTable(BaseTailwindTable):
         return self.render_div(value, extra_classes=self.stats_style)
 
     def render_payments_due(self, value):
-        return self.render_div(value, extra_classes=self.stats_style)
-
-    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
-
+        if value is None:
+            value = 0
+        return self.render_div(f"${value}", extra_classes=self.stats_style)
 
     def render_actions(self, record):
+        # TO-DO update the urls once finalize
         actions = [
             {
                 "title": "View Opportunity",
