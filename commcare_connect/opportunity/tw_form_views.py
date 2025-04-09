@@ -26,11 +26,13 @@ from commcare_connect.opportunity.tw_forms import (
     OpportunityVerificationFlagsConfigForm,
     PaymentInvoiceForm,
     PaymentUnitForm,
+    ProgramForm,
     SendMessageMobileUsersForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import get_opportunity_or_404
 from commcare_connect.organization.decorators import org_admin_required, org_member_required
+from commcare_connect.program import views as program_views
 from commcare_connect.users.models import User
 
 
@@ -291,3 +293,12 @@ class OpportunityFinalize(views.OpportunityFinalize):
             messages.warning(request, "Please configure payment units before setting budget")
             return redirect("opportunity:tw_add_payment_units", org_slug=request.org.slug, pk=self.object.id)
         return super().dispatch(request, *args, **kwargs)
+
+
+class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
+    form_class = ProgramForm
+
+    def get_template_names(self):
+        view = ("add", "edit")[self.object is not None]
+        template = f"tailwind/pages/program_{view}.html"
+        return template

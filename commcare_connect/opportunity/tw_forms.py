@@ -12,7 +12,7 @@ from django.utils.timezone import now
 from commcare_connect.connect_id_client.models import Credential
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import ManagedOpportunity
+from commcare_connect.program.models import ManagedOpportunity, Program
 
 from .models import (
     CommCareApp,
@@ -664,3 +664,61 @@ class OpportunityFinalizeForm(forms.ModelForm):
                     self.add_error("total_budget", "Budget exceeds the program budget.")
 
             return cleaned_data
+
+
+class ProgramForm(forms.ModelForm):
+    class Meta:
+        model = Program
+        fields = [
+            "name",
+            "description",
+            "delivery_type",
+            "budget",
+            "currency",
+            "start_date",
+            "end_date",
+        ]
+        widgets = {
+            "start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": BASE_INPUT_CLASS}),
+            "end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": BASE_INPUT_CLASS}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user", None)
+        self.organization = kwargs.pop("organization")
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("name", css_class=BASE_INPUT_CLASS)),
+            Row(Field("description", css_class=TEXTAREA_CLASS)),
+            Row(Field("delivery_type", css_class=BASE_INPUT_CLASS)),
+            Row(
+                Field("budget", css_class=BASE_INPUT_CLASS),
+                Field("currency", css_class=BASE_INPUT_CLASS),
+            ),
+            Row(
+                Field("start_date"),
+                Field("end_date"),
+            ),
+            Submit("submit", "Submit"),
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+
+        if start_date and end_date and end_date <= start_date:
+            self.add_error("end_date", "End date must be after the start date.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        if not self.instance.pk:
+            self.instance.organization = self.organization
+            self.instance.created_by = self.user.email
+
+        self.instance.modified_by = self.user.email
+
+        self.instance.currency = self.cleaned_data["currency"].upper()
+
+        return super().save(commit=commit)
