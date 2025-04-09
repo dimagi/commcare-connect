@@ -18,10 +18,10 @@ from .models import (
     PaymentUnit,
 )
 
-BASE_INPUT_CLASS = "w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-SELECT_CLASS = "w-full p-2 border border-gray-300 rounded-lg"
-TEXTAREA_CLASS = "w-full p-2 border border-gray-300 rounded-lg"
-CHECKBOX_CLASS = "form-checkbox text-blue-600 rounded"
+BASE_INPUT_CLASS = "base-input"
+SELECT_CLASS = "base-dropdown"
+TEXTAREA_CLASS = "simple-textarea"
+CHECKBOX_CLASS = "simple-toggle"
 
 
 class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
@@ -40,6 +40,12 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": BASE_INPUT_CLASS}),
             "location": forms.NumberInput(attrs={"class": BASE_INPUT_CLASS}),
         }
+        help_texts = {
+            "location": "Minimum distance between form locations (metres)",
+            "duplicate": "Flag duplicate form submissions for an entity.",
+            "gps": "Flag forms with no location information.",
+            "catchment_areas": "Flag forms outside a user's assigned catchment area",
+        } 
         labels = {
             "duplicate": "Check Duplicates",
             "gps": "Check GPS",
@@ -47,12 +53,6 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_end": "End Time",
             "location": "Location Distance",
             "catchment_areas": "Catchment Area",
-        }
-        help_texts = {
-            "location": "Minimum distance between form locations (metres)",
-            "duplicate": "Flag duplicate form submissions for an entity.",
-            "gps": "Flag forms with no location information.",
-            "catchment_areas": "Flag forms outside a user's assigned catchment area",
         }
 
     def __init__(self, *args, **kwargs):
@@ -65,19 +65,24 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
-            Row(
-                Field("duplicate", wrapper_class="flex items-center gap-2"),
-                Field("gps", wrapper_class="flex items-center gap-2"),
-                Field("catchment_areas", wrapper_class="flex items-center gap-2"),
-            ),
-            Row(Field("location")),
-            Fieldset(
-                "Form Submission Hours",
-                Row(
-                    Column(Field("form_submission_start")),
-                    Column(Field("form_submission_end")),
+            Row( 
+                Column(
+                        Field("duplicate", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
+                        Field("gps", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
+                        Field("catchment_areas", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),  
+                ),Column(
+                        Row(Field("location"),css_class="flex-1"),
+                        Fieldset(
+                            "Form Submission Hours",
+                            Row(
+                                Column(Field("form_submission_start"),css_class="flex-1"),
+                                Column(Field("form_submission_end"),css_class="flex-1"),
+                                css_class="flex gap-4 w-full"
+                            ),
+                        )
                 ),
-            ),
+                css_class="grid grid-cols-2 gap-6"
+            )
         )
 
         for field in ["duplicate", "location", "gps", "catchment_areas"]:
@@ -115,10 +120,15 @@ class DeliverUnitFlagsForm(forms.ModelForm):
             Row(
                 Column(Field("deliver_unit")),
                 Column(
-                    HTML("<div class='font-semibold mb-2'>Attachments</div>"),
-                    Field("check_attachments", wrapper_class="flex items-center gap-2"),
+                    Column(
+                        HTML("<div class='font-medium text-sm'>Attachments</div>"),
+                        Field("check_attachments",wrapper_class="flex gap-4 w-full"),
+                        css_class="flex flex-col"
+                    ),
+                    css_class="flex flex-col"
                 ),
                 Column(Field("duration")),
+                css_class="grid grid-cols-3 gap-x-6"
             ),
         )
 
@@ -158,11 +168,15 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         self.helper.render_hidden_fields = True
         self.helper.layout = Layout(
             Row(
-                Column(Field("name")),
-                Column(Field("question_path")),
-                Column(Field("question_value")),
-            ),
-            Row(Column(Field("deliver_unit", wrapper_class="space-y-2"))),
+                Row(
+                    Column(Field("name")),
+                    Column(Field("question_path")),
+                    Column(Field("question_value")),
+                    css_class="flex flex-col gap-2"
+                ),
+                Column(Field("deliver_unit", wrapper_class="w-full")),
+                css_class="grid grid-cols-2 gap-6"
+            )
         )
 
 
