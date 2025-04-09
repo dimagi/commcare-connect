@@ -2095,3 +2095,13 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
     ]
     table = OpportunityWorkerPaymentTable(data)
     return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Payment", "table": table })    
+
+
+def signup(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/signup.html")
+
+def login(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/login.html")
+
+def onboarding(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/onboarding.html")

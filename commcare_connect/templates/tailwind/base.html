@@ -14,6 +14,8 @@
        {% endblock %}
        {% block javascript %}
        <!-- Vendor dependencies bundled as one file -->
+       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+       <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
        <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
        <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
        <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>

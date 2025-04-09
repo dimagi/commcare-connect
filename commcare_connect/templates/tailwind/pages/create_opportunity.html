@@ -18,7 +18,7 @@
       <hr class="border-t-2 border-dashed border-gray-300 w-full  {% if  forloop.last  %} hidden {% endif %}">
       {% endfor %}
    </div>
-   {% include "tailwind/components/create/details-form.html" %}
+   {% include "tailwind/components/create/verification-flags-form.html" %}
    <div class="bg-white rounded-lg shadow-sm flex justify-end p-2 gap-2">
       <button class="button button-md outline-style" @click="step--" :disabled="step === 1">
          Prev

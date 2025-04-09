@@ -143,6 +143,9 @@ urlpatterns = [
     path("<int:opp_id>/tw/my_organization/", tw_views.my_organization, name="tw_my_organization"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
+    path("<int:opp_id>/tw/login/", tw_views.login, name="tw_login"),
+    path("<int:opp_id>/tw/signup/", tw_views.signup, name="tw_signup"),
+    path("<int:opp_id>/tw/onboarding/", tw_views.onboarding, name="tw_onboarding"),
     # Tables 
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO

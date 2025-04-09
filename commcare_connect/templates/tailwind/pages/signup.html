@@ -1,0 +1,83 @@
+{% extends 'tailwind/base.html' %}
+{% load static i18n %}
+{% block content %}
+
+<div class="container md:max-w-screen-md mx-auto relative flex items-center justify-center h-screen">
+    <div class="relative w-full h-fit">
+        <div class="bg-gray-100 shadow-sm rounded-lg h-fit flex p-2 gap-2"> 
+           <div class="flex flex-col gap-2  w-1/2">
+                <div class="bg-brand-cornflower-blue flex flex-col justify-between  items-end p-2 rounded-lg w-full flex-1">
+                    <img src="{% static 'images/logo-full.svg' %}" alt="Compact Logo" class="w-48 pt-4 pr-6">
+                    <img src="{% static 'images/onboarding-graphics.svg' %}" alt="Compact Logo" class="w-full">
+                </div>
+                <div class="grid grid-cols-2 gap-2 h-1/4">
+                    <div class="p-6 bg-brand-deep-purple rounded-lg text-white flex flex-col justify-center pt-12">
+                        <h3 class="text-3xl">10.5k +</h3>
+                        <p class="text-xs leading-snug mt-auto">health services delivered</p>
+                    </div>  
+                    <div class="p-6 bg-brand-indigo rounded-lg text-white  flex flex-col justify-center  pt-12">
+                        <h3 class="text-3xl">10 + </h3>
+                        <span class="text-xs mt-auto">Countries</span>
+                    </div>     
+                </div>
+            </div>
+            <form class="min-h-[620px] h-fit bg-white rounded-lg py-6 px-8 w-1/2 flex flex-col gap-4">
+                <h6 class="title text-brand-deep-purple">Signup</h6> 
+                <span class="text-sm text-gray-600">Please enter your details</span> 
+                <div class="simple-input">
+                    <input type="text" placeholder="Enter Email ID" required/>
+                    <i class="fa-light fa-envelope"></i>
+                </div>
+                <div class="simple-input">
+                    <input type="password" placeholder="Password" required/>
+                    <i class="fa-light fa-lock"></i>
+                </div>
+                <div class="simple-input">
+                    <input type="password" placeholder="Confirm Password" required/>
+                    <i class="fa-light fa-lock"></i>
+                </div>
+                <div class="flex flex-col gap-3 items-end">
+                    <div class="flex gap-2 w-full items-start">
+                        <input type="checkbox" name="" id="" class="simple-checkbox aspect-square" required/>
+                        <p class="hint">
+                            <span>By accessing CommCare Connect, you accept our </span> 
+                            <a href="#" class=" text-brand-indigo font-medium">Terms & Conditions and Privacy Policy</a>
+                        </p>
+                    </div>
+                    <button class="button button-md primary-dark">
+                        <span class="relative z-20">Signup</span>
+                    </button>
+                </div> 
+                <span class="text-sm text-gray-400 text-center">or</span>
+
+                <div class="space-y-2 place-items-center">
+                    <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer">
+                        <div class="w-6 h-6">
+                            <img src="{% static 'images/google.svg' %}" alt="Compact Logo" class="w-full">
+                        </div>
+                        <span class="text-sm">Sign up with Google</span>
+                    </button>
+                    <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer">
+                        <div class="w-6 h-6">
+                            <img src="{% static 'images/logo-color.svg' %}" alt="Compact Logo" class="w-full">
+                        </div>
+                        <span class="text-sm">Sign up with CommCareHQ</span>
+                    </button>
+                </div>
+
+                <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 bg-red-">
+                    Already have an account?
+                    <a href="#" class="text-brand-indigo font-medium">Login</a>
+                <div>
+            </form>
+        </div> 
+        <div class="absolute -left-0 -translate-x-1/2  -bottom-1/2 -translate-y-1/4 -z-10"  class="w-8">
+            <img src="{% static 'images/bg-graphics-bottom-left.svg' %}" alt="Compact Logo" class="w-full h-full aspect-auto">
+        </div>
+        <div class="absolute rotate-90 right-0 translate-x-1/2 top-0 -translate-y-1/2 -z-10" class="w-1/2">
+            <img src="{% static 'images/bg-graphics-top-right.svg' %}" alt="Compact Logo" class="w-full h-full">
+        </div>
+    </div>
+</div>
+
+{% endblock %}

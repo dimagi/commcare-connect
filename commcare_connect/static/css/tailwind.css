@@ -313,6 +313,10 @@
     .simple-dropdown select:invalid {
         @apply text-gray-200; /* Change to desired color */
     }
+
+    .simple-dropdown option{
+        @apply px-1
+    }
  
 }
 
@@ -391,20 +395,18 @@
     }
 }
 
+
 /*--- simple checbox ------------------------- */ 
 @layer components {
     .simple-checkbox {
-        @apply w-4 h-4 appearance-none border-2 border-gray-400 cursor-pointer transition-all duration-200;
+      @apply w-4 h-4 appearance-none border-2 border-gray-400 rounded-sm bg-white cursor-pointer transition-all duration-200 bg-no-repeat bg-center bg-contain;
     }
+  
     .simple-checkbox:checked {
-        @apply w-4 h-4;
+      border-color: gray; /* blue-500 */ 
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z'/%3E%3C/svg%3E");
     }
-    .simple-checkbox:checked::after {
-        content: '\2705'; /* Unicode checkmark */
-        @apply text-gray-600 text-xs flex items-center justify-center;
-        display: flex;
-    }
-} 
+}
 
 
 /*---- table class -----------*/
