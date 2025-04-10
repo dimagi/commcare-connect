@@ -2098,7 +2098,7 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
 
 
 def onboarding(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/onboarding.html", {'load_url': '/a/test-org-managed/opportunity/56/tw/api/login/'})
+    return render(request, "tailwind/pages/onboarding.html")
 
 def onboarding_org(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/onboarding.html", {'load_url': '/a/test-org-managed/opportunity/56/tw/api/setup-org/'})
