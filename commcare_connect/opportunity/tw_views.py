@@ -2097,11 +2097,35 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Payment", "table": table })    
 
 
-def signup(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/signup.html")
-
-def login(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/login.html")
-
 def onboarding(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/onboarding.html")
+    return render(request, "tailwind/pages/onboarding.html", {'load_url': '/a/test-org-managed/opportunity/56/tw/api/login/'})
+
+def onboarding_org(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/onboarding.html", {'load_url': '/a/test-org-managed/opportunity/56/tw/api/setup-org/'})
+
+def onboarding_invite(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/onboarding.html", {'load_url': '/a/test-org-managed/opportunity/56/tw/api/invite/'})
+
+def signup_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/signup-form.html")
+
+def login_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/login-form.html")
+
+def create_org_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/create-organization.html")
+
+def setup_org_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/setup-organization.html")
+
+def email_verify_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/email-verification.html")
+
+def password_reset_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/password-reset.html")
+
+def password_update_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/password-update.html")
+
+def invite_comp(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/components/onboarding/invite.html")

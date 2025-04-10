@@ -1,5 +1,5 @@
 {% load static i18n %}
-<form method="post" class="w-full min-h-[620px] h-fit bg-white rounded-lg py-6 px-8 flex flex-col gap-4">
+<form method="post" class="w-full min-h-[620px] h-fit  flex flex-col gap-4">
     {% csrf_token %}
     <h6 class="title text-brand-deep-purple">Login</h6> 
     <span class="text-sm text-gray-600">Please enter your details</span> 
@@ -14,9 +14,9 @@
     <div class="flex justify-between items-center">
         <p class="text-sm text-gray-400">
             Forgot Password?
-            <a href="#" class="block text-brand-indigo font-medium">Reset</a>
+            <a href="#" x-on:click="$dispatch('notify', { variant: 'info',  message: 'Please check your email for password reset link.' })" type="button" class="block text-brand-indigo font-medium" hx-get="/a/test-org-managed/opportunity/56/tw/api/password-reset/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Reset</a>
         </p>
-        <button class="button button-md primary-dark" type="submit">
+        <button class="button button-md primary-dark" type="submit"   x-on:click.prevent="$dispatch('notify', { variant: 'error',  message: 'Email Not Found' })">
             <span class="relative z-20">Login</span>
         </button>
     </div>
@@ -39,6 +39,6 @@
 
     <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
         Don't have an account?
-        <a href="#" class="text-brand-indigo font-medium">Signup</a>
+        <a href="" class="text-brand-indigo font-medium" hx-get="/a/test-org-managed/opportunity/56/tw/api/signup/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Signup</a>
     </div>
 </form>

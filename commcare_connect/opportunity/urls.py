@@ -143,9 +143,11 @@ urlpatterns = [
     path("<int:opp_id>/tw/my_organization/", tw_views.my_organization, name="tw_my_organization"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
-    path("<int:opp_id>/tw/login/", tw_views.login, name="tw_login"),
-    path("<int:opp_id>/tw/signup/", tw_views.signup, name="tw_signup"),
+    # path("<int:opp_id>/tw/login/", tw_views.login, name="tw_login"),
+    # path("<int:opp_id>/tw/signup/", tw_views.signup, name="tw_signup"),
     path("<int:opp_id>/tw/onboarding/", tw_views.onboarding, name="tw_onboarding"),
+    path("<int:opp_id>/tw/onboarding/setup-org", tw_views.onboarding_org, name="tw_onboarding"),
+    path("<int:opp_id>/tw/onboarding/invite", tw_views.onboarding_invite, name="tw_onboarding"),
     # Tables 
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
@@ -157,4 +159,12 @@ urlpatterns = [
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
     path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),
+    path("<int:opp_id>/tw/api/signup/", tw_views.signup_comp, name="signup_comp"),
+    path("<int:opp_id>/tw/api/login/", tw_views.login_comp, name="login_comp"),
+    path("<int:opp_id>/tw/api/create-org/", tw_views.create_org_comp, name="create_org_comp"),
+    path("<int:opp_id>/tw/api/setup-org/", tw_views.setup_org_comp, name="setup_org_comp"),
+    path("<int:opp_id>/tw/api/email-verify/", tw_views.email_verify_comp, name="email_verify_comp"),
+    path("<int:opp_id>/tw/api/password-reset/", tw_views.password_reset_comp, name="password_reset_comp"),
+    path("<int:opp_id>/tw/api/password-update/", tw_views.password_update_comp, name="password_update_comp"),
+    path("<int:opp_id>/tw/api/invite/", tw_views.invite_comp, name="invite_comp"),
 ]

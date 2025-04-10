@@ -346,6 +346,21 @@
     }
 }
 
+@layer components{
+    .input-group .error-icon{
+        @apply absolute right-3 top-1/2 -translate-y-1/2 text-red-500 invisible;
+    }
+    .input-group .error-msg{
+        @apply mt-1 text-xs text-red-500 font-light hidden;
+    }
+    .input-group.error .error-icon, .input-group.error .error-msg{
+        @apply visible block
+    }
+    .input-group.error input{
+        @apply border-red-500 ring-2 ring-red-500/80;
+    }
+}
+
 
 /*--- simple textarea ------------------------- */
 @layer components{
