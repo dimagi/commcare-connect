@@ -163,4 +163,7 @@ urlpatterns = [
         view=tw_form_views.add_budget_existing_users,
         name="tw_add_budget_existing_users",
     ),
+    path("tw/init/", view=tw_form_views.OpportunityInit.as_view(), name="tw_init"),
+    path("<int:pk>/tw/finalize/", view=tw_form_views.OpportunityFinalize.as_view(), name="tw_finalize"),
+    path("<int:pk>/tw/payment_units/create", view=tw_form_views.add_payment_units, name="tw_add_payment_units"),
 ]

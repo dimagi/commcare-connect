@@ -3,6 +3,7 @@ from django.db.models import Q
 from django.forms import modelformset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
+from django.urls import reverse
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
@@ -20,14 +21,18 @@ from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     OpportunityChangeForm,
+    OpportunityFinalizeForm,
+    OpportunityInitForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentInvoiceForm,
     PaymentUnitForm,
+    ProgramForm,
     SendMessageMobileUsersForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import get_opportunity_or_404
 from commcare_connect.organization.decorators import org_admin_required, org_member_required
+from commcare_connect.program import views as program_views
 from commcare_connect.users.models import User
 
 
@@ -253,24 +258,47 @@ def invoice_create(request, org_slug, pk):
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
 def add_budget_existing_users(request, org_slug=None, pk=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
-    opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
-    opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
-
-    form = TWAddBudgetExistingUsersForm(
-        opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST or None
-    )
-    if form.is_valid():
-        form.save()
-        return redirect("opportunity:detail", org_slug, pk)
-
-    return render(
+    return views.add_budget_existing_users(
         request,
-        "tailwind/pages/add_visits_existing_users.html",
-        {
-            "form": form,
-            "opportunity_claims": opportunity_claims,
-            "budget_per_visit": opportunity.budget_per_visit_new,
-            "opportunity": opportunity,
-        },
+        org_slug,
+        pk,
+        form_class=TWAddBudgetExistingUsersForm,
+        template_name="tailwind/pages/add_visits_existing_users.html",
     )
+
+
+class OpportunityInit(views.OpportunityInit):
+    template_name = "tailwind/pages/opportunity_init.html"
+    form_class = OpportunityInitForm
+
+    def get_success_url(self):
+        return reverse("opportunity:tw_add_payment_units", args=(self.request.org.slug, self.object.id))
+
+
+@org_member_required
+def add_payment_units(request, org_slug=None, pk=None):
+    if request.POST:
+        return add_payment_unit(request, org_slug=org_slug, pk=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    return render(request, "tailwind/pages/add_payment_units.html", dict(opportunity=opportunity))
+
+
+class OpportunityFinalize(views.OpportunityFinalize):
+    template_name = "tailwind/pages/opportunity_finalize.html"
+    form_class = OpportunityFinalizeForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.paymentunit_set.count() == 0:
+            messages.warning(request, "Please configure payment units before setting budget")
+            return redirect("opportunity:tw_add_payment_units", org_slug=request.org.slug, pk=self.object.id)
+        return super().dispatch(request, *args, **kwargs)
+
+
+class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
+    form_class = ProgramForm
+
+    def get_template_names(self):
+        view = ("add", "edit")[self.object is not None]
+        template = f"tailwind/pages/program_{view}.html"
+        return template
