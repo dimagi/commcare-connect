@@ -32,6 +32,14 @@ TEXTAREA_CLASS = "simple-textarea"
 CHECKBOX_CLASS = "simple-toggle"
 
 
+class TailwindFormHelper(FormHelper):
+    def __init__(self, form=None):
+        super().__init__(form)
+
+    def render_layout(self, form, context, template_pack="tailwind"):
+        return super().render_layout(form, context, "tailwind")
+
+
 class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
     class Meta:
         model = OpportunityVerificationFlags
@@ -70,7 +78,7 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         self.fields["gps"].widget.attrs["class"] = CHECKBOX_CLASS
         self.fields["catchment_areas"].widget.attrs["class"] = CHECKBOX_CLASS
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
             Row( 
@@ -122,7 +130,7 @@ class DeliverUnitFlagsForm(forms.ModelForm):
         self.fields["check_attachments"].widget.attrs["class"] = CHECKBOX_CLASS
         self.fields["duration"].widget.attrs["class"] = BASE_INPUT_CLASS
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
             Row(
@@ -171,7 +179,7 @@ class FormJsonValidationRulesForm(forms.ModelForm):
             widget=forms.Select(attrs={"class": "w-full p-2 border border-gray-300 rounded-lg"}),
         )
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.form_tag = False
         self.helper.render_hidden_fields = True
         self.helper.layout = Layout(
@@ -194,7 +202,7 @@ class OpportunityUserInviteForm(forms.Form):
         credentials = [Credential(org_slug, org_slug)]  # connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Fieldset(
                 "",
@@ -250,7 +258,7 @@ class OpportunityChangeForm(
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Row(Field("name", css_class=BASE_INPUT_CLASS)),
             Row(Field("active", css_class=CHECKBOX_CLASS)),
@@ -319,7 +327,7 @@ class PaymentUnitForm(forms.ModelForm):
         payment_units = kwargs.pop("payment_units", [])
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Row(Field("name", css_class=BASE_INPUT_CLASS)),
             Row(Field("description")),
@@ -405,7 +413,7 @@ class SendMessageMobileUsersForm(forms.Form):
         users = kwargs.pop("users", [])
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Row(Field("selected_users", css_class=CHECKBOX_CLASS)),
             Row(Field("title", css_class=BASE_INPUT_CLASS)),
@@ -428,7 +436,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Row(Field("amount", css_class=BASE_INPUT_CLASS)),
             Row(Field("date", css_class=BASE_INPUT_CLASS)),
@@ -469,7 +477,7 @@ class OpportunityInitForm(forms.ModelForm):
         self.org_slug = kwargs.pop("org_slug", "")
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Row(Field("name"), css_class=BASE_INPUT_CLASS),
             Row(Field("description", css_class=TEXTAREA_CLASS)),
@@ -606,7 +614,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper()
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Field(
                 "start_date",
@@ -701,7 +709,7 @@ class ProgramForm(forms.ModelForm):
         self.user = kwargs.pop("user", None)
         self.organization = kwargs.pop("organization")
         super().__init__(*args, **kwargs)
-        self.helper = FormHelper(self)
+        self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
             Row(Field("name", css_class=BASE_INPUT_CLASS)),
             Row(Field("description", css_class=TEXTAREA_CLASS)),
