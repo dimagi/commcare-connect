@@ -342,21 +342,13 @@ class OpportunityChangeForm(
 
 
 class PaymentUnitForm(forms.ModelForm):
-    """
-    Form for creating and updating payment units.
-    """
-
     class Meta:
         model = PaymentUnit
-        fields = [
-            "name",
-            "description",
-            "amount",
-            "max_total",
-            "max_daily",
-            "start_date",
-            "end_date",
-        ]
+        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        help_texts = {
+            "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
+            "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
+        }
         widgets = {
             "start_date": forms.DateInput(attrs={"type": "date", "class": BASE_INPUT_CLASS}),
             "end_date": forms.DateInput(attrs={"type": "date", "class": BASE_INPUT_CLASS}),
@@ -369,85 +361,41 @@ class PaymentUnitForm(forms.ModelForm):
 
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Div(
-                Div(
-                    # Left Column (Details)
-                    Div(
-                        HTML('''
-                        <span class="text-sm text-brand-indigo font-medium">Details</span>
-                        <br />
-                        <span class="text-xs text-brand-blue-light">Add the details of the units</span>
-                        '''),
-                        Field("name", css_class=BASE_INPUT_CLASS),
-                        Field(
-                            "description",
-                            css_class=f"{BASE_INPUT_CLASS} h-43",  
-                        ),
-                        css_class="w-1/2",
-                    ),
-                    # Right Column (Dates and Visits)
-                    Div(
-                        HTML('''
-                             <span class='text-sm font-medium text-brand-indigo'>Dates</span>
-                             <br />
-                             <span class='text-xs text-brand-blue-light'> Optional. If not specified opportunity start date applies to form submissions.</span>
-                             '''),
-                        Div(
-                            Div(Field("start_date", css_class=BASE_INPUT_CLASS),css_class="w-1/2"),
-                            Div(Field("end_date", css_class=BASE_INPUT_CLASS),css_class="w-1/2"),
-                            css_class="flex justify-between w-full gap-4",
-                        ),
-                        HTML("<h3 class='text-lg font-semibold mt-4 mb-2'>Visits</h3>"),
-                        Div(
-                            Div(Field("max_total", css_class=BASE_INPUT_CLASS), css_class="w-1/2"),
-                            Div(Field("max_daily", css_class=BASE_INPUT_CLASS), css_class="w-1/2"),
-                            css_class="flex justify-between w-full gap-4",
-                        ),
-                        Field("amount", css_class=BASE_INPUT_CLASS),
-                        css_class="w-1/2",
-                    ),
-                    css_class="flex flex-row gap-4 bg-white p-6 rounded-lg",
+            Row(
+                Column(
+                    Field("name", css_class=BASE_INPUT_CLASS),
+                    Field("description",css_class=TEXTAREA_CLASS),
                 ),
-                Div(
-                    HTML("<span class='text-base font-normal text-slate-700'>Configuration</span>"),
-                    Div(
-                        Div(
-                            HTML('''
-                           <span class='text-sm font-medium text-brand-indigo'>Deliver Units</span>
-                           <br />
-                           <span class='text-xs text-brand-blue-light'>
-                             Please choose the delivery units from the list below to include in the payment unit.
-                           </span>
-                           '''),
-                            Field("required_deliver_units", css_class=CHECKBOX_CLASS),
-                            css_class="w-1/2",
-                        ),
-                        Div(
-                            HTML('''
-                           <span class='text-sm font-medium text-brand-indigo'>Prerequisite Payment Units</span>
-                           <br />
-                           <span class='text-xs text-brand-blue-light'>
-                             Please choose other payment units that the user should have completed before delivering the payment unit.
-                           </span>
-                           '''),
-                            Field("payment_units", css_class=CHECKBOX_CLASS),
-                            css_class="w-1/2",
-                        ),
-                        css_class="flex flex-row gap-4 w-full",
+                Column( 
+                    Row(
+                        Field("start_date", css_class=BASE_INPUT_CLASS),
+                        Field("end_date", css_class=BASE_INPUT_CLASS),
+                        css_class="grid grid-cols-2 gap-4"),
+                    Row(
+                        Field("max_total", css_class=BASE_INPUT_CLASS),
+                        Field("max_daily", css_class=BASE_INPUT_CLASS),
+                        css_class="grid grid-cols-2 gap-4"
                     ),
-                    Div(
-                        Submit(name="submit", value="Submit", css_class="button button-md primary-dark w-40"),
-                        css_class="flex justify-end"
-                    ),
-                    css_class="w-full p-6 bg-white rounded-lg flex flex-col justify-between gap-4",
+                    Field("amount", css_class=BASE_INPUT_CLASS),
                 ),
-                css_class="w-258 mx-auto flex flex-col gap-10 my-4",
+                css_class="grid grid-cols-2 gap-4"
+            ),
+            HTML('<div class="bg-gray-200 h-0.5 w-full my-8"></div>'),
+            Row(
+                Column(
+                    Field("required_deliver_units", css_class=CHECKBOX_CLASS),
+                    Field("optional_deliver_units", css_class=CHECKBOX_CLASS)
+                ),
+                Column(Field("payment_units", css_class=CHECKBOX_CLASS)),
+                css_class="grid grid-cols-2 gap-4"
+            ),
+            Row(
+                Submit(name="submit", value="Submit",css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
             )
         )
-
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
-
         self.fields["required_deliver_units"] = forms.MultipleChoiceField(
             choices=deliver_unit_choices,
             widget=forms.CheckboxSelectMultiple,
@@ -468,7 +416,6 @@ class PaymentUnitForm(forms.ModelForm):
             help_text="The selected Payment Units need to be completed in order to complete this payment unit.",
             required=False,
         )
-
         if PaymentUnit.objects.filter(pk=self.instance.pk).exists():
             deliver_units = self.instance.deliver_units.all()
             self.fields["required_deliver_units"].initial = [
@@ -483,27 +430,6 @@ class PaymentUnitForm(forms.ModelForm):
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
 
-    def clean(self):
-        cleaned_data = super().clean()
-        if cleaned_data:
-            if cleaned_data["max_daily"] > cleaned_data["max_total"]:
-                self.add_error(
-                    "max_daily",
-                    "Daily max visits per user cannot be greater than total Max visits per user",
-                )
-            common_deliver_units = set(cleaned_data.get("required_deliver_units", [])) & set(
-                cleaned_data.get("optional_deliver_units", [])
-            )
-            for deliver_unit in common_deliver_units:
-                deliver_unit_obj = DeliverUnit.objects.get(pk=deliver_unit)
-                self.add_error(
-                    "optional_deliver_units",
-                    error=f"{deliver_unit_obj.name} cannot be marked both Required and Optional",
-                )
-            if cleaned_data["end_date"] and cleaned_data["end_date"] < now().date():
-                self.add_error("end_date", "Please provide a valid end date.")
-
-        return cleaned_data
 
 
 
