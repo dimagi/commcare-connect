@@ -528,7 +528,7 @@ class SendMessageMobileUsersForm(forms.Form):
             Row(Field("title", css_class=BASE_INPUT_CLASS)),
             Row(Field("body", css_class=TEXTAREA_CLASS)),
             Row(Field("message_type", css_class=CHECKBOX_CLASS)),
-            Submit(name="submit", value="Submit"),
+            Submit(name="submit", value="Submit",css_class="button button-md primary-dark"),
         )
 
         choices = [(user.pk, user.username) for user in users]
