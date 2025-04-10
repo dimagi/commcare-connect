@@ -144,7 +144,7 @@ class PaymentAppTable(BaseTailwindTable):
                     class="border border-brand-border-light focus:outline-none rounded px-3 pr-8 py-2 w-full cursor-pointer"
                     placeholder="Select date"
                     value="{}"
-                    @click="fp.toggle()">
+                    ">
                 <i class="fa-solid fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-brand-deep-purple transition-transform duration-200 pointer-events-none"
                    :class="{{'rotate-180': isOpen}}">
                 </i>
@@ -441,7 +441,7 @@ class AddBudgetTable(BaseTailwindTable):
                     value="{}">
                 <i class="fa-solid fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-brand-deep-purple transition-transform duration-200 cursor-pointer"
                 :class="{{'rotate-180': isOpen}}"
-                @click="$refs.input._flatpickr.toggle()">
+                ">
                 </i>
             </div>
             """,
