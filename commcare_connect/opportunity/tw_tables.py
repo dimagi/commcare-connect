@@ -67,7 +67,34 @@ class PaymentAppTable(BaseTailwindTable):
     amount = tables.Column(verbose_name="Amount")
     total_deliveries = tables.Column(verbose_name="Total Deliveries")
     max_daily = tables.Column(verbose_name="Max Daily")
-    delivery_units = tables.Column(verbose_name="Delivery Units")
+    delivery_units = tables.TemplateColumn(
+        template_code='''
+        <div class="flex justify-between">
+            <span>{{ value }}</span>
+            <div x-data="{ expanded: false }">
+                <button class="btn btn-primary btn-sm"
+                        hx-get="/a/test-1/opportunity/1/tw/api/payment_app_expand?index={{record.index}}"
+                        hx-target="closest tr"
+                        hx-swap="afterend"
+                        @click="expanded = true"
+                        x-show="!expanded">
+                    <i class="fa-light fa-chevron-down"></i>
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        @click="$event.preventDefault(); 
+                                const detailRow = $el.closest('tr').nextElementSibling; 
+                                if (detailRow && detailRow.classList.contains('detail-row-{{record.index}}')) { 
+                                    detailRow.remove(); 
+                                } 
+                                expanded = false"
+                        x-show="expanded">
+                    <i class="fa-light fa-chevron-up"></i>
+                </button>
+            </div>
+        </div>
+        ''',
+        verbose_name="Delivery Units"
+    )
     
     class Meta:
         sequence = ("index", "unit_name", "start_date", "end_date", "amount", "total_deliveries", "max_daily", "delivery_units")
@@ -141,15 +168,34 @@ class PaymentAppTable(BaseTailwindTable):
             '<div class="">{}</div>', value
         )
     
-    def render_delivery_units(self, value):
-        return format_html(
-            '''<div class="flex justify-between">
-                    <span>{}</span>
-                    <i class="fa-light fa-chevron-down"></i>
-                </div>
-            ''', value
-        )
-       
+    # def render_delivery_units(self, value):
+    #     return format_html(
+    #         '''<div class="flex justify-between">
+    #                 <span>{}</span>
+    #                 <div x-data="{{ expanded: false }}">
+    #                     <button class="btn btn-primary btn-sm"
+    #                     hx-get="http:localhost:3000/expand?year=2024&quarter=1"
+    #                     hx-target="closest tr"
+    #                     hx-swap="afterend"
+    #                     @click="expanded = true"
+    #                     x-show="!expanded">
+    #                     <i class="fa-light fa-chevron-down"></i>
+    #                     </button>
+    #                     <button class="btn btn-secondary btn-sm"
+    #                     @click="$event.preventDefault(); 
+    #                             const detailRow = $el.closest('tr').nextElementSibling; 
+    #                             if (detailRow && detailRow.classList.contains('detail-row-1')) { 
+    #                                 detailRow.remove(); 
+    #                             } 
+    #                             expanded = false"
+    #                     x-show="expanded">
+    #                     <i class="fa-light fa-chevron-up"></i>
+    #                     </button>
+    #                 </div>
+    #             </div>
+    #         ''', value
+    #     )
+        
 class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
     time = tables.Column(verbose_name="Time")

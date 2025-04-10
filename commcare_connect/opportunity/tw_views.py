@@ -201,9 +201,40 @@ def payment_app_table(request,org_slug=None, opp_id=None):
         {"index":4, "unit_name":"Payment Unit Name 4", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
         {"index":5, "unit_name":"Payment Unit Name 5", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
         {"index":6, "unit_name":"Payment Unit Name 6", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":7, "unit_name":"Payment Unit Name 1", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":8, "unit_name":"Payment Unit Name 2", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":9, "unit_name":"Payment Unit Name 3", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":9, "unit_name":"Payment Unit Name 4", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
+        {"index":10, "unit_name":"Payment Unit Name 5", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
     ]
     table = PaymentAppTable(data)
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
+
+def payment_app_table_expand(request,org_slug=None, opp_id=None):
+    index = request.GET.get('index')
+    
+    html = f'''
+    <tr class="detail-row-{index}">
+      <td colspan="8">
+        <div class="p-3 bg-slate-100 rounded-lg">
+          <div class="flex gap-16">
+            <div class="flex flex-col gap-4">
+              <p>Delivery Unit Name 1</p>
+              <p>Delivery Unit Name 2</p>
+              <p>Delivery Unit Name 3</p>
+            </div>
+            <div class="flex flex-col gap-4">
+              <p>Delivery Unit Name 4</p>
+              <p>Delivery Unit Name 5</p>
+              <p>Delivery Unit Name 6</p>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    '''
+    
+    return HttpResponse(html)
 
 def opportunities_card(request, org_slug=None, opp_id=None):
     data = [

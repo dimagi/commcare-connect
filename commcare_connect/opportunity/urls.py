@@ -170,6 +170,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/tables/worker_rejected_table",tw_views.worker_rejected_table, name="tw_rejected_table"),
     path("<int:opp_id>/tw/tables/worker_all_table",tw_views.worker_all_table, name="tw_all_table"),
     # API
+    path("<int:opp_id>/tw/api/payment_app_expand",tw_views.payment_app_table_expand, name="tw_payment_app"),
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
     path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),

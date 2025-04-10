@@ -11,3 +11,6 @@ bg-indigo-700/20
 bg-green-600/20
 bg-slate-100/20
 bg-orange-600/20
+
+bg-slate-100
+gap-16
