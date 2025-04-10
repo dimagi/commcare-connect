@@ -6,11 +6,10 @@ from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Subm
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
-from django.urls import reverse
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client.models import Credential
-from commcare_connect.opportunity.forms import FILTER_COUNTRIES
+from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program
 
@@ -24,6 +23,7 @@ from .models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
+    VisitValidationStatus,
 )
 
 BASE_INPUT_CLASS = "base-input"
@@ -566,40 +566,20 @@ class OpportunityInitForm(forms.ModelForm):
             Submit("submit", "Submit"),
         )
 
-        domain_choices = [(domain, domain) for domain in self.domains]
+        domain_choices = [(i, f"Domain {i}") for i in range(1, 11)]
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_learn_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_learn_app",
-                    "data-loading-disable": True,
-                }
-            ),
         )
-        self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
+        learn_app_choices = [(i, f"Learn App {i}") for i in range(1, 11)]
+        self.fields["learn_app"] = forms.Field(widget=forms.Select(choices=learn_app_choices))
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
         self.fields["deliver_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_deliver_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_deliver_app",
-                    "data-loading-disable": True,
-                }
-            ),
         )
-        self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
+        deliver_app_choices = [(i, f"Deliver App {i}") for i in range(1, 11)]
+        self.fields["deliver_app"] = forms.Field(widget=forms.Select(choices=deliver_app_choices))
         self.fields["api_key"] = forms.CharField(max_length=50)
 
     def clean(self):
@@ -816,3 +796,28 @@ class ProgramForm(forms.ModelForm):
         self.instance.currency = self.cleaned_data["currency"].upper()
 
         return super().save(commit=commit)
+
+
+class VisitExportForm(forms.Form):
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
+    status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
+    flatten_form_data = forms.BooleanField(initial=True, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = TailwindFormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("format", css_class=SELECT_CLASS)),
+            Row(Field("date_range", css_class=SELECT_CLASS)),
+            Row(Field("status", css_class=SELECT_CLASS)),
+            Row(Field("flatten_form_data", css_class=CHECKBOX_CLASS)),
+        )
+        self.helper.form_tag = False
+
+    def clean_status(self):
+        statuses = self.cleaned_data["status"]
+        if not statuses or "all" in statuses:
+            return []
+
+        return [VisitValidationStatus(status) for status in statuses]

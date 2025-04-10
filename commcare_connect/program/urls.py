@@ -41,4 +41,5 @@ urlpatterns = [
     ),
     path("tw/init/", view=tw_form_views.ProgramCreateOrUpdate.as_view(), name="tw_init"),
     path("<int:pk>/tw/edit", view=tw_form_views.ProgramCreateOrUpdate.as_view(), name="tw_edit"),
+    path("<int:pk>/tw/invite", view=tw_form_views.invite_organization, name="tw_invite_organization"),
 ]

@@ -28,6 +28,7 @@ from commcare_connect.opportunity.tw_forms import (
     PaymentUnitForm,
     ProgramForm,
     SendMessageMobileUsersForm,
+    VisitExportForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import get_opportunity_or_404
@@ -104,10 +105,6 @@ def verification_flags_config(request, org_slug=None, pk=None):
 class OpportunityEdit(views.OpportunityEdit):
     template_name = "tailwind/pages/opportunity_edit.html"
     form_class = OpportunityChangeForm
-
-    @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -274,6 +271,13 @@ class OpportunityInit(views.OpportunityInit):
     def get_success_url(self):
         return reverse("opportunity:tw_add_payment_units", args=(self.request.org.slug, self.object.id))
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["domains"] = []
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
+
 
 @org_member_required
 def add_payment_units(request, org_slug=None, pk=None):
@@ -302,3 +306,12 @@ class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
         view = ("add", "edit")[self.object is not None]
         template = f"tailwind/pages/program_{view}.html"
         return template
+
+
+def invite_organization(request, org_slug=None, pk=None):
+    return render(request, "tailwind/pages/invite_organization.html")
+
+
+def export_user_visits(request, org_slug, pk):
+    form = VisitExportForm(data=request.POST or None)
+    return render(request, "tailwind/pages/form.html", context=dict(form=form))
