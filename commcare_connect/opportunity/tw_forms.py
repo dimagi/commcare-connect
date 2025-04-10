@@ -6,7 +6,6 @@ from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Subm
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
-from django.urls import reverse
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client.models import Credential
@@ -487,40 +486,20 @@ class OpportunityInitForm(forms.ModelForm):
             Submit("submit", "Submit"),
         )
 
-        domain_choices = [(domain, domain) for domain in self.domains]
+        domain_choices = [(i, f"Domain {i}") for i in range(1, 11)]
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_learn_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_learn_app",
-                    "data-loading-disable": True,
-                }
-            ),
         )
-        self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
+        learn_app_choices = [(i, f"Learn App {i}") for i in range(1, 11)]
+        self.fields["learn_app"] = forms.Field(widget=forms.Select(choices=learn_app_choices))
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
         self.fields["deliver_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_deliver_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_deliver_app",
-                    "data-loading-disable": True,
-                }
-            ),
         )
-        self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
+        deliver_app_choices = [(i, f"Deliver App {i}") for i in range(1, 11)]
+        self.fields["deliver_app"] = forms.Field(widget=forms.Select(choices=deliver_app_choices))
         self.fields["api_key"] = forms.CharField(max_length=50)
 
     def clean(self):

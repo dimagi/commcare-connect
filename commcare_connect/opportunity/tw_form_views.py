@@ -274,6 +274,13 @@ class OpportunityInit(views.OpportunityInit):
     def get_success_url(self):
         return reverse("opportunity:tw_add_payment_units", args=(self.request.org.slug, self.object.id))
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["domains"] = []
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
+
 
 @org_member_required
 def add_payment_units(request, org_slug=None, pk=None):
