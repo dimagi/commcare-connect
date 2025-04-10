@@ -309,3 +309,7 @@ class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
         view = ("add", "edit")[self.object is not None]
         template = f"tailwind/pages/program_{view}.html"
         return template
+
+
+def invite_organization(request, org_slug=None, pk=None):
+    return render(request, "tailwind/pages/invite_organization.html")
