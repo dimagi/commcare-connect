@@ -28,7 +28,7 @@ from .models import (
 
 BASE_INPUT_CLASS = "base-input"
 SELECT_CLASS = "base-dropdown"
-TEXTAREA_CLASS = "simple-textarea"
+TEXTAREA_CLASS = "base-textarea"
 CHECKBOX_CLASS = "simple-toggle"
 
 
@@ -157,6 +157,14 @@ class DeliverUnitFlagsForm(forms.ModelForm):
             raise ValidationError("Flags are already configured for this Deliver Unit.")
         return deliver_unit
 
+def icon_field(field_name, icon_class, **kwargs):
+    icon_html = f'<i class="fa {icon_class} mr-2 text-gray-500"></i>'
+    return Field(
+        field_name,
+        label=Markup(icon_html + field_name.capitalize()),
+        **kwargs
+    )
+
 
 class FormJsonValidationRulesForm(forms.ModelForm):
     class Meta:
@@ -172,11 +180,17 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
-        self.fields["deliver_unit"] = forms.ModelChoiceField(
+        # self.fields["deliver_unit"] = forms.ModelChoiceField(
+        #     queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+        #     disabled=True,
+        #     empty_label=None,
+        #     widget=forms.Select(attrs={"class": "w-full p-2 border border-gray-300 rounded-lg"}),
+        # )
+
+        self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
             queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            widget=forms.CheckboxSelectMultiple(attrs={"class": "space-y-2"}),  # Tailwind spacing between checkboxes
             disabled=True,
-            empty_label=None,
-            widget=forms.Select(attrs={"class": "w-full p-2 border border-gray-300 rounded-lg"}),
         )
 
         self.helper = TailwindFormHelper(self)
@@ -260,28 +274,46 @@ class OpportunityChangeForm(
 
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name", css_class=BASE_INPUT_CLASS)),
-            Row(Field("active", css_class=CHECKBOX_CLASS)),
-            Row(Field("is_test", css_class=CHECKBOX_CLASS)),
-            Row(Field("delivery_type", css_class=BASE_INPUT_CLASS)),
-            Row(Field("description", css_class=TEXTAREA_CLASS)),
-            Row(Field("short_description", css_class=BASE_INPUT_CLASS)),
-            Row(Field("currency", css_class=SELECT_CLASS)),
             Row(
-                Field("additional_users", css_class=BASE_INPUT_CLASS),
-                Field("end_date", css_class=BASE_INPUT_CLASS),
-            ),
-            HTML("<hr />"),
-            Fieldset(
-                "Invite Users",
-                Row(Field("users", css_class=TEXTAREA_CLASS)),
-                Row(
-                    Field("filter_country", css_class=BASE_INPUT_CLASS),
-                    Field("filter_credential", css_class=BASE_INPUT_CLASS),
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Opportunity Details</h6>  <span class='hint'>Edit the details of the opportunity. All fields are mandatory.  </span> </div>"),
+                Column(
+                    Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
+                    Field("short_description", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),  
+                    Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full"),
                 ),
+                Column(  
+                    Field("delivery_type", css_class=BASE_INPUT_CLASS),
+                    Field("active", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"),
+                    Field("is_test", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"), 
+                ),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg"
+            ), 
+            Row(
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Date</h6>  <span class='hint'>Optional: If not specified, the opportunity start & end dates will apply to the form submissions.</span> </div>"),
+                Column(
+                    Field("end_date", css_class=BASE_INPUT_CLASS),
+                ),
+                Column( 
+                    Field("currency", css_class=SELECT_CLASS),
+                    Field("additional_users", css_class=BASE_INPUT_CLASS)
+                ),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg"
+            ),   
+            Row(
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Workers</h6></div>"),
+                Row(
+                    Field("filter_country", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
+                    Field("filter_credential", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
+                    css_class="flex gap-2"
+                ),
+                Row(Field("users", css_class=TEXTAREA_CLASS,wrapper_class="w-full"),css_class="col-span-2"),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg"
             ),
-            Submit("submit", "Submit"),
-        )
+            Row(
+                Submit("submit", "Submit",css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            ) 
+        ) 
 
         self.fields["additional_users"] = forms.IntegerField(
             required=False, help_text="Adds budget for additional users."
@@ -329,16 +361,38 @@ class PaymentUnitForm(forms.ModelForm):
 
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name", css_class=BASE_INPUT_CLASS)),
-            Row(Field("description")),
-            Row(Field("amount", css_class=BASE_INPUT_CLASS)),
-            Row(Column("start_date"), Column("end_date")),
-            Row(Field("required_deliver_units", css_class=CHECKBOX_CLASS)),
-            Row(Field("optional_deliver_units", css_class=CHECKBOX_CLASS)),
-            Row(Field("payment_units", css_class=CHECKBOX_CLASS)),
-            Field("max_total", css_class=BASE_INPUT_CLASS),
-            Field("max_daily", css_class=BASE_INPUT_CLASS),
-            Submit(name="submit", value="Submit"),
+            Row(
+                Column(
+                    Field("name", css_class=BASE_INPUT_CLASS),
+                    Field("description",css_class=TEXTAREA_CLASS),
+                ),
+                Column( 
+                    Row(
+                        Field("start_date", css_class=BASE_INPUT_CLASS),
+                        Field("end_date", css_class=BASE_INPUT_CLASS),
+                        css_class="grid grid-cols-2 gap-4"),
+                    Row(
+                        Field("max_total", css_class=BASE_INPUT_CLASS),
+                        Field("max_daily", css_class=BASE_INPUT_CLASS),
+                        css_class="grid grid-cols-2 gap-4"
+                    ),
+                    Field("amount", css_class=BASE_INPUT_CLASS),
+                ),
+                css_class="grid grid-cols-2 gap-4"
+            ),
+            HTML('<div class="bg-gray-200 h-0.5 w-full my-8"></div>'),
+            Row(
+                Column(
+                    Field("required_deliver_units", css_class=CHECKBOX_CLASS),
+                    Field("optional_deliver_units", css_class=CHECKBOX_CLASS)
+                ),
+                Column(Field("payment_units", css_class=CHECKBOX_CLASS)),
+                css_class="grid grid-cols-2 gap-4"
+            ),
+            Row(
+                Submit(name="submit", value="Submit",css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            )
         )
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
@@ -438,10 +492,21 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("amount", css_class=BASE_INPUT_CLASS)),
-            Row(Field("date", css_class=BASE_INPUT_CLASS)),
-            Row(Field("invoice_number", css_class=BASE_INPUT_CLASS)),
-            Row(Field("service_delivery", css_class=CHECKBOX_CLASS)),
+            Column(
+                Row( 
+                    Row(Field("amount", css_class=BASE_INPUT_CLASS),css_class="flex-1"),
+                    Row(Field("date", css_class=BASE_INPUT_CLASS),css_class="flex-1"),  
+                    Row(Field("invoice_number", css_class=BASE_INPUT_CLASS),css_class="flex-1"),
+                    Row(Field("service_delivery", css_class=CHECKBOX_CLASS, wrapper_class="w-full bg-slate-100 flex items-center justify-between p-4 rounded-lg")), 
+                    css_class="flex flex-col gap-2"
+                ),
+                Row(
+                    Submit("submit", "Cancel",css_class="button button-md outline-style"),
+                    Submit("submit", "Submit",css_class="button button-md primary-dark"),
+                    css_class="flex justify-end gap-4"
+                ),
+                css_class="flex flex-col gap-4"
+            )
         )
         self.helper.form_tag = False
 
@@ -616,20 +681,27 @@ class OpportunityFinalizeForm(forms.ModelForm):
 
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Field(
-                "start_date",
-                help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
+            Row(
+                Field(
+                        "start_date",
+                        help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
+                        wrapper_class="flex-1"
+                    ),
+                Field("end_date",wrapper_class="flex-1"),
+                Field(
+                        "max_users",
+                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
+                        f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
+                        f"* parseInt(this.value || 0)",
+                        css_class=BASE_INPUT_CLASS
+                    ),
+                    Field("total_budget", readonly=True, wrapper_class="form-group ", css_class=BASE_INPUT_CLASS),
+                css_class="grid grid-cols-2 gap-6"
             ),
-            Field("end_date"),
-            Field(
-                "max_users",
-                oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
-                f"* parseInt(this.value || 0)",
-                css_class=BASE_INPUT_CLASS,
-            ),
-            Field("total_budget", readonly=True, wrapper_class="form-group col-md-4 mb-0", css_class=BASE_INPUT_CLASS),
-            Submit("submit", "Submit"),
+           Row(
+             Submit("submit", "Submit",css_class="button button-md primary-dark"),
+             css_class="flex justify-end"
+           )
         )
 
         if self.opportunity.managed:

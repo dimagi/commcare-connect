@@ -4,6 +4,10 @@
 [x-cloak] {
     display: none !important;
 }
+
+:root{
+    --breakpoint-sm:640px;
+}
 @theme {
     --font-sans : "Work Sans", "sans-serif"; 
     --breakpoint-sm:5rem;
@@ -17,6 +21,7 @@
     --color-brand-blue-light : #94A3B8;
     --color-brand-sunset-light : #FC5F3633;
     --color-brand-border-light : #E2E8F0; 
+    --width-screen-sm: var(--breakpoint-sm);
 }
 /* ----- background -------*/
 .card_bg{
@@ -189,7 +194,7 @@
 } 
 
 .outline-style{
-    @apply border border-gray-200 rounded-lg text-brand-deep-purple;
+    @apply border border-gray-200 rounded-lg text-brand-deep-purple bg-white;
 }
 
 
@@ -290,7 +295,7 @@
 /*--- base select  list ------------------------- */
 @layer components {
     .base-dropdown {
-        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10 w-full;
     }
     
     .base-dropdown:focus{
@@ -325,7 +330,7 @@
 /*--- based input ------------------------- */
 @layer components{
     .base-input{
-        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10 w-full;
     }
 
     .base-input:focus{
@@ -348,6 +353,13 @@
     }
 }
 
+/*--- base textarea-----------------------------*/
+
+@layer components{ 
+    .base-textarea{
+        @apply p-4 h-fit min-h-20 w-full text-sm text-gray-900 bg-transparent rounded border-1 border-gray-300 focus:outline-none focus:ring-0 focus:border-blue-600
+    } 
+}
 
 /*--- simple textarea ------------------------- */
 @layer components{
@@ -476,6 +488,33 @@
         @apply p-4 text-left border-b-[1px] border-gray-100 whitespace-nowrap;
     }  
 }
+
+@layer components {
+    .stepper {
+      @apply flex justify-between items-center gap-4;
+    }
+  
+    .stepper a {
+      @apply flex items-center gap-4;
+    }
+  
+    .stepper  h6 {
+        @apply w-8 h-8 rounded-full grid place-content-center border border-gray-300 text-brand-deep-purple;
+      }
+
+    .stepper a.active h6 {
+      @apply text-center bg-brand-deep-purple text-white;
+    }
+  
+  
+    .stepper span {
+      @apply text-sm text-gray-400 whitespace-nowrap;
+    }
+  
+    .stepper a.active span {
+      @apply font-medium text-brand-deep-purple;
+    }
+  }
 
 
 /* Hide scrollbar for Chrome, Safari and Opera */

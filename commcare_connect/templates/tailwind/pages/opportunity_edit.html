@@ -12,10 +12,11 @@
     <li class="breadcrumb-item active" aria-current="page">Edit Opportunity</li>
 {% endblock %}
 {% block content %}
-    <h2 class="mb-2">Edit Opportunity</h2>
-    <hr>
-    <form method="post">
-        {% csrf_token %}
-        {% crispy form %}
-    </form>
+    <div class="md:max-w-screen-lg mx-auto">
+        <h2 class="title my-8">Edit Opportunity</h2> 
+        <form method="post" class="flex flex-col gap-4">
+            {% csrf_token %}
+            {% crispy form %}
+        </form>
+    </div>
 {% endblock content %}

@@ -7,5 +7,8 @@
     {% block title %}{{ title }}{% endblock %}
 {% endif %}
 {% block content %}
+<div class="md:max-w-screen-sm mx-auto card_bg flex flex-col gap-4">
+    <h6 class="title">Payment Invoice Create</h6>
     {% include "partial_form.html" %}
+</div>
 {% endblock content %}

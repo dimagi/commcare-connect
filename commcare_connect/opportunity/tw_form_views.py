@@ -241,17 +241,17 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
-def invoice_create(request, org_slug, pk):
+def invoice_create(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or request.org_membership.is_program_manager:
-        return redirect("opportunity:detail", org_slug, pk)
+    # if not opportunity.managed or request.org_membership.is_program_manager:
+    #     return redirect("opportunity:detail", org_slug, pk)
     form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
     if request.POST and form.is_valid():
         form.save()
     return render(
         request,
         "tailwind/pages/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Invoice Create", form=form),
+        dict(title=f"{request.org.slug} - {opportunity.name}", form=form),
     )
 
 

@@ -1,8 +1,19 @@
 {% load static %}
 {% load crispy_forms_tags %}
 
-<div class="nav nav-pills nav-fill mt-3 mb-3" id="nav-tab" role="tablist">
-  <div class="nav-link {% if step == 'step1' %}active{% endif %}" id="step1-tab" data-toggle="tab">1. Create Opportunity</div>
-  <a class="nav-link {% if step == 'step2' %}active{% endif %}" id="step2-tab" data-toggle="tab" href="{% if pk %} {% url 'opportunity:add_payment_units' org_slug=org_slug pk=pk %}{% endif %}">2. Payment Units</a>
-  <a class="nav-link {% if step == 'step3' %}active{% endif %}" id="step3-tab" data-toggle="tab"  href="{% if pk %} {% url 'opportunity:finalize' org_slug=org_slug pk=pk %}{% endif %}">3. Budget</a>
-</div>
+<div class="stepper" id="nav-tab" role="tablist">
+  <a class=" {% if step == 'step1' %}active{% endif %}" id="step1-tab" data-toggle="tab">
+    <h6>1</h6>
+    <span>Create Opportunity</span>
+  </a>
+  <hr class="border-t-2 border-dashed border-gray-300 w-full"> 
+  <a class="{% if step == 'step2' %}active{% endif %}" id="step2-tab" data-toggle="tab">
+    <h6>2</h6>
+    <span>Payment Unit</span>
+  </a>
+  <hr class="border-t-2 border-dashed border-gray-300 w-full"> 
+  <a class="{% if step == 'step3' %}active{% endif %}" id="step3-tab" data-toggle="tab">
+    <h6>3</h6>
+    <span>Budget</span>
+  </a>
+ </div>
