@@ -28,6 +28,7 @@ from commcare_connect.opportunity.tw_forms import (
     PaymentUnitForm,
     ProgramForm,
     SendMessageMobileUsersForm,
+    VisitExportForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import get_opportunity_or_404
@@ -104,10 +105,6 @@ def verification_flags_config(request, org_slug=None, pk=None):
 class OpportunityEdit(views.OpportunityEdit):
     template_name = "tailwind/pages/opportunity_edit.html"
     form_class = OpportunityChangeForm
-
-    @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -313,3 +310,8 @@ class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
 
 def invite_organization(request, org_slug=None, pk=None):
     return render(request, "tailwind/pages/invite_organization.html")
+
+
+def export_user_visits(request, org_slug, pk):
+    form = VisitExportForm(data=request.POST or None)
+    return render(request, "tailwind/pages/form.html", context=dict(form=form))

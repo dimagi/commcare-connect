@@ -9,7 +9,7 @@ from django.db.models import Q, Sum
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client.models import Credential
-from commcare_connect.opportunity.forms import FILTER_COUNTRIES
+from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program
 
@@ -23,6 +23,7 @@ from .models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
+    VisitValidationStatus,
 )
 
 BASE_INPUT_CLASS = "w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -709,3 +710,28 @@ class ProgramForm(forms.ModelForm):
         self.instance.currency = self.cleaned_data["currency"].upper()
 
         return super().save(commit=commit)
+
+
+class VisitExportForm(forms.Form):
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
+    status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
+    flatten_form_data = forms.BooleanField(initial=True, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = TailwindFormHelper(self)
+        self.helper.layout = Layout(
+            Row(Field("format", css_class=SELECT_CLASS)),
+            Row(Field("date_range", css_class=SELECT_CLASS)),
+            Row(Field("status", css_class=SELECT_CLASS)),
+            Row(Field("flatten_form_data", css_class=CHECKBOX_CLASS)),
+        )
+        self.helper.form_tag = False
+
+    def clean_status(self):
+        statuses = self.cleaned_data["status"]
+        if not statuses or "all" in statuses:
+            return []
+
+        return [VisitValidationStatus(status) for status in statuses]
