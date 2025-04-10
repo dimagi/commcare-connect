@@ -27,7 +27,7 @@
                         }
                     }">
                         <!-- apps list -->
-                        {% for app in data %}
+                        {% for app in opp_resource_counts %}
                         <div class="min-w-48 flex flex-row items-center justify-between px-4 h-10 bg-brand-indigo rounded cursor-pointer"
                              @click="toggleModal() ; selectedTab = '{{app.name}}'; selectedOption = '{{app.name}}'">
                             <div class="flex items-center">
@@ -39,7 +39,7 @@
                         {% endfor %}
 
                         <!-- Modal -->
-                        {% include "tailwind/components/opportunity-dashboard/app_modal.html" %}
+                        {% include "tailwind/components/opportunity-dashboard/app_modal.html" with opp_id=opportunity.id %}
                     </div>
                 </div>
             </div>
@@ -55,11 +55,7 @@
                     {% endif %}
                     {% endfor %}
                   <div>
-                      <span class="badge badge-md
-                        {% if opportunity.status == 'Active' %}positive-dark
-                        {% elif opportunity.status == 'Inactive' %}neutral-dark
-                        {% elif opportunity.status == 'Ended' %}negative-dark
-                        {% else %}default-dark{% endif %}">
+                      <span class="badge badge-md positive-dark">
                         {{ opportunity.status }}
                       </span>
                   </div>
@@ -124,7 +120,7 @@
         <div class="flex flex-col gap-8 w-full p-8 shadow-sm rounded-xl bg-white">
             <h4 class="text-brand-deep-purple font-medium">Worker Progress Funnel</h4>
             <div class="flex flex-col md:flex-row gap-4 justify-between">
-                {% for data in funnel%}
+                {% for data in funnel_progress%}
                     <div class="flex flex-col gap-2">
                         <div class="flex items-center gap-2">
                         <div class="text-brand-indigo text-lg p-2 rounded bg-indigo-100 aspect-square text-center h-12 w-12 place-content-center">
@@ -137,7 +133,7 @@
                         </div>
                         {% endif %}
                     </div>
-                        <p class="text-xl font-semibold text-brand-deep-purple">{{ data.count }}</p>
+                        <p class="text-xl w-12 text-center font-semibold text-brand-deep-purple">{{ data.count }}</p>
                         <p class="text-xs font-normal text-gray-500 whitespace-nowrap">{{ data.stage }}</p>
                 </div>
                 {% endfor %}

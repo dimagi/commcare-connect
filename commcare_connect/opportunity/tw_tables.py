@@ -1,7 +1,11 @@
+import itertools
+
 import django_tables2 as tables
 from django.utils.html import format_html
-from django_tables2.utils import A
 from django.utils.safestring import mark_safe
+
+from commcare_connect.opportunity.models import LearnModule, DeliverUnit, PaymentUnit
+
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
@@ -10,107 +14,66 @@ class BaseTailwindTable(tables.Table):
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
 
-class LearnAppTable(BaseTailwindTable):
-    index = tables.Column(verbose_name="#", orderable=False)
-    name = tables.Column(verbose_name="Name")
-    description = tables.Column(verbose_name="Description")
-    estimated_time = tables.Column(verbose_name="Estimated Time")
-    
-    class Meta:
-        sequence = ("index", "name", "description", "estimated_time")
-    
-    def render_index(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    def render_name(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    def render_description(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    def render_estimated_time(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )                
-        
-class DeliveryAppTable(BaseTailwindTable):
-    index = tables.Column(verbose_name="#", orderable=False)
-    unit_name = tables.Column(verbose_name="Deliver Unit Name")
-    unit_id = tables.Column(verbose_name="Deliver Unit ID")
-    
-    class Meta:
-        sequence = ("index", "unit_name", "unit_id")
-    
-    def render_index(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    
-    def render_unit_name(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )        
-    def render_unit_id(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
 
-class PaymentAppTable(BaseTailwindTable):
-    index = tables.Column(verbose_name="#", orderable=False)
-    unit_name = tables.Column(verbose_name="Payment Unit Name")
-    start_date = tables.Column(verbose_name="Start Date")
-    end_date = tables.Column(verbose_name="End Date")
-    amount = tables.Column(verbose_name="Amount")
-    total_deliveries = tables.Column(verbose_name="Total Deliveries")
-    max_daily = tables.Column(verbose_name="Max Daily")
-    delivery_units = tables.Column(verbose_name="Delivery Units")
-    
+class IndexColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "#")
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault("empty_values", ())
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record, bound_column, bound_row, **kwargs):
+        table = bound_row._table  # Correct way to access table
+
+        page = getattr(table, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
+            table._row_counter = itertools.count(start=start_index)
+            table._row_counter_start = start_index
+
+        return next(table._row_counter)
+
+
+class LearnModuleTable(BaseTailwindTable):
+    index = IndexColumn()
+
     class Meta:
-        sequence = ("index", "unit_name", "start_date", "end_date", "amount", "total_deliveries", "max_daily", "delivery_units")
-    
-    def render_index(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    
-    def render_unit_name(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    
-    def render_start_date(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    
-    def render_end_date(self, value):
-        return format_html(
-            """
-            <div>
-                {}
-            </div>
-            """,
-            value,
-        )    
-    def render_amount(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-        
-    def render_total_deliveries(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    
-    def render_max_daily(self, value):
-        return format_html(
-            '<div class="">{}</div>', value
-        )
-    
-    def render_delivery_units(self, value):
+        model = LearnModule
+        orderable = False
+        fields = ("index", "name", "description", "time_estimate")
+
+    def render_time_estimate(self, value):
+        return f"{value}hr"
+
+
+class DeliverUnitTable(BaseTailwindTable):
+    index = IndexColumn(empty_values=(), verbose_name="#")
+
+    slug = tables.Column(verbose_name="Delivery Unit ID")
+    name = tables.Column(verbose_name="Name")
+
+    class Meta:
+        model = DeliverUnit
+        fields = ("index", "slug", "name")  # Fields to show (index is custom so it's not included here)
+
+
+
+class OpportunityPaymentUnitTable(BaseTailwindTable):
+    index = IndexColumn()
+    name = tables.Column(verbose_name="Payment Unit Name")
+    max_total = tables.Column(verbose_name="Total Deliveries")
+    delivery_unit_count = tables.Column(verbose_name="Delivery Units")
+
+    class Meta:
+        model = PaymentUnit
+        orderable = False
+        fields = ("index", "name", "start_date", "end_date", "amount", "max_total", "max_daily", "delivery_unit_count")
+
+    def render_delivery_unit_count(self, value):
         return format_html(
             '''<div class="flex justify-between">
                     <span>{}</span>
@@ -118,7 +81,9 @@ class PaymentAppTable(BaseTailwindTable):
                 </div>
             ''', value
         )
-       
+
+
+
 class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
     time = tables.Column(verbose_name="Time")
@@ -336,15 +301,15 @@ class AddBudgetTable(BaseTailwindTable):
     def render_end_date(self, value):
         return format_html(
             """
-            
+
                 <input type="date"
                 class="border w-32 border-brand-border-light focus:outline-none rounded p-2"
                 value="{}">
-            
+
             """,
             value,
         )
-        
+
 class OpportunitiesListTable(tables.Table):
     index = tables.Column(verbose_name="")
     opportunity = tables.Column(verbose_name="Opportunity", orderable=False)
@@ -515,7 +480,7 @@ class WorkerPaymentsTable(tables.Table):
                                     {% if value %}
                                        <div class="status-active"></div>
                                     {% else %}
-                                        <div class="status-error"></div> 
+                                        <div class="status-error"></div>
                                     {% endif %}
                                     """,
     )
@@ -542,7 +507,7 @@ class WorkerPaymentsTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -692,7 +657,7 @@ class WorkerLearnTable(tables.Table):
     )
     modules_completed = tables.TemplateColumn(
         verbose_name="Modules Completed",
-        template_code=""" 
+        template_code="""
                             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value %}
                         """,
     )
@@ -711,7 +676,7 @@ class WorkerLearnTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -754,7 +719,7 @@ class WorkerLearnTable(tables.Table):
             "attempts",
             "learning_hours",
         )
-        
+
     def render_index(self, value, record):
         # Use 1-based indexing for display and storage
         display_index = value
@@ -799,10 +764,10 @@ class WorkerLearnTable(tables.Table):
         )
 
     def render_lastActive(self, value):
-        return format_html('<div">{}</div>', value) 
+        return format_html('<div">{}</div>', value)
 
     def render_start_learning(self, value):
-        return format_html('<div>{}</div>', value) 
+        return format_html('<div>{}</div>', value)
     def render_completed_learning(self, value):
         return format_html('<div class="">{}</div>', value)
     def render_assessment(self, value):
@@ -885,7 +850,7 @@ class PayWorker(BaseTailwindTable):
             """,
             value,
         )
-    
+
 class WorkerMainTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     worker = tables.Column(verbose_name="Name", orderable=False)
@@ -948,7 +913,7 @@ class WorkerMainTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.base_columns['index'].verbose_name = mark_safe(
             '''
             <div class="flex justify-start text-sm font-medium text-brand-deep-purple">

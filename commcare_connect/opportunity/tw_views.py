@@ -1,11 +1,14 @@
 from django import forms
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from .helpers import get_opportunity_dashboard_data
+from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, \
-    WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable
+    WorkerLearnTable, PayWorker, AddBudgetTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable
+from .views import get_opportunity_or_404
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -41,6 +44,7 @@ def home(request, org_slug=None, opp_id=None):
 
 def about(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/about.html")
+
 
 def dashboard(request, org_slug=None, opp_id=None):
     data = {
@@ -146,63 +150,34 @@ def dashboard(request, org_slug=None, opp_id=None):
             'data': data,
             'header_title': 'Dashboard',
             'sidenav_active': 'Programs'
-            }
-        )
+        }
+    )
+
 
 def learn_app_table(request, org_slug=None, opp_id=None):
-    data = [
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-        {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
-        {"index": 2, "name": "Module Name 2", "description":"Additional Descriptio for module 2", "estimated_time": "30min"},
-        {"index": 3, "name": "Module Name 3", "description":"Additional Descriptio for module 3", "estimated_time": "30min"},
-        {"index": 4, "name": "Module Name 4", "description":"Additional Descriptio for module 4", "estimated_time": "45min"},
-    ]
-    table = LearnAppTable(data)
-    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table,'app_name':'Learn App Name'})
-def delivery_app_table(request, org_slug=None, opp_id=None):
-    data = [
-        {"index": 1, "unit_name": "Unit Name 1", "unit_id": "Unit ID 1"},
-        {"index": 2, "unit_name": "Unit Name 2", "unit_id": "Unit ID 2"},
-        {"index": 3, "unit_name": "Unit Name 3", "unit_id": "Unit ID 3"},
-        {"index": 4, "unit_name": "Unit Name 4", "unit_id": "Unit ID 4"},
-    ]
-    table = DeliveryAppTable(data)
-    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table,'app_name':'Delivery App Name'})
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    learn_module = LearnModule.objects.filter(app=opp.learn_app)
+    table = LearnModuleTable(learn_module)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html',
+                  {'table': table, 'app_name': 'Learn App Name'})
 
-def payment_app_table(request,org_slug=None, opp_id=None):
-    data = [
-        {"index":1, "unit_name":"Payment Unit Name 1", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
-        {"index":2, "unit_name":"Payment Unit Name 2", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
-        {"index":3, "unit_name":"Payment Unit Name 3", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
-        {"index":4, "unit_name":"Payment Unit Name 4", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
-        {"index":5, "unit_name":"Payment Unit Name 5", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
-        {"index":6, "unit_name":"Payment Unit Name 6", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
-    ]
-    table = PaymentAppTable(data)
+
+def delivery_app_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    unit = DeliverUnit.objects.filter(app=opp.deliver_app)
+    table = DeliverUnitTable(unit)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html',
+                  {'table': table, 'app_name': 'Delivery App Name'})
+
+
+def payment_app_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    payment_units = PaymentUnit.objects.filter(opportunity=opp).annotate(
+        delivery_unit_count=Count('deliver_unit')
+    )
+    table = OpportunityPaymentUnitTable(payment_units)
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
+
 
 def opportunities_card(request, org_slug=None, opp_id=None):
     data = [
@@ -215,7 +190,7 @@ def opportunities_card(request, org_slug=None, opp_id=None):
             'delivery_type': 'Name of the delivery type',
             'start_date': '12-Jul-2024',
             'end_date': '12-Jul-2024',
-            'labels':{
+            'labels': {
                 'name': 'Delieveries',
                 'count': '100/150',
                 'tags': [
@@ -246,7 +221,7 @@ def opportunities_card(request, org_slug=None, opp_id=None):
             'delivery_type': 'Name of the delivery type',
             'start_date': '12-Jul-2024',
             'end_date': '12-Jul-2024',
-            'labels':{
+            'labels': {
                 'name': 'Workers',
                 'count': '256',
                 'tags': [
@@ -271,14 +246,15 @@ def opportunities_card(request, org_slug=None, opp_id=None):
     ]
     return render(request, 'tailwind/components/cards/opportunity_card.html', {'data': data})
 
+
 def worker(request, org_slug=None, opp_id=None):
     user_kpi = [
-           {"name":"Total Delieveries", "icon":"memo","count":234,"dropdown":'false' },
-           {"name":"Flagged Delieveries", "icon":"flag-swallowtail","count":234,"dropdown":'false' },
-           {"name":"Rejected Delieveries", "icon":"thumbs-down","count":234,"dropdown":'true' },
-           {"name":"Accrued Payments", "icon":"money-bill-simple-wave","count":234,"dropdown":'false' },
-           {"name":"Paid Payments", "icon":"hand-holding-dollar","count":234,"dropdown":'true' },
-        ]
+        {"name": "Total Delieveries", "icon": "memo", "count": 234, "dropdown": 'false'},
+        {"name": "Flagged Delieveries", "icon": "flag-swallowtail", "count": 234, "dropdown": 'false'},
+        {"name": "Rejected Delieveries", "icon": "thumbs-down", "count": 234, "dropdown": 'true'},
+        {"name": "Accrued Payments", "icon": "money-bill-simple-wave", "count": 234, "dropdown": 'false'},
+        {"name": "Paid Payments", "icon": "hand-holding-dollar", "count": 234, "dropdown": 'true'},
+    ]
     data = [
         {"name": "Flagged", "count": "45", "url": "/tables"},
         {"name": "PM Review", "count": "45", "url": "/tables"},
@@ -288,18 +264,22 @@ def worker(request, org_slug=None, opp_id=None):
         {"name": "All", "count": "45", "url": "/tables"},
     ]
 
-    return render(request, "tailwind/pages/worker.html", {"header_title": "Worker", "tabs": data, "kpi":user_kpi })
+    return render(request, "tailwind/pages/worker.html", {"header_title": "Worker", "tabs": data, "kpi": user_kpi})
+
 
 def opportunities(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=2).first()
 
-    print(opp.name)
+    learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
+    deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
+    payment_unit_count = opp.paymentunit_set.count()
 
     path = ['programs', 'opportunities', 'opportunity name']
-    data = [
-        {"name": "Learn App", "count": "2", "icon": "fa-book-open-cover"},
-        {"name": "Delivery App", "count": "2", "icon": "fa-clipboard-check"},
-        {"name": "Payments Units", "count": "2", "icon": "fa-hand-holding-dollar"},
+
+    opp_resource_counts = [
+        {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},
+        {"name": "Delivery App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
+        {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
     ]
 
     opp_basic_details = [
@@ -390,7 +370,7 @@ def opportunities(request, org_slug=None, opp_id=None):
                     "name": "Payments",
                     "status": "Earned",
                     "value": opp.total_accrued,
-                    "incr": "6", #TO-DO
+                    "incr": "6",  # TO-DO
                 },
                 {"icon": "fa-light", "name": "Payments", "status": "Due", "value": opp.payments_due},
             ],
@@ -398,32 +378,31 @@ def opportunities(request, org_slug=None, opp_id=None):
 
     ]
 
-
     workerporgress = [
         {"index": 1, "title": "Workers", "progress": {"total": 100, "maximum": 30, "avg": 56}},
         {"index": 2, "title": "Deliveries", "progress": {"total": 100, "maximum": 30, "avg": 56}},
         {"index": 3, "title": "Payments", "progress": {"total": 100, "maximum": 30, "avg": 56}},
     ]
 
-    funnel = [
-        {"index": 1, "stage": "invited", "count": "100", "icon": "envelope"},
-        {"index": 2, "stage": "Accepted", "count": "98", "icon": "circle-check"},
-        {"index": 3, "stage": "Started Learning", "count": "87", "icon": "book-open-cover"},
-        {"index": 4, "stage": "Completed Learning", "count": "82", "icon": "book-blank"},
-        {"index": 5, "stage": "Complted Assesment", "count": "81", "icon": "award-simple"},
-        {"index": 6, "stage": "Claimed Job", "count": "100", "icon": "user-check"},
-        {"index": 6, "stage": "Started Delivery", "count": "100", "icon": "house-chimney-user"},
+    funnel_progress = [
+        {"index": 1, "stage": "invited", "count": opp.workers_invited, "icon": "envelope"},
+        {"index": 2, "stage": "Accepted", "count": opp.workers_invited - opp.pending_invites, "icon": "circle-check"},
+        {"index": 3, "stage": "Started Learning", "count": opp.started_learning_count, "icon": "book-open-cover"},
+        {"index": 4, "stage": "Completed Learning", "count": opp.completed_learning, "icon": "book-blank"},
+        {"index": 5, "stage": "Completed Assessment", "count": opp.completed_assessments, "icon": "award-simple"},
+        {"index": 6, "stage": "Claimed Job", "count": opp.claimed_job, "icon": "user-check"},
+        {"index": 6, "stage": "Started Delivery", "count": opp.started_deleveries, "icon": "house-chimney-user"},
     ]
     return render(
         request,
         "tailwind/pages/opportunities.html",
         {
-            "data": data,
+            "opp_resource_counts": opp_resource_counts,
             "opportunity": opp,
             "opp_basic_details": opp_basic_details,
             "opp_stats": opp_stats,
             "header_title": "Opportunities",
-            "funnel": funnel,
+            "funnel_progress": funnel_progress,
             "workerprogress": workerporgress,
             'path': path
         },
