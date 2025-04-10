@@ -863,10 +863,13 @@ class VisitExportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format", css_class=SELECT_CLASS)),
-            Row(Field("date_range", css_class=SELECT_CLASS)),
-            Row(Field("status", css_class=SELECT_CLASS)),
-            Row(Field("flatten_form_data", css_class=CHECKBOX_CLASS)),
+            Row(
+                Field("format", css_class=SELECT_CLASS),
+                Field("date_range", css_class=SELECT_CLASS),
+                Field("status", css_class=SELECT_CLASS),
+                Field("flatten_form_data", css_class=CHECKBOX_CLASS, wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100"),
+                css_class="flex flex-col" 
+            ),
         )
         self.helper.form_tag = False
 
