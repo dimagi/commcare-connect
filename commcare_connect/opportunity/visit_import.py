@@ -26,7 +26,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import send_payment_notification
+from commcare_connect.opportunity.tasks import bulk_update_payment_accrued, send_payment_notification
 from commcare_connect.opportunity.utils.completed_work import update_status, update_work_payment_date
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.itertools import batched
@@ -177,7 +177,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 to_update, fields=["status", "reason", "review_created_on", "justification", "status_modified_date"]
             )
             missing_visits |= set(visit_batch) - seen_visits
-    update_payment_accrued(opportunity, users=user_ids)
+    bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
     return VisitImportStatus(seen_visits, missing_visits)
 
 
@@ -419,7 +419,8 @@ def _bulk_update_completed_work_status(opportunity: Opportunity, dataset: Datase
                 user_ids.add(completed_work.opportunity_access.user_id)
             CompletedWork.objects.bulk_update(to_update, fields=["status", "reason", "status_modified_date"])
             missing_completed_works |= set(work_batch) - seen_completed_works
-        update_payment_accrued(opportunity, users=user_ids)
+
+        bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
     return CompletedWorkImportStatus(seen_completed_works, missing_completed_works)
 
 
@@ -706,7 +707,7 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
             UserVisit.objects.bulk_update(to_update, fields=["review_status"])
 
     if user_ids:
-        update_payment_accrued(opportunity=opportunity, users=user_ids)
+        bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
 
     missing_visits = visit_ids - {visit.xform_id for visit in existing_visits}
 

@@ -4,6 +4,7 @@ import logging
 import httpx
 from allauth.utils import build_absolute_uri
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
@@ -357,3 +358,15 @@ def generate_catchment_area_export(opportunity_id: int, export_format: str):
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_catchment_area.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
+
+
+@celery_app.task()
+def bulk_update_payment_accrued(opportunity_id, user_ids: list):
+    """Updates payment accrued for completed and approved CompletedWork instances."""
+    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity_id, user__in=user_ids, suspended=False)
+    for access in access_objects:
+        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
+            completed_works = access.completedwork_set.exclude(status=CompletedWorkStatus.rejected).select_related(
+                "payment_unit"
+            )
+            update_status(completed_works, access, compute_payment=True)

@@ -1,6 +1,7 @@
 import datetime
 import json
 from functools import reduce
+from http import HTTPStatus
 
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
@@ -11,6 +12,7 @@ from django.core.files.storage import storages
 from django.db.models import Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import format_html
@@ -28,8 +30,10 @@ from geopy import distance
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
+from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
+    AddBudgetNewUsersForm,
     DateRanges,
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
@@ -238,10 +242,6 @@ class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
         if users or filter_country or filter_credential:
             add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
 
-        additional_users = form.cleaned_data["additional_users"]
-        if additional_users:
-            for payment_unit in opportunity.paymentunit_set.all():
-                opportunity.total_budget += payment_unit.amount * payment_unit.max_total * additional_users
         end_date = form.cleaned_data["end_date"]
         if end_date:
             opportunity.end_date = end_date
@@ -492,9 +492,14 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
+    program_manager = (
+        getattr(request, "org_membership", None) and request.org_membership.is_program_manager
+    ) or request.user.is_superuser
 
     form = AddBudgetExistingUsersForm(
-        opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST or None
+        opportunity_claims=opportunity_claims,
+        opportunity=opportunity,
+        data=request.POST or None,
     )
     if form.is_valid():
         form.save()
@@ -508,8 +513,43 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
             "opportunity_claims": opportunity_claims,
             "budget_per_visit": opportunity.budget_per_visit_new,
             "opportunity": opportunity,
+            "disable_add_budget_for_new_users": opportunity.managed and not program_manager,
         },
     )
+
+
+@org_member_required
+def add_budget_new_users(request, org_slug=None, pk=None):
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    program_manager = (
+        getattr(request, "org_membership", None) and request.org_membership.is_program_manager
+    ) or request.user.is_superuser
+
+    form = AddBudgetNewUsersForm(
+        opportunity=opportunity,
+        program_manager=program_manager,
+        data=request.POST or None,
+    )
+
+    if form.is_valid():
+        form.save()
+        redirect_url = reverse("opportunity:detail", args=[org_slug, pk])
+        response = HttpResponse()
+        response["HX-Redirect"] = redirect_url
+        return response
+
+    csrf_token = get_token(request)
+    form_html = f"""
+        <form id="form-content"
+              hx-post="{reverse('opportunity:add_budget_new_users', args=[org_slug, pk])}"
+              hx-trigger="submit"
+              hx-headers='{{"X-CSRFToken": "{csrf_token}"}}'>
+            <input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}">
+            {render_crispy_form(form)}
+        </form>
+        """
+
+    return HttpResponse(mark_safe(form_html))
 
 
 class OpportunityUserStatusTableView(OrganizationUserMixin, OrgContextSingleTableView):
@@ -573,6 +613,8 @@ def add_payment_unit(request, org_slug=None, pk=None):
         deliver_units=deliver_units,
         data=request.POST or None,
         payment_units=opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
+        org_slug=org_slug,
+        opportunity_id=opportunity.pk,
     )
     if form.is_valid():
         form.instance.opportunity = opportunity
@@ -628,6 +670,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         instance=payment_unit,
         data=request.POST or None,
         payment_units=opportunity_payment_units,
+        org_slug=org_slug,
+        opportunity_id=opportunity.pk,
     )
     if form.is_valid():
         form.save()
@@ -1144,7 +1188,7 @@ def import_catchment_area(request, org_slug=None, pk=None):
 @org_member_required
 def opportunity_user_invite(request, org_slug=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
-    form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug)
+    form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug, opportunity=opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
         filter_country = form.cleaned_data["filter_country"]
@@ -1322,7 +1366,6 @@ def resend_user_invite(request, org_slug, opp_id, pk):
 
     return HttpResponse("The invitation has been successfully resent to the user.")
 
-
 def worker_list(request, org_slug=None, opp_id=None):
     return render(request, "opportunity/tailwind/workers.html")
 
@@ -1337,3 +1380,16 @@ def worker_deliver(request, org_slug=None, opp_id=None):
 
 def worker_verify(request, org_slug=None, opp_id=None):
     return render(request, "opportunity/tailwind/verify.html")
+
+
+def sync_deliver_units(request, org_slug, opp_id):
+    status = HTTPStatus.OK
+    message = "Delivery unit sync completed."
+    try:
+        create_learn_modules_and_deliver_units(opp_id)
+    except AppNoBuildException:
+        status = HTTPStatus.BAD_REQUEST
+        message = "Failed to retrieve updates. No available build at the moment."
+
+    return HttpResponse(content=message, status=status)
+

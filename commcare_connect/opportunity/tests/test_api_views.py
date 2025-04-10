@@ -4,7 +4,9 @@ import pytest
 from rest_framework.test import APIClient
 
 from commcare_connect.opportunity.api.serializers import (
+    CommCareAppSerializer,
     DeliveryProgressSerializer,
+    OpportunityClaimSerializer,
     OpportunitySerializer,
     PaymentSerializer,
     UserVisitSerializer,
@@ -168,8 +170,8 @@ def test_learn_progress_endpoint(mobile_user: User, api_client: APIClient):
     assert len(response.data["completed_modules"]) == 1
     assert "assessments" in response.data
     assert len(response.data["assessments"]) == 1
-    assert list(response.data["completed_modules"][0].keys()) == ["module", "date", "duration"]
-    assert list(response.data["assessments"][0].keys()) == ["date", "score", "passing_score", "passed"]
+    assert list(response.data["completed_modules"][0].keys()) == ["module", "date", "duration", "id"]
+    assert list(response.data["assessments"][0].keys()) == ["date", "score", "passing_score", "passed", "id"]
 
 
 @pytest.mark.parametrize(
@@ -194,6 +196,9 @@ def test_opportunity_list_endpoint(
     assert response.status_code == 200
     assert len(response.data) == 1
     assert response.data[0].keys() == OpportunitySerializer().get_fields().keys()
+    assert response.data[0]["deliver_app"].keys() == CommCareAppSerializer().get_fields().keys()
+    assert response.data[0]["learn_app"].keys() == CommCareAppSerializer().get_fields().keys()
+    assert response.data[0]["claim"].keys() == OpportunityClaimSerializer().get_fields().keys()
     payment_units = opportunity.paymentunit_set.all()
     assert response.data[0]["max_visits_per_user"] == sum([pu.max_total for pu in payment_units])
     assert response.data[0]["daily_max_visits_per_user"] == sum([pu.max_daily for pu in payment_units])
@@ -205,6 +210,10 @@ def test_opportunity_list_endpoint(
         verification_flags.form_submission_start
     )
     assert response.data[0]["verification_flags"]["form_submission_end"] == str(verification_flags.form_submission_end)
+    payment_units = response.data[0]["payment_units"]
+
+    payment_unit_fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
+    assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
 
 
 def test_delivery_progress_endpoint(

@@ -25,7 +25,7 @@ from commcare_connect.opportunity.models import (
 class LearnModuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = LearnModule
-        fields = ["slug", "name", "description", "time_estimate"]
+        fields = ["slug", "name", "description", "time_estimate", "id"]
 
 
 class CommCareAppSerializer(serializers.ModelSerializer):
@@ -45,6 +45,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
             "learn_modules",
             "passing_score",
             "install_url",
+            "id",
         ]
 
     def get_install_url(self, obj):
@@ -59,7 +60,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
 class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
-        fields = ["id", "name", "max_total", "max_daily", "amount"]
+        fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
@@ -74,7 +75,7 @@ class OpportunityClaimSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OpportunityClaim
-        fields = ["max_payments", "end_date", "date_claimed", "payment_units"]
+        fields = ["max_payments", "end_date", "date_claimed", "payment_units", "id"]
 
     def get_max_payments(self, obj):
         # return 1 for old opportunities
@@ -200,13 +201,13 @@ def remove_opportunity_access_cache(user, opportunity):
 class CompletedModuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompletedModule
-        fields = ["module", "date", "duration"]
+        fields = ["module", "date", "duration", "id"]
 
 
 class AssessmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Assessment
-        fields = ["date", "score", "passing_score", "passed"]
+        fields = ["date", "score", "passing_score", "passed", "id"]
 
 
 class UserLearnProgressSerializer(serializers.Serializer):

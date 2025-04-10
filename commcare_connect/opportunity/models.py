@@ -195,7 +195,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_active(self):
-        return self.active and self.end_date and self.end_date >= now().date()
+        return bool(self.active and self.end_date and self.end_date >= now().date())
 
 
 class OpportunityVerificationFlags(models.Model):
@@ -271,8 +271,11 @@ class OpportunityAccess(models.Model):
 
     @property
     def visit_count(self):
-        return sum(
-            [cw.completed for cw in self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).all()]
+        return (
+            self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).aggregate(
+                total=Sum("saved_completed_count")
+            )["total"]
+            or 0
         )
 
     @property

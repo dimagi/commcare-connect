@@ -237,6 +237,12 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    payment_unit = deliver_unit.payment_unit
+    if not payment_unit:
+        raise ProcessingError(
+            f"Payment unit is not configured for the deliver unit: "
+            f"{deliver_unit.name} in opportunity: {opportunity.name}"
+        )
 
     counts = (
         UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
@@ -247,7 +253,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
         )
     )
-    payment_unit = deliver_unit.payment_unit
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
     entity_id = deliver_unit_block.get("entity_id")

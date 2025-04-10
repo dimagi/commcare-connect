@@ -12,6 +12,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
 
@@ -117,4 +118,5 @@ def test_access_visit_count(opportunity: Opportunity):
     UserVisitFactory(
         completed_work=completed_work, deliver_unit=deliver_unit, user=access.user, opportunity=access.opportunity
     )
+    update_payment_accrued(opportunity, [access.user.id])
     assert access.visit_count == 1

@@ -5,8 +5,15 @@ import random
 import pytest
 from factory.fuzzy import FuzzyDate, FuzzyText
 
-from commcare_connect.opportunity.forms import OpportunityChangeForm, OpportunityCreationForm
-from commcare_connect.opportunity.tests.factories import ApplicationFactory, CommCareAppFactory, OpportunityFactory
+from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm, OpportunityCreationForm
+from commcare_connect.opportunity.models import PaymentUnit
+from commcare_connect.opportunity.tests.factories import (
+    ApplicationFactory,
+    CommCareAppFactory,
+    OpportunityFactory,
+    PaymentUnitFactory,
+)
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
 
 class TestOpportunityCreationForm:
@@ -127,7 +134,7 @@ class TestOpportunityChangeForm:
 
     @pytest.fixture
     def valid_opportunity(self, organization):
-        return OpportunityFactory(
+        opp = OpportunityFactory(
             organization=organization,
             active=True,
             learn_app=CommCareAppFactory(cc_app_id="test_learn_app"),
@@ -139,6 +146,8 @@ class TestOpportunityChangeForm:
             is_test=False,
             end_date=datetime.date.today() + datetime.timedelta(days=30),
         )
+        PaymentUnitFactory(opportunity=opp)
+        return opp
 
     @pytest.fixture
     def base_form_data(self, valid_opportunity):
@@ -150,7 +159,6 @@ class TestOpportunityChangeForm:
             "currency": "EUR",
             "is_test": False,
             "delivery_type": valid_opportunity.delivery_type.id,
-            "additional_users": 5,
             "end_date": (datetime.date.today() + datetime.timedelta(days=60)).isoformat(),
             "users": "+1234567890\n+9876543210",
             "filter_country": "US",
@@ -167,7 +175,6 @@ class TestOpportunityChangeForm:
             "currency",
             "is_test",
             "delivery_type",
-            "additional_users",
             "end_date",
             "users",
             "filter_country",
@@ -208,15 +215,6 @@ class TestOpportunityChangeForm:
     @pytest.mark.parametrize(
         "test_data",
         [
-            pytest.param(
-                {
-                    "field": "additional_users",
-                    "value": "invalid",
-                    "error_expected": True,
-                    "error_message": "Enter a whole number.",
-                },
-                id="invalid_additional_users",
-            ),
             pytest.param(
                 {
                     "field": "end_date",
@@ -271,12 +269,13 @@ class TestOpportunityChangeForm:
         ],
     )
     def test_app_reuse_validation(self, organization, base_form_data, app_scenario):
-        OpportunityFactory(
+        opp1 = OpportunityFactory(
             organization=organization,
             active=True,
             learn_app=CommCareAppFactory(cc_app_id=app_scenario["active_app_ids"][0]),
             deliver_app=CommCareAppFactory(cc_app_id=app_scenario["active_app_ids"][1]),
         )
+        PaymentUnitFactory(opportunity=opp1)
 
         inactive_opp = OpportunityFactory(
             organization=organization,
@@ -284,6 +283,8 @@ class TestOpportunityChangeForm:
             learn_app=CommCareAppFactory(cc_app_id=app_scenario["new_app_ids"][0]),
             deliver_app=CommCareAppFactory(cc_app_id=app_scenario["new_app_ids"][1]),
         )
+
+        PaymentUnitFactory(opportunity=inactive_opp)
 
         form = OpportunityChangeForm(data=base_form_data, instance=inactive_opp, org_slug=organization.slug)
 
@@ -305,3 +306,89 @@ class TestOpportunityChangeForm:
         data.update(data_updates)
         form = OpportunityChangeForm(data=data, instance=valid_opportunity, org_slug=organization.slug)
         assert form.is_valid() == expected_valid
+
+    def test_for_incomplete_opp(self, base_form_data, valid_opportunity, organization):
+        data = data = base_form_data.copy()
+        PaymentUnit.objects.filter(opportunity=valid_opportunity).delete()  # making opp incomplete explicitly
+        form = OpportunityChangeForm(
+            data=data,
+            instance=valid_opportunity,
+            org_slug=organization.slug,
+        )
+        assert not form.is_valid()
+        assert "users" in form.errors
+        assert "Please finish setting up the opportunity before inviting users." in form.errors["users"]
+
+
+class TestAddBudgetNewUsersForm:
+    @pytest.fixture(
+        params=[
+            (5, 1, 2, 2, 200),  # amount, org_pay, max_total, total_user, program_budget
+        ]
+    )
+    def setup(self, request, program_manager_org, organization):
+        amount, org_pay, max_total, total_user, program_budget = request.param
+
+        self.budget_per_user = (amount + org_pay) * max_total  # 12
+        self.opp_total_budget_initially = total_user * self.budget_per_user  # 24
+
+        self.program = ProgramFactory(organization=program_manager_org, budget=program_budget)
+        self.opportunity = ManagedOpportunityFactory(
+            program=self.program,
+            organization=organization,
+            total_budget=self.opp_total_budget_initially,
+            org_pay_per_visit=org_pay,
+            managed=True,
+        )
+        PaymentUnitFactory(opportunity=self.opportunity, max_total=max_total, amount=amount)
+
+    @pytest.mark.parametrize("num_new_users, expected_budget", [(3, 60), (5, 84)])
+    def test_valid_add_users(self, setup, num_new_users, expected_budget):
+        form_data = {"add_users": num_new_users}
+        form = AddBudgetNewUsersForm(data=form_data, opportunity=self.opportunity, program_manager=True)
+
+        assert form.is_valid()
+        form.save()
+        self.opportunity.refresh_from_db()
+        assert self.opportunity.total_budget == self.opp_total_budget_initially + (
+            num_new_users * self.budget_per_user
+        )
+
+    @pytest.mark.parametrize("num_new_users", [200, 500])
+    def test_exceeding_program_budget(self, setup, num_new_users):
+        form_data = {"add_users": num_new_users}
+        form = AddBudgetNewUsersForm(data=form_data, opportunity=self.opportunity, program_manager=True)
+
+        assert not form.is_valid()
+        assert "add_users" in form.errors
+        assert form.errors["add_users"][0] == "Budget exceeds program budget."
+
+    def test_missing_input(self, setup):
+        form_data = {}
+        form = AddBudgetNewUsersForm(data=form_data, opportunity=self.opportunity, program_manager=True)
+
+        assert not form.is_valid()
+        assert "Please provide either the number of users or a total budget." in form.errors["__all__"]
+
+    def test_non_program_manager_access(self, setup):
+        form_data = {"add_users": 2}
+        form = AddBudgetNewUsersForm(data=form_data, opportunity=self.opportunity, program_manager=False)
+
+        assert not form.is_valid()
+        assert "__all__" in form.errors
+        assert "Only program managers are allowed to add budgets for managed opportunities." in form.errors["__all__"]
+
+    @pytest.mark.parametrize("new_budget, is_valid", [(150, True), (201, False)])
+    def test_changing_total_budget(self, setup, new_budget, is_valid):
+        form_data = {"total_budget": new_budget}
+        form = AddBudgetNewUsersForm(data=form_data, opportunity=self.opportunity, program_manager=True)
+
+        if is_valid:
+            assert form.is_valid()
+            form.save()
+            self.opportunity.refresh_from_db()
+            assert self.opportunity.total_budget == new_budget
+        else:
+            assert not form.is_valid()
+            assert "total_budget" in form.errors
+            assert form.errors["total_budget"][0] == "Total budget exceeds program budget."

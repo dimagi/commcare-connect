@@ -17,6 +17,7 @@ from commcare_connect.opportunity.views import (
     OpportunityUserStatusTableView,
     UserPaymentsTableView,
     add_budget_existing_users,
+    add_budget_new_users,
     add_payment_unit,
     add_payment_units,
     approve_visit,
@@ -45,6 +46,7 @@ from commcare_connect.opportunity.views import (
     send_message_mobile_users,
     suspend_user,
     suspended_users_list,
+    sync_deliver_units,
     update_completed_work_status_import,
     update_visit_status_import,
     user_profile,
@@ -83,6 +85,11 @@ urlpatterns = [
         "<int:pk>/add_budget_existing_users",
         view=add_budget_existing_users,
         name="add_budget_existing_users",
+    ),
+    path(
+        "<int:pk>/add_budget_new_users",
+        view=add_budget_new_users,
+        name="add_budget_new_users",
     ),
     path("<int:pk>/payment_table/", view=OpportunityPaymentTableView.as_view(), name="payment_table"),
     path("<int:pk>/payment_export/", view=export_users_for_payment, name="payment_export"),
@@ -127,6 +134,7 @@ urlpatterns = [
     path("<int:pk>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
+    path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
     # New tailwind based views
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
@@ -145,7 +153,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/add_budget/", tw_views.add_budget, name="tw_add_budget"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
-    # Tables 
+    # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
@@ -160,7 +168,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/tables/worker_revalidate_table",tw_views.worker_revalidate_table, name="tw_revalidate_table"),
     path("<int:opp_id>/tw/tables/worker_approved_table",tw_views.worker_approved_table, name="tw_approved_table"),
     path("<int:opp_id>/tw/tables/worker_rejected_table",tw_views.worker_rejected_table, name="tw_rejected_table"),
-    path("<int:opp_id>/tw/tables/worker_all_table",tw_views.worker_all_table, name="tw_all_table"),    
+    path("<int:opp_id>/tw/tables/worker_all_table",tw_views.worker_all_table, name="tw_all_table"),
     # API
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
