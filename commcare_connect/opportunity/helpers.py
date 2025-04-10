@@ -1,6 +1,10 @@
 from collections import namedtuple
+from datetime import timedelta
 
-from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When
+from django.db.models import Case, Min, When, QuerySet
+from django.db.models import Count, Q, Exists, OuterRef, Sum, Value, DecimalField, ExpressionWrapper, F, Max, Subquery
+from django.db.models.functions import Coalesce
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -9,7 +13,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
-    VisitValidationStatus,
+    VisitValidationStatus, CompletedModule, UserInviteStatus, UserVisit, LearnModule,
 )
 
 
@@ -22,7 +26,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
             last_visit_date_d=Max(
                 "opportunity_access__user__uservisit__visit_date",
                 filter=Q(opportunity_access__user__uservisit__opportunity=opportunity)
-                & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
+                       & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
             ),
             date_deliver_started=Min(
                 "opportunity_access__user__uservisit__visit_date",
@@ -151,3 +155,105 @@ def get_payment_report_data(opportunity: Opportunity):
             PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
         )
     return data, total_user_payment_accrued, total_nm_payment_accrued
+
+
+def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Opportunity]:
+    today = now()
+    three_days_ago = today - timedelta(days=3)
+    yesterday = today - timedelta(days=1)
+
+    # Subquery to find users who have completed all modules
+    completed_user_ids = CompletedModule.objects.filter(
+        opportunity=OuterRef("pk")
+    ).values("user").annotate(
+        completed_modules=Count("module", distinct=True),
+        total_modules=Subquery(
+            LearnModule.objects.filter(app=OuterRef("opportunity__learn_app"))
+            .values("app")
+            .annotate(count=Count("id"))
+            .values("count")[:1]
+        )
+    ).filter(
+        completed_modules=F("total_modules")
+    ).values("user")
+
+    started_users_subquery = CompletedModule.objects.filter(
+        opportunity=OuterRef("pk")
+    ).values("user").distinct()
+
+    queryset = Opportunity.objects.annotate(
+        workers_invited=Count("userinvite", distinct=True),
+        pending_invites=Count(
+            "userinvite",
+            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            distinct=True,
+        ),
+        inactive_workers=Count(
+            "opportunityaccess",
+            filter=Q(
+                ~Exists(
+                    UserVisit.objects.filter(
+                        opportunity_access=OuterRef('opportunityaccess'),
+                        visit_date__gte=three_days_ago,
+                    )
+                )
+            ),
+            distinct=True,
+        ),
+        total_accrued=Coalesce(
+            Sum('opportunityaccess__payment_accrued', distinct=True),
+            Value(0),
+            output_field=DecimalField()
+        ),
+        total_paid=Coalesce(
+            Sum(
+                'opportunityaccess__payment__amount_usd',
+                filter=Q(opportunityaccess__payment__confirmed=True),
+                distinct=True
+            ),
+            Value(0),
+            output_field=DecimalField()
+        ),
+        payments_due=ExpressionWrapper(
+            F('total_accrued') - F('total_paid'),
+            output_field=DecimalField(),
+        ),
+        total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
+        flagged_deliveries_waiting_for_review=Count(
+            "opportunityaccess__completedwork",
+            filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.pending),
+            distinct=True
+        ),
+        most_recent_delivery=Max(
+            "uservisit__visit_date",
+            filter=Q(uservisit__completed_work__isnull=False)
+        ),
+        deliveries_from_yesterday=Count(
+            "uservisit",
+            filter=Q(
+                uservisit__completed_work__isnull=False,
+                uservisit__visit_date__gte=yesterday
+            ),
+            distinct=True,
+        ),
+        started_learning_count=Count(
+            'opportunityaccess__user',
+            filter=Q(opportunityaccess__user__in=Subquery(started_users_subquery)),
+            distinct=True
+        ),
+        completed_learning=Count(
+            'opportunityaccess__user',
+            filter=Q(opportunityaccess__user__in=Subquery(completed_user_ids)),
+            distinct=True
+        ),
+        claimed_job=Count("opportunityaccess__opportunityclaim", distinct=True),
+        started_deleveries=Count("uservisit__user", distinct=True),
+        completed_assessments=Count(
+            "assessment__user",
+            filter=Q(assessment__passed=True),
+            distinct=True
+        ),
+        recent_payment=Max("opportunityaccess__payment__date_paid")
+    ).filter(id=opp_id)
+
+    return queryset

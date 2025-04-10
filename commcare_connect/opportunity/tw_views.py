@@ -1,12 +1,11 @@
 from django import forms
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
-from django.template import Template, Context
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
-
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable
-
+from .helpers import get_opportunity_dashboard_data
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, \
+    WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -43,7 +42,7 @@ def home(request, org_slug=None, opp_id=None):
 def about(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/about.html")
 
-def dashboard(request, org_slug=None, opp_id=None): 
+def dashboard(request, org_slug=None, opp_id=None):
     data = {
         'programs': [
             {
@@ -142,14 +141,14 @@ def dashboard(request, org_slug=None, opp_id=None):
         ]
     }
     return render(
-        request, 'tailwind/pages/dashboard.html', 
+        request, 'tailwind/pages/dashboard.html',
         {
-            'data': data, 
-            'header_title': 'Dashboard', 
+            'data': data,
+            'header_title': 'Dashboard',
             'sidenav_active': 'Programs'
             }
         )
-    
+
 def learn_app_table(request, org_slug=None, opp_id=None):
     data = [
         {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
@@ -290,36 +289,41 @@ def worker(request, org_slug=None, opp_id=None):
     ]
 
     return render(request, "tailwind/pages/worker.html", {"header_title": "Worker", "tabs": data, "kpi":user_kpi })
-  
+
 def opportunities(request, org_slug=None, opp_id=None):
-    path = ['programs','opportunities','opportunity name' ]
+    opp = get_opportunity_dashboard_data(opp_id=2).first()
+
+    print(opp.name)
+
+    path = ['programs', 'opportunities', 'opportunity name']
     data = [
         {"name": "Learn App", "count": "2", "icon": "fa-book-open-cover"},
         {"name": "Delivery App", "count": "2", "icon": "fa-clipboard-check"},
         {"name": "Payments Units", "count": "2", "icon": "fa-hand-holding-dollar"},
     ]
-    totalinfo = [
+
+    opp_basic_details = [
         {
             "name": "Delivery Type",
-            "count": "Early Childhood Development",
+            "count": opp.delivery_type.name,
             "icon": "file-check",
             "color": "",
         },
         {
             "name": "Start Date",
-            "count": "21-Dec-2024",
+            "count": opp.start_date,
             "icon": "calendar-range",
             "color": "",
         },
         {
             "name": "End Date",
-            "count": "21-Dec-2024",
+            "count": opp.end_date or '--',
             "icon": "arrow-right",
             "color": "",
         },
         {
             "name": "Total Workers",
-            "count": "248",
+            "count": opp.number_of_users,
             "icon": "users",
             "color": "brand-mango",
         },
@@ -331,90 +335,97 @@ def opportunities(request, org_slug=None, opp_id=None):
         },
         {
             "name": "Worker Budget",
-            "count": "₹250,000",
+            "count": opp.total_budget,
             "icon": "money-bill",
             "color": "",
         },
     ]
-    opList = [
+
+    opp_stats = [
         {
-            "opName": "Workers",
-            "opLabel": "Active Yesterday",
-            "opValue": "10",
-            "ops": [
-                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": "25"},
-                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation", "value": "12"},
+            "title": "Workers",
+            "sub_heading": "Active Yesterday",
+            "value": opp.deliveries_from_yesterday,
+            "panels": [
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited},
+                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation",
+                 "value": opp.pending_invites},
                 {
                     "icon": "fa-clipboard-list",
                     "name": "Workers",
                     "status": "Inactive last 3 days",
-                    "value": "7",
+                    "value": opp.inactive_workers,
                     "type": "2",
                 },
             ],
         },
+
         {
-            "opName": "Deliveries",
-            "opLabel": "Last Delivery",
-            "opValue": "10 Feb, 2025 | 14:67",
-            "ops": [
+            "title": "Deliveries",
+            "sub_heading": "Last Delivery",
+            "value": opp.most_recent_delivery or "--",
+            "panels": [
                 {
                     "icon": "fa-clipboard-list-check",
                     "name": "Deliveries",
                     "status": "Total",
-                    "value": "248",
-                    "incr": "6",
+                    "value": opp.total_deliveries,
+                    "incr": opp.deliveries_from_yesterday,
                 },
                 {
                     "icon": "fa-clipboard-list-check",
                     "name": "Deliveries",
                     "status": "Awaiting Flag Review",
-                    "value": "32",
+                    "value": opp.flagged_deliveries_waiting_for_review,
                 },
             ],
         },
         {
-            "opName": "Worker Payments",
-            "opLabel": "Last Payment ",
-            "opValue": "10 Feb, 2025 | 14:67",
-            "ops": [
+            "title": "Worker Payments",
+            "sub_heading": "Last Payment ",
+            "value": opp.recent_payment or "--",
+            "panels": [
                 {
                     "icon": "fa-hand-holding-dollar",
                     "name": "Payments",
                     "status": "Earned",
-                    "value": "₹25,000",
-                    "incr": "6",
+                    "value": opp.total_accrued,
+                    "incr": "6", #TO-DO
                 },
-                {"icon": "fa-light", "name": "Payments", "status": "Due", "value": "₹1,200"},
+                {"icon": "fa-light", "name": "Payments", "status": "Due", "value": opp.payments_due},
             ],
         },
+
     ]
+
+
     workerporgress = [
-        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+        {"index": 1, "title": "Workers", "progress": {"total": 100, "maximum": 30, "avg": 56}},
+        {"index": 2, "title": "Deliveries", "progress": {"total": 100, "maximum": 30, "avg": 56}},
+        {"index": 3, "title": "Payments", "progress": {"total": 100, "maximum": 30, "avg": 56}},
     ]
 
     funnel = [
-        {"index": 1, "stage": "invited", "count": "100","icon":"envelope"},
-        {"index": 2, "stage": "Accepted", "count": "98","icon":"circle-check"},
-        {"index": 3, "stage": "Started Learning", "count": "87","icon":"book-open-cover"},
-        {"index": 4, "stage": "Completed Learning", "count": "82","icon":"book-blank"},
-        {"index": 5, "stage": "Complted Assesment", "count": "81","icon":"award-simple"},
-        {"index": 6, "stage": "Claimed Job", "count": "100","icon":"user-check"},
-        {"index": 6, "stage": "Started Delivery", "count": "100","icon":"house-chimney-user"},
+        {"index": 1, "stage": "invited", "count": "100", "icon": "envelope"},
+        {"index": 2, "stage": "Accepted", "count": "98", "icon": "circle-check"},
+        {"index": 3, "stage": "Started Learning", "count": "87", "icon": "book-open-cover"},
+        {"index": 4, "stage": "Completed Learning", "count": "82", "icon": "book-blank"},
+        {"index": 5, "stage": "Complted Assesment", "count": "81", "icon": "award-simple"},
+        {"index": 6, "stage": "Claimed Job", "count": "100", "icon": "user-check"},
+        {"index": 6, "stage": "Started Delivery", "count": "100", "icon": "house-chimney-user"},
     ]
     return render(
         request,
         "tailwind/pages/opportunities.html",
         {
             "data": data,
-            "totalinfo": totalinfo,
-            "opList": opList,
+            "opportunity": opp,
+            "opp_basic_details": opp_basic_details,
+            "opp_stats": opp_stats,
             "header_title": "Opportunities",
-            "funnel":funnel,
-            "workerprogress":workerporgress,
-            'path':path
+            "funnel": funnel,
+            "workerprogress": workerporgress,
+            'path': path
         },
     )
 
@@ -1702,7 +1713,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "assessment":"Passed",
             "attempts":"4",
             "learning_hours":"10h 19m"
-            
+
         },
         {
             "index": 2,
@@ -1811,7 +1822,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "attempts":"4",
             "learning_hours":"10h 19m"
         },
-        
+
     ]
 
     table = WorkerLearnTable(data)
@@ -1963,7 +1974,7 @@ def pay_worker(request, org_slug=None, opp_id=None):
 ]
 
     table = PayWorker(data)
-    
+
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
 def worker_main(request, org_slug=None, opp_id=None):

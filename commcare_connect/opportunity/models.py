@@ -197,6 +197,14 @@ class Opportunity(BaseModel):
     def is_active(self):
         return self.active and self.end_date and self.end_date >= now().date()
 
+    @property
+    def status(self):
+        if self.is_active:
+            return "Active"
+        if self.end_date and self.end_date < now().date():
+            return "Ended"
+        return "Inactive"
+
 
 class OpportunityVerificationFlags(models.Model):
     opportunity = models.OneToOneField(Opportunity, on_delete=models.CASCADE)
