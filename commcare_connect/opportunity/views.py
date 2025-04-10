@@ -8,7 +8,8 @@ from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.core.files.storage import storages
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage, storages
 from django.db.models import Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
@@ -95,6 +96,7 @@ from commcare_connect.opportunity.tables import (
 )
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
+    bulk_update_payments_task,
     create_learn_modules_and_deliver_units,
     generate_catchment_area_export,
     generate_deliver_status_export,
@@ -112,7 +114,6 @@ from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
     bulk_update_completed_work_status,
-    bulk_update_payment_status,
     bulk_update_visit_review_status,
     bulk_update_visit_status,
     get_exchange_rate,
@@ -122,7 +123,9 @@ from commcare_connect.organization.decorators import org_admin_required, org_mem
 from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
 from commcare_connect.program.tables import ProgramInvitationTable
 from commcare_connect.users.models import User
+from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
+from commcare_connect.utils.file import get_file_extension
 
 
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -417,11 +420,10 @@ def review_visit_export(request, org_slug, pk):
 @org_member_required
 @require_GET
 def export_status(request, org_slug, task_id):
-    task_meta = AsyncResult(task_id)._get_task_meta()
+    task = AsyncResult(task_id)
+    task_meta = task._get_task_meta()
     status = task_meta.get("status")
-    progress = {
-        "complete": status == "SUCCESS",
-    }
+    progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
     if status == "FAILURE":
         progress["error"] = task_meta.get("result")
     return render(
@@ -585,14 +587,17 @@ def export_users_for_payment(request, org_slug, pk):
 def payment_import(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("payments")
-    try:
-        status = bulk_update_payment_status(opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"Payment status updated successfully for {len(status)} users."
-        messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, pk)
+
+    file_format = get_file_extension(file)
+    if file_format not in ("csv", "xlsx"):
+        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+
+    file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
+    saved_path = default_storage.save(file_path, ContentFile(file.read()))
+    result = bulk_update_payments_task.delay(opportunity.pk, saved_path, file_format)
+
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
