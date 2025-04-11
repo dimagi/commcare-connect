@@ -235,6 +235,8 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
+    if not opportunity.is_setup_complete:
+        raise ProcessingError("Opportunity setup is not complete")
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     payment_unit = deliver_unit.payment_unit
