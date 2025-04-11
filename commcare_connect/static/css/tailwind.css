@@ -511,7 +511,34 @@
     .stepper a.active span {
       @apply font-medium text-brand-deep-purple;
     }
-  }
+}
+
+
+@layer{
+    .modal{
+        @apply bg-white rounded-xl shadow-xl w-full max-w-lg p-6 relative z-50;
+    }
+
+    .modal-backdrop {
+        @apply fixed inset-0 z-40 bg-black/40 flex items-center justify-center;
+    }
+
+    .modal .dialog-box{
+        @apply bg-white rounded-lg p-6 shadow-sm mx-auto my-auto z-50;
+    }
+
+    .modal .header{
+        @apply flex justify-between items-center;
+    }
+
+    .modal .content{
+        @apply flex flex-col gap-4;
+    }
+
+    .modal .footer{
+        @apply space-x-4 text-right
+    }
+}
 
 
 /* Hide scrollbar for Chrome, Safari and Opera */

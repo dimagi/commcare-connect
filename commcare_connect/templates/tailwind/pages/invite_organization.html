@@ -7,52 +7,81 @@
 {% load tailwind_filters %}
 
 {% block content %}
-<div class="container bg-white shadow">
-  <div class="mt-5 py-3">
-      <button data-bs-toggle="modal" data-bs-target="#inviteOrganizationsModal" class="btn btn-primary">
-        <a class="dropdown-item">
-          <i class="bi bi-building-fill-add pe-2"></i>{% translate "Invite" %}
-        </a>
-      </button>
-  </div>
-</div>
+<!-- Alpine.js Modal Button + Modal Component -->
+<div x-data="{ open: false }">
+  <!-- Trigger Button -->
+  <button
+    @click="open = true"
+    class="button button-md primary-dark">
+    <i class="bi bi-building-fill-add"></i>
+    {% translate "Invite" %}
+  </button>
 
-
-<!-- Managed opportunity invite modal -->
-<div class="modal fade" id="inviteOrganizationsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
-     aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header bg-primary">
-        <h1 class="modal-title fs-5 text-white">{% translate "Invite Organizations" %}</h1>
-        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+  <!-- Modal Overlay -->
+  <div
+    x-show="open"
+    x-transition.opacity
+    class="modal-backdrop"
+  >
+    <!-- Modal Box -->
+    <div
+      @click.away="open = false"
+      x-transition
+      class="modal"
+    >
+      <!-- Modal Header -->
+      <div class="header">
+        <h2 class="title">{% translate "Invite Organizations" %}</h2>
+        <button
+          @click="open = false"
+          class="button-icon"
+          aria-label="Close">
+          <i class="fa-light fa-xmark text-xl"></i>
+        </button>
       </div>
+
+      <!-- Modal Body -->
       <form method="post">
-      <div class="modal-body">
-        <div class="mb-3">
-          {% csrf_token %}
-          <label for="organization" class="form-label">{% translate "Organization" %}</label>
-          <select class="form-select" id="organization" name="organization" required>
+        {% csrf_token %}
+        <div class="flex flex-col gap-2">
+          <label for="organization" class="btitle-sm">
+            {% translate "Organization" %}
+          </label>
+          <select
+            id="organization"
+            name="organization"
+            required
+            class="base-dropdown"
+          >
             {% for org in organizations %}
-            <option value="{{ org.slug }}">{{ org.name }}</option>
+              <option value="{{ org.slug }}">{{ org.name }}</option>
             {% endfor %}
           </select>
-          <div class="col-auto mt-2">
-              <span id="organizationHelp" class="form-text">
-                {% blocktrans %}
-                  Select the organization you want to invite.
-                {% endblocktrans %}
-              </span>
-          </div>
+          <span class="hint">
+            {% blocktrans %}
+              Select the organization you want to invite.
+            {% endblocktrans %}
+          </span>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        <button type="submit" class="btn btn-primary"><i class="bi bi-envelope"></i> Invite</button>
-      </div>
+
+        <!-- Modal Footer -->
+        <div class="footer">
+          <button
+            type="button"
+            @click="open = false"
+            class="button button-md outline-style">
+            Close
+          </button>
+          <button
+            type="submit"
+            class="button button-md primary-dark">
+            Invite
+          </button>
+        </div>
       </form>
     </div>
   </div>
 </div>
+
 
 {% endblock content %}

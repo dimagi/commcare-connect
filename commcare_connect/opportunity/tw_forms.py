@@ -525,26 +525,38 @@ class OpportunityInitForm(forms.ModelForm):
 
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name"), css_class=BASE_INPUT_CLASS),
-            Row(Field("description", css_class=TEXTAREA_CLASS)),
-            Row(Field("short_description", css_class=BASE_INPUT_CLASS)),
-            Fieldset(
-                "Learn App",
-                Row(Field("learn_app_domain", css_class=SELECT_CLASS)),
-                Row(Field("learn_app", css_class=SELECT_CLASS)),
-                Row(Field("learn_app_description", css_class=TEXTAREA_CLASS)),
-                Row(Field("learn_app_passing_score", css_class=BASE_INPUT_CLASS)),
-                data_loading_states=True,
+            Row(
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Opportunity Details</h6>  <span class='hint'>Add the details of the opportunity. All fields are mandatory.</span> </div>"),
+                Column(
+                    Field("name", css_class=BASE_INPUT_CLASS),
+                    Field("short_description", css_class=BASE_INPUT_CLASS),
+                    Field("description", css_class=TEXTAREA_CLASS),  
+                ), 
+                Column( 
+                    Field("currency", css_class=BASE_INPUT_CLASS),
+                    Field("api_key", css_class=BASE_INPUT_CLASS),
+                ),
+                css_class="grid grid-cols-2 gap-4 card_bg"
             ),
-            Fieldset(
-                "Deliver App",
-                Row(Field("deliver_app_domain", css_class=SELECT_CLASS)),
-                Row(Field("deliver_app", css_class=SELECT_CLASS)),
-                data_loading_states=True,
-            ),
-            Row(Field("currency", css_class=BASE_INPUT_CLASS)),
-            Row(Field("api_key", css_class=BASE_INPUT_CLASS)),
-            Submit("submit", "Submit"),
+            Row(
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Apps</h6>  <span class='hint'>Add required apps to the opportunity. All fields are mandatory.</span> </div>"),
+                Column(
+                    "Learn App",
+                    Field("learn_app_domain", css_class=SELECT_CLASS),
+                    Field("learn_app", css_class=SELECT_CLASS),
+                    Field("learn_app_description", css_class=TEXTAREA_CLASS),
+                    Field("learn_app_passing_score", css_class=BASE_INPUT_CLASS),
+                    data_loading_states=True,
+                ),  
+                Column(
+                    "Deliver App",
+                    Field("deliver_app_domain", css_class=SELECT_CLASS),
+                    Field("deliver_app", css_class=SELECT_CLASS), 
+                    data_loading_states=True,
+                ),  
+                css_class="grid grid-cols-2 gap-4 card_bg my-4"
+            ),  
+            Submit("submit", "Submit",css_class="button button-md primary-dark")
         )
 
         domain_choices = [(i, f"Domain {i}") for i in range(1, 11)]
@@ -744,18 +756,23 @@ class ProgramForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.helper = TailwindFormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name", css_class=BASE_INPUT_CLASS)),
-            Row(Field("description", css_class=TEXTAREA_CLASS)),
-            Row(Field("delivery_type", css_class=BASE_INPUT_CLASS)),
+            Row(Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full")),
+            Row(Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full")),
+            Row(Field("delivery_type", css_class=BASE_INPUT_CLASS,wrapper_class="w-full")),
             Row(
-                Field("budget", css_class=BASE_INPUT_CLASS),
-                Field("currency", css_class=BASE_INPUT_CLASS),
+                Field("budget", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
+                Field("currency", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
+                css_class="flex gap-4 w-full"
             ),
             Row(
-                Field("start_date"),
-                Field("end_date"),
+                Field("start_date",wrapper_class="w-full"),
+                Field("end_date",wrapper_class="w-full"),
+                css_class="flex gap-4 w-full"
             ),
-            Submit("submit", "Submit"),
+            Row(
+                Submit("submit", "Submit",css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            )
         )
 
     def clean(self):

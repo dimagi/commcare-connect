@@ -4,7 +4,8 @@
 {% load tailwind_filters %}
 
 {% block content %}
-<h2 class="mb-2">Create Program</h2>
-<hr>
-{% include "partial_form.html" %}
+<div class="md:max-w-screen-sm mx-auto flex flex-col gap-4 card_bg">
+    <h2 class="title">Create Program</h2> 
+    {% include "partial_form.html" %}
+</div>
 {% endblock content %}
