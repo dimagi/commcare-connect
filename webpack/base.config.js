@@ -13,6 +13,10 @@ module.exports = {
       '../commcare_connect/static/js/dashboard',
     ),
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
+    tailwind: path.resolve(
+      __dirname,
+      '../commcare_connect/static/css/tailwind.css',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
@@ -30,9 +34,9 @@ module.exports = {
   ],
   module: {
     rules: [
-      // we pass the output from babel loader to react-hot loader
       {
         test: /\.js$/,
+        exclude: /node_modules/,
         loader: 'babel-loader',
       },
       {
@@ -44,7 +48,10 @@ module.exports = {
             loader: 'postcss-loader',
             options: {
               postcssOptions: {
-                plugins: ['postcss-preset-env', 'autoprefixer', 'pixrem'],
+                plugins: [
+                  require('@tailwindcss/postcss'),
+                  require('autoprefixer'),
+                ],
               },
             },
           },
