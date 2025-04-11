@@ -378,10 +378,20 @@ def opportunities(request, org_slug=None, opp_id=None):
 
     ]
 
-    workerporgress = [
-        {"index": 1, "title": "Workers", "progress": {"total": 100, "maximum": 30, "avg": 56}},
-        {"index": 2, "title": "Deliveries", "progress": {"total": 100, "maximum": 30, "avg": 56}},
-        {"index": 3, "title": "Payments", "progress": {"total": 100, "maximum": 30, "avg": 56}},
+    worker_progress = [
+        {"title": "Daily Active Workers",
+         "progress": [{"title": "Maximum", "total": opp.maximum_visit_in_a_day, "value": opp.maximum_visit_in_a_day,
+                       "badge_type": False},
+                      {"title": "Average", "total": opp.average_visits_per_day, "value": opp.average_visits_per_day,
+                       "badge_type": False}]},
+        {"title": "Service Deliveries",
+         "progress": [
+             {"title": "Verified", "total": opp.total_deliveries, "value": opp.approved_deliveries, "badge_type": True},
+             {"title": "Rejected", "total": opp.total_deliveries, "value": opp.rejected_deliveries,
+              "badge_type": True}]},
+        {"title": "Payments to Workers",
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": opp.total_accrued, "badge_type": True},
+                      {"title": "Paid", "total": opp.total_accrued, "value": opp.total_paid, "badge_type": True}]},
     ]
 
     funnel_progress = [
@@ -403,7 +413,7 @@ def opportunities(request, org_slug=None, opp_id=None):
             "opp_stats": opp_stats,
             "header_title": "Opportunities",
             "funnel_progress": funnel_progress,
-            "workerprogress": workerporgress,
+            "worker_progress": worker_progress,
             'path': path
         },
     )
@@ -702,6 +712,7 @@ def opportunity_visits(request, org_slug=None, opp_id=None):
         },
     )
 
+
 def add_budget(request, org_slug=None, opp_id=None):
     data = [
         {
@@ -876,6 +887,8 @@ def add_budget(request, org_slug=None, opp_id=None):
             "opportunity_name": "Opportunity Name"
         },
     )
+
+
 def opportunities_list_table_view(request, org_slug=None, opp_id=None):
     data = [
         {
@@ -1647,6 +1660,7 @@ def worker_payments(request, org_slug=None, opp_id=None):
 def opportunity_worker(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/opportunity_worker.html", {"header_title": "Workers"})
 
+
 def get_worker_last_payment(request, org_slug=None, opp_id=None):
     payments = [
         {"date": "12-Jul-2024", "amount": "₹4,780"},
@@ -1679,6 +1693,7 @@ def create_opportunity(request, org_slug=None, opp_id=None):
     }
     return render(request, "tailwind/pages/create_opportunity.html", {"data": step})
 
+
 def worker_learn(request, org_slug=None, opp_id=None):
     data = [
         {
@@ -1689,9 +1704,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
 
         },
         {
@@ -1702,9 +1717,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 3,
@@ -1714,9 +1729,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 4,
@@ -1726,9 +1741,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 5,
@@ -1738,9 +1753,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 6,
@@ -1749,9 +1764,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 7,
@@ -1761,9 +1776,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 8,
@@ -1773,9 +1788,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 9,
@@ -1785,9 +1800,9 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
         {
             "index": 10,
@@ -1797,320 +1812,349 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "start_learning": "12-Aug-2025",
             "modules_completed": "50",
             "completed_learning": "12-Aug-2025",
-            "assessment":"Passed",
-            "attempts":"4",
-            "learning_hours":"10h 19m"
+            "assessment": "Passed",
+            "attempts": "4",
+            "learning_hours": "10h 19m"
         },
 
     ]
 
     table = WorkerLearnTable(data)
-    return render(request, "tailwind/pages/worker_learn.html",{ "table": table})
+    return render(request, "tailwind/pages/worker_learn.html", {"table": table})
+
 
 def pay_worker(request, org_slug=None, opp_id=None):
-
     data = [
-    {
-        "index": 1,
-        "worker": "Worker 1",
-        "unpaid": "$ 4,780",
-        "toBePaid": "4,780",
-        "paymentDate": "2025-08-12"
-    },
-    {
-        "index": 2,
-        "worker": "Worker 2",
-        "unpaid": "$ 3,500",
-        "toBePaid": "3,500",
-        "paymentDate": "15-Aug-2025"
-    },
-    {
-        "index": 3,
-        "worker": "Worker 3",
-        "unpaid": "$ 2,950",
-        "toBePaid": "2,950",
-        "paymentDate": "18-Aug-2025"
-    },
-    {
-        "index": 4,
-        "worker": "Worker 4",
-        "unpaid": "$ 5,600",
-        "toBePaid": "5,600",
-        "paymentDate": "20-Aug-2025"
-    },
-    {
-        "index": 5,
-        "worker": "Worker 5",
-        "unpaid": "$ 6,120",
-        "toBePaid": "6,120",
-        "paymentDate": "22-Aug-2025"
-    },
-    {
-        "index": 6,
-        "worker": "Worker 6",
-        "unpaid": "$ 4,300",
-        "toBePaid": "4,300",
-        "paymentDate": "25-Aug-2025"
-    },
-    {
-        "index": 7,
-        "worker": "Worker 7",
-        "unpaid": "$ 3,950",
-        "toBePaid": "3,950",
-        "paymentDate": "28-Aug-2025"
-    },
-    {
-        "index": 8,
-        "worker": "Worker 8",
-        "unpaid": "$ 2,800",
-        "toBePaid": "2,800",
-        "paymentDate": "30-Aug-2025"
-    },
-    {
-        "index": 9,
-        "worker": "Worker 9",
-        "unpaid": "$ 3,600",
-        "toBePaid": "3,600",
-        "paymentDate": "02-Sep-2025"
-    },
-    {
-        "index": 10,
-        "worker": "Worker 10",
-        "unpaid": "$ 4,200",
-        "toBePaid": "4,200",
-        "paymentDate": "05-Sep-2025"
-    },
-    {
-        "index": 11,
-        "worker": "Worker 11",
-        "unpaid": "$ 7,000",
-        "toBePaid": "7,000",
-        "paymentDate": "08-Sep-2025"
-    },
-    {
-        "index": 12,
-        "worker": "Worker 12",
-        "unpaid": "$ 5,500",
-        "toBePaid": "5,500",
-        "paymentDate": "10-Sep-2025"
-    },
-    {
-        "index": 13,
-        "worker": "Worker 13",
-        "unpaid": "$ 6,900",
-        "toBePaid": "6,900",
-        "paymentDate": "12-Sep-2025"
-    },
-    {
-        "index": 14,
-        "worker": "Worker 14",
-        "unpaid": "$ 8,100",
-        "toBePaid": "8,100",
-        "paymentDate": "15-Sep-2025"
-    },
-    {
-        "index": 15,
-        "worker": "Worker 15",
-        "unpaid": "$ 3,300",
-        "toBePaid": "3,300",
-        "paymentDate": "18-Sep-2025"
-    },
-    {
-        "index": 16,
-        "worker": "Worker 16",
-        "unpaid": "$ 4,500",
-        "toBePaid": "4,500",
-        "paymentDate": "20-Sep-2025"
-    },
-    {
-        "index": 17,
-        "worker": "Worker 17",
-        "unpaid": "$ 5,300",
-        "toBePaid": "5,300",
-        "paymentDate": "22-Sep-2025"
-    },
-    {
-        "index": 18,
-        "worker": "Worker 18",
-        "unpaid": "$ 6,000",
-        "toBePaid": "6,000",
-        "paymentDate": "25-Sep-2025"
-    },
-    {
-        "index": 19,
-        "worker": "Worker 19",
-        "unpaid": "$ 7,800",
-        "toBePaid": "7,800",
-        "paymentDate": "28-Sep-2025"
-    },
-    {
-        "index": 20,
-        "worker": "Worker 20",
-        "unpaid": "$ 9,000",
-        "toBePaid": "9,000",
-        "paymentDate": "30-Sep-2025"
-    }
-]
+        {
+            "index": 1,
+            "worker": "Worker 1",
+            "unpaid": "$ 4,780",
+            "toBePaid": "4,780",
+            "paymentDate": "2025-08-12"
+        },
+        {
+            "index": 2,
+            "worker": "Worker 2",
+            "unpaid": "$ 3,500",
+            "toBePaid": "3,500",
+            "paymentDate": "15-Aug-2025"
+        },
+        {
+            "index": 3,
+            "worker": "Worker 3",
+            "unpaid": "$ 2,950",
+            "toBePaid": "2,950",
+            "paymentDate": "18-Aug-2025"
+        },
+        {
+            "index": 4,
+            "worker": "Worker 4",
+            "unpaid": "$ 5,600",
+            "toBePaid": "5,600",
+            "paymentDate": "20-Aug-2025"
+        },
+        {
+            "index": 5,
+            "worker": "Worker 5",
+            "unpaid": "$ 6,120",
+            "toBePaid": "6,120",
+            "paymentDate": "22-Aug-2025"
+        },
+        {
+            "index": 6,
+            "worker": "Worker 6",
+            "unpaid": "$ 4,300",
+            "toBePaid": "4,300",
+            "paymentDate": "25-Aug-2025"
+        },
+        {
+            "index": 7,
+            "worker": "Worker 7",
+            "unpaid": "$ 3,950",
+            "toBePaid": "3,950",
+            "paymentDate": "28-Aug-2025"
+        },
+        {
+            "index": 8,
+            "worker": "Worker 8",
+            "unpaid": "$ 2,800",
+            "toBePaid": "2,800",
+            "paymentDate": "30-Aug-2025"
+        },
+        {
+            "index": 9,
+            "worker": "Worker 9",
+            "unpaid": "$ 3,600",
+            "toBePaid": "3,600",
+            "paymentDate": "02-Sep-2025"
+        },
+        {
+            "index": 10,
+            "worker": "Worker 10",
+            "unpaid": "$ 4,200",
+            "toBePaid": "4,200",
+            "paymentDate": "05-Sep-2025"
+        },
+        {
+            "index": 11,
+            "worker": "Worker 11",
+            "unpaid": "$ 7,000",
+            "toBePaid": "7,000",
+            "paymentDate": "08-Sep-2025"
+        },
+        {
+            "index": 12,
+            "worker": "Worker 12",
+            "unpaid": "$ 5,500",
+            "toBePaid": "5,500",
+            "paymentDate": "10-Sep-2025"
+        },
+        {
+            "index": 13,
+            "worker": "Worker 13",
+            "unpaid": "$ 6,900",
+            "toBePaid": "6,900",
+            "paymentDate": "12-Sep-2025"
+        },
+        {
+            "index": 14,
+            "worker": "Worker 14",
+            "unpaid": "$ 8,100",
+            "toBePaid": "8,100",
+            "paymentDate": "15-Sep-2025"
+        },
+        {
+            "index": 15,
+            "worker": "Worker 15",
+            "unpaid": "$ 3,300",
+            "toBePaid": "3,300",
+            "paymentDate": "18-Sep-2025"
+        },
+        {
+            "index": 16,
+            "worker": "Worker 16",
+            "unpaid": "$ 4,500",
+            "toBePaid": "4,500",
+            "paymentDate": "20-Sep-2025"
+        },
+        {
+            "index": 17,
+            "worker": "Worker 17",
+            "unpaid": "$ 5,300",
+            "toBePaid": "5,300",
+            "paymentDate": "22-Sep-2025"
+        },
+        {
+            "index": 18,
+            "worker": "Worker 18",
+            "unpaid": "$ 6,000",
+            "toBePaid": "6,000",
+            "paymentDate": "25-Sep-2025"
+        },
+        {
+            "index": 19,
+            "worker": "Worker 19",
+            "unpaid": "$ 7,800",
+            "toBePaid": "7,800",
+            "paymentDate": "28-Sep-2025"
+        },
+        {
+            "index": 20,
+            "worker": "Worker 20",
+            "unpaid": "$ 9,000",
+            "toBePaid": "9,000",
+            "paymentDate": "30-Sep-2025"
+        }
+    ]
 
     table = PayWorker(data)
 
-    return render(request, "tailwind/components/tables/table.html",{ "table": table})
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
+
 
 def worker_main(request, org_slug=None, opp_id=None):
     data = [
-        {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600", "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025", "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025"},
-        {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500", "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025", "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025"},
-        {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700", "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025", "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025"},
-        {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300", "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025", "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025"},
-        {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500", "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025", "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025"},
-        {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700", "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025", "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025"},
-        {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400", "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025", "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025"},
-        {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400", "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025", "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025"},
-        {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500", "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025", "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025"},
-        {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600", "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025", "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025"},
-        {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700", "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025", "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025"},
-        {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500", "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025", "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025"},
-        {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400", "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025", "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025"},
-        {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500", "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025", "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025"},
-        {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025"}
+        {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600",
+         "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025",
+         "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025"},
+        {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500",
+         "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025",
+         "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025"},
+        {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700",
+         "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025",
+         "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025"},
+        {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300",
+         "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025",
+         "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025"},
+        {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500",
+         "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025",
+         "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025"},
+        {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700",
+         "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025",
+         "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025"},
+        {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400",
+         "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025",
+         "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025"},
+        {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400",
+         "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025",
+         "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025"},
+        {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500",
+         "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025",
+         "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025"},
+        {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600",
+         "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025",
+         "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025"},
+        {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700",
+         "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025",
+         "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025"},
+        {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500",
+         "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025",
+         "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025"},
+        {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400",
+         "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025",
+         "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025"},
+        {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500",
+         "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025",
+         "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025"},
+        {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600",
+         "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025",
+         "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025"}
     ]
 
     table = WorkerMainTable(data)
-    return render(request, "tailwind/pages/worker_main.html",{ "table": table})
+    return render(request, "tailwind/pages/worker_main.html", {"table": table})
 
 
 def payment_history(request, org_slug=None, opp_id=None):
-
     data = [
-  {
-    "date": "01-Mar-2024",
-    "time": "08:30 AM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$3,500",
-    "workers": 50
-  },
-  {
-    "date": "02-Mar-2024",
-    "time": "09:15 AM",
-    "title": "By Network Manager",
-    "status": "Failed",
-    "amount": "$1,200",
-    "workers": 30
-  },
-  {
-    "date": "03-Mar-2024",
-    "time": "10:00 AM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$4,000",
-    "workers": 60
-  },
-  {
-    "date": "04-Mar-2024",
-    "time": "11:45 AM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$2,800",
-    "workers": 40
-  },
-  {
-    "date": "05-Mar-2024",
-    "time": "12:30 PM",
-    "title": "By Network Manager",
-    "status": "Failed",
-    "amount": "$1,000",
-    "workers": 20
-  },
-  {
-    "date": "06-Mar-2024",
-    "time": "01:00 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$5,000",
-    "workers": 75
-  },
-  {
-    "date": "07-Mar-2024",
-    "time": "02:45 PM",
-    "title": "By Network Manager",
-    "status": "Failed",
-    "amount": "$900",
-    "workers": 15
-  },
-  {
-    "date": "08-Mar-2024",
-    "time": "03:30 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$6,200",
-    "workers": 90
-  },
-  {
-    "date": "09-Mar-2024",
-    "time": "04:15 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$3,800",
-    "workers": 55
-  },
-  {
-    "date": "10-Mar-2024",
-    "time": "05:00 PM",
-    "title": "By Network Manager",
-    "status": "Failed",
-    "amount": "$1,500",
-    "workers": 25
-  },
-  {
-    "date": "08-Mar-2024",
-    "time": "03:30 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$6,200",
-    "workers": 90
-  },
-  {
-    "date": "09-Mar-2024",
-    "time": "04:15 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$3,800",
-    "workers": 55
-  },
-  {
-    "date": "10-Mar-2024",
-    "time": "05:00 PM",
-    "title": "By Network Manager",
-    "status": "Failed",
-    "amount": "$1,500",
-    "workers": 25
-  },
-  {
-    "date": "08-Mar-2024",
-    "time": "03:30 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$6,200",
-    "workers": 90
-  },
-  {
-    "date": "09-Mar-2024",
-    "time": "04:15 PM",
-    "title": "By Network Manager",
-    "status": "Paid",
-    "amount": "$3,800",
-    "workers": 55
-  },
-  {
-    "date": "10-Mar-2024",
-    "time": "05:00 PM",
-    "title": "By Network Manager",
-    "status": "Failed",
-    "amount": "$1,500",
-    "workers": 25
-  }
-]
+        {
+            "date": "01-Mar-2024",
+            "time": "08:30 AM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$3,500",
+            "workers": 50
+        },
+        {
+            "date": "02-Mar-2024",
+            "time": "09:15 AM",
+            "title": "By Network Manager",
+            "status": "Failed",
+            "amount": "$1,200",
+            "workers": 30
+        },
+        {
+            "date": "03-Mar-2024",
+            "time": "10:00 AM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$4,000",
+            "workers": 60
+        },
+        {
+            "date": "04-Mar-2024",
+            "time": "11:45 AM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$2,800",
+            "workers": 40
+        },
+        {
+            "date": "05-Mar-2024",
+            "time": "12:30 PM",
+            "title": "By Network Manager",
+            "status": "Failed",
+            "amount": "$1,000",
+            "workers": 20
+        },
+        {
+            "date": "06-Mar-2024",
+            "time": "01:00 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$5,000",
+            "workers": 75
+        },
+        {
+            "date": "07-Mar-2024",
+            "time": "02:45 PM",
+            "title": "By Network Manager",
+            "status": "Failed",
+            "amount": "$900",
+            "workers": 15
+        },
+        {
+            "date": "08-Mar-2024",
+            "time": "03:30 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$6,200",
+            "workers": 90
+        },
+        {
+            "date": "09-Mar-2024",
+            "time": "04:15 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$3,800",
+            "workers": 55
+        },
+        {
+            "date": "10-Mar-2024",
+            "time": "05:00 PM",
+            "title": "By Network Manager",
+            "status": "Failed",
+            "amount": "$1,500",
+            "workers": 25
+        },
+        {
+            "date": "08-Mar-2024",
+            "time": "03:30 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$6,200",
+            "workers": 90
+        },
+        {
+            "date": "09-Mar-2024",
+            "time": "04:15 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$3,800",
+            "workers": 55
+        },
+        {
+            "date": "10-Mar-2024",
+            "time": "05:00 PM",
+            "title": "By Network Manager",
+            "status": "Failed",
+            "amount": "$1,500",
+            "workers": 25
+        },
+        {
+            "date": "08-Mar-2024",
+            "time": "03:30 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$6,200",
+            "workers": 90
+        },
+        {
+            "date": "09-Mar-2024",
+            "time": "04:15 PM",
+            "title": "By Network Manager",
+            "status": "Paid",
+            "amount": "$3,800",
+            "workers": 55
+        },
+        {
+            "date": "10-Mar-2024",
+            "time": "05:00 PM",
+            "title": "By Network Manager",
+            "status": "Failed",
+            "amount": "$1,500",
+            "workers": 25
+        }
+    ]
 
     return render(request, "opportunity/tailwind/components/payment_history.html", {"data": data})
-

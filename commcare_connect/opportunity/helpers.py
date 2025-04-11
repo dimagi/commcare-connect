@@ -1,9 +1,9 @@
 from collections import namedtuple
 from datetime import timedelta
 
-from django.db.models import Case, Min, When, QuerySet
+from django.db.models import Case, Min, When, QuerySet, Avg, DateField, FloatField, IntegerField
 from django.db.models import Count, Q, Exists, OuterRef, Sum, Value, DecimalField, ExpressionWrapper, F, Max, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate, Extract
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
@@ -162,7 +162,6 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
     three_days_ago = today - timedelta(days=3)
     yesterday = today - timedelta(days=1)
 
-    # Subquery to find users who have completed all modules
     completed_user_ids = CompletedModule.objects.filter(
         opportunity=OuterRef("pk")
     ).values("user").annotate(
@@ -180,6 +179,13 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
     started_users_subquery = CompletedModule.objects.filter(
         opportunity=OuterRef("pk")
     ).values("user").distinct()
+
+    effective_end_date = Case(
+        When(end_date__isnull=True, then=Value(today)),
+        When(end_date__gt=today, then=Value(today)),
+        default=F('end_date'),
+        output_field=DateField()
+    )
 
     queryset = Opportunity.objects.annotate(
         workers_invited=Count("userinvite", distinct=True),
@@ -208,7 +214,6 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
         total_paid=Coalesce(
             Sum(
                 'opportunityaccess__payment__amount_usd',
-                filter=Q(opportunityaccess__payment__confirmed=True),
                 distinct=True
             ),
             Value(0),
@@ -219,6 +224,12 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
             output_field=DecimalField(),
         ),
         total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
+        approved_deliveries=Count("opportunityaccess__completedwork",
+                                  filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
+                                  distinct=True),
+        rejected_deliveries=Count("opportunityaccess__completedwork",
+                                  filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.rejected),
+                                  distinct=True),
         flagged_deliveries_waiting_for_review=Count(
             "opportunityaccess__completedwork",
             filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.pending),
@@ -253,7 +264,28 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
             filter=Q(assessment__passed=True),
             distinct=True
         ),
-        recent_payment=Max("opportunityaccess__payment__date_paid")
+        recent_payment=Max("opportunityaccess__payment__date_paid"),
+        maximum_visit_in_a_day=Subquery(
+            UserVisit.objects.filter(
+                opportunity=OuterRef('pk')
+            ).annotate(
+                visit_day=TruncDate('visit_date')
+            ).values('visit_day')
+            .annotate(
+                day_count=Count('id')
+            ).order_by('-day_count')
+            .values('day_count')[:1]
+        ),
+        total_visits=Count('uservisit', distinct=True),
+        total_days=ExpressionWrapper(
+            Extract(effective_end_date, 'day') - Extract(F('start_date'), 'day'),
+            output_field=IntegerField()
+        ),
+        average_visits_per_day=Case(
+            When(total_days__gt=0, then=F('total_visits') / F('total_days')),
+            default=Value(0),
+            output_field=FloatField()
+        )
     ).filter(id=opp_id)
 
     return queryset
