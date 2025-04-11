@@ -179,24 +179,23 @@
                     
                     <div class="bg-white p-4 rounded-lg">
                         {% for progress in data.progress %}
-                            <div class="flex gap-8 w-full items-end rounded-lg my-3">
-                                <div class="flex flex-col gap-1.5 w-full">
-                                    <div class="flex gap-4 items-center">
-                                        <span class="text-sm block">{{ progress }}</span>
-                                        <span class="badge badge-sm primary-light">{{ 56|format_percentage }}</span>
-                                    </div>
-                                    {% if forloop.last %}
-                                        <div class="w-full bg-white rounded-full h-2.5">
-                                    {% else %}
-                                        <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                    {% endif %}
-                                            <div class="bg-brand-indigo h-2.5 rounded-full" style="width: {{ 56|format_percentage }}"></div>
-                                        </div>
-                                    </div>
+                    <div class="flex gap-8 w-full items-end rounded-lg my-3">
+                        <div class="flex flex-col gap-1.5 w-full">
+                            <div class="flex gap-4 items-center">
+                                <span class="text-sm block">{{progress}}</span>
+                                <span class="badge badge-sm primary-light">{{56}}%</span>
+                            </div>
+                            {% if forloop.last %}
+                                <div class="w-full bg-white rounded-full h-2.5">
+                            {% else %}
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            {% endif %}
+                                    <div class="bg-brand-indigo h-2.5 rounded-full" style="width: {{56}}%"></div>
                                 </div>
-                            <span class="text-lg">{{56}}</span>
                         </div>
-                        {% endfor %}
+                        <span class="text-lg">{{56}}</span>
+                    </div>
+                    {% endfor %}
                     </div>     
                 </div>
                 {% endfor %}   
