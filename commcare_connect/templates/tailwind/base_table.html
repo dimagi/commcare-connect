@@ -1,5 +1,6 @@
 {% load django_tables2 %}
 {% load i18n %}
+{% load sort_link %}
 {% block table-wrapper %}
 <div class="table-container">
   {% block table %}
@@ -13,7 +14,7 @@
           <th>
             {% if column.orderable %}
             <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" >
-              {{ column.header }}
+              {% sortable_header column.name column.header %}
             </a>
             {% else %}
             <span>{{ column.header }}</span>
