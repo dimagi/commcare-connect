@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     Payment,
     PaymentUnit,
     UserVisit,
+    VisitValidationStatus,
 )
 
 
@@ -245,6 +246,7 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
     deliver_unit_name = serializers.CharField(source="payment_unit.name")
     deliver_unit_slug = serializers.CharField(source="payment_unit.pk")
     visit_date = serializers.DateTimeField(source="completion_date")
+    flags = serializers.SerializerMethodField()
 
     class Meta:
         model = CompletedWork
@@ -257,7 +259,22 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
             "entity_id",
             "entity_name",
             "reason",
+            "flags",
         ]
+
+    def get_flags(self, obj):
+        visits = obj.uservisit_set.exclude(status=VisitValidationStatus.approved).values_list("flag_reason", flat=True)
+        flags = []
+        for visit in visits:
+            if not visit:
+                continue
+
+            flags_dict = {}
+            for slug, reason in visit.get("flags", []):
+                flags_dict[slug] = reason
+
+            flags.append(flags_dict)
+        return flags
 
 
 class PaymentSerializer(serializers.ModelSerializer):

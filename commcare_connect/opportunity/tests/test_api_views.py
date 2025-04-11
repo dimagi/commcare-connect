@@ -5,11 +5,11 @@ from rest_framework.test import APIClient
 
 from commcare_connect.opportunity.api.serializers import (
     CommCareAppSerializer,
+    CompletedWorkSerializer,
     DeliveryProgressSerializer,
     OpportunityClaimSerializer,
     OpportunitySerializer,
     PaymentSerializer,
-    UserVisitSerializer,
 )
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
@@ -227,6 +227,12 @@ def test_delivery_progress_endpoint(
         status=VisitValidationStatus.pending,
         opportunity_access=access,
         completed_work=completed_work,
+        flag_reason={
+            "flags": [
+                ["duration", "The form was completed too quickly."],
+                ["attachment_missing", "Form was submitted without attachments."],
+            ]
+        },
     )
     api_client.force_authenticate(mobile_user_with_connect_link)
     response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
@@ -235,7 +241,13 @@ def test_delivery_progress_endpoint(
     assert response.data.keys() == DeliveryProgressSerializer().get_fields().keys()
     assert len(response.data["deliveries"]) == 1
     assert len(response.data["payments"]) == 0
-    assert response.data["deliveries"][0].keys() == UserVisitSerializer().get_fields().keys()
+    assert response.data["deliveries"][0].keys() == CompletedWorkSerializer().get_fields().keys()
+    assert response.data["deliveries"][0]["flags"] == [
+        {
+            "duration": "The form was completed too quickly.",
+            "attachment_missing": "Form was submitted without attachments.",
+        }
+    ]
 
     Payment.objects.create(amount=10, date_paid=datetime.date.today(), opportunity_access=access)
     response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
