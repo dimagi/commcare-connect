@@ -1,0 +1,14 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load tailwind_filters %} 
+{% block title %}{{ request.org }} - Opportunity Budget{% endblock %}
+
+{% block content %}
+<div class="md:max-w-screen-lg mx-auto flex flex-col gap-8">
+  {% include "steps.html" with step='step3'  org_slug=request.org.slug pk=opportunity.pk %}
+  <div class="card_bg">
+    {% include "partial_form.html" %}
+  </div>
+</div>
+{% endblock content %}

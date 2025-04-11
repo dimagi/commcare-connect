@@ -1,0 +1,87 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load i18n %}
+{% load sort_link %}
+{% load django_tables2 %}
+{% load crispy_forms_tags %}
+{% load tailwind_filters %}
+
+{% block content %}
+<!-- Alpine.js Modal Button + Modal Component -->
+<div x-data="{ open: false }">
+  <!-- Trigger Button -->
+  <button
+    @click="open = true"
+    class="button button-md primary-dark">
+    <i class="bi bi-building-fill-add"></i>
+    {% translate "Invite" %}
+  </button>
+
+  <!-- Modal Overlay -->
+  <div
+    x-show="open"
+    x-transition.opacity
+    class="modal-backdrop"
+  >
+    <!-- Modal Box -->
+    <div
+      @click.away="open = false"
+      x-transition
+      class="modal">
+      
+      <!-- Modal Header -->
+      <div class="header">
+        <h2 class="title">{% translate "Invite Organizations" %}</h2>
+        <button
+          @click="open = false"
+          class="button-icon"
+          aria-label="Close">
+          <i class="fa-light fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <form method="post">
+        {% csrf_token %}
+        <div class="flex flex-col gap-2 py-4">
+          <label for="organization" class="btitle-sm">
+            {% translate "Organization" %}
+          </label>
+          <select
+            id="organization"
+            name="organization"
+            required
+            class="base-dropdown"
+          >
+            {% for org in organizations %}
+              <option value="{{ org.slug }}">{{ org.name }}</option>
+            {% endfor %}
+          </select>
+          <span class="hint">
+            {% blocktrans %}
+              Select the organization you want to invite.
+            {% endblocktrans %}
+          </span>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="footer">
+          <button
+            type="button"
+            @click="open = false"
+            class="button button-md outline-style">
+            Close
+          </button>
+          <button
+            type="submit"
+            class="button button-md primary-dark">
+            Invite
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+{% endblock content %}

@@ -1,0 +1,30 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load tailwind_filters %}
+{% load django_tables2 %}
+
+{% block title %}{{ request.org }} - Payment Units {% endblock %}
+
+{% block content %}
+<div class="md:max-w-screen-lg mx-auto flex flex-col gap-8">
+  {% include "steps.html" with step='step2' org_slug=request.org.slug pk=opportunity.pk %}
+  <div class="card_bg space-y-4 !p-2">
+      <div hx-get="{% url 'opportunity:payment_unit_table' org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
+          hx-trigger="load" hx-swap="outerHTML">
+        {% include "tables/table_placeholder.html" with num_cols=4 %}
+      </div>
+      <div class="flex justify-end gap-4" x-data="{ buttonDisabled: false }">
+        <button class="button button-md outline-style" type="button" hx-get="{% url 'opportunity:tw_add_payment_unit' org_slug=request.org.slug pk=opportunity.id %}?partial=True" hx-target="#paymentunitform" hx-swap="beforeend  scroll:bottom"
+          x-on:click="buttonDisabled = true" x-bind:disabled="buttonDisabled">
+          <i class="fa-light fa-plus mr-2"></i>
+          Add Payment Unit
+        </button>
+        <a class="button button-md primary-dark" type="button" href="{% url 'opportunity:tw_finalize' org_slug=request.org.slug pk=opportunity.id %}">
+          Setup Budget 
+        </a>
+      </div>
+  </div>
+    <div id="paymentunitform" class="card_bg"></div>
+</div>
+{% endblock content %}
