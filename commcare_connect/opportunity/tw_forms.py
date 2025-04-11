@@ -556,7 +556,10 @@ class OpportunityInitForm(forms.ModelForm):
                 ),  
                 css_class="grid grid-cols-2 gap-4 card_bg my-4"
             ),  
-            Submit("submit", "Submit",css_class="button button-md primary-dark")
+            Row(
+                Submit("submit", "Submit",css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            )
         )
 
         domain_choices = [(i, f"Domain {i}") for i in range(1, 11)]
