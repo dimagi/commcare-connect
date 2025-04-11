@@ -189,7 +189,7 @@
 
 /*-- chips ---------------------------------------*/ 
 .chip{
-    @apply inline-block text-nowrap text-sm font-medium rounded-full transition-all duration-300 cursor-pointer;
+    @apply inline-block text-nowrap text-sm font-medium rounded-full transition-all duration-300 cursor-pointer border border-gray-200;
 }
 
 .chip-md{
@@ -440,7 +440,7 @@
 
     .base-table tbody::before{
         content: '';
-        @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow-lg -z-20;
+        @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow -z-20;
     }
 
     .base-table tbody tr{
