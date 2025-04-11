@@ -274,7 +274,7 @@ def opportunities(request, org_slug=None, opp_id=None):
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
     payment_unit_count = opp.paymentunit_set.count()
 
-    path = ['programs', 'opportunities', 'opportunity name']
+    path = ['opportunities', opp.name]
 
     opp_resource_counts = [
         {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},
@@ -309,7 +309,7 @@ def opportunities(request, org_slug=None, opp_id=None):
         },
         {
             "name": "Total Service Deliveries",
-            "count": "350",
+            "count": opp.allotted_visits,
             "icon": "gears",
             "color": "",
         },
