@@ -4,6 +4,7 @@ from django.forms import modelformset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
 from django.urls import reverse
+from django.views.generic import CreateView
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
@@ -16,7 +17,11 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentUnit,
 )
-from commcare_connect.opportunity.tasks import send_push_notification_task, send_sms_task
+from commcare_connect.opportunity.tasks import (
+    create_learn_modules_and_deliver_units,
+    send_push_notification_task,
+    send_sms_task,
+)
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
@@ -31,7 +36,7 @@ from commcare_connect.opportunity.tw_forms import (
     VisitExportForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
-from commcare_connect.opportunity.views import get_opportunity_or_404
+from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
 from commcare_connect.organization.decorators import org_admin_required, org_member_required
 from commcare_connect.program import views as program_views
 from commcare_connect.users.models import User
@@ -264,12 +269,12 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     )
 
 
-class OpportunityInit(views.OpportunityInit):
+class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
     template_name = "tailwind/pages/opportunity_init.html"
     form_class = OpportunityInitForm
 
     def get_success_url(self):
-        return reverse("opportunity:tw_add_payment_units", args=(self.request.org.slug, self.object.id))
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -277,6 +282,11 @@ class OpportunityInit(views.OpportunityInit):
         kwargs["user"] = self.request.user
         kwargs["org_slug"] = self.request.org.slug
         return kwargs
+
+    def form_valid(self, form: OpportunityInitForm):
+        response = super().form_valid(form)
+        create_learn_modules_and_deliver_units(self.object.id)
+        return response
 
 
 @org_member_required
