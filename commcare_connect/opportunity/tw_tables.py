@@ -206,8 +206,8 @@ class WorkerFlaggedTable(BaseTailwindTable):
         template_code="""
             <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
                 {% if value %}
-                    {% for flag in value|slice:":2" %}
-                        {% include "tailwind/components/badges/badge_sm.html" with text=flag %}
+                    {% for flag in value|slice:":2" %} 
+                        <span class="badge badge-sm label">flag</span>
                     {% endfor %}
                     {% if value|length > 2 %}
                         {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
@@ -1719,8 +1719,8 @@ class BaseWorkerTable(BaseTailwindTable):
         template_code="""
             <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
                 {% if value %}
-                    {% for flag in value|slice:":2" %}
-                        {% include "tailwind/components/badges/badge_sm.html" with text=flag %}
+                    {% for flag in value|slice:":2" %} 
+                         <span class="badge badge-sm label">flag</span>
                     {% endfor %}
                     {% if value|length > 2 %}
                         {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}

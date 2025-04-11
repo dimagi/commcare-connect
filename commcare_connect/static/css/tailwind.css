@@ -38,6 +38,11 @@
     @apply text-gray-400 text-xs
 }
 
+@layer components {
+    .marquee {
+      @apply  truncate;
+    } 
+}
 
 /*-- status ----------------------------------*/
 .status-active{
@@ -180,6 +185,10 @@
 
 .neutral {
     @apply text-slate-300 bg-slate-100;
+}
+
+.label {
+    @apply text-brand-deep-purple bg-slate-100;
 } 
 
 .outline-style{
@@ -470,6 +479,23 @@
     }  
 }
 
+/*------------ Tabs --------------*/
+@layer{
+    .tabs {
+        @apply flex h-full px-2 gap-x-8;
+    }
+    .tabs li{
+        @apply flex items-center h-full text-sm cursor-pointer text-gray-500 relative;
+    }
+    
+    .tabs li.active{
+        @apply text-brand-deep-purple font-medium;
+    }
+
+    .tabs li div{
+        @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 max-w-10 h-1.5 bg-brand-mango rounded-t-lg;
+    }
+}
 
 /* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {

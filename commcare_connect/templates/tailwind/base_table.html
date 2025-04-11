@@ -1,9 +1,9 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block table-wrapper %}
-<div class="scrollable-table-wrapper">
+<div class="overflow-hidden">
   {% block table %}
-  <div class="scrollable-table-container">
+  <div class="w-full max-h-[80vh] overflow-x-auto block">
     <table class="base-table">
       {% block table.thead %}
       {% if table.show_header %}
@@ -64,19 +64,5 @@
     </table>
   </div>
   {% endblock table %}
-</div>
-<style>
-    .scrollable-table-wrapper {
-      border-radius: 8px;
-      overflow: hidden;
-    }
-  
-    .scrollable-table-container {
-      max-height: 80vh;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
-    }
-
-  </style>
+</div> 
 {% endblock table-wrapper %}
