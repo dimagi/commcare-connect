@@ -10,12 +10,12 @@
     
     <!-- Background overlay -->
     <div class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity"
-            @click="showModal = false"></div>
+            @click="showModal = false;document.body.style.overflow = '';"></div>
 
     <!-- Modal content -->
     <div class="flex items-center justify-center min-h-screen p-4">
-        <div class="relative rounded-2xl bg-gray-100 shadow-xl w-[952px] h-[554px] mx-auto overflow-hidden p-3"
-                @click.away="showModal = false">
+        <div class="relative rounded-2xl bg-gray-100 shadow-xl w-2/3 h-1/2 mx-auto overflow-hidden p-3"
+                @click.away="showModal = false;document.body.style.overflow = '';">
             <!-- Modal header with tabs -->
             <div class="flex flex-col w-full" x-init="selectedTab='Learn App'">
                 <!-- Tabs -->
@@ -42,7 +42,7 @@
                     </ul>
 
                     <!-- Close button -->
-                    <button @click="showModal = false" id="button" class="button-icon" >
+                    <button @click="showModal = false;document.body.style.overflow = '';" id="button" class="button-icon" >
                         <i class="fa-light fa-xmark-large text-brand-deep-purple"></i>
                     </button>
                 </div>
