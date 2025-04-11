@@ -1,0 +1,114 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+{% load tailwind_filters %}
+
+{% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
+
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+  <li class="breadcrumb-item">
+    <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.pk %}">
+      {{ opportunity.name }}
+    </a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">Update Visits</li>
+{% endblock %}
+
+{% block content %}
+  <h2>Edit Opportunity</h2>
+  <h4 class="mb-2">Adding Visits for Existing Users</h4>
+  <hr>
+  <form method="post"
+          x-data="{
+            additionalVisits: 0,
+            selected_users: [],
+            end_date: '',
+            isSelected (id) { return this.selected_users.find(el => el === id)},
+            totalVisits() { return this.selected_users.length * this.additionalVisits },
+            calculatedBudget() { return this.totalVisits() * '{{ budget_per_visit }}' }
+          }"
+    >
+      {% csrf_token %}
+      {% if form.selected_users.errors %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+          Please select users to update.
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endif %}
+      {% if opportunity_claims %}
+        <table class="table table-responsive table-bordered">
+          <thead class="table-primary">
+          <tr>
+            <th></th>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Max Visits</th>
+            <th>Used Visits</th>
+            <th>End date</th>
+          </tr>
+          </thead>
+          <tbody>
+          {% for opp_claim in opportunity_claims %}
+            <tr>
+              <td>
+                <input type="checkbox" name="selected_users" id="id_selected_users" value="{{ opp_claim.id }}"
+                       x-model="selected_users"
+                       class="form-check-input border-dark shadow {% if form.selected_users.errors %}is-invalid{% endif %}"/>
+              </td>
+              <td>{{ opp_claim.opportunity_access.user.name }}</td>
+              <td>{{ opp_claim.opportunity_access.user.username }}</td>
+              <!-- Todo; replace by climitlimit.max_visits -->
+              <td>{{ opp_claim.max_payments }}</td>
+              <td>{{ opp_claim.opportunity_access.visit_count }}</td>
+              <td>{{ opp_claim.end_date }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="row mb-2 py-2">
+          <div class="col-md">
+            {{ form.additional_visits|as_crispy_field }}
+          </div>
+          <div class="col-md">
+            {{ form.end_date|as_crispy_field }}
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary float-end" data-bs-toggle="modal"
+                data-bs-target="#confirm-modal-add-visits">
+          Save
+        </button>
+      {% else %}
+        <div class="text-center">
+          <b>No Opportunity Claims yet.</b> <br/>
+          <a class="btn btn-primary mt-2" href="{% url "opportunity:list" org_slug=request.org.slug %}">All
+            Opportunities</a>
+        </div>
+      {% endif %}
+
+      <!-- Modal -->
+      <div class="modal fade" id="confirm-modal-add-visits" tabindex="-1" aria-labelledby="exampleModalLabel"
+           aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="exampleModalLabel">Confirm</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              You are about to allocate an additional <b x-text="totalVisits()"></b> visits which will result in an
+              additional budget allocation of <b x-text="calculatedBudget()"></b> to this Opportunity.
+              <div x-show="!!end_date">
+                You are changing the end date for the selected users to <b
+                x-text="new Date(end_date).toLocaleDateString()"></b>.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-primary" type="submit">Confirm</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+{% endblock content %}

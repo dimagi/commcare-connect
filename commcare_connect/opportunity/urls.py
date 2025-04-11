@@ -157,4 +157,14 @@ urlpatterns = [
     path(
         "<int:pk>/tw/send_message", view=tw_form_views.send_message_mobile_users, name="tw_send_message_mobile_users"
     ),
+    path("<int:pk>/tw/invoice/create/", tw_form_views.invoice_create, name="tw_invoice_create"),
+    path(
+        "<int:pk>/tw/add_budget_existing_users",
+        view=tw_form_views.add_budget_existing_users,
+        name="tw_add_budget_existing_users",
+    ),
+    path("tw/init/", view=tw_form_views.OpportunityInit.as_view(), name="tw_init"),
+    path("<int:pk>/tw/finalize/", view=tw_form_views.OpportunityFinalize.as_view(), name="tw_finalize"),
+    path("<int:pk>/tw/payment_units/create", view=tw_form_views.add_payment_units, name="tw_add_payment_units"),
+    path("<int:pk>/tw/visit_export/", view=tw_form_views.export_user_visits, name="tw_visit_export"),
 ]

@@ -4,30 +4,41 @@ from django.forms import modelformset_factory
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
 from django.urls import reverse
-from django.views.generic import UpdateView
+from django.views.generic import CreateView
 
+from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
-    Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
     PaymentUnit,
 )
-from commcare_connect.opportunity.tasks import add_connect_users, send_push_notification_task, send_sms_task
+from commcare_connect.opportunity.tasks import (
+    create_learn_modules_and_deliver_units,
+    send_push_notification_task,
+    send_sms_task,
+)
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     OpportunityChangeForm,
+    OpportunityFinalizeForm,
+    OpportunityInitForm,
     OpportunityVerificationFlagsConfigForm,
+    PaymentInvoiceForm,
     PaymentUnitForm,
+    ProgramForm,
     SendMessageMobileUsersForm,
+    VisitExportForm,
 )
+from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
 from commcare_connect.organization.decorators import org_admin_required, org_member_required
+from commcare_connect.program import views as program_views
 from commcare_connect.users.models import User
 
 
@@ -96,41 +107,9 @@ def verification_flags_config(request, org_slug=None, pk=None):
     )
 
 
-class OpportunityEdit(OrganizationUserMemberRoleMixin, UpdateView):
-    model = Opportunity
+class OpportunityEdit(views.OpportunityEdit):
     template_name = "tailwind/pages/opportunity_edit.html"
     form_class = OpportunityChangeForm
-
-    @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
-    def dispatch(self, request, *args, **kwargs):
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_success_url(self):
-        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.id))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
-
-    def form_valid(self, form):
-        opportunity = form.instance
-        opportunity.modified_by = self.request.user.email
-        users = form.cleaned_data["users"]
-        filter_country = form.cleaned_data["filter_country"]
-        filter_credential = form.cleaned_data["filter_credential"]
-        if users or filter_country or filter_credential:
-            add_connect_users.delay(users, form.instance.id, filter_country, filter_credential)
-
-        additional_users = form.cleaned_data["additional_users"]
-        if additional_users:
-            for payment_unit in opportunity.paymentunit_set.all():
-                opportunity.total_budget += payment_unit.amount * payment_unit.max_total * additional_users
-        end_date = form.cleaned_data["end_date"]
-        if end_date:
-            opportunity.end_date = end_date
-        response = super().form_valid(form)
-        return response
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -260,3 +239,89 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             user_ids=list(user_ids),
         ),
     )
+
+
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
+@org_member_required
+def invoice_create(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed or request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
+    form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
+    if request.POST and form.is_valid():
+        form.save()
+    return render(
+        request,
+        "tailwind/pages/form.html",
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Invoice Create", form=form),
+    )
+
+
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
+@org_member_required
+def add_budget_existing_users(request, org_slug=None, pk=None):
+    return views.add_budget_existing_users(
+        request,
+        org_slug,
+        pk,
+        form_class=TWAddBudgetExistingUsersForm,
+        template_name="tailwind/pages/add_visits_existing_users.html",
+    )
+
+
+class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
+    template_name = "tailwind/pages/opportunity_init.html"
+    form_class = OpportunityInitForm
+
+    def get_success_url(self):
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["domains"] = []
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
+
+    def form_valid(self, form: OpportunityInitForm):
+        response = super().form_valid(form)
+        create_learn_modules_and_deliver_units(self.object.id)
+        return response
+
+
+@org_member_required
+def add_payment_units(request, org_slug=None, pk=None):
+    if request.POST:
+        return add_payment_unit(request, org_slug=org_slug, pk=pk)
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
+    return render(request, "tailwind/pages/add_payment_units.html", dict(opportunity=opportunity))
+
+
+class OpportunityFinalize(views.OpportunityFinalize):
+    template_name = "tailwind/pages/opportunity_finalize.html"
+    form_class = OpportunityFinalizeForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.paymentunit_set.count() == 0:
+            messages.warning(request, "Please configure payment units before setting budget")
+            return redirect("opportunity:tw_add_payment_units", org_slug=request.org.slug, pk=self.object.id)
+        return super().dispatch(request, *args, **kwargs)
+
+
+class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
+    form_class = ProgramForm
+
+    def get_template_names(self):
+        view = ("add", "edit")[self.object is not None]
+        template = f"tailwind/pages/program_{view}.html"
+        return template
+
+
+def invite_organization(request, org_slug=None, pk=None):
+    return render(request, "tailwind/pages/invite_organization.html")
+
+
+def export_user_visits(request, org_slug, pk):
+    form = VisitExportForm(data=request.POST or None)
+    return render(request, "tailwind/pages/form.html", context=dict(form=form))
