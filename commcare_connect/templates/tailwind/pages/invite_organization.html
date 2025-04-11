@@ -27,8 +27,8 @@
     <div
       @click.away="open = false"
       x-transition
-      class="modal"
-    >
+      class="modal">
+      
       <!-- Modal Header -->
       <div class="header">
         <h2 class="title">{% translate "Invite Organizations" %}</h2>
@@ -43,7 +43,7 @@
       <!-- Modal Body -->
       <form method="post">
         {% csrf_token %}
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2 py-4">
           <label for="organization" class="btitle-sm">
             {% translate "Organization" %}
           </label>
