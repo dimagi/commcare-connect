@@ -544,11 +544,24 @@ class OpportunitiesListTable(BaseTailwindTable):
             </div>
         ''')
 
-        self.base_columns['inactiveWorkers'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
-                Inactive Workers
+
+        self.base_columns['inactiveWorkers'].verbose_name = mark_safe('''
+            <div class="relative inline-flex items-center group cursor-default">
+                <span>Inactive Workers</span>
+                <!-- Tooltip container - positioned relative to viewport -->
+                <div class="fixed hidden group-hover:block z-50 pointer-events-none"
+                    style="transform: translate(-15%,-70%);">
+                    <!-- Arrow -->
+                    <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+                    
+                    <!-- Tooltip content with proper arrow -->
+                    <div class="relative bg-white w-40 rounded p-2 text-slate-500 text-xs whitespace-normal break-words">
+                        Inactive Workers who haven't completed any deliveries in the past 3 days or more
+                    </div>
+                </div>
             </div>
-        ''')
+            ''')
+
 
         self.base_columns['pendingApprovals'].verbose_name = mark_safe(f'''
             <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
