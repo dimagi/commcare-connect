@@ -1,12 +1,16 @@
 from django import forms
+from django.db.models import Max, Min, Case, When, Q, Count, ExpressionWrapper, F, DurationField, Value
+from django.db.models.functions import Coalesce, Greatest, Now, Least
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template import Template, Context
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+from .helpers import get_worker_table_data
+from .models import OpportunityAccess, CompletedModule
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
-
+from .views import OrganizationUserMixin, get_opportunity_or_404
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -43,7 +47,7 @@ def home(request, org_slug=None, opp_id=None):
 def about(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/about.html")
 
-def dashboard(request, org_slug=None, opp_id=None): 
+def dashboard(request, org_slug=None, opp_id=None):
     data = {
         'programs': [
             {
@@ -142,14 +146,14 @@ def dashboard(request, org_slug=None, opp_id=None):
         ]
     }
     return render(
-        request, 'tailwind/pages/dashboard.html', 
+        request, 'tailwind/pages/dashboard.html',
         {
-            'data': data, 
-            'header_title': 'Dashboard', 
+            'data': data,
+            'header_title': 'Dashboard',
             'sidenav_active': 'Programs'
             }
         )
-    
+
 def learn_app_table(request, org_slug=None, opp_id=None):
     data = [
         {"index": 1, "name": "Module Name 1", "description":"Additional Descriptio for module 1", "estimated_time": "1hr 30min"},
@@ -296,21 +300,21 @@ def worker(request, org_slug=None, opp_id=None):
         {"name": "All", "count": "45", "url": "/tables"},
     ]
     return render(
-        request, 
-        "tailwind/pages/worker.html", 
+        request,
+        "tailwind/pages/worker.html",
         {
-            "header_title": "Worker", 
-            "tabs": data, "kpi":user_kpi , 
-            "datapoints":user_datapoints, 
+            "header_title": "Worker",
+            "tabs": data, "kpi":user_kpi ,
+            "datapoints":user_datapoints,
             "timeline":user_timeline,
-            "flags":flags, 
-            "flagged_info":flagged_info, 
-            "rejected_details":rejected_details, 
+            "flags":flags,
+            "flagged_info":flagged_info,
+            "rejected_details":rejected_details,
             "payment_details":payment_details,
             "flag_details":flag_details
             }
         )
-  
+
 def opportunities(request, org_slug=None, opp_id=None):
     path = ['programs','opportunities','opportunity name' ]
     data = [
@@ -410,9 +414,9 @@ def opportunities(request, org_slug=None, opp_id=None):
         },
     ]
     workerporgress = [
-        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}},
+        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}},
+        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}},
     ]
 
     funnel = [
@@ -1450,7 +1454,8 @@ def worker_payments(request, org_slug=None, opp_id=None):
 
 
 def opportunity_worker(request, org_slug=None, opp_id=None):
-    return render(request, "tailwind/pages/opportunity_worker.html", {"header_title": "Workers"})
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    return render(request, "tailwind/pages/opportunity_worker.html", {"opportunity": opp})
 
 def invoice_list(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/invoice_list.html", {"header_title": "Invoices"})
@@ -1883,7 +1888,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "assessment":"Passed",
             "attempts":"4",
             "learning_hours":"10h 19m"
-            
+
         },
         {
             "index": 2,
@@ -2316,7 +2321,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "attempts":"4",
             "learning_hours":"10h 19m"
         },
-        
+
     ]
 
     table = WorkerLearnTable(data)
@@ -3199,12 +3204,12 @@ def worker_delivery(request, org_slug=None, opp_id=None):
             },
         }
     ]
-    
-    
+
+
     table = WorkerDeliveryTable(data)
     return render(request, "tailwind/pages/worker_delivery.html", {"table": table})
-    
-    
+
+
 def pay_worker(request, org_slug=None, opp_id=None):
 
     data = [
@@ -3351,30 +3356,12 @@ def pay_worker(request, org_slug=None, opp_id=None):
 ]
 
     table = PayWorker(data)
-    
+
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
 def worker_main(request, org_slug=None, opp_id=None):
-    data = [
-        {"index": 1, "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"}, "indicator": "green-600", "lastActive": "22-Aug-2025", "inviteDate": "22-Aug-2025", "startedLearn": "22-Aug-2025", "completedLearn": "22-Aug-2025", "daysToCompleteLearn": "22-Aug-2025", "firstDeliveryDate": "25-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 2, "worker": {"id": "AB34YZ56LM90", "name": "John Doe"}, "indicator": "blue-500", "lastActive": "23-Aug-2025", "inviteDate": "23-Aug-2025", "startedLearn": "23-Aug-2025", "completedLearn": "23-Aug-2025", "daysToCompleteLearn": "23-Aug-2025", "firstDeliveryDate": "26-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 3, "worker": {"id": "BC45KL67OP89", "name": "Emma Smith"}, "indicator": "red-700", "lastActive": "24-Aug-2025", "inviteDate": "24-Aug-2025", "startedLearn": "24-Aug-2025", "completedLearn": "24-Aug-2025", "daysToCompleteLearn": "24-Aug-2025", "firstDeliveryDate": "27-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 4, "worker": {"id": "CD56MN78QR12", "name": "Michael Johnson"}, "indicator": "yellow-300", "lastActive": "25-Aug-2025", "inviteDate": "25-Aug-2025", "startedLearn": "25-Aug-2025", "completedLearn": "25-Aug-2025", "daysToCompleteLearn": "25-Aug-2025", "firstDeliveryDate": "28-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 5, "worker": {"id": "EF67OP89RS23", "name": "Sophia Brown"}, "indicator": "orange-500", "lastActive": "26-Aug-2025", "inviteDate": "26-Aug-2025", "startedLearn": "26-Aug-2025", "completedLearn": "26-Aug-2025", "daysToCompleteLearn": "26-Aug-2025", "firstDeliveryDate": "29-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 6, "worker": {"id": "GH78QR90ST34", "name": "Daniel Lee"}, "indicator": "green-700", "lastActive": "27-Aug-2025", "inviteDate": "27-Aug-2025", "startedLearn": "27-Aug-2025", "completedLearn": "27-Aug-2025", "daysToCompleteLearn": "27-Aug-2025", "firstDeliveryDate": "30-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 7, "worker": {"id": "IJ89ST01UV45", "name": "Olivia Harris"}, "indicator": "purple-400", "lastActive": "28-Aug-2025", "inviteDate": "28-Aug-2025", "startedLearn": "28-Aug-2025", "completedLearn": "28-Aug-2025", "daysToCompleteLearn": "28-Aug-2025", "firstDeliveryDate": "31-Aug-2025", "daysToStartDelivery": "3 days"},
-        {"index": 8, "worker": {"id": "KL90UV12WX56", "name": "James Wilson"}, "indicator": "blue-400", "lastActive": "29-Aug-2025", "inviteDate": "29-Aug-2025", "startedLearn": "29-Aug-2025", "completedLearn": "29-Aug-2025", "daysToCompleteLearn": "29-Aug-2025", "firstDeliveryDate": "01-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 9, "worker": {"id": "MN01VW23XY67", "name": "Charlotte Scott"}, "indicator": "pink-500", "lastActive": "30-Aug-2025", "inviteDate": "30-Aug-2025", "startedLearn": "30-Aug-2025", "completedLearn": "30-Aug-2025", "daysToCompleteLearn": "30-Aug-2025", "firstDeliveryDate": "02-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 10, "worker": {"id": "OP12XY34ZA89", "name": "William Moore"}, "indicator": "cyan-600", "lastActive": "31-Aug-2025", "inviteDate": "31-Aug-2025", "startedLearn": "31-Aug-2025", "completedLearn": "31-Aug-2025", "daysToCompleteLearn": "31-Aug-2025", "firstDeliveryDate": "03-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 11, "worker": {"id": "QR23YZ45AB01", "name": "Ava Clark"}, "indicator": "brown-700", "lastActive": "01-Sep-2025", "inviteDate": "01-Sep-2025", "startedLearn": "01-Sep-2025", "completedLearn": "01-Sep-2025", "daysToCompleteLearn": "01-Sep-2025", "firstDeliveryDate": "04-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 12, "worker": {"id": "ST34AB56CD12", "name": "Lucas Lewis"}, "indicator": "teal-500", "lastActive": "02-Sep-2025", "inviteDate": "02-Sep-2025", "startedLearn": "02-Sep-2025", "completedLearn": "02-Sep-2025", "daysToCompleteLearn": "02-Sep-2025", "firstDeliveryDate": "05-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 13, "worker": {"id": "UV45BC67EF23", "name": "Amelia Walker"}, "indicator": "grey-400", "lastActive": "03-Sep-2025", "inviteDate": "03-Sep-2025", "startedLearn": "03-Sep-2025", "completedLearn": "03-Sep-2025", "daysToCompleteLearn": "03-Sep-2025", "firstDeliveryDate": "06-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 14, "worker": {"id": "WX56DE78FG34", "name": "Mason Allen"}, "indicator": "lime-500", "lastActive": "04-Sep-2025", "inviteDate": "04-Sep-2025", "startedLearn": "04-Sep-2025", "completedLearn": "04-Sep-2025", "daysToCompleteLearn": "04-Sep-2025", "firstDeliveryDate": "07-Sep-2025", "daysToStartDelivery": "3 days"},
-        {"index": 15, "worker": {"id": "YZ67FG89HI45", "name": "Ethan Harris"}, "indicator": "indigo-600", "lastActive": "05-Sep-2025", "inviteDate": "05-Sep-2025", "startedLearn": "05-Sep-2025", "completedLearn": "05-Sep-2025", "daysToCompleteLearn": "05-Sep-2025", "firstDeliveryDate": "08-Sep-2025", "daysToStartDelivery": "3 days"}
-    ]
-
-
-
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    data = get_worker_table_data(opportunity)
     table = WorkerMainTable(data)
     return render(request, "tailwind/pages/worker_main.html",{ "table": table})
 
@@ -3519,43 +3506,43 @@ def worker_flagged_table(request,org_slug=None,opp_id=None):
         {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'], "reportIcons": ['flag']}
         for i in range(25)
     ]
-    table = FlaggedWorkerTable(data)    
+    table = FlaggedWorkerTable(data)
     return render(request, "tailwind/components/worker_page/table.html", {"table": table})
 
 def worker_review_table(request,org_slug=None,opp_id=None):
     data = [
-        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'], 
+        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'],
          "last_activity": "12 Aug 2025", "reportIcons": ['pending','partial']}
         for i in range(25)
     ]
-    table = CommonWorkerTable(data)    
+    table = CommonWorkerTable(data)
     return render(request, "tailwind/components/worker_page/table.html", {"table": table})
 
 def worker_revalidate_table(request,org_slug=None,opp_id=None):
     data = [
-        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'], 
+        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'],
          "last_activity": "12 Aug 2025", "reportIcons": ['reject','partial']}
         for i in range(25)
     ]
-    table = CommonWorkerTable(data)    
+    table = CommonWorkerTable(data)
     return render(request, "tailwind/components/worker_page/table.html", {"table": table})
 
 def worker_approved_table(request,org_slug=None,opp_id=None):
     data = [
-        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'], 
+        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'],
          "last_activity": "12 Aug 2025", "reportIcons": ['accept','approved']}
         for i in range(25)
     ]
-    table = CommonWorkerTable(data)    
+    table = CommonWorkerTable(data)
     return render(request, "tailwind/components/worker_page/table.html", {"table": table})
 
 def worker_rejected_table(request,org_slug=None,opp_id=None):
     data = [
-        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'], 
+        {"index": i+1, "time": "14:56", "entity_name": "Viollo Maeya", "flags": ['Location','Form Duration','Photos'],
          "last_activity": "12 Aug 2025", "reportIcons": ['reject','cancelled']}
         for i in range(25)
     ]
-    table = CommonWorkerTable(data)    
+    table = CommonWorkerTable(data)
     return render(request, "tailwind/components/worker_page/table.html", {"table": table})
 
 def worker_all_table(request,org_slug=None,opp_id=None):
@@ -3570,7 +3557,7 @@ def worker_all_table(request,org_slug=None,opp_id=None):
         ['approved'],
         ['cancelled']
     ]
-    
+
     data = [
         {
             "index": i+1,
@@ -3583,7 +3570,7 @@ def worker_all_table(request,org_slug=None,opp_id=None):
         }
         for i in range(25)
     ]
-    table = AllWorkerTable(data)    
+    table = AllWorkerTable(data)
     return render(request, "tailwind/components/worker_page/table.html", {"table": table})
 def my_organization(request, org_slug=None, opp_id=None):
      return render(request, "tailwind/pages/my_organization.html", {"header_title": "My Organization"})
@@ -3611,7 +3598,7 @@ def my_organization_members_table(request, org_slug=None, opp_id=None):
         {"index": 19, "member": "Quincy Adams", "status": "active", "email": "quincy.adams@example.com", "addedOn": "25-Aug-2025", "addedBy": "Paul Allen", "role": "Manager"},
         {"index": 20, "member": "Rachel Young", "status": "inactive", "email": "rachel.young@example.com", "addedOn": "28-Aug-2025", "addedBy": "Quincy Adams", "role": "User"}
     ]
-    
+
     table = MyOrganizationMembersTable(data)
     return render(request, "tailwind/components/tables/index_selectable_table.html",{ "table": table})
 
@@ -3650,7 +3637,7 @@ def opportunity_worker_learn_progress(request, org_slug=None, opp_id=None):
         },
     ]
     table = OpportunityWorkerLearnProgressTable(data)
-    return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Learn Progress", "table": table })    
+    return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Learn Progress", "table": table })
 
 
 def opportunity_worker_payment(request, org_slug=None, opp_id=None):
@@ -3686,4 +3673,4 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
         },
     ]
     table = OpportunityWorkerPaymentTable(data)
-    return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Payment", "table": table })    
+    return render(request, "tailwind/pages/opportunity_worker_extended.html", {"header_title": "Worker", "kpi":user_kpi, "tab_name": "Payment", "table": table })

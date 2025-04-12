@@ -1,3 +1,5 @@
+import uuid
+from datetime import timedelta
 from http import HTTPStatus
 
 import pytest
@@ -5,6 +7,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect.opportunity.helpers import get_worker_table_data
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
@@ -18,7 +21,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     PaymentUnitFactory,
-    UserVisitFactory,
+    UserVisitFactory, LearnModuleFactory, CompletedModuleFactory,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
@@ -215,3 +218,61 @@ def test_approve_visit(
         )
     assert response.redirect_chain[-1][0] == expected_redirect_url
     assert response.status_code == HTTPStatus.OK
+
+
+@pytest.mark.django_db
+def test_get_worker_table_data_all_fields(opportunity):
+    today = now().date()
+    five_days_ago = today - timedelta(days=5)
+    three_days_ago = today - timedelta(days=3)
+    two_days_ago = today - timedelta(days=2)
+
+    opportunity.end_date = today +timedelta(days=5)
+    opportunity.save()
+    opportunity.refresh_from_db()
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+
+    access = OpportunityAccessFactory(opportunity=opportunity)
+
+    # Completed modules
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=five_days_ago,
+    )
+    CompletedModuleFactory(
+        xform_id=uuid.uuid4(),
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=today,
+    )
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module2,
+        date=three_days_ago,
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        visit_date=two_days_ago,
+    )
+
+    result = get_worker_table_data(opportunity)
+    row = result.get(id=access.id)
+
+    assert row.started_learn.date() == five_days_ago
+    assert row.completed_learn.date() == three_days_ago
+    assert row.days_to_complete_learn.days == 2
+    assert row.first_delivery.date() == two_days_ago
+    assert row.days_to_start_delivery.days == (today-two_days_ago).days
+    assert row.last_active.date() == today

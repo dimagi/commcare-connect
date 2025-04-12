@@ -1,6 +1,8 @@
 from collections import namedtuple
 
-from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When
+from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When, ExpressionWrapper, DurationField, OuterRef, \
+    Subquery
+from django.db.models.functions import Greatest, Coalesce, Least, Now
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -9,7 +11,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
-    VisitValidationStatus,
+    VisitValidationStatus, CompletedModule,
 )
 
 
@@ -151,3 +153,48 @@ def get_payment_report_data(opportunity: Opportunity):
             PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
         )
     return data, total_user_payment_accrued, total_nm_payment_accrued
+
+
+def get_worker_table_data(opportunity):
+    learn_modules_count = opportunity.learn_app.learn_modules.count()
+
+    min_dates_per_module = CompletedModule.objects.filter(
+        opportunity_access=OuterRef('pk')
+    ).values('module').annotate(
+        min_date=Min('date')
+    ).values('min_date')
+
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date")),
+        started_learn=Min("completedmodule__date"),
+        completed_modules_count=Count(
+            "completedmodule__module",
+            distinct=True,
+        ),
+        completed_learn=Case(
+            When(
+                Q(completed_modules_count=learn_modules_count),
+                then=Subquery(
+                    min_dates_per_module.order_by('-min_date')[:1]
+                )
+            ),
+            default=None,
+        ),
+        days_to_complete_learn=ExpressionWrapper(
+            F("completed_learn") - F("started_learn"),
+            output_field=DurationField(),
+        ),
+        first_delivery=Min(
+            "uservisit__visit_date",
+        ),
+        days_to_start_delivery=ExpressionWrapper(
+            Coalesce(
+                Least(Now(), Value(opportunity.end_date)),
+                Now()
+            ) - F("first_delivery"),
+            output_field=DurationField()
+        ),
+
+    )
+
+    return queryset

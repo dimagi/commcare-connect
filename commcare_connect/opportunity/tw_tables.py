@@ -1,8 +1,13 @@
+import itertools
+
 import django_tables2 as tables
 from django.utils.html import format_html
 from django_tables2.utils import A
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
+
+from commcare_connect.opportunity.models import OpportunityAccess
+
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
@@ -16,10 +21,10 @@ class LearnAppTable(BaseTailwindTable):
     name = tables.Column(verbose_name="Name")
     description = tables.Column(verbose_name="Description")
     estimated_time = tables.Column(verbose_name="Estimated Time")
-    
+
     class Meta:
         sequence = ("index", "name", "description", "estimated_time")
-    
+
     def render_index(self, value):
         return format_html(
             '<div class="">{}</div>', value
@@ -35,25 +40,25 @@ class LearnAppTable(BaseTailwindTable):
     def render_estimated_time(self, value):
         return format_html(
             '<div class="">{}</div>', value
-        )                
-        
+        )
+
 class DeliveryAppTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     unit_name = tables.Column(verbose_name="Deliver Unit Name")
     unit_id = tables.Column(verbose_name="Deliver Unit ID")
-    
+
     class Meta:
         sequence = ("index", "unit_name", "unit_id")
-    
+
     def render_index(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-    
+
     def render_unit_name(self, value):
         return format_html(
             '<div class="">{}</div>', value
-        )        
+        )
     def render_unit_id(self, value):
         return format_html(
             '<div class="">{}</div>', value
@@ -68,29 +73,29 @@ class PaymentAppTable(BaseTailwindTable):
     total_deliveries = tables.Column(verbose_name="Total Deliveries")
     max_daily = tables.Column(verbose_name="Max Daily")
     delivery_units = tables.Column(verbose_name="Delivery Units")
-    
+
     class Meta:
         sequence = ("index", "unit_name", "start_date", "end_date", "amount", "total_deliveries", "max_daily", "delivery_units")
-    
+
     def render_index(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-    
+
     def render_unit_name(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-    
+
     def render_start_date(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-    
+
     def render_end_date(self, value):
         return format_html(
             """
-            <div class="relative w-36" 
+            <div class="relative w-36"
                 x-data="{{
                     isOpen: false,
                     init() {{
@@ -125,22 +130,22 @@ class PaymentAppTable(BaseTailwindTable):
             """,
             value,
             value
-        )    
+        )
     def render_amount(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-        
+
     def render_total_deliveries(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-    
+
     def render_max_daily(self, value):
         return format_html(
             '<div class="">{}</div>', value
         )
-    
+
     def render_delivery_units(self, value):
         return format_html(
             '''<div class="flex justify-between">
@@ -149,7 +154,7 @@ class PaymentAppTable(BaseTailwindTable):
                 </div>
             ''', value
         )
-       
+
 class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
     time = tables.Column(verbose_name="Time")
@@ -367,7 +372,7 @@ class AddBudgetTable(BaseTailwindTable):
     def render_end_date(self, value):
         return format_html(
             """
-            <div class="relative w-36" 
+            <div class="relative w-36"
                 x-data="{{
                     isOpen: false,
                     init() {{
@@ -402,12 +407,12 @@ class AddBudgetTable(BaseTailwindTable):
             value,
             value
         )
-        
+
 class OpportunitiesListTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.base_columns['index'].verbose_name = mark_safe(
             '''
             <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer">
@@ -605,7 +610,7 @@ class OpportunitiesListTable(BaseTailwindTable):
     )
 
     class Meta:
-        
+
         sequence = (
             "index",
             "opportunity",
@@ -621,7 +626,7 @@ class OpportunitiesListTable(BaseTailwindTable):
             "actions"
         )
 
-    
+
 
     def render_index(self, value):
         return format_html(
@@ -652,25 +657,25 @@ class OpportunitiesListTable(BaseTailwindTable):
             '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
-    
+
     def render_pendingInvites(self, value):
         return format_html(
             '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
             value['link'], value['count'],
         )
-    
+
     def render_inactiveWorkers(self, value):
         return format_html(
             '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
             value['link'],  value['count'],
         )
-    
+
     def render_pendingApprovals(self, value):
         return format_html(
             '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
             value['link'], value['count'],
         )
-    
+
     def render_paymentsDue(self, value):
         return format_html(
             '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
@@ -691,7 +696,7 @@ class WorkerPaymentsTable(tables.Table):
                                     {% if value %}
                                        <div class="status-active"></div>
                                     {% else %}
-                                        <div class="status-error"></div> 
+                                        <div class="status-error"></div>
                                     {% endif %}
                                     """,
     )
@@ -714,7 +719,7 @@ class WorkerPaymentsTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -736,7 +741,7 @@ class WorkerPaymentsTable(tables.Table):
                 {"type": "meta", "meta": {"sort": True}},
             ],
         }
-        
+
         last_active_dropdown_html = render_to_string(
             "tailwind/components/dropdowns/multi_type_dropdown.html",
             {
@@ -757,7 +762,7 @@ class WorkerPaymentsTable(tables.Table):
                             <div class="w-4 h-2 bg-black rounded"></div>
                         </div>
         ''')
-                
+
 
 
     class Meta:
@@ -879,7 +884,7 @@ class WorkerLearnTable(tables.Table):
     )
     modules_completed = tables.TemplateColumn(
         verbose_name="Modules Completed",
-        template_code=""" 
+        template_code="""
                             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value %}
                         """,
     )
@@ -907,7 +912,7 @@ class WorkerLearnTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -929,7 +934,7 @@ class WorkerLearnTable(tables.Table):
                 {"type": "meta", "meta": {"sort": True}},
             ],
         }
-        
+
         last_active_dropdown_html = render_to_string(
             "tailwind/components/dropdowns/multi_type_dropdown.html",
             {
@@ -966,7 +971,7 @@ class WorkerLearnTable(tables.Table):
             "learning_hours",
             "action"
         )
-        
+
     def render_index(self, value, record):
         # Use 1-based indexing for display and storage
         display_index = value
@@ -1011,10 +1016,10 @@ class WorkerLearnTable(tables.Table):
         )
 
     def render_lastActive(self, value):
-        return format_html('<div">{}</div>', value) 
+        return format_html('<div">{}</div>', value)
 
     def render_start_learning(self, value):
-        return format_html('<div>{}</div>', value) 
+        return format_html('<div>{}</div>', value)
     def render_completed_learning(self, value):
         return format_html('<div class="">{}</div>', value)
     def render_assessment(self, value):
@@ -1085,11 +1090,11 @@ class WorkerDeliveryTable(BaseTailwindTable):
             "flagged",
             "approved",
             "rejected",
-            "action"  
+            "action"
         )
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -1110,7 +1115,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
                 </div>
             '''
         )
-        
+
     def render_index(self, value, record):
         # Use 1-based indexing for display and storage
         display_index = value
@@ -1156,12 +1161,12 @@ class WorkerDeliveryTable(BaseTailwindTable):
 
     def render_lastActive(self, value):
         return format_html('<div">{}</div>', value)
-    
+
     def render_payment_units(self, value):
         return format_html('<div>{}</div>', value)
     def render_started(self, value):
         return format_html('<div>{}</div>', value)
-    
+
     def render_delivered(self, value):
         # Handle both string and dictionary values
         if not isinstance(value, dict):
@@ -1181,22 +1186,22 @@ class WorkerDeliveryTable(BaseTailwindTable):
                         const dropdown = this.$refs.dropdown;
                         const windowHeight = window.innerHeight;
                         const dropdownHeight = dropdown.offsetHeight;
-                        
+
                         const spaceBelow = windowHeight - rect.bottom;
                         const showBelow = spaceBelow >= dropdownHeight;
-                        
+
                         const left = rect.left;
                         const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-                        
+
                         dropdown.style.top = `${{top}}px`;
                         dropdown.style.left = `${{left}}px`;
                     }}
                 }}">
-                
+
                 <button class="button-icon"
                         @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
                         @click.outside="isOpen = false">{}</button>
-                
+
                 <div x-ref="dropdown"
                     x-show="isOpen"
                     x-transition:enter="transition ease-out duration-100"
@@ -1207,10 +1212,10 @@ class WorkerDeliveryTable(BaseTailwindTable):
                     x-transition:leave-end="opacity-0 scale-95"
                     class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
                     style="display: none">
-                    
+
                     <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
                         <span class="text-start font-normal">Delivered Info</span>
-                    </div>                    
+                    </div>
                     {}
                 </div>
             </div>
@@ -1245,21 +1250,21 @@ class WorkerDeliveryTable(BaseTailwindTable):
                         const dropdown = this.$refs.dropdown;
                         const windowHeight = window.innerHeight;
                         const dropdownHeight = dropdown.offsetHeight;
-                        
+
                         const spaceBelow = windowHeight - rect.bottom;
                         const showBelow = spaceBelow >= dropdownHeight;
-                        
+
                         const left = rect.left;
                         const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-                        
+
                         dropdown.style.top = `${{top}}px`;
                         dropdown.style.left = `${{left}}px`;
                     }}
                 }}">
-                
+
                 <button class="button-icon"
                         @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
-                        @click.outside="isOpen = false">{}</button>        
+                        @click.outside="isOpen = false">{}</button>
                 <div x-ref="dropdown"
                     x-show="isOpen"
                     x-transition:enter="transition ease-out duration-100"
@@ -1270,10 +1275,10 @@ class WorkerDeliveryTable(BaseTailwindTable):
                     x-transition:leave-end="opacity-0 scale-95"
                     class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
                     style="display: none">
-                    
+
                     <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
                         <span class="text-start font-normal">Flagged Info</span>
-                    </div>                    
+                    </div>
                     {}
                 </div>
             </div>
@@ -1288,7 +1293,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
                 """
                 for option in options
             ]))
-        )    
+        )
     def render_approved(self, value):
     # Handle both string and dictionary values
         if not isinstance(value, dict):
@@ -1310,22 +1315,22 @@ class WorkerDeliveryTable(BaseTailwindTable):
                         const dropdown = this.$refs.dropdown;
                         const windowHeight = window.innerHeight;
                         const dropdownHeight = dropdown.offsetHeight;
-                        
+
                         const spaceBelow = windowHeight - rect.bottom;
                         const showBelow = spaceBelow >= dropdownHeight;
-                        
+
                         const left = rect.left;
                         const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-                        
+
                         dropdown.style.top = `${{top}}px`;
                         dropdown.style.left = `${{left}}px`;
                     }}
                 }}">
-                
+
                 <button class="button-icon"
                     @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
                     @click.outside="isOpen = false">{}</button>
-                
+
                 <div x-ref="dropdown"
                     x-show="isOpen"
                     x-transition:enter="transition ease-out duration-100"
@@ -1336,10 +1341,10 @@ class WorkerDeliveryTable(BaseTailwindTable):
                     x-transition:leave-end="opacity-0 scale-95"
                     class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
                     style="display: none">
-                    
+
                     <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
                         <span class="text-start font-normal">Approved Info</span>
-                    </div>                    
+                    </div>
                     {}
                 </div>
             </div>
@@ -1375,22 +1380,22 @@ class WorkerDeliveryTable(BaseTailwindTable):
                         const dropdown = this.$refs.dropdown;
                         const windowHeight = window.innerHeight;
                         const dropdownHeight = dropdown.offsetHeight;
-                        
+
                         const spaceBelow = windowHeight - rect.bottom;
                         const showBelow = spaceBelow >= dropdownHeight;
-                        
+
                         const left = rect.left - dropdown.offsetWidth + rect.width;
                         const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-                        
+
                         dropdown.style.top = `${{top}}px`;
                         dropdown.style.left = `${{left}}px`;
                     }}
                 }}">
-                
+
                 <button class="button-icon"
                         @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
                         @click.outside="isOpen = false">{}</button>
-                
+
                 <div x-ref="dropdown"
                     x-show="isOpen"
                     x-transition:enter="transition ease-out duration-100"
@@ -1401,10 +1406,10 @@ class WorkerDeliveryTable(BaseTailwindTable):
                     x-transition:leave-end="opacity-0 scale-95"
                     class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
                     style="display: none">
-                    
+
                     <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
                         <span class="text-start font-normal">Rejected Info</span>
-                    </div>                    
+                    </div>
                     {}
                 </div>
             </div>
@@ -1493,77 +1498,66 @@ class PayWorker(BaseTailwindTable):
             """,
             value,
         )
-    
+
+class IndexColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "#")
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault("empty_values", ())
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record, bound_column, bound_row, **kwargs):
+        table = bound_row._table  # Correct way to access table
+
+        page = getattr(table, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
+            table._row_counter = itertools.count(start=start_index)
+            table._row_counter_start = start_index
+        value = next(table._row_counter)
+        return value
+
+
+class DMYDate(tables.DateColumn):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("format", "d-M-Y")
+        super().__init__(*args, **kwargs)
+
 class WorkerMainTable(BaseTailwindTable):
-    index = tables.Column(orderable=False)
-    worker = tables.Column(verbose_name="Name", orderable=False)
-    indicator = tables.TemplateColumn(
-        verbose_name="Indicator",
+    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
+    name = tables.Column()
+    suspended = tables.TemplateColumn(
         orderable=False,
-        template_code="""
-        {% if value %}
-            <div class="w-10"><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
-        {% else %}
-            <div class="w-10"><div class="w-4 h-2"></div></div>
-        {% endif %}
-        """,
+        template_code="<>",
     )
-    lastActive = tables.Column(
-        verbose_name="Last Active",
-        orderable=False
-    )
-    inviteDate = tables.Column(
-        verbose_name="Invite Date",
-        orderable=False
-    )
-    startedLearn = tables.Column(
-        verbose_name="Started Learn",
-        orderable=False
-    )
-    completedLearn = tables.Column(
-        verbose_name="Completed Learn",
-        orderable=False
-    )
-    daysToCompleteLearn = tables.Column(
-        verbose_name="Days to complete Learn",
+    last_active = DMYDate()
+    started_learn = DMYDate()
+    completed_learn = DMYDate()
+    invited_date = DMYDate()
+    days_to_complete_learn = tables.Column(
         attrs={
             "td": {
                 "class": "p-0",
             }
         },
     )
-    firstDeliveryDate=tables.Column(
-        verbose_name="First Delivery Date",
-        orderable=False
-    )
-    daysToStartDelivery=tables.Column(
-        verbose_name="Days to Start Delivery",
-        orderable=False
-    )
-    action = tables.TemplateColumn(
-        verbose_name="",
-        orderable=False,
-        template_code="""
-            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
-                <i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>
-            </div>
-        """
-    )
+    first_delivery=tables.Column()
+    days_to_start_delivery=tables.Column()
 
-    # class Meta:
-    #     sequence = {
-    #         "index",
-    #         "worker",
-    #         "indicator",
-    #         "lastActive",
-    #         "inviteDate",
-    #         "startedLearn",
-    #         "completedLearn",
-    #         "daysToCompleteLearn",
-    #         "firstDeliveryDate",
-    #         "daysToStartDelivery",
-    #         "action",
-    #     }
+    # Commenting Not sure why it is used if used why opacity 0?
+    # action = tables.TemplateColumn(
+    #     verbose_name="",
+    #     orderable=False,
+    #     template_code="""
+    #         <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+    #             <i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>
+    #         </div>
+    #     """
+    # )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1580,37 +1574,31 @@ class WorkerMainTable(BaseTailwindTable):
             '''
         )
 
-        HEADERS = {
-            "status": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Inactive"},
-                {"type": "radio", "name": "Active"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-        }
-        
-        last_active_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': "Last Active",
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
+        self.base_columns['suspended'].verbose_name = mark_safe(
+            '<div class="w-[40px]"><div class="w-4 h-2 bg-black rounded"></div></div>')
 
-        self.base_columns['lastActive'].verbose_name = mark_safe(f'''
-            <div class="flex items-center cursor-pointer">
-                {last_active_dropdown_html}
-            </div>
-        ''')
-        
-        self.base_columns['indicator'].verbose_name = mark_safe(f'''
-             <div class="w-[40px]">
-                            <div class="w-4 h-2 bg-black rounded"></div>
-                        </div>
-        ''')
-    def render_index(self, value, record):
-        display_index = value
+    def render_suspended(self, value):
+        color_class = 'positive-dark' if value else 'negative-dark'
+        element = f'<div class="w-10"><div class="w-4 h-2 rounded {color_class}"></div></div>'
+        return format_html(element)
+
+    def render_index(self):
+        page = getattr(self, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if (
+            not hasattr(self, '_row_counter') or
+            not hasattr(self, '_row_counter_start') or
+            self._row_counter_start != start_index
+        ):
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        print("@@@@@@@")
+        display_index = next(self._row_counter)
 
         return format_html(
             """
@@ -1640,7 +1628,7 @@ class WorkerMainTable(BaseTailwindTable):
         )
 
     def render_worker(self, value):
-        
+
         return format_html(
             """
         <div class="flex flex-col items-start w-40">
@@ -1651,18 +1639,15 @@ class WorkerMainTable(BaseTailwindTable):
             value["name"],
             value["id"],
         )
-    
-    def render_lastActive(self, value):
-        return format_html(
-            """
-            <div class="flex flex-col items-start">
-                <p class="text-sm text-slate-900 ">{}</p>
-            </div>
-            """,
-            value
-        )
 
-    
+
+    class Meta:
+        model = OpportunityAccess
+        fields = ("suspended", "invited_date")
+        sequence = ("index", "name", "suspended", "last_active", "invited_date", "started_learn",
+                    "completed_learn", "days_to_complete_learn", "first_delivery", "days_to_start_delivery")
+
+
 class BaseWorkerTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     time = tables.Column(verbose_name="Time", orderable=False)
@@ -1714,7 +1699,7 @@ class BaseWorkerTable(BaseTailwindTable):
                 x-data="{{'hovering': false}}"
                 x-on:mouseenter="hovering = true"
                 x-on:mouseleave="hovering = false">
-                
+
                 <i x-show="!isRowSelected({0}) && hovering"
                    class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
                    x-on:click="toggleRow({0}); $dispatch('selection-changed', {{selected: selectedRows}}); $event.stopPropagation()"></i>
@@ -1735,7 +1720,7 @@ class BaseWorkerTable(BaseTailwindTable):
 
     def render_entity_name(self, value):
         return format_html('<div class="">{}</div>', value)
-    
+
     def render_reportIcons(self, record):
         # Expect record['reportIcons'] to be a list of status strings.
         statuses = record.get("reportIcons", [])
@@ -1762,7 +1747,7 @@ class BaseWorkerTable(BaseTailwindTable):
             justify_class,
             mark_safe(icons_html),
         )
-    
+
 class FlaggedWorkerTable(BaseWorkerTable):
     class Meta:
         sequence = (
@@ -1772,7 +1757,7 @@ class FlaggedWorkerTable(BaseWorkerTable):
             "flags",
             "reportIcons",
         )
-    
+
 class CommonWorkerTable(BaseWorkerTable):
     last_activity = tables.Column(verbose_name="Last Activity", orderable=False)
 
@@ -1788,7 +1773,7 @@ class CommonWorkerTable(BaseWorkerTable):
 
     def render_last_activity(self, value):
         return format_html('<div class="">{}</div>', value)
-    
+
 class AllWorkerTable(BaseWorkerTable):
     date = tables.Column(verbose_name="Date", orderable=False)
     last_activity = tables.Column(verbose_name="Last Activity", orderable=False)
@@ -1810,7 +1795,7 @@ class AllWorkerTable(BaseWorkerTable):
     def render_last_activity(self, value):
         return format_html('<div class="">{}</div>', value)
 
-   
+
     def render_lastActive(self, value):
         return format_html(
             """
@@ -1883,7 +1868,7 @@ class InvoicesListTable(BaseTailwindTable):
         )
 
     class Meta:
-        
+
         sequence = (
             "index",
             "invoiceNumber",
@@ -1969,7 +1954,7 @@ class InvoicePaymentReportTable(BaseTailwindTable):
         )
 
     class Meta:
-        
+
         sequence = (
             "index",
             "paymentUnit",
@@ -2067,7 +2052,7 @@ class MyOrganizationMembersTable(BaseTailwindTable):
         )
 
     class Meta:
-        
+
         sequence = (
             "index",
             "member",
