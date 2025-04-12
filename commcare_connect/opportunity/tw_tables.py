@@ -1529,7 +1529,7 @@ class DMYDate(tables.DateColumn):
 
 class WorkerMainTable(BaseTailwindTable):
     index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
-    name = tables.Column()
+    user = tables.Column()
     suspended = tables.TemplateColumn(
         orderable=False,
         template_code="<>",
@@ -1597,7 +1597,6 @@ class WorkerMainTable(BaseTailwindTable):
             self._row_counter = itertools.count(start=start_index)
             self._row_counter_start = start_index
 
-        print("@@@@@@@")
         display_index = next(self._row_counter)
 
         return format_html(
@@ -1627,8 +1626,7 @@ class WorkerMainTable(BaseTailwindTable):
             display_index,
         )
 
-    def render_worker(self, value):
-
+    def render_user(self, value):
         return format_html(
             """
         <div class="flex flex-col items-start w-40">
@@ -1636,15 +1634,15 @@ class WorkerMainTable(BaseTailwindTable):
             <p class="text-xs text-slate-400">{}</p>
         </div>
         """,
-            value["name"],
-            value["id"],
+            value.name,
+            value.username,
         )
 
 
     class Meta:
         model = OpportunityAccess
         fields = ("suspended", "invited_date")
-        sequence = ("index", "name", "suspended", "last_active", "invited_date", "started_learn",
+        sequence = ("index", "user", "suspended", "last_active", "invited_date", "started_learn",
                     "completed_learn", "days_to_complete_learn", "first_delivery", "days_to_start_delivery")
 
 
