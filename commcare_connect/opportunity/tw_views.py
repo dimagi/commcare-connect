@@ -9,7 +9,7 @@ from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from .helpers import get_worker_table_data
 from .models import OpportunityAccess, CompletedModule
 
-from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
+from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, WorkerStatusTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
 from .views import OrganizationUserMixin, get_opportunity_or_404
 
 
@@ -3362,7 +3362,7 @@ def pay_worker(request, org_slug=None, opp_id=None):
 def worker_main(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_table_data(opportunity)
-    table = WorkerMainTable(data)
+    table = WorkerStatusTable(data)
     return render(request, "tailwind/pages/worker_main.html",{ "table": table})
 
 

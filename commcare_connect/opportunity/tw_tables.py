@@ -1527,13 +1527,26 @@ class DMYDate(tables.DateColumn):
         kwargs.setdefault("format", "d-M-Y")
         super().__init__(*args, **kwargs)
 
-class WorkerMainTable(BaseTailwindTable):
+
+class SuspendedIndicatorColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('orderable', False)
+        kwargs.setdefault('verbose_name', mark_safe(
+            '<div class="w-[40px]"><div class="w-4 h-2 bg-black rounded"></div></div>'
+        ))
+        super().__init__(*args, **kwargs)
+
+    def render(self, value):
+        color_class = 'positive-dark' if value else 'negative-dark'
+        return format_html(
+            '<div class="w-10"><div class="w-4 h-2 rounded {}"></div></div>',
+            color_class
+        )
+
+class WorkerStatusTable(BaseTailwindTable):
     index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
     user = tables.Column()
-    suspended = tables.TemplateColumn(
-        orderable=False,
-        template_code="<>",
-    )
+    suspended = SuspendedIndicatorColumn()
     last_active = DMYDate()
     started_learn = DMYDate()
     completed_learn = DMYDate()
@@ -1574,13 +1587,6 @@ class WorkerMainTable(BaseTailwindTable):
             '''
         )
 
-        self.base_columns['suspended'].verbose_name = mark_safe(
-            '<div class="w-[40px]"><div class="w-4 h-2 bg-black rounded"></div></div>')
-
-    def render_suspended(self, value):
-        color_class = 'positive-dark' if value else 'negative-dark'
-        element = f'<div class="w-10"><div class="w-4 h-2 rounded {color_class}"></div></div>'
-        return format_html(element)
 
     def render_index(self):
         page = getattr(self, 'page', None)
