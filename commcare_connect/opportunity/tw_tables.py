@@ -16,6 +16,40 @@ class BaseTailwindTable(tables.Table):
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
 
+
+class UserInfoColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('orderable', True)
+        kwargs.setdefault('verbose_name', "User")
+        super().__init__(*args, **kwargs)
+
+    def render(self, value):
+        return format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            value.name,
+            value.username,
+        )
+
+class SuspendedIndicatorColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('orderable', False)
+        kwargs.setdefault('verbose_name', mark_safe(
+            '<div class="w-[40px]"><div class="w-4 h-2 bg-black rounded"></div></div>'
+        ))
+        super().__init__(*args, **kwargs)
+
+    def render(self, value):
+        color_class = 'positive-dark' if value else 'negative-dark'
+        return format_html(
+            '<div class="w-10"><div class="w-4 h-2 rounded {}"></div></div>',
+            color_class
+        )
+
 class LearnAppTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     name = tables.Column(verbose_name="Name")
@@ -861,44 +895,28 @@ class WorkerLearnTable(tables.Table):
     index = tables.Column(
         orderable=False,
     )
-    worker = tables.Column(
-        verbose_name="Name",
-    )
-    indicator = tables.TemplateColumn(
-        verbose_name="Indicator",
-        orderable=False,
-        template_code="""
-            {% if value %}
-            <div class=""><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
-            {% else %}
-                <div class=""><div class=" h-2"></div></div>
-            {% endif %}
-            """,
-    )
-    lastActive = tables.Column(
-        verbose_name="Last Active",
+    user = UserInfoColumn()
+    suspended = SuspendedIndicatorColumn()
+    last_active = tables.Column(
         orderable=False,
     )
-    start_learning = tables.Column(
-        verbose_name="Start Learning",
+    started_learning = tables.Column(
     )
     modules_completed = tables.TemplateColumn(
-        verbose_name="Modules Completed",
         template_code="""
                             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value %}
                         """,
     )
     completed_learning = tables.Column(
-        verbose_name="Completed Learning",
+        accessor="completed_learn"
     )
     assessment = tables.Column(
-        verbose_name="Assessment",
+        accessor="passed_assessment"
     )
     attempts = tables.Column(
-        verbose_name="Attempts",
+        accessor="assesment_count"
     )
     learning_hours = tables.Column(
-        verbose_name="Learning Hours",
     )
     action = tables.TemplateColumn(
         verbose_name="",
@@ -944,25 +962,20 @@ class WorkerLearnTable(tables.Table):
             }
         )
 
-        self.base_columns['lastActive'].verbose_name = mark_safe(f'''
+        self.base_columns['last_active'].verbose_name = mark_safe(f'''
             <div class="flex items-center cursor-pointer">
                 {last_active_dropdown_html}
             </div>
         ''')
 
-        self.base_columns['indicator'].verbose_name = mark_safe(f'''
-             <div class="w-[40px]">
-                            <div class="w-4 h-2 bg-black rounded"></div>
-                        </div>
-        ''')
-
 
     class Meta:
+        model = OpportunityAccess
         sequence = (
             "index",
-            "worker",
-            "indicator",
-            "lastActive",
+            "user",
+            "suspended",
+            "last_active",
             "start_learning",
             "modules_completed",
             "completed_learning",
@@ -1003,31 +1016,6 @@ class WorkerLearnTable(tables.Table):
             display_index,
         )
 
-    def render_worker(self, value):
-        return format_html(
-            """
-        <div class="flex flex-col items-start">
-            <p class="text-sm text-slate-900 ">{}</p>
-            <p class="text-xs text-slate-400">{}</p>
-        </div>
-        """,
-            value["name"],
-            value["id"],
-        )
-
-    def render_lastActive(self, value):
-        return format_html('<div">{}</div>', value)
-
-    def render_start_learning(self, value):
-        return format_html('<div>{}</div>', value)
-    def render_completed_learning(self, value):
-        return format_html('<div class="">{}</div>', value)
-    def render_assessment(self, value):
-        return format_html('<div class="">{}</div>', value)
-    def render_attempts(self, value):
-        return format_html('<div class="">{}</div>', value)
-    def render_learning_hours(self, value):
-        return format_html('<div class="">{}</div>', value)
 
 class WorkerDeliveryTable(BaseTailwindTable):
     index = tables.Column(
@@ -1528,24 +1516,10 @@ class DMYDate(tables.DateColumn):
         super().__init__(*args, **kwargs)
 
 
-class SuspendedIndicatorColumn(tables.Column):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault('orderable', False)
-        kwargs.setdefault('verbose_name', mark_safe(
-            '<div class="w-[40px]"><div class="w-4 h-2 bg-black rounded"></div></div>'
-        ))
-        super().__init__(*args, **kwargs)
-
-    def render(self, value):
-        color_class = 'positive-dark' if value else 'negative-dark'
-        return format_html(
-            '<div class="w-10"><div class="w-4 h-2 rounded {}"></div></div>',
-            color_class
-        )
 
 class WorkerStatusTable(BaseTailwindTable):
     index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
-    user = tables.Column()
+    user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = DMYDate()
     started_learn = DMYDate()
@@ -1630,18 +1604,6 @@ class WorkerStatusTable(BaseTailwindTable):
             </div>
         """,
             display_index,
-        )
-
-    def render_user(self, value):
-        return format_html(
-            """
-        <div class="flex flex-col items-start w-40">
-            <p class="text-sm text-slate-900 ">{}</p>
-            <p class="text-xs text-slate-400">{}</p>
-        </div>
-        """,
-            value.name,
-            value.username,
         )
 
 

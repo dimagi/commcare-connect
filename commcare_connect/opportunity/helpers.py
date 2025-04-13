@@ -1,8 +1,8 @@
 from collections import namedtuple
 
 from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When, ExpressionWrapper, DurationField, OuterRef, \
-    Subquery
-from django.db.models.functions import Greatest, Coalesce, Least, Now
+    Subquery, BooleanField, FloatField, Exists
+from django.db.models.functions import Greatest, Coalesce, Least, Now, Round
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -11,7 +11,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
-    VisitValidationStatus, CompletedModule,
+    VisitValidationStatus, CompletedModule, Assessment,
 )
 
 
@@ -197,4 +197,45 @@ def get_worker_table_data(opportunity):
 
     )
 
+    return queryset
+
+
+def get_worker_learn_table_data(opportunity):
+    learn_modules_count = opportunity.learn_app.learn_modules.count()
+    min_dates_per_module = CompletedModule.objects.filter(
+        opportunity_access=OuterRef('pk')
+    ).values('module').annotate(
+        min_date=Min('date')
+    ).values('min_date')
+
+    assessments_qs = Assessment.objects.filter(
+        user=OuterRef("user"),
+        opportunity=OuterRef("opportunity"),
+        passed=True
+    )
+
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+        last_active=Max("completedmodule__date"),
+        started_learning = Max("completedmodule__date"),
+        completed_modules_count=Count("completedmodule__module", distinct=True),
+        completed_learn=Case(
+            When(
+                Q(completed_modules_count=learn_modules_count),
+                then=Subquery(
+                    min_dates_per_module.order_by('-min_date')[:1]
+                )
+            ),
+            default=None,
+        ),
+        passed_assessment=Exists(assessments_qs),
+        assesment_count=Count("assessment", distinct=True),
+        learning_hours=Sum("completedmodule__duration", distinct=True),
+        modules_completed_percentage=Round(
+            ExpressionWrapper(
+                F("completed_modules_count") * 100.0 / learn_modules_count,
+                output_field=FloatField()
+            ),
+            1
+        )
+    )
     return queryset
