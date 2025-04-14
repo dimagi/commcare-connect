@@ -736,6 +736,297 @@ class OpportunitiesListTable(BaseTailwindTable):
             value['link'], value['amount'],
         )
 
+class PMOpportunitiesListTable(BaseTailwindTable):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.base_columns['index'].verbose_name = mark_safe(
+            '''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer">
+                #
+            </div>
+            '''
+        )
+
+
+        HEADERS = {
+            "opportunities": [
+                {"type": "radio", "name": "All"},
+                {"type": "radio", "name": "Test"},
+                {"type": "radio", "name": "Live"},
+                {"type": "meta", "meta": {"sort": True}},
+            ],
+            "status": [
+                {
+                    "type": "radio",
+                    "name": "All",
+                },
+                {
+                    "type": "radio",
+                    "name": "Inactive",
+                },
+                {
+                    "type": "radio",
+                    "name": "Active",
+                },
+                {
+                    "type": "radio",
+                    "name": "Ended",
+                },
+            ],
+        }
+
+        opp_dropdown_html = render_to_string(
+            "tailwind/components/dropdowns/multi_type_dropdown.html",
+            {
+                'text': 'Opportunity',
+                'list': HEADERS['opportunities'],
+                'styles': 'text-sm font-medium text-brand-deep-purple'
+            }
+        )
+
+        status_dropdown_html = render_to_string(
+            "tailwind/components/dropdowns/multi_type_dropdown.html",
+            {
+                'text': 'Status',
+                'list': HEADERS['status'],
+                'styles': 'text-sm font-medium text-brand-deep-purple'
+            }
+        )
+
+        self.base_columns['opportunity'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+                {opp_dropdown_html}
+            </div>
+        ''')
+
+        self.base_columns['entityStatus'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple "">
+                {status_dropdown_html}
+            </div>
+        ''')
+
+        self.base_columns['program'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+                Program
+            </div>
+        ''')
+
+        self.base_columns['startDate'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple ">
+                Start Date
+            </div>
+        ''')
+
+        self.base_columns['endDate'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+                End Date
+            </div>
+        ''')
+
+        self.base_columns['activeWorkers'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+                Active Workers
+            </div>
+        ''')
+
+
+        self.base_columns['deliveries'].verbose_name = mark_safe('''
+            <div class="relative inline-flex items-center group cursor-default">
+                <span>Deliveries</span>
+                <!-- Tooltip container - positioned relative to viewport -->
+                <div class="fixed hidden group-hover:block z-50 pointer-events-none -translate-x-[15%] -translate-y-[70%] transform">
+                    <!-- Arrow -->
+                    <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+                    
+                    <!-- Tooltip content with proper arrow -->
+                    <div class="relative bg-white w-28 rounded p-2 text-slate-500 text-xs whitespace-normal break-words">
+                        Deliveries in the past 3 days or more
+                    </div>
+                </div>
+            </div>
+            ''')
+
+
+        self.base_columns['approved'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+                Approved
+            </div>
+        ''')
+
+        self.base_columns['earnings'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+                Earnings
+            </div>
+        ''')
+
+    index = tables.Column(verbose_name="#", orderable=False)
+    opportunity = tables.Column( orderable=False)
+    # entityType = tables.TemplateColumn(
+    #     verbose_name="",
+    #     orderable=False,
+    #     template_code="""
+    #         <div class="flex justify-start text-sm font-normal text-brand-deep-purple w-fit"
+    #              x-data="{
+    #                showTooltip: false,
+    #                tooltipStyle: '',
+    #                positionTooltip(el) {
+    #                  const rect = el.getBoundingClientRect();
+    #                  const top = rect.top - 30;  /* 30px above the icon */
+    #                  const left = rect.left + rect.width/2;
+    #                  this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
+    #                }
+    #              }">
+    #           {% if value %}
+    #             {% if value == 'test' %}
+    #                 <div class="relative">
+    #                     <i class="fa-light fa-file-dashed-line"
+    #                        @mouseenter="showTooltip = true; positionTooltip($el)"
+    #                        @mouseleave="showTooltip = false
+    #                        "></i>
+    #                     <span x-show="showTooltip"
+    #                           :style="tooltipStyle"
+    #                           class="fixed z-40 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+    #                         Test Opportunity
+    #                     </span>
+    #                 </div>
+    #             {% else %}
+    #                 <span class="relative">
+    #                     <i class="invisible fa-light fa-file-dashed-line"></i>
+    #                 </span>
+    #             {% endif %}
+    #           {% endif%}
+    #         </div>
+    #     """,
+    # )
+    entityStatus = tables.TemplateColumn(
+        verbose_name="Status",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+                {% if value %}
+                {% if value == 'active' %}
+                    <span class="badge badge-sm bg-green-600/20 text-green-600">{{value}}</span>
+                {% elif value == 'inactive' %}
+                    <span class="badge badge-sm bg-orange-600/20 text-orange-600">{{value}}</span>
+                {% elif value == 'ended' %}
+                    <span class="badge badge-sm bg-slate-100 text-slate-400">{{value}}</span>
+                {% endif %}
+               {% endif%}
+            </div>
+        """,
+    )
+    program = tables.Column(verbose_name="Program", orderable=False)
+    startDate = tables.Column(verbose_name="Start Date", orderable=False)
+    endDate = tables.Column(verbose_name="End Date", orderable=False)
+
+    activeWorkers = tables.Column(
+        verbose_name="Active Workers",
+        orderable=False,
+    )
+    deliveries = tables.Column(
+        verbose_name="Deliveries",
+        orderable=False,
+    )
+    approved = tables.Column(
+        verbose_name="Approved",
+        orderable=False,
+    )
+    earnings = tables.Column(
+        verbose_name="Earnings",
+        orderable=False,
+    )
+    actions = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+          <div class="flex justify-center w-4 text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+               {% if value %}
+              {% include "tailwind/components/dropdowns/text_button_dropdown.html" with text='...' list=value.list styles='text-sm' %}
+          {% endif%}
+          </div>
+        """,
+    )
+
+    class Meta:
+        
+        sequence = (
+            "index",
+            "opportunity",
+            # "entityType",
+            "entityStatus",
+            "program",
+            "startDate",
+            "endDate",
+            "activeWorkers",
+            "deliveries",
+            "approved",
+            "earnings",
+            "actions"
+        )
+
+    
+
+    def render_index(self, value):
+        return format_html(
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+
+    def render_opportunity(self, value):
+        return format_html(
+            """
+        <div class="flex flex-col items-start">
+            <p class="text-sm text-slate-900 ">{}</p>
+            <p class="text-xs text-slate-400">{}</p>
+        </div>
+        """,
+            value["oppName"],
+            value["nmName"],
+        )
+    def render_program(self, value):
+        return format_html(
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+
+    def render_startDate(self, value):
+        return format_html(
+            '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+
+    def render_endDate(self, value):
+        return format_html(
+            '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+    
+    # def render_pendingInvites(self, value):
+    #     return format_html(
+    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+    #         value['link'], value['count'],
+    #     )
+    
+    # def render_inactiveWorkers(self, value):
+    #     return format_html(
+    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+    #         value['link'],  value['count'],
+    #     )
+    
+    # def render_pendingApprovals(self, value):
+    #     return format_html(
+    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+    #         value['link'], value['count'],
+    #     )
+    
+    # def render_paymentsDue(self, value):
+    #     return format_html(
+    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
+    #         value['link'], value['amount'],
+    #     )
+
 class WorkerPaymentsTable(tables.Table):
     index = tables.Column(
         orderable=False,
@@ -2106,7 +2397,7 @@ class MyOrganizationMembersTable(BaseTailwindTable):
         verbose_name="Roles",
         orderable=False,
         template_code="""
-        <a href="#" class="underline underline-offset-4">{{value}}</a>
+        <p x-on:click="isViewPermissionModalOpen = true" class="cursor-pointer underline underline-offset-4">{{value}}</p>
         """
     )
 

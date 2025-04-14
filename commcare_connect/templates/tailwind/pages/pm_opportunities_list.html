@@ -1,0 +1,37 @@
+<!-- opportunities_list.html -->
+
+{% extends 'tailwind/base.html' %}
+{% block content %}
+<div class="flex items-center justify-center">
+  <div
+    class="flex flex-col gap-2 w-full"
+    
+  >
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+      <p class="text-sm text-brand-deep-purple">Opportunities List</p>
+      <div class="flex gap-x-6">
+        <button type="button"><i class="fa-light fa-sliders-simple"></i></button>
+        <button
+        class="button button-md primary-dark"
+      >
+        Add New
+      </button>
+      </div>
+    </div>
+
+    <!-- Table Header -->
+    <div class="flex flex-col w-full gap-2">
+
+      <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
+        <div hx-get="/a/test-1/opportunity/1/tw/tables/pm_opportunities_list/" hx-trigger="load" hx-swap="outerHTML"></div>
+      </div>
+    </div>
+
+    <!--Table Footer-->
+<div
+class="table-footer w-full flex items-center justify-between h-14  bg-slate-50  text-brand-deep-purple py-2 px-4 rounded-lg">
+{% include "tailwind/components/pagination.html" %}
+</div>
+  </div>
+</div>
+{% endblock %}
