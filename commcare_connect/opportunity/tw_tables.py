@@ -1025,41 +1025,15 @@ class WorkerDeliveryTable(BaseTailwindTable):
     index = tables.Column(
         orderable=False,
     )
-    worker = tables.Column(
-        verbose_name="Name",
-    )
-    indicator = tables.TemplateColumn(
-        verbose_name="Indicator",
-        orderable=False,
-        template_code="""
-            {% if value %}
-            <div class=""><div class="w-4 h-2 rounded bg-{{ value }}"></div></div>
-            {% else %}
-                <div class=""><div class=" h-2"></div></div>
-            {% endif %}
-            """,
-    )
-    lastActive = tables.Column(
-        verbose_name="Last Active",
-    )
-    payment_units = tables.Column(
-        verbose_name="Payment Units",
-    )
-    started = tables.Column(
-        verbose_name="Started",
-    )
-    delivered = tables.Column(
-        verbose_name="Delivered",
-    )
-    flagged = tables.Column(
-        verbose_name="Flagged",
-    )
-    approved = tables.Column(
-        verbose_name="Approved",
-    )
-    rejected = tables.Column(
-        verbose_name="Rejected",
-    )
+    user=UserInfoColumn()
+    suspended = SuspendedIndicatorColumn()
+    last_active = tables.Column()
+    payment_units = tables.Column()
+    started = tables.Column()
+    delivered = tables.Column()
+    flagged = tables.Column()
+    approved = tables.Column()
+    rejected = tables.Column()
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -1071,11 +1045,13 @@ class WorkerDeliveryTable(BaseTailwindTable):
     )
 
     class Meta:
+        model=OpportunityAccess
+        fields = ("suspended", "user")
         sequence = (
             "index",
-            "worker",
-            "indicator",
-            "lastActive",
+            "user",
+            "suspended",
+            "last_active",
             "payment_units",
             "started",
             "delivered",
@@ -1100,13 +1076,6 @@ class WorkerDeliveryTable(BaseTailwindTable):
             '''
         )
 
-        self.base_columns['indicator'].verbose_name = mark_safe(
-            '''
-                <div class="w-[40px]">
-                    <div class="w-4 h-2 bg-black rounded"></div>
-                </div>
-            '''
-        )
 
     def render_index(self, value, record):
         # Use 1-based indexing for display and storage
@@ -1139,25 +1108,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
             display_index,
         )
 
-    def render_worker(self, value):
-        return format_html(
-            """
-        <div class="flex flex-col items-start">
-            <p class="text-sm text-slate-900 ">{}</p>
-            <p class="text-xs text-slate-400">{}</p>
-        </div>
-        """,
-            value["name"],
-            value["id"],
-        )
 
-    def render_lastActive(self, value):
-        return format_html('<div">{}</div>', value)
-
-    def render_payment_units(self, value):
-        return format_html('<div>{}</div>', value)
-    def render_started(self, value):
-        return format_html('<div>{}</div>', value)
 
     def render_delivered(self, value):
         # Handle both string and dictionary values
@@ -1417,6 +1368,8 @@ class WorkerDeliveryTable(BaseTailwindTable):
                 for option in options
             ]))
         )
+
+
 class PayWorker(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     worker = tables.Column(verbose_name="Worker")

@@ -6,7 +6,7 @@ from django.shortcuts import redirect, render
 from django.template import Template, Context
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
-from .helpers import get_worker_table_data, get_worker_learn_table_data
+from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
 from .models import OpportunityAccess, CompletedModule
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, WorkerStatusTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
@@ -2758,9 +2758,12 @@ def worker_delivery(request, org_slug=None, opp_id=None):
             },
         }
     ]
-
-
-    table = WorkerDeliveryTable(data)
+    opportunity = get_opportunity_or_404(opp_id,org_slug)
+    queryset= get_annotated_opportunity_access_deliver_status(opportunity)
+    final_query = queryset.annotate(
+        flagged=Count("uservisit__completedwork", filter=Q(uservisit__flagged=True), distinct=True),
+    )
+    table = WorkerDeliveryTable (data)
     return render(request, "tailwind/pages/worker_delivery.html", {"table": table})
 
 
