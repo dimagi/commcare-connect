@@ -2,11 +2,13 @@
 <div class="md:max-w-screen-2xl mx-auto flex items-center">
   <div class="w-full space-y-4">
     <!-- Profile & Statistic Cards Container -->
-    <div class="flex gap-4  items-center h-32 p-4 profile-bg bg-brand-indigo rounded-2xl">
+    <div class="flex gap-4 items-center h-32 p-4 profile-bg bg-brand-indigo rounded-2xl">
         {% include "tailwind/components/worker_page/profile.html" %} 
-        {% for data in kpi %}
-        {% include "tailwind/components/cards/kpi.html" with count=data.count text=data.name icon=data.icon dropdown=data.dropdown %}  
-        {% endfor %} 
+        <div class="grid grid-cols-5 gap-4 w-full">
+          {% for data in kpi %}
+          {% include "tailwind/components/cards/kpi.html" with count=data.count text=data.name icon=data.icon dropdown=data.dropdown %}  
+          {% endfor %} 
+        </div>
     </div>
     <div class="flex justify-center w-full">
       <div class="w-full grid grid-cols-10 gap-2">
