@@ -38,11 +38,33 @@
     @apply text-gray-400 text-xs
 }
 
-@layer components {
-    .marquee {
-      @apply  truncate;
+@layer utilities {
+
+    @keyframes scroll {
+        0% {
+          transform: translateX(0);
+        }
+        100% {
+          transform: translateX(calc(-100% + 2rem));
+        }
+    }
+    
+    .animate-scroll {
+        animation: scroll 4s linear forwards;
+    }
+    
+    .hover\:animate-scroll:hover {
+        animation: scroll 4s linear forwards;
     } 
-}
+
+    .animate-marquee{
+       @apply overflow-hidden w-full;
+    }
+ 
+    .animate-marquee p{
+        @apply truncate text-nowrap hover:overflow-visible;
+    } 
+  }
 
 /*-- status ----------------------------------*/
 .status-active{
