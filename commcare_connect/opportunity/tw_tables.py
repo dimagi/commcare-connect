@@ -1,5 +1,10 @@
+import itertools
+
 import django_tables2 as tables
+from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.timezone import now
 from django_tables2.utils import A
 from django.utils.safestring import mark_safe
 
@@ -343,7 +348,7 @@ class WorkerPaymentsTable(tables.Table):
                                     {% if value %}
                                        <div class="status-active"></div>
                                     {% else %}
-                                        <div class="status-error"></div> 
+                                        <div class="status-error"></div>
                                     {% endif %}
                                     """,
     )
@@ -370,7 +375,7 @@ class WorkerPaymentsTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -520,7 +525,7 @@ class WorkerLearnTable(tables.Table):
     )
     modules_completed = tables.TemplateColumn(
         verbose_name="Modules Completed",
-        template_code=""" 
+        template_code="""
                             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value %}
                         """,
     )
@@ -539,7 +544,7 @@ class WorkerLearnTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
             '''
@@ -582,7 +587,7 @@ class WorkerLearnTable(tables.Table):
             "attempts",
             "learning_hours",
         )
-        
+
     def render_index(self, value, record):
         # Use 1-based indexing for display and storage
         display_index = value
@@ -627,10 +632,10 @@ class WorkerLearnTable(tables.Table):
         )
 
     def render_lastActive(self, value):
-        return format_html('<div">{}</div>', value) 
+        return format_html('<div">{}</div>', value)
 
     def render_start_learning(self, value):
-        return format_html('<div>{}</div>', value) 
+        return format_html('<div>{}</div>', value)
     def render_completed_learning(self, value):
         return format_html('<div class="">{}</div>', value)
     def render_assessment(self, value):
@@ -713,7 +718,239 @@ class PayWorker(BaseTailwindTable):
             """,
             value,
         )
-    
+
+class OpportunitiesListViewTable(BaseTailwindTable):
+    stats_style = "underline underline-offset-2 justify-center"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        HEADERS = {
+            "opportunities": [
+                {"type": "radio", "name": "All"},
+                {"type": "radio", "name": "Test"},
+                {"type": "radio", "name": "Live"},
+                {"type": "meta", "meta": {"sort": True}},
+            ],
+            "status": [
+                {
+                    "type": "radio",
+                    "name": "All",
+                },
+                {
+                    "type": "radio",
+                    "name": "Inactive",
+                },
+                {
+                    "type": "radio",
+                    "name": "Active",
+                },
+                {
+                    "type": "radio",
+                    "name": "Ended",
+                },
+            ],
+        }
+
+        opp_dropdown_html = render_to_string(
+            "tailwind/components/dropdowns/multi_type_dropdown.html",
+            {
+                'text': 'Opportunity',
+                'list': HEADERS['opportunities'],
+                'styles': 'text-sm font-medium text-brand-deep-purple'
+            }
+        )
+
+        status_dropdown_html = render_to_string(
+            "tailwind/components/dropdowns/multi_type_dropdown.html",
+            {
+                'text': 'Status',
+                'list': HEADERS['status'],
+                'styles': 'text-sm font-medium text-brand-deep-purple'
+            }
+        )
+
+        self.base_columns['opportunity'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
+                @click="sortBy('opportunity')">
+                {opp_dropdown_html}
+                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
+                    :class="{{
+                        'rotate-180': isSorted('opportunity') && sortDirection === 'desc',
+                        'opacity-0 group-hover:opacity-100': !isSorted('opportunity'),
+                        'opacity-100': isSorted('opportunity'),
+                        'animate-fade-in': isSorted('opportunity') && sortDirection === 'asc'
+                    }}"></i>
+            </div>
+        ''')
+
+        self.base_columns['status'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
+                @click="sortBy('entityStatus')">
+                {status_dropdown_html}
+                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
+                    :class="{{
+                        'rotate-180': isSorted('entityStatus') && sortDirection === 'desc',
+                        'opacity-0 group-hover:opacity-100': !isSorted('entityStatus'),
+                        'opacity-100': isSorted('entityStatus'),
+                        'animate-fade-in': isSorted('entityStatus') && sortDirection === 'asc'
+                    }}"></i>
+            </div>
+        ''')
+
+    index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
+    opportunity = tables.Column(accessor="name", orderable=False)
+    entityType = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start text-sm font-normal text-brand-deep-purple w-fit"
+                 x-data="{
+                   showTooltip: false,
+                   tooltipStyle: '',
+                   positionTooltip(el) {
+                     const rect = el.getBoundingClientRect();
+                     const top = rect.top - 30;  /* 30px above the icon */
+                     const left = rect.left + rect.width/2;
+                     this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
+                   }
+                 }">
+                {% if record.is_test %}
+                    <div class="relative">
+                        <i class="fa-light fa-file-dashed-line"
+                           @mouseenter="showTooltip = true; positionTooltip($el)"
+                           @mouseleave="showTooltip = false
+                           "></i>
+                        <span x-show="showTooltip"
+                              :style="tooltipStyle"
+                              class="fixed z-50 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+                            Test Opportunity
+                        </span>
+                    </div>
+                {% else %}
+                    <span class="relative">
+                        <i class="invisible fa-light fa-file-dashed-line"></i>
+                    </span>
+                {% endif %}
+            </div>
+        """,
+    )
+    status = tables.TemplateColumn(
+        verbose_name="Status",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+              {% if value == 0 %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
+              {% elif value == 1 %}
+                    {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
+              {% else %}
+                   {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
+              {% endif %}
+            </div>
+        """,
+        extra_context={"now": now()},
+    )
+    program = tables.Column()
+    start_date = tables.Column()
+    end_date = tables.Column()
+    pending_invites = tables.Column()
+    inactive_workers = tables.Column()
+    pending_approvals = tables.Column()
+    payments_due = tables.Column()
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+    class Meta:
+        sequence = (
+            "index",
+            "opportunity",
+            "entityType",
+            "status",
+            "program",
+            "start_date",
+            "end_date",
+            "pending_invites",
+            "inactive_workers",
+            "pending_approvals",
+            "payments_due",
+            "actions"
+        )
+
+    def render_div(self, value, extra_classes=""):
+        base_classes = (
+            "flex text-sm font-normal truncate text-brand-deep-purple "
+            "overflow-clip overflow-ellipsis"
+        )
+        all_classes = f"{base_classes} {extra_classes}".strip()
+        return format_html('<div class="{}">{}</div>', all_classes, value)
+
+    def render_index(self, value):
+        page = getattr(self, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(self, '_row_counter') or self._row_counter_start != start_index:
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        return self.render_div(next(self._row_counter), extra_classes="justify-start")
+
+    def render_opportunity(self, value):
+        return self.render_div(value, extra_classes="justify-start")
+
+    def render_program(self, value):
+        return self.render_div(value if value else "--", extra_classes="justify-start")
+
+    def render_start_date(self, value):
+        return self.render_div(value, extra_classes="justify-center")
+
+    def render_end_date(self, value):
+        return self.render_div(value, extra_classes="justify-center")
+
+    def render_pending_invites(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_inactive_workers(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_pending_approvals(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_payments_due(self, value):
+        if value is None:
+            value = 0
+        return self.render_div(f"${value}", extra_classes=self.stats_style)
+
+    def render_actions(self, record):
+        # TO-DO update the urls once finalize
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Pending Reviews",
+                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Pending Invoices",
+                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+            }
+        ]
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            }
+        )
+        return mark_safe(html)
+
+
 class WorkerMainTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     worker = tables.Column(verbose_name="Name", orderable=False)
@@ -776,7 +1013,7 @@ class WorkerMainTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.base_columns['index'].verbose_name = mark_safe(
             '''
             <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
@@ -858,3 +1095,6 @@ class WorkerMainTable(BaseTailwindTable):
 #                                     {% endif %}
 #                                     """,
 #     )
+
+
+

@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.opportunity import tw_views, views
+from commcare_connect.opportunity.tw_views import OpportunityListView
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -132,6 +133,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
     path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
+    path("tw/opportunities_list_new/", OpportunityListView.as_view(), name="opportunities_list_new"),
     path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"),
     path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),
     path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),
@@ -139,7 +141,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO
-    # Tables 
+    # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),

@@ -8,23 +8,23 @@
       const badgeRect = badge.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
-      
+
       // Calculate available space
       const spaceBelow = viewportHeight - badgeRect.bottom;
       const shouldShowAbove = spaceBelow < 200 && badgeRect.top > 200;
-      
+
       // Position calculation
-      let top = shouldShowAbove 
+      let top = shouldShowAbove
         ? badgeRect.top + window.scrollY - 200
         : badgeRect.bottom + window.scrollY;
-      
+
       // Adjust for right edge
       let left = Math.min(
-        badgeRect.left, 
+        badgeRect.left,
         viewportWidth - 220
         );
-      
-      
+
+
 
       this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
     },
@@ -63,11 +63,12 @@
     class="z-[9999] w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
   >
     <p class="text-blue-light text-xs mb-1">{{ title|default:'' }}</p>
-    <div class="" >
+   <div class="" >
       {% for item in list %}
-     <div> <button type="button" class="bg-transparent  border-0 px-2 my-2">
-        {{item}}
-      </button></div>
+      <a href="{{ item.url }}" class="block w-full text-left bg-transparent border-0 px-2 my-2 hover:bg-slate-100 rounded">
+        {{ item.title }}
+      </a>
       {% endfor %}
+    </div>
   </div>
 </span>

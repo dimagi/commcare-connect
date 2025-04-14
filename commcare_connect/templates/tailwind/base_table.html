@@ -1,6 +1,7 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block table-wrapper %}
+{% load sort_link %}
 <div class="scrollable-table-wrapper">
   {% block table %}
   <div class="scrollable-table-container">
@@ -13,7 +14,7 @@
           <th>
             {% if column.orderable %}
             <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" >
-              {{ column.header }}
+              {% sortable_header column.name column.header %}
             </a>
             {% else %}
             <span>{{ column.header }}</span>
@@ -73,35 +74,35 @@
       margin-bottom: .5rem; {% endcomment %}
       {% comment %} box-shadow: 0 2px 4px rgba(0,0,0,0.1); {% endcomment %}
     }
-  
+
     .scrollable-table-container {
       max-height: 80vh;
       width: 100%;
       overflow-x: auto;
       display: block;
     }
-  
+
     {% comment %} .scrollable-table {
       width: 100%;
       border-collapse: collapse;
       table-layout: auto;
     }
-  
+
     .scrollable-table thead {
       position: sticky;
       top: 0;
       z-index: 10;
       font-size: 0.875rem;
-      color:#16006d; 
+      color:#16006d;
     }
-  
+
     .scrollable-table thead th {
       background: #e2e8f0;
       font-weight: 500;
-      height: 56px; 
+      height: 56px;
       position: relative;
     }
-  
+
     /* Add the visual gap using a pseudo-element */
     .scrollable-table thead::after {
       content: "";
@@ -113,12 +114,12 @@
       background: #f3f4f6;
       pointer-events: none;
     }
-  
+
     .scrollable-table tbody {
       padding-top: 2rem;
-      font-size: 0.875rem; 
+      font-size: 0.875rem;
     }
-  
+
     .scrollable-table th,
     .scrollable-table td {
       padding: 12px;
@@ -126,13 +127,13 @@
       border-bottom: 1px solid #ddd;
       white-space: nowrap;
     }
-  
+
     /* Use first and last-child to round first and last header cells */
     .scrollable-table thead th:first-child {
       border-top-left-radius: 8px;
       border-bottom-left-radius: 8px;
     }
-  
+
     .scrollable-table thead th:last-child {
       border-top-right-radius: 8px;
       border-bottom-right-radius: 8px;
@@ -142,13 +143,13 @@
         margin-top: 8px;
     }
     .scrollable-table tbody tr {
-        background: white; 
+        background: white;
     }
-    
+
     .scrollable-table tbody tr:first-child {
-        background: white; 
+        background: white;
     }
-    
+
     .scrollable-table tbody tr:first-child td {
         padding-top: 22px;
     }

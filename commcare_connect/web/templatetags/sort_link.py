@@ -1,5 +1,7 @@
 from django import template
-from django.utils.html import format_html
+from django.utils.html import format_html, strip_tags
+from django.utils.safestring import mark_safe
+from urllib.parse import urlencode
 
 register = template.Library()
 
@@ -46,3 +48,41 @@ def update_query_params(context, **kwargs):
         updated[key] = value
 
     return updated.urlencode()
+
+
+@register.simple_tag(takes_context=True)
+def sortable_header(context, field, label):
+    request = context["request"]
+    current_sort = request.GET.get("sort", "")
+
+    next_sort = ""
+
+    icon_element = '<i class="fa-solid ml-1 {}"></i>'
+
+    if current_sort == field:
+        next_sort = f"-{field}"
+        icon_element = icon_element.format("fa-sort-asc text-brand-deep-purple")
+        page = request.GET.get("page")
+    elif current_sort == f"-{field}":
+        next_sort = ""
+        icon_element = icon_element.format("fa-sort-desc text-brand-deep-purple")
+        page = request.GET.get("page")
+    else:
+        next_sort = field
+        icon_element = icon_element.format("fa-sort text-gray-400")
+        page = request.GET.get("page")
+
+    query_params = request.GET.copy()
+    if next_sort:
+        query_params["sort"] = next_sort
+    else:
+        query_params.pop("sort", None)
+
+    url = f"{request.path}?{urlencode(query_params)}"
+    label_text = strip_tags(label)
+
+    return format_html(
+        '<a href="{}" class="flex items-center text-sm font-medium text-brand-deep-purple">{}</a>',
+        url,
+        mark_safe(f"{label_text} {icon_element}"),
+    )

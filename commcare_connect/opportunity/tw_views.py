@@ -2,11 +2,15 @@ from django import forms
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template import Template, Context
+from django.views.generic import TemplateView
+from django_tables2 import SingleTableMixin
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+from .helpers import get_opportunity_list_data
 
-from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable,PayWorker
-
+from .tw_tables import OpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, \
+    WorkerLearnTable, PayWorker, OpportunitiesListViewTable
+from .views import OrganizationUserMixin
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -43,7 +47,7 @@ def home(request, org_slug=None, opp_id=None):
 def about(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/about.html")
 
-def dashboard(request, org_slug=None, opp_id=None): 
+def dashboard(request, org_slug=None, opp_id=None):
     data = {
         'programs': [
             {
@@ -327,9 +331,9 @@ def opportunities(request, org_slug=None, opp_id=None):
         },
     ]
     workerporgress = [
-        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
-        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}}, 
+        {"index": 1, "title":"Workers", "progress":{"total": 100, "maximum": 30,"avg":56}},
+        {"index": 2, "title":"Deliveries", "progress":{"total": 100, "maximum": 30,"avg":56}},
+        {"index": 3, "title":"Payments", "progress":{"total": 100, "maximum": 30,"avg":56}},
     ]
 
     funnel = [
@@ -649,6 +653,44 @@ def opportunity_visits(request, org_slug=None, opp_id=None):
         },
     )
 
+class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
+    template_name = "tailwind/pages/opportunities_list.html"
+    table_class = OpportunitiesListViewTable
+    paginate_by = 15
+
+    allowed_sort_columns = [
+        'program',
+        'start_date',
+        'end_date',
+        'pending_invites',
+        'inactive_workers',
+        'pending_approvals',
+        'payments_due',
+        'status'
+    ]
+
+    def get_table_data(self):
+        org = self.request.org
+        return get_opportunity_list_data(org)
+
+    def get_validated_order_by(self):
+        requested_order = self.request.GET.get('sort', 'start_date')
+
+        is_descending = requested_order.startswith('-')
+        column = requested_order[1:] if is_descending else requested_order
+        return requested_order if column in self.allowed_sort_columns else 'start_date'
+
+    def get_table(self, **kwargs):
+        table = super().get_table(**kwargs)
+
+        validated_order = self.get_validated_order_by()
+
+        if validated_order:
+            table.order_by = validated_order
+        else:
+            table.order_by = ("-status", "start_date", "end_date")
+
+        return table
 
 def opportunities_list_table_view(request, org_slug=None, opp_id=None):
     data = [
@@ -1466,7 +1508,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "assessment":"Passed",
             "attempts":"4",
             "learning_hours":"10h 19m"
-            
+
         },
         {
             "index": 2,
@@ -1575,7 +1617,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
             "attempts":"4",
             "learning_hours":"10h 19m"
         },
-        
+
     ]
 
     table = WorkerLearnTable(data)
@@ -1727,7 +1769,7 @@ def pay_worker(request, org_slug=None, opp_id=None):
 ]
 
     table = PayWorker(data)
-    
+
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
 def worker_main(request, org_slug=None, opp_id=None):
