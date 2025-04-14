@@ -903,8 +903,9 @@ class WorkerLearnTable(tables.Table):
     started_learning = tables.Column(
     )
     modules_completed = tables.TemplateColumn(
+        accessor="modules_completed_percentage",
         template_code="""
-                            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value %}
+                            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value|default:0 %}
                         """,
     )
     completed_learning = tables.Column(
@@ -971,12 +972,13 @@ class WorkerLearnTable(tables.Table):
 
     class Meta:
         model = OpportunityAccess
+        fields=("suspended", "user")
         sequence = (
             "index",
             "user",
             "suspended",
             "last_active",
-            "start_learning",
+            "started_learning",
             "modules_completed",
             "completed_learning",
             "assessment",
@@ -1016,6 +1018,8 @@ class WorkerLearnTable(tables.Table):
             display_index,
         )
 
+    def render_assessment(self, value):
+        return 'passed' if value else 'failed'
 
 class WorkerDeliveryTable(BaseTailwindTable):
     index = tables.Column(
