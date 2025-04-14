@@ -62,15 +62,12 @@ def sortable_header(context, field, label):
     if current_sort == field:
         next_sort = f"-{field}"
         icon_element = icon_element.format("fa-sort-asc text-brand-deep-purple")
-        page = request.GET.get("page")
     elif current_sort == f"-{field}":
         next_sort = ""
         icon_element = icon_element.format("fa-sort-desc text-brand-deep-purple")
-        page = request.GET.get("page")
     else:
         next_sort = field
         icon_element = icon_element.format("fa-sort text-gray-400")
-        page = request.GET.get("page")
 
     query_params = request.GET.copy()
     if next_sort:
