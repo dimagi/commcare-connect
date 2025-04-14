@@ -3,6 +3,7 @@
 {% load static %}
 {% load crispy_forms_tags %}
 {% load i18n %}
+{% load permissions %}
 
 {% block title %}{{ request.org }} - Invoices{% endblock title %}
 
@@ -19,7 +20,7 @@
 {% block content %}
   <h2>Invoices</h2>
   <hr />
-  {% if not request.org_membership.is_program_manager %}
+  {% if not request|is_program_manager_for_opportunity:opportunity.id %}
     <button type="button" class="btn btn-primary mb-2" data-bs-toggle="modal" data-bs-target="#invoiceModal">
       {% translate "Add New Invoice" %}
     </button>
@@ -38,7 +39,7 @@
     </div>
   </form>
 
-  {% if request.org_membership.is_program_manager %}
+  {% if request|is_program_manager_for_opportunity:opportunity.id %}
     <form x-data="{
             selectAll: false,
             selected: [],
@@ -61,13 +62,13 @@
     {% include "tables/table_placeholder.html" with num_cols=4 %}
   </div>
 
-  {% if request.org_membership.is_program_manager %}
+  {% if request|is_program_manager_for_opportunity:opportunity.id %}
       <button type="submit" class="btn btn-primary mt-2">{% translate "Pay" %}</button>
     </form>
   {% endif %}
 {% endblock content %}
 
-{% if not request.org_membership.is_program_manager %}
+{% if not request|is_program_manager_for_opportunity:opportunity.id %}
 {% block modal %}
   <div class="modal fade" id="invoiceModal" tabindex="-1" role="dialog" aria-labelledby="invoiceModalLabel" aria-hidden="true">
     <div class="modal-dialog" role="document">
