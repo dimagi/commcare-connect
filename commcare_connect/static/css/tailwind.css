@@ -292,6 +292,24 @@
     }
 }
 
+@layer components{
+    .infocard-dark2{
+        @apply flex gap-3 w-full justify-center;
+    }
+
+    .infocard-dark2 i{
+        @apply mt-1 text-gray-400;
+    }
+
+    .infocard-dark2 h6{
+        @apply text-xs text-slate-400;
+    }
+
+    .infocard-dark2 p{
+        @apply text-sm font-normal whitespace-nowrap text-slate-700
+    }
+}
+
 /*--- Info card light ------------------------- */
 @layer components {
     .infocard-light {

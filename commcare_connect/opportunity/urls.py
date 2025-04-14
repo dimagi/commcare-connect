@@ -137,9 +137,11 @@ urlpatterns = [
     path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
     # New tailwind based views
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
+    path("<int:opp_id>/tw/pm_dashboard/", tw_views.pm_dashboard, name="pm_dashboard"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
     path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
+    path("<int:opp_id>/tw/pm_opportunities_list/", tw_views.pm_opportunities_list, name="tw_pm_opportunities"),
     path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"), # TABLE
     path("<int:opp_id>/tw/worker_delivery/", tw_views.worker_delivery, name="tw_worker_deliver"),
     path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),  # TABLE
@@ -156,6 +158,7 @@ urlpatterns = [
     # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
+    path("<int:opp_id>/tw/tables/pm_opportunities_list/", tw_views.pm_opportunities_list_table_view, name="pm_opp_list"),
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
     path("<int:opp_id>/tw/tables/all_invoice", tw_views.all_invoice_table, name="tw_all_invoice"),
     path("<int:opp_id>/tw/tables/invoice_report", tw_views.invoice_report_table, name="tw_invoice_report"),
@@ -174,4 +177,5 @@ urlpatterns = [
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
     path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),
+    path("<int:opp_id>/tw/api/pm_cards/", tw_views.pm_opportunities_card, name="tw_pm_cards"),
 ]
