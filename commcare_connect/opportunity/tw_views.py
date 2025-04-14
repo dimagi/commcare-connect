@@ -1,19 +1,20 @@
 from django import forms
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
-from django.template import Template, Context
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
-from .helpers import get_opportunity_list_data
+from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
+from .models import LearnModule, DeliverUnit, PaymentUnit
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
     WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, \
     AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable, \
-    OpportunitiesListViewTable
-from .views import OrganizationUserMixin
+    OpportunitiesListViewTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable
+from .views import OrganizationUserMixin, get_opportunity_or_404
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -190,6 +191,21 @@ def learn_app_table(request, org_slug=None, opp_id=None):
     ]
     table = LearnAppTable(data)
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table,'app_name':'Learn App Name'})
+
+def learn_module_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    data = LearnModule.objects.filter(app=opp.learn_app)
+    table = LearnModuleTable(data)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html',
+                  {'table': table, 'app_name': 'Learn App Name'})
+
+def deliver_unit_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    unit = DeliverUnit.objects.filter(app=opp.deliver_app)
+    table = DeliverUnitTable(unit)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html',
+                  {'table': table, 'app_name': 'Delivery App Name'})
+
 def delivery_app_table(request, org_slug=None, opp_id=None):
     data = [
         {"index": 1, "unit_name": "Unit Name 1", "unit_id": "Unit ID 1"},
@@ -215,6 +231,14 @@ def payment_app_table(request,org_slug=None, opp_id=None):
         {"index":10, "unit_name":"Payment Unit Name 5", "start_date":"2024-01-01", "end_date":"2024-12-31", "amount":100, "total_deliveries":145, "max_daily":3, "delivery_units":"10"},
     ]
     table = PaymentAppTable(data)
+    return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
+
+def payment_unit_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    payment_units = PaymentUnit.objects.filter(opportunity=opp).annotate(
+        delivery_unit_count=Count('deliver_unit')
+    )
+    table = OpportunityPaymentUnitTable(payment_units)
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
 
 def payment_app_table_expand(request,org_slug=None, opp_id=None):
@@ -3766,3 +3790,155 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
             table.order_by = ("-status", "start_date", "end_date")
 
         return table
+
+
+def opportunity_dashboard(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_dashboard_data(opp_id=2).first()
+
+    learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
+    deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
+    payment_unit_count = opp.paymentunit_set.count()
+
+    path = ['opportunities', opp.name]
+
+    opp_resource_counts = [
+        {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},
+        {"name": "Delivery App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
+        {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
+    ]
+
+    opp_basic_details = [
+        {
+            "name": "Delivery Type",
+            "count": opp.delivery_type.name,
+            "icon": "file-check",
+            "color": "",
+        },
+        {
+            "name": "Start Date",
+            "count": opp.start_date,
+            "icon": "calendar-range",
+            "color": "",
+        },
+        {
+            "name": "End Date",
+            "count": opp.end_date or '--',
+            "icon": "arrow-right",
+            "color": "",
+        },
+        {
+            "name": "Total Workers",
+            "count": opp.number_of_users,
+            "icon": "users",
+            "color": "brand-mango",
+        },
+        {
+            "name": "Total Service Deliveries",
+            "count": opp.allotted_visits,
+            "icon": "gears",
+            "color": "",
+        },
+        {
+            "name": "Worker Budget",
+            "count": opp.total_budget,
+            "icon": "money-bill",
+            "color": "",
+        },
+    ]
+
+    opp_stats = [
+        {
+            "title": "Workers",
+            "sub_heading": "Active Yesterday",
+            "value": opp.deliveries_from_yesterday,
+            "panels": [
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited},
+                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation",
+                 "value": opp.pending_invites},
+                {
+                    "icon": "fa-clipboard-list",
+                    "name": "Workers",
+                    "status": "Inactive last 3 days",
+                    "value": opp.inactive_workers,
+                    "type": "2",
+                },
+            ],
+        },
+
+        {
+            "title": "Deliveries",
+            "sub_heading": "Last Delivery",
+            "value": opp.most_recent_delivery or "--",
+            "panels": [
+                {
+                    "icon": "fa-clipboard-list-check",
+                    "name": "Deliveries",
+                    "status": "Total",
+                    "value": opp.total_deliveries,
+                    "incr": opp.deliveries_from_yesterday,
+                },
+                {
+                    "icon": "fa-clipboard-list-check",
+                    "name": "Deliveries",
+                    "status": "Awaiting Flag Review",
+                    "value": opp.flagged_deliveries_waiting_for_review,
+                },
+            ],
+        },
+        {
+            "title": "Worker Payments",
+            "sub_heading": "Last Payment ",
+            "value": opp.recent_payment or "--",
+            "panels": [
+                {
+                    "icon": "fa-hand-holding-dollar",
+                    "name": "Payments",
+                    "status": "Earned",
+                    "value": opp.total_accrued,
+                    "incr": "6",  # TO-DO
+                },
+                {"icon": "fa-light", "name": "Payments", "status": "Due", "value": opp.payments_due},
+            ],
+        },
+
+    ]
+
+    worker_progress = [
+        {"title": "Daily Active Workers",
+         "progress": [{"title": "Maximum", "total": opp.maximum_visit_in_a_day, "value": opp.maximum_visit_in_a_day,
+                       "badge_type": False},
+                      {"title": "Average", "total": opp.average_visits_per_day, "value": opp.average_visits_per_day,
+                       "badge_type": False}]},
+        {"title": "Service Deliveries",
+         "progress": [
+             {"title": "Verified", "total": opp.total_deliveries, "value": opp.approved_deliveries, "badge_type": True},
+             {"title": "Rejected", "total": opp.total_deliveries, "value": opp.rejected_deliveries,
+              "badge_type": True}]},
+        {"title": "Payments to Workers",
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": opp.total_accrued, "badge_type": True},
+                      {"title": "Paid", "total": opp.total_accrued, "value": opp.total_paid, "badge_type": True}]},
+    ]
+
+    funnel_progress = [
+        {"index": 1, "stage": "invited", "count": opp.workers_invited, "icon": "envelope"},
+        {"index": 2, "stage": "Accepted", "count": opp.workers_invited - opp.pending_invites, "icon": "circle-check"},
+        {"index": 3, "stage": "Started Learning", "count": opp.started_learning_count, "icon": "book-open-cover"},
+        {"index": 4, "stage": "Completed Learning", "count": opp.completed_learning, "icon": "book-blank"},
+        {"index": 5, "stage": "Completed Assessment", "count": opp.completed_assessments, "icon": "award-simple"},
+        {"index": 6, "stage": "Claimed Job", "count": opp.claimed_job, "icon": "user-check"},
+        {"index": 6, "stage": "Started Delivery", "count": opp.started_deleveries, "icon": "house-chimney-user"},
+    ]
+    return render(
+        request,
+        "tailwind/pages/opportunities.html",
+        {
+            "opp_resource_counts": opp_resource_counts,
+            "opportunity": opp,
+            "opp_basic_details": opp_basic_details,
+            "opp_stats": opp_stats,
+            "header_title": "Opportunities",
+            "funnel_progress": funnel_progress,
+            "worker_progress": worker_progress,
+            'path': path
+        },
+    )

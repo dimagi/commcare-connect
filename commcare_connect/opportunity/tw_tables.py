@@ -9,6 +9,8 @@ from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 from model_utils.models import now
 
+from commcare_connect.opportunity.models import LearnModule, DeliverUnit, PaymentUnit
+
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
@@ -16,6 +18,72 @@ class BaseTailwindTable(tables.Table):
     class Meta:
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
+
+
+class IndexColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "#")
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault("empty_values", ())
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record, bound_column, bound_row, **kwargs):
+        table = bound_row._table  # Correct way to access table
+
+        page = getattr(table, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
+            table._row_counter = itertools.count(start=start_index)
+            table._row_counter_start = start_index
+
+        return next(table._row_counter)
+
+class LearnModuleTable(BaseTailwindTable):
+    index = IndexColumn()
+
+    class Meta:
+        model = LearnModule
+        orderable = False
+        fields = ("index", "name", "description", "time_estimate")
+
+    def render_time_estimate(self, value):
+        return f"{value}hr"
+
+
+class DeliverUnitTable(BaseTailwindTable):
+    index = IndexColumn(empty_values=(), verbose_name="#")
+
+    slug = tables.Column(verbose_name="Delivery Unit ID")
+    name = tables.Column(verbose_name="Name")
+
+    class Meta:
+        model = DeliverUnit
+        fields = ("index", "slug", "name")  # Fields to show (index is custom so it's not included here)
+
+
+class OpportunityPaymentUnitTable(BaseTailwindTable):
+    index = IndexColumn()
+    name = tables.Column(verbose_name="Payment Unit Name")
+    max_total = tables.Column(verbose_name="Total Deliveries")
+    delivery_unit_count = tables.Column(verbose_name="Delivery Units")
+
+    class Meta:
+        model = PaymentUnit
+        orderable = False
+        fields = ("index", "name", "start_date", "end_date", "amount", "max_total", "max_daily", "delivery_unit_count")
+
+    def render_delivery_unit_count(self, value):
+        return format_html(
+            '''<div class="flex justify-between">
+                    <span>{}</span>
+                    <i class="fa-light fa-chevron-down"></i>
+                </div>
+            ''', value
+        )
 
 class LearnAppTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
