@@ -1,6 +1,7 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block table-wrapper %}
+{% load sort_link %}
 <div class="overflow-hidden">
   {% block table %}
   <div class="w-full max-h-[80vh] overflow-x-auto block">
@@ -13,7 +14,7 @@
           <th>
             {% if column.orderable %}
             <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" >
-              {{ column.header }}
+             {% sortable_header column.name column.header %}
             </a>
             {% else %}
             <span>{{ column.header }}</span>
@@ -64,5 +65,5 @@
     </table>
   </div>
   {% endblock table %}
-</div> 
+</div>
 {% endblock table-wrapper %}
