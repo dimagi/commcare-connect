@@ -92,6 +92,7 @@ from commcare_connect.opportunity.tables import (
     UserVisitReviewFilter,
     UserVisitReviewTable,
     UserVisitTable,
+    UserVisitVerificationTable,
 )
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
@@ -1431,3 +1432,72 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         },
     )
     return response
+
+
+class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
+    model = UserVisit
+    table_class = UserVisitVerificationTable
+    template_name = "tailwind/base_table.html"
+
+    def get_paginate_by(self, table_data):
+        return self.request.GET.get("per_page", 10)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        table = self.get_table(**self.get_table_kwargs())
+        self.total_pages = table.paginator.num_pages
+        context[self.get_context_table_name(table)] = table
+        return context
+
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        url = reverse(
+            "opportunity:user_visit_verification",
+            args=[request.org.slug, self.kwargs["opp_id"], self.kwargs["pk"]],
+        )
+        query_params = request.GET.urlencode()
+        response["HX-Replace-Url"] = f"{url}?{query_params}"
+        response["HX-Trigger"] = json.dumps({"load-total-pages": self.total_pages})
+        return response
+
+    def get_queryset(self):
+        self.filter_status = self.request.GET.get("filter_status")
+        self.filter_date = self.request.GET.get("filter_date")
+
+        filter_kwargs = {"opportunity_access": self.kwargs["pk"]}
+        if self.filter_date:
+            date = datetime.datetime.strptime(self.filter_date, "%Y-%m-%d")
+            print(date)
+            filter_kwargs.update({"visit_date__date": date})
+
+        if self.filter_status == "pending":
+            filter_kwargs.update({"status": VisitValidationStatus.pending})
+        if self.filter_status == "pending_review":
+            filter_kwargs.update(
+                {
+                    "review_status": VisitReviewStatus.pending,
+                    "status": VisitValidationStatus.approved,
+                }
+            )
+        if self.filter_status == "revalidate":
+            filter_kwargs.update(
+                {
+                    "review_status": VisitReviewStatus.disagree,
+                    "status": VisitValidationStatus.approved,
+                }
+            )
+        if self.filter_status == "approved":
+            filter_kwargs.update(
+                {
+                    "review_status": VisitReviewStatus.agree,
+                    "status": VisitValidationStatus.approved,
+                }
+            )
+        if self.filter_status == "rejected":
+            filter_kwargs.update({"status": VisitValidationStatus.rejected})
+        return UserVisit.objects.filter(**filter_kwargs).order_by("visit_date")
+
+
+def user_visit_details(request, org_slug, opp_id, pk):
+    user_visit = get_object_or_404(UserVisit, opportunity_id=opp_id, pk=pk)
+    return render(request, "opportunity/user_visit_details.html", context={"user_visit": user_visit})

@@ -179,4 +179,10 @@ urlpatterns = [
         view=views.user_visit_verification,
         name="user_visit_verification",
     ),
+    path(
+        "<int:opp_id>/user_visit_verification_table/<int:pk>/",
+        view=views.VisitVerificationTableView.as_view(),
+        name="user_visit_verification_table",
+    ),
+    path("<int:opp_id>/user_visit_details/<int:pk>/", view=views.user_visit_details, name="user_visit_details"),
 ]

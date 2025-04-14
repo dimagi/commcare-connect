@@ -30,7 +30,7 @@
             <div style="overflow:hidden; border-radius:8px;">
           {% for row in table.paginated_rows %}
           {% block table.tbody.row %}
-          <tr class="group">
+          <tr class="group" {{ row.attrs.as_html }}>
             {% for column, cell in row.items %}
             <td>
               {% if column.localize == None %}
@@ -70,7 +70,7 @@
       border-radius: 8px;
       overflow: hidden;
     }
-  
+
     .scrollable-table-container {
       max-height: 80vh;
       width: 100%;

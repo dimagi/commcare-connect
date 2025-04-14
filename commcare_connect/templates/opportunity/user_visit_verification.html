@@ -231,13 +231,13 @@
                       <option value="20">20</option>
                       <option value="50">50</option>
                     </select>
-                    <div class="flex items-center gap-2" x-data="page: 1">
-                      <span class="button-icon" @click="page -= page > 0 ? 1 : 0;">
+                    <div class="flex items-center gap-2" x-data="{page: 1, totalPages: 1}" @load-total-pages.window="totalPages = $event.detail.value">
+                      <span class="button-icon" @click="page -= page > 1 ? 1 : 0;" :disabled="page == 1">
                         <i class="fa-light fa-chevron-left"></i>
                       </span>
-                      <input name="page" type="number" min="1" class="base-input w-16" x-model="page">
-                      <span class="whitespace-nowrap ml-2">of <span id="total-pages"></span></span>
-                      <span class="button-icon" @click="page += page > 0 ? 1 : 0;">
+                      <input name="page" type="number" min="1" class="base-input w-16" x-model="page" :max="totalPages">
+                      <span class="whitespace-nowrap ml-2">of <span x-text="totalPages"></span></span>
+                      <span class="button-icon" @click="page += page < totalPages ? 1 : 0;" :disabled="page == totalPages">
                         <i class="fa-light fa-chevron-right"></i>
                       </span>
                     </div>
@@ -287,9 +287,9 @@
     </div>
   </div>
 <script>
-          document.addEventListener('load_total_pages', (event) => {
-            document.getElementById("total-pages").innerHTML = event.detail.value;
-          });
+          // document.addEventListener('load-total-pages', (event) => {
+          //  document.getElementById("total-pages").innerHTML = event.detail.value;
+          // });
 
           document.addEventListener('alpine:init', () => {
             Alpine.data('datePicker', (id) => ({
