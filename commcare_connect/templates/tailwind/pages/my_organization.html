@@ -5,9 +5,11 @@ class="flex flex-col max-w-screen-lg mx-auto gap-2"
 x-data="{
   selectedTab: '',
   selectedOption: '',
+  isViewPermissionModalOpen: false,
   }"
   x-init="selectedTab='members';selectedOption=''"
   >
+  {% include "tailwind/components/cards/organization_view_permission.html" %}
   <!-- Tabs -->
   <div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
     <div class="flex h-full px-2 gap-x-8">

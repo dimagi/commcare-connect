@@ -1,0 +1,51 @@
+<div class="fixed inset-0 z-40 bg-slate-950/50" x-show="isViewPermissionModalOpen" x-cloak></div>
+<div
+  x-cloak
+  x-show="isViewPermissionModalOpen"
+  @click.outside="isViewPermissionModalOpen = false"
+  class="fixed z-50 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 rounded-2xl overflow-hidden bg-white shadow-sm w-2xl"
+>
+  <div class="h-16 flex justify-between items-center border-b border-slate-200 px-4">
+    <p class="text-base font-medium text-brand-deep-purple">Admin Permissions</p>
+    <button class="button-icon" x-on:click="isViewPermissionModalOpen = false">
+      <i class="fa-light fa-xmark-large cursor-pointer"></i>
+    </button>
+  </div>
+  <div class="p-4 pt-6">
+    <div
+      x-data="{
+      actions: ['Add', 'Edit', 'View', 'Delete'],
+      privileges: [
+        { name: 'Users', permissions: [true, true, true, true] },
+        { name: 'Workers', permissions: [true, true, true, true] },
+        { name: 'Worker Budget', permissions: [true, true, true, true] },
+        { name: 'Raise Invoice', permissions: [true, true, true, true] }
+      ]
+    }"
+      class="grid grid-cols-6 gap-y-2 text-sm bg-slate-50 px-1"
+    >
+      <!-- Header Row -->
+      <div class="col-span-2 h-13 flex items-center px-4 text-slate-400 font-medium">Privileges</div>
+      <template x-for="action in actions" :key="action">
+        <div class="h-13 flex items-center justify-center text-slate-400 font-medium" x-text="action"></div>
+      </template>
+
+      <!-- Data Rows -->
+      <template x-for="(row, index) in privileges" :key="index">
+        <div class="contents">
+          <div class="col-span-2 h-13 flex items-center px-4 bg-slate-100 text-slate-900" x-text="row.name"></div>
+          <template x-for="(allowed, i) in row.permissions" :key="i">
+            <div class="bg-slate-100 h-13 flex items-center justify-center">
+              <template x-if="allowed">
+                <i class="fa-solid fa-circle-check positive-light text-2xl"></i>
+              </template>
+              <template x-if="!allowed">
+                <i class="fa-regular fa-circle-xmark text-red-400 text-2xl"></i>
+              </template>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
