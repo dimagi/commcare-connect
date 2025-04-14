@@ -174,4 +174,9 @@ urlpatterns = [
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
     path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),
+    path(
+        "<int:opp_id>/user_visit_verification/<int:pk>/",
+        view=views.user_visit_verification,
+        name="user_visit_verification",
+    ),
 ]

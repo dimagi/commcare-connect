@@ -1,0 +1,337 @@
+{% extends 'tailwind/base.html' %}
+{% load django_tables2 %}
+{% load i18n %}
+
+{% block content %}
+  <div class="w-full space-y-4">
+    <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
+      <div x-data="{ isStatusModalOpen: false, isTimelineModalOpen: false }"
+           class="profile-card w=full h-full flex gap-4 text-white relative">
+        <div class="profile-left flex flex-col justify-center items-center">
+          <div class="h-12 w-12 rounded-full overflow-hidden relative">
+            <div class="absolute z-10 top-0 left-0 w-full h-full"
+                 @click="isStatusModalOpen = true">
+              <svg viewBox="-600 -600 1200 1200" xmlns="http://www.w3.org/2000/svg">
+                <g transform="rotate(45)">
+                  <circle r="500" stroke="red" stroke-width="200" stroke-linecap="round" pathLength="360"
+                          stroke-dasharray="90 270" fill="none"/>
+                </g>
+              </svg>
+            </div>
+            <img src="https://gravatar.com/avatar/27205e5c51cb03f862138b22bcb5dc20f94a342e744ff6df1b8dc8af3c865109"
+                 alt="Profile Image z-0"/>
+          </div>
+          <div class="share-icon flex justify-center mt-4">
+            <div class="relative">
+              <i class="fa-light fa-code-merge cursor-pointer"
+                 @click="isTimelineModalOpen = true"></i>
+              <!-- Timeline Modal -->
+              <div x-show="isTimelineModalOpen"
+                   x-cloak
+                   class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity z-40"
+                   @click="isTimelineModalOpen = false"></div>
+              <div x-show="isTimelineModalOpen"
+                   x-cloak
+                   class="absolute top-15 -left-8 w-110 h-120 bg-white rounded-2xl shadow-xl z-50"
+                   @click.stop>{% include "tailwind/components/user_timeline.html" %}</div>
+              <!-- Status Modal -->
+              <div x-show="isStatusModalOpen"
+                   x-cloak
+                   class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity z-40"
+                   @click="isStatusModalOpen = false"></div>
+              <div x-show="isStatusModalOpen"
+                   x-cloak
+                   class="absolute top-15 -left-8  bg-white rounded-2xl shadow-xl z-50"
+                   @click.stop>{% include "tailwind/components/cards/user_status_card.html" %}</div>
+            </div>
+          </div>
+        </div>
+        <div class="py-2 basis-sm">
+          <h2 class="text-base whitespace-nowrap">{{ opportunity_access.user.name }}</h2>
+          <p class="text-xs">{{ opportunity_access.user.username }}</p>
+          <p class="mt-2 whitespace-nowrap">
+            <i class="fa-light fa-phone"></i>
+            <span class="text-xs">{{ opportunity_access.user.phone_number }}</span>
+          </p>
+        </div>
+      </div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ counts.total }}</div>
+          <i class="fa-light fa-memo text-xl"></i>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Total Deliveries</span>
+        </div>
+      </div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+           x-data="{ isOpen: false }">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ counts.flagged }}</div>
+          <i class="fa-light fa-flag-swallowtail text-xl"></i>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Flagged Deliveries</span>
+          <i class="fa-solid ml-2 cursor-pointer"
+             :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+             @click="isOpen = !isOpen"></i>
+        </div>
+        <div x-show="isOpen"
+             x-cloak
+             @click.outside="isOpen = false"
+             x-transition
+             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+          <span class="text-sm font-medium text-brand-deep-purple">Flagged Info</span>
+          <div class="py-2">
+            <div class="flex justify-between items-center py-3">
+              <span class="text-xs w-27">Name</span>
+              <i class="fa-light fa-circle-check text-green-600"></i>
+              <i class="fa-light fa-circle-xmark text-brand-sunset "></i>
+            </div>
+            {% for data in flagged_info %}
+              <div class="flex justify-between items-center py-3 pr-1">
+                <span class="text-xs w-25">{{ flag.name }}</span>
+                <span class="text-xs">{{ flag.approved_count }}</span>
+                <span class="text-xs">{{ flag.pending_count }}</span>
+                <span class="text-xs">{{ flag.rejected_count }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+           x-data="{ isOpen: false }">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ counts.rejected }}</div>
+          <i class="fa-light fa-thumbs-down text-xl"></i>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Rejected Deliveries</span>
+          <i class="fa-solid ml-2 cursor-pointer"
+             :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+             @click="isOpen = !isOpen"></i>
+        </div>
+        <div x-show="isOpen"
+             x-cloak
+             @click.outside="isOpen = false"
+             x-transition
+             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+          <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
+          <!-- Details -->
+          <div class="py-2">
+            {% for data in rejected_details %}
+              <div class="flex justify-between items-center py-3">
+                <span class="text-xs w-27">{{ data.name }}</span>
+                <span class="text-xs">{{ data.count }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ opportunity_access.payment_accrued }}</div>
+          <i class="fa-light fa-light fa-money-bill-simple-wave text-xl"></i>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Accrued Amount</span>
+        </div>
+      </div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+           x-data="{ isOpen: false }">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ opportunity_access.total_paid }}</div>
+          <i class="fa-light fa-hand-holding-dollar text-xl"></i>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Paid Amount</span>
+          <i class="fa-solid ml-2 cursor-pointer"
+             :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+             @click="isOpen = !isOpen"></i>
+        </div>
+        <div x-show="isOpen"
+             x-cloak
+             @click.outside="isOpen = false"
+             x-transition
+             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+          <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
+          <div class="flex flex-col py-5 gap-1.5">
+            <span class="text-xs text-brand-blue-light">Last Paid</span>
+            <span class="text-xs text-brand-deep-purple">{{ payment_details.date }}</span>
+            <span class="text-xl text-green-600">{{ payment_details.amount }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="w-full grid grid-cols-10 gap-2">
+      <div class="col-span-6" hx-indicator="#loading-spinner">
+        <form class="flex flex-col w-full gap-2"
+              hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
+              hx-target="#table-container"
+              hx-trigger="change, load">
+          <div
+            class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+            <div class="flex h-full gap-x-8 px-2"
+                 x-data="{activeTab: new URLSearchParams(location.search).get('filter_status') || 'pending'}">
+              {% for tab in tabs %}
+                <label class="relative cursor-pointer text-sm h-full flex items-center gap-1 text-gray-500"
+                       @click="activeTab = '{{ tab.name }}'"
+                       :class="{
+                          'text-brand-deep-purple font-medium': activeTab == '{{ tab.name }}',
+                          'text-gray-500': activeTab !== '{{ tab.name }}'
+                        }">
+                  <input class="peer sr-only" type="radio" value="{{ tab.name }}" name="filter_status" />
+                  {{ tab.label }}
+                  <span x-show="activeTab == '{{ tab.name }}'">(<span>{{ tab.count }}</span>)</span>
+                  <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
+                       x-show="activeTab == '{{ tab.name }}'"></div>
+                </label>
+              {% endfor %}
+            </div>
+            <div x-data="datePicker('tableDatePicker')" class="flex gap-x-4 items-center">
+              <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
+                <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
+                <input type="text" id="tableDatePicker" name="filter_date"
+                       class="text-center w-32 focus:outline-none text-sm"
+                       placeholder="Select Date">
+                <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Content Container with Loading Animation -->
+          <div class="w-full h-160 bg-white z-10 relative rounded-lg">
+            <div class="w-full h-160 overflow-hidden rounded-lg shadow-sm">
+
+              <div id="table-container" class="flex flex-col w-full gap-2 h-176"></div>
+
+              <div id="loading-spinner" role="status"
+                   class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+                <span class="sr-only">Loading...</span>
+              </div>
+            </div>
+
+            <!-- Table Footer -->
+            <div class="table-footer w-full flex items-center justify-between h-14 mt-2 bg-[#F8FAFC] shadow-sm text-brand-deep-purple py-2 px-4 rounded-lg">
+              <div class="flex items-center justify-between w-full">
+                <!-- Left side content -->
+                <div class="flex items-center justify-between w-1/2">
+                  <div></div>
+                  <div class="relative" x-data="{ isOpen: false }">
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                  <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
+                    <span class="whitespace-nowrap">Items per page</span>
+                    <select type="number" name="per_page" class="base-dropdown w-16">
+                      <option value="10" selected>10</option>
+                      <option value="20">20</option>
+                      <option value="50">50</option>
+                    </select>
+                    <div class="flex items-center gap-2" x-data="page: 1">
+                      <span class="button-icon" @click="page -= page > 0 ? 1 : 0;">
+                        <i class="fa-light fa-chevron-left"></i>
+                      </span>
+                      <input name="page" type="number" min="1" class="base-input w-16" x-model="page">
+                      <span class="whitespace-nowrap ml-2">of <span id="total-pages"></span></span>
+                      <span class="button-icon" @click="page += page > 0 ? 1 : 0;">
+                        <i class="fa-light fa-chevron-right"></i>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+
+      </div>
+      <div class="col-span-4 relative" hx-indicator="#visit-loading-indicator">
+        <div x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0"
+             class="absolute inset-0">
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center px-4 bg-white rounded-lg shadow-sm h-14">
+              <p class="text-sm font-normal text-brand-deep-purple">Details</p>
+            </div>
+
+            <div class="p-4 rounded-lg shadow-sm bg-white h-160 overflow-y-auto scrollbar-hide scrollbar-default">
+              <div id="visit-details">
+                <div class="flex justify-items-center align-items-center">
+                  <span>Please select a visit to load details.</span>
+                </div>
+              </div>
+              <div id="visit-loading-indicator" role="status"
+                   class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+                <span class="sr-only">Loading...</span>
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm">
+              <div class="flex gap-4">
+                <button class="button button-md outline-style">Reject</button>
+                <button class="button button-md primary-dark">Approve</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+          document.addEventListener('load_total_pages', (event) => {
+            document.getElementById("total-pages").innerHTML = event.detail.value;
+          });
+
+          document.addEventListener('alpine:init', () => {
+            Alpine.data('datePicker', (id) => ({
+              selectedDate: null,
+              flatpickrInstance: flatpickr(document.getElementById(id), {
+                      defaultDate: new Date(),
+                      altInput: true,
+                      altFormat: 'd M, Y',
+                      dateFormat: 'Y-m-d',
+                      enableTime: false,
+                    }),
+              init() {
+                this.$nextTick(() => {
+                    this.flatpickrInstance.onChange = (selectedDates) => {
+                        if (selectedDates?.[0]) {
+                          this.selectedDate = selectedDates[0];
+                          this.$dispatch('date-changed', {
+                            date: selectedDates[0],
+                            id: id
+                          });
+                        }
+                      }
+                    this.selectedDate = new Date();
+                    this.flatpickrInstance.setDate(this.selectedDate);
+                });
+              },
+              navigateDate(direction) {
+                const currentDate = this.selectedDate || new Date();
+                const newDate = new Date(currentDate);
+                newDate.setDate(newDate.getDate() + direction);
+
+                // Update the date
+                this.selectedDate = newDate;
+                this.flatpickrInstance.setDate(newDate, true);
+
+                // Dispatch the date change event
+                this.$dispatch('date-changed', {
+                  date: newDate,
+                  id: id
+                });
+              }
+            }));
+          });
+</script>
+{% endblock %}

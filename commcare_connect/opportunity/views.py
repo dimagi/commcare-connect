@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.storage import storages
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
@@ -1366,6 +1366,7 @@ def resend_user_invite(request, org_slug, opp_id, pk):
 
     return HttpResponse("The invitation has been successfully resent to the user.")
 
+
 def worker_list(request, org_slug=None, opp_id=None):
     return render(request, "opportunity/tailwind/workers.html")
 
@@ -1393,3 +1394,40 @@ def sync_deliver_units(request, org_slug, opp_id):
 
     return HttpResponse(content=message, status=status)
 
+
+def user_visit_verification(request, org_slug, opp_id, pk):
+    opportunity_access = get_object_or_404(OpportunityAccess, opportunity=opp_id, pk=pk)
+    user_visit_counts = UserVisit.objects.filter(opportunity_access=opportunity_access).aggregate(
+        pending=Count("id", filter=Q(status=VisitValidationStatus.pending)),
+        pending_review=Count(
+            "id",
+            filter=Q(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.pending),
+        ),
+        revalidate=Count(
+            "id",
+            filter=Q(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.disagree),
+        ),
+        approved=Count("id", filter=Q(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)),
+        rejected=Count("id", filter=Q(status=VisitValidationStatus.rejected)),
+        flagged=Count("id", filter=Q(flagged=True)),
+        total=Count("*"),
+    )
+    tabs = [
+        {"name": "pending", "label": "Pending", "count": user_visit_counts.get("pending", 0)},
+        {"name": "pending_review", "label": "Review", "count": user_visit_counts.get("pending_review", 0)},
+        {"name": "revalidate", "label": "Revalidate", "count": user_visit_counts.get("revalidate", 0)},
+        {"name": "approved", "label": "Approved", "count": user_visit_counts.get("approved", 0)},
+        {"name": "rejected", "label": "Rejected", "count": user_visit_counts.get("rejected", 0)},
+        {"name": "all", "label": "All", "count": user_visit_counts.get("total", 0)},
+    ]
+    response = render(
+        request,
+        "opportunity/user_visit_verification.html",
+        context={
+            "header_title": "Worker",
+            "opportunity_access": opportunity_access,
+            "counts": user_visit_counts,
+            "tabs": tabs,
+        },
+    )
+    return response
