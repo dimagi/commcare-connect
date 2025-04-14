@@ -826,14 +826,14 @@ class PMOpportunitiesListTable(BaseTailwindTable):
         ''')
 
         self.base_columns['activeWorkers'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+            <div class="flex justify-center items-center text-sm font-medium text-brand-deep-purple">
                 Active Workers
             </div>
         ''')
 
 
         self.base_columns['deliveries'].verbose_name = mark_safe('''
-            <div class="relative inline-flex items-center group cursor-default">
+            <div class="relative inline-flex justify-center items-center group cursor-default">
                 <span>Deliveries</span>
                 <!-- Tooltip container - positioned relative to viewport -->
                 <div class="fixed hidden group-hover:block z-50 pointer-events-none -translate-x-[15%] -translate-y-[70%] transform">
@@ -850,13 +850,13 @@ class PMOpportunitiesListTable(BaseTailwindTable):
 
 
         self.base_columns['approved'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+            <div class="flex justify-center items-center text-sm font-medium text-brand-deep-purple">
                 Approved
             </div>
         ''')
 
         self.base_columns['earnings'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
+            <div class="flex justify-center items-center text-sm font-medium text-brand-deep-purple">
                 Earnings
             </div>
         ''')
@@ -993,39 +993,39 @@ class PMOpportunitiesListTable(BaseTailwindTable):
 
     def render_startDate(self, value):
         return format_html(
-            '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
 
     def render_endDate(self, value):
         return format_html(
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+    
+    def render_activeWorkers(self, value):
+        return format_html(
+            '<div class="flex justify-center text-sm  font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
+    
+    def render_deliveries(self, value):
+        return format_html(
             '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
     
-    # def render_pendingInvites(self, value):
-    #     return format_html(
-    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
-    #         value['link'], value['count'],
-    #     )
+    def render_approved(self, value):
+        return format_html(
+            '<div class="flex justify-center text-sm  font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
     
-    # def render_inactiveWorkers(self, value):
-    #     return format_html(
-    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
-    #         value['link'],  value['count'],
-    #     )
-    
-    # def render_pendingApprovals(self, value):
-    #     return format_html(
-    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
-    #         value['link'], value['count'],
-    #     )
-    
-    # def render_paymentsDue(self, value):
-    #     return format_html(
-    #         '<div class="flex justify-center text-sm underline underline-offset-2 font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"><a href="{}">{}</a></div>',
-    #         value['link'], value['amount'],
-    #     )
+    def render_earnings(self, value):
+        return format_html(
+            '<div class="flex justify-center text-sm  font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
+            value,
+        )
 
 class WorkerPaymentsTable(tables.Table):
     index = tables.Column(
