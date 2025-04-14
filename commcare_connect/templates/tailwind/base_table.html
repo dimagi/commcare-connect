@@ -1,0 +1,68 @@
+{% load django_tables2 %}
+{% load i18n %}
+{% block table-wrapper %}
+<div class="table-container">
+  {% block table %}
+  <div >
+    <table class="base-table">
+      {% block table.thead %}
+      {% if table.show_header %}
+      <thead {{ table.attrs.thead.as_html }}>
+        <tr>
+          {% for column in table.columns %}
+          <th>
+            {% if column.orderable %}
+            <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" >
+              {{ column.header }}
+            </a>
+            {% else %}
+            <span>{{ column.header }}</span>
+            {% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      {% endif %}
+      {% endblock table.thead %}
+
+      {% block table.tbody %}
+      <tbody>
+            <div style="overflow:hidden; border-radius:8px;">
+          {% for row in table.paginated_rows %}
+          {% block table.tbody.row %}
+          <tr class="group">
+            {% for column, cell in row.items %}
+            <td>
+              {% if column.localize == None %}
+                {{ cell }}
+              {% else %}
+                {% if column.localize %}
+                  {{ cell|localize }}
+                {% else %}
+                  {{ cell|unlocalize }}
+                {% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endblock table.tbody.row %}
+          {% empty %}
+          {% if table.empty_text %}
+          {% block table.tbody.empty_text %}
+          <tr>
+            <td colspan="{{ table.columns|length }}" class="text-center py-4">
+              {{ table.empty_text }}
+            </td>
+          </tr>
+          {% endblock table.tbody.empty_text %}
+          {% endif %}
+          {% endfor %}
+        </div>
+        </tbody>
+        {% endblock table.tbody %}
+
+    </table>
+  </div>
+  {% endblock table %}
+</div>
+{% endblock table-wrapper %}
