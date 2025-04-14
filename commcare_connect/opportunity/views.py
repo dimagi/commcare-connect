@@ -86,6 +86,7 @@ from commcare_connect.opportunity.tables import (
     PaymentReportTable,
     PaymentUnitTable,
     SuspendedUsersTable,
+    TWPaymentInvoiceTable,
     UserPaymentsTable,
     UserStatusTable,
     UserVisitFilter,
@@ -1263,6 +1264,60 @@ def payment_report(request, org_slug, pk):
     )
 
 
+@org_member_required
+def tw_payment_report(request, org_slug, pk):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed:
+        return redirect("opportunity:detail", org_slug, pk)
+    total_paid_users = (
+        Payment.objects.filter(opportunity_access__opportunity=opportunity).aggregate(total=Sum("amount"))["total"]
+        or 0
+    )
+    total_paid_nm = (
+        Payment.objects.filter(organization=opportunity.organization).aggregate(total=Sum("amount"))["total"] or 0
+    )
+    data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity)
+    table = PaymentReportTable(data)
+    RequestConfig(request, paginate={"per_page": 2}).configure(table)
+
+    cards = [
+        {
+            "amount": f"{opportunity.currency} {total_user_payment_accrued}",
+            "icon": "fa-user-friends",
+            "label": "Worker",
+            "subtext": "Total Accrued",
+        },
+        {
+            "amount": f"{opportunity.currency} {total_paid_users}",
+            "icon": "fa-user-friends",
+            "label": "Worker",
+            "subtext": "Total Paid",
+        },
+        {
+            "amount": f"{opportunity.currency} {total_nm_payment_accrued}",
+            "icon": "fa-building",
+            "label": "Organization",
+            "subtext": "Total Accrued",
+        },
+        {
+            "amount": f"{opportunity.currency} {total_paid_nm}",
+            "icon": "fa-building",
+            "label": "Organization",
+            "subtext": "Total Paid",
+        },
+    ]
+
+    return render(
+        request,
+        "tailwind/pages/invoice_payment_report.html",
+        context=dict(
+            table=table,
+            opportunity=opportunity,
+            cards=cards,
+        ),
+    )
+
+
 class PaymentInvoiceTableView(OrganizationUserMixin, SingleTableView):
     model = PaymentInvoice
     paginate_by = 25
@@ -1295,6 +1350,25 @@ def invoice_list(request, org_slug, pk):
         request,
         "opportunity/invoice_list.html",
         context=dict(opportunity=opportunity, form=form),
+    )
+
+
+@org_member_required
+def tw_invoice_list(request, org_slug=None, pk=None):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed:
+        return redirect("opportunity:detail", org_slug, pk)
+
+    filter_kwargs = dict(opportunity=opportunity)
+
+    queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+    table = TWPaymentInvoiceTable(queryset)
+
+    RequestConfig(request, paginate={"per_page": 2}).configure(table)
+    return render(
+        request,
+        "tailwind/pages/invoice_list.html",
+        {"header_title": "Invoices", "opportunity": opportunity, "table": table},
     )
 
 
@@ -1366,21 +1440,6 @@ def resend_user_invite(request, org_slug, opp_id, pk):
 
     return HttpResponse("The invitation has been successfully resent to the user.")
 
-def worker_list(request, org_slug=None, opp_id=None):
-    return render(request, "opportunity/tailwind/workers.html")
-
-
-def worker_learn(request, org_slug=None, opp_id=None):
-    return render(request, "opportunity/tailwind/learn.html")
-
-
-def worker_deliver(request, org_slug=None, opp_id=None):
-    return render(request, "opportunity/tailwind/deliver.html")
-
-
-def worker_verify(request, org_slug=None, opp_id=None):
-    return render(request, "opportunity/tailwind/verify.html")
-
 
 def sync_deliver_units(request, org_slug, opp_id):
     status = HTTPStatus.OK
@@ -1392,4 +1451,3 @@ def sync_deliver_units(request, org_slug, opp_id):
         message = "Failed to retrieve updates. No available build at the moment."
 
     return HttpResponse(content=message, status=status)
-
