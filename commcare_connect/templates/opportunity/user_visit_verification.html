@@ -95,12 +95,11 @@
                 <i class="fa-light fa-circle-check text-green-600"></i>
                 <i class="fa-light fa-circle-xmark text-brand-sunset "></i>
               </div>
-              {% for data in flagged_info %}
+              {% for flag in flagged_info %}
                 <div class="flex justify-between items-center py-3 pr-1">
                   <span class="text-xs w-25">{{ flag.name }}</span>
-                  <span class="text-xs">{{ flag.approved_count }}</span>
-                  <span class="text-xs">{{ flag.pending_count }}</span>
-                  <span class="text-xs">{{ flag.rejected_count }}</span>
+                  <span class="text-xs">{{ flag.approved }}</span>
+                  <span class="text-xs">{{ flag.rejected }}</span>
                 </div>
               {% endfor %}
             </div>
@@ -129,11 +128,13 @@
             <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
             <!-- Details -->
             <div class="py-2">
-              {% for data in rejected_details %}
-                <div class="flex justify-between items-center py-3">
-                  <span class="text-xs w-27">{{ data.name }}</span>
-                  <span class="text-xs">{{ data.count }}</span>
-                </div>
+              {% for flag in flagged_info %}
+                {% if flag.rejected > 0 %}
+                  <div class="flex justify-between items-center py-3">
+                    <span class="text-xs w-27">{{ flag.name }}</span>
+                    <span class="text-xs">{{ flag.rejected }}</span>
+                  </div>
+                {% endif %}
               {% endfor %}
             </div>
           </div>
@@ -161,6 +162,7 @@
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
             <span>Paid Amount</span>
+          {% if last_payment_details %}
             <i class="fa-solid ml-2 cursor-pointer"
                :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
                @click="isOpen = !isOpen"></i>
@@ -173,9 +175,10 @@
             <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
             <div class="flex flex-col py-5 gap-1.5">
               <span class="text-xs text-brand-blue-light">Last Paid</span>
-              <span class="text-xs text-brand-deep-purple">{{ payment_details.date }}</span>
-              <span class="text-xl text-green-600">{{ payment_details.amount }}</span>
+              <span class="text-xs text-brand-deep-purple">{{ last_payment_details.date_paid|date }}</span>
+              <span class="text-xl text-green-600">{{ last_payment_details.amount }}</span>
             </div>
+            {% endif %}
           </div>
         </div>
       </div>

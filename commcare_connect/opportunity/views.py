@@ -1,5 +1,6 @@
 import datetime
 import json
+from collections import defaultdict
 from functools import reduce
 from http import HTTPStatus
 
@@ -1425,6 +1426,20 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         flagged=Count("id", filter=Q(flagged=True)),
         total=Count("*"),
     )
+
+    visits = UserVisit.objects.filter(opportunity_access=opportunity_access)
+    flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "rejected": 0})
+    for visit in visits:
+        for flag in visit.flags:
+            if visit.status == VisitValidationStatus.approved:
+                flagged_info[flag]["approved"] += 1
+                flagged_info[flag]["name"] = flag
+            if visit.status == VisitValidationStatus.rejected:
+                flagged_info[flag]["rejected"] += 1
+                flagged_info[flag]["name"] = flag
+    flagged_info = flagged_info.values()
+    last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
+
     tabs = [
         {
             "name": "pending",
@@ -1461,6 +1476,8 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             "opportunity_access": opportunity_access,
             "counts": user_visit_counts,
             "tabs": tabs,
+            "flagged_info": flagged_info,
+            "last_payment_details": last_payment_details,
         },
     )
     return response
