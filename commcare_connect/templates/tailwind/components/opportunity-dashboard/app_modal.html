@@ -10,54 +10,39 @@
     
     <!-- Background overlay -->
     <div class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity"
-            @click="showModal = false"></div>
+            @click="showModal = false;document.body.style.overflow = '';"></div>
 
     <!-- Modal content -->
     <div class="flex items-center justify-center min-h-screen p-4">
-        <div class="relative rounded-2xl bg-gray-100 shadow-xl w-[952px] h-[554px] mx-auto overflow-hidden p-3"
-                @click.away="showModal = false">
+        <div class="relative rounded-2xl bg-gray-100 shadow-xl w-2/3 h-1/2 mx-auto overflow-hidden p-3"
+                @click.away="showModal = false;document.body.style.overflow = '';">
             <!-- Modal header with tabs -->
-            <div class="flex flex-col w-full"
-                    x-init="selectedTab='Learn App'">
+            <div class="flex flex-col w-full" x-init="selectedTab='Learn App'">
                 <!-- Tabs -->
                 <div class="flex relative mx-auto items-center shadow rounded-lg justify-between w-full px-3 mb-3 bg-slate-50 h-14">
-                    <div class="flex h-full gap-x-8 px-2">
-                        <div @click="selectedTab = 'Learn App'" 
-                                class="relative cursor-pointer text-sm h-full flex items-center"
-                                :class="{
-                                'text-brand-deep-purple font-medium': selectedTab === 'Learn App',
-                                'text-gray-500': selectedTab !== 'Learn App'
-                                }">
+                    <ul class="tabs">
+                        <li 
+                            @click="selectedTab = 'Learn App'" 
+                            :class="{ 'active': selectedTab === 'Learn App' }">
                             <span>Learn App</span>
-                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                                x-show="selectedTab === 'Learn App'"></div>
-                        </div>
+                            <div x-show="selectedTab === 'Learn App'"></div>
+                        </li>
                         <!-- Delivery App Tab -->
-                        <div @click="selectedTab = 'Delivery App'" 
-                                class="relative cursor-pointer text-sm h-full flex items-center"
-                                :class="{
-                                'text-brand-deep-purple font-medium': selectedTab === 'Delivery App',
-                                'text-gray-500': selectedTab !== 'Delivery App'
-                                }">
+                        <li @click="selectedTab = 'Delivery App'"   
+                            :class="{ 'active': selectedTab === 'Delivery App' }">
                             <span>Delivery App</span>
-                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                                    x-show="selectedTab === 'Delivery App'"></div>
-                        </div>
+                            <div x-show="selectedTab === 'Delivery App'"></div>
+                        </li>
                         <!-- Payment Units Tab -->
-                        <div @click="selectedTab = 'Payments Units'" 
-                                class="relative cursor-pointer text-sm h-full flex items-center"
-                                :class="{
-                                'text-brand-deep-purple font-medium': selectedTab === 'Payments Units',
-                                'text-gray-500': selectedTab !== 'Payments Units'
-                                }">
+                        <li @click="selectedTab = 'Payments Units'"  
+                            :class="{ 'active': selectedTab === 'Payments Units' }"> 
                             <span>Payment Units</span>
-                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                                    x-show="selectedTab === 'Payments Units'"></div>
-                        </div>
-                    </div>
+                            <div x-show="selectedTab === 'Payments Units'"></div>
+                        </li>
+                    </ul>
 
                     <!-- Close button -->
-                    <button @click="showModal = false" id="button" class="button-icon" >
+                    <button @click="showModal = false;document.body.style.overflow = '';" id="button" class="button-icon" >
                         <i class="fa-light fa-xmark-large text-brand-deep-purple"></i>
                     </button>
                 </div>

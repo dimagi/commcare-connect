@@ -1,0 +1,53 @@
+<div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative" x-data="{showOpp: false}">
+    <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+    <div class="flex w-full justify-between">
+      <!-- invitataion program.status -->
+      <div class="flex items-start justify-end gap-6">
+        <div>
+          <p class="card_title">{{ program.name }}</p>
+          <p class="card_description w-1/2">{{ program.description }}</p>
+        </div>
+        <button class="button-icon">
+          <i class="fa-light fa-gauge-max"></i>
+        </button>
+        <button class="button-icon">
+          <i class="fa-light fa-pen-line"></i>
+        </button>
+        <button class="button button-sm outline-style">Invite</button>
+      </div>
+    </div>
+    <div class="flex justify-between items-center">
+      <!-- program info -->
+      <div class="flex items-center gap-6">
+        {% include 'tailwind/components/cards/info.html' with icon="file-check" head="Delivery Type" data=program.delivery_type classname="infocard-dark" %}
+        <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+        {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=program.start_date classname="infocard-dark" %} 
+        {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=program.end_date classname="infocard-dark" %}
+        <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+        {% include 'tailwind/components/cards/info.html' with icon="money-bill-wave" head="Budget" data=program.budget classname="infocard-dark" %}
+      </div>
+  
+      <!-- button -->
+      <button class="button button-md outline-style" @click="showOpp = !showOpp; if(showOpp) { htmx.ajax('GET', '/a/test-1/opportunity/1/tw/api/pm_cards/', '#pm-container') } else { document.getElementById('pm-container').innerHTML = '' }">
+        <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
+        <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </button>
+  
+    </div>
+    <!-- progress -->
+    <div class="bg-neutral-100 rounded-lg w-full h-20 flex items-center px-5 justify-between gap-6">
+      {% include 'tailwind/components/cards/info.html' with icon="envelope" head="Invited" data=program.invited classname="infocard-dark2" %}
+      <i class="fa-light fa-arrow-right text-brand-mango "></i>
+      {% include 'tailwind/components/cards/info.html' with icon="file-lines" head="Applied" data=program.applied classname="infocard-dark2" %}
+      <i class="fa-light fa-arrow-right text-brand-mango "></i>
+      {% include 'tailwind/components/cards/info.html' with icon="memo-circle-check" head="RPF Received" data=program.rpf classname="infocard-dark2" %}
+      <i class="fa-light fa-arrow-right text-brand-mango "></i>
+      {% include 'tailwind/components/cards/info.html' with icon="circle-check" head="Accepted" data=program.accepted classname="infocard-dark2" %}
+      <i class="fa-light fa-arrow-right text-brand-mango "></i>
+      {% include 'tailwind/components/cards/info.html' with icon="handshake" head="Contracted" data=program.contracted classname="infocard-dark2" %}
+
+    </div>
+
+
+    <div id="pm-container" class="flex flex-col gap-y-4"></div>
+  </div>

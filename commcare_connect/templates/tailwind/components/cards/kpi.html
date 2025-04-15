@@ -1,14 +1,20 @@
 <!-- Worker Dashboard Card -->
-<div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg" 
+<div class="flex-1 w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg" 
      x-data="{ isOpen: false }">
     <div class="flex justify-between items-start">
         <!-- Number Content -->
         <div class="text-2xl">{{count|default:"0"}}</div>
         <!-- Icon -->
-        <i class="fa-light fa-{{icon|default:"gem"}} text-xl"></i>
+        <div class="hidden lg:block">
+            <i class="fa-light fa-{{icon|default:"gem"}} text-md"></i>
+        </div>
     </div>
-    <div class="pt-4 text-sm flex items-center justify-between">
-        <span>{{text|default:"Total Delieveries"}}</span>
+    <div class="pt-4 text-sm flex items-center justify-between w-full"> 
+        <div class="animate-marquee">
+            <div class="group w-full hover:animate-scroll">
+                <p>{{text|default:"Total Delieveries"}}</p> 
+            </div>
+        </div>
         {% if dropdown != 'nil' %}
         <i class="fa-solid ml-2 cursor-pointer" 
         :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
