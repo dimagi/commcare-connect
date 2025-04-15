@@ -673,6 +673,7 @@ class TWAddBudgetExistingUsersForm(AddBudgetExistingUsersForm):
         )
 
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def opportunity_visits(request, org_slug=None, opp_id=None):
     from commcare_connect.opportunity.models import OpportunityAccess, OpportunityClaim
     from commcare_connect.opportunity.views import get_opportunity_or_404

@@ -1,0 +1,15 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+{% load tailwind_filters %}
+
+{% block title %}{{ request.org }}Create Opportunity{% endblock %}
+
+{% block content %}
+<div class="md:max-w-screen-lg mx-auto flex flex-col gap-8">
+  {% include "steps.html" with step='step1' %}
+  <h6 class="title">Create Details</h6>
+  {% include "partial_form.html" %}
+</div>
+{% endblock content %}
