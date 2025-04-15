@@ -235,8 +235,8 @@ def payment_app_table(request,org_slug=None, opp_id=None):
 
 def payment_unit_table(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
-    payment_units = PaymentUnit.objects.filter(opportunity=opp).annotate(
-        delivery_unit_count=Count('deliver_unit')
+    payment_units = PaymentUnit.objects.filter(opportunity=opp).prefetch_related(
+        'deliver_units'
     )
     table = OpportunityPaymentUnitTable(payment_units)
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
