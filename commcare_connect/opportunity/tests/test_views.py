@@ -7,21 +7,22 @@ from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
-from commcare_connect.opportunity.helpers import get_opportunity_list_data
+from commcare_connect.opportunity.helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
     UserVisit,
     VisitReviewStatus,
-    VisitValidationStatus, UserInviteStatus,
+    VisitValidationStatus, UserInviteStatus, CompletedWorkStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     PaymentUnitFactory,
-    UserVisitFactory, UserInviteFactory, PaymentFactory,
+    UserVisitFactory, UserInviteFactory, PaymentFactory, AssessmentFactory, CompletedWorkFactory, LearnModuleFactory,
+    CompletedModuleFactory,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
@@ -267,3 +268,93 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
     assert opp.payments_due == Decimal("350")
     assert opp.inactive_workers == 2
     assert opp.status == 0
+
+
+
+@pytest.mark.django_db
+def test_get_opportunity_dashboard_data_counts(opportunity):
+    today = now()
+    three_days_ago = today - timedelta(days=3)
+
+    modules = [LearnModuleFactory(app=opportunity.learn_app) for _ in range(3)]
+
+    access_users = OpportunityAccessFactory.create_batch(6, opportunity=opportunity)
+
+    for ac in access_users[:4]:
+        for module in modules:
+            CompletedModuleFactory(user=ac.user, opportunity_access=ac, module=module, opportunity=opportunity)
+
+    CompletedModuleFactory(user=access_users[5].user, opportunity_access=access_users[5], module=modules[0],
+                           opportunity=opportunity)
+
+    # Create user invites
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.invited)
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted)
+
+    # Inactive worker: user with no recent visit
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access_users[0],
+        user=access_users[0].user,
+        visit_date=three_days_ago - timedelta(days=1),
+        status=VisitValidationStatus.approved
+    )
+
+
+
+    # Active worker
+    UserVisitFactory(
+        opportunity=opportunity,
+        user=access_users[1].user,
+        opportunity_access=access_users[1],
+        visit_date=today,
+        status=VisitValidationStatus.approved
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access_users[2],
+        user=access_users[2].user,
+        visit_date=today - timedelta(hours=23),
+        status=VisitValidationStatus.approved
+    )
+
+    PaymentFactory(opportunity_access=access_users[0], amount_usd=100, confirmed=True)
+    PaymentFactory(opportunity_access=access_users[1], amount_usd=50, confirmed=True)
+
+    access_users[0].payment_accrued = 200
+    access_users[0].save()
+    access_users[0].refresh_from_db()
+
+    CompletedWorkFactory(opportunity_access=access_users[0])
+
+    # Flagged delivery
+    CompletedWorkFactory(
+        opportunity_access=access_users[1],
+        status=CompletedWorkStatus.pending
+    )
+
+    OpportunityClaimFactory(opportunity_access=access_users[0])
+
+    # Assessments: 3 users passed
+    for ac in access_users[:3]:
+        AssessmentFactory(user=ac.user, opportunity=opportunity, opportunity_access=access_users[0], passed=True)
+
+    queryset = get_opportunity_dashboard_data(opportunity.id)
+    opp = queryset.first()
+
+    assert opp.pending_invites == 1
+    assert opp.workers_invited == 2
+    assert opp.inactive_workers == 4
+    assert opp.total_paid == Decimal("150")
+    assert opp.total_accrued == Decimal("200")
+    assert opp.payments_due == Decimal("50")
+    assert opp.total_deliveries == 2
+    assert opp.flagged_deliveries_waiting_for_review == 1
+    assert opp.completed_learning == 4
+    assert opp.started_learning_count == 5
+    assert opp.claimed_job == 1
+    assert opp.started_deleveries == 3
+    assert opp.completed_assessments == 3
+    assert opp.most_recent_delivery == today
+    assert opp.deliveries_from_yesterday == 2

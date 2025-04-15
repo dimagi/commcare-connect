@@ -2,9 +2,9 @@ from collections import namedtuple
 from datetime import timedelta
 
 from django.db.models import Count, Q, Sum, F, Case, When, Value, IntegerField, DecimalField, ExpressionWrapper, Exists, \
-    OuterRef
+    OuterRef, Subquery, DateField, FloatField, QuerySet
 from django.db.models import Max, Min
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate, Extract
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
@@ -14,7 +14,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
-    VisitValidationStatus, UserInviteStatus, UserVisit,
+    VisitValidationStatus, UserInviteStatus, UserVisit, CompletedModule, LearnModule,
 )
 
 
@@ -214,3 +214,144 @@ def get_opportunity_list_data(organization):
     )
 
     return queryset
+
+
+def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Opportunity]:
+    today = now()
+    three_days_ago = today - timedelta(days=3)
+    yesterday = today - timedelta(days=1)
+
+
+    completed_user_ids = CompletedModule.objects.filter(
+        opportunity=OuterRef("pk")
+    ).values("user").annotate(
+        completed_modules=Count("module", distinct=True),
+        total_modules=Subquery(
+            LearnModule.objects.filter(app=OuterRef("opportunity__learn_app"))
+            .values("app")
+            .annotate(count=Count("id"))
+            .values("count")[:1]
+        )
+    ).filter(
+        completed_modules=F("total_modules")
+    ).values("user")
+
+
+    started_users_subquery = CompletedModule.objects.filter(
+        opportunity=OuterRef("pk")
+    ).values("user").distinct()
+
+
+    effective_end_date = Case(
+        When(end_date__isnull=True, then=Value(today)),
+        When(end_date__gt=today, then=Value(today)),
+        default=F('end_date'),
+        output_field=DateField()
+    )
+
+
+    queryset = Opportunity.objects.annotate(
+        workers_invited=Count("userinvite", distinct=True),
+        pending_invites=Count(
+            "userinvite",
+            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            distinct=True,
+        ),
+        inactive_workers=Count(
+            "opportunityaccess",
+            filter=Q(
+                ~Exists(
+                    UserVisit.objects.filter(
+                        opportunity_access=OuterRef('opportunityaccess'),
+                        visit_date__gte=three_days_ago,
+                    )
+                )
+            ),
+            distinct=True,
+        ),
+        total_accrued=Coalesce(
+            Sum('opportunityaccess__payment_accrued', distinct=True),
+            Value(0),
+            output_field=DecimalField()
+        ),
+        total_paid=Coalesce(
+            Sum(
+                'opportunityaccess__payment__amount_usd',
+                distinct=True
+            ),
+            Value(0),
+            output_field=DecimalField()
+        ),
+        payments_due=ExpressionWrapper(
+            F('total_accrued') - F('total_paid'),
+            output_field=DecimalField(),
+        ),
+        total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
+        approved_deliveries=Count("opportunityaccess__completedwork",
+                                  filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
+                                  distinct=True),
+        rejected_deliveries=Count("opportunityaccess__completedwork",
+                                  filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.rejected),
+                                  distinct=True),
+        flagged_deliveries_waiting_for_review=Count(
+            "opportunityaccess__completedwork",
+            filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.pending),
+            distinct=True
+        ),
+        most_recent_delivery=Max(
+            "uservisit__visit_date",
+            filter=Q(uservisit__completed_work__isnull=False)
+        ),
+        deliveries_from_yesterday=Count(
+            "uservisit",
+            filter=Q(
+                uservisit__completed_work__isnull=False,
+                uservisit__visit_date__gte=yesterday
+            ),
+            distinct=True,
+        ),
+        started_learning_count=Count(
+            'opportunityaccess__user',
+            filter=Q(opportunityaccess__user__in=Subquery(started_users_subquery)),
+            distinct=True
+        ),
+        completed_learning=Count(
+            'opportunityaccess__user',
+            filter=Q(opportunityaccess__user__in=Subquery(completed_user_ids)),
+            distinct=True
+        ),
+        claimed_job=Count("opportunityaccess__opportunityclaim", distinct=True),
+        started_deleveries=Count("uservisit__user", distinct=True),
+        completed_assessments=Count(
+            "assessment__user",
+            filter=Q(assessment__passed=True),
+            distinct=True
+        ),
+        recent_payment=Max("opportunityaccess__payment__date_paid"),
+        maximum_visit_in_a_day=Subquery(
+            UserVisit.objects.filter(
+                opportunity=OuterRef('pk')
+            ).annotate(
+                visit_day=TruncDate('visit_date')
+            ).values('visit_day')
+            .annotate(
+                day_count=Count('id')
+            ).order_by('-day_count')
+            .values('day_count')[:1]
+        ),
+        total_visits=Count('uservisit', distinct=True),
+        total_days=ExpressionWrapper(
+            Extract(effective_end_date, 'day') - Extract(F('start_date'), 'day'),
+            output_field=IntegerField()
+        ),
+        average_visits_per_day=Case(
+            When(total_days__gt=0, then=F('total_visits') / F('total_days')),
+            default=Value(0),
+            output_field=FloatField()
+        )
+    ).filter(id=opp_id)
+
+
+    return queryset
+
+

@@ -9,6 +9,8 @@ from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 from model_utils.models import now
 
+from commcare_connect.opportunity.models import LearnModule, DeliverUnit, PaymentUnit
+
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
@@ -16,6 +18,111 @@ class BaseTailwindTable(tables.Table):
     class Meta:
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
+
+
+class IndexColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "#")
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault("empty_values", ())
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record, bound_column, bound_row, **kwargs):
+        table = bound_row._table  # Correct way to access table
+
+        page = getattr(table, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
+            table._row_counter = itertools.count(start=start_index)
+            table._row_counter_start = start_index
+
+        return next(table._row_counter)
+
+class LearnModuleTable(BaseTailwindTable):
+    index = IndexColumn()
+
+    class Meta:
+        model = LearnModule
+        orderable = False
+        fields = ("index", "name", "description", "time_estimate")
+
+    def render_time_estimate(self, value):
+        return f"{value}hr"
+
+
+class DeliverUnitTable(BaseTailwindTable):
+    index = IndexColumn(empty_values=(), verbose_name="#")
+
+    slug = tables.Column(verbose_name="Delivery Unit ID")
+    name = tables.Column(verbose_name="Name")
+
+    class Meta:
+        model = DeliverUnit
+        fields = ("index", "slug", "name")  # Fields to show (index is custom so it's not included here)
+
+
+class OpportunityPaymentUnitTable(BaseTailwindTable):
+    index = IndexColumn()
+    name = tables.Column(verbose_name="Payment Unit Name")
+    max_total = tables.Column(verbose_name="Total Deliveries")
+    deliver_units = tables.Column(verbose_name="Delivery Units")
+
+    class Meta:
+        model = PaymentUnit
+        orderable = False
+        fields = ("index", "name", "start_date", "end_date", "amount", "max_total", "max_daily", "deliver_units")
+
+    def render_deliver_units(self, record):
+        deliver_units = record.deliver_units
+        count = deliver_units.count()
+        deliver_units = deliver_units.all()
+
+        detail_html = f'''
+                <div class="grid grid-flow-row gap-8 w-full" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+                    {''.join([f'<div class="w-full"><span>{unit.name}</span> {"(<i>optional</i>)" if unit.optional else ""}</div>' for unit in deliver_units])}
+                </div>
+            '''
+
+        return format_html('''
+            <div class="flex justify-between items-center">
+                <span>{count}</span>
+                <div x-data="{{ expanded: false }}">
+                    <button class="btn btn-primary btn-sm"
+                            @click="expanded = true; $el.closest('tr').insertAdjacentHTML('afterend', $refs.detailRow.innerHTML)"
+                            x-show="!expanded">
+                        <i class="fa-light fa-chevron-down"></i>
+                    </button>
+                    <button class="btn btn-secondary btn-sm"
+                            @click.prevent="
+                                const detailRow = $el.closest('tr').nextElementSibling;
+                                if (detailRow && detailRow.classList.contains('detail-row')) {{{{
+                                    detailRow.remove();
+                                }}}}
+                                expanded = false
+                            "
+                            x-show="expanded">
+                        <i class="fa-light fa-chevron-up"></i>
+                    </button>
+                    <template x-ref="detailRow">
+                        <tr class="detail-row">
+                            <td colspan="8">
+                                <div class="p-3 bg-slate-100 rounded-lg">
+                                    <div class="mb-4">Delivery units</div>
+                                    <div class="flex gap-16">
+                                        {detail_html}
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </div>
+            </div>
+        ''', count=count, detail_html=mark_safe(detail_html))
+
 
 class LearnAppTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
@@ -174,33 +281,6 @@ class PaymentAppTable(BaseTailwindTable):
             '<div class="">{}</div>', value
         )
 
-    # def render_delivery_units(self, value):
-    #     return format_html(
-    #         '''<div class="flex justify-between">
-    #                 <span>{}</span>
-    #                 <div x-data="{{ expanded: false }}">
-    #                     <button class="btn btn-primary btn-sm"
-    #                     hx-get="http:localhost:3000/expand?year=2024&quarter=1"
-    #                     hx-target="closest tr"
-    #                     hx-swap="afterend"
-    #                     @click="expanded = true"
-    #                     x-show="!expanded">
-    #                     <i class="fa-light fa-chevron-down"></i>
-    #                     </button>
-    #                     <button class="btn btn-secondary btn-sm"
-    #                     @click="$event.preventDefault();
-    #                             const detailRow = $el.closest('tr').nextElementSibling;
-    #                             if (detailRow && detailRow.classList.contains('detail-row-1')) {
-    #                                 detailRow.remove();
-    #                             }
-    #                             expanded = false"
-    #                     x-show="expanded">
-    #                     <i class="fa-light fa-chevron-up"></i>
-    #                     </button>
-    #                 </div>
-    #             </div>
-    #         ''', value
-    #     )
 
 class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
