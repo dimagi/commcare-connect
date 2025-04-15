@@ -1102,7 +1102,6 @@ class WorkerDeliveryTable(BaseTailwindTable):
         if record.user.id in self._seen_users:
             return ""
 
-        self._seen_users.add(record.user.id)
 
         if (
             not hasattr(self, '_row_counter') or
