@@ -1402,23 +1402,55 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         pending=Count("id", filter=Q(status=VisitValidationStatus.pending)),
         pending_review=Count(
             "id",
-            filter=Q(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.pending),
+            filter=Q(
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.pending,
+            ),
         ),
         revalidate=Count(
             "id",
-            filter=Q(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.disagree),
+            filter=Q(
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.disagree,
+            ),
         ),
-        approved=Count("id", filter=Q(status=VisitValidationStatus.approved, review_status=VisitReviewStatus.agree)),
+        approved=Count(
+            "id",
+            filter=Q(
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.agree,
+            ),
+        ),
         rejected=Count("id", filter=Q(status=VisitValidationStatus.rejected)),
         flagged=Count("id", filter=Q(flagged=True)),
         total=Count("*"),
     )
     tabs = [
-        {"name": "pending", "label": "Pending", "count": user_visit_counts.get("pending", 0)},
-        {"name": "pending_review", "label": "Review", "count": user_visit_counts.get("pending_review", 0)},
-        {"name": "revalidate", "label": "Revalidate", "count": user_visit_counts.get("revalidate", 0)},
-        {"name": "approved", "label": "Approved", "count": user_visit_counts.get("approved", 0)},
-        {"name": "rejected", "label": "Rejected", "count": user_visit_counts.get("rejected", 0)},
+        {
+            "name": "pending",
+            "label": "Pending",
+            "count": user_visit_counts.get("pending", 0),
+        },
+        {
+            "name": "pending_review",
+            "label": "Review",
+            "count": user_visit_counts.get("pending_review", 0),
+        },
+        {
+            "name": "revalidate",
+            "label": "Revalidate",
+            "count": user_visit_counts.get("revalidate", 0),
+        },
+        {
+            "name": "approved",
+            "label": "Approved",
+            "count": user_visit_counts.get("approved", 0),
+        },
+        {
+            "name": "rejected",
+            "label": "Rejected",
+            "count": user_visit_counts.get("rejected", 0),
+        },
         {"name": "all", "label": "All", "count": user_visit_counts.get("total", 0)},
     ]
     response = render(
@@ -1462,12 +1494,10 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
     def get_queryset(self):
         self.filter_status = self.request.GET.get("filter_status")
         self.filter_date = self.request.GET.get("filter_date")
-
         filter_kwargs = {"opportunity_access": self.kwargs["pk"]}
         if self.filter_date:
             date = datetime.datetime.strptime(self.filter_date, "%Y-%m-%d")
             filter_kwargs.update({"visit_date__date": date})
-
         if self.filter_status == "pending":
             filter_kwargs.update({"status": VisitValidationStatus.pending})
             self.exclude_columns = ["last_activity"]
@@ -1498,5 +1528,41 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
 
 
 def user_visit_details(request, org_slug, opp_id, pk):
-    user_visit = get_object_or_404(UserVisit, opportunity_id=opp_id, pk=pk)
-    return render(request, "opportunity/user_visit_details.html", context={"user_visit": user_visit})
+    user_visit = get_object_or_404(UserVisit, pk=pk)
+    serializer = XFormSerializer(data=user_visit.form_json)
+    serializer.is_valid()
+    xform = serializer.save()
+    user_forms = []
+    other_forms = []
+    lat = None
+    lon = None
+    precision = None
+    if user_visit.location:
+        locations = UserVisit.objects.filter(opportunity=user_visit.opportunity).exclude(pk=pk).select_related("user")
+        lat, lon, _, precision = user_visit.location.split(" ")
+        for loc in locations:
+            if loc.location is None:
+                continue
+            other_lat, other_lon, _, other_precision = loc.location.split(" ")
+            dist = distance.distance((lat, lon), (other_lat, other_lon))
+            if dist.m <= 250:
+                if user_visit.user_id == loc.user_id:
+                    user_forms.append((loc, dist.m, other_lat, other_lon, other_precision))
+                else:
+                    other_forms.append((loc, dist.m, other_lat, other_lon, other_precision))
+        user_forms.sort(key=lambda x: x[1])
+        other_forms.sort(key=lambda x: x[1])
+    return render(
+        request,
+        "opportunity/user_visit_details.html",
+        context=dict(
+            user_visit=user_visit,
+            xform=xform,
+            user_forms=user_forms[:5],
+            other_forms=other_forms[:5],
+            visit_lat=lat,
+            visit_lon=lon,
+            visit_precision=precision,
+            MAPBOX_TOKEN=settings.MAPBOX_TOKEN,
+        ),
+    )

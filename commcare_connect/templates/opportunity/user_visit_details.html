@@ -1,3 +1,6 @@
+{% load duration_minutes %}
+{% load static %}
+
 <div class="flex flex-col gap-6" x-data="{
     slides: [
         { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 1' },
@@ -136,7 +139,7 @@
   <hr class="h-px bg-gray-200 border-0">
 
   <!-- Media Section -->
-  {% if visit.images %}
+  {% if user_visit.images %}
   <div class="flex justify-between">
     <p class="text-sm font-medium text-brand-deep-purple">Media</p>
     <div class="flex gap-2">
@@ -166,49 +169,30 @@
   <!-- Verification Flags -->
   <div class="grid grid-cols-3 gap-4">
     <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
-    <div>
-      <div class="text-sm text-brand-blue-light">Location</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Less than 2m</div>
-    </div>
+    {% if user_visit.flagged %}
+      {% for flag in user_visit.flag_reason.flags %}
+        <div>
+          <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
+          <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+        </div>
+      {% endfor %}
+    {% endif %}
     <div>
       <div class="text-sm text-brand-blue-light">Form Duration</div>
-      <div class="text-sm font-normal text-brand-deep-purple">4.6min</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
     </div>
     <div>
       <div class="text-sm text-brand-blue-light">Photos</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Yes</div>
-    </div>
-    <div>
-      <div class="text-sm text-brand-blue-light">Duplicate</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Yes</div>
-    </div>
-    <div>
-      <div class="text-sm text-brand-blue-light">Flag Name</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Flag Value</div>
-    </div>
-    <div>
-      <div class="text-sm text-brand-blue-light">Flag Name</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Flag Value</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
     </div>
   </div>
 
   <hr class="h-px bg-gray-200 border-0">
 
-  <!-- Delivery Timestamp -->
-  <div class="w-full rounded-lg bg-slate-100 p-4 h-40 grid grid-cols-2 grid-rows-2">
-    <p class="text-sm text-brand-deep-purple">Delivery Time-stamp</p>
-    <div class="justify-self-end">
-          <span
-            class="badge badge-md primary-dark">
-            12 Jul, 2024
-      </span>
-    </div>
-  </div>
-
   <!-- Map -->
   <div class="flex flex-col gap-2 h-64">
     <p class="mb-3 text-sm font-medium text-brand-deep-purple">Map</p>
-    <div class="w-full p-4 rounded-lg bg-slate-50 h-full">
+    <div class="w-full p-4 rounded-lg bg-slate-50 h-full" id="user-visit-map">
     </div>
   </div>
 
@@ -278,3 +262,139 @@
     </div>
   </div>
 </div>
+
+<script type="text/javascript">
+  document.addEventListener('visit-loaded', function() {
+      mapboxgl.accessToken = "{{ MAPBOX_TOKEN }}";
+      const map = new mapboxgl.Map({
+          container: 'user-visit-map',
+          style: 'mapbox://styles/mapbox/streets-v12',
+          center: [{{ visit_lon }}, {{ visit_lat }}],
+          zoom: 16,
+      });
+      circles = []
+      marker = new mapboxgl.Marker({"color": "green"})
+          .setLngLat([{{ visit_lon }}, {{ visit_lat }}])
+          .setPopup(new mapboxgl.Popup().setHTML(
+              `
+              <table><tbody>
+              <tr><th>Name</th><td>{{visit.entity_name}}</td></tr>
+              <tr><th>User</th><td>{{visit.user.name}}</td></tr>
+              <tr><th>Date</th><td>{{visit.visit_date}}</td></tr>
+              <tr><th>Status</th><td>{{visit.get_status_display}}</td></tr>
+              </tbody></table>
+              `
+          ))
+          .addTo(map);
+      marker.getElement().onmouseenter = (event) => {
+          map.setLayoutProperty(
+              'circles',
+              'visibility',
+              'visible'
+          );
+      };
+      marker.getElement().onmouseleave = (event) => {
+          map.setLayoutProperty(
+              'circles',
+              'visibility',
+              'none'
+          );
+      };
+      circles.push(circle([{{ visit_lon }}, {{ visit_lat }}], {{ visit_precision }}, {units: 'meters'}))
+      {% for form in user_forms %}
+      marker = new mapboxgl.Marker({"scale": 0.75})
+          .setLngLat([{{ form.3 }}, {{ form.2 }}])
+          .setPopup(new mapboxgl.Popup().setHTML(
+              `
+                  <table><tbody>
+                  <tr><th>Name</th><td>{{form.0.entity_name}}</td></tr>
+                  <tr><th>User</th><td>{{form.0.user.name}}</td></tr>
+                  <tr><th>Date</th><td>{{form.0.visit_date}}</td></tr>
+                  <tr><th>Status</th><td>{{form.0.get_status_display}}</td></tr>
+                  </tbody></table>
+                  <a href="{% url 'opportunity:visit_verification' org_slug=request.org.slug pk=form.0.pk %}">View Form</a>
+                  `
+          ))
+          .addTo(map);
+     marker.getElement().onmouseenter = (event) => {
+         map.setLayoutProperty(
+             'circles',
+             'visibility',
+             'visible'
+         );
+      };
+      marker.getElement().onmouseleave = (event) => {
+          map.setLayoutProperty(
+              'circles',
+              'visibility',
+              'none'
+          );
+      };
+      circles.push(circle([{{ form.3 }}, {{ form.2 }}], {{ form.4}}, {units: 'meters'}))
+      {% endfor %}
+      {% for form in other_forms %}
+      marker = new mapboxgl.Marker({"color": "red", "scale": 0.75})
+          .setLngLat([{{ form.3 }}, {{ form.2 }}])
+          .setPopup(new mapboxgl.Popup().setHTML(
+              `
+                  <table><tbody>
+                  <tr><th>Name</th><td>{{form.0.entity_name}}</td></tr>
+                  <tr><th>User</th><td>{{form.0.user.name}}</td></tr>
+                  <tr><th>Date</th><td>{{form.0.visit_date}}</td></tr>
+                  <tr><th>Status</th><td>{{form.0.get_status_display}}</td></tr>
+                  </tbody></table>
+                  <a href="{% url 'opportunity:visit_verification' org_slug=request.org.slug pk=form.0.pk %}">View Form</a>
+                  `
+          ))
+          .addTo(map);
+     marker.getElement().onmouseenter = (event) => {
+         map.setLayoutProperty(
+             'circles',
+             'visibility',
+             'visible'
+         );
+      };
+      marker.getElement().onmouseleave = (event) => {
+          map.setLayoutProperty(
+              'circles',
+              'visibility',
+              'none'
+          );
+      };
+      circles.push(circle([{{ form.3 }}, {{ form.2 }}], {{ form.4}}, {units: 'meters'}))
+      {% endfor %}
+
+      <!-- map.on('style.load', () => { -->
+      <!--     map.addLayer({ -->
+      <!--         "id": "circles", -->
+      <!--         "type": "fill", -->
+      <!--         "source": { -->
+      <!--             "type": "geojson", -->
+      <!--             "data": { -->
+      <!--                 "type": "FeatureCollection", -->
+      <!--                 "features": circles, -->
+      <!--             } -->
+      <!--         }, -->
+      <!--         "layout": { -->
+      <!--             "visibility": "none" -->
+      <!--         }, -->
+      <!--         "paint": { -->
+      <!--             "fill-antialias": true, -->
+      <!--             "fill-opacity": 0.3, -->
+      <!--             "fill-color": "yellow", -->
+      <!--             "fill-outline-color": "#000", -->
+      <!--         } -->
+      <!--     }); -->
+      <!-- }) -->
+
+      <!-- const styleList = document.getElementById('menu'); -->
+      <!-- const inputs = styleList.getElementsByTagName('input'); -->
+      <!---->
+      <!-- for (const input of inputs) { -->
+      <!--     input.onclick = (click) => { -->
+      <!--         const styleId = click.target.id; -->
+      <!--         map.setStyle('mapbox://styles/mapbox/' + styleId); -->
+      <!--     }; -->
+      <!-- } -->
+  })
+</script>
