@@ -1311,9 +1311,52 @@ def opportunities_list(request, org_slug=None, opp_id=None):
         {"header_title": "Opportunities List"},
     )
 
+from django.shortcuts import render
+from django.urls import reverse
+
 def opportunity_worker(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
-    return render(request, "tailwind/pages/opportunity_worker.html", {"opportunity": opp})
+    base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
+
+    raw_qs = request.GET.urlencode()
+    query = f"?{raw_qs}" if raw_qs else ""
+
+    tabs = [
+        {
+            "key": "workers",
+            "label": "Workers",
+            "url": reverse("opportunity:tw_worker_table", kwargs=base_kwargs) + query,
+            "trigger": "loadWorkers",
+        },
+        {
+            "key": "learn",
+            "label": "Learn",
+            "url": reverse("opportunity:tw_learn_table", kwargs=base_kwargs) + query,
+            "trigger": "loadLearn",
+        },
+        {
+            "key": "delivery",
+            "label": "Delivery",
+            "url": reverse("opportunity:tw_delivery_table", kwargs=base_kwargs) + query,
+            "trigger": "loadDelivery",
+        },
+        {
+            "key": "payments",
+            "label": "Payments",
+            "url": reverse("opportunity:tw_payments_table", kwargs=base_kwargs) + query,
+            "trigger": "loadPayments",
+        },
+    ]
+
+    return render(
+        request,
+        "tailwind/pages/opportunity_worker.html",
+        {
+            "opportunity": opp,
+            "tabs": tabs,
+        },
+    )
+
 
 def invoice_list(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/invoice_list.html", {"header_title": "Invoices"})

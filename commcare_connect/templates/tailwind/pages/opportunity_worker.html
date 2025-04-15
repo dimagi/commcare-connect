@@ -6,123 +6,81 @@
   <!-- Tabs -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <ul class="tabs">
+      {% for tab in tabs %}
       <li
-        @click="setTab('workers')"
-        id="workers-tab"
-        :class="{ 'active': selectedTab === 'workers' }"
-        hx-get="{% url 'opportunity:tw_worker_table' request.org.slug opportunity.id %}"
+        @click="setTab('{{ tab.key }}')"
+        id="{{ tab.key }}-tab"
+        :class="{ 'active': selectedTab === '{{ tab.key }}' }"
+        hx-get="{{ tab.url }}"
         hx-swap="innerHTML"
-        hx-trigger="loadWorkers"
+        hx-trigger="{{ tab.trigger }} from:body"
         hx-target="#opportunity_worker_container"
       >
-        <span>Workers</span>
-        <div x-show="selectedTab === 'workers'"></div>
+        <span>{{ tab.label }}</span>
+        <div x-show="selectedTab === '{{ tab.key }}'"></div>
       </li>
-      <li
-        @click="setTab('learn')"
-        id="learn-tab"
-        :class="{ 'active': selectedTab === 'learn' }"
-        hx-get="{% url 'opportunity:tw_learn_table' request.org.slug opportunity.id %}"
-        hx-swap="innerHTML"
-        hx-trigger="loadLearn"
-        hx-target="#opportunity_worker_container"
-      >
-        <span>Learn</span>
-        <div x-show="selectedTab === 'learn'"></div>
-      </li>
-      <li
-        @click="setTab('delivery')"
-        id="delivery-tab"
-        :class="{ 'active': selectedTab === 'delivery' }"
-        hx-get="{% url 'opportunity:tw_delivery_table' request.org.slug opportunity.id %}"
-        hx-swap="innerHTML"
-        hx-trigger="loadDelivery"
-        hx-target="#opportunity_worker_container"
-      >
-        <span>Delivery</span>
-        <div x-show="selectedTab === 'delivery'"></div>
-      </li>
-      <li
-        @click="setTab('payments')"
-        id="payments-tab"
-        :class="{ 'active': selectedTab === 'payments' }"
-        hx-get="{% url 'opportunity:tw_payments_table' request.org.slug opportunity.id %}"
-        hx-swap="innerHTML"
-        hx-trigger="loadPayments"
-        hx-target="#opportunity_worker_container"
-      >
-        <span>Payments</span>
-        <div x-show="selectedTab === 'payments'"></div>
-      </li>
+      {% endfor %}
     </ul>
 
     <!-- Tab Options -->
-    <template x-if="selectedTab === 'workers'">
-      <div class="flex gap-x-4 items-center">
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-download text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-        </button>
-        <button class="button button-md outline-style">
-          Add Worker
-        </button>
-      </div>
-    </template>
+    <div x-show="selectedTab === 'workers'" class="flex gap-x-4 items-center">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+      <button class="button button-md outline-style">
+        Add Worker
+      </button>
+    </div>
 
-    <template x-if="selectedTab === 'learn'">
-      <div class="flex gap-x-4">
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-download text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-        </button>
-      </div>
-    </template>
+    <div x-show="selectedTab === 'learn'" class="flex gap-x-4">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+    </div>
 
-    <template x-if="selectedTab === 'delivery'">
-      <div class="flex gap-x-4">
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-upload text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-download text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-        </button>
-      </div>
-    </template>
+    <div x-show="selectedTab === 'delivery'" class="flex gap-x-4">
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-upload text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+    </div>
 
-    <template x-if="selectedTab === 'payments'">
-      <div class="flex gap-x-4">
-        <button
-          type="button"
-          class="button-icon-activatable"
-          @click="selectedOption = 'paymentHistory'"
-          :class="{
-            'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
-            'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory'
-          }"
-        >
-          <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-upload text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-download text-brand-deep-purple"></i>
-        </button>
-        <button type="button" class="button-icon">
-          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-        </button>
-      </div>
-    </template>
+    <div x-show="selectedTab === 'payments'" class="flex gap-x-4">
+      <button
+        type="button"
+        class="button-icon-activatable"
+        @click="selectedOption = 'paymentHistory'"
+        :class="{
+          'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
+          'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory'
+        }"
+      >
+        <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-upload text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-download text-brand-deep-purple"></i>
+      </button>
+      <button type="button" class="button-icon">
+        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+      </button>
+    </div>
 
     <!-- Payment History Dropdown -->
     <div
@@ -151,7 +109,7 @@
   <div
     id="opportunity_worker_container"
     class="w-full"
-    hx-get="{% url 'opportunity:tw_worker_table' request.org.slug opportunity.id %}"
+    hx-get="{{ tabs.0.url }}"
     hx-swap="innerHTML"
     hx-trigger="load"
   ></div>
@@ -160,33 +118,35 @@
 <!-- Alpine Tabs Script -->
 <script>
   function opportunityTabs() {
-    return {
-      selectedTab: '',
-      selectedOption: '',
-      init() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const tab = urlParams.get('active_tab') || 'workers';
-        this.setTab(tab, true);
-      },
-      setTab(tab, updateUrl = true) {
-        this.selectedTab = tab;
-        this.selectedOption = '';
-        if (updateUrl) {
-          const url = new URL(window.location.href);
-          url.searchParams.set('active_tab', tab);
-          window.history.replaceState({}, '', url);
-        }
-        this.$nextTick(() => {
-          const eventMap = {
-            workers: 'loadWorkers',
-            learn: 'loadLearn',
-            delivery: 'loadDelivery',
-            payments: 'loadPayments'
-          };
-          htmx.trigger(`#${tab}-tab`, eventMap[tab]);
-        });
+  return {
+    selectedTab: '',
+    selectedOption: '',
+    tabTriggers: {
+      {% for tab in tabs %}
+      '{{ tab.key }}': '{{ tab.trigger }}'{% if not forloop.last %},{% endif %}
+      {% endfor %}
+    },
+    init() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tab = urlParams.get('active_tab') || 'workers';
+      this.setTab(tab, true);
+    },
+    setTab(tab, updateUrl = true) {
+      this.selectedTab = tab;
+      this.selectedOption = '';
+      if (updateUrl) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('active_tab', tab);
+        window.history.replaceState({}, '', url);
       }
-    };
-  }
+      this.$nextTick(() => {
+        // Dispatch the custom event using the mapping from tabTriggers
+        if (this.tabTriggers[tab]) {
+          document.body.dispatchEvent(new CustomEvent(this.tabTriggers[tab]));
+        }
+      });
+    }
+  };
+}
 </script>
 {% endblock content %}
