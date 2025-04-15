@@ -12,18 +12,6 @@
   </div>
 </div>
 
-{% comment %} <div class="flex justify-center w-full">
-  <div class="flex flex-col w-full grid-cols-10 gap-2 lg:grid">
-    <div class="col-span-6">
-      <!-- Tabs -->
-      <div hx-get="src/components/tabs/tabs.ejs" hx-trigger="load"></div>
-    </div>
-    <div class="w-full col-span-4">
-      <div hx-get="src/components/details.ejs" hx-trigger="load"></div>
-    </div>
-  </div>
-</div> {% endcomment %}
-
 <div class="flex flex-row gap-4">
   {% include "tailwind/components/cards/user_status_card.html" with rows=rows %}
   {% include "tailwind/components/user_timeline.html" with timeline=timeline%}

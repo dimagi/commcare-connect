@@ -1,6 +1,6 @@
 <div
   class="flex flex-col w-full gap-2"
-  {% comment %} dynamically load these tings {% endcomment %}
+  {% comment %} dynamically load these things {% endcomment %}
   x-data="{
         selectedTab: 'flagged',
         selectedOption: '',
@@ -54,29 +54,21 @@
     }"
 >
   <!-- Tabs -->
-  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-    <div class="flex h-full gap-x-8 px-2">
+  <div class="relative flex mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+    <ul class="tabs">
       <template x-for="tab in tabs" :key="tab.id">
-        <div
+        <li
           :id="`${tab.id}-tab`"
-          @click="switchTab(tab.id)"
-          class="relative cursor-pointer text-sm h-full flex items-center gap-1"
-          :class="{
-            'text-brand-deep-purple font-medium': selectedTab === tab.id,
-            'text-gray-500': selectedTab !== tab.id
-          }"
-        >
+          @click="switchTab(tab.id)" 
+          :class="{ 'active': selectedTab === tab.id }">
           <span x-text="tab.label"></span>
           <span 
             x-show="selectedTab === tab.id && tabConfig[tab.id].count > 0">(<span x-text="tabConfig[tab.id].count"></span>)
           </span>
-          <div
-            class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-            x-show="selectedTab === tab.id"
-          ></div>
-        </div>
+          <div x-show="selectedTab === tab.id"></div>
+        </li>
       </template>
-    </div>
+    </ul>
 
     <!-- Dynamic Tab Options -->
     <template x-for="(tab, id) in tabConfig" :key="id">

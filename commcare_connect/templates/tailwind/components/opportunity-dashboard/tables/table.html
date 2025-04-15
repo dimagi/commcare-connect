@@ -1,5 +1,7 @@
 {% load render_table from django_tables2 %}
+{% if app_name %}
 <div class="bg-gray-100 text-base font-medium text-brand-deep-purple w-full h-10 pl-2">{{app_name}}</div>
-<div class="h-106 shadow-md rounded-xl overflow-hidden text-brand-deep-purple ">
+{% endif %}
+<div class="h-106 shadow-md rounded-xl overflow-hidden text-brand-deep-purple">
     {% render_table table%}
 </div>

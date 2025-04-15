@@ -10,50 +10,36 @@
 >
   <!-- Tabs -->
   <div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
-    <div class="flex h-full px-2 gap-x-8">
-      <div
+    <ul class="tabs">
+      <li
         @click="selectedTab = 'invoices'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#invoices-tab', 'loadInvoices');
             })"
-        id="invoices-tab"
-        class="relative flex items-center h-full text-sm cursor-pointer"
-        :class="{
-                'text-brand-deep-purple font-medium': selectedTab === 'invoices',
-                'text-gray-500': selectedTab !== 'invoices'
-            }"
+        id="invoices-tab" 
+        :class="{ 'active': selectedTab === 'invoices' }"
         hx-get="/a/test-org-managed/opportunity/8/tw/tables/all_invoice"
         hx-swap="innerHTML"
         hx-trigger="loadInvoices"
         hx-target="#invoice_report_container"
       >
         <span>All Invoices</span>
-        <div
-          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-          x-show="selectedTab === 'invoices'"
-        ></div>
-      </div>
-      <div
+        <div x-show="selectedTab === 'invoices'"></div>
+      </li>
+      <li
         @click="selectedTab = 'report'; selectedRows = []; $nextTick(() => { 
                 htmx.trigger('#report-tab', 'loadReport');
             })"
         id="report-tab"
-        class="relative flex items-center h-full text-sm cursor-pointer"
-        :class="{
-                'text-brand-deep-purple font-medium': selectedTab === 'report',
-                'text-gray-500': selectedTab !== 'report'
-            }"
+        :class="{ 'active': selectedTab === 'report' }"
         hx-get="/a/test-org-managed/opportunity/8/tw/tables/invoice_report"
         hx-swap="innerHTML"
         hx-trigger="loadReport"
         hx-target="#invoice_report_container"
       >
         <span>Payment Report</span>
-        <div
-          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-          x-show="selectedTab === 'report'"
-        ></div>
-      </div>
-    </div>
+        <div x-show="selectedTab === 'report'"></div>
+    </li>
+    </ul>
 
     <!-- All Invoices Options -->
     <div x-show="selectedTab === 'invoices'" class="flex items-center gap-x-4">

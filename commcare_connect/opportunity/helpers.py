@@ -1,6 +1,11 @@
 from collections import namedtuple
+from datetime import timedelta
 
-from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When
+from django.db.models import Count, Q, Sum, F, Case, When, Value, IntegerField, DecimalField, ExpressionWrapper, Exists, \
+    OuterRef
+from django.db.models import Max, Min
+from django.db.models.functions import Coalesce
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -9,7 +14,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
-    VisitValidationStatus,
+    VisitValidationStatus, UserInviteStatus, UserVisit,
 )
 
 
@@ -22,7 +27,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
             last_visit_date_d=Max(
                 "opportunity_access__user__uservisit__visit_date",
                 filter=Q(opportunity_access__user__uservisit__opportunity=opportunity)
-                & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
+                       & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
             ),
             date_deliver_started=Min(
                 "opportunity_access__user__uservisit__visit_date",
@@ -151,3 +156,61 @@ def get_payment_report_data(opportunity: Opportunity):
             PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
         )
     return data, total_user_payment_accrued, total_nm_payment_accrued
+
+
+def get_opportunity_list_data(organization):
+    today = now().date()
+    three_days_ago = now() - timedelta(days=3)
+
+    queryset = Opportunity.objects.filter(organization=organization).annotate(
+        program=F("managedopportunity__program__name"),
+        pending_invites=Count(
+            "userinvite",
+            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            distinct=True,
+        ),
+        pending_approvals=Count(
+            "uservisit",
+            filter=Q(uservisit__status=VisitValidationStatus.pending),
+            distinct=True,
+        ),
+        total_accrued=Coalesce(
+            Sum('opportunityaccess__payment_accrued', distinct=True),
+            Value(0),
+            output_field=DecimalField()
+        ),
+        total_paid=Coalesce(
+            Sum(
+                'opportunityaccess__payment__amount_usd',
+                filter=Q(opportunityaccess__payment__confirmed=True),
+                distinct=True
+            ),
+            Value(0),
+            output_field=DecimalField()
+        ),
+        payments_due=ExpressionWrapper(
+            F('total_accrued') - F('total_paid'),
+            output_field=DecimalField(),
+        ),
+
+        inactive_workers=Count(
+            "opportunityaccess",
+            filter=Q(
+                ~Exists(
+                    UserVisit.objects.filter(
+                        opportunity_access=OuterRef('opportunityaccess'),
+                        visit_date__gte=three_days_ago,
+                    )
+                )
+            ),
+            distinct=True,
+        ),
+        status=Case(
+            When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+            When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+            default=Value(2),  # Inactive
+            output_field=IntegerField()
+        )
+    )
+
+    return queryset

@@ -2,13 +2,14 @@
 
 {% extends 'tailwind/base.html' %}
 {% block content %}
+{% load i18n %}
 <div class="flex items-center justify-center">
   <div
     class="flex flex-col gap-2 w-full"
-    
+
   >
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-      <p class="text-sm text-brand-deep-purple">Opportunities List</p>
+      <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
       <div class="flex gap-x-6">
         <button type="button"><i class="fa-light fa-sliders-simple"></i></button>
         <button
@@ -23,7 +24,7 @@
     <div class="flex flex-col w-full gap-2">
 
       <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
-        <div hx-get="/a/test-1/opportunity/1/tw/tables/opportunities_list/" hx-trigger="load" hx-swap="outerHTML"></div>
+        {% include "tailwind/components/tables/table.html" %}
       </div>
     </div>
 
