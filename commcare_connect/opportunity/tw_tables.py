@@ -16,6 +16,8 @@ from commcare_connect.opportunity.models import OpportunityAccess
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
 
+    use_htmx = False  # This flag is used to make the sort header use HTMX-specific URL.
+
     class Meta:
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}

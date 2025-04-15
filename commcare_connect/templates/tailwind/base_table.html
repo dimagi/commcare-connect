@@ -13,9 +13,7 @@
           {% for column in table.columns %}
           <th>
             {% if column.orderable %}
-            <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" >
-             {% sortable_header column.name column.header %}
-            </a>
+            {% sortable_header column.name column.header table.use_htmx %}
             {% else %}
             <span>{{ column.header }}</span>
             {% endif %}

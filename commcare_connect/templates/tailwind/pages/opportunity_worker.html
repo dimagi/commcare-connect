@@ -165,15 +165,15 @@
       selectedOption: '',
       init() {
         const urlParams = new URLSearchParams(window.location.search);
-        const tab = urlParams.get('active-tab') || 'workers';
-        this.setTab(tab, false);
+        const tab = urlParams.get('active_tab') || 'workers';
+        this.setTab(tab, true);
       },
       setTab(tab, updateUrl = true) {
         this.selectedTab = tab;
         this.selectedOption = '';
         if (updateUrl) {
           const url = new URL(window.location.href);
-          url.searchParams.set('active-tab', tab);
+          url.searchParams.set('active_tab', tab);
           window.history.replaceState({}, '', url);
         }
         this.$nextTick(() => {

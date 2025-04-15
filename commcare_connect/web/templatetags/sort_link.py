@@ -1,4 +1,4 @@
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 
 from django import template
 from django.utils.html import format_html, strip_tags
@@ -52,13 +52,24 @@ def update_query_params(context, **kwargs):
 
 
 @register.simple_tag(takes_context=True)
-def sortable_header(context, field, label):
+def sortable_header(context, field, label, use_htmx=False):
     request = context["request"]
-    current_sort = request.GET.get("sort", "")
-
-    next_sort = ""
-
+    current_sort = next_sort = None
     icon_element = '<i class="fa-solid ml-1 {}"></i>'
+
+
+    if use_htmx:
+        path = request.path
+        query_params = request.GET.copy()
+        current_sort = query_params.get("sort", "")
+
+    else:
+        referer = request.META.get("HTTP_REFERER", request.get_full_path())
+        parsed_url = urlparse(referer)
+        query_params = parse_qs(parsed_url.query)
+        path = parsed_url.path
+        current_sort = query_params.get("sort", [""])[0]
+
 
     if current_sort == field:
         next_sort = f"-{field}"
@@ -70,13 +81,15 @@ def sortable_header(context, field, label):
         next_sort = field
         icon_element = icon_element.format("fa-sort text-gray-400")
 
-    query_params = request.GET.copy()
+
     if next_sort:
         query_params["sort"] = next_sort
     else:
         query_params.pop("sort", None)
 
-    url = f"{request.path}?{urlencode(query_params)}"
+    query_string = urlencode(query_params, doseq=True)
+    url = f"{path}?{query_string}" if query_string else path
+
     label_text = strip_tags(label)
 
     return format_html(
