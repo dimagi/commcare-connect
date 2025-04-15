@@ -10,11 +10,8 @@
       <li
         @click="setTab('{{ tab.key }}')"
         id="{{ tab.key }}-tab"
+        data-url="{{ tab.url }}"
         :class="{ 'active': selectedTab === '{{ tab.key }}' }"
-        hx-get="{{ tab.url }}"
-        hx-swap="innerHTML"
-        hx-trigger="{{ tab.trigger }} from:body"
-        hx-target="#opportunity_worker_container"
       >
         <span>{{ tab.label }}</span>
         <div x-show="selectedTab === '{{ tab.key }}'"></div>
@@ -109,23 +106,15 @@
   <div
     id="opportunity_worker_container"
     class="w-full"
-    hx-get="{{ tabs.0.url }}"
-    hx-swap="innerHTML"
-    hx-trigger="load"
   ></div>
 </div>
 
 <!-- Alpine Tabs Script -->
 <script>
-  function opportunityTabs() {
+function opportunityTabs() {
   return {
     selectedTab: '',
     selectedOption: '',
-    tabTriggers: {
-      {% for tab in tabs %}
-      '{{ tab.key }}': '{{ tab.trigger }}'{% if not forloop.last %},{% endif %}
-      {% endfor %}
-    },
     init() {
       const urlParams = new URLSearchParams(window.location.search);
       const tab = urlParams.get('active_tab') || 'workers';
@@ -134,15 +123,22 @@
     setTab(tab, updateUrl = true) {
       this.selectedTab = tab;
       this.selectedOption = '';
+
       if (updateUrl) {
         const url = new URL(window.location.href);
         url.searchParams.set('active_tab', tab);
         window.history.replaceState({}, '', url);
       }
+
       this.$nextTick(() => {
-        // Dispatch the custom event using the mapping from tabTriggers
-        if (this.tabTriggers[tab]) {
-          document.body.dispatchEvent(new CustomEvent(this.tabTriggers[tab]));
+        const tabElement = document.querySelector(`#${tab}-tab`);
+        const container = document.querySelector('#opportunity_worker_container');
+        const url = tabElement?.dataset?.url;
+        if (url && container) {
+          htmx.ajax('GET', url, {
+            target: container,
+            swap: 'innerHTML',
+          });
         }
       });
     }
