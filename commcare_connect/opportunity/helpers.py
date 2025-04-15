@@ -306,7 +306,7 @@ def get_opportunity_list_data(organization):
             ),
             distinct=True,
         ),
-        status=Case(
+        status_value=Case(
             When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
             When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
             default=Value(2),  # Inactive

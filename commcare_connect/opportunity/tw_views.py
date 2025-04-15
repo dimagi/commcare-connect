@@ -1,5 +1,5 @@
 from django import forms
-from django.db.models import Count
+from django.db.models import Count, Min, Max
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import TemplateView
@@ -7,17 +7,15 @@ from django_tables2 import SingleTableMixin
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
-from .models import OpportunityAccess, CompletedModule
+from .models import OpportunityAccess
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 
-from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, WorkerStatusTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
-from .views import OrganizationUserMixin, get_opportunity_or_404
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
-    WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, \
+    WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, \
     AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable, \
-    OpportunitiesListViewTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable
+    OpportunitiesListViewTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable, WorkerStatusTable
 from .views import OrganizationUserMixin, get_opportunity_or_404
 
 

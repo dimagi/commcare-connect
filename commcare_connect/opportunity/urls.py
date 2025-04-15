@@ -139,7 +139,7 @@ urlpatterns = [
     # New tailwind based views
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
-    path("<int:opp_id>/tw/opportunities/", tw_views.opportunity_dashboard, name="tw_opportunities"),
+    path("<int:opp_id>/tw/opportunity/", tw_views.opportunity_dashboard, name="tw_opportunity"),
     path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
     path("tw/opportunities_list_new/", OpportunityListView.as_view(), name="opportunities_list_new"),
     path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_learn_table"), # TABLE

@@ -2321,6 +2321,7 @@ class OpportunitiesListViewTable(BaseTailwindTable):
     )
     status = tables.TemplateColumn(
         verbose_name="Status",
+        accessor="status_value",
         orderable=False,
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
@@ -2412,15 +2413,15 @@ class OpportunitiesListViewTable(BaseTailwindTable):
         actions = [
             {
                 "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[record.organization.slug, record.id]),
+                "url": reverse("opportunity:tw_opportunity", args=[record.organization.slug, record.id]),
             },
             {
                 "title": "View Pending Reviews",
-                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+                "url": reverse("opportunity:tw_worker_table", args=[record.organization.slug, record.id]),
             },
             {
                 "title": "View Pending Invoices",
-                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+                "url": reverse("opportunity:tw_worker_table", args=[record.organization.slug, record.id]),
             }
         ]
 
