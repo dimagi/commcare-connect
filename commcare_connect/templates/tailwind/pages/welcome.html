@@ -1,9 +1,9 @@
 {% extends 'tailwind/base.html' %} {% load static i18n %} {% block content %}
 
-<div class="container relative flex items-center justify-center h-screen mx-auto md:max-w-screen-md">
+<div class="container relative flex items-center justify-center h-screen mx-auto md:max-w-screen-sm">
   <div class="relative w-full h-fit">
     <div class="flex flex-col gap-2 p-2 bg-gray-100 rounded-lg shadow-sm h-fit">
-      <div class="flex justify-between items-center flex-1 w-full h-fit p-4 rounded-lg bg-brand-cornflower-blue">
+      <div class="flex justify-between items-center flex-1 w-full h-fit p-4 rounded-lg bg-brand-cornflower-blue hidden">
         <div class="h-12">
           <img src="{% static 'images/logo-full.svg' %}" alt="Compact Logo" class="h-full" />
         </div>
@@ -12,7 +12,7 @@
         </div>
       </div> 
       <div class="w-full h-full bg-white rounded-lg p-6 flex flex-col gap-8">
-        <div class="w-2/3">
+        <div class="w-full space-y-2">
           <h4 class="text-2xl text-brand-deep-purple">Welcome to CommCare Connect</h4>
           <p class="text-sm text-gray-400">Click the button below to continue your onboarding. You can also come back later to finish setting things up.</p>
         </div>

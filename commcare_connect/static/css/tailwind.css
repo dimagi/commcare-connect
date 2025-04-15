@@ -6,6 +6,11 @@
 [x-cloak] {
     display: none !important;
 }
+
+:root{
+    --breakpoint-sm:640px;
+}
+
 @theme {
     --font-sans : "Work Sans", "sans-serif"; 
     --breakpoint-sm:5rem;
@@ -19,6 +24,7 @@
     --color-brand-blue-light : #94A3B8;
     --color-brand-sunset-light : #FC5F3633;
     --color-brand-border-light : #E2E8F0; 
+    --width-screen-sm: var(--breakpoint-sm); 
 }
 
 /* ------ Typography------ */
