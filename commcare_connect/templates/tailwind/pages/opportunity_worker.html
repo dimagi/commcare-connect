@@ -1,36 +1,28 @@
-{% extends "tailwind/base.html" %} {% block content %}
+{% extends "tailwind/base.html" %}
+{% block content %}
 <p class="py-2 text-sm font-medium text-brand-deep-purple my-2">{{ opportunity.name }}</p>
-<div
-  class="flex flex-col w-full gap-2"
-  x-data="{
-        selectedTab: '',
-        selectedOption: '',
-    }"
-  x-init="selectedTab='workers';selectedOption=''"
->
+
+<div class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
   <!-- Tabs -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <ul class="tabs">
       <li
-        @click="selectedTab = 'workers'; selectedRows = []; $nextTick(() => {
-                htmx.trigger('#workers-tab', 'loadWorkers');
-            })"
+        @click="setTab('workers')"
         id="workers-tab"
         :class="{ 'active': selectedTab === 'workers' }"
         hx-get="{% url 'opportunity:tw_worker_table' request.org.slug opportunity.id %}"
         hx-swap="innerHTML"
         hx-trigger="loadWorkers"
-        hx-target="#opportunity_worker_container">
+        hx-target="#opportunity_worker_container"
+      >
         <span>Workers</span>
         <div x-show="selectedTab === 'workers'"></div>
       </li>
       <li
-        @click="selectedTab = 'learn'; selectedRows = []; $nextTick(() => {
-                htmx.trigger('#learn-tab', 'loadLearn');
-            })"
+        @click="setTab('learn')"
         id="learn-tab"
         :class="{ 'active': selectedTab === 'learn' }"
-         hx-get="{% url 'opportunity:tw_learn_table' request.org.slug opportunity.id %}"
+        hx-get="{% url 'opportunity:tw_learn_table' request.org.slug opportunity.id %}"
         hx-swap="innerHTML"
         hx-trigger="loadLearn"
         hx-target="#opportunity_worker_container"
@@ -39,9 +31,7 @@
         <div x-show="selectedTab === 'learn'"></div>
       </li>
       <li
-        @click="selectedTab = 'delivery'; selectedRows = []; $nextTick(() => {
-                htmx.trigger('#delivery-tab', 'loadDelivery');
-            })"
+        @click="setTab('delivery')"
         id="delivery-tab"
         :class="{ 'active': selectedTab === 'delivery' }"
         hx-get="{% url 'opportunity:tw_delivery_table' request.org.slug opportunity.id %}"
@@ -50,12 +40,10 @@
         hx-target="#opportunity_worker_container"
       >
         <span>Delivery</span>
-        <div x-show="selectedTab === 'delivery'" ></div>
+        <div x-show="selectedTab === 'delivery'"></div>
       </li>
       <li
-        @click="selectedTab = 'payments'; selectedRows = []; $nextTick(() => {
-                htmx.trigger('#payments-tab', 'loadPayments');
-            })"
+        @click="setTab('payments')"
         id="payments-tab"
         :class="{ 'active': selectedTab === 'payments' }"
         hx-get="{% url 'opportunity:tw_payments_table' request.org.slug opportunity.id %}"
@@ -64,76 +52,80 @@
         hx-target="#opportunity_worker_container"
       >
         <span>Payments</span>
-        <div  x-show="selectedTab === 'payments'"></div>
+        <div x-show="selectedTab === 'payments'"></div>
       </li>
     </ul>
 
-    <!-- Workers Options -->
-    <div x-show="selectedTab === 'workers'" class="flex  gap-x-4  items-center">
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-      </button>
-      <button class="button button-md outline-style">
-        Add Worker
-      </button>
-    </div>
+    <!-- Tab Options -->
+    <template x-if="selectedTab === 'workers'">
+      <div class="flex gap-x-4 items-center">
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+        </button>
+        <button class="button button-md outline-style">
+          Add Worker
+        </button>
+      </div>
+    </template>
 
-    <!-- Learn Options -->
-    <div x-show="selectedTab === 'learn'" class="flex  gap-x-4 ">
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-      </button>
-    </div>
+    <template x-if="selectedTab === 'learn'">
+      <div class="flex gap-x-4">
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </template>
 
-    <!-- Delivery Options -->
-    <div x-show="selectedTab === 'delivery'" class="flex  gap-x-4 ">
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-upload text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-      </button>
-    </div>
+    <template x-if="selectedTab === 'delivery'">
+      <div class="flex gap-x-4">
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-upload text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </template>
 
-    <!-- Payment Options -->
-    <div x-show="selectedTab === 'payments'" class="flex  gap-x-4 ">
-      <button
-        type="button"
-        class="button-icon-activatable"
-        @click="selectedOption = 'paymentHistory'; console.log(selectedOption)"
-        :class="{
-          'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
-          'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory'
-        }"
-      >
-        <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-upload text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon">
-        <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
-      </button>
-    </div>
+    <template x-if="selectedTab === 'payments'">
+      <div class="flex gap-x-4">
+        <button
+          type="button"
+          class="button-icon-activatable"
+          @click="selectedOption = 'paymentHistory'"
+          :class="{
+            'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
+            'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory'
+          }"
+        >
+          <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-upload text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon">
+          <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
+        </button>
+      </div>
+    </template>
 
-    <!-- History -->
+    <!-- Payment History Dropdown -->
     <div
-      x-init="console.log('Default selectedOption:', selectedOption)"
       x-cloak
       x-show="selectedOption == 'paymentHistory'"
       class="absolute z-40 px-4 pt-2 bg-white rounded-lg shadow-sm top-0 mt-16 right-0 w-70"
@@ -164,4 +156,37 @@
     hx-trigger="load"
   ></div>
 </div>
+
+<!-- Alpine Tabs Script -->
+<script>
+  function opportunityTabs() {
+    return {
+      selectedTab: '',
+      selectedOption: '',
+      init() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tab = urlParams.get('active-tab') || 'workers';
+        this.setTab(tab, false);
+      },
+      setTab(tab, updateUrl = true) {
+        this.selectedTab = tab;
+        this.selectedOption = '';
+        if (updateUrl) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('active-tab', tab);
+          window.history.replaceState({}, '', url);
+        }
+        this.$nextTick(() => {
+          const eventMap = {
+            workers: 'loadWorkers',
+            learn: 'loadLearn',
+            delivery: 'loadDelivery',
+            payments: 'loadPayments'
+          };
+          htmx.trigger(`#${tab}-tab`, eventMap[tab]);
+        });
+      }
+    };
+  }
+</script>
 {% endblock content %}
