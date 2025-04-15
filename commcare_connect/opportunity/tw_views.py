@@ -1449,7 +1449,12 @@ def worker_payments(request, org_slug=None, opp_id=None):
         },
     ]
 
-    table = WorkerPaymentsTable(data)
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
+        "-payment_accrued"
+    )
+    query_set = query_set.annotate(last_active=Min("uservisit__visit_date"), last_paid=Max("payment__date_paid"))
+    table = WorkerPaymentsTable(query_set)
     return render(request, "tailwind/pages/worker_payments.html", {"table": table})
 
 
@@ -2759,10 +2764,7 @@ def worker_delivery(request, org_slug=None, opp_id=None):
         }
     ]
     opportunity = get_opportunity_or_404(opp_id,org_slug)
-    queryset= get_annotated_opportunity_access_deliver_status(opportunity)
-    final_query = queryset.annotate(
-        flagged=Count("uservisit__completedwork", filter=Q(uservisit__flagged=True), distinct=True),
-    )
+    data= get_annotated_opportunity_access_deliver_status(opportunity)
     table = WorkerDeliveryTable (data)
     return render(request, "tailwind/pages/worker_delivery.html", {"table": table})
 

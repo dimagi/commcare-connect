@@ -16,11 +16,38 @@ class BaseTailwindTable(tables.Table):
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
 
+class DMYDate(tables.DateColumn):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("format", "d-M-Y")
+        super().__init__(*args, **kwargs)
+
+class IndexColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "#")
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault("empty_values", ())
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record, bound_column, bound_row, **kwargs):
+        table = bound_row._table  # Correct way to access table
+
+        page = getattr(table, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
+            table._row_counter = itertools.count(start=start_index)
+            table._row_counter_start = start_index
+        value = next(table._row_counter)
+        return value
+
 
 class UserInfoColumn(tables.Column):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault('orderable', True)
-        kwargs.setdefault('verbose_name', "User")
+        kwargs.setdefault('verbose_name', "Name")
         super().__init__(*args, **kwargs)
 
     def render(self, value):
@@ -717,39 +744,14 @@ class OpportunitiesListTable(BaseTailwindTable):
         )
 
 class WorkerPaymentsTable(tables.Table):
-    index = tables.Column(
-        orderable=False,
-    )
-    worker = tables.Column(
-        verbose_name="Name",
-    )
-    indicator = tables.TemplateColumn(
-        verbose_name="Indicator",
-        orderable=False,
-        template_code="""
-                                    {% if value %}
-                                       <div class="status-active"></div>
-                                    {% else %}
-                                        <div class="status-error"></div>
-                                    {% endif %}
-                                    """,
-    )
-    lastActive = tables.Column(
-        orderable=False,
-        verbose_name="Last Active",
-    )
-    accrued = tables.Column(
-        verbose_name="Accrued",
-    )
-    totalPaid = tables.Column(
-        verbose_name="Total Paid",
-    )
-    lastPaid = tables.Column(
-        verbose_name="Last Paid",
-    )
-    confirmed = tables.Column(
-        verbose_name="Confirmed",
-    )
+    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
+    user = UserInfoColumn()
+    suspended = SuspendedIndicatorColumn()
+    last_active = tables.Column()
+    payment_accrued = tables.Column(verbose_name="Accrued")
+    total_paid = tables.Column()
+    last_paid = DMYDate()
+    total_confirmed_paid = tables.Column(verbose_name="Confirm")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -785,26 +787,36 @@ class WorkerPaymentsTable(tables.Table):
             }
         )
 
-        self.base_columns['lastActive'].verbose_name = mark_safe(f'''
+        self.base_columns['last_active'].verbose_name = mark_safe(f'''
             <div class="flex items-center cursor-pointer">
                 {last_active_dropdown_html}
             </div>
         ''')
 
-        self.base_columns['indicator'].verbose_name = mark_safe(f'''
-             <div class="w-[40px]">
-                            <div class="w-4 h-2 bg-black rounded"></div>
-                        </div>
-        ''')
 
 
 
     class Meta:
-        sequence = ("index", "worker", "indicator", "lastActive", "accrued", "totalPaid", "lastPaid", "confirmed")
+        model= OpportunityAccess
+        fields=("user", "suspended", "payment_accrued", "total_paid", "total_confirmed_paid")
+        sequence = ("index", "user", "suspended", "last_active", "payment_accrued", "total_paid", "last_paid", "total_confirmed_paid")
 
     def render_index(self, value, record):
-        # Use 1-based indexing for display and storage
-        display_index = value
+        page = getattr(self, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if (
+            not hasattr(self, '_row_counter') or
+            not hasattr(self, '_row_counter_start') or
+            self._row_counter_start != start_index
+        ):
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        display_index = next(self._row_counter)
 
         return format_html(
             """
@@ -833,28 +845,7 @@ class WorkerPaymentsTable(tables.Table):
             display_index,
         )
 
-    def render_worker(self, value):
-        return format_html(
-            """
-        <div class="flex flex-col items-start">
-            <p class="text-sm text-slate-900 ">{}</p>
-            <p class="text-xs text-slate-400">{}</p>
-        </div>
-        """,
-            value["name"],
-            value["id"],
-        )
-
-    def render_lastActive(self, value):
-        return format_html('<div class="">{}</div>', value)
-
-    def render_accrued(self, value):
-        return format_html('<div class="">{}</div>', value)
-
-    def render_totalPaid(self, value):
-        return format_html('<div class="">{}</div>', value)
-
-    def render_lastPaid(self, value):
+    def render_last_paid(self, value):
         return format_html(
             """
             <div class="relative"
@@ -888,13 +879,9 @@ class WorkerPaymentsTable(tables.Table):
             value,
         )
 
-    def render_confirmed(self, value):
-        return format_html('<div class="">{}</div>', value)
 
 class WorkerLearnTable(tables.Table):
-    index = tables.Column(
-        orderable=False,
-    )
+    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column(
@@ -989,7 +976,21 @@ class WorkerLearnTable(tables.Table):
 
     def render_index(self, value, record):
         # Use 1-based indexing for display and storage
-        display_index = value
+        page = getattr(self, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if (
+            not hasattr(self, '_row_counter') or
+            not hasattr(self, '_row_counter_start') or
+            self._row_counter_start != start_index
+        ):
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        display_index = next(self._row_counter)
 
         return format_html(
             """
@@ -1022,13 +1023,11 @@ class WorkerLearnTable(tables.Table):
         return 'passed' if value else 'failed'
 
 class WorkerDeliveryTable(BaseTailwindTable):
-    index = tables.Column(
-        orderable=False,
-    )
+    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
     user=UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
-    payment_units = tables.Column()
+    payment_unit = tables.Column()
     started = tables.Column()
     delivered = tables.Column()
     flagged = tables.Column()
@@ -1052,7 +1051,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
             "user",
             "suspended",
             "last_active",
-            "payment_units",
+            "payment_unit",
             "started",
             "delivered",
             "flagged",
@@ -1078,8 +1077,21 @@ class WorkerDeliveryTable(BaseTailwindTable):
 
 
     def render_index(self, value, record):
-        # Use 1-based indexing for display and storage
-        display_index = value
+        page = getattr(self, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if (
+            not hasattr(self, '_row_counter') or
+            not hasattr(self, '_row_counter_start') or
+            self._row_counter_start != start_index
+        ):
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        display_index = next(self._row_counter)
 
         return format_html(
             """
@@ -1444,33 +1456,7 @@ class PayWorker(BaseTailwindTable):
             value,
         )
 
-class IndexColumn(tables.Column):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("verbose_name", "#")
-        kwargs.setdefault("orderable", False)
-        kwargs.setdefault("empty_values", ())
-        super().__init__(*args, **kwargs)
 
-    def render(self, value, record, bound_column, bound_row, **kwargs):
-        table = bound_row._table  # Correct way to access table
-
-        page = getattr(table, 'page', None)
-        if page:
-            start_index = (page.number - 1) * page.paginator.per_page + 1
-        else:
-            start_index = 1
-
-        if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
-            table._row_counter = itertools.count(start=start_index)
-            table._row_counter_start = start_index
-        value = next(table._row_counter)
-        return value
-
-
-class DMYDate(tables.DateColumn):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("format", "d-M-Y")
-        super().__init__(*args, **kwargs)
 
 
 

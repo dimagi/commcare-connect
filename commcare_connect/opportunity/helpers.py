@@ -1,7 +1,7 @@
 from collections import namedtuple
 
 from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When, ExpressionWrapper, DurationField, OuterRef, \
-    Subquery, BooleanField, FloatField, Exists
+    Subquery, FloatField, Exists
 from django.db.models.functions import Greatest, Coalesce, Least, Now, Round
 
 from commcare_connect.opportunity.models import (
@@ -24,7 +24,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
             last_visit_date_d=Max(
                 "opportunity_access__user__uservisit__visit_date",
                 filter=Q(opportunity_access__user__uservisit__opportunity=opportunity)
-                & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
+                       & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
             ),
             date_deliver_started=Min(
                 "opportunity_access__user__uservisit__visit_date",
@@ -80,13 +80,12 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             .annotate(
                 payment_unit=Value(payment_unit.name),
                 started_delivery=Min(
-                    "uservisit__visit_date",
-                    filter=Q(uservisit__completedwork__isnull=False) & Q(
-                        uservisit__completedwork__payment_unit=payment_unit)
+                    "completedwork",
+                    filter=Q(completedwork__uservisit__isnull=False) & Q(
+                        completedwork__payment_unit=payment_unit)
                 ),
-                last_active=Max("uservisit__visit_date", filter=Q(uservisit__completedwork__isnull=False) & Q(
-                    uservisit__completedwork__payment_unit=payment_unit)
-                                ),
+                last_active=Max("completedwork", filter=Q(completedwork__uservisit__isnull=False) & Q(
+                    completedwork__payment_unit=payment_unit)),
                 pending=Count(
                     "completedwork",
                     filter=Q(
@@ -130,6 +129,11 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                         completedwork__payment_unit=payment_unit,
                         completedwork__status=CompletedWorkStatus.incomplete,
                     ),
+                    distinct=True,
+                ),
+                flagged=Count(
+                    "uservisit",
+                    filter=Q(uservisit__flagged=True),
                     distinct=True,
                 ),
                 completed=F("approved") + F("rejected") + F("pending") + F("over_limit"),
@@ -224,7 +228,7 @@ def get_worker_learn_table_data(opportunity):
 
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
         last_active=Max("completedmodule__date"),
-        started_learning = Max("completedmodule__date"),
+        started_learning=Max("completedmodule__date"),
         completed_modules_count=Count("completedmodule__module", distinct=True),
         completed_learn=Case(
             When(
