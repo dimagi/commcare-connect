@@ -83,7 +83,7 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
 
         detail_html = f'''
                 <div class="grid grid-flow-row gap-8 w-full" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
-                    {''.join([f'<div class="w-full"><span>{unit.name}</span> {"(<i>optional</i>)" if not unit.optional else ""}</div>' for unit in deliver_units])}
+                    {''.join([f'<div class="w-full"><span>{unit.name}</span> {"(<i>optional</i>)" if unit.optional else ""}</div>' for unit in deliver_units])}
                 </div>
             '''
 
