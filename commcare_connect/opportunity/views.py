@@ -1438,16 +1438,15 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
     model = UserVisit
     table_class = UserVisitVerificationTable
     template_name = "tailwind/base_table.html"
+    exclude_columns = []
 
     def get_paginate_by(self, table_data):
         return self.request.GET.get("per_page", 10)
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        table = self.get_table(**self.get_table_kwargs())
-        self.total_pages = table.paginator.num_pages
-        context[self.get_context_table_name(table)] = table
-        return context
+    def get_table(self, **kwargs):
+        kwargs["exclude"] = self.exclude_columns
+        self.table = super().get_table(**kwargs)
+        return self.table
 
     def dispatch(self, request, *args, **kwargs):
         response = super().dispatch(request, *args, **kwargs)
@@ -1457,7 +1456,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
         )
         query_params = request.GET.urlencode()
         response["HX-Replace-Url"] = f"{url}?{query_params}"
-        response["HX-Trigger"] = json.dumps({"load_total_pages": self.total_pages})
+        response["HX-Trigger"] = json.dumps({"load-total-pages": self.table.paginator.num_pages})
         return response
 
     def get_queryset(self):
@@ -1467,11 +1466,11 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
         filter_kwargs = {"opportunity_access": self.kwargs["pk"]}
         if self.filter_date:
             date = datetime.datetime.strptime(self.filter_date, "%Y-%m-%d")
-            print(date)
             filter_kwargs.update({"visit_date__date": date})
 
         if self.filter_status == "pending":
             filter_kwargs.update({"status": VisitValidationStatus.pending})
+            self.exclude_columns = ["last_activity"]
         if self.filter_status == "pending_review":
             filter_kwargs.update(
                 {
