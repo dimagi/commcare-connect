@@ -55,110 +55,127 @@
           </p>
         </div>
       </div>
-      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
-        <div class="flex justify-between items-center">
-          <div class="text-2xl">{{ counts.total }}</div>
-          <i class="fa-light fa-memo text-xl"></i>
-        </div>
-        <div class="pt-4 text-sm flex items-center justify-between">
-          <span>Total Deliveries</span>
-        </div>
-      </div>
-      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
-           x-data="{ isOpen: false }">
-        <div class="flex justify-between items-center">
-          <div class="text-2xl">{{ counts.flagged }}</div>
-          <i class="fa-light fa-flag-swallowtail text-xl"></i>
-        </div>
-        <div class="pt-4 text-sm flex items-center justify-between">
-          <span>Flagged Deliveries</span>
-          <i class="fa-solid ml-2 cursor-pointer"
-             :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-             @click="isOpen = !isOpen"></i>
-        </div>
-        <div x-show="isOpen"
-             x-cloak
-             @click.outside="isOpen = false"
-             x-transition
-             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-          <span class="text-sm font-medium text-brand-deep-purple">Flagged Info</span>
-          <div class="py-2">
-            <div class="flex justify-between items-center py-3">
-              <span class="text-xs w-27">Name</span>
-              <i class="fa-light fa-circle-check text-green-600"></i>
-              <i class="fa-light fa-circle-xmark text-brand-sunset "></i>
+
+      <div class="grid grid-cols-5 gap-4 w-full">
+        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+          <div class="flex justify-between items-center">
+            <div class="text-2xl">{{ counts.total }}</div>
+            <div class="hidden lg:block">
+              <i class="fa-light fa-memo text-xl"></i>
             </div>
-            {% for data in flagged_info %}
-              <div class="flex justify-between items-center py-3 pr-1">
-                <span class="text-xs w-25">{{ flag.name }}</span>
-                <span class="text-xs">{{ flag.approved_count }}</span>
-                <span class="text-xs">{{ flag.pending_count }}</span>
-                <span class="text-xs">{{ flag.rejected_count }}</span>
-              </div>
-            {% endfor %}
+          </div>
+          <div class="pt-4 text-sm flex items-center justify-between">
+            <span>Total Deliveries</span>
           </div>
         </div>
-      </div>
-      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
-           x-data="{ isOpen: false }">
-        <div class="flex justify-between items-center">
-          <div class="text-2xl">{{ counts.rejected }}</div>
-          <i class="fa-light fa-thumbs-down text-xl"></i>
-        </div>
-        <div class="pt-4 text-sm flex items-center justify-between">
-          <span>Rejected Deliveries</span>
-          <i class="fa-solid ml-2 cursor-pointer"
-             :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-             @click="isOpen = !isOpen"></i>
-        </div>
-        <div x-show="isOpen"
-             x-cloak
-             @click.outside="isOpen = false"
-             x-transition
-             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-          <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
-          <!-- Details -->
-          <div class="py-2">
-            {% for data in rejected_details %}
+
+        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+             x-data="{ isOpen: false }">
+          <div class="flex justify-between items-center">
+            <div class="text-2xl">{{ counts.flagged }}</div>
+            <div class="hidden lg:block">
+              <i class="fa-light fa-flag-swallowtail text-xl"></i>
+            </div>
+          </div>
+          <div class="pt-4 text-sm flex items-center justify-between">
+            <span>Flagged Deliveries</span>
+            <i class="fa-solid ml-2 cursor-pointer"
+               :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+               @click="isOpen = !isOpen"></i>
+          </div>
+          <div x-show="isOpen"
+               x-cloak
+               @click.outside="isOpen = false"
+               x-transition
+               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+            <span class="text-sm font-medium text-brand-deep-purple">Flagged Info</span>
+            <div class="py-2">
               <div class="flex justify-between items-center py-3">
-                <span class="text-xs w-27">{{ data.name }}</span>
-                <span class="text-xs">{{ data.count }}</span>
+                <span class="text-xs w-27">Name</span>
+                <i class="fa-light fa-circle-check text-green-600"></i>
+                <i class="fa-light fa-circle-xmark text-brand-sunset "></i>
               </div>
-            {% endfor %}
+              {% for data in flagged_info %}
+                <div class="flex justify-between items-center py-3 pr-1">
+                  <span class="text-xs w-25">{{ flag.name }}</span>
+                  <span class="text-xs">{{ flag.approved_count }}</span>
+                  <span class="text-xs">{{ flag.pending_count }}</span>
+                  <span class="text-xs">{{ flag.rejected_count }}</span>
+                </div>
+              {% endfor %}
+            </div>
           </div>
         </div>
-      </div>
-      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
-        <div class="flex justify-between items-center">
-          <div class="text-2xl">{{ opportunity_access.payment_accrued }}</div>
-          <i class="fa-light fa-light fa-money-bill-simple-wave text-xl"></i>
+
+        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+             x-data="{ isOpen: false }">
+          <div class="flex justify-between items-center">
+            <div class="text-2xl">{{ counts.rejected }}</div>
+            <div class="hidden lg:block">
+              <i class="fa-light fa-thumbs-down text-xl"></i>
+            </div>
+          </div>
+          <div class="pt-4 text-sm flex items-center justify-between">
+            <span>Rejected Deliveries</span>
+            <i class="fa-solid ml-2 cursor-pointer"
+               :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+               @click="isOpen = !isOpen"></i>
+          </div>
+          <div x-show="isOpen"
+               x-cloak
+               @click.outside="isOpen = false"
+               x-transition
+               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+            <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
+            <!-- Details -->
+            <div class="py-2">
+              {% for data in rejected_details %}
+                <div class="flex justify-between items-center py-3">
+                  <span class="text-xs w-27">{{ data.name }}</span>
+                  <span class="text-xs">{{ data.count }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
         </div>
-        <div class="pt-4 text-sm flex items-center justify-between">
-          <span>Accrued Amount</span>
+
+        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+          <div class="flex justify-between items-center">
+            <div class="text-2xl">{{ opportunity_access.payment_accrued }}</div>
+            <div class="hidden lg:block">
+              <i class="fa-light fa-light fa-money-bill-simple-wave text-xl"></i>
+            </div>
+          </div>
+          <div class="pt-4 text-sm flex items-center justify-between">
+            <span>Accrued Amount</span>
+          </div>
         </div>
-      </div>
-      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
-           x-data="{ isOpen: false }">
-        <div class="flex justify-between items-center">
-          <div class="text-2xl">{{ opportunity_access.total_paid }}</div>
-          <i class="fa-light fa-hand-holding-dollar text-xl"></i>
-        </div>
-        <div class="pt-4 text-sm flex items-center justify-between">
-          <span>Paid Amount</span>
-          <i class="fa-solid ml-2 cursor-pointer"
-             :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-             @click="isOpen = !isOpen"></i>
-        </div>
-        <div x-show="isOpen"
-             x-cloak
-             @click.outside="isOpen = false"
-             x-transition
-             class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-          <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
-          <div class="flex flex-col py-5 gap-1.5">
-            <span class="text-xs text-brand-blue-light">Last Paid</span>
-            <span class="text-xs text-brand-deep-purple">{{ payment_details.date }}</span>
-            <span class="text-xl text-green-600">{{ payment_details.amount }}</span>
+
+        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+             x-data="{ isOpen: false }">
+          <div class="flex justify-between items-center">
+            <div class="text-2xl">{{ opportunity_access.total_paid }}</div>
+            <div class="hidden lg:block">
+              <i class="fa-light fa-hand-holding-dollar text-xl"></i>
+            </div>
+          </div>
+          <div class="pt-4 text-sm flex items-center justify-between">
+            <span>Paid Amount</span>
+            <i class="fa-solid ml-2 cursor-pointer"
+               :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+               @click="isOpen = !isOpen"></i>
+          </div>
+          <div x-show="isOpen"
+               x-cloak
+               @click.outside="isOpen = false"
+               x-transition
+               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+            <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
+            <div class="flex flex-col py-5 gap-1.5">
+              <span class="text-xs text-brand-blue-light">Last Paid</span>
+              <span class="text-xs text-brand-deep-purple">{{ payment_details.date }}</span>
+              <span class="text-xl text-green-600">{{ payment_details.amount }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -217,8 +234,8 @@
           </div>
 
           <!-- Tab Content Container with Loading Animation -->
-          <div class="relative">
-            <div class="w-full h-160 bg-white overflow-hidden rounded-lg shadow-sm">
+          <div class="w-full h-160 bg-white z-10 relative rounded-lg">
+            <div class="w-full h-160 overflow-hidden rounded-lg shadow-sm">
               <div id="table-container" class="flex flex-col w-full gap-2 h-200"></div>
               <div id="loading-spinner" role="status"
                    class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
