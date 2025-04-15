@@ -481,3 +481,29 @@
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
 }
+
+
+.tabs {
+  @apply flex flex-wrap h-full gap-x-8 px-2;
+}
+
+.tab {
+  @apply relative cursor-pointer text-sm h-full flex items-center gap-1 text-gray-500;
+
+  /* Active Tabs */
+  &:is(.tab-active, [aria-selected="true"]):not(.tab-disabled, [disabled]),
+  &:is(input:checked),
+  &:is(label:has(:checked)) {
+    &:before {
+      @apply w-2/3 h-1.5 left-1/2 -translate-x-1/2 bg-brand-mango rounded-t-lg bottom-0 absolute text-brand-mango w-10 max-w-10;
+      --tw-content: "";
+      content: var(--tw-content);
+      transition: background-color 0.2s ease;
+    }
+  }
+}
+
+.tab-active {
+  @apply text-brand-deep-purple font-medium;
+}
+
