@@ -1024,7 +1024,7 @@ class WorkerLearnTable(tables.Table):
 
 class WorkerDeliveryTable(BaseTailwindTable):
     index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
-    user=UserInfoColumn()
+    user = tables.Column(orderable=False, verbose_name="Name")
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
     payment_unit = tables.Column()
@@ -1061,6 +1061,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
         )
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._seen_users = set()
 
         # Custom HTML for 'select' header (your toggle button)
         self.base_columns['index'].verbose_name = mark_safe(
@@ -1076,12 +1077,32 @@ class WorkerDeliveryTable(BaseTailwindTable):
         )
 
 
+    def render_user(self, value):
+        if value.id in self._seen_users:
+            return ""
+        self._seen_users.add(value.id)
+        return format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            value.name,
+            value.username,
+        )
+
     def render_index(self, value, record):
         page = getattr(self, 'page', None)
         if page:
             start_index = (page.number - 1) * page.paginator.per_page + 1
         else:
             start_index = 1
+
+        if record.user.id in self._seen_users:
+            return ""
+
+        self._seen_users.add(record.user.id)
 
         if (
             not hasattr(self, '_row_counter') or
