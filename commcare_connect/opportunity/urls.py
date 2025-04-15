@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.opportunity import tw_views, views
+from commcare_connect.opportunity.tw_views import OpportunityListView
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -138,8 +139,9 @@ urlpatterns = [
     # New tailwind based views
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
-    path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
+    path("<int:opp_id>/tw/opportunities/", tw_views.opportunity_dashboard, name="tw_opportunities"),
     path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
+    path("tw/opportunities_list_new/", OpportunityListView.as_view(), name="opportunities_list_new"),
     path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_learn_table"), # TABLE
     path("<int:opp_id>/tw/worker_delivery/", tw_views.worker_delivery, name="tw_delivery_table"),
     path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_payments_table"),  # TABLE
@@ -161,8 +163,11 @@ urlpatterns = [
     path("<int:opp_id>/tw/tables/invoice_report", tw_views.invoice_report_table, name="tw_invoice_report"),
     path("<int:opp_id>/tw/tables/my_organization_members", tw_views.my_organization_members_table, name="tw_my_organization_members_table"),
     path("<int:opp_id>/tw/tables/learn_app",tw_views.learn_app_table, name="tw_learn_app"),
+    path("<int:opp_id>/tw/tables/learn_module",tw_views.learn_module_table, name="tw_learn_module"),
     path("<int:opp_id>/tw/tables/delivery_app",tw_views.delivery_app_table, name="tw_delivery_app"),
+    path("<int:opp_id>/tw/tables/deliver_unit",tw_views.deliver_unit_table, name="tw_deliver_unit"),
     path("<int:opp_id>/tw/tables/payment_app",tw_views.payment_app_table, name="tw_payment_app"),
+    path("<int:opp_id>/tw/tables/payment_unit",tw_views.payment_unit_table, name="tw_payment_unit"),
     path("<int:opp_id>/tw/tables/worker_flagged_table",tw_views.worker_flagged_table, name="tw_flagged_table"),
     path("<int:opp_id>/tw/tables/worker_review_table",tw_views.worker_review_table, name="tw_review_table"),
     path("<int:opp_id>/tw/tables/worker_revalidate_table",tw_views.worker_revalidate_table, name="tw_revalidate_table"),
@@ -170,6 +175,7 @@ urlpatterns = [
     path("<int:opp_id>/tw/tables/worker_rejected_table",tw_views.worker_rejected_table, name="tw_rejected_table"),
     path("<int:opp_id>/tw/tables/worker_all_table",tw_views.worker_all_table, name="tw_all_table"),
     # API
+    path("<int:opp_id>/tw/api/payment_app_expand",tw_views.payment_app_table_expand, name="tw_payment_app"),
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
     path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),

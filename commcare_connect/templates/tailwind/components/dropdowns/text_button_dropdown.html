@@ -9,24 +9,24 @@
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
       const dropdown = this.$el.querySelector('.dropdown-content');
-      
+
       setTimeout(() => {
         const dropdownHeight = dropdown ? dropdown.offsetHeight : 0;
-        
+
         const spaceBelow = viewportHeight - badgeRect.bottom;
         const shouldShowAbove = spaceBelow < dropdownHeight && badgeRect.top > dropdownHeight;
-        
-        let top = shouldShowAbove 
+
+        let top = shouldShowAbove
           ? badgeRect.top + window.scrollY - dropdownHeight
           : badgeRect.bottom + window.scrollY;
-        
+
         let left = Math.min(
-          badgeRect.left, 
+          badgeRect.left,
           viewportWidth -  dropdown.offsetWidth - 20
         );
-        
+
         this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
-      }, 0); 
+      }, 0);
     },
     toggleDropdown() {
       if (!this.open) {
@@ -63,9 +63,11 @@
     class="dropdown-content z-40 w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200 min-w-8"
   >
     <p class="text-blue-light text-xs mb-1">{{ title|default:'' }}</p>
-    <div class="">
+    <div class="" >
       {% for item in list %}
-      <div><button type="button" class="bg-transparent border-0 px-2 my-2">{{item}}</button></div>
+      <a href="{{ item.url }}" class="block w-full text-left bg-transparent border-0 px-2 my-2 hover:bg-slate-100 rounded">
+        {{ item.title }}
+      </a>
       {% endfor %}
     </div>
   </div>

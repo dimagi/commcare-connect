@@ -1,9 +1,10 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block table-wrapper %}
-<div class="scrollable-table-wrapper">
+{% load sort_link %}
+<div class="overflow-hidden">
   {% block table %}
-  <div class="scrollable-table-container">
+  <div class="w-full max-h-[80vh] overflow-x-auto block">
     <table class="base-table">
       {% block table.thead %}
       {% if table.show_header %}
@@ -13,7 +14,7 @@
           <th>
             {% if column.orderable %}
             <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}" >
-              {{ column.header }}
+             {% sortable_header column.name column.header %}
             </a>
             {% else %}
             <span>{{ column.header }}</span>
@@ -65,18 +66,4 @@
   </div>
   {% endblock table %}
 </div>
-<style>
-    .scrollable-table-wrapper {
-      border-radius: 8px;
-      overflow: hidden;
-    }
-  
-    .scrollable-table-container {
-      max-height: 80vh;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
-    }
-
-  </style>
 {% endblock table-wrapper %}

@@ -1,10 +1,14 @@
 import itertools
 
 import django_tables2 as tables
+from django.db.models.functions import Now
+from django.urls import reverse
 from django.utils.html import format_html
-from django_tables2.utils import A
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
+
+from commcare_connect.opportunity.models import LearnModule, DeliverUnit, PaymentUnit
+
 
 from commcare_connect.opportunity.models import OpportunityAccess
 
@@ -77,6 +81,50 @@ class SuspendedIndicatorColumn(tables.Column):
             color_class
         )
 
+
+class LearnModuleTable(BaseTailwindTable):
+    index = IndexColumn()
+
+    class Meta:
+        model = LearnModule
+        orderable = False
+        fields = ("index", "name", "description", "time_estimate")
+
+    def render_time_estimate(self, value):
+        return f"{value}hr"
+
+
+class DeliverUnitTable(BaseTailwindTable):
+    index = IndexColumn(empty_values=(), verbose_name="#")
+
+    slug = tables.Column(verbose_name="Delivery Unit ID")
+    name = tables.Column(verbose_name="Name")
+
+    class Meta:
+        model = DeliverUnit
+        fields = ("index", "slug", "name")  # Fields to show (index is custom so it's not included here)
+
+
+class OpportunityPaymentUnitTable(BaseTailwindTable):
+    index = IndexColumn()
+    name = tables.Column(verbose_name="Payment Unit Name")
+    max_total = tables.Column(verbose_name="Total Deliveries")
+    delivery_unit_count = tables.Column(verbose_name="Delivery Units")
+
+    class Meta:
+        model = PaymentUnit
+        orderable = False
+        fields = ("index", "name", "start_date", "end_date", "amount", "max_total", "max_daily", "delivery_unit_count")
+
+    def render_delivery_unit_count(self, value):
+        return format_html(
+            '''<div class="flex justify-between">
+                    <span>{}</span>
+                    <i class="fa-light fa-chevron-down"></i>
+                </div>
+            ''', value
+        )
+
 class LearnAppTable(BaseTailwindTable):
     index = tables.Column(verbose_name="#", orderable=False)
     name = tables.Column(verbose_name="Name")
@@ -133,7 +181,34 @@ class PaymentAppTable(BaseTailwindTable):
     amount = tables.Column(verbose_name="Amount")
     total_deliveries = tables.Column(verbose_name="Total Deliveries")
     max_daily = tables.Column(verbose_name="Max Daily")
-    delivery_units = tables.Column(verbose_name="Delivery Units")
+    delivery_units = tables.TemplateColumn(
+        template_code='''
+        <div class="flex justify-between">
+            <span>{{ value }}</span>
+            <div x-data="{ expanded: false }">
+                <button class="btn btn-primary btn-sm"
+                        hx-get="/a/test-1/opportunity/1/tw/api/payment_app_expand?index={{record.index}}"
+                        hx-target="closest tr"
+                        hx-swap="afterend"
+                        @click="expanded = true"
+                        x-show="!expanded">
+                    <i class="fa-light fa-chevron-down"></i>
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        @click="$event.preventDefault();
+                                const detailRow = $el.closest('tr').nextElementSibling;
+                                if (detailRow && detailRow.classList.contains('detail-row-{{record.index}}')) {
+                                    detailRow.remove();
+                                }
+                                expanded = false"
+                        x-show="expanded">
+                    <i class="fa-light fa-chevron-up"></i>
+                </button>
+            </div>
+        </div>
+        ''',
+        verbose_name="Delivery Units"
+    )
 
     class Meta:
         sequence = ("index", "unit_name", "start_date", "end_date", "amount", "total_deliveries", "max_daily", "delivery_units")
@@ -183,7 +258,7 @@ class PaymentAppTable(BaseTailwindTable):
                     class="border border-brand-border-light focus:outline-none rounded px-3 pr-8 py-2 w-full cursor-pointer"
                     placeholder="Select date"
                     value="{}"
-                    @click="fp.toggle()">
+                    ">
                 <i class="fa-solid fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-brand-deep-purple transition-transform duration-200 pointer-events-none"
                    :class="{{'rotate-180': isOpen}}">
                 </i>
@@ -207,14 +282,33 @@ class PaymentAppTable(BaseTailwindTable):
             '<div class="">{}</div>', value
         )
 
-    def render_delivery_units(self, value):
-        return format_html(
-            '''<div class="flex justify-between">
-                    <span>{}</span>
-                    <i class="fa-light fa-chevron-down"></i>
-                </div>
-            ''', value
-        )
+    # def render_delivery_units(self, value):
+    #     return format_html(
+    #         '''<div class="flex justify-between">
+    #                 <span>{}</span>
+    #                 <div x-data="{{ expanded: false }}">
+    #                     <button class="btn btn-primary btn-sm"
+    #                     hx-get="http:localhost:3000/expand?year=2024&quarter=1"
+    #                     hx-target="closest tr"
+    #                     hx-swap="afterend"
+    #                     @click="expanded = true"
+    #                     x-show="!expanded">
+    #                     <i class="fa-light fa-chevron-down"></i>
+    #                     </button>
+    #                     <button class="btn btn-secondary btn-sm"
+    #                     @click="$event.preventDefault();
+    #                             const detailRow = $el.closest('tr').nextElementSibling;
+    #                             if (detailRow && detailRow.classList.contains('detail-row-1')) {
+    #                                 detailRow.remove();
+    #                             }
+    #                             expanded = false"
+    #                     x-show="expanded">
+    #                     <i class="fa-light fa-chevron-up"></i>
+    #                     </button>
+    #                 </div>
+    #             </div>
+    #         ''', value
+    #     )
 
 class WorkerFlaggedTable(BaseTailwindTable):
     index = tables.Column(verbose_name="", orderable=False)
@@ -227,7 +321,7 @@ class WorkerFlaggedTable(BaseTailwindTable):
             <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
                 {% if value %}
                     {% for flag in value|slice:":2" %}
-                        {% include "tailwind/components/badges/badge_sm.html" with text=flag %}
+                        <span class="badge badge-sm label">flag</span>
                     {% endfor %}
                     {% if value|length > 2 %}
                         {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
@@ -461,7 +555,7 @@ class AddBudgetTable(BaseTailwindTable):
                     value="{}">
                 <i class="fa-solid fa-caret-down absolute right-3 top-1/2 -translate-y-1/2 text-brand-deep-purple transition-transform duration-200 cursor-pointer"
                 :class="{{'rotate-180': isOpen}}"
-                @click="$refs.input._flatpickr.toggle()">
+                ">
                 </i>
             </div>
             """,
@@ -564,11 +658,24 @@ class OpportunitiesListTable(BaseTailwindTable):
             </div>
         ''')
 
-        self.base_columns['inactiveWorkers'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
-                Inactive Workers
+
+        self.base_columns['inactiveWorkers'].verbose_name = mark_safe('''
+            <div class="relative inline-flex items-center group cursor-default">
+                <span>Inactive Workers</span>
+                <!-- Tooltip container - positioned relative to viewport -->
+                <div class="fixed hidden group-hover:block z-50 pointer-events-none"
+                    style="transform: translate(-15%,-70%);">
+                    <!-- Arrow -->
+                    <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+
+                    <!-- Tooltip content with proper arrow -->
+                    <div class="relative bg-white w-40 rounded p-2 text-slate-500 text-xs whitespace-normal break-words">
+                        Inactive Workers who haven't completed any deliveries in the past 3 days or more
+                    </div>
+                </div>
             </div>
-        ''')
+            ''')
+
 
         self.base_columns['pendingApprovals'].verbose_name = mark_safe(f'''
             <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple">
@@ -1569,12 +1676,28 @@ class WorkerStatusTable(BaseTailwindTable):
             display_index,
         )
 
+    def render_worker(self, value):
 
-    class Meta:
-        model = OpportunityAccess
-        fields = ("suspended", "invited_date")
-        sequence = ("index", "user", "suspended", "last_active", "invited_date", "started_learn",
-                    "completed_learn", "days_to_complete_learn", "first_delivery", "days_to_start_delivery")
+        return format_html(
+            """
+        <div class="flex flex-col items-start w-40">
+            <p class="text-sm text-slate-900 ">{}</p>
+            <p class="text-xs text-slate-400">{}</p>
+        </div>
+        """,
+            value["name"],
+            value["id"],
+        )
+
+    def render_lastActive(self, value):
+        return format_html(
+            """
+            <div class="flex flex-col items-start">
+                <p class="text-sm text-slate-900 ">{}</p>
+            </div>
+            """,
+            value
+        )
 
 
 class BaseWorkerTable(BaseTailwindTable):
@@ -1588,7 +1711,7 @@ class BaseWorkerTable(BaseTailwindTable):
             <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
                 {% if value %}
                     {% for flag in value|slice:":2" %}
-                        {% include "tailwind/components/badges/badge_sm.html" with text=flag %}
+                         <span class="badge badge-sm label">flag</span>
                     {% endfor %}
                     {% if value|length > 2 %}
                         {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
@@ -2078,3 +2201,235 @@ class OpportunityWorkerPaymentTable(BaseTailwindTable):
             "dateCompleted",
             "timeCompleted",
         )
+
+
+class OpportunitiesListViewTable(BaseTailwindTable):
+    stats_style = "underline underline-offset-2 justify-center"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        HEADERS = {
+            "opportunities": [
+                {"type": "radio", "name": "All"},
+                {"type": "radio", "name": "Test"},
+                {"type": "radio", "name": "Live"},
+                {"type": "meta", "meta": {"sort": True}},
+            ],
+            "status": [
+                {
+                    "type": "radio",
+                    "name": "All",
+                },
+                {
+                    "type": "radio",
+                    "name": "Inactive",
+                },
+                {
+                    "type": "radio",
+                    "name": "Active",
+                },
+                {
+                    "type": "radio",
+                    "name": "Ended",
+                },
+            ],
+        }
+
+        opp_dropdown_html = render_to_string(
+            "tailwind/components/dropdowns/multi_type_dropdown.html",
+            {
+                'text': 'Opportunity',
+                'list': HEADERS['opportunities'],
+                'styles': 'text-sm font-medium text-brand-deep-purple'
+            }
+        )
+
+        status_dropdown_html = render_to_string(
+            "tailwind/components/dropdowns/multi_type_dropdown.html",
+            {
+                'text': 'Status',
+                'list': HEADERS['status'],
+                'styles': 'text-sm font-medium text-brand-deep-purple'
+            }
+        )
+
+        self.base_columns['opportunity'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
+                @click="sortBy('opportunity')">
+                {opp_dropdown_html}
+                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
+                    :class="{{
+                        'rotate-180': isSorted('opportunity') && sortDirection === 'desc',
+                        'opacity-0 group-hover:opacity-100': !isSorted('opportunity'),
+                        'opacity-100': isSorted('opportunity'),
+                        'animate-fade-in': isSorted('opportunity') && sortDirection === 'asc'
+                    }}"></i>
+            </div>
+        ''')
+
+        self.base_columns['status'].verbose_name = mark_safe(f'''
+            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
+                @click="sortBy('entityStatus')">
+                {status_dropdown_html}
+                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
+                    :class="{{
+                        'rotate-180': isSorted('entityStatus') && sortDirection === 'desc',
+                        'opacity-0 group-hover:opacity-100': !isSorted('entityStatus'),
+                        'opacity-100': isSorted('entityStatus'),
+                        'animate-fade-in': isSorted('entityStatus') && sortDirection === 'asc'
+                    }}"></i>
+            </div>
+        ''')
+
+    index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
+    opportunity = tables.Column(accessor="name", orderable=False)
+    entityType = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start text-sm font-normal text-brand-deep-purple w-fit"
+                 x-data="{
+                   showTooltip: false,
+                   tooltipStyle: '',
+                   positionTooltip(el) {
+                     const rect = el.getBoundingClientRect();
+                     const top = rect.top - 30;  /* 30px above the icon */
+                     const left = rect.left + rect.width/2;
+                     this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
+                   }
+                 }">
+                {% if record.is_test %}
+                    <div class="relative">
+                        <i class="fa-light fa-file-dashed-line"
+                           @mouseenter="showTooltip = true; positionTooltip($el)"
+                           @mouseleave="showTooltip = false
+                           "></i>
+                        <span x-show="showTooltip"
+                              :style="tooltipStyle"
+                              class="fixed z-50 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+                            Test Opportunity
+                        </span>
+                    </div>
+                {% else %}
+                    <span class="relative">
+                        <i class="invisible fa-light fa-file-dashed-line"></i>
+                    </span>
+                {% endif %}
+            </div>
+        """,
+    )
+    status = tables.TemplateColumn(
+        verbose_name="Status",
+        orderable=False,
+        template_code="""
+            <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+              {% if value == 0 %}
+                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
+              {% elif value == 1 %}
+                    {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
+              {% else %}
+                   {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
+              {% endif %}
+            </div>
+        """,
+        extra_context={"now": Now()},
+    )
+    program = tables.Column()
+    start_date = tables.Column()
+    end_date = tables.Column()
+    pending_invites = tables.Column()
+    inactive_workers = tables.Column()
+    pending_approvals = tables.Column()
+    payments_due = tables.Column()
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+    class Meta:
+        sequence = (
+            "index",
+            "opportunity",
+            "entityType",
+            "status",
+            "program",
+            "start_date",
+            "end_date",
+            "pending_invites",
+            "inactive_workers",
+            "pending_approvals",
+            "payments_due",
+            "actions"
+        )
+
+    def render_div(self, value, extra_classes=""):
+        base_classes = (
+            "flex text-sm font-normal truncate text-brand-deep-purple "
+            "overflow-clip overflow-ellipsis"
+        )
+        all_classes = f"{base_classes} {extra_classes}".strip()
+        return format_html('<div class="{}">{}</div>', all_classes, value)
+
+    def render_index(self, value):
+        page = getattr(self, 'page', None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if not hasattr(self, '_row_counter') or self._row_counter_start != start_index:
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        return self.render_div(next(self._row_counter), extra_classes="justify-start")
+
+    def render_opportunity(self, value):
+        return self.render_div(value, extra_classes="justify-start")
+
+    def render_program(self, value):
+        return self.render_div(value if value else "--", extra_classes="justify-start")
+
+    def render_start_date(self, value):
+        return self.render_div(value, extra_classes="justify-center")
+
+    def render_end_date(self, value):
+        return self.render_div(value, extra_classes="justify-center")
+
+    def render_pending_invites(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_inactive_workers(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_pending_approvals(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_payments_due(self, value):
+        if value is None:
+            value = 0
+        return self.render_div(f"${value}", extra_classes=self.stats_style)
+
+    def render_actions(self, record):
+        # TO-DO update the urls once finalize
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Pending Reviews",
+                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Pending Invoices",
+                "url": reverse("opportunity:tw_worker_learn", args=[record.organization.slug, record.id]),
+            }
+        ]
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            }
+        )
+        return mark_safe(html)

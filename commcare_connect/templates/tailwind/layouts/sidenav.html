@@ -1,6 +1,7 @@
 {% load static i18n %}
 
 <div x-data="{ sidebarOpen: false }"
+    x-cloak
     @click.outside="sidebarOpen = false"
     class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
     :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -11,13 +12,15 @@
         <div class="">
             <div class="flex p-2 justify-start">
                 <div 
-                    x-show.immediate="!sidebarOpen" 
+                    x-show.immediate="!sidebarOpen"
+                    x-cloak 
                     class=" h-12 transition-none" 
                 >
                     <img src="{% static 'images/logo.svg' %}" alt="Compact Logo" class="w-8 h-8">
                 </div>
                 <div 
-                    x-show.immediate="sidebarOpen" 
+                    x-show.immediate="sidebarOpen"
+                    x-cloak 
                     class="h-12 pl-1"
                 >
                     <img src="{% static 'images/logo-full.svg' %}" alt="Full Logo" class="h-12 w-auto">
