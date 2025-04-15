@@ -3,7 +3,7 @@ from django.db.models import Count, Min, Max
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import TemplateView
-from django_tables2 import SingleTableMixin
+from django_tables2 import SingleTableMixin, RequestConfig
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
@@ -1780,18 +1780,21 @@ def worker_learn(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_learn_table_data(opp)
     table = WorkerLearnTable(data)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/pages/worker_learn.html",{ "table": table})
 
 def worker_delivery(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id,org_slug)
     data= get_annotated_opportunity_access_deliver_status(opportunity)
     table = WorkerDeliveryTable (data)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/pages/worker_delivery.html", {"table": table})
 
 def worker_main(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_table_data(opportunity)
     table = WorkerStatusTable(data)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/pages/worker_main.html",{ "table": table})
 
 def worker_payments(request, org_slug=None, opp_id=None):
@@ -1801,6 +1804,7 @@ def worker_payments(request, org_slug=None, opp_id=None):
     )
     query_set = query_set.annotate(last_active=Min("uservisit__visit_date"), last_paid=Max("payment__date_paid"))
     table = WorkerPaymentsTable(query_set)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/pages/worker_payments.html", {"table": table})
 
 
