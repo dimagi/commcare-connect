@@ -1457,7 +1457,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
         )
         query_params = request.GET.urlencode()
         response["HX-Replace-Url"] = f"{url}?{query_params}"
-        response["HX-Trigger"] = json.dumps({"load-total-pages": self.total_pages})
+        response["HX-Trigger"] = json.dumps({"load_total_pages": self.total_pages})
         return response
 
     def get_queryset(self):

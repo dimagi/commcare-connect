@@ -169,43 +169,57 @@
         <form class="flex flex-col w-full gap-2"
               hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
               hx-target="#table-container"
-              hx-trigger="change, load">
+              hx-trigger="change, load"
+              x-data="{
+                activeTab: 'pending',
+                filter_date: new Date(),
+                page: 1,
+                per_page: 10,
+                totalPages: 1,
+                init() {
+                  search_params = new URLSearchParams(location.search);
+                  this.activeTab = search_params.get('filter_status') || 'pending';
+                  this.filter_date = search_params.get('filter_date') || new Date();
+                  this.page = parseInt(search_params.get('page')) || 1;
+                  this.per_page = parseInt(search_params.get('per_page')) || 10;
+                }
+              }"
+              @load-total-pages.window="totalPages = $event.detail.value">
           <div
-            class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-            <div class="flex h-full gap-x-8 px-2"
-                 x-data="{activeTab: new URLSearchParams(location.search).get('filter_status') || 'pending'}">
+            class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
+
+            <div class="tabs">
               {% for tab in tabs %}
-                <label class="relative cursor-pointer text-sm h-full flex items-center gap-1 text-gray-500"
-                       @click="activeTab = '{{ tab.name }}'"
-                       :class="{
-                          'text-brand-deep-purple font-medium': activeTab == '{{ tab.name }}',
-                          'text-gray-500': activeTab !== '{{ tab.name }}'
-                        }">
-                  <input class="peer sr-only" type="radio" value="{{ tab.name }}" name="filter_status" />
+                <label class="tab" :class="{ 'tab-active': activeTab == '{{ tab.name }}'}">
+                  <input class="peer sr-only" type="radio" value="{{ tab.name }}" name="filter_status"
+                         x-model="activeTab"
+                    {% if not request.GET.filter_status and forloop.first %}
+                         checked="checked" {% elif request.GET.filter_status == tab.name %}
+                         checked="checked" {% endif %}/>
                   {{ tab.label }}
                   <span x-show="activeTab == '{{ tab.name }}'">(<span>{{ tab.count }}</span>)</span>
-                  <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-1.5 bg-brand-mango rounded-t-lg"
-                       x-show="activeTab == '{{ tab.name }}'"></div>
                 </label>
               {% endfor %}
             </div>
+
             <div x-data="datePicker('tableDatePicker')" class="flex gap-x-4 items-center">
               <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
                 <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
                 <input type="text" id="tableDatePicker" name="filter_date"
                        class="text-center w-32 focus:outline-none text-sm"
-                       placeholder="Select Date">
+                       placeholder="Select Date"
+                       {% if request.GET.filter_date %}value="{{ request.GET.filter_date }}"
+                       {% else %}value="{% now 'Y-m-d' %}"{% endif %}>
                 <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
               </div>
             </div>
+
           </div>
 
           <!-- Tab Content Container with Loading Animation -->
-          <div class="w-full h-160 bg-white z-10 relative rounded-lg">
-            <div class="w-full h-160 overflow-hidden rounded-lg shadow-sm">
-
-              <div id="table-container" class="flex flex-col w-full gap-2 h-176"></div>
-
+          <div class="relative">
+            <div class="w-full h-160 bg-white overflow-hidden rounded-lg shadow-sm">
+              <div id="table-container" class="flex flex-col w-full gap-2 h-200"></div>
               <div id="loading-spinner" role="status"
                    class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
                 <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
@@ -214,7 +228,8 @@
             </div>
 
             <!-- Table Footer -->
-            <div class="table-footer w-full flex items-center justify-between h-14 mt-2 bg-[#F8FAFC] shadow-sm text-brand-deep-purple py-2 px-4 rounded-lg">
+            <div
+              class="table-footer w-full flex items-center justify-between h-14 mt-2 bg-[#F8FAFC] shadow-sm text-brand-deep-purple py-2 px-4 rounded-lg">
               <div class="flex items-center justify-between w-full">
                 <!-- Left side content -->
                 <div class="flex items-center justify-between w-1/2">
@@ -225,22 +240,26 @@
 
                 <div class="flex items-center gap-4">
                   <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
+
                     <span class="whitespace-nowrap">Items per page</span>
-                    <select type="number" name="per_page" class="base-dropdown w-16">
-                      <option value="10" selected>10</option>
-                      <option value="20">20</option>
-                      <option value="50">50</option>
+                    <select type="number" name="per_page" class="base-dropdown w-16" x-model="per_page">
+                      <option value="10" {% if request.GET.per_page == 10 %}selected{% endif %}>10</option>
+                      <option value="20" {% if request.GET.per_page == 20 %}selected{% endif %}>20</option>
+                      <option value="50" {% if request.GET.per_page == 50 %}selected{% endif %}>50</option>
                     </select>
-                    <div class="flex items-center gap-2" x-data="{page: 1, totalPages: 1}" @load-total-pages.window="totalPages = $event.detail.value">
-                      <span class="button-icon" @click="page -= page > 1 ? 1 : 0;" :disabled="page == 1">
+
+                    <div class="flex items-center gap-2">
+                      <span class="button-icon" @click="page -= page > 1 ? 1 : 0" :disabled="page == 1">
                         <i class="fa-light fa-chevron-left"></i>
                       </span>
-                      <input name="page" type="number" min="1" class="base-input w-16" x-model="page" :max="totalPages">
+                      <input name="page" type="number" min="1" class="base-input w-16" x-model="page" :max="totalPages" value="{{ request.GET.page|default:'1' }}">
                       <span class="whitespace-nowrap ml-2">of <span x-text="totalPages"></span></span>
-                      <span class="button-icon" @click="page += page < totalPages ? 1 : 0;" :disabled="page == totalPages">
+                      <span class="button-icon" @click="page += page < totalPages ? 1 : 0"
+                            :disabled="page == totalPages">
                         <i class="fa-light fa-chevron-right"></i>
                       </span>
                     </div>
+
                   </div>
                 </div>
               </div>
@@ -286,52 +305,47 @@
       </div>
     </div>
   </div>
-<script>
-          // document.addEventListener('load-total-pages', (event) => {
-          //  document.getElementById("total-pages").innerHTML = event.detail.value;
-          // });
-
-          document.addEventListener('alpine:init', () => {
-            Alpine.data('datePicker', (id) => ({
-              selectedDate: null,
-              flatpickrInstance: flatpickr(document.getElementById(id), {
-                      defaultDate: new Date(),
-                      altInput: true,
-                      altFormat: 'd M, Y',
-                      dateFormat: 'Y-m-d',
-                      enableTime: false,
-                    }),
-              init() {
-                this.$nextTick(() => {
-                    this.flatpickrInstance.onChange = (selectedDates) => {
-                        if (selectedDates?.[0]) {
-                          this.selectedDate = selectedDates[0];
-                          this.$dispatch('date-changed', {
-                            date: selectedDates[0],
-                            id: id
-                          });
-                        }
-                      }
-                    this.selectedDate = new Date();
-                    this.flatpickrInstance.setDate(this.selectedDate);
-                });
-              },
-              navigateDate(direction) {
-                const currentDate = this.selectedDate || new Date();
-                const newDate = new Date(currentDate);
-                newDate.setDate(newDate.getDate() + direction);
-
-                // Update the date
-                this.selectedDate = newDate;
-                this.flatpickrInstance.setDate(newDate, true);
-
-                // Dispatch the date change event
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('datePicker', (id) => ({
+        selectedDate: new Date("{% if request.GET.filter_date %}{{ request.GET.filter_date }}{% else %}{% now 'Y-m-d' %}{% endif %}"),
+        flatpickrInstance: flatpickr(document.getElementById(id), {
+          defaultDate: this.selectedDate,
+          altInput: true,
+          altFormat: 'd M, Y',
+          dateFormat: 'Y-m-d',
+          enableTime: false,
+        }),
+        init() {
+          this.$nextTick(() => {
+            this.flatpickrInstance.onChange = (selectedDates) => {
+              if (selectedDates?.[0]) {
+                this.selectedDate = selectedDates[0];
                 this.$dispatch('date-changed', {
-                  date: newDate,
+                  date: selectedDates[0],
                   id: id
                 });
               }
-            }));
+            }
+            this.flatpickrInstance.setDate(this.selectedDate);
           });
-</script>
+        },
+        navigateDate(direction) {
+          const currentDate = this.selectedDate;
+          const newDate = new Date(currentDate);
+          newDate.setDate(newDate.getDate() + direction);
+
+          // Update the date
+          this.selectedDate = newDate;
+          this.flatpickrInstance.setDate(newDate, true);
+
+          // Dispatch the date change event
+          this.$dispatch('date-changed', {
+            date: newDate,
+            id: id
+          });
+        }
+      }));
+    });
+  </script>
 {% endblock %}
