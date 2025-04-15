@@ -168,6 +168,12 @@ urlpatterns = [
     path("<int:opp_id>/tw/onboarding/", tw_views.onboarding, name="tw_onboarding"),
     path("<int:opp_id>/tw/onboarding/setup-org", tw_views.onboarding_org, name="tw_onboarding"),
     path("<int:opp_id>/tw/onboarding/invite", tw_views.onboarding_invite, name="tw_onboarding"),
+    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),  # TODO
+    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"),  # TODO
+    path("<int:opp_id>/tw/onboarding/", tw_views.onboarding, name="tw_onboarding"),
+    path("<int:opp_id>/tw/onboarding/welcome", tw_views.welcome, name="tw_welcome"),
+    path("<int:opp_id>/tw/onboarding/setup-org", tw_views.onboarding_org, name="tw_setup_org"),
+    path("<int:opp_id>/tw/onboarding/invite", tw_views.onboarding_invite, name="tw_invite"),
     # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path(

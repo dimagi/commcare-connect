@@ -3891,3 +3891,6 @@ def password_update_comp(request, org_slug=None, opp_id=None):
 
 def invite_comp(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/components/onboarding/invite.html")
+
+def welcome(request, org_slug=None, opp_id=None):
+    return render(request, "tailwind/pages/welcome.html")
