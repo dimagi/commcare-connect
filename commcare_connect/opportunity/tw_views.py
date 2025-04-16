@@ -2739,7 +2739,7 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
-    opp = get_opportunity_dashboard_data(opp_id=2).first()
+    opp = get_opportunity_dashboard_data(opp_id=opp_id).first()
 
     learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
