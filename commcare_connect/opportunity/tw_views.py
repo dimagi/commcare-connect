@@ -4,8 +4,9 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig
+from django.test.utils import override_settings
 
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, VisitExportForm, PaymentExportForm
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
 from .models import OpportunityAccess
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
@@ -1314,9 +1315,12 @@ def opportunities_list(request, org_slug=None, opp_id=None):
 from django.shortcuts import render
 from django.urls import reverse
 
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def opportunity_worker(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
+    visit_export_form = VisitExportForm()
+    export_form = PaymentExportForm()
 
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""
@@ -1354,6 +1358,8 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
         {
             "opportunity": opp,
             "tabs": tabs,
+            "visit_export_form": visit_export_form,
+            "export_form":export_form
         },
     )
 
