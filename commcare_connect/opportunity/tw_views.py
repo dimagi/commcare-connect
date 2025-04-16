@@ -2786,27 +2786,34 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         },
     ]
 
+    worker_list_url = reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))
+    status_url = worker_list_url + "?active_tab=workers"
+    learn_url = worker_list_url + "?active_tab=learn"
+    delivery_url = worker_list_url + "?active_tab=delivery"
+    payment_url = worker_list_url + "?active_tab=payments"
+
     opp_stats = [
         {
             "title": "Workers",
             "sub_heading": "Active Yesterday",
             "value": opp.deliveries_from_yesterday,
+            "url": status_url,
             "panels": [
-                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited},
-                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation",
-                 "value": opp.pending_invites},
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited,},
+                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation",},
                 {
                     "icon": "fa-clipboard-list",
                     "name": "Workers",
                     "status": "Inactive last 3 days",
                     "value": opp.inactive_workers,
                     "type": "2",
-                },
+                    "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id)) + "?active_tab=workers", },
             ],
         },
 
         {
             "title": "Deliveries",
+            "url": delivery_url,
             "sub_heading": "Last Delivery",
             "value": opp.most_recent_delivery or "--",
             "panels": [
@@ -2828,6 +2835,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         {
             "title": "Worker Payments",
             "sub_heading": "Last Payment ",
+            "url": payment_url,
             "value": opp.recent_payment or "--",
             "panels": [
                 {
