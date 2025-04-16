@@ -649,7 +649,9 @@ class UserVisit(XFormBaseModel):
 
     @property
     def flags(self):
-        return [flag for flag, _ in self.flag_reason.get("flags", [])]
+        if self.flag_reason is not None:
+            return [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return []
 
     class Meta:
         constraints = [
