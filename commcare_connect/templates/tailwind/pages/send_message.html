@@ -1,0 +1,81 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+{% load tailwind_filters %}
+
+{% if title %}{% block title %}{{ title }}{% endblock %} {% endif %}
+
+{% block content %}
+  <div class="md:max-w-screen-lg mx-auto flex flex-col gap-6">
+    {% if form_title %}<h1 class="title">{{ form_title }}</h1>{% endif %}
+    <form method="post"
+          x-data="{
+            selectAll: false,
+            selectedUsers: [],
+            toggleSelectAll() {
+              this.selectAll = !this.selectAll;
+              if(this.selectAll)
+                this.selectedUsers = JSON.parse(document.getElementById('user_ids').textContent);
+              else
+                this.selectedUsers = [];
+            }
+          }"
+    >
+
+      {% csrf_token %}
+      {% if form.selected_users.errors %} 
+      <div class="flex justify-between items-center warning-light p-4 rounded-lg" role="alert">
+        Please select users to send message.
+        <button type="button" class="button-icon" data-bs-dismiss="alert" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      {% endif %}
+      {% if users %}
+        <div class="card_bg flex flex-col gap-4 ">
+          <div class="space-y-4 p-4  bg-gray-100 rounded-lg">
+            <p class="title-sm">Select Users*</p>
+            <table class="base-table">
+              <thead class="table-primary">
+              <tr>
+                <th><input type="checkbox" class="simple-checkbox" @click="toggleSelectAll()" x-bind:checked="selectAll" /></th>
+                <th>Name</th>
+                <th>Username</th>
+              </tr>
+              </thead>
+              <tbody>
+              {% for user in users %}
+                <tr>
+                  <td>
+                    <input type="checkbox" name="selected_users" id="id_selected_users" value={{ user.id }}
+                           x-model="selectedUsers"
+                           class="simple-checkbox {% if form.selected_users.errors %}is-invalid{% endif %}"/>
+                  </td>
+                  <td>{{ user.name }}</td>
+                  <td>{{ user.username }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg">
+            {{ form.title|as_crispy_field }}
+            {{ form.body|as_crispy_field }}
+            {{ form.message_type|as_crispy_field }}
+            <div class="flex justify-end">
+              <button class="button button-md primary-dark" type="submit">Confirm</button>
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <div class="text-center">
+          <b>No Users yet.</b> <br/>
+          <a class="btn btn-primary mt-2" href="{% url "opportunity:list" org_slug=request.org.slug %}">All
+            Opportunities</a>
+        </div>
+      {% endif %}
+    </form>
+    {{ user_ids|json_script:"user_ids" }}
+  </div>
+{% endblock content %}

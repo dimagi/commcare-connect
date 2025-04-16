@@ -1,0 +1,44 @@
+{% load static i18n %}
+<form method="post" class="w-full min-h-[620px] h-fit  flex flex-col gap-4">
+    {% csrf_token %}
+    <h6 class="title text-brand-deep-purple">Login</h6> 
+    <span class="text-sm text-gray-600">Please enter your details</span> 
+    <div class="simple-input">
+        <input type="email" placeholder="Enter Email ID" name="email"/>
+        <i class="fa-light fa-envelope"></i>
+    </div>
+    <div class="simple-input">
+        <input type="password" placeholder="Password" name="password"/>
+        <i class="fa-light fa-lock"></i>
+    </div>
+    <div class="flex justify-between items-center">
+        <p class="text-sm text-gray-400">
+            Forgot Password?
+            <a href="#" x-on:click="$dispatch('notify', { variant: 'info',  message: 'Please check your email for password reset link.' })" type="button" class="block text-brand-indigo font-medium" hx-get="/a/test-org-managed/opportunity/56/tw/api/password-reset/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Reset</a>
+        </p>
+        <button class="button button-md primary-dark" type="submit"   x-on:click.prevent="$dispatch('notify', { variant: 'error',  message: 'Email Not Found' })">
+            <span class="relative z-20">Login</span>
+        </button>
+    </div>
+    <span class="text-sm text-gray-400 text-center">or</span>
+
+    <div class="space-y-2 place-items-center">
+        <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer" type="button">
+            <div class="w-6 h-6">
+                <img src="{% static 'images/google.svg' %}" alt="Compact Logo" class="w-full">
+            </div>
+            <span class="text-sm">Login with Google</span>
+        </button>
+        <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer" type="button">
+            <div class="w-6 h-6">
+                <img src="{% static 'images/logo-color.svg' %}" alt="Compact Logo" class="w-full">
+            </div>
+            <span class="text-sm">Login with CommCareHQ</span>
+        </button>
+    </div>
+
+    <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
+        Don't have an account?
+        <a href="" class="text-brand-indigo font-medium" hx-get="/a/test-org-managed/opportunity/56/tw/api/signup/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Signup</a>
+    </div>
+</form>

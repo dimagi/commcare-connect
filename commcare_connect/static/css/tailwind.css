@@ -6,8 +6,13 @@
 [x-cloak] {
     display: none !important;
 }
+
+:root{
+    --breakpoint-sm:640px;
+}
+
 @theme {
-    --font-sans : "Work Sans", "sans-serif"; 
+    --font-sans : "Work Sans", "sans-serif";
     --breakpoint-sm:5rem;
     --color-brand-deep-purple : #16006D;
     --color-brand-indigo : #3843D0;
@@ -15,10 +20,15 @@
     --color-brand-sky : #8EA1FF;
     --color-brand-sunset : #E44434;
     --color-brand-mango : #FC5F36;
-    --color-brand-marigold : #FEAF31; 
+    --color-brand-marigold : #FEAF31;
     --color-brand-blue-light : #94A3B8;
     --color-brand-sunset-light : #FC5F3633;
-    --color-brand-border-light : #E2E8F0; 
+    --color-brand-border-light : #E2E8F0;
+    --width-screen-sm: var(--breakpoint-sm);
+}
+/* ----- background -------*/
+.card_bg{
+    @apply bg-white rounded-lg shadow-sm p-6
 }
 
 /* ------ Typography------ */
@@ -29,9 +39,13 @@
 
 .card_description{
     @apply font-normal text-sm text-gray-600
-} 
+}
 .title{
     @apply font-medium text-gray-900;
+}
+
+.title-sm{
+    @apply font-medium text-gray-900 text-sm;
 }
 
 .hint{
@@ -48,22 +62,22 @@
           transform: translateX(calc(-100% + 2rem));
         }
     }
-    
+
     .animate-scroll {
         animation: scroll 4s linear forwards;
     }
-    
+
     .hover\:animate-scroll:hover {
         animation: scroll 4s linear forwards;
-    } 
+    }
 
     .animate-marquee{
        @apply overflow-hidden w-full;
     }
- 
+
     .animate-marquee p{
         @apply truncate text-nowrap hover:overflow-visible;
-    } 
+    }
   }
 
 /*-- status ----------------------------------*/
@@ -84,7 +98,7 @@
 }
 
 
- 
+
 /*-- badges --------------------------------------*/
 .badge {
     @apply inline-block text-nowrap rounded-full text-xs;
@@ -100,26 +114,26 @@
 }
 
 
-/*-- buttons -------------------------------------*/ 
+/*-- buttons -------------------------------------*/
 
 .button {
-    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2 min-w-24;
+    @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2;
 }
 
 .button:hover::after {
     content: '';
     @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-lg top-0 left-0 z-0;
-}  
+}
 
 .button-outline-rounded {
     @apply border border-gray-200 rounded-full text-brand-deep-purple;
-} 
+}
 
 .button-outline-rounded:not(:disabled):hover::after {
     content: '';
     @apply bg-brand-deep-purple/10 absolute w-full h-full rounded-full top-0 left-0 z-0;
-}  
- 
+}
+
 
 @layer components {
     .button-icon{
@@ -154,7 +168,7 @@
     .button-text i{
        @apply text-gray-400 text-xs;
     }
-    
+
     .button-text:hover{
         @apply bg-gray-50
     }
@@ -163,11 +177,11 @@
 /* Size Variants */
 
 .button-sm{
-    @apply py-1 px-4;
+    @apply py-1 px-4 min-w-16;
 }
 
 .button-md{
-    @apply py-3 px-4; 
+    @apply py-3 px-4 min-w-24;
 }
 
 /* Dark Theme */
@@ -211,14 +225,14 @@
 
 .label {
     @apply text-brand-deep-purple bg-slate-100;
-} 
+}
 
 .outline-style{
-    @apply border border-gray-200 rounded-lg text-brand-deep-purple;
+    @apply border border-gray-200 rounded-lg text-brand-deep-purple bg-white;
 }
 
 
-/*-- chips ---------------------------------------*/ 
+/*-- chips ---------------------------------------*/
 .chip{
     @apply inline-block text-nowrap text-sm font-medium rounded-full transition-all duration-300 cursor-pointer border border-gray-200;
 }
@@ -227,20 +241,20 @@
     @apply py-1 px-4;
 }
 
-/*-- tooltips ---------------------------------------*/ 
+/*-- tooltips ---------------------------------------*/
 @layer components {
     .tooltip {
         @apply rounded-sm bg-white text-brand-deep-purple text-sm shadow-sm relative px-2 py-2;
-    } 
+    }
 
     .tooltip::before {
         content: '';
-        @apply absolute w-0 h-0 border-gray-400 blur-xl border-t-8 border-x-8 border-x-transparent  -bottom-1/3 -translate-y-1/2 left-1/2 transform -translate-x-1/2 z-10; 
+        @apply absolute w-0 h-0 border-gray-400 blur-xl border-t-8 border-x-8 border-x-transparent  -bottom-1/3 -translate-y-1/2 left-1/2 transform -translate-x-1/2 z-10;
     }
 
     .tooltip::after {
         content: '';
-        @apply absolute w-0 h-0 border-white border-t-8 border-x-8 border-x-transparent  -bottom-1/3 -translate-y-1/2 left-1/2 transform -translate-x-1/2 z-10; 
+        @apply absolute w-0 h-0 border-white border-t-8 border-x-8 border-x-transparent  -bottom-1/3 -translate-y-1/2 left-1/2 transform -translate-x-1/2 z-10;
     }
 }
 
@@ -249,11 +263,11 @@
     .breadcrumb {
       @apply list-none cursor-pointer inline-flex py-4;
     }
-  
+
     .breadcrumb li {
       @apply flex gap-0.5 pr-0.5 items-center;
     }
-  
+
     .breadcrumb li a {
       @apply text-xs;
     }
@@ -272,7 +286,7 @@
 }
 
 
-/*--- Info card dark ------------------------- */ 
+/*--- Info card dark ------------------------- */
 
 @layer components{
     .infocard-dark{
@@ -333,16 +347,16 @@
 /*--- base select  list ------------------------- */
 @layer components {
     .base-dropdown {
-        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10 w-full;
     }
-    
+
     .base-dropdown:focus{
         @apply outline-1 outline-brand-indigo
     }
 
     .base-dropdown option {
         @apply text-gray-900 w-full px-2;
-    }  
+    }
 }
 
 /*--- simple select list ------------------------- */
@@ -350,11 +364,11 @@
     .simple-dropdown {
         @apply relative h-12;
     }
-    
+
     .simple-dropdown select{
         @apply px-10 h-full w-full text-sm text-gray-900 invalid:text-gray-200 bg-transparent rounded border-1 border-gray-300 focus:outline-none focus:ring-0 focus:border-blue-600
     }
-    
+
     .simple-dropdown i{
         @apply absolute left-3 top-1/2 -translate-y-1/2 z-10
     }
@@ -362,13 +376,17 @@
     .simple-dropdown select:invalid {
         @apply text-gray-200; /* Change to desired color */
     }
- 
+
+    .simple-dropdown option{
+        @apply px-1
+    }
+
 }
 
 /*--- based input ------------------------- */
 @layer components{
     .base-input{
-        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+        @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10 w-full;
     }
 
     .base-input:focus{
@@ -391,6 +409,28 @@
     }
 }
 
+@layer components{
+    .input-group .error-icon{
+        @apply absolute right-3 top-1/2 -translate-y-1/2 text-red-500 invisible;
+    }
+    .input-group .error-msg{
+        @apply mt-1 text-xs text-red-500 font-light hidden;
+    }
+    .input-group.error .error-icon, .input-group.error .error-msg{
+        @apply visible block
+    }
+    .input-group.error input{
+        @apply border-red-500 ring-2 ring-red-500/80;
+    }
+}
+
+/*--- base textarea-----------------------------*/
+
+@layer components{
+    .base-textarea{
+        @apply p-4 h-fit min-h-20 w-full text-sm text-gray-900 bg-transparent rounded border-1 border-gray-300 focus:outline-none focus:ring-0 focus:border-blue-600
+    }
+}
 
 /*--- simple textarea ------------------------- */
 @layer components{
@@ -407,7 +447,7 @@
     }
 }
 
-/*--- simple toggle switch ------------------------- */ 
+/*--- simple toggle switch ------------------------- */
 @layer components {
     .simple-toggle {
         @apply relative h-6 w-11 cursor-pointer appearance-none rounded-full bg-gray-200 transition;
@@ -425,7 +465,7 @@
 }
 
 
-/*--- simple date picker ------------------------- */ 
+/*--- simple date picker ------------------------- */
 @layer components{
     .simple-date-picker{
         @apply relative h-12
@@ -440,20 +480,17 @@
     }
 }
 
-/*--- simple checbox ------------------------- */ 
+/*--- simple checbox ------------------------- */
 @layer components {
     .simple-checkbox {
-        @apply w-4 h-4 appearance-none border-2 border-gray-400 cursor-pointer transition-all duration-200;
+      @apply w-4 h-4 appearance-none border-2 border-gray-400 rounded-sm bg-white cursor-pointer transition-all duration-200 bg-no-repeat bg-center bg-contain;
     }
+
     .simple-checkbox:checked {
-        @apply w-4 h-4;
+      border-color: gray; /* blue-500 */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z'/%3E%3C/svg%3E");
     }
-    .simple-checkbox:checked::after {
-        content: '\2705'; /* Unicode checkmark */
-        @apply text-gray-600 text-xs flex items-center justify-center;
-        display: flex;
-    }
-} 
+}
 
 
 /*---- table class -----------*/
@@ -485,11 +522,11 @@
 
     .base-table tbody{
         @apply pt-4 text-sm relative;
-    } 
+    }
 
     .base-table tbody::before{
         content: '';
-        @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow -z-20;
+        @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow-sm -z-20;
     }
 
     .base-table tbody tr{
@@ -509,14 +546,14 @@
     .base-table tbody tr:hover::after{
         @apply opacity-100;
     }
-    
+
     /* .base-table tbody tr:hover{
         @apply bg-gray-100 rounded-lg;
     }  */
 
     .base-table tbody td{
         @apply p-4 text-left border-b-[1px] border-gray-100 whitespace-nowrap;
-    }  
+    }
 }
 
 /*------------ Tabs --------------*/
@@ -527,7 +564,7 @@
     .tabs li{
         @apply flex items-center h-full text-sm cursor-pointer text-gray-500 relative;
     }
-    
+
     .tabs li.active{
         @apply text-brand-deep-purple font-medium;
     }
@@ -536,6 +573,61 @@
         @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 max-w-10 h-1.5 bg-brand-mango rounded-t-lg;
     }
 }
+
+@layer components {
+    .stepper {
+      @apply flex justify-between items-center gap-4;
+    }
+
+    .stepper a {
+      @apply flex items-center gap-4;
+    }
+
+    .stepper  h6 {
+        @apply w-8 h-8 rounded-full grid place-content-center border border-gray-300 text-brand-deep-purple;
+      }
+
+    .stepper a.active h6 {
+      @apply text-center bg-brand-deep-purple text-white;
+    }
+
+
+    .stepper span {
+      @apply text-sm text-gray-400 whitespace-nowrap;
+    }
+
+    .stepper a.active span {
+      @apply font-medium text-brand-deep-purple;
+    }
+}
+
+
+@layer{
+    .modal{
+        @apply bg-white rounded-xl shadow-xl w-full max-w-lg p-6 relative z-50;
+    }
+
+    .modal-backdrop {
+        @apply fixed inset-0 z-40 bg-black/40 flex items-center justify-center;
+    }
+
+    .modal .dialog-box{
+        @apply bg-white rounded-lg p-6 shadow-sm mx-auto my-auto z-50;
+    }
+
+    .modal .header{
+        @apply flex justify-between items-center;
+    }
+
+    .modal .content{
+        @apply flex flex-col gap-4 py-4;
+    }
+
+    .modal .footer{
+        @apply space-x-4 text-right
+    }
+}
+
 
 /* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {

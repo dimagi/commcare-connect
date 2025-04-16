@@ -1,0 +1,183 @@
+{% load static i18n %}
+<form method="post" 
+      x-data="signupForm()" 
+      class="w-full min-h-[620px] h-fit flex flex-col gap-4"
+      hx-post="/a/test-org-managed/opportunity/56/tw/api/email-verify/"
+      hx-target="#onboarding-container"
+      hx-swap="innerHTML"
+      hx-trigger="validatedSubmit"
+      @submit.prevent="submitWithValidation()">
+    {% csrf_token %}
+    <h6 class="title text-brand-deep-purple">Signup</h6> 
+    <span class="text-sm text-gray-600">Please enter your details</span> 
+    
+    <!-- Email Field -->
+    <div class="input-group" 
+         :class="{'error': !emailValid && emailTouched}">
+        <div class="simple-input">
+            <input type="email" 
+                   placeholder="Enter Email ID" 
+                   required 
+                   name="email"
+                   x-model="email"
+                   @blur="emailTouched = true; validateEmail()"
+                   @input="if(emailTouched) validateEmail()"/>
+            <i class="fa-light fa-envelope"></i>
+            <span class="error-icon fa-solid fa-circle-exclamation"></span>
+        </div>
+        <p class="error-msg">Invalid email format</p>
+    </div>
+
+    <!-- Password Field -->
+    <div class="input-group" 
+         :class="{'error': !passwordValid && passwordTouched}">
+        <div class="simple-input">
+            <input type="password" 
+                   placeholder="Password" 
+                   name="password" 
+                   required
+                   x-model="password"
+                   @blur="passwordTouched = true; validatePassword()"
+                   @input="if(passwordTouched) validatePassword()"/>
+            <i class="fa-light fa-lock"></i>
+            <span class="error-icon fa-solid fa-circle-exclamation"></span>
+        </div>
+        <p class="error-msg">Password must be at least 8 characters</p>
+    </div>
+
+    <!-- Confirm Password Field -->
+    <div class="input-group" 
+         :class="{'error': !confirmPasswordValid && confirmPasswordTouched}">
+        <div class="simple-input">
+            <input type="password" 
+                   placeholder="Confirm Password" 
+                   name="confirm-password" 
+                   required
+                   x-model="confirmPassword"
+                   @blur="confirmPasswordTouched = true; validateConfirmPassword()"
+                   @input="if(confirmPasswordTouched) validateConfirmPassword()"/>
+            <i class="fa-light fa-lock"></i>
+            <span class="error-icon fa-solid fa-circle-exclamation"></span>
+        </div>
+        <p class="error-msg">Passwords must match and be at least 8 characters</p>
+    </div>
+
+    <!-- Checkbox and Submit -->
+    <div class="flex flex-col items-end gap-3">
+        <div class="input-group"
+            x-data="{ expanded: false }"
+            x-effect="document.body.style.overflow = expanded ? 'hidden' : 'auto'"
+             :class="{'error': !termsValid && termsTouched}">
+            <div class="flex items-start w-full gap-2">
+                <input type="checkbox" 
+                       name="" 
+                       id="" 
+                       class="simple-checkbox aspect-square" 
+                       required
+                       x-model="termsAccepted"
+                       @change="termsTouched = true; validateTerms()"/>
+                       <p class="hint">
+                        <span>By accessing CommCare Connect, you accept our </span> 
+                        <button class="font-medium cursor-pointer text-brand-indigo" x-on:click.prevent="expanded = true">Terms & Conditions and Privacy Policy</button>
+                        <div x-show="expanded" x-cloak>
+                            {% include "tailwind/components/onboarding/terms-condition-modal.html" %}
+                        </div>
+                    </p>
+            </div>
+            <p class="error-msg">You must accept the terms and conditions</p>
+        </div>
+        <button class="button button-md primary-dark" 
+                @click="submitWithValidation()"
+                @submit.prevent="submitWithValidation()">
+            <span class="relative z-20">Signup</span>
+        </button>
+    </div> 
+    <span class="text-sm text-center text-gray-600">or</span>
+
+    <!-- Social Login Buttons -->
+    <div class="space-y-2 place-items-center">
+        <button class="flex items-center gap-2 p-2 pr-4 bg-gray-100 rounded-full cursor-pointer">
+            <div class="w-6 h-6">
+                <img src="{% static 'images/google.svg' %}" alt="Compact Logo" class="w-full">
+            </div>
+            <span class="text-sm">Sign up with Google</span>
+        </button>
+        <button class="flex items-center gap-2 p-2 pr-4 bg-gray-100 rounded-full cursor-pointer">
+            <div class="w-6 h-6">
+                <img src="{% static 'images/logo-color.svg' %}" alt="Compact Logo" class="w-full">
+            </div>
+            <span class="text-sm">Sign up with CommCareHQ</span>
+        </button>
+    </div>
+
+    <!-- Login Link -->
+    <div class="pt-4 mt-auto text-sm text-center text-gray-600 border-t-2 border-t-gray-200">
+        Already have an account?
+        <a href="" 
+           class="font-medium text-brand-indigo" 
+           hx-get="/a/test-org-managed/opportunity/56/tw/api/login/" 
+           hx-trigger="click" 
+           hx-target="#onboarding-container" 
+           hx-swap="innerHTML">Login</a>
+    </div>
+</form>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('signupForm', () => ({
+        email: '',
+        password: '',
+        confirmPassword: '',
+        termsAccepted: false,
+        emailTouched: false,
+        passwordTouched: false,
+        confirmPasswordTouched: false,
+        termsTouched: false,
+        emailValid: true,
+        passwordValid: true,
+        confirmPasswordValid: true,
+        termsValid: true,
+        
+        validateEmail() {
+            this.emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email);
+            return this.emailValid;
+        },
+        
+        validatePassword() {
+            this.passwordValid = this.password.length >= 8;
+            return this.passwordValid;
+        },
+        
+        validateConfirmPassword() {
+            this.confirmPasswordValid = this.confirmPassword.length >= 8 && 
+                                      this.confirmPassword === this.password;
+            return this.confirmPasswordValid;
+        },
+        
+        validateTerms() {
+            this.termsValid = this.termsAccepted === true;
+            return this.termsValid;
+        },
+        
+        validateAllFields() {
+            this.emailTouched = true;
+            this.passwordTouched = true;
+            this.confirmPasswordTouched = true;
+            this.termsTouched = true;
+            
+            const isEmailValid = this.validateEmail();
+            const isPasswordValid = this.validatePassword();
+            const isConfirmPasswordValid = this.validateConfirmPassword();
+            const isTermsValid = this.validateTerms();
+            
+            return isEmailValid && isPasswordValid && isConfirmPasswordValid && isTermsValid;
+        },
+        
+        submitWithValidation() {
+            if (this.validateAllFields()) {
+                this.$el.dispatchEvent(new CustomEvent('validatedSubmit', { bubbles: true }));
+            }
+        }
+    }));
+});
+</script>

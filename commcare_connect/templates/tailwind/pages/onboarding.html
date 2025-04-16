@@ -1,0 +1,170 @@
+{% extends 'tailwind/base.html' %} {% load static i18n %} {% block content %}
+
+<div class="container relative flex items-center justify-center h-screen mx-auto md:max-w-screen-md">
+  <div class="relative w-full h-fit">
+    <div class="flex gap-2 p-2 bg-gray-100 rounded-lg shadow-sm h-fit">
+      <div class="flex flex-col w-1/2 gap-2">
+        <div class="flex flex-col items-end justify-between flex-1 w-full p-2 rounded-lg bg-brand-cornflower-blue">
+          <img src="{% static 'images/logo-full.svg' %}" alt="Compact Logo" class="w-48 pt-4 pr-6" />
+          <img src="{% static 'images/onboarding-graphics.svg' %}" alt="Compact Logo" class="w-full" />
+        </div>
+        <div class="grid grid-cols-2 gap-2 h-1/4">
+          <div class="flex flex-col justify-center p-6 pt-12 text-white rounded-lg bg-brand-deep-purple">
+            <h3 class="text-3xl">10.5k +</h3>
+            <p class="mt-auto text-xs leading-snug">health services delivered</p>
+          </div>
+          <div class="flex flex-col justify-center p-6 pt-12 text-white rounded-lg bg-brand-indigo">
+            <h3 class="text-3xl">10 +</h3>
+            <span class="mt-auto text-xs">Countries</span>
+          </div>
+        </div>
+      </div>
+      <div id="onboarding-container" class="h-full bg-white rounded-lg py-6 px-8 w-1/2"
+      {% if load_url %}
+      hx-get="{{ load_url }}" hx-trigger="load" hx-swap="innerHTML"
+      {% endif %}
+      >
+        {% include "tailwind/components/onboarding/signup-form.html" %}
+      </div>
+    </div>
+    <div class="absolute -translate-x-1/2 -left-0 -bottom-1/2 -translate-y-1/4 -z-10" class="w-8">
+      <img src="{% static 'images/bg-graphics-bottom-left.svg' %}" alt="Compact Logo" class="w-full h-full aspect-auto" />
+    </div>
+    <div class="absolute top-0 right-0 rotate-90 translate-x-1/2 -translate-y-1/2 -z-10" class="w-1/2">
+      <img src="{% static 'images/bg-graphics-top-right.svg' %}" alt="Compact Logo" class="w-full h-full" />
+    </div>
+  </div>
+</div>
+
+<!-- Notifications -->
+<div
+  class="w-full"
+  x-data="{
+    notifications: [],
+    displayDuration: 3000,
+
+    addNotification({  message = null, variant = null }) {
+        const id = Date.now()
+        const notification = { id, variant, message }
+
+        if (this.notifications.length >= 20) {
+            this.notifications.splice(0, this.notifications.length - 19)
+        }
+
+        this.notifications.push(notification)
+    },
+    
+    removeNotification(id) {
+        setTimeout(() => {
+            this.notifications = this.notifications.filter(
+                (notification) => notification.id !== id,
+            )
+        }, 400);
+    },
+}"
+  x-on:notify.window="addNotification({
+    variant: $event.detail.variant,
+    message: $event.detail.message,
+})"
+>
+  <div
+    x-on:mouseenter="$dispatch('pause-auto-dismiss')"
+    x-on:mouseleave="$dispatch('resume-auto-dismiss')"
+    class="group pointer-events-none fixed left-1/2 transform -translate-x-1/2 bottom-8 h-16 w-fit max-w-3/7 z-50 flex justify-center flex-col items-center gap-2 px-6 py-6"
+  >
+
+    <template x-for="(notification, index) in notifications" x-bind:key="notification.id">
+      <div>
+        <!-- Info Notification -->
+        <template x-if="notification.variant === 'info'">
+          <div
+            x-data="{ isVisible: false, timeout: null }"
+            x-cloak
+            x-show="isVisible"
+            class="pointer-events-auto relative rounded-radius"
+            role="alert"
+            x-on:pause-auto-dismiss.window="clearTimeout(timeout)"
+            x-on:resume-auto-dismiss.window=" timeout = setTimeout(() => {(isVisible = false), removeNotification(notification.id) }, displayDuration)"
+            x-init="$nextTick(() => { isVisible = true }), (timeout = setTimeout(() => { isVisible = false, removeNotification(notification.id)}, displayDuration))"
+            x-transition:enter="transition duration-300 ease-out"
+            x-transition:enter-end="translate-y-0"
+            x-transition:enter-start="translate-y-8"
+            x-transition:leave="transition duration-300 ease-in"
+            x-transition:leave-end="-translate-x-24 opacity-0 md:translate-x-24"
+            x-transition:leave-start="translate-x-0 opacity-100"
+          >
+            <div class="flex w-full items-center gap-4 bg-slate-50 rounded-lg p-4 transition-all duration-300">
+              <!-- Icon -->
+              <div class="w-8 h-8 bg-indigo-300/10 rounded-lg flex items-center justify-center">
+                <i class="fa-light fa-envelope text-brand-indigo"></i>
+              </div>
+
+              <!-- Message -->
+              <div class="flex flex-col gap-2">
+                <p x-cloak x-show="notification.message" class="text-pretty text-xs" x-text="notification.message"></p>
+              </div>
+
+              <!-- Dismiss Button -->
+              <button
+                type="button"
+                class="ml-auto button-icon"
+                aria-label="dismiss notification"
+                x-on:click="(isVisible = false), removeNotification(notification.id)"
+              >
+                <i class="fa-light fa-xmark-large text-slate-400"></i>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <template x-for="(notification, index) in notifications" x-bind:key="notification.id">
+        <div>
+          <!-- Info Notification -->
+          <template x-if="notification.variant === 'error'">
+            <div
+              x-data="{ isVisible: false, timeout: null }"
+              x-cloak
+              x-show="isVisible"
+              class="pointer-events-auto relative rounded-radius"
+              role="alert"
+              x-on:pause-auto-dismiss.window="clearTimeout(timeout)"
+              x-on:resume-auto-dismiss.window=" timeout = setTimeout(() => {(isVisible = false), removeNotification(notification.id) }, displayDuration)"
+              x-init="$nextTick(() => { isVisible = true }), (timeout = setTimeout(() => { isVisible = false, removeNotification(notification.id)}, displayDuration))"
+              x-transition:enter="transition duration-300 ease-out"
+              x-transition:enter-end="translate-y-0"
+              x-transition:enter-start="translate-y-8"
+              x-transition:leave="transition duration-300 ease-in"
+              x-transition:leave-end="-translate-x-24 opacity-0 md:translate-x-24"
+              x-transition:leave-start="translate-x-0 opacity-100"
+            >
+              <div class="flex w-full items-center gap-4 bg-red-50 border border-red-500 ring-1 ring-red-500/80 rounded-lg p-4 transition-all duration-300">
+                <!-- Icon -->
+                <div class="w-8 h-8 bg-red-300/10 rounded-lg flex items-center justify-center">
+                    <i class="fa-light fa-circle-exclamation text-red-500"></i>
+                </div>
+  
+                <!-- Title & Message -->
+                <div class="flex flex-col gap-2">
+                  <p x-cloak x-show="notification.message" class="text-pretty text-xs text-red-500 font-medium" x-text="notification.message"></p>
+                </div>
+  
+                <!-- Dismiss Button -->
+                <button
+                  type="button"
+                  class="ml-auto button-icon"
+                  aria-label="dismiss notification"
+                  x-on:click="(isVisible = false), removeNotification(notification.id)"
+                >
+                  <i class="fa-light fa-xmark-large text-slate-400"></i>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+  </div>
+</div>
+
+{% endblock %}
