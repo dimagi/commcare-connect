@@ -128,7 +128,8 @@
   <!-- Export visit model -->
 <div x-show="showVisitExportModal"
      x-cloak
-     class="fixed inset-0 z-50 flex items-center justify-center"
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
      @keydown.escape.window="showVisitExportModal = false">
   <div @click.outside="showVisitExportModal = false"
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
@@ -188,8 +189,9 @@
         <label for="importFile" class="block text-sm font-medium text-gray-700 mb-1">
           Select file to import
         </label>
+
         <input type="file" id="importFile" name="visits" required
-               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple" />
+               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple p-2" />
         <p class="mt-2 text-xs text-gray-500" id="importFileHelp">
           The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.
         </p>
@@ -238,7 +240,7 @@
           Select file to import
         </label>
         <input type="file" id="importPaymentFile" name="payments"
-               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple" />
+               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple p-2" />
         <p class="mt-2 text-xs text-gray-500" id="importFileHelp">
           The file must contain at least the "Username", "Amount" and "Payment Date" columns.
         </p>
