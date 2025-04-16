@@ -13,7 +13,7 @@
   <ul class="">
     {% if opportunity.managed %}
     <li>
-       <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+       <a href="{% url 'opportunity:tw_invoice_list' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >View Invoices</a
       >
     </li>
