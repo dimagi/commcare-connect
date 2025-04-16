@@ -2753,10 +2753,11 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
     ]
 
+
     opp_basic_details = [
         {
             "name": "Delivery Type",
-            "count": opp.delivery_type.name,
+            "count": opp.delivery_type.name if opp.delivery_type else "---",
             "icon": "file-check",
             "color": "",
         },
