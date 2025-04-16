@@ -11,11 +11,13 @@
   class="absolute right-0 top-8 w-50 py-2 bg-white rounded-lg shadow-xl z-20"
 >
   <ul class="">
+    {% if opportunity.managed %}
     <li>
-      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+       <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >View Invoices</a
       >
     </li>
+    {% endif %}
     <li>
       <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Catchment Areas</a
@@ -27,17 +29,17 @@
       >
     </li>
     <li>
-      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a href="{% url 'opportunity:tw_add_budget_existing_users' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Add Worker Budget</a
       >
     </li>
     <li>
-      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a  href="{% url 'opportunity:tw_verification_flags_config' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Verification Flags</a
       >
     </li>
     <li>
-      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a href="{% url 'opportunity:tw_send_message_mobile_users' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Send Message</a
       >
     </li>

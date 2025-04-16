@@ -17,7 +17,7 @@ from .models import OpportunityAccess
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
-from .tw_forms import VisitExportForm
+from .tw_forms import VisitExportForm, PaymentExportFormTw
 
 from .tw_tables import  PMOpportunitiesListTable
 
@@ -1669,7 +1669,7 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
     visit_export_form = VisitExportForm()
-    export_form = PaymentExportForm()
+    export_form = PaymentExportFormTw()
 
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""
@@ -2745,7 +2745,9 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
     payment_unit_count = opp.paymentunit_set.count()
 
-    path = ['opportunities', opp.name]
+    path = [{"title": 'opportunities',
+             "url": reverse('opportunity:opportunities_list_new', kwargs={"org_slug": request.org.slug})},
+            {"title": opp.name, "url": reverse('opportunity:tw_opportunity', args=(request.org.slug, opp.id))}]
 
     opp_resource_counts = [
         {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},

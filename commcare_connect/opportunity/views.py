@@ -1369,7 +1369,7 @@ def tw_invoice_list(request, org_slug=None, pk=None):
 
     opportunity = get_opportunity_or_404(pk, org_slug)
     if not opportunity.managed:
-        return redirect("opportunity:detail", org_slug, pk)
+        return redirect("opportunity:tw_opportunity", org_slug, pk)
 
     filter_kwargs = dict(opportunity=opportunity)
 

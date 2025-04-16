@@ -12,11 +12,12 @@
       <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
       <div class="flex gap-x-6">
         <button type="button"><i class="fa-light fa-sliders-simple"></i></button>
-        <button
+        <a
         class="button button-md primary-dark"
+        href="{% url 'opportunity:tw_init' request.org.slug %}"
       >
         Add Opportunity
-      </button>
+      </a>
       </div>
     </div>
 
