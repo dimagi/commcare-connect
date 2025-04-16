@@ -1,6 +1,6 @@
 from django.urls import path
 
-from commcare_connect.opportunity import tw_views, views
+from commcare_connect.opportunity import tw_form_views, tw_views, views
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -163,6 +163,10 @@ urlpatterns = [
     path("<int:opp_id>/tw/add_budget/", tw_views.add_budget, name="tw_add_budget"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),  # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"),  # TODO
+    path("<int:opp_id>/tw/onboarding/", tw_views.onboarding, name="tw_onboarding"),
+    path("<int:opp_id>/tw/onboarding/welcome", tw_views.welcome, name="tw_welcome"),
+    path("<int:opp_id>/tw/onboarding/setup-org", tw_views.onboarding_org, name="tw_setup_org"),
+    path("<int:opp_id>/tw/onboarding/invite", tw_views.onboarding_invite, name="tw_invite"),
     # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
     path(
@@ -206,5 +210,46 @@ urlpatterns = [
         name="user_visit_verification_table",
     ),
     path("<int:opp_id>/user_visit_details/<int:pk>/", view=views.user_visit_details, name="user_visit_details"),
+    path("<int:opp_id>/tw/api/signup/", tw_views.signup_comp, name="signup_comp"),
+    path("<int:opp_id>/tw/api/login/", tw_views.login_comp, name="login_comp"),
+    path("<int:opp_id>/tw/api/create-org/", tw_views.create_org_comp, name="create_org_comp"),
+    path("<int:opp_id>/tw/api/setup-org/", tw_views.setup_org_comp, name="setup_org_comp"),
+    path("<int:opp_id>/tw/api/email-verify/", tw_views.email_verify_comp, name="email_verify_comp"),
+    path("<int:opp_id>/tw/api/password-reset/", tw_views.password_reset_comp, name="password_reset_comp"),
+    path("<int:opp_id>/tw/api/password-update/", tw_views.password_update_comp, name="password_update_comp"),
+    path("<int:opp_id>/tw/api/invite/", tw_views.invite_comp, name="invite_comp"),
     path("<int:opp_id>/tw/api/pm_cards/", tw_views.pm_opportunities_card, name="tw_pm_cards"),
+    path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
+    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),  # TODO
+    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"),  # TODO
+    # Custom Tailwind Table
+    # path("<int:opp_id>/tw/custom_table/", tw_views.custom_table, name="tw_custom_table"),
+    # Tables
+    path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
+    path(
+        "<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"
+    ),  # TODO
+    path(
+        "<int:pk>/tw/verification_flags_config/",
+        view=tw_form_views.verification_flags_config,
+        name="tw_verification_flags_config",
+    ),
+    path("<int:pk>/tw/edit", view=tw_form_views.OpportunityEdit.as_view(), name="tw_edit"),
+    path("<int:pk>/tw/payment_unit/create", view=tw_form_views.add_payment_unit, name="tw_add_payment_unit"),
+    path(
+        "<int:opp_id>/tw/payment_unit/<int:pk>/edit", view=tw_form_views.edit_payment_unit, name="tw_edit_payment_unit"
+    ),
+    path(
+        "<int:pk>/tw/send_message", view=tw_form_views.send_message_mobile_users, name="tw_send_message_mobile_users"
+    ),
+    path("<int:pk>/tw/invoice/create/", tw_form_views.invoice_create, name="tw_invoice_create"),
+    path(
+        "<int:pk>/tw/add_budget_existing_users",
+        view=tw_form_views.add_budget_existing_users,
+        name="tw_add_budget_existing_users",
+    ),
+    path("tw/init/", view=tw_form_views.OpportunityInit.as_view(), name="tw_init"),
+    path("<int:pk>/tw/finalize/", view=tw_form_views.OpportunityFinalize.as_view(), name="tw_finalize"),
+    path("<int:pk>/tw/payment_units/create", view=tw_form_views.add_payment_units, name="tw_add_payment_units"),
+    path("<int:pk>/tw/visit_export/", view=tw_form_views.export_user_visits, name="tw_visit_export"),
 ]

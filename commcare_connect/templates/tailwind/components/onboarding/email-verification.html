@@ -1,0 +1,18 @@
+{% load static i18n %}
+<form method="post" class="w-full min-h-[620px] h-fit  flex flex-col gap-4">
+    <h6 class="title text-brand-deep-purple">Email Verification</h6> 
+    <span class="text-sm text-gray-600">An email has been send to your account. Please check your inbox. If you can’t find the email. Please check your spam mail. .</span> 
+    
+    <div class="flex justify-between items-center mt-6"> 
+        <div class="text-sm text-gray-400">Didn't get email?</div>
+        {% comment %} type="submit" {% endcomment %}
+        <button class="button button-md outline-style" hx-get="/a/test-org-managed/opportunity/56/tw/api/setup-org/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">
+            <span class="relative z-20">Resend</span>
+        </button>
+    </div> 
+
+    <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
+        Don't have an account?
+        <a href="#" class="text-brand-indigo font-medium" hx-get="/a/test-org-managed/opportunity/56/tw/api/signup/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Signup</a>
+    </div>
+</form> 

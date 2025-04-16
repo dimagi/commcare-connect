@@ -1,0 +1,11 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load tailwind_filters %}
+
+{% block content %}
+<div class="md:max-w-screen-sm mx-auto flex flex-col gap-4 card_bg">
+    <h2 class="title">Create Program</h2> 
+    {% include "partial_form.html" %}
+</div>
+{% endblock content %}

@@ -1,0 +1,60 @@
+{% load static i18n %}
+<form method="post" class="w-full min-h-[620px] h-fit  flex flex-col gap-4">
+    {% csrf_token %}
+    <div class="flex gap-6 items-center">
+        <button class="button-icon">
+            <i class="fa-light fa-arrow-left"></i>
+        </button>
+        <h6 class="title text-brand-deep-purple">Create organization</h6> 
+    </div>
+    <span class="text-sm text-gray-600">Create your own organization by entering its name below.</span> 
+    <div class="simple-input">
+        <input type="text" placeholder="Organization NAme" name="org-name"  required/>
+        <i class="fa-light fa-building"></i>
+    </div> 
+    <div class="simple-input">
+        <input type="text" placeholder="URL" name="org-url"  required/>
+        <i class="fa-light fa-link-simple"></i>
+    </div> 
+    <div 
+    class="simple-dropdown" 
+    x-data="countrySelect()" 
+    x-init="fetchCountries()">
+        <select name="org-country" id="">
+            <template x-for="country in countries" :key="country.code">
+                <option :value="country.name" x-text="country.name"></option>
+            </template>
+        </select>
+        <i class="fa-light fa-earth-americas"></i>
+    </div> 
+    <div class="simple-input">
+        <input type="text" placeholder="Address" name="org-address"/>
+        <i class="fa-light fa-location-dot"></i>
+    </div>   
+    <div class="flex justify-end gap-4">
+        <button type="submit" class="button button-md outline-style" hx-get="/a/test-org-managed/opportunity/56/tw/api/setup-org/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Back</button>
+        <button type="submit" class="button button-md primary-dark">Continue</button>
+    </div>
+</form>
+
+<script>
+    function countrySelect() {
+        return {
+            countries: [],
+            async fetchCountries() {
+                try {
+                    const response = await fetch('https://restcountries.com/v3.1/all');
+                    const data = await response.json();
+                    this.countries = data
+                        .map(c => ({
+                            name: c.name.common,
+                            code: c.cca2
+                        }))
+                        .sort((a, b) => a.name.localeCompare(b.name));
+                } catch (error) {
+                    console.error("Failed to fetch countries:", error);
+                }
+            }
+        }
+    }
+</script>
