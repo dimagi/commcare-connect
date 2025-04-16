@@ -2745,7 +2745,9 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
     payment_unit_count = opp.paymentunit_set.count()
 
-    path = ['opportunities', opp.name]
+    path = [{"title": 'opportunities',
+             "url": reverse('opportunity:opportunities_list_new', kwargs={"org_slug": request.org.slug})},
+            {"title": opp.name, "url": reverse('opportunity:tw_opportunity', args=(request.org.slug, opp.id))}]
 
     opp_resource_counts = [
         {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},
