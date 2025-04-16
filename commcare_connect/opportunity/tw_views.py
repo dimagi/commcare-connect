@@ -1,16 +1,21 @@
 from django import forms
+from django.contrib import messages
 from django.db.models import Count, Min, Max
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.utils.safestring import mark_safe
+from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig
 from django.test.utils import override_settings
 
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, VisitExportForm, PaymentExportForm
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, VisitExportForm, PaymentExportForm, \
+    ReviewVisitExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
 from .models import OpportunityAccess
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
+from .tasks import generate_review_visit_export, generate_payment_export
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
@@ -18,6 +23,8 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
     AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable, \
     OpportunitiesListViewTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable, WorkerStatusTable
 from .views import OrganizationUserMixin, get_opportunity_or_404
+from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status
+from ..organization.decorators import org_member_required
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -1359,13 +1366,85 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
             "opportunity": opp,
             "tabs": tabs,
             "visit_export_form": visit_export_form,
-            "export_form":export_form
+            "export_form": export_form,
+            "export_task_id": request.GET.get("export_task_id")
         },
     )
 
 
+@org_member_required
+@require_POST
+def tw_update_visit_status_import(request, org_slug=None, opp_id=None):
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
+    file = request.FILES.get("visits")
+    try:
+        status = bulk_update_visit_status(opportunity, file)
+    except ImportException as e:
+        messages.error(request, e.message)
+    else:
+        message = f"Visit status updated successfully for {len(status)} visits."
+        if status.missing_visits:
+            message += status.get_missing_message()
+        messages.success(request, mark_safe(message))
+    if opportunity.managed:
+        return redirect("opportunity:user_visit_review", org_slug, opp_id)
+    return redirect("opportunity:tw_worker_list", org_slug, opp_id)
+
+@org_member_required
+def export_visit_status(request, org_slug, opp_id):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
+    form = ReviewVisitExportForm(data=request.POST)
+    if not form.is_valid():
+        messages.error(request, form.errors)
+        return redirect("opportunity:tw_worker_list", request.org.slug, opp_id)
+
+    export_format = form.cleaned_data["format"]
+    date_range = DateRanges(form.cleaned_data["date_range"])
+    status = form.cleaned_data["status"]
+
+    result = generate_review_visit_export.delay(opp_id, date_range, status, export_format)
+    redirect_url = reverse("opportunity:tw_worker_list", args=(request.org.slug, opp_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
+
+
+@org_member_required
+@require_POST
+def payment_import(request, org_slug=None, opp_id=None):
+    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
+    file = request.FILES.get("payments")
+    try:
+        status = bulk_update_payment_status(opportunity, file)
+    except ImportException as e:
+        messages.error(request, e.message)
+    else:
+        message = f"Payment status updated successfully for {len(status)} users."
+        messages.success(request, mark_safe(message))
+    return redirect(f"{reverse('opportunity:tw_worker_list', args=[org_slug, opp_id])}?active_tab=payments")
+
+
+
+@org_member_required
+def export_users_for_payment(request, org_slug, opp_id):
+    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
+    form = PaymentExportForm(data=request.POST)
+    if not form.is_valid():
+        messages.error(request, form.errors)
+        return redirect(f"{reverse('opportunity:tw_worker_list', args=[org_slug, opp_id])}?active_tab=payments")
+
+    export_format = form.cleaned_data["format"]
+    result = generate_payment_export.delay(opp_id, export_format)
+    redirect_url = reverse("opportunity:tw_worker_list", args=(request.org.slug, opp_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}&active_tab=payments")
+
+
+
+
+
 def invoice_list(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/invoice_list.html", {"header_title": "Invoices"})
+
+
+
 
 def all_invoice_table(request, org_slug=None, opp_id=None):
     data = [
