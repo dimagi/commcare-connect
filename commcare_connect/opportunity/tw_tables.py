@@ -868,7 +868,7 @@ class PMOpportunitiesListTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.base_columns['index'].verbose_name = mark_safe(
             '''
             <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer">
@@ -967,7 +967,7 @@ class PMOpportunitiesListTable(BaseTailwindTable):
                 <div class="fixed hidden group-hover:block z-50 pointer-events-none -translate-x-[15%] -translate-y-[70%] transform">
                     <!-- Arrow -->
                     <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
-                    
+
                     <!-- Tooltip content with proper arrow -->
                     <div class="relative bg-white w-28 rounded p-2 text-slate-500 text-xs whitespace-normal break-words">
                         Deliveries in the past 3 days or more
@@ -1078,7 +1078,7 @@ class PMOpportunitiesListTable(BaseTailwindTable):
     )
 
     class Meta:
-        
+
         sequence = (
             "index",
             "opportunity",
@@ -1094,7 +1094,7 @@ class PMOpportunitiesListTable(BaseTailwindTable):
             "actions"
         )
 
-    
+
 
     def render_index(self, value):
         return format_html(
@@ -1130,33 +1130,33 @@ class PMOpportunitiesListTable(BaseTailwindTable):
             '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
-    
+
     def render_activeWorkers(self, value):
         return format_html(
             '<div class="flex justify-center text-sm  font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
-    
+
     def render_deliveries(self, value):
         return format_html(
             '<div class="flex justify-center text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
-    
+
     def render_approved(self, value):
         return format_html(
             '<div class="flex justify-center text-sm  font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
-    
+
     def render_earnings(self, value):
         return format_html(
             '<div class="flex justify-center text-sm  font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">{}</div>',
             value,
         )
 
-class WorkerPaymentsTable(tables.Table):
-    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
+class WorkerPaymentsTable(BaseTailwindTable):
+    index = IndexColumn()
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
@@ -1168,18 +1168,6 @@ class WorkerPaymentsTable(tables.Table):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Custom HTML for 'select' header (your toggle button)
-        self.base_columns['index'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
-                <i
-                    x-on:click="toggleAll()"
-                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
-                    class="text-xl cursor-pointer text-brand-deep-purple"
-                ></i>
-            </div>
-            '''
-        )
 
         HEADERS = {
             "status": [
@@ -1213,49 +1201,6 @@ class WorkerPaymentsTable(tables.Table):
         fields=("user", "suspended", "payment_accrued", "total_paid", "total_confirmed_paid")
         sequence = ("index", "user", "suspended", "last_active", "payment_accrued", "total_paid", "last_paid", "total_confirmed_paid")
 
-    def render_index(self, value, record):
-        page = getattr(self, 'page', None)
-        if page:
-            start_index = (page.number - 1) * page.paginator.per_page + 1
-        else:
-            start_index = 1
-
-        if (
-            not hasattr(self, '_row_counter') or
-            not hasattr(self, '_row_counter_start') or
-            self._row_counter_start != start_index
-        ):
-            self._row_counter = itertools.count(start=start_index)
-            self._row_counter_start = start_index
-
-        display_index = next(self._row_counter)
-
-        return format_html(
-            """
-            <div class="text-brand-deep-purple relative flex items-center justify-start h-full"
-                x-data="{{
-                    'hovering': false
-                }}"
-                x-on:mouseenter="hovering = true"
-                x-on:mouseleave="hovering = false">
-
-                <!-- Show empty square when hovering and not selected -->
-                <i x-show="!isRowSelected({0}) && hovering"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show checked square when selected -->
-                <i x-show="isRowSelected({0})"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show number when not hovering and not selected -->
-                <span x-show="!isRowSelected({0}) && !hovering"
-                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
-            </div>
-        """,
-            display_index,
-        )
 
     def render_last_paid(self, value):
         return format_html(
@@ -1292,8 +1237,8 @@ class WorkerPaymentsTable(tables.Table):
         )
 
 
-class WorkerLearnTable(tables.Table):
-    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
+class WorkerLearnTable(BaseTailwindTable):
+    index = IndexColumn()
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column(
@@ -1330,19 +1275,6 @@ class WorkerLearnTable(tables.Table):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # Custom HTML for 'select' header (your toggle button)
-        self.base_columns['index'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
-                <i
-                    x-on:click="toggleAll()"
-                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
-                    class="text-xl cursor-pointer text-brand-deep-purple"
-                ></i>
-            </div>
-            '''
-        )
 
         HEADERS = {
             "status": [
@@ -1386,56 +1318,12 @@ class WorkerLearnTable(tables.Table):
             "action"
         )
 
-    def render_index(self, value, record):
-        # Use 1-based indexing for display and storage
-        page = getattr(self, 'page', None)
-        if page:
-            start_index = (page.number - 1) * page.paginator.per_page + 1
-        else:
-            start_index = 1
-
-        if (
-            not hasattr(self, '_row_counter') or
-            not hasattr(self, '_row_counter_start') or
-            self._row_counter_start != start_index
-        ):
-            self._row_counter = itertools.count(start=start_index)
-            self._row_counter_start = start_index
-
-        display_index = next(self._row_counter)
-
-        return format_html(
-            """
-            <div class="text-brand-deep-purple relative flex items-center justify-start w-full h-full"
-                x-data="{{
-                    'hovering': false
-                }}"
-                x-on:mouseenter="hovering = true"
-                x-on:mouseleave="hovering = false">
-
-                <!-- Show empty square when hovering and not selected -->
-                <i x-show="!isRowSelected({0}) && hovering"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show checked square when selected -->
-                <i x-show="isRowSelected({0})"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show number when not hovering and not selected -->
-                <span x-show="!isRowSelected({0}) && !hovering"
-                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
-            </div>
-        """,
-            display_index,
-        )
 
     def render_assessment(self, value):
         return 'passed' if value else 'failed'
 
 class WorkerDeliveryTable(BaseTailwindTable):
-    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
+    index = IndexColumn()
     user = tables.Column(orderable=False, verbose_name="Name")
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
@@ -1475,18 +1363,6 @@ class WorkerDeliveryTable(BaseTailwindTable):
         super().__init__(*args, **kwargs)
         self._seen_users = set()
 
-        # Custom HTML for 'select' header (your toggle button)
-        self.base_columns['index'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
-                <i
-                    x-on:click="toggleAll()"
-                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
-                    class="text-xl cursor-pointer text-brand-deep-purple"
-                ></i>
-            </div>
-            '''
-        )
 
 
     def render_user(self, value):
@@ -1525,32 +1401,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
 
         display_index = next(self._row_counter)
 
-        return format_html(
-            """
-            <div class="text-brand-deep-purple relative flex items-center justify-start w-full h-full"
-                x-data="{{
-                    'hovering': false
-                }}"
-                x-on:mouseenter="hovering = true"
-                x-on:mouseleave="hovering = false">
-
-                <!-- Show empty square when hovering and not selected -->
-                <i x-show="!isRowSelected({0}) && hovering"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show checked square when selected -->
-                <i x-show="isRowSelected({0})"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show number when not hovering and not selected -->
-                <span x-show="!isRowSelected({0}) && !hovering"
-                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
-            </div>
-        """,
-            display_index,
-        )
+        return display_index
 
 
 
@@ -1893,7 +1744,7 @@ class PayWorker(BaseTailwindTable):
 
 
 class WorkerStatusTable(BaseTailwindTable):
-    index = tables.Column(orderable=False, empty_values=(), verbose_name="#")
+    index = IndexColumn()
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = DMYDate()
@@ -1924,75 +1775,6 @@ class WorkerStatusTable(BaseTailwindTable):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.base_columns['index'].verbose_name = mark_safe(
-            '''
-            <div class="flex justify-start text-sm font-medium text-brand-deep-purple">
-                <i
-                    x-on:click="toggleAll()"
-                    :class="isAllSelected() ? 'fa-regular fa-square-check' : 'fa-regular fa-square'"
-                    class="text-xl cursor-pointer text-brand-deep-purple"
-                ></i>
-            </div>
-            '''
-        )
-
-
-    def render_index(self):
-        page = getattr(self, 'page', None)
-        if page:
-            start_index = (page.number - 1) * page.paginator.per_page + 1
-        else:
-            start_index = 1
-
-        if (
-            not hasattr(self, '_row_counter') or
-            not hasattr(self, '_row_counter_start') or
-            self._row_counter_start != start_index
-        ):
-            self._row_counter = itertools.count(start=start_index)
-            self._row_counter_start = start_index
-
-        display_index = next(self._row_counter)
-
-        return format_html(
-            """
-            <div class="text-brand-deep-purple relative flex items-center justify-start h-full w-4"
-                x-data="{{
-                    'hovering': false
-                }}"
-                x-on:mouseenter="hovering = true"
-                x-on:mouseleave="hovering = false">
-
-                <!-- Show empty square when hovering and not selected -->
-                <i x-show="!isRowSelected({0}) && hovering"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show checked square when selected -->
-                <i x-show="isRowSelected({0})"
-                class="absolute text-xl -translate-y-1/2 cursor-pointer fa-regular fa-square-check text-brand-deep-purple top-1/2"
-                x-on:click="toggleRow({0}); $event.stopPropagation()"></i>
-
-                <!-- Show number when not hovering and not selected -->
-                <span x-show="!isRowSelected({0}) && !hovering"
-                    class="absolute pl-1 -translate-y-1/2 top-1/2">{0}</span>
-            </div>
-        """,
-            display_index,
-        )
-
-    def render_worker(self, value):
-
-        return format_html(
-            """
-        <div class="flex flex-col items-start w-40">
-            <p class="text-sm text-slate-900 ">{}</p>
-            <p class="text-xs text-slate-400">{}</p>
-        </div>
-        """,
-            value["name"],
-            value["id"],
-        )
 
     def render_lastActive(self, value):
         return format_html(
