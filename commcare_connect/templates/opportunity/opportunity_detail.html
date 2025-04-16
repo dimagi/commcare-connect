@@ -1,0 +1,662 @@
+{% extends "opportunity/base.html" %}
+{% load i18n %}
+{% load django_tables2 %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
+
+{% block breadcrumbs_inner %}
+  {{ block.super }}
+ <li class="breadcrumb-item active" aria-current="page">{{ object.name }}</li>
+{% endblock %}
+
+{% block content %}
+  <div class="row align-items-center">
+    <div class="col-6">
+      <h1 class="mb-0">{{ object.name }}</h1>
+    </div>
+    <div class="col-6">
+      <div class="dropdown float-end">
+        <button class="btn btn-primary btn-sm rounded-circle" type="button" id="opportunity_details_dropdown"
+          data-bs-toggle="dropdown" aria-expanded="false" {% if request.org_membership.is_viewer %} disabled {% endif %}>
+          <i class="bi bi-three-dots-vertical"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="opportunity_details_dropdown">
+          {% if user_is_network_manager %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:user_invite' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-pencil-fill pe-2"></i> Invite Users
+            </a>
+          </li>
+          {% else %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:edit' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-pencil-fill pe-2"></i> Edit
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:add_budget_existing_users' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-plus-circle-fill pe-2"></i>
+              Add Budget
+            </a>
+          </li>
+          {% if object.managed %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">
+              <i class="bi bi-clipboard2-data-fill pe-2"></i>
+             {% translate "Review User Visits" %}
+            </a>
+          </li>
+            {% if request.org_membership.is_program_manager or request.user.is_superuser %}
+              <li>
+                <a class="dropdown-item"
+                   href="{% url "opportunity:payment_report" org_slug=request.org.slug pk=opportunity.pk %}">
+                  <i class="bi bi-pie-chart-fill pe-2"></i>
+                 {% translate "Payment Report" %}
+                </a>
+              </li>
+            {% endif %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url "opportunity:invoice_list" org_slug=request.org.slug pk=opportunity.pk %}">
+              <i class="bi bi-cash-stack pe-2"></i>
+             {% translate "Invoices" %}
+            </a>
+          </li>
+          {% endif %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:add_payment_unit' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-plus-circle-fill pe-2"></i>
+              {% translate "Add Payment Unit" %}
+            </a>
+          </li>
+          {% if request.org_membership.is_admin %}
+            <li>
+              <a class="dropdown-item" href="{% url "opportunity:send_message_mobile_users" org_slug=request.org.slug pk=opportunity.pk %}">
+                <i class="bi bi-send-fill pe-2"></i>
+                {% translate "Send Message" %}
+              </a>
+            </li>
+          {% endif %}
+
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:suspended_users_list' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-person-fill-exclamation pe-2"></i>
+              {% translate "Suspended Users" %}
+            </a>
+          </li>
+          {% if not object.managed or request.org_membership.is_program_manager %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:verification_flags_config' org_slug=request.org.slug pk=opportunity.id %}">
+              <i class="bi bi-plus-circle-fill pe-2"></i>
+              {% translate "Configure Verification Flags" %}
+            </a>
+          </li>
+          {% endif %}
+          {% if object.managed and request.org_membership.is_program_manager %}
+            <li class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPMReviewModal">
+                <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+                {% translate "Export PM Review Visits" %}
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importPMReviewModal">
+                <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+                 {% translate "Import PM Review Visits" %}
+              </a>
+            </li>
+          {% endif%}
+          <li class="dropdown-divider"></li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportVisitModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export User Visits" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importVisitModal">
+              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+              {% translate "Import Verified Visits" %}
+            </a>
+          </li>
+          <li class="dropdown-divider"></li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPaymentModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export Users for Payment" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importPaymentModal">
+              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+              {% translate "Import Payment Records" %}
+            </a>
+          </li>
+          <li class="dropdown-divider"></li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportCompletedWorkModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export Payment Verification" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importCompletedWorkModal">
+              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+              {% translate "Import Verified Payments" %}
+            </a>
+          </li>
+          <li class="dropdown-divider"></li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportUserStatusModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export User Status" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportDeliverStatusModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export Deliver Status" %}
+            </a>
+          </li>
+           <li class="dropdown-divider"></li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportCatchmentModal">
+              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+              {% translate "Export Catchment Area" %}
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importCatchmentModal">
+              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+              {% translate "Import Catchment Area" %}
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-9">
+      <small title="End date"><i class="bi bi-clock"></i> Ends on <b>{{ object.end_date }}</b></small>
+    </div>
+    <div class="col-3 d-flex">
+      {% if export_task_id %}
+        <div class="flex-grow-1 justify-content-end">
+        <div hx-get="{% url "opportunity:export_status" request.org.slug export_task_id %}"
+             hx-target="this"
+             hx-trigger="load"
+             hx-swap="outerHTML">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  <hr/>
+  <span class="text-black-50 text-uppercase">Description</span>
+  <p>
+    {{ object.description }}
+  </p>
+  <div class="row">
+    <div class="col-md-6">
+      <table class="table table-borderless table-responsive shadow">
+        <thead>
+        <tr>
+          <th colspan="2" class="text-center fs-4 pb-3 bg-primary-subtle">Visits</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <th scope="row">Total Visits Allotted</th>
+          <td>{{ object.allotted_visits }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Total Visits Claimed</th>
+          <td>{{ object.claimed_visits }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Total Visits Approved</th>
+          <td>{{ object.approved_visits }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Allotted Visits per user</th>
+          <td>{{ object.max_visits_per_user_new }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Daily Max Visits per user</th>
+          <td>{{ object.daily_max_visits_per_user_new }}</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col-md-6">
+      <table class="table table-borderless table-responsive shadow">
+        <thead>
+        <tr>
+          <th colspan="2" class="text-center fs-4 pb-3 bg-primary-subtle">Budget</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+          <th scope="row">Total Budget</th>
+          <td>{{ object.total_budget }} {{ object.currency|default_if_none:"" }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Budget per user</th>
+          <td>{{ object.budget_per_user }} {{ object.currency|default_if_none:"" }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Budget Claimed</th>
+          <td>{{ object.claimed_budget }} {{ object.currency|default_if_none:"" }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Budget Utilised</th>
+          <td>{{ object.utilised_budget }} {{ object.currency|default_if_none:"" }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Budget per visit</th>
+          <td>{{ object.budget_per_visit_new }} {{ object.currency|default_if_none:"" }}</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="accordion shadow" id="accordionExample">
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingOne">
+        <button class="accordion-button fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#learn-app-modules" aria-expanded="true" aria-controls="collapseOne">
+          Learn App -&nbsp;
+          <a href="{{ object.learn_app.url }}" target="_blank">{{ object.learn_app.name }}</a>
+        </button>
+      </h2>
+      <div id="learn-app-modules" class="accordion-collapse collapse show" aria-labelledby="headingOne" data-bs-parent="#accordionExample">
+        <div class="accordion-body p-0 m-0">
+          <table class="table table-bordered table-responsive mb-0">
+            <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Time Estimate</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for module in object.learn_app.learn_modules.all %}
+              <tr>
+                <td>{{ module.name }}</td>
+                <td>{{ module.description }}</td>
+                <td>{{ module.time_estimate }} hour{{ module.time_estimate|pluralize:",s" }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingTwo">
+        <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#deliver-units" aria-expanded="false" aria-controls="collapseTwo">
+          Deliver App -&nbsp;
+          <a href="{{ object.deliver_app.url }}" target="_blank">{{ object.deliver_app.name }}</a>
+        </button>
+      </h2>
+      <div id="deliver-units" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#accordionExample">
+        <div class="accordion-body p-0 m-0">
+          <table class="table table-bordered table-responsive mb-0">
+            <thead>
+            <tr>
+              <th>Deliver Unit Name</th>
+              <th>Deliver Unit ID</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for unit in object.deliver_app.deliver_units.all %}
+              <tr>
+                <td>{{ unit.name }}</td>
+                <td>{{ unit.slug }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingTwo">
+        <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#payment-units" aria-expanded="false" aria-controls="collapseTwo">
+          Payment Units
+        </button>
+      </h2>
+      <div id="payment-units" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#accordionExample">
+        <div class="accordion-body p-0 m-0">
+          <div hx-get="{% url "opportunity:payment_unit_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
+               hx-trigger="load" hx-swap="outerHTML">
+            {% include "tables/table_placeholder.html" with num_cols=4 %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 shadow mb-5">
+    <ul class="nav nav-tabs fw-bold bg-primary-subtle" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="user-status-tab" data-bs-toggle="tab" data-bs-target="#user-status-tab-pane"
+                type="button" role="tab" aria-controls="user-status-tab-pane" aria-selected="true">
+          <i class="bi bi-person-lines-fill"></i> {% trans "User Status" %}
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="learn-tab" data-bs-toggle="tab" data-bs-target="#learn-tab-pane"
+                type="button" role="tab" aria-controls="learn-tab-pane" aria-selected="false">
+          <i class="bi bi-mortarboard-fill"></i> {% trans "Learn Status" %}
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="deliver-status-tab" data-bs-toggle="tab" data-bs-target="#deliver-status-tab-pane"
+                type="button" role="tab" aria-controls="deliver-status-tab-pane" aria-selected="false">
+          <i class="bi bi-journal-text"></i> {% trans "Deliver Status" %}
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="payment-tab" data-bs-toggle="tab" data-bs-target="#payment-tab-pane"
+                type="button" role="tab" aria-controls="payment-tab-pane" aria-selected="false">
+          <i class="bi bi-cash-stack"></i> {% translate "Payment Status" %}
+        </button>
+      </li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="user-status-tab-pane" role="tabpanel" aria-labelledby="user-status-tab"
+           tabindex="0" hx-on::after-request="refreshTooltips()">
+        <div hx-get="{% url "opportunity:user_status_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
+             hx-trigger="load, userStatusReload from:body">
+          {% include "tables/table_placeholder.html" with num_cols=4 %}
+        </div>
+      </div>
+      <div class="tab-pane fade" id="learn-tab-pane" role="tabpanel" aria-labelledby="learn-tab"
+           tabindex="0" hx-on::after-request="refreshTooltips()">
+        <div hx-get="{% url "opportunity:user_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
+             hx-trigger="load" hx-swap="outerHTML">
+          {% include "tables/table_placeholder.html" with num_cols=4 %}
+        </div>
+      </div>
+      <div class="tab-pane fade" id="deliver-status-tab-pane" role="tabpanel" aria-labelledby="deliver-status-tab"
+           tabindex="0" hx-on::after-request="refreshTooltips()">
+        <div hx-get="{% url "opportunity:deliver_status_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
+             hx-trigger="load" hx-swap="outerHTML">
+          {% include "tables/table_placeholder.html" with num_cols=4 %}
+        </div>
+      </div>
+      <div class="tab-pane fade" id="payment-tab-pane" role="tabpanel" aria-labelledby="payment-tab"
+           tabindex="0" hx-on::after-request="refreshTooltips()">
+        <div hx-get="{% url "opportunity:payment_table" org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
+             hx-trigger="load" hx-swap="outerHTML">
+          {% include "tables/table_placeholder.html" with num_cols=4 %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+{% endblock content %}
+
+{% block modal %}
+<!-- User Visit Export modal -->
+<div class="modal fade" id="exportVisitModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Export Visit Data" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:visit_export" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% crispy visit_export_form %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-filetype-xls"></i> Export</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- User Visit Import modal -->
+<div class="modal fade" id="importVisitModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Import Verified Visits" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:visit_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% csrf_token %}
+            <input class="form-control" type="file" id="importFile" name="visits" required>
+            <div class="col-auto">
+              <span id="importFileHelp" class="form-text">
+                {{ import_visit_helper_text }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!--Review User Visit Export modal -->
+<div class="modal fade" id="exportPMReviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Export Review Visit Data" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:review_visit_export" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% crispy review_visit_export_form %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-filetype-xls"></i> Export</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!--Review User Visit Import modal -->
+<div class="modal fade" id="importPMReviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Import Review Visits" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:review_visit_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% csrf_token %}
+            <input class="form-control" type="file" id="importFile" name="visits" required>
+            <div class="col-auto">
+              <span id="importFileHelp" class="form-text">
+                {% blocktrans %}
+                  The file must contain at least the "Visit ID" and "Program Manager Review" column.
+                  The import is case-insensitive.
+                {% endblocktrans %}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+  <!-- Payment Export modal -->
+  {% url "opportunity:payment_export" org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
+  {% include "export_modal.html" with modal_id="exportPaymentModal" modal_title=_("Export Users for Payment") export_url=payment_export_url export_form=export_form %}
+
+<!-- Payment Import modal -->
+<div class="modal fade" id="importPaymentModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Import Payment Records" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:payment_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% csrf_token %}
+            <input class="form-control" type="file" id="importFile" name="payments">
+            <div class="col-auto">
+              <span id="importFileHelp" class="form-text">
+                {% blocktrans %}
+                  The file must contain at least the "Username", "Amount" and "Payment Date" columns.
+                {% endblocktrans %}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+  <!-- User Status Export Modal -->
+  {% url 'opportunity:user_status_export' org_slug=request.org.slug pk=opportunity.pk as user_status_export_url %}
+  {% include "export_modal.html" with modal_id="exportUserStatusModal" modal_title=_("Export User Status") export_url=user_status_export_url export_form=export_form %}
+
+  <!-- Deliver Status Export Modal -->
+  {% url 'opportunity:deliver_status_export' org_slug=request.org.slug pk=opportunity.pk as deliver_status_export_url %}
+  {% include "export_modal.html" with modal_id="exportDeliverStatusModal" modal_title=_("Export Deliver Status") export_url=deliver_status_export_url export_form=export_form %}
+
+  <!-- Completed Work Export Modal -->
+  {% url 'opportunity:completed_work_export' org_slug=request.org.slug pk=opportunity.pk as completed_work_export_url %}
+  {% include "export_modal.html" with modal_id="exportCompletedWorkModal" modal_title=_("Export Payment Verification") export_url=completed_work_export_url export_form=export_form %}
+
+ <!-- Catchment Area Export Modal -->
+  {% url 'opportunity:catchment_area_export' org_slug=request.org.slug pk=opportunity.pk as catchment_area_export_url %}
+  {% include "export_modal.html" with modal_id="exportCatchmentModal" modal_title=_("Export Catchment Area") export_url=catchment_area_export_url export_form=export_form %}
+
+
+  <!-- Completed Work Import modal -->
+  <div class="modal fade" id="importCompletedWorkModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary">
+          <h1 class="modal-title fs-5 text-white">{% translate "Import Verified Payments" %}</h1>
+          <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form action="{% url "opportunity:completed_work_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+              enctype="multipart/form-data">
+          <div class="modal-body">
+            <div class="mb-3">
+              {% csrf_token %}
+              <input class="form-control" type="file" id="importFile" name="visits" required>
+              <div class="col-auto">
+                <span id="importFileHelp" class="form-text">
+                  {% blocktrans %}
+                    The file must contain at least the "ID" and "Status" column.
+                    The import is case-insensitive.
+                  {% endblocktrans %}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+<!-- Catchment Area Import modal -->
+<div class="modal fade" id="importCatchmentModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary">
+        <h1 class="modal-title fs-5 text-white">{% translate "Import Catchment Areas" %}</h1>
+        <button type="button" class="btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{% url "opportunity:catchment_area_import" org_slug=request.org.slug pk=opportunity.pk %}" method="post"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            {% csrf_token %}
+            <input class="form-control" type="file" id="importFile" name="catchments" required>
+            <div class="col-auto">
+              <span id="importFileHelp" class="form-text">
+                {% blocktrans %}
+                  The file must contain at least the "Area Name", "Active", "Latitude", "Longitude", "Site code" and "Radius" column.
+                {% endblocktrans %}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="resendInviteModal" tabindex="-1" aria-labelledby="resendInviteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resendInviteModalLabel">Alert</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="modalBodyContent">
+                <!-- HTMX will inject the response content here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+{% endblock modal %}

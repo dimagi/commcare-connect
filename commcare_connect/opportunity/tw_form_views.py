@@ -111,6 +111,10 @@ class OpportunityEdit(views.OpportunityEdit):
     template_name = "tailwind/pages/opportunity_edit.html"
     form_class = OpportunityChangeForm
 
+    def get_success_url(self):
+        return reverse("opportunity:tw_opportunity_detail", args=(self.request.org.slug, self.object.id))
+
+
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
@@ -226,7 +230,7 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             send_push_notification_task.delay(selected_user_ids, title, body)
         if "sms" in message_type:
             send_sms_task.delay(selected_user_ids, body)
-        return redirect("opportunity:detail", org_slug=request.org.slug, pk=pk)
+        return redirect("opportunity:tw_opportunity_detail", request.org.slug, pk)
 
     return render(
         request,
@@ -316,6 +320,11 @@ class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
         view = ("add", "edit")[self.object is not None]
         template = f"tailwind/pages/program_{view}.html"
         return template
+
+    def get_success_url(self):
+        # Todo; update with tailwind URL
+        return reverse("program:list", kwargs={"org_slug": self.request.org.slug})
+
 
 
 def invite_organization(request, org_slug=None, pk=None):

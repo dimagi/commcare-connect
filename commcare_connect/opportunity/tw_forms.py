@@ -7,8 +7,9 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
 from django.utils.timezone import now
+from django.urls import reverse
 
-from commcare_connect.connect_id_client.models import Credential
+from commcare_connect import connect_id_client
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program
@@ -213,7 +214,7 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
-        credentials = [Credential(org_slug, org_slug)]  # connect_id_client.fetch_credentials(org_slug)
+        credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
         self.helper = TailwindFormHelper(self)
@@ -586,7 +587,6 @@ class OpportunityInitForm(forms.ModelForm):
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Apps</h6>  <span class='hint'>Add required apps to the opportunity. All fields are mandatory.</span> </div>"),
                 Column(
-                    "Learn App",
                     Field("learn_app_domain", css_class=SELECT_CLASS),
                     Field("learn_app", css_class=SELECT_CLASS),
                     Field("learn_app_description", css_class=TEXTAREA_CLASS),
@@ -594,7 +594,6 @@ class OpportunityInitForm(forms.ModelForm):
                     data_loading_states=True,
                 ),  
                 Column(
-                    "Deliver App",
                     Field("deliver_app_domain", css_class=SELECT_CLASS),
                     Field("deliver_app", css_class=SELECT_CLASS), 
                     data_loading_states=True,
@@ -607,10 +606,19 @@ class OpportunityInitForm(forms.ModelForm):
             )
         )
 
-        domain_choices = [(i, f"Domain {i}") for i in range(1, 11)]
+        domain_choices = [(domain, domain) for domain in self.domains]
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
+            widget=forms.Select(
+                attrs={
+                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
+                    "hx-include": "#id_learn_app_domain",
+                    "hx-trigger": "load delay:0.3s, change",
+                    "hx-target": "#id_learn_app",
+                    "data-loading-disable": True,
+                }
+            ),
         )
         learn_app_choices = [(i, f"Learn App {i}") for i in range(1, 11)]
         self.fields["learn_app"] = forms.Field(widget=forms.Select(choices=learn_app_choices))
