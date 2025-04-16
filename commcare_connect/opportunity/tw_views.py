@@ -10,13 +10,14 @@ from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig
 from django.test.utils import override_settings
 
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, VisitExportForm, PaymentExportForm, \
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, \
     ReviewVisitExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
 from .models import OpportunityAccess
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
+from .tw_forms import VisitExportForm
 
 from .tw_tables import  PMOpportunitiesListTable
 
@@ -2752,10 +2753,11 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
     ]
 
+
     opp_basic_details = [
         {
             "name": "Delivery Type",
-            "count": opp.delivery_type.name,
+            "count": opp.delivery_type.name if opp.delivery_type else "---",
             "icon": "file-check",
             "color": "",
         },

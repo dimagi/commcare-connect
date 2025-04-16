@@ -2406,6 +2406,7 @@ class OpportunitiesListViewTable(BaseTailwindTable):
             </div>
         """,
     )
+
     status = tables.TemplateColumn(
         verbose_name="Status",
         accessor="status_value",
@@ -2413,11 +2414,11 @@ class OpportunitiesListViewTable(BaseTailwindTable):
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
               {% if value == 0 %}
-                  {% include "tailwind/components/badges/badge_sm.html" with bg_color='green-600/20' text='active' text_color='green-600' %}
+                  <span class="badge badge-sm bg-green-600/20 text-green-600">Active</span>
               {% elif value == 1 %}
-                    {% include "tailwind/components/badges/badge_sm.html" with bg_color='slate-100/20' text='ended' text_color='slate-400' %}
+                    <span class="badge badge-sm bg-orange-600/20 text-orange-600">Ended</span>
               {% else %}
-                   {% include "tailwind/components/badges/badge_sm.html" with bg_color='orange-600/20' text='inactive' text_color='orange-600' %}
+                   <span class="badge badge-sm bg-slate-100 text-slate-400">Inactive</span>
               {% endif %}
             </div>
         """,
