@@ -1355,6 +1355,7 @@ def invoice_list(request, org_slug, pk):
 
 @org_member_required
 def tw_invoice_list(request, org_slug=None, pk=None):
+    from commcare_connect.opportunity.tw_forms import PaymentInvoiceForm
     opportunity = get_opportunity_or_404(pk, org_slug)
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, pk)
@@ -1364,11 +1365,13 @@ def tw_invoice_list(request, org_slug=None, pk=None):
     queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
     table = TWPaymentInvoiceTable(queryset)
 
+    form = PaymentInvoiceForm(opportunity=opportunity)
+
     RequestConfig(request, paginate={"per_page": 2}).configure(table)
     return render(
         request,
         "tailwind/pages/invoice_list.html",
-        {"header_title": "Invoices", "opportunity": opportunity, "table": table},
+        {"header_title": "Invoices", "opportunity": opportunity, "table": table, "form": form},
     )
 
 

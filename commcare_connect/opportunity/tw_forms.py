@@ -524,11 +524,6 @@ class PaymentInvoiceForm(forms.ModelForm):
                     ),
                     css_class="flex flex-col gap-2",
                 ),
-                Row(
-                    Submit("cancel", "Cancel", css_class="button button-md outline-style"),
-                    Submit("submit", "Submit", css_class="button button-md primary-dark"),
-                    css_class="flex justify-end gap-4",
-                ),
                 css_class="flex flex-col gap-4",
             )
         )

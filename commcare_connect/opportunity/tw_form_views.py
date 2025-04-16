@@ -1,10 +1,12 @@
 from django.contrib import messages
 from django.db.models import Q
 from django.forms import modelformset_factory
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.views.generic import CreateView
+from crispy_forms.utils import render_crispy_form
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
@@ -249,16 +251,15 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
 @org_member_required
 def invoice_create(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    # if not opportunity.managed or request.org_membership.is_program_manager:
-    #     return redirect("opportunity:detail", org_slug, pk)
+    if not opportunity.managed or request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
     form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
     if request.POST and form.is_valid():
         form.save()
-    return render(
-        request,
-        "tailwind/pages/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form=form),
-    )
+        form = PaymentInvoiceForm(opportunity=opportunity)
+        return redirect("opportunity:tw_invoice_list", org_slug, pk)
+    return HttpResponse(render_crispy_form(form))
+
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
