@@ -69,10 +69,10 @@
       >
         <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon" @click="showPaymentExportModal = true">
+      <button type="button" class="button-icon"  @click="showPaymentImportModal= true" >
         <i class="fa-light fa-upload text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon" @click="showPaymentImportModal= true">
+      <button type="button" class="button-icon" @click="showPaymentExportModal = true" >
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
       <button type="button" class="button-icon">
@@ -166,7 +166,8 @@
     <!-- Import visit model -->
   <div x-show="showVisitImportModal"
      x-cloak
-     class="fixed inset-0 z-50 flex items-center justify-center bg-opacity-25"
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
      @keydown.escape.window="showVisitImportModal = false">
   <div @click.outside="showVisitImportModal = false"
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
@@ -216,7 +217,8 @@
   <!-- Import Payment Modal -->
 <div x-show="showPaymentImportModal"
      x-cloak
-     class="fixed inset-0 z-50 flex items-center justify-center bg-opacity-25"
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center  modal-backdrop"
      @keydown.escape.window="showPaymentImportModal = false">
   <div @click.outside="showPaymentImportModal = false"
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
@@ -266,14 +268,15 @@
     <!-- Export visit model -->
 <div x-show="showPaymentExportModal"
      x-cloak
-     class="fixed inset-0 z-50 flex items-center justify-center  bg-opacity-25"
+      x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center  modal-backdrop"
      @keydown.escape.window="showVisitExportModal = false">
   <div @click.outside="showVisitExportModal = false"
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
 
     <div class="flex justify-between items-center border-b pb-2 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">
-        Export Visit Data
+        Export Payments
       </h2>
       <button @click="showPaymentExportModal = false" class="text-gray-500 hover:text-gray-700">
         <i class="fa-solid fa-xmark text-xl"></i>
