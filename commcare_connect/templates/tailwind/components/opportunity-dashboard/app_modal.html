@@ -51,7 +51,7 @@
                 <div class="z-50 bg-white ">
                     <!-- Learn App Content -->
                     <div x-show="selectedTab === 'Learn App'"
-                            hx-get="{% url 'opportunity:tw_learn_module' request.org.slug 2 %}"
+                            hx-get="{% url 'opportunity:tw_learn_module' request.org.slug opp_id %}"
                             hx-trigger="load"
                             hx-swap="innerHTML"
                             class=" rounded-lg h-full w-full">
@@ -62,7 +62,7 @@
 
                     <!-- Delivery App Content -->
                     <div x-show="selectedTab === 'Delivery App'"
-                            hx-get="{% url 'opportunity:tw_deliver_unit' request.org.slug 2 %}"
+                            hx-get="{% url 'opportunity:tw_deliver_unit' request.org.slug opp_id %}"
                             hx-trigger="load"
                             hx-swap="innerHTML"
                             class="rounded-lg h-full w-full">
@@ -73,7 +73,7 @@
 
                     <!-- Payment Units Content -->
                     <div x-show="selectedTab === 'Payments Units'"
-                            hx-get="{% url 'opportunity:tw_payment_unit' request.org.slug 2 %}"
+                            hx-get="{% url 'opportunity:tw_payment_unit' request.org.slug opp_id %}"
                             hx-trigger="load"
                             hx-swap="innerHTML"
                             class="rounded-lg h-full w-full">
