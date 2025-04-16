@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.db.models import Count, Min, Max
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
@@ -17,7 +18,7 @@ from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
 
-from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, PMOpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
+from .tw_tables import  PMOpportunitiesListTable
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
@@ -2203,21 +2204,21 @@ def worker_learn(request, org_slug=None, opp_id=None):
     data = get_worker_learn_table_data(opp)
     table = WorkerLearnTable(data)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
-    return render(request, "tailwind/pages/worker_learn.html",{ "table": table})
+    return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
 def worker_delivery(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id,org_slug)
     data= get_annotated_opportunity_access_deliver_status(opportunity)
     table = WorkerDeliveryTable (data)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
-    return render(request, "tailwind/pages/worker_delivery.html", {"table": table})
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 def worker_main(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_table_data(opportunity)
     table = WorkerStatusTable(data)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
-    return render(request, "tailwind/pages/worker_main.html",{ "table": table})
+    return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
 def worker_payments(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
@@ -2227,7 +2228,7 @@ def worker_payments(request, org_slug=None, opp_id=None):
     query_set = query_set.annotate(last_active=Min("uservisit__visit_date"), last_paid=Max("payment__date_paid"))
     table = WorkerPaymentsTable(query_set)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
-    return render(request, "tailwind/pages/worker_payments.html", {"table": table})
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 
 def pay_worker(request, org_slug=None, opp_id=None):
