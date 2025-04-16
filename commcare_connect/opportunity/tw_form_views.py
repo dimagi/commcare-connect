@@ -1,10 +1,12 @@
 from django.contrib import messages
 from django.db.models import Q
 from django.forms import modelformset_factory
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.views.generic import CreateView
+from crispy_forms.utils import render_crispy_form
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
@@ -110,6 +112,10 @@ def verification_flags_config(request, org_slug=None, pk=None):
 class OpportunityEdit(views.OpportunityEdit):
     template_name = "tailwind/pages/opportunity_edit.html"
     form_class = OpportunityChangeForm
+
+    def get_success_url(self):
+        return reverse("opportunity:tw_opportunity_detail", args=(self.request.org.slug, self.object.id))
+
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -226,7 +232,7 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             send_push_notification_task.delay(selected_user_ids, title, body)
         if "sms" in message_type:
             send_sms_task.delay(selected_user_ids, body)
-        return redirect("opportunity:detail", org_slug=request.org.slug, pk=pk)
+        return redirect("opportunity:tw_opportunity_detail", request.org.slug, pk)
 
     return render(
         request,
@@ -245,16 +251,15 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
 @org_member_required
 def invoice_create(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    # if not opportunity.managed or request.org_membership.is_program_manager:
-    #     return redirect("opportunity:detail", org_slug, pk)
+    if not opportunity.managed or request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
     form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
     if request.POST and form.is_valid():
         form.save()
-    return render(
-        request,
-        "tailwind/pages/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form=form),
-    )
+        form = PaymentInvoiceForm(opportunity=opportunity)
+        return redirect("opportunity:tw_invoice_list", org_slug, pk)
+    return HttpResponse(render_crispy_form(form))
+
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -316,6 +321,11 @@ class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
         view = ("add", "edit")[self.object is not None]
         template = f"tailwind/pages/program_{view}.html"
         return template
+
+    def get_success_url(self):
+        # Todo; update with tailwind URL
+        return reverse("program:list", kwargs={"org_slug": self.request.org.slug})
+
 
 
 def invite_organization(request, org_slug=None, pk=None):
