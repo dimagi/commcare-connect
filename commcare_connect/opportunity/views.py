@@ -1397,6 +1397,7 @@ def sync_deliver_units(request, org_slug, opp_id):
     return HttpResponse(content=message, status=status)
 
 
+@org_member_required
 def user_visit_verification(request, org_slug, opp_id, pk):
     opportunity_access = get_object_or_404(OpportunityAccess, opportunity=opp_id, pk=pk)
     user_visit_counts = UserVisit.objects.filter(opportunity_access=opportunity_access).aggregate(
@@ -1544,6 +1545,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
         return UserVisit.objects.filter(**filter_kwargs).order_by("visit_date")
 
 
+@org_member_required
 def user_visit_details(request, org_slug, opp_id, pk):
     user_visit = get_object_or_404(UserVisit, pk=pk)
     serializer = XFormSerializer(data=user_visit.form_json)
