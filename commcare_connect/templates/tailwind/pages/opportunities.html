@@ -15,7 +15,7 @@
                  :class="isOpen ? 'fa-xmark-large' : 'fa-bars'"
                  @click="isOpen = !isOpen"></i>
               <!-- Dropdown Menu -->
-              {% include "tailwind/components/opportunity-dashboard/dropdown.html"%}
+              {% include "tailwind/components/opportunity-dashboard/dropdown.html" with request=request opportunity=opportunity %}
           </div>
           <div class="flex justify-between items-end">
               <div class="flex flex-col gap-2">
