@@ -1416,7 +1416,7 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
     table = OpportunitiesListTable(data)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
-
+@org_member_required
 def opportunities_list(request, org_slug=None, opp_id=None):
     return render(
         request,
@@ -2199,6 +2199,8 @@ def create_opportunity(request, org_slug=None, opp_id=None):
     }
     return render(request, "tailwind/pages/create_opportunity.html", {"data": step})
 
+
+@org_member_required
 def worker_learn(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_learn_table_data(opp)
@@ -2206,6 +2208,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
+@org_member_required
 def worker_delivery(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id,org_slug)
     data= get_annotated_opportunity_access_deliver_status(opportunity)
@@ -2213,6 +2216,7 @@ def worker_delivery(request, org_slug=None, opp_id=None):
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
+@org_member_required
 def worker_main(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_table_data(opportunity)
@@ -2220,6 +2224,7 @@ def worker_main(request, org_slug=None, opp_id=None):
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/components/tables/table.html",{ "table": table})
 
+@org_member_required
 def worker_payments(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
@@ -2731,7 +2736,7 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
         return table
 
-
+@org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=2).first()
 
