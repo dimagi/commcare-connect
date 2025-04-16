@@ -62,7 +62,7 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "duplicate": "Flag duplicate form submissions for an entity.",
             "gps": "Flag forms with no location information.",
             "catchment_areas": "Flag forms outside a user's assigned catchment area",
-        } 
+        }
         labels = {
             "duplicate": "Check Duplicates",
             "gps": "Check GPS",
@@ -82,11 +82,11 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         self.helper = TailwindFormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
-            Row( 
+            Row(
                 Column(
                         Field("duplicate", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
                         Field("gps", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
-                        Field("catchment_areas", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),  
+                        Field("catchment_areas", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
                 ),Column(
                         Row(Field("location"),css_class="flex-1"),
                         Fieldset(
@@ -279,27 +279,27 @@ class OpportunityChangeForm(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Opportunity Details</h6>  <span class='hint'>Edit the details of the opportunity. All fields are mandatory.  </span> </div>"),
                 Column(
                     Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
-                    Field("short_description", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),  
+                    Field("short_description", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
                     Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full"),
                 ),
-                Column(  
+                Column(
                     Field("delivery_type", css_class=BASE_INPUT_CLASS),
                     Field("active", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"),
-                    Field("is_test", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"), 
+                    Field("is_test", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"),
                 ),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg"
-            ), 
+            ),
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Date</h6>  <span class='hint'>Optional: If not specified, the opportunity start & end dates will apply to the form submissions.</span> </div>"),
                 Column(
                     Field("end_date", css_class=BASE_INPUT_CLASS),
                 ),
-                Column( 
+                Column(
                     Field("currency", css_class=SELECT_CLASS),
                     Field("additional_users", css_class=BASE_INPUT_CLASS)
                 ),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg"
-            ),   
+            ),
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Workers</h6></div>"),
                 Row(
@@ -313,8 +313,8 @@ class OpportunityChangeForm(
             Row(
                 Submit("submit", "Submit",css_class="button button-md primary-dark"),
                 css_class="flex justify-end"
-            ) 
-        ) 
+            )
+        )
 
         self.fields["additional_users"] = forms.IntegerField(
             required=False, help_text="Adds budget for additional users."
@@ -367,7 +367,7 @@ class PaymentUnitForm(forms.ModelForm):
                     Field("name", css_class=BASE_INPUT_CLASS),
                     Field("description",css_class=TEXTAREA_CLASS),
                 ),
-                Column( 
+                Column(
                     Row(
                         Field("start_date", css_class=BASE_INPUT_CLASS),
                         Field("end_date", css_class=BASE_INPUT_CLASS),
@@ -571,9 +571,9 @@ class OpportunityInitForm(forms.ModelForm):
                 Column(
                     Field("name", css_class=BASE_INPUT_CLASS),
                     Field("short_description", css_class=BASE_INPUT_CLASS),
-                    Field("description", css_class=TEXTAREA_CLASS),  
-                ), 
-                Column( 
+                    Field("description", css_class=TEXTAREA_CLASS),
+                ),
+                Column(
                     Field("currency", css_class=BASE_INPUT_CLASS),
                     Field("api_key", css_class=BASE_INPUT_CLASS),
                 ),
@@ -587,14 +587,14 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("learn_app_description", css_class=TEXTAREA_CLASS),
                     Field("learn_app_passing_score", css_class=BASE_INPUT_CLASS),
                     data_loading_states=True,
-                ),  
+                ),
                 Column(
                     Field("deliver_app_domain", css_class=SELECT_CLASS),
-                    Field("deliver_app", css_class=SELECT_CLASS), 
+                    Field("deliver_app", css_class=SELECT_CLASS),
                     data_loading_states=True,
-                ),  
+                ),
                 css_class="grid grid-cols-2 gap-4 card_bg my-4"
-            ),  
+            ),
             Row(
                 Submit("submit", "Submit",css_class="button button-md primary-dark"),
                 css_class="flex justify-end"
@@ -862,7 +862,7 @@ class VisitExportForm(forms.Form):
                 Field("date_range", css_class=SELECT_CLASS),
                 Field("status", css_class=SELECT_CLASS),
                 Field("flatten_form_data", css_class=CHECKBOX_CLASS, wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100"),
-                css_class="flex flex-col" 
+                css_class="flex flex-col"
             ),
         )
         self.helper.form_tag = False
@@ -873,3 +873,18 @@ class VisitExportForm(forms.Form):
             return []
 
         return [VisitValidationStatus(status) for status in statuses]
+
+
+class PaymentExportFormTw(forms.Form):
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = TailwindFormHelper(self)
+        self.helper.layout = Layout(
+            Row(
+                Field("format", css_class=SELECT_CLASS),
+                css_class="flex flex-col"
+            ),
+        )
+        self.helper.form_tag = False
