@@ -1,0 +1,30 @@
+{% load static i18n %}
+<form method="post" class="w-full min-h-[620px] h-fit  flex flex-col gap-4">
+    <h6 class="title text-brand-deep-purple!important">Organization</h6>  
+    <div class="p-4 space-y-4 bg-gray-100 rounded-lg">
+        <h6 class="text-xs font-medium">Found Organization</h6>
+        <p class="text-sm text-gray-600">Looks like your work email is linked to an organization. Click to join Now!</p>
+        <div class="flex justify-between ">
+            <h6 class="text-sm font-medium text-brand-deep-purple">Organization Name</h6>
+            <button class="button button-md primary-dark">
+                Join
+            </button>
+        </div>
+    </div>
+    <span class="text-sm text-center text-gray-400">or</span>
+    <div class="simple-input">
+        <input type="text" placeholder="Organization ID" name="org-id"  required/>
+        <i class="fa-light fa-building"></i>
+    </div> 
+    <div class="flex items-center justify-between"> 
+        <div></div>
+        <button class="button button-md primary-dark">
+            <span class="relative z-20">Request to Join</span>
+        </button>
+    </div>   
+    <span class="text-sm text-center text-gray-400">or</span>
+    <button class="px-6 py-3 mx-auto space-x-2 text-sm bg-gray-100 border border-gray-200 rounded-full cursor-pointer w-fit">
+        <i class="fa-light fa-plus"></i>
+        <span class="relative z-20" hx-get="/a/test-org-managed/opportunity/56/tw/api/create-org/" hx-trigger="click" hx-target="#onboarding-container" hx-swap="innerHTML">Create a new Organization</span>
+    </button>
+</form>

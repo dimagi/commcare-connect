@@ -1,0 +1,25 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load tailwind_filters %}
+
+{% block title %}{{ request.org }} - {{ program.name }}{% endblock %}
+
+{% block breadcrumbs_inner %}
+{{ block.super }}
+<li class="breadcrumb-item">
+  <a>
+    {{ program.name }}
+  </a>
+</li>
+<li class="breadcrumb-item active" aria-current="page">Edit Program</li>
+{% endblock %}
+
+{% block content %}
+<h2 class="mb-2">Edit Program</h2>
+<hr>
+<form method="post">
+  {% csrf_token %}
+  {% crispy form %}
+</form>
+{% endblock content %}
