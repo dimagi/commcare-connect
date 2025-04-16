@@ -17,6 +17,8 @@ from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
 
+from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, PMOpportunitiesListTable, VisitsTable, WorkerFlaggedTable, WorkerMainTable, WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable
+
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
     WorkerPaymentsTable, WorkerLearnTable, PayWorker, LearnAppTable, DeliveryAppTable, PaymentAppTable, \
@@ -167,6 +169,59 @@ def dashboard(request, org_slug=None, opp_id=None):
             'sidenav_active': 'Programs'
             }
         )
+
+def pm_dashboard(request, org_slug=None, opp_id=None):
+    data = {
+        'programs': [
+            {
+                'name': 'Program Name',
+                'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+                'delivery_type': 'Name of the delivery type',
+                'start_date': '12-Jul-2024',
+                'end_date': '12-Jul-2024',
+                'budget': '$10,000',
+                'invited': 156,
+                'applied': 126,
+                'rpf': 120,
+                'accepted': 98,
+                'contracted': 26,
+            },{
+                'name': 'Program Name',
+                'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+                'delivery_type': 'Name of the delivery type',
+                'start_date': '12-Jul-2024',
+                'end_date': '12-Jul-2024',
+                'budget': '$10,000',
+                'invited': 156,
+                'applied': 126,
+                'rpf': 120,
+                'accepted': 98,
+                'contracted': 26,
+            },
+            {
+                'name': 'Program Name',
+                'description': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus venenatis. Aliquam rhonc msan. Aliquam rhonc msan.Aliquam rhonc msan.',
+                'delivery_type': 'Name of the delivery type',
+                'start_date': '12-Jul-2024',
+                'end_date': '12-Jul-2024',
+                'budget': '$10,000',
+                'invited': 156,
+                'applied': 126,
+                'rpf': 120,
+                'accepted': 98,
+                'contracted': 26,
+            },
+        ],
+            }
+    return render(
+        request, 'tailwind/pages/pm_dashboard.html',
+        {
+            'data': data,
+            'header_title': 'Dashboard',
+            'sidenav_active': 'Programs'
+            }
+        )
+
 
 def learn_app_table(request, org_slug=None, opp_id=None):
     data = [
@@ -343,6 +398,55 @@ def opportunities_card(request, org_slug=None, opp_id=None):
         }
     ]
     return render(request, 'tailwind/components/cards/opportunity_card.html', {'data': data})
+
+def pm_opportunities_card(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            'date': '06 May, 2024',
+            'organization_name': 'Network Manager Organization Name',
+            'status': 'invited',
+        },
+        {
+            'date': '06 May, 2024',
+            'organization_name': 'Network Manager Organization Name',
+            'status': 'applied',
+        },
+        {
+            'date': '06 May, 2024',
+            'organization_name': 'Network Manager Organization Name',
+            'status': 'accepted',
+        },
+        {
+            'date': '06 May, 2024',
+            'organization_name': 'Network Manager Organization Name',
+            'status': 'accepted',
+            'labels':{
+                'name': 'Workers',
+                'count': '256',
+                'tags': [
+                    {
+                        'name': 'Learning',
+                        'count': '23',
+                        'color': 'brand-marigold'
+                    },
+                    {
+                        'name': 'Certfied',
+                        'count': '124',
+                        'color': 'green-400'
+                    },
+                    {
+                        'name': 'Started Delivery',
+                        'count': '120',
+                        'color': 'brand-indigo'
+                    }
+                ]
+            }
+        },
+
+    ]
+
+    return render(request, 'tailwind/components/cards/nm_card.html', {'data': data})
+
 
 def worker(request, org_slug=None, opp_id=None):
     user_kpi = [
@@ -1309,7 +1413,7 @@ def opportunities_list_table_view(request, org_slug=None, opp_id=None):
         return render(request, "tailwind/components/placeholders/opportunities_list_table_placeholder.html")
 
     table = OpportunitiesListTable(data)
-    return render(request, "tailwind/components/tables/opportunities_list_table-backup.html", {"table": table})
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 
 def opportunities_list(request, org_slug=None, opp_id=None):
@@ -1319,8 +1423,244 @@ def opportunities_list(request, org_slug=None, opp_id=None):
         {"header_title": "Opportunities List"},
     )
 
-from django.shortcuts import render
-from django.urls import reverse
+def pm_opportunities_list_table_view(request, org_slug=None, opp_id=None):
+    data = [{"index":1,"opportunity":{"oppName":"Opportunity Alpha","nmName":"John Doe"},"entityStatus":"active","program":"Health Program A","startDate":"12 Jul, 2025","endDate":"12 Aug, 2025","activeWorkers":36,"deliveries":42,"approved":22,"earnings":"₹3076","actions":{"list":["View Opportunity","View Pending Reviews","View Pending Invoices"]}},
+        {"index":2,"opportunity":{"oppName":"Opportunity Beta","nmName":"Jane Smith"},"entityStatus":"ended","program":"Nutrition Program B","startDate":"01 Jun, 2025","endDate":"01 Jul, 2025","activeWorkers":28,"deliveries":35,"approved":19,"earnings":"₹5384","actions":{"list":["View Opportunity","View Pending Reviews"]}},
+        {"index":3,"opportunity":{"oppName":"Opportunity Gamma","nmName":"Chris Johnson"},"entityStatus":"inactive","program":"Education Support C","startDate":"15 May, 2025","endDate":"15 Jun, 2025","activeWorkers":12,"deliveries":18,"approved":10,"earnings":"₹1538","actions":{"list":["View Opportunity"]}},
+        {"index":4,"opportunity":{"oppName":"Opportunity Delta","nmName":"Maria Lopez"},"entityStatus":"active","program":"Clean Water Initiative","startDate":"05 Apr, 2025","endDate":"05 May, 2025","activeWorkers":22,"deliveries":25,"approved":20,"earnings":"₹4615","actions":{"list":["View Opportunity","View Pending Invoices"]}},
+        {"index":5,"opportunity":{"oppName":"Opportunity Epsilon","nmName":"Ahmed Khan"},"entityStatus":"active","program":"Youth Employment Program","startDate":"20 Apr, 2025","endDate":"20 May, 2025","activeWorkers":40,"deliveries":50,"approved":35,"earnings":"₹6923","actions":{"list":["View Opportunity","View Pending Reviews"]}},
+        {"index":6,"opportunity":{"oppName":"Opportunity Zeta","nmName":"Linda Kim"},"entityStatus":"ended","program":"Rural Health Drive","startDate":"01 Mar, 2025","endDate":"01 Apr, 2025","activeWorkers":15,"deliveries":20,"approved":15,"earnings":"₹2307","actions":{"list":["View Opportunity"]}},
+        {"index":7,"opportunity":{"oppName":"Opportunity Eta","nmName":"Omar Aziz"},"entityStatus":"active","program":"Child Education Mission","startDate":"10 Jul, 2025","endDate":"10 Aug, 2025","activeWorkers":30,"deliveries":37,"approved":28,"earnings":"₹5384","actions":{"list":["View Opportunity","View Pending Invoices"]}},
+        {"index":8,"opportunity":{"oppName":"Opportunity Theta","nmName":"Sarah Yu"},"entityStatus":"inactive","program":"Community Farming","startDate":"11 May, 2025","endDate":"11 Jun, 2025","activeWorkers":10,"deliveries":15,"approved":8,"earnings":"₹1538","actions":{"list":["View Opportunity"]}},
+        {"index":9,"opportunity":{"oppName":"Opportunity Iota","nmName":"David Brown"},"entityStatus":"active","program":"Disaster Relief","startDate":"15 Apr, 2025","endDate":"15 May, 2025","activeWorkers":50,"deliveries":60,"approved":45,"earnings":"₹7692","actions":{"list":["View Opportunity","View Pending Reviews","View Pending Invoices"]}},
+        {"index":10,"opportunity":{"oppName":"Opportunity Kappa","nmName":"Emily Zhang"},"entityStatus":"ended","program":"Elderly Care Drive","startDate":"20 Mar, 2025","endDate":"20 Apr, 2025","activeWorkers":25,"deliveries":30,"approved":22,"earnings":"₹3846","actions":{"list":["View Opportunity"]}},
+        {"index":11,"opportunity":{"oppName":"Opportunity Lambda","nmName":"Carlos Mendez"},"entityStatus":"active","program":"Youth Leadership","startDate":"01 Jul, 2025","endDate":"01 Aug, 2025","activeWorkers":33,"deliveries":40,"approved":30,"earnings":"₹6153","actions":{"list":["View Opportunity","View Pending Reviews"]}},
+        {"index":12,"opportunity":{"oppName":"Opportunity Mu","nmName":"Isabella Rossi"},"entityStatus":"active","program":"Urban Gardening","startDate":"14 Jun, 2025","endDate":"14 Jul, 2025","activeWorkers":18,"deliveries":23,"approved":16,"earnings":"₹2307","actions":{"list":["View Opportunity"]}},
+        {"index":13,"opportunity":{"oppName":"Opportunity Nu","nmName":"Tomoko Sato"},"entityStatus":"ended","program":"Clean Energy Awareness","startDate":"02 May, 2025","endDate":"02 Jun, 2025","activeWorkers":20,"deliveries":26,"approved":21,"earnings":"₹3846","actions":{"list":["View Opportunity","View Pending Invoices"]}},
+        {"index":14,"opportunity":{"oppName":"Opportunity Xi","nmName":"Igor Petrov"},"entityStatus":"active","program":"Recycling Initiative","startDate":"10 Apr, 2025","endDate":"10 May, 2025","activeWorkers":27,"deliveries":33,"approved":26,"earnings":"₹4615","actions":{"list":["View Opportunity","View Pending Reviews"]}},
+        {"index":15,"opportunity":{"oppName":"Opportunity Omicron","nmName":"Fatima Noor"},"entityStatus":"inactive","program":"Digital Literacy Campaign","startDate":"05 Mar, 2025","endDate":"05 Apr, 2025","activeWorkers":14,"deliveries":18,"approved":13,"earnings":"₹1538","actions":{"list":["View Opportunity"]}},
+        {"index":16,"opportunity":{"oppName":"Opportunity Pi","nmName":"George Adams"},"entityStatus":"active","program":"Food Distribution Drive","startDate":"18 Jul, 2025","endDate":"18 Aug, 2025","activeWorkers":45,"deliveries":58,"approved":41,"earnings":"₹8461","actions":{"list":["View Opportunity","View Pending Reviews","View Pending Invoices"]}},
+        {"index":17,"opportunity":{"oppName":"Opportunity Rho","nmName":"Hannah Lee"},"entityStatus":"ended","program":"Anti-Malaria Campaign","startDate":"09 Jun, 2025","endDate":"09 Jul, 2025","activeWorkers":19,"deliveries":24,"approved":17,"earnings":"₹2307","actions":{"list":["View Opportunity","View Pending Invoices"]}},
+        {"index":18,"opportunity":{"oppName":"Opportunity Sigma","nmName":"Victor Hugo"},"entityStatus":"active","program":"Mental Health Awareness","startDate":"22 Jul, 2025","endDate":"22 Aug, 2025","activeWorkers":29,"deliveries":36,"approved":27,"earnings":"₹5384","actions":{"list":["View Opportunity","View Pending Reviews"]}},
+        {"index":19,"opportunity":{"oppName":"Opportunity Tau","nmName":"Nina Patel"},"entityStatus":"inactive","program":"Women Empowerment Initiative","startDate":"01 Apr, 2025","endDate":"01 May, 2025","activeWorkers":16,"deliveries":19,"approved":14,"earnings":"₹1538","actions":{"list":["View Opportunity"]}},
+        {"index":20,"opportunity":{"oppName":"Opportunity Upsilon","nmName":"Mohammed Al-Fulan"},"entityStatus":"active","program":"Tech for All","startDate":"28 Jul, 2025","endDate":"28 Aug, 2025","activeWorkers":38,"deliveries":45,"approved":32,"earnings":"₹6153","actions":{"list":["View Opportunity","View Pending Reviews","View Pending Invoices"]}}
+    ]
+    # data = []
+    if len(data) == 0:
+        return render(request, "tailwind/components/placeholders/opportunities_list_table_placeholder.html")
+
+    table = PMOpportunitiesListTable(data)
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
+
+
+def pm_opportunities_list(request, org_slug=None, opp_id=None):
+    return render(
+        request,
+        "tailwind/pages/pm_opportunities_list.html",
+        {"header_title": "Opportunities"},
+    )
+
+
+def worker_payments(request, org_slug=None, opp_id=None):
+    data = [
+        {
+            "index": 1,
+            "worker": {"id": "UV23WX45YZ67", "name": "Isabella Carter"},
+            "indicator": "orange-600",
+            "lastActive": "9hr ago",
+            "accrued": "₹ 4,780",
+            "totalPaid": "₹ 4,780",
+            "lastPaid": "12-Aug-2025",
+            "confirmed": "₹ 4,780",
+        },
+        {
+            "index": 2,
+            "worker": {"id": "OP45QR67ST89", "name": "Alexander Nelson"},
+            "indicator": "green-600",
+            "lastActive": "9hr ago",
+            "accrued": "₹ 4,780",
+            "totalPaid": "₹ 4,780",
+            "lastPaid": "12-Aug-2025",
+            "confirmed": "₹ 4,780",
+        },
+        {
+            "index": 3,
+            "worker": {"id": "IJ78KL12MN34", "name": "Evelyn Adams"},
+            "indicator": "red-600",
+            "lastActive": "95 hr ago",
+            "accrued": "₹ 4,780",
+            "totalPaid": "₹ 4,780",
+            "lastPaid": "12-Aug-2025",
+            "confirmed": "₹ 4,780",
+        },
+        {
+            "index": 4,
+            "worker": {"id": "AB23CD45EF67", "name": "Liam Parker"},
+            "lastActive": "3hr ago",
+            "accrued": "₹ 5,000",
+            "totalPaid": "₹ 5,000",
+            "lastPaid": "13-Aug-2025",
+            "confirmed": "₹ 5,000",
+        },
+        {
+            "index": 5,
+            "worker": {"id": "GH56IJ78KL90", "name": "Olivia Robinson"},
+            "indicator": "yellow-600",
+            "lastActive": "12hr ago",
+            "accrued": "₹ 6,200",
+            "totalPaid": "₹ 6,200",
+            "lastPaid": "14-Aug-2025",
+            "confirmed": "₹ 6,200",
+        },
+        {
+            "index": 6,
+            "worker": {"id": "MN23OP45QR67", "name": "Noah Martinez"},
+            "indicator": "gray-600",
+            "lastActive": "24hr ago",
+            "accrued": "₹ 3,500",
+            "totalPaid": "₹ 3,500",
+            "lastPaid": "12-Aug-2025",
+            "confirmed": "₹ 3,500",
+        },
+        {
+            "index": 7,
+            "worker": {"id": "ST89UV12WX34", "name": "Emma Wilson"},
+            "lastActive": "48hr ago",
+            "accrued": "₹ 4,000",
+            "totalPaid": "₹ 4,000",
+            "lastPaid": "15-Aug-2025",
+            "confirmed": "₹ 4,000",
+        },
+        {
+            "index": 8,
+            "worker": {"id": "YZ12AB34CD56", "name": "James Smith"},
+            "indicator": "red-600",
+            "lastActive": "72hr ago",
+            "accrued": "₹ 5,500",
+            "totalPaid": "₹ 5,500",
+            "lastPaid": "16-Aug-2025",
+            "confirmed": "₹ 5,500",
+        },
+        {
+            "index": 9,
+            "worker": {"id": "EF78GH90IJ12", "name": "Sophia Johnson"},
+            "indicator": "orange-600",
+            "lastActive": "24hr ago",
+            "accrued": "₹ 4,300",
+            "totalPaid": "₹ 4,300",
+            "lastPaid": "17-Aug-2025",
+            "confirmed": "₹ 4,300",
+        },
+        {
+            "index": 10,
+            "worker": {"id": "KL34MN56OP78", "name": "Mason Taylor"},
+            "indicator": "green-600",
+            "lastActive": "96hr ago",
+            "accrued": "₹ 5,000",
+            "totalPaid": "₹ 5,000",
+            "lastPaid": "18-Aug-2025",
+            "confirmed": "₹ 5,000",
+        },
+        {
+            "index": 11,
+            "worker": {"id": "QR12ST34UV56", "name": "Amelia Brown"},
+            "indicator": "yellow-600",
+            "lastActive": "30hr ago",
+            "accrued": "₹ 6,000",
+            "totalPaid": "₹ 6,000",
+            "lastPaid": "19-Aug-2025",
+            "confirmed": "₹ 6,000",
+        },
+        {
+            "index": 12,
+            "worker": {"id": "WX78YZ90AB12", "name": "Lucas Harris"},
+            "lastActive": "15hr ago",
+            "accrued": "₹ 4,100",
+            "totalPaid": "₹ 4,100",
+            "lastPaid": "20-Aug-2025",
+            "confirmed": "₹ 4,100",
+        },
+        {
+            "index": 13,
+            "worker": {"id": "CD56EF78GH90", "name": "Charlotte Garcia"},
+            "lastActive": "8hr ago",
+            "accrued": "₹ 5,500",
+            "totalPaid": "₹ 5,500",
+            "lastPaid": "21-Aug-2025",
+            "confirmed": "₹ 5,500",
+        },
+        {
+            "index": 14,
+            "worker": {"id": "IJ34KL56MN78", "name": "Henry Lee"},
+            "indicator": "red-600",
+            "lastActive": "72hr ago",
+            "accrued": "₹ 3,800",
+            "totalPaid": "₹ 3,800",
+            "lastPaid": "22-Aug-2025",
+            "confirmed": "₹ 3,800",
+        },
+        {
+            "index": 15,
+            "worker": {"id": "OP90QR12ST34", "name": "Grace Scott"},
+            "indicator": "gray-600",
+            "lastActive": "60hr ago",
+            "accrued": "₹ 6,200",
+            "totalPaid": "₹ 6,200",
+            "lastPaid": "23-Aug-2025",
+            "confirmed": "₹ 6,200",
+        },
+        {
+            "index": 16,
+            "worker": {"id": "UV12WX34YZ56", "name": "David Martinez"},
+            "indicator": "orange-600",
+            "lastActive": "5hr ago",
+            "accrued": "₹ 4,800",
+            "totalPaid": "₹ 4,800",
+            "lastPaid": "24-Aug-2025",
+            "confirmed": "₹ 4,800",
+        },
+        {
+            "index": 17,
+            "worker": {"id": "AB34CD56EF78", "name": "Lily Robinson"},
+            "indicator": "yellow-600",
+            "lastActive": "28hr ago",
+            "accrued": "₹ 5,200",
+            "totalPaid": "₹ 5,200",
+            "lastPaid": "25-Aug-2025",
+            "confirmed": "₹ 5,200",
+        },
+        {
+            "index": 18,
+            "worker": {"id": "GH90IJ12KL34", "name": "Benjamin King"},
+            "lastActive": "11hr ago",
+            "accrued": "₹ 5,500",
+            "totalPaid": "₹ 5,500",
+            "lastPaid": "26-Aug-2025",
+            "confirmed": "₹ 5,500",
+        },
+        {
+            "index": 19,
+            "worker": {"id": "MN23OP45QR67", "name": "Jack Wright"},
+            "indicator": "green-600",
+            "lastActive": "7hr ago",
+            "accrued": "₹ 4,300",
+            "totalPaid": "₹ 4,300",
+            "lastPaid": "27-Aug-2025",
+            "confirmed": "₹ 4,300",
+        },
+        {
+            "index": 20,
+            "worker": {"id": "ST89UV12WX34", "name": "Emily Johnson"},
+            "lastActive": "55hr ago",
+            "accrued": "₹ 6,000",
+            "totalPaid": "₹ 6,000",
+            "lastPaid": "28-Aug-2025",
+            "confirmed": "₹ 6,000",
+        },
+    ]
+
+    table = WorkerPaymentsTable(data)
+    return render(request, "tailwind/pages/worker_payments.html", {"table": table})
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def opportunity_worker(request, org_slug=None, opp_id=None):
@@ -1442,9 +1782,6 @@ def export_users_for_payment(request, org_slug, opp_id):
 
 def invoice_list(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/invoice_list.html", {"header_title": "Invoices"})
-
-
-
 
 def all_invoice_table(request, org_slug=None, opp_id=None):
     data = [
