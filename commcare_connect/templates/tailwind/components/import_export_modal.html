@@ -1,0 +1,82 @@
+<!-- Alpine Modal Component -->
+<div
+  x-data="modalComponent()"
+  x-show="show"
+  x-cloak
+  x-ref="modal"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-gray-700 bg-opacity-25"
+  @keydown.escape.window="show = false"
+>
+  <div
+    @click.outside="show = false"
+    class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6"
+  >
+    <!-- Modal Header -->
+    <div class="flex justify-between items-center border-b pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple" x-text="title"></h2>
+      <button @click="show = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <!-- Modal Form -->
+    <form :action="action" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <template x-if="formType === 'import'">
+        <div class="mb-4">
+          <label :for="fileInputId" class="block text-sm font-medium text-gray-700 mb-1">
+            <span x-text="fileLabel"></span>
+          </label>
+          <input
+            type="file"
+            :id="fileInputId"
+            :name="fileInputName"
+            required
+            class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple"
+          />
+          <p class="mt-2 text-xs text-gray-500" x-text="fileHelp"></p>
+        </div>
+      </template>
+
+      <template x-if="formType === 'export'">
+        <div class="mb-4">
+          {% crispy export_form %}
+        </div>
+      </template>
+
+      <!-- Modal Footer -->
+      <div class="flex justify-end gap-2 border-t pt-4">
+        <button type="button" @click="show = false" class="btn btn-secondary">
+          Close
+        </button>
+        <button type="submit" class="btn btn-primary flex items-center gap-2">
+          <i :class="submitIcon"></i>
+          <span x-text="submitLabel"></span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Alpine Component Script -->
+<script>
+  function modalComponent() {
+    return {
+      show: false,
+      formType: '',
+      title: '',
+      action: '',
+      fileInputId: '',
+      fileInputName: '',
+      fileLabel: '',
+      fileHelp: '',
+      submitLabel: '',
+      submitIcon: '',
+
+      open(config) {
+        Object.assign(this, config);
+        this.show = true;
+      },
+    };
+  }
+</script>

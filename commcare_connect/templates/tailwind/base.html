@@ -28,7 +28,27 @@
     <div class="flex-1  px-4">
       {% include 'tailwind/layouts/header.html'%}
       <div class="h-5 w-full mt-16"></div>
+
+
       <main id="content" class="md:max-w-screen-2xl mx-auto">
+        {% if messages %}
+      {% for message in messages %}
+      <div class="flex items-center justify-between p-4 mb-4 rounded-lg
+                {% if message.tags == 'success' %}bg-green-600 text-white
+                {% elif message.tags == 'error' or message.tags == 'danger' %}bg-red-500 text-white
+                {% elif message.tags == 'warning' %}bg-yellow-500 text-white
+                {% elif message.tags == 'info' %}bg-blue-500 text-white
+                {% else %}bg-gray-500 text-white{% endif %}">
+        <span>{{ message }}</span>
+        <button type="button"
+                class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+                aria-label="Close"
+                onclick="this.parentElement.remove()">
+          &times;
+        </button>
+      </div>
+      {% endfor %}
+      {% endif %}
         {% block content %}
         {% endblock %}
       </main>

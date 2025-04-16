@@ -1,3 +1,7 @@
+from datetime import timedelta
+from decimal import Decimal
+import uuid
+from datetime import timedelta
 from http import HTTPStatus
 
 import pytest
@@ -5,20 +9,22 @@ from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect.opportunity.helpers import get_worker_table_data, get_worker_learn_table_data, get_opportunity_list_data, get_opportunity_dashboard_data
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
     UserVisit,
     VisitReviewStatus,
-    VisitValidationStatus,
+    VisitValidationStatus, UserInviteStatus, CompletedWorkStatus,
 )
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     PaymentUnitFactory,
-    UserVisitFactory,
+    UserVisitFactory, UserInviteFactory, PaymentFactory, AssessmentFactory, CompletedWorkFactory, LearnModuleFactory,
+    CompletedModuleFactory,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
@@ -215,3 +221,280 @@ def test_approve_visit(
         )
     assert response.redirect_chain[-1][0] == expected_redirect_url
     assert response.status_code == HTTPStatus.OK
+
+
+@pytest.mark.django_db
+def test_get_worker_table_data_all_fields(opportunity):
+    today = now().date()
+    five_days_ago = today - timedelta(days=5)
+    three_days_ago = today - timedelta(days=3)
+    two_days_ago = today - timedelta(days=2)
+
+    opportunity.end_date = today +timedelta(days=5)
+    opportunity.save()
+    opportunity.refresh_from_db()
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+
+    access = OpportunityAccessFactory(opportunity=opportunity)
+
+    # Completed modules
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=five_days_ago,
+    )
+    CompletedModuleFactory(
+        xform_id=uuid.uuid4(),
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=today,
+    )
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module2,
+        date=three_days_ago,
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        visit_date=two_days_ago,
+    )
+
+    result = get_worker_table_data(opportunity)
+    row = result.get(id=access.id)
+
+    assert row.started_learn.date() == five_days_ago
+    assert row.completed_learn.date() == three_days_ago
+    assert row.days_to_complete_learn.days == 2
+    assert row.first_delivery.date() == two_days_ago
+    assert row.days_to_start_delivery.days == (today-two_days_ago).days
+    assert row.last_active.date() == today
+
+
+
+@pytest.mark.django_db
+def test_get_worker_learn_table_data_all_fields(
+    opportunity,
+):
+    today = now().date()
+    five_days_ago = today - timedelta(days=5)
+    three_days_ago = today - timedelta(days=3)
+    two_days_ago = today - timedelta(days=2)
+
+    opportunity.end_date = today + timedelta(days=5)
+    opportunity.save()
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+    module3 = LearnModuleFactory(app=opportunity.learn_app)
+
+    access = OpportunityAccessFactory(opportunity=opportunity)
+
+    # Completed 2 out of 3 modules
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=five_days_ago,
+        duration=timedelta(hours=1),
+    )
+    CompletedModuleFactory(
+        xform_id=uuid.uuid4(),
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module2,
+        date=three_days_ago,
+        duration=timedelta(hours=2),
+    )
+    print(OpportunityAccess.objects.filter(id=access.id).count())
+    # Passed assessment
+    AssessmentFactory(
+        user=access.user,
+        opportunity=opportunity,
+        opportunity_access=access,
+        passed=True,
+        score=85,
+        passing_score=70,
+        date=today,
+    )
+
+    print(OpportunityAccess.objects.filter(id=access.id).count())
+
+    # Failed assessment (shouldn't affect passed_assessment=True)
+    AssessmentFactory(
+        user=access.user,
+        opportunity=opportunity,
+        opportunity_access=access,
+        passed=False,
+        score=50,
+        passing_score=70,
+        date=three_days_ago,
+    )
+
+    print(OpportunityAccess.objects.filter(id=access.id).count())
+
+    result = get_worker_learn_table_data(opportunity)
+    for r in result:
+        print(r.id)
+    print(OpportunityAccess.objects.filter(id=access.id).count())
+    row = result.get(id=access.id)
+
+    assert row.last_active.date() == three_days_ago
+    assert row.started_learning.date() == three_days_ago
+    assert row.completed_learn == None
+    assert row.passed_assessment is True
+    assert row.assesment_count == 2
+    assert row.learning_hours.total_seconds() == 10800
+    assert row.completed_modules_count == 2
+    assert row.modules_completed_percentage == round(2 * 100.0 / 3, 1)
+
+
+
+@pytest.mark.django_db
+def test_get_opportunity_list_data_all_annotations(opportunity):
+    today = now().date()
+    three_days_ago = now() - timedelta(days=3)
+
+    opportunity.end_date = today + timedelta(days=1)
+    opportunity.active = True
+    opportunity.save()
+
+    # Create OpportunityAccesses
+    oa1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=300)
+    oa2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=200)
+    oa3 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=0)
+
+    # Payments
+    PaymentFactory(opportunity_access=oa1, amount_usd=100, confirmed=True)
+    PaymentFactory(opportunity_access=oa2, amount_usd=50, confirmed=True)
+    PaymentFactory(opportunity_access=oa1, amount_usd=999, confirmed=False)
+    PaymentFactory(opportunity_access=oa3, amount_usd=0, confirmed=True)
+
+    # Invites
+    for _ in range(3):
+        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.invited)
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted)
+
+    # Visits
+    UserVisitFactory(opportunity=opportunity, opportunity_access=oa1,
+                     status=VisitValidationStatus.pending, visit_date=now())
+
+    UserVisitFactory(opportunity=opportunity, opportunity_access=oa2,
+                     status=VisitValidationStatus.approved, visit_date=three_days_ago - timedelta(days=1))
+
+    UserVisitFactory(opportunity=opportunity, opportunity_access=oa3,
+                     status=VisitValidationStatus.rejected, visit_date=three_days_ago - timedelta(days=1))
+
+
+    queryset = get_opportunity_list_data(opportunity.organization)
+    opp = queryset[0]
+
+    assert opp.pending_invites == 3
+    assert opp.pending_approvals == 1
+    assert opp.total_accrued == Decimal("500")
+    assert opp.total_paid == Decimal("150")
+    assert opp.payments_due == Decimal("350")
+    assert opp.inactive_workers == 2
+    assert opp.status == 0
+
+
+
+@pytest.mark.django_db
+def test_get_opportunity_dashboard_data_counts(opportunity):
+    today = now()
+    three_days_ago = today - timedelta(days=3)
+
+    modules = [LearnModuleFactory(app=opportunity.learn_app) for _ in range(3)]
+
+    access_users = OpportunityAccessFactory.create_batch(6, opportunity=opportunity)
+
+    for ac in access_users[:4]:
+        for module in modules:
+            CompletedModuleFactory(user=ac.user, opportunity_access=ac, module=module, opportunity=opportunity)
+
+    CompletedModuleFactory(user=access_users[5].user, opportunity_access=access_users[5], module=modules[0],
+                           opportunity=opportunity)
+
+    # Create user invites
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.invited)
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted)
+
+    # Inactive worker: user with no recent visit
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access_users[0],
+        user=access_users[0].user,
+        visit_date=three_days_ago - timedelta(days=1),
+        status=VisitValidationStatus.approved
+    )
+
+
+
+    # Active worker
+    UserVisitFactory(
+        opportunity=opportunity,
+        user=access_users[1].user,
+        opportunity_access=access_users[1],
+        visit_date=today,
+        status=VisitValidationStatus.approved
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access_users[2],
+        user=access_users[2].user,
+        visit_date=today - timedelta(hours=23),
+        status=VisitValidationStatus.approved
+    )
+
+    PaymentFactory(opportunity_access=access_users[0], amount_usd=100, confirmed=True)
+    PaymentFactory(opportunity_access=access_users[1], amount_usd=50, confirmed=True)
+
+    access_users[0].payment_accrued = 200
+    access_users[0].save()
+    access_users[0].refresh_from_db()
+
+    CompletedWorkFactory(opportunity_access=access_users[0])
+
+    # Flagged delivery
+    CompletedWorkFactory(
+        opportunity_access=access_users[1],
+        status=CompletedWorkStatus.pending
+    )
+
+    OpportunityClaimFactory(opportunity_access=access_users[0])
+
+    # Assessments: 3 users passed
+    for ac in access_users[:3]:
+        AssessmentFactory(user=ac.user, opportunity=opportunity, opportunity_access=access_users[0], passed=True)
+
+    queryset = get_opportunity_dashboard_data(opportunity.id)
+    opp = queryset.first()
+
+    assert opp.pending_invites == 1
+    assert opp.workers_invited == 2
+    assert opp.inactive_workers == 4
+    assert opp.total_paid == Decimal("150")
+    assert opp.total_accrued == Decimal("200")
+    assert opp.payments_due == Decimal("50")
+    assert opp.total_deliveries == 2
+    assert opp.flagged_deliveries_waiting_for_review == 1
+    assert opp.completed_learning == 4
+    assert opp.started_learning_count == 5
+    assert opp.claimed_job == 1
+    assert opp.started_deleveries == 3
+    assert opp.completed_assessments == 3
+    assert opp.most_recent_delivery == today
+    assert opp.deliveries_from_yesterday == 2

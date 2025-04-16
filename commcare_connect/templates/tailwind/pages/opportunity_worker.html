@@ -1,75 +1,27 @@
-{% extends "tailwind/base.html" %} {% block content %}
-<p class="py-2 text-sm font-medium text-brand-deep-purple my-3">Opportunity Name</p>
-<div
-  class="flex flex-col w-full gap-2"
-  x-data="{
-        selectedTab: '',
-        selectedOption: '',
-    }"
-  x-init="selectedTab='workers';selectedOption=''"
->
+{% extends "tailwind/base.html" %}
+{% block content %}
+{% load crispy_forms_tags %}
+<p class="py-2 text-sm font-medium text-brand-deep-purple my-2">{{ opportunity.name }}</p>
+
+<div class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
   <!-- Tabs -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <ul class="tabs">
+      {% for tab in tabs %}
       <li
-        @click="selectedTab = 'workers'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#workers-tab', 'loadWorkers');
-            })"
-        id="workers-tab" 
-        :class="{ 'active': selectedTab === 'workers' }" 
-        hx-get="/a/test-1/opportunity/1/tw/worker_main/"
-        hx-swap="innerHTML"
-        hx-trigger="loadWorkers"
-        hx-target="#opportunity_worker_container">
-        <span>Workers</span>
-        <div x-show="selectedTab === 'workers'"></div>
-      </li>
-      <li
-        @click="selectedTab = 'learn'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#learn-tab', 'loadLearn');
-            })"
-        id="learn-tab" 
-        :class="{ 'active': selectedTab === 'learn' }"  
-        hx-get="/a/test-1/opportunity/1/tw/worker_learn/"
-        hx-swap="innerHTML"
-        hx-trigger="loadLearn"
-        hx-target="#opportunity_worker_container"
+        @click="setTab('{{ tab.key }}')"
+        id="{{ tab.key }}-tab"
+        data-url="{{ tab.url }}"
+        :class="{ 'active': selectedTab === '{{ tab.key }}' }"
       >
-        <span>Learn</span>
-        <div x-show="selectedTab === 'learn'"></div>
+        <span>{{ tab.label }}</span>
+        <div x-show="selectedTab === '{{ tab.key }}'"></div>
       </li>
-      <li
-        @click="selectedTab = 'delivery'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#delivery-tab', 'loadDelivery');
-            })"
-        id="delivery-tab"
-        :class="{ 'active': selectedTab === 'delivery' }"   
-        hx-get="/a/test-1/opportunity/1/tw/worker_delivery/"
-        hx-swap="innerHTML"
-        hx-trigger="loadDelivery"
-        hx-target="#opportunity_worker_container"
-      >
-        <span>Delivery</span>
-        <div x-show="selectedTab === 'delivery'" ></div>
-      </li>
-      <li
-        @click="selectedTab = 'payments'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#payments-tab', 'loadPayments');
-            })"
-        id="payments-tab"
-        :class="{ 'active': selectedTab === 'payments' }"  
-        hx-get="/a/test-1/opportunity/1/tw/worker_payments/"
-        hx-swap="innerHTML"
-        hx-trigger="loadPayments"
-        hx-target="#opportunity_worker_container"
-      >
-        <span>Payments</span>
-        <div  x-show="selectedTab === 'payments'"></div>
-      </li>
+      {% endfor %}
     </ul>
-
-    <!-- Workers Options -->
-    <div x-show="selectedTab === 'workers'" class="flex  gap-x-4  items-center">
+    <div class="flex justify-end gap-2">
+    <!-- Tab Options -->
+    <div x-show="selectedTab === 'workers'" class="flex gap-x-4 items-center">
       <button type="button" class="button-icon">
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
@@ -81,8 +33,7 @@
       </button>
     </div>
 
-    <!-- Learn Options -->
-    <div x-show="selectedTab === 'learn'" class="flex  gap-x-4 ">
+    <div x-show="selectedTab === 'learn'" class="flex gap-x-4">
       <button type="button" class="button-icon">
         <i class="fa-light fa-user-slash text-brand-deep-purple"></i>
       </button>
@@ -94,36 +45,34 @@
       </button>
     </div>
 
-    <!-- Delivery Options -->
-    <div x-show="selectedTab === 'delivery'" class="flex  gap-x-4 ">
-      <button type="button" class="button-icon">
+    <div x-show="selectedTab === 'delivery'" class="flex gap-x-4">
+      <button type="button" @click="showVisitImportModal = true" class="button-icon">
         <i class="fa-light fa-upload text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon">
+       <button type="button" class="button-icon" @click="showVisitExportModal = true">
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon">
+      <button type="button" class="button-icon"  @click="showVisitExportModal = true">
         <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
       </button>
     </div>
 
-    <!-- Payment Options -->
-    <div x-show="selectedTab === 'payments'" class="flex  gap-x-4 ">
+    <div x-show="selectedTab === 'payments'" class="flex gap-x-4">
       <button
         type="button"
         class="button-icon-activatable"
-        @click="selectedOption = 'paymentHistory'; console.log(selectedOption)"
-        :class="{ 
+        @click="selectedOption = 'paymentHistory'"
+        :class="{
           'hover:bg-gray-200/20': selectedOption !== 'paymentHistory',
-          'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory' 
+          'bg-brand-marigold/20 text-white': selectedOption === 'paymentHistory'
         }"
       >
         <i class="fa-light fa-clock-rotate-left text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon">
+      <button type="button" class="button-icon" @click="showPaymentExportModal = true">
         <i class="fa-light fa-upload text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon">
+      <button type="button" class="button-icon" @click="showPaymentImportModal= true">
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
       <button type="button" class="button-icon">
@@ -131,9 +80,8 @@
       </button>
     </div>
 
-    <!-- History -->
+    <!-- Payment History Dropdown -->
     <div
-      x-init="console.log('Default selectedOption:', selectedOption)"
       x-cloak
       x-show="selectedOption == 'paymentHistory'"
       class="absolute z-40 px-4 pt-2 bg-white rounded-lg shadow-sm top-0 mt-16 right-0 w-70"
@@ -148,20 +96,255 @@
       </div>
       <div
         id="payment-history-container"
-        hx-get="/a/test-1/opportunity/1/tw/api/payment_history/"
+        hx-get="{% url 'opportunity:tw_payment_history' request.org.slug opportunity.id %}"
         hx-swap="outerHTML"
         hx-trigger="load"
       ></div>
     </div>
+
+    {% if export_task_id %}
+      <div class="flex">
+        <div
+          hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}?ui=new"
+          hx-target="this"
+          hx-trigger="load"
+          hx-swap="outerHTML"
+          class="flex items-center justify-center"
+        >
+          <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+          <span class="sr-only">Loading...</span>
+        </div>
+      </div>
+    {% endif %}
   </div>
+    </div>
 
   <!-- Tab Content Container -->
   <div
     id="opportunity_worker_container"
     class="w-full"
-    hx-get="/a/test-1/opportunity/1/tw/worker_main/"
-    hx-swap="innerHTML"
-    hx-trigger="load"
   ></div>
+
+  <!-- Export visit model -->
+<div x-show="showVisitExportModal"
+     x-cloak
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+     @keydown.escape.window="showVisitExportModal = false">
+  <div @click.outside="showVisitExportModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <div class="flex justify-between items-center border-b pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        Export Visit Data
+      </h2>
+      <button @click="showVisitExportModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <form action="{% url 'opportunity:tw_export_visit' request.org.slug opportunity.pk %}"
+          method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-4">
+        {% crispy visit_export_form %}
+      </div>
+
+      <div class="flex justify-end gap-2 border-t pt-4">
+        <button type="button" class="btn btn-secondary" @click="showVisitExportModal = false">
+          Close
+        </button>
+        <button type="submit" class="btn btn-primary flex items-center gap-2">
+          <i class="bi bi-filetype-xls"></i>
+          Export
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
+
+    <!-- Import visit model -->
+  <div x-show="showVisitImportModal"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-opacity-25"
+     @keydown.escape.window="showVisitImportModal = false">
+  <div @click.outside="showVisitImportModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <!-- Modal Header -->
+    <div class="flex justify-between items-center border-b pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        Import Verified Visits
+      </h2>
+      <button @click="showVisitImportModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form action="{% url 'opportunity:tw_import_visit' request.org.slug opportunity.pk %}"
+          method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-4">
+        <label for="importFile" class="block text-sm font-medium text-gray-700 mb-1">
+          Select file to import
+        </label>
+
+        <input type="file" id="importFile" name="visits" required
+               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple p-2" />
+        <p class="mt-2 text-xs text-gray-500" id="importFileHelp">
+          The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.
+        </p>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex justify-end gap-2 border-t pt-4">
+        <button type="button" @click="showVisitImportModal = false"
+                class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300">
+          Close
+        </button>
+        <button type="submit"
+                class="px-4 py-2 rounded-lg bg-brand-deep-purple text-white hover:bg-purple-800 flex items-center gap-2">
+          <i class="bi bi-cloud-arrow-up"></i>
+          Import
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+  <!-- Import Payment Modal -->
+<div x-show="showPaymentImportModal"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-opacity-25"
+     @keydown.escape.window="showPaymentImportModal = false">
+  <div @click.outside="showPaymentImportModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <!-- Modal Header -->
+    <div class="flex justify-between items-center border-b pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        Import Payment Records
+      </h2>
+      <button @click="showPaymentImportModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <!-- Form -->
+    <form action="{% url 'opportunity:tw_import_payments' request.org.slug opportunity.pk %}"
+          method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-4">
+        <label for="importPaymentFile" class="block text-sm font-medium text-gray-700 mb-1">
+          Select file to import
+        </label>
+        <input type="file" id="importPaymentFile" name="payments"
+               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple p-2" />
+        <p class="mt-2 text-xs text-gray-500" id="importFileHelp">
+          The file must contain at least the "Username", "Amount" and "Payment Date" columns.
+        </p>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex justify-end gap-2 border-t pt-4">
+        <button type="button" @click="showPaymentImportModal = false"
+                class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300">
+          Close
+        </button>
+        <button type="submit"
+                class="px-4 py-2 rounded-lg bg-brand-deep-purple text-white hover:bg-purple-800 flex items-center gap-2">
+          <i class="bi bi-cloud-arrow-up"></i>
+          Import
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+    <!-- Export visit model -->
+<div x-show="showPaymentExportModal"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center  bg-opacity-25"
+     @keydown.escape.window="showVisitExportModal = false">
+  <div @click.outside="showVisitExportModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <div class="flex justify-between items-center border-b pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        Export Visit Data
+      </h2>
+      <button @click="showPaymentExportModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <form action="{% url "opportunity:tw_export_payments" request.org.slug opportunity.pk %}"
+          method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-4">
+        {% crispy export_form %}
+      </div>
+
+      <div class="flex justify-end gap-2 border-t pt-4">
+        <button type="button" class="btn btn-secondary" @click="showPaymentExportModal = false">
+          Close
+        </button>
+        <button type="submit" class="btn btn-primary flex items-center gap-2">
+          <i class="bi bi-filetype-xls"></i>
+          Export
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+
+
+</div>
+
+
+
+<!-- Alpine Tabs Script -->
+<script>
+function opportunityTabs() {
+  return {
+    selectedTab: '',
+    selectedOption: '',
+    showVisitExportModal: false,
+    showVisitImportModal: false,
+    showPaymentImportModal: false,
+    showPaymentExportModal: false,
+    init() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tab = urlParams.get('active_tab') || 'workers';
+      this.setTab(tab, true);
+    },
+    setTab(tab, updateUrl = true) {
+      this.selectedTab = tab;
+      this.selectedOption = '';
+
+      if (updateUrl) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('active_tab', tab);
+        window.history.replaceState({}, '', url);
+      }
+
+      this.$nextTick(() => {
+        const tabElement = document.querySelector(`#${tab}-tab`);
+        const container = document.querySelector('#opportunity_worker_container');
+        const url = tabElement?.dataset?.url;
+        if (url && container) {
+          htmx.ajax('GET', url, {
+            target: container,
+            swap: 'innerHTML',
+          });
+        }
+      });
+    }
+  };
+}
+</script>
 {% endblock content %}

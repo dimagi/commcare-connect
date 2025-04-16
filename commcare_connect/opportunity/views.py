@@ -420,20 +420,30 @@ def review_visit_export(request, org_slug, pk):
 def export_status(request, org_slug, task_id):
     task_meta = AsyncResult(task_id)._get_task_meta()
     status = task_meta.get("status")
+    print(status)
     progress = {
         "complete": status == "SUCCESS",
     }
     if status == "FAILURE":
         progress["error"] = task_meta.get("result")
+
+    template = (
+        "tailwind/components/upload_progress_bar.html"
+        if request.GET.get("ui") == "new"
+        else "opportunity/upload_progress.html"
+    )
+
+
     return render(
         request,
-        "opportunity/upload_progress.html",
+        template,
         {
             "task_id": task_id,
             "current_time": now().microsecond,
             "progress": progress,
         },
     )
+
 
 
 @org_member_required
