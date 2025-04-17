@@ -1559,6 +1559,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             "last_payment_details": last_payment_details,
             "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
             "filter_date": filter_date,
+            "opportunity": opportunity_access.opportunity,
         },
     )
     return response

@@ -15,6 +15,19 @@
 {% endblock javascript %}
 
 {% block content %}
+  <ul class="breadcrumb">
+      <li>
+          <a href='{% url "opportunity:opportunities_list_new" request.org.slug %}'>Opportunities</a>
+          <i class="fa-solid fa-chevron-right"></i>
+      </li>
+      <li>
+          <a href='{% url "opportunity:tw_opportunity" request.org.slug opportunity.pk %}'>{{ opportunity.name }}</a>
+          <i class="fa-solid fa-chevron-right"></i>
+      </li>
+      <li>
+          <a href='{% url "opportunity:user_visit_verification" request.org.slug opportunity.pk opportunity_access.pk %}'>Worker</a>
+      </li>
+  </ul>
   <div class="w-full space-y-4">
     <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
       <div x-data="{ isStatusModalOpen: false, isTimelineModalOpen: false }"
