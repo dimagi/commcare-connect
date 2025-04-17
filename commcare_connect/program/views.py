@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Count, F, OuterRef, Q, Subquery, Sum
+from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
@@ -243,6 +244,8 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
 
     if action not in action_map:
         messages.error(request, "Action not allowed.")
+        if request.htmx:
+            return HttpResponseNotAllowed()
         return redirect(redirect_url)
 
     application.status = action_map[action]["status"]
@@ -250,7 +253,8 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     application.save()
 
     messages.success(request, action_map[action]["message"])
-
+    if request.htmx:
+        return HttpResponse(status=200)
     return redirect(redirect_url)
 
 
