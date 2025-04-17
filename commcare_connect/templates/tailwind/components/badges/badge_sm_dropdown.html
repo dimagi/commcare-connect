@@ -1,4 +1,4 @@
-<span 
+<span
   x-data="{
     open: false,
     dropdownStyle: '',
@@ -14,7 +14,7 @@
     const shouldShowAbove = spaceBelow < 70 && badgeRect.top > 200;
 
     // Corrected: remove window.scrollY
-    let top = shouldShowAbove 
+    let top = shouldShowAbove
       ? badgeRect.top - 115
       : badgeRect.bottom;
 
@@ -40,15 +40,15 @@
   @click="toggleDropdown()"
   @click.outside="open = false; document.body.style.overflow = originalOverflow || '';"
   :class="{
-    'bg-[#16006d] text-white': open,
-    'bg-[#f1f5f9] text-[#16006d]': !open
+    'primary-dark': open,
+    'primary-light': !open
   }"
   class="badge inline-block py-0.5 px-3.5 mx-1 text-nowrap rounded-3xl text-xs cursor-pointer relative transition-colors duration-200"
 >
   +{{ list|length|add:-2 }}
 
   <!-- Dropdown -->
-  <div 
+  <div
     x-show="open"
     x-cloak
     x-transition:enter="transition ease-out duration-200"
