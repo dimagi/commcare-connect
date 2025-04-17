@@ -2855,7 +2855,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
                     "value": opp.total_accrued,
                     "incr": "6",  # TO-DO
                 },
-                {"icon": "fa-light", "name": "Payments", "status": "Due", "value": opp.payments_due},
+                {"icon": "fa-hand-holding-droplet", "name": "Payments", "status": "Due", "value": opp.payments_due},
             ],
         },
 
