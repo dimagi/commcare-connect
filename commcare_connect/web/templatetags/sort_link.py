@@ -52,24 +52,22 @@ def update_query_params(context, **kwargs):
 
 
 @register.simple_tag(takes_context=True)
-def sortable_header(context, field, label, use_htmx=False):
+def sortable_header(context, field, label, use_view_url=True):
     request = context["request"]
     current_sort = next_sort = None
     icon_element = '<i class="fa-solid ml-1 {}"></i>'
 
-
-    if use_htmx:
-        path = request.path
-        query_params = request.GET.copy()
-        current_sort = query_params.get("sort", "")
-
-    else:
-        referer = request.META.get("HTTP_REFERER", request.get_full_path())
+    if use_view_url:
+        referer = request.headers.get("referer", request.get_full_path())
         parsed_url = urlparse(referer)
         query_params = parse_qs(parsed_url.query)
         path = parsed_url.path
         current_sort = query_params.get("sort", [""])[0]
 
+    else:
+        path = request.path
+        query_params = request.GET.copy()
+        current_sort = query_params.get("sort", "")
 
     if current_sort == field:
         next_sort = f"-{field}"

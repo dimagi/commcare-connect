@@ -17,7 +17,7 @@ from commcare_connect.organization.models import UserOrganizationMembership
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
 
-    use_htmx = False  # This flag is used to make the sort header use HTMX-specific URL.
+    use_view_url = True  # If want to use htmx url then set it to False.
 
     class Meta:
         template_name = "tailwind/base_table.html"  # Use your custom template
@@ -2253,6 +2253,7 @@ class OpportunitiesListViewTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.use_view_url = False
 
 
     index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
