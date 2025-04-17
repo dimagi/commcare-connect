@@ -4,10 +4,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from django.utils.translation import gettext
 from django.views.decorators.http import require_POST
+from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
 from commcare_connect import connect_id_client
 from commcare_connect.connect_id_client.models import Credential
+from commcare_connect.opportunity.tw_forms import TwMembershipForm, TwAddCredentialForm, TwOrganizationChangeForm
+from commcare_connect.opportunity.tw_tables import OrgMemberTable
 from commcare_connect.organization.decorators import org_admin_required
 from commcare_connect.organization.forms import (
     AddCredentialForm,
@@ -107,3 +110,64 @@ def add_credential_view(request, org_slug):
         credential = form.cleaned_data["credential"]
         add_credential_task.delay(org.pk, credential, users)
     return redirect("organization:home", org_slug)
+
+
+@org_admin_required
+@require_POST
+def tw_add_credential_view(request, org_slug):
+    org = get_object_or_404(Organization, slug=org_slug)
+    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
+    credential_name = f"Worked for {org.name}"
+    if not any(c.name == credential_name for c in credentials):
+        credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))
+    form = AddCredentialForm(data=request.POST, credentials=credentials)
+
+    if form.is_valid():
+        users = form.cleaned_data["users"]
+        credential = form.cleaned_data["credential"]
+        add_credential_task.delay(org.pk, credential, users)
+    return redirect("organization:org_member_view", org_slug)
+
+@org_admin_required
+def org_member_view(request, org_slug=None, opp_id=None):
+    org = get_object_or_404(Organization, slug=org_slug)
+    org_form = TwOrganizationChangeForm(instance=request.org)
+    form = TwMembershipForm(None, organization=org)
+
+    print(request.POST)
+
+    if "org_form" in request.POST:
+        org_form = TwOrganizationChangeForm(data=request.POST, instance=request.org)
+
+    if "membership_form" in request.POST:
+        form = TwMembershipForm(request.POST, organization=org)
+
+
+    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
+    credential_name = f"Worked for {org.name}"
+    if not any(c.name == credential_name for c in credentials):
+        credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))
+    cred_form = TwAddCredentialForm(credentials=credentials)
+
+    if request.method == "POST":
+        if "org_form" in request.POST and org_form.is_valid():
+            org_form.save()
+            messages.success(request, gettext("Organization details saved!"))
+
+        elif "membership_form" in request.POST and form.is_valid():
+            form.instance.organization = org
+            form.save()
+            send_org_invite.delay(membership_id=form.instance.pk, host_user_id=request.user.pk)
+            messages.success(request, gettext("Membership details saved!"))
+
+    return render(request, "tailwind/pages/my_organization.html",
+                  {"header_title": "My Organization", "member_form": form, "cred_form": cred_form,
+                   "org_form": org_form})
+
+
+@org_admin_required
+def org_member_table(request, org_slug=None, opp_id=None):
+    members = UserOrganizationMembership.objects.filter(organization=request.org)
+    table = OrgMemberTable(members)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    return render(request, "tailwind/components/tables/table.html", {"table": table})

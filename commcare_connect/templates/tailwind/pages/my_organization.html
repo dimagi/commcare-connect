@@ -1,32 +1,41 @@
-{% extends "tailwind/base.html" %} {% block content %}
+{% extends "tailwind/base.html" %}
+{% block content %}
+{% load crispy_forms_tags %}
 <p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">My Organization</p>
+
 <div
-class="flex flex-col max-w-screen-lg mx-auto gap-2"
-x-data="{
-  selectedTab: '',
-  selectedOption: '',
-  isViewPermissionModalOpen: false,
-  }"
-  x-init="selectedTab='members';selectedOption=''"
-  >
+  class="flex flex-col max-w-screen-lg mx-auto gap-2"
+  x-data="{
+      selectedTab: '{{ request.GET.active_tab|default:'details' }}',
+      selectedOption: '',
+      isViewPermissionModalOpen: false,
+      changeTab(tab) {
+        this.selectedTab = tab;
+        const url = new URL(window.location);
+        url.searchParams.set('active_tab', tab);
+        window.history.pushState({}, '', url);
+      },
+      init() {
+        if (this.selectedTab === 'members') {
+          htmx.trigger('#invoice_members_container', 'loadMembers');
+        }
+      }
+    }"
+  x-init="init()"
+>
   {% include "tailwind/components/cards/organization_view_permission.html" %}
+
   <!-- Tabs -->
   <div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
     <div class="flex h-full px-2 gap-x-8">
+      <!-- Details Tab -->
       <div
-        @click="selectedTab = 'details'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#details-tab', 'loadDetails');
-            })"
-        id="details-tab"
+        @click="changeTab('details'); selectedRows = []"
         class="relative flex items-center h-full text-sm cursor-pointer"
         :class="{
                 'text-brand-deep-purple font-medium': selectedTab === 'details',
                 'text-gray-500': selectedTab !== 'details'
             }"
-        hx-get="/a/test-org-managed/opportunity/8/tw/tables/"
-        hx-swap="innerHTML"
-        hx-trigger="loadDetails"
-        hx-target="#invoice_members_container"
       >
         <span>Details</span>
         <div
@@ -34,9 +43,11 @@ x-data="{
           x-show="selectedTab === 'details'"
         ></div>
       </div>
+
+      <!-- Members Tab -->
       <div
-        @click="selectedTab = 'members'; selectedRows = []; $nextTick(() => { 
-                htmx.trigger('#members-tab', 'loadMembers');
+        @click="changeTab('members'); selectedRows = []; $nextTick(() => {
+                htmx.trigger('#invoice_members_container', 'loadMembers');
             })"
         id="members-tab"
         class="relative flex items-center h-full text-sm cursor-pointer"
@@ -44,10 +55,6 @@ x-data="{
                 'text-brand-deep-purple font-medium': selectedTab === 'members',
                 'text-gray-500': selectedTab !== 'members'
             }"
-        hx-get="/a/test-org-managed/opportunity/8/tw/tables/my_organization_members"
-        hx-swap="innerHTML"
-        hx-trigger="loadMembers"
-        hx-target="#invoice_members_container"
       >
         <span>Members</span>
         <div
@@ -57,11 +64,7 @@ x-data="{
       </div>
     </div>
 
-    <!-- All Details Options -->
-    <div x-show="selectedTab === 'details'" class="flex items-center gap-x-4">
-    </div>
-    
-    <!-- Members Options -->
+    <!-- Options -->
     <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
       <button type="button" class="button-icon">
         <i class="fa-light fa-pen-line"></i>
@@ -76,16 +79,36 @@ x-data="{
     </div>
   </div>
 
+  <!-- Tab Content Containers -->
+  <div class="w-full">
+    <!-- Details Content (Already rendered) -->
+    <div x-show="selectedTab === 'details'" class="w-full">
+        <h1 class="mt-4 mb-2 text-lg">Organization</h1>
+        <form method="post">
+          {% csrf_token %}
+          {% crispy org_form %}
+        </form>
+        <h1 class="mt-16 mb-2 text-lg">Members Invite</h1>
+        <form method="post">
+          {% csrf_token %}
+          {% crispy member_form %}
+        </form>
+        <h1 class="mt-16 text-lg mb-2">Add Credential</h1>
+        <form action="{% url 'organization:tw_add_credential' request.org.slug %}" method="post">
+          {% csrf_token %}
+          {% crispy cred_form %}
+        </form>
+    </div>
 
-  <!-- Tab Content Container -->
-  <div
+    <!-- Members Content (Loaded via HTMX) -->
+    <div
+    x-show="selectedTab === 'members'"
     id="invoice_members_container"
     class="w-full"
-    hx-get="/a/test-org-managed/opportunity/8/tw/tables/my_organization_members"
+    hx-get="{% url 'organization:org_member_table' request.org.slug %}"
     hx-swap="innerHTML"
-    hx-trigger="load"
+    hx-trigger="loadMembers from:body"
   ></div>
-  <div class="flex items-center justify-between w-full px-4 py-2 bg-white rounded-lg table-footer h-14 text-brand-deep-purple">
-    {% include "tailwind/components/pagination.html" %}
+  </div>
 </div>
 {% endblock content %}
