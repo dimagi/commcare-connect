@@ -53,7 +53,7 @@
                     <ul class="p-2 w-full">
                         <li class="p-2 text-left">
                             <p class="text-brand-deep-purple font-medium">{{ request.user.username }}</p>
-                            <span class="text-gray-400 text-sm">Role</span>
+                            {% if request.org %}<span class="text-gray-400 text-sm">{{ request.org_membership.role }}</span>{% endif %}
                         </li>
                         <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
                             <p class="text-brand-deep-purple"><a href="{% url 'users:detail' request.user.pk %}">{% translate "Profile" %}</a></p>
