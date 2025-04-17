@@ -2213,7 +2213,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
 def worker_delivery(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id,org_slug)
     data= get_annotated_opportunity_access_deliver_status(opportunity)
-    table = WorkerDeliveryTable (data)
+    table = WorkerDeliveryTable (data, org_slug=org_slug, opp_id=opp_id)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
@@ -2711,7 +2711,8 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
         'inactive_workers',
         'pending_approvals',
         'payments_due',
-        'status'
+        'status',
+        'opportunity',
     ]
 
     def get_table_data(self):

@@ -1170,33 +1170,6 @@ class WorkerPaymentsTable(BaseTailwindTable):
         super().__init__(*args, **kwargs)
 
 
-        HEADERS = {
-            "status": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Inactive"},
-                {"type": "radio", "name": "Active"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-        }
-
-        last_active_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': "Last Active",
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        self.base_columns['last_active'].verbose_name = mark_safe(f'''
-            <div class="flex items-center cursor-pointer">
-                {last_active_dropdown_html}
-            </div>
-        ''')
-
-
-
-
     class Meta:
         model= OpportunityAccess
         fields=("user", "suspended", "payment_accrued", "total_paid", "total_confirmed_paid")
@@ -1243,7 +1216,7 @@ class WorkerLearnTable(BaseTailwindTable):
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column(
-        orderable=False,
+        orderable=True,
     )
     started_learning = tables.Column(
     )
@@ -1276,30 +1249,6 @@ class WorkerLearnTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        HEADERS = {
-            "status": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Inactive"},
-                {"type": "radio", "name": "Active"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-        }
-
-        last_active_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': "Last Active",
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        self.base_columns['last_active'].verbose_name = mark_safe(f'''
-            <div class="flex items-center cursor-pointer">
-                {last_active_dropdown_html}
-            </div>
-        ''')
 
 
     class Meta:
@@ -1334,19 +1283,18 @@ class WorkerDeliveryTable(BaseTailwindTable):
     flagged = tables.Column()
     approved = tables.Column()
     rejected = tables.Column()
+    id = tables.Column(visible=False)
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
         template_code="""
-            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
-                <i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>
-            </div>
+
         """
     )
 
     class Meta:
         model=OpportunityAccess
-        fields = ("suspended", "user")
+        fields = ("id","suspended", "user")
         sequence = (
             "index",
             "user",
@@ -1361,10 +1309,19 @@ class WorkerDeliveryTable(BaseTailwindTable):
             "action"
         )
     def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug")
+        self.opp_id = kwargs.pop("opp_id")
         super().__init__(*args, **kwargs)
         self._seen_users = set()
 
-
+    def render_action(self, record):
+        url = reverse("opportunity:user_visit_verification", args=(self.org_slug, self.opp_id, record.id))
+        template = """
+            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>
+        """
+        return format_html(template, url)
 
     def render_user(self, value):
         if value.id in self._seen_users:
@@ -2297,81 +2254,9 @@ class OpportunitiesListViewTable(BaseTailwindTable):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        HEADERS = {
-            "opportunities": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Test"},
-                {"type": "radio", "name": "Live"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-            "status": [
-                {
-                    "type": "radio",
-                    "name": "All",
-                },
-                {
-                    "type": "radio",
-                    "name": "Inactive",
-                },
-                {
-                    "type": "radio",
-                    "name": "Active",
-                },
-                {
-                    "type": "radio",
-                    "name": "Ended",
-                },
-            ],
-        }
-
-        opp_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': 'Opportunity',
-                'list': HEADERS['opportunities'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        status_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': 'Status',
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        self.base_columns['opportunity'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-                @click="sortBy('opportunity')">
-                {opp_dropdown_html}
-                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
-                    :class="{{
-                        'rotate-180': isSorted('opportunity') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('opportunity'),
-                        'opacity-100': isSorted('opportunity'),
-                        'animate-fade-in': isSorted('opportunity') && sortDirection === 'asc'
-                    }}"></i>
-            </div>
-        ''')
-
-        self.base_columns['status'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-                @click="sortBy('entityStatus')">
-                {status_dropdown_html}
-                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
-                    :class="{{
-                        'rotate-180': isSorted('entityStatus') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('entityStatus'),
-                        'opacity-100': isSorted('entityStatus'),
-                        'animate-fade-in': isSorted('entityStatus') && sortDirection === 'asc'
-                    }}"></i>
-            </div>
-        ''')
 
     index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
-    opportunity = tables.Column(accessor="name", orderable=False)
+    opportunity = tables.Column(accessor="name")
     entityType = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -2411,7 +2296,7 @@ class OpportunitiesListViewTable(BaseTailwindTable):
     status = tables.TemplateColumn(
         verbose_name="Status",
         accessor="status_value",
-        orderable=False,
+        orderable=True,
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
               {% if value == 0 %}
