@@ -2391,14 +2391,16 @@ class OpportunitiesListViewTable(BaseTailwindTable):
                 "url": reverse("opportunity:tw_opportunity", args=[record.organization.slug, record.id]),
             },
             {
-                "title": "View Pending Reviews",
-                "url": reverse("opportunity:tw_worker_list", args=[record.organization.slug, record.id])+"?active_tab=delivery",
+                "title": "View Workers",
+                "url": reverse("opportunity:tw_worker_list", args=[record.organization.slug, record.id]),
             },
-            {
-                "title": "View Pending Invoices",
-                "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
-            }
         ]
+
+        if record.managed:
+            actions.append({
+                "title": "View Invoices",
+                "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+            })
 
         html = render_to_string(
             "tailwind/components/dropdowns/text_button_dropdown.html",
