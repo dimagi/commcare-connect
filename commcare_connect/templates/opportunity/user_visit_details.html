@@ -3,13 +3,9 @@
 
 <div class="flex flex-col gap-6" x-data="{
     slides: [
-        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 1' },
-        { src: 'https://tinyurl.com/checks-image', alt: 'Checkup Image 2' },
-        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 3' },
-        { src: 'https://tinyurl.com/checks-image', alt: 'Checkup Image 4' },
-        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 5' },
-        { src: 'https://tinyurl.com/checks-image', alt: 'Checkup Image 4' },
-        { src: 'https://tinyurl.com/checkup-images', alt: 'Checkup Image 5' }
+      {% for image in user_visit.images %}
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug blob_id=image.blob_id %}' },
+      {% endfor %}
     ],
     currentIndex: 0,
     modalCurrentIndex: 0,
@@ -201,7 +197,6 @@
           class="absolute bottom-2 right-2 button-icon">
           <a :href="slides[modalCurrentIndex].src"
              download="downloaded-image.jpg"
-
              aria-label="Download Image">
             <i class="fa-light fa-download text-brand-deep-purple"></i>
           </a>
