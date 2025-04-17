@@ -3,11 +3,13 @@ import json
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Submit, Div
+from crispy_forms.templatetags.crispy_forms_field import css_class
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
 from django.utils.timezone import now
 from django.urls import reverse
+from markupsafe import Markup
 
 from commcare_connect import connect_id_client
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
@@ -215,6 +217,7 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
+        self.opportunity = kwargs.pop("opportunity", None)
         credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
@@ -226,9 +229,13 @@ class OpportunityUserInviteForm(forms.Form):
                 Row(
                     Field("filter_country", css_class=BASE_INPUT_CLASS),
                     Field("filter_credential", css_class=BASE_INPUT_CLASS),
+                    css_class="gap-2"
                 ),
             ),
-            Submit("submit", "Submit"),
+            Row(
+                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            )
         )
 
         self.fields["users"] = forms.CharField(
@@ -251,6 +258,10 @@ class OpportunityUserInviteForm(forms.Form):
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
+
+        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+            raise ValidationError("Please finish setting up the opportunity before inviting users.")
+
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
 

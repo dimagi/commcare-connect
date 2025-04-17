@@ -17,12 +17,12 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
-    PaymentUnit,
+    PaymentUnit, Opportunity,
 )
 from commcare_connect.opportunity.tasks import (
     create_learn_modules_and_deliver_units,
     send_push_notification_task,
-    send_sms_task,
+    send_sms_task, add_connect_users,
 )
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
@@ -35,7 +35,7 @@ from commcare_connect.opportunity.tw_forms import (
     PaymentUnitForm,
     ProgramForm,
     SendMessageMobileUsersForm,
-    VisitExportForm,
+    VisitExportForm, OpportunityUserInviteForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
@@ -335,3 +335,24 @@ def invite_organization(request, org_slug=None, pk=None):
 def export_user_visits(request, org_slug, pk):
     form = VisitExportForm(data=request.POST or None)
     return render(request, "tailwind/pages/form.html", context=dict(form=form))
+
+
+
+@org_member_required
+@override_settings(CRISPY_TEMPLATE_PACK="tailwind")
+def opportunity_user_invite(request, org_slug=None, pk=None):
+    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug, opportunity=opportunity)
+    if form.is_valid():
+        users = form.cleaned_data["users"]
+        filter_country = form.cleaned_data["filter_country"]
+        filter_credential = form.cleaned_data["filter_credential"]
+        if users or filter_country or filter_credential:
+            add_connect_users.delay(users, opportunity.id, filter_country, filter_credential)
+        return redirect("opportunity:detail", request.org.slug, pk)
+    return render(
+        request,
+        "tailwind/components/form.html",
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Invite Users", form=form,
+             opportunity=opportunity),
+    )
