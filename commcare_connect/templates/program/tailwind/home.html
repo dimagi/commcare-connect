@@ -29,14 +29,8 @@
                 {% if program_app.status == 'invited' %}
                   <span class="badge badge-md warning-dark">invited</span>
                 {% elif program_app.status == 'applied' %}
-                  <button class="button-icon">
-                    <i class="fa-light fa-download"></i>
-                  </button>
                   <span class="badge badge-md primary-dark">applied</span>
                 {% elif program_app.status == 'accepted' %}
-                  <button class="button-icon">
-                    <i class="fa-light fa-download"></i>
-                  </button>
                   <span class="badge badge-md positive-dark">accepted</span>
                 {% endif %}
               </div>
@@ -116,13 +110,42 @@
       <div class="mb-4 text-brand-deep-purple font-medium text-sm">Recent Activities</div>
       <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
         <div class="flex flex-col gap-4">
-
-          <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
-            <div class="flex gap-4 items-center">
-              <i class="fa-light fa-clock-rotate-left"></i>
-              <p class="text-base">Pending Review</p>
+          {% if pending_review %}
+            <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+              <div class="flex gap-4 items-center">
+                <i class="fa-light fa-clock-rotate-left"></i>
+                <p class="text-base">Pending Review</p>
+              </div>
+              {% for row in pending_review %}
+                  <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                    <div>
+                      <p class="title">{{ row.opportunity__name }}</p>
+                      <p class="hint">{{ row.opportunity__organization__name }}</p>
+                    </div>
+                    <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                      <div class="flex items-center justify-between gap-4">
+                        <p class="text-2xl">{{ row.count }}</p>
+                        <i class="fa-light fa-arrow-right"></i>
+                      </div>
+                    </a>
+                  </div>
+              {% endfor %}
+              <div class="flex justify-end" x-show="{{ pending_review|length }} > 2">
+                <button class="button-text" @click="expanded = !expanded">
+                  <span x-text="expanded ? 'less' : 'more'"></span>
+                  <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                </button>
+              </div>
             </div>
-            {% for row in pending_review %}
+          {% endif %}
+
+          {% if pending_payments %}
+            <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+              <div class="flex gap-4 items-center">
+                <i class="fa-light fa-hand-holding-dollar"></i>
+                <p class="text-base">Pending Payments</p>
+              </div>
+              {% for row in pending_payments %}
                 <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
                   <div>
                     <p class="title">{{ row.opportunity__name }}</p>
@@ -135,68 +158,44 @@
                     </div>
                   </a>
                 </div>
-            {% endfor %}
-            <div class="flex justify-end" x-show="{{ pending_review|length }} > 2">
-              <button class="button-text" @click="expanded = !expanded">
-                <span x-text="expanded ? 'less' : 'more'"></span>
-                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
-              </button>
-            </div>
-          </div>
-
-          <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
-            <div class="flex gap-4 items-center">
-              <i class="fa-light fa-hand-holding-dollar"></i>
-              <p class="text-base">Pending Payments</p>
-            </div>
-            {% for row in pending_payments %}
-              <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
-                <div>
-                  <p class="title">{{ row.opportunity__name }}</p>
-                  <p class="hint">{{ row.opportunity__organization__name }}</p>
-                </div>
-                <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
-                  <div class="flex items-center justify-between gap-4">
-                    <p class="text-2xl">{{ row.count }}</p>
-                    <i class="fa-light fa-arrow-right"></i>
-                  </div>
-                </a>
+              {% endfor %}
+              <div class="flex justify-end" x-show="{{ pending_payments|length }} > 2">
+                <button class="button-text" @click="expanded = !expanded">
+                  <span x-text="expanded ? 'less' : 'more'"></span>
+                  <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                </button>
               </div>
-            {% endfor %}
-            <div class="flex justify-end" x-show="{{ pending_payments|length }} > 2">
-              <button class="button-text" @click="expanded = !expanded">
-                <span x-text="expanded ? 'less' : 'more'"></span>
-                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
-              </button>
             </div>
-          </div>
+          {% endif %}
 
-          <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
-            <div class="flex gap-4 items-center">
-              <i class="fa-light fa-user-slash"></i>
-              <p class="text-base">Inactive Workers</p>
-            </div>
-            {% for row in inactive_workers %}
-              <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
-                <div>
-                  <p class="title">{{ row.opportunity__name }}</p>
-                  <p class="hint">{{ row.opportunity__organization__name }}</p>
-                </div>
-                <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
-                  <div class="flex items-center justify-between gap-4">
-                    <p class="text-2xl">{{ row.count }}</p>
-                    <i class="fa-light fa-arrow-right"></i>
-                  </div>
-                </a>
+          {% if inactive_workers %}
+            <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+              <div class="flex gap-4 items-center">
+                <i class="fa-light fa-user-slash"></i>
+                <p class="text-base">Inactive Workers</p>
               </div>
-            {% endfor %}
-            <div class="flex justify-end" x-show="{{ inactive_workers|length }} > 2">
-              <button class="button-text" @click="expanded = !expanded">
-                <span x-text="expanded ? 'less' : 'more'"></span>
-                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
-              </button>
+              {% for row in inactive_workers %}
+                <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                  <div>
+                    <p class="title">{{ row.opportunity__name }}</p>
+                    <p class="hint">{{ row.opportunity__organization__name }}</p>
+                  </div>
+                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-2xl">{{ row.count }}</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </a>
+                </div>
+              {% endfor %}
+              <div class="flex justify-end" x-show="{{ inactive_workers|length }} > 2">
+                <button class="button-text" @click="expanded = !expanded">
+                  <span x-text="expanded ? 'less' : 'more'"></span>
+                  <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                </button>
+              </div>
             </div>
-          </div>
+          {% endif %}
 
         </div>
       </div>
