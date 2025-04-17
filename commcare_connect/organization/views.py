@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.text import slugify
 from django.utils.translation import gettext
 from django.views.decorators.http import require_POST
@@ -134,8 +135,6 @@ def org_member_view(request, org_slug=None, opp_id=None):
     org_form = TwOrganizationChangeForm(instance=request.org)
     form = TwMembershipForm(None, organization=org)
 
-    print(request.POST)
-
     if "org_form" in request.POST:
         org_form = TwOrganizationChangeForm(data=request.POST, instance=request.org)
 
@@ -171,3 +170,19 @@ def org_member_table(request, org_slug=None, opp_id=None):
     table = OrgMemberTable(members)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
+
+
+@api_view(["POST"])
+@login_required
+def tw_add_members_form(request, org_slug):
+    org = get_object_or_404(Organization, slug=org_slug)
+    form = TwMembershipForm(request.POST or None, organization=org)
+
+    if form.is_valid():
+        form.instance.organization = org
+        form.save()
+        send_org_invite.delay(membership_id=form.instance.pk, host_user_id=request.user.pk)
+    else:
+        messages.error(request, gettext("User with this email does not exist or is already a member!"))
+    url = reverse("organization:org_member_view", args=(org_slug,)) + "?active_tab=members"
+    return redirect(url)
