@@ -89,7 +89,7 @@
                         {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=opportunity.start_date classname="infocard-dark" %}
                         {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=opportunity.end_date id='1' classname="infocard-dark" %}
                       </div>
-                      <a class="button button-md button-outline-rounded" href="{% url "opportunity:detail" request.org.slug opportunity.id %}">
+                      <a class="button button-md button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug opportunity.id %}">
                         <div class="flex items-center justify-between gap-4">
                           <p class="text-sm">View</p>
                           <i class="fa-light fa-arrow-right"></i>
@@ -122,7 +122,7 @@
                       <p class="title">{{ row.opportunity__name }}</p>
                       <p class="hint">{{ row.opportunity__organization__name }}</p>
                     </div>
-                    <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                    <a class="button button-sm button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug row.opportunity__id %}">
                       <div class="flex items-center justify-between gap-4">
                         <p class="text-2xl">{{ row.count }}</p>
                         <i class="fa-light fa-arrow-right"></i>
@@ -151,7 +151,7 @@
                     <p class="title">{{ row.opportunity__name }}</p>
                     <p class="hint">{{ row.opportunity__organization__name }}</p>
                   </div>
-                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug row.opportunity__id %}">
                     <div class="flex items-center justify-between gap-4">
                       <p class="text-2xl">{{ row.count }}</p>
                       <i class="fa-light fa-arrow-right"></i>
@@ -180,7 +180,7 @@
                     <p class="title">{{ row.opportunity__name }}</p>
                     <p class="hint">{{ row.opportunity__organization__name }}</p>
                   </div>
-                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug row.opportunity__id %}">
                     <div class="flex items-center justify-between gap-4">
                       <p class="text-2xl">{{ row.count }}</p>
                       <i class="fa-light fa-arrow-right"></i>
