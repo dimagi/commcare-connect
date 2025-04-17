@@ -2391,7 +2391,7 @@ class OpportunitiesListViewTable(BaseTailwindTable):
             },
             {
                 "title": "View Pending Reviews",
-                "url": reverse("opportunity:tw_worker_table", args=[record.organization.slug, record.id])+"?active_tab=delivery",
+                "url": reverse("opportunity:tw_worker_list", args=[record.organization.slug, record.id])+"?active_tab=delivery",
             },
             {
                 "title": "View Pending Invoices",
