@@ -9,7 +9,12 @@
       <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
       <div class="flex flex-col gap-4">
         {% for program_app in program_apps %}
-          <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative" x-data="{showOpp: false}">
+            <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative"
+                 x-data="{
+                  showOpp: false,
+                  status: '{{ program_app.status }}',
+                  setApplied(e) { if(e?.detail?.successful) this.status = 'applied'}
+                 }">
             <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
             <div class="flex w-full justify-between">
               <!-- program details -->
@@ -26,12 +31,14 @@
 
               <!-- invitataion status -->
               <div class="flex items-center justify-end gap-6">
-                {% if program_app.status == 'invited' %}
-                  <span class="badge badge-md warning-dark">invited</span>
-                {% elif program_app.status == 'applied' %}
-                  <span class="badge badge-md primary-dark">applied</span>
-                {% elif program_app.status == 'accepted' %}
-                  <span class="badge badge-md positive-dark">accepted</span>
+                {% if program_app.status %}
+                  <span class="badge badge-md"
+                        :class="{
+                          'warning-dark': status == 'invited',
+                          'primary-dark': status == 'applied',
+                          'positive-dark': status == 'accepted'
+                        }"
+                        x-text="status"></span>
                 {% endif %}
               </div>
             </div>
@@ -50,9 +57,13 @@
 
               <!-- button -->
               {% if program_app.status == 'invited' %}
-                <form action="{% url "program:apply_or_decline_application" request.org.slug program_app.program.id program_app.id "apply" %}" method="post">
+                <form x-data="{ }"
+                      hx-post="{% url "program:apply_or_decline_application" request.org.slug program_app.program.id program_app.id "apply" %}"
+                      hx-swap="none"
+                      @htmx:after-request="setApplied">
                   {% csrf_token %}
-                  <button class="button button-md primary-dark" type="submit">
+                  <button class="button button-md" type="submit"
+                          :class="{'neutral disabled': status == 'applied', 'primary-dark': status == 'invited'}">
                     <span class="relative z-20">Apply</span>
                   </button>
                 </form>
