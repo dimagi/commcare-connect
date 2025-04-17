@@ -24,41 +24,41 @@
       {% endif %}
       {% endblock table.thead %}
 
-      {% block table.tbody %}
-      <tbody>
+          {% block table.tbody %}
+            <tbody>
             <div style="overflow:hidden; border-radius:8px;">
-          {% for row in table.paginated_rows %}
-          {% block table.tbody.row %}
-          <tr class="group">
-            {% for column, cell in row.items %}
-            <td>
-              {% if column.localize == None %}
-                {{ cell }}
-              {% else %}
-                {% if column.localize %}
-                  {{ cell|localize }}
-                {% else %}
-                  {{ cell|unlocalize }}
+              {% for row in table.paginated_rows %}
+                {% block table.tbody.row %}
+                  <tr class="group" {{ row.attrs.as_html }}>
+                    {% for column, cell in row.items %}
+                      <td>
+                        {% if column.localize == None %}
+                          {{ cell }}
+                        {% else %}
+                          {% if column.localize %}
+                            {{ cell|localize }}
+                          {% else %}
+                            {{ cell|unlocalize }}
+                          {% endif %}
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endblock table.tbody.row %}
+                {% empty %}
+                {% if table.empty_text %}
+                  {% block table.tbody.empty_text %}
+                    <tr>
+                      <td colspan="{{ table.columns|length }}" class="text-center py-4">
+                        {{ table.empty_text }}
+                      </td>
+                    </tr>
+                  {% endblock table.tbody.empty_text %}
                 {% endif %}
-              {% endif %}
-            </td>
-            {% endfor %}
-          </tr>
-          {% endblock table.tbody.row %}
-          {% empty %}
-          {% if table.empty_text %}
-          {% block table.tbody.empty_text %}
-          <tr>
-            <td colspan="{{ table.columns|length }}" class="text-center py-4">
-              {{ table.empty_text }}
-            </td>
-          </tr>
-          {% endblock table.tbody.empty_text %}
-          {% endif %}
-          {% endfor %}
-        </div>
-        </tbody>
-        {% endblock table.tbody %}
+              {% endfor %}
+            </div>
+            </tbody>
+          {% endblock table.tbody %}
 
     </table>
   </div>

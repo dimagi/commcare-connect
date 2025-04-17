@@ -19,6 +19,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.tw_tables import BaseTailwindTable
 from commcare_connect.users.models import User
 
 
@@ -537,6 +538,7 @@ class TWPaymentInvoiceTable(PaymentInvoiceTable):
     class Meta(PaymentInvoiceTable.Meta):
         fields = ("amount", "date", "invoice_number", "service_delivery")
         sequence = ("amount", "date", "invoice_number", "payment_status", "payment_date", "service_delivery")
+        orderable = True
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):
@@ -557,3 +559,100 @@ def date_with_time_popup(table, date):
         date.strftime("%d %b, %Y"),
         date.strftime("%d %b %Y, %I:%M%p"),
     )
+
+
+class UserVisitVerificationTable(BaseTailwindTable):
+    time = columns.TimeColumn(verbose_name="Time", accessor="visit_date", format="H:i")
+    entity_name = columns.Column(verbose_name="Entity Name")
+    flags = columns.TemplateColumn(
+        verbose_name="Flags",
+        orderable=False,
+        template_code="""
+            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
+                {% if value %}
+                    {% for flag in value|slice:":2" %}
+                        <span class="badge badge-sm primary-light mx-1">
+                            {{ flag }}
+                        </span>
+                    {% endfor %}
+                    {% if value|length > 2 %}
+                    {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
+                    {% endif %}
+                {% endif %}
+            </div>
+            """,
+    )
+    last_activity = columns.DateColumn(verbose_name="Last Activity")
+    icons = columns.Column(verbose_name="", empty_values=("",))
+
+    class Meta:
+        model = UserVisit
+        sequence = (
+            "time",
+            "entity_name",
+            "flags",
+            "last_activity",
+            "icons",
+        )
+        fields = []
+        empty_text = "No Visits for this filter."
+        row_attrs = {
+            "hx-get": lambda record: reverse(
+                "opportunity:user_visit_details",
+                args=[record.opportunity.organization.slug, record.opportunity_id, record.pk],
+            ),
+            "hx-trigger": "click",
+            "hx-indicator": "#visit-loading-indicator",
+            "hx-target": "#visit-details",
+            "hx-params": "none",
+        }
+
+    def render_icons(self, record):
+        status_to_icon = {
+            # Review Status Pending, Visit Status Approved
+            "approved_pending_review": "fa-solid fa-circle-check text-slate-300/50",
+            VisitValidationStatus.approved: "fa-solid fa-circle-check",
+            VisitValidationStatus.rejected: "fa-light fa-ban",
+            VisitValidationStatus.pending: "fa-light fa-flag-swallowtail",
+            VisitReviewStatus.disagree: "fa-light fa-thumbs-down",
+            VisitReviewStatus.agree: "fa-light fa-thumbs-up",
+            # Review Status Pending (custom name, original choice clashes with Visit Pending)
+            "pending_review": "fa-light fa-timer",
+        }
+
+        if record.status == VisitValidationStatus.pending.value:
+            icon_class = status_to_icon[VisitValidationStatus.pending]
+            icons_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+            return format_html(
+                '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
+                "justify-end",
+                mark_safe(icons_html),
+            )
+
+        status = []
+        if record.review_status:
+            if record.review_status == VisitReviewStatus.pending.value:
+                status.append("pending_review")
+            else:
+                status.append(record.review_status)
+        if record.status:
+            if (
+                record.review_status == VisitReviewStatus.pending.value
+                and record.status == VisitValidationStatus.approved
+            ):
+                status.append("approved_pending_review")
+            else:
+                status.append(record.status)
+
+        icons_html = ""
+        for status in status:
+            icon_class = status_to_icon[status]
+            if icon_class:
+                icons_html += f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+        justify_class = "justify-end" if len(status) == 1 else "justify-between"
+
+        return format_html(
+            '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
+            justify_class,
+            mark_safe(icons_html),
+        )

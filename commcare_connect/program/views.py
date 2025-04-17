@@ -1,14 +1,23 @@
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db.models import Count, F, OuterRef, Q, Subquery, Sum
+from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.timezone import now
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 from django_tables2 import SingleTableView
 
-from commcare_connect.opportunity.models import UserVisit
+from commcare_connect.opportunity.models import CompletedModule, OpportunityAccess, Payment, UserVisit
 from commcare_connect.opportunity.views import OpportunityInit
-from commcare_connect.organization.decorators import org_admin_required, org_program_manager_required
+from commcare_connect.organization.decorators import (
+    org_admin_required,
+    org_member_required,
+    org_program_manager_required,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
 from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
@@ -149,6 +158,7 @@ def invite_organization(request, org_slug, pk):
 
     if created:
         messages.success(request, "Organization invited successfully!")
+
     else:
         messages.info(request, "The invitation for this organization has been updated.")
 
@@ -234,6 +244,8 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
 
     if action not in action_map:
         messages.error(request, "Action not allowed.")
+        if request.htmx:
+            return HttpResponseNotAllowed()
         return redirect(redirect_url)
 
     application.status = action_map[action]["status"]
@@ -241,7 +253,8 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     application.save()
 
     messages.success(request, action_map[action]["message"])
-
+    if request.htmx:
+        return HttpResponse(status=200)
     return redirect(redirect_url)
 
 
@@ -280,14 +293,8 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
         return get_delivery_performance_report(program, start_date, end_date)
 
 
-from django.contrib.auth.decorators import login_required, user_passes_test
-
-
-# @login_required
-# @user_passes_test(lambda u: u.is_superuser)
+@org_member_required
 def program_home(request, org_slug):
-    from django.db.models import Count, F
-
     # Fetch the organization by slug
     org = Organization.objects.get(slug=org_slug)
 
@@ -296,29 +303,51 @@ def program_home(request, org_slug):
         ProgramApplication.objects.filter(organization=org)
         .select_related("program", "program__organization", "program__delivery_type")
         .order_by("-date_created")
-        .values(
-            "program__name",
-            "program__start_date",
-            "program__end_date",
-            "program__description",
-            "status",
-            "program__organization__name",
-            "program__delivery_type__name",
-            "date_created",
-        )
     )
 
+    programs = [app.program for app in apps if app.status == ProgramApplicationStatus.ACCEPTED]
+
     # Sort by ProgramApplication date first, then Program start_date
-    results = sorted(apps, key=lambda x: (x["date_created"], x["program__start_date"]), reverse=True)
-    pending_counts = (
-        UserVisit.objects.filter(status="pending")
-        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")  # Separate field names
+    results = sorted(apps, key=lambda x: (x.date_created, x.program.start_date), reverse=True)
+    pending_review = (
+        UserVisit.objects.filter(
+            status="pending", opportunity__managed=True, opportunity__managedopportunity__program__in=programs
+        )
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id"))
+    )
+    access_qs = OpportunityAccess.objects.filter(
+        opportunity__managed=True, opportunity__managedopportunity__program__in=programs
+    )
+    payment_total = Payment.objects.filter(opportunity_access=OuterRef("pk"))
+    pending_payments = (
+        access_qs.annotate(payments=Subquery(payment_total.values("amount")))
+        .annotate(pending_payment=F("payment_accrued") - Sum("payments"))
+        .filter(pending_payment__gte=0)
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id"))
+    )
+    learn_module_date_query = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk")).order_by("-date").values("date")[:1]
+    )
+    user_visit_date_query = (
+        UserVisit.objects.filter(opportunity_access=OuterRef("pk")).order_by("-visit_date").values("visit_date")[:1]
+    )
+    inactive_workers = (
+        access_qs.annotate(
+            learn_module_date=Subquery(learn_module_date_query),
+            user_visit_date=Subquery(user_visit_date_query),
+        )
+        .filter(
+            Q(user_visit_date__lte=now() - timedelta(days=3)) | Q(learn_module_date__lte=now() - timedelta(days=3))
+        )
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id"))
     )
     context = {
         "program_apps": results,
-        "review_counts": pending_counts,
-        "pending_payments": pending_counts, # Todo
-        "inactive_workers": pending_counts, # Todo
-    }  # The queryset from the ORM query
+        "pending_review": pending_review,
+        "pending_payments": pending_payments,
+        "inactive_workers": inactive_workers,
+    }
     return render(request, "program/tailwind/home.html", context)

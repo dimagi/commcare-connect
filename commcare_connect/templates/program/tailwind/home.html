@@ -1,82 +1,217 @@
-{% extends "tailwind/base.html" %}
+<!-- dashbaord.html -->
+{% extends 'tailwind/base.html' %}
 
 {% block content %}
-<div id="content-area" class="md:max-w-screen-2xl mx-auto flex flex-row gap-4 min-h-screen">
-   <!-- Left Column -->
-   <div class="w-2/3">
-      <h2 class="mb-4 text-test-red font-medium text-sm">Programs</h2>
+
+  <div id="content-area" class="md:max-w-screen-2xl mx-auto flex flex-col lg:flex-row gap-4 min-h-screen">
+    <!-- Left Column -->
+    <div class="w-full lg:w-2/3" >
+      <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
       <div class="flex flex-col gap-4">
-         {% for app in program_apps %}
-         {% comment %} <div class="bg-white p-6 rounded-lg shadow-lg relative">
-            <div class="absolute -top-1 left-4 h-[8px] w-[26px] bg-orange-400 rounded z-[50]"></div>
+        {% for program_app in program_apps %}
+            <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative"
+                 x-data="{
+                  showOpp: false,
+                  status: '{{ program_app.status }}',
+                  setApplied(e) { if(e?.detail?.successful) this.status = 'applied'}
+                 }">
+            <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+            <div class="flex w-full justify-between">
+              <!-- program details -->
+              <div class="flex items-center gap-2 font-normal">
+                {% if program_app.status == 'invited' %}
+                  <div class="h-2 w-2 bg-brand-marigold rounded-full"></div>
+                {% elif program_app.status == 'applied' %}
+                  <div class="h-2 w-2 bg-brand-deep-purple rounded-full"></div>
+                {% elif program_app.status == 'accepted' %}
+                  <div class="h-2 w-2 bg-green-600 rounded-full"></div>
+                {% endif %}
+                <p class="hint">{{ program_app.program.organization.name }}</p>
+              </div>
 
-            <!-- Header Section -->
-            <div class="flex justify-between items-center text-gray-500 text-sm mb-3">
-               <div class="flex items-center gap-3">
-                  <span>{{ app.date_created|date:"d M, Y" }}</span>
-                  <span class="flex items-center">
-                     <span class="text-orange-400 text-lg mx-1">•</span>
-                     {{ app.program__organization__name }}
-                  </span>
-               </div>
-               <span class="bg-[#FEAF31] text-[#16006D] text-sm px-3 py-1 rounded-full">
-                  {{ app.status|title }}
-               </span>
+              <!-- invitataion status -->
+              <div class="flex items-center justify-end gap-6">
+                {% if program_app.status %}
+                  <span class="badge badge-md"
+                        :class="{
+                          'warning-dark': status == 'invited',
+                          'primary-dark': status == 'applied',
+                          'positive-dark': status == 'accepted'
+                        }"
+                        x-text="status"></span>
+                {% endif %}
+              </div>
             </div>
-
-            <!-- Program Name -->
-            <h3 class="text-xl font-bold text-indigo-900">{{ app.program__name }}</h3>
-
-            <!-- Description -->
-            <p class="text-gray-500 text-sm mt-2">
-               {{ app.program__description|default:"No description available." }}
-            </p>
-
-            <!-- Program Details -->
-            <div class="flex items-center justify-between mt-4">
-               <div class="flex items-center gap-8">
-                  <!-- Delivery Type -->
-                  <div>
-                     <p class="text-gray-400">Delivery Type</p>
-                     <p class="font-bold text-blue-900">{{ app.program__delivery_type__name }}</p>
-                  </div>
-
-                  <!-- Dates -->
-                  <div class="flex items-center gap-4">
-                     <div>
-                        <p class="text-gray-400">Start Date</p>
-                        <p class="font-bold text-blue-900">{{ app.program__start_date|date:"d-M-Y" }}</p>
-                     </div>
-                     <div>
-                        <p class="text-gray-400">End Date</p>
-                        <p class="font-bold text-blue-900">{{ app.program__end_date|date:"d-M-Y" }}</p>
-                     </div>
-                  </div>
-               </div>
-
-               <!-- Apply Button -->
-               <button class="bg-brand-indigo text-white px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">
-                  Apply
-               </button>
+            <div>
+              <p class="card_title">{{ program_app.program.name }}</p>
+              <p class="card_description w-1/2">{{ program_app.program.description }}</p>
             </div>
-         </div> {% endcomment %}
-         {% include "program/tailwind/program_card.html" %}
-         {% empty %}
-         <p class="text-gray-500">No programs found.</p>
-         {% endfor %}
+            <div class="flex justify-between items-center">
+              <!-- program info -->
+              <div class="flex items-center gap-6">
+                {% include 'tailwind/components/cards/info.html' with icon="file-check" head="Delivery Type" data=program_app.program.delivery_type classname="infocard-dark" %}
+                <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+                {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=program_app.program.start_date classname="infocard-dark" %}
+                {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=program_app.program.end_date id='1' classname="infocard-dark" %}
+              </div>
+
+              <!-- button -->
+              {% if program_app.status == 'invited' %}
+                <form x-data="{ }"
+                      hx-post="{% url "program:apply_or_decline_application" request.org.slug program_app.program.id program_app.id "apply" %}"
+                      hx-swap="none"
+                      @htmx:after-request="setApplied">
+                  {% csrf_token %}
+                  <button class="button button-md" type="submit"
+                          :class="{'neutral disabled': status == 'applied', 'primary-dark': status == 'invited'}">
+                    <span class="relative z-20">Apply</span>
+                  </button>
+                </form>
+              {% elif program_app.status == 'applied' %}
+                <button class="button button-md neutral disabled">
+                  <span class="relative z-20">Apply</span>
+                </button>
+              {% elif program_app.status == 'accepted' %}
+                <button class="button button-md outline-style" @click="showOpp = !showOpp">
+                  <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
+                  <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                </button>
+              {% endif %}
+            </div>
+            {% if program_app.status == 'accepted' %}
+              <div id="opportunity-container" class="flex flex-col gap-y-4 py-4" x-show="showOpp" x-cloak>
+                {% for opportunity in program_app.program.managedopportunity_set.all %}
+                  <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
+                    <div class="flex justify-between w-full">
+                      <div class="flex flex-col gap-5 w-1/2">
+                        <div class="flex items-center gap-2 font-normal">
+                          <div class="w-2 h-2 bg-green-600 rounded-full"></div>
+                          <p class="hint">{{ opportunity.organization.name }}</p>
+                        </div>
+                        <div>
+                          <p class="card_title">{{ opportunity.name }}</p>
+                          <p class="card_description">{{ opportunity.description }}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-6">
+                        {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=opportunity.start_date classname="infocard-dark" %}
+                        {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=opportunity.end_date id='1' classname="infocard-dark" %}
+                      </div>
+                      <a class="button button-md button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug opportunity.id %}">
+                        <div class="flex items-center justify-between gap-4">
+                          <p class="text-sm">View</p>
+                          <i class="fa-light fa-arrow-right"></i>
+                        </div>
+                      </a>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
       </div>
-   </div>
+    </div>
+    <!-- Right Column -->
 
-   <!-- Right Column -->
-   <div class="w-1/3">
+    <div class="w-full lg:w-1/3">
       <div class="mb-4 text-brand-deep-purple font-medium text-sm">Recent Activities</div>
       <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
-         <div class="flex flex-col gap-4">
-            {% include 'tailwind/components/cards/activity_card.html' with title="Visits Pending Review" rows=review_counts icon="fa-clock-rotate-left" %}
-            {% include 'tailwind/components/cards/activity_card.html' with title="Pending Payment" rows=pending_payments icon="fa-hand-holding-dollar" %}
-            {% include 'tailwind/components/cards/activity_card.html' with title="Inactive Workers" rows=inactive_workers icon="fa-user-slash" %}
-         </div>
+        <div class="flex flex-col gap-4">
+          {% if pending_review %}
+            <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+              <div class="flex gap-4 items-center">
+                <i class="fa-light fa-clock-rotate-left"></i>
+                <p class="text-base">Pending Review</p>
+              </div>
+              {% for row in pending_review %}
+                  <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                    <div>
+                      <p class="title">{{ row.opportunity__name }}</p>
+                      <p class="hint">{{ row.opportunity__organization__name }}</p>
+                    </div>
+                    <a class="button button-sm button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug row.opportunity__id %}">
+                      <div class="flex items-center justify-between gap-4">
+                        <p class="text-2xl">{{ row.count }}</p>
+                        <i class="fa-light fa-arrow-right"></i>
+                      </div>
+                    </a>
+                  </div>
+              {% endfor %}
+              <div class="flex justify-end" x-show="{{ pending_review|length }} > 2">
+                <button class="button-text" @click="expanded = !expanded">
+                  <span x-text="expanded ? 'less' : 'more'"></span>
+                  <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                </button>
+              </div>
+            </div>
+          {% endif %}
+
+          {% if pending_payments %}
+            <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+              <div class="flex gap-4 items-center">
+                <i class="fa-light fa-hand-holding-dollar"></i>
+                <p class="text-base">Pending Payments</p>
+              </div>
+              {% for row in pending_payments %}
+                <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                  <div>
+                    <p class="title">{{ row.opportunity__name }}</p>
+                    <p class="hint">{{ row.opportunity__organization__name }}</p>
+                  </div>
+                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug row.opportunity__id %}">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-2xl">{{ row.count }}</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </a>
+                </div>
+              {% endfor %}
+              <div class="flex justify-end" x-show="{{ pending_payments|length }} > 2">
+                <button class="button-text" @click="expanded = !expanded">
+                  <span x-text="expanded ? 'less' : 'more'"></span>
+                  <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                </button>
+              </div>
+            </div>
+          {% endif %}
+
+          {% if inactive_workers %}
+            <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+              <div class="flex gap-4 items-center">
+                <i class="fa-light fa-user-slash"></i>
+                <p class="text-base">Inactive Workers</p>
+              </div>
+              {% for row in inactive_workers %}
+                <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                  <div>
+                    <p class="title">{{ row.opportunity__name }}</p>
+                    <p class="hint">{{ row.opportunity__organization__name }}</p>
+                  </div>
+                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug row.opportunity__id %}">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-2xl">{{ row.count }}</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </a>
+                </div>
+              {% endfor %}
+              <div class="flex justify-end" x-show="{{ inactive_workers|length }} > 2">
+                <button class="button-text" @click="expanded = !expanded">
+                  <span x-text="expanded ? 'less' : 'more'"></span>
+                  <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                </button>
+              </div>
+            </div>
+          {% endif %}
+
+        </div>
       </div>
-   </div>
-</div>
+    </div>
+  </div>
+
+
 {% endblock %}
