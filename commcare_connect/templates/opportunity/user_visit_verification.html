@@ -1,6 +1,18 @@
 {% extends 'tailwind/base.html' %}
+
+{% load static %}
 {% load django_tables2 %}
 {% load i18n %}
+
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/mapbox.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/mapbox-bundle.js' %}" defer></script>
+{% endblock javascript %}
 
 {% block content %}
   <div class="w-full space-y-4">
@@ -247,7 +259,7 @@
             </div>
 
             <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
-              <div id="visit-details">
+              <div id="visit-details" hx-on::after-settle="loadMap()">
                 <div class="flex justify-items-center align-items-center">
                   <span>Please select a visit to load details.</span>
                 </div>
@@ -270,6 +282,7 @@
       </div>
     </div>
   </div>
+
   <script>
     document.addEventListener('alpine:init', () => {
       Alpine.data('datePicker', (id) => ({
@@ -312,5 +325,147 @@
         }
       }));
     });
-  </script>
+
+
+  let map;
+  function loadMap() {
+      mapboxgl.accessToken = "{{ MAPBOX_TOKEN }}";
+      if(map) map?.remove();
+
+      const visit_data = JSON.parse(document.getElementById('visit_data').textContent);
+      const user_forms = JSON.parse(document.getElementById('user_forms').textContent);
+      const other_forms = JSON.parse(document.getElementById('other_forms').textContent);
+
+      map = new mapboxgl.Map({
+          container: 'user-visit-map',
+          style: 'mapbox://styles/mapbox/streets-v12',
+          center: [visit_data.lon, visit_data.lat],
+          zoom: 16,
+      });
+      circles = []
+      const marker = new mapboxgl.Marker({"color": "green"})
+          .setLngLat([visit_data.lon, visit_data.lat])
+          .setPopup(new mapboxgl.Popup().setHTML(
+              `
+              <table><tbody>
+              <tr><th>Name</th><td>${visit_data.entity_name}</td></tr>
+              <tr><th>User</th><td>${visit_data.user__name}</td></tr>
+              <tr><th>Date</th><td>${visit_data.visit_date}</td></tr>
+              <tr><th>Status</th><td>${visit_data.status}</td></tr>
+              </tbody></table>
+              `
+          ))
+          .addTo(map);
+      marker.getElement().onmouseenter = (event) => {
+          map.setLayoutProperty(
+              'circles',
+              'visibility',
+              'visible'
+          );
+      };
+      marker.getElement().onmouseleave = (event) => {
+          map.setLayoutProperty(
+              'circles',
+              'visibility',
+              'none'
+          );
+      };
+      circles.push(circle([visit_data.lon, visit_data.lat], visit_data.precision, {units: 'meters'}))
+      for (const user_form of user_forms) {
+        const marker = new mapboxgl.Marker({"scale": 0.75})
+            .setLngLat([user_form[3], user_form[2]])
+            .setPopup(new mapboxgl.Popup().setHTML(
+                `
+                    <table><tbody>
+                    <tr><th>Name</th><td>${user_form[0].entity_name}</td></tr>
+                    <tr><th>User</th><td>${user_form[0].user__name}</td></tr>
+                    <tr><th>Date</th><td>${user_form[0].visit_date}</td></tr>
+                    <tr><th>Status</th><td>${user_form[0].status}</td></tr>
+                    </tbody></table>
+                    <a hx-get="${user_form[0].url}" hx-trigger="click" hx-target="#visit-details>View Form</a>
+                    `
+            ))
+            .addTo(map);
+       marker.getElement().onmouseenter = (event) => {
+           map.setLayoutProperty(
+               'circles',
+               'visibility',
+               'visible'
+           );
+        };
+        marker.getElement().onmouseleave = (event) => {
+            map.setLayoutProperty(
+                'circles',
+                'visibility',
+                'none'
+            );
+        };
+        circles.push(circle([user_form[3], user_form[2]], user_form[4], {units: 'meters'}))
+      }
+      for (const other_form of other_forms) {
+        const marker = new mapboxgl.Marker({"color": "red", "scale": 0.75})
+            .setLngLat([other_form[3], other_form[2]])
+            .setPopup(new mapboxgl.Popup().setHTML(
+                `
+                    <table><tbody>
+                    <tr><th>Name</th><td>${other_form[0].entity_name}</td></tr>
+                    <tr><th>User</th><td>${other_form[0].user__name}</td></tr>
+                    <tr><th>Date</th><td>${other_form[0].visit_date}</td></tr>
+                    <tr><th>Status</th><td>${other_form[0].status}</td></tr>
+                    </tbody></table>
+                    <a hx-get="${other_form[0].url}" hx-trigger="click" hx-target="#visit-details">View Form</a>
+                    `
+            ))
+            .addTo(map);
+       marker.getElement().onmouseenter = (event) => {
+           map.setLayoutProperty(
+               'circles',
+               'visibility',
+               'visible'
+           );
+        };
+        marker.getElement().onmouseleave = (event) => {
+            map.setLayoutProperty(
+                'circles',
+                'visibility',
+                'none'
+            );
+        };
+        circles.push(circle([other_form[3], other_form[2]], other_form[4], {units: 'meters'}))
+      }
+
+      map.on('style.load', () => {
+          map.addLayer({
+              "id": "circles",
+              "type": "fill",
+              "source": {
+                  "type": "geojson",
+                  "data": {
+                      "type": "FeatureCollection",
+                      "features": circles,
+                  }
+              },
+              "layout": {
+                  "visibility": "none"
+              },
+              "paint": {
+                  "fill-antialias": true,
+                  "fill-opacity": 0.3,
+                  "fill-color": "yellow",
+                  "fill-outline-color": "#000",
+              }
+          });
+      })
+
+      // const styleList = document.getElementById('menu');
+      // const inputs = styleList.getElementsByTagName('input');
+
+      // for (const input of inputs) {
+      //     input.onclick = (click) => {
+      //         const styleId = click.target.id;
+      //         map.setStyle('mapbox://styles/mapbox/' + styleId);
+      //     };
+      // }
+  }
+</script>
 {% endblock %}
