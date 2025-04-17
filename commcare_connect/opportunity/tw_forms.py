@@ -3,16 +3,19 @@ import json
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Submit, Div
+from crispy_forms.templatetags.crispy_forms_field import css_class
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
 from django.utils.timezone import now
 from django.urls import reverse
+from markupsafe import Markup
 
 from commcare_connect import connect_id_client
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import ManagedOpportunity, Program
+from commcare_connect.users.models import User
 
 from .models import (
     CommCareApp,
@@ -214,6 +217,7 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
+        self.opportunity = kwargs.pop("opportunity", None)
         credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
@@ -225,9 +229,13 @@ class OpportunityUserInviteForm(forms.Form):
                 Row(
                     Field("filter_country", css_class=BASE_INPUT_CLASS),
                     Field("filter_credential", css_class=BASE_INPUT_CLASS),
+                    css_class="gap-2"
                 ),
             ),
-            Submit("submit", "Submit"),
+            Row(
+                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            )
         )
 
         self.fields["users"] = forms.CharField(
@@ -250,6 +258,10 @@ class OpportunityUserInviteForm(forms.Form):
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
+
+        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+            raise ValidationError("Please finish setting up the opportunity before inviting users.")
+
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
 
@@ -888,3 +900,113 @@ class PaymentExportFormTw(forms.Form):
             ),
         )
         self.helper.form_tag = False
+
+
+class TwMembershipForm(forms.ModelForm):
+    email = forms.CharField(
+        max_length=254,
+        required=True,
+        label="",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Enter email address",
+                "class": BASE_INPUT_CLASS,
+            }
+        ),
+    )
+
+    class Meta:
+        model = UserOrganizationMembership
+        fields = ("role",)
+        labels = {"role": ""}
+        widgets = {
+            "role": forms.Select(attrs={"class": SELECT_CLASS}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.organization = kwargs.pop("organization")
+        super().__init__(*args, **kwargs)
+
+        self.helper = TailwindFormHelper(self)
+        self.helper.add_input(
+                Submit("membership_form", "Submit",css_class="button button-md primary-dark float-end"),
+            )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"]
+        user = User.objects.filter(email=email).exclude(
+            memberships__organization=self.organization
+        ).first()
+
+        if not user:
+            raise ValidationError("User with this email does not exist or is already a member")
+
+        self.instance.user = user
+        return email
+
+
+
+
+class TwAddCredentialForm(forms.Form):
+    credential = forms.CharField(
+        widget=forms.Select(
+            attrs={"class": SELECT_CLASS}
+        )
+    )
+    users = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "class": TEXTAREA_CLASS,
+                "placeholder": (
+                    "Enter the phone numbers of the users you want to add the "
+                    "credential to, one on each line."
+                ),
+            }
+        )
+    )
+
+    def __init__(self, *args, **kwargs):
+        credentials = kwargs.pop("credentials", [])
+        super().__init__(*args, **kwargs)
+
+        self.fields["credential"].widget.choices = [
+            (c.name, c.name) for c in credentials
+        ]
+
+        self.helper = TailwindFormHelper(self)
+        self.helper.add_input(
+            Submit("submit", "Submit", css_class="button button-md primary-dark float-end")
+        )
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
+        return split_users
+
+
+class TwOrganizationChangeForm(forms.ModelForm):
+    name = forms.CharField(
+        max_length=254,
+        required=True,
+        label="Organization Name",
+        widget=forms.TextInput(
+            attrs={
+                "class": BASE_INPUT_CLASS,
+            }
+        ),
+    )
+
+    class Meta:
+        model = Organization
+        fields = ("name",)
+        labels = {
+            "name": "Organization Name",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = TailwindFormHelper(self)
+        self.helper.add_input(
+            Submit("org_form", "Update", css_class="button button-md primary-dark float-end")
+        )
+

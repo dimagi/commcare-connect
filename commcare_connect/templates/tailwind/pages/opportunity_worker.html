@@ -28,9 +28,9 @@
       <button type="button" class="button-icon">
         <i class="fa-light fa-sliders-simple text-brand-deep-purple"></i>
       </button>
-      <button class="button button-md outline-style">
+      <a href="{% url 'opportunity:tw_invite_user' request.org.slug opportunity.id %}" class="button button-md outline-style">
         Add Worker
-      </button>
+      </a>
     </div>
 
     <div x-show="selectedTab === 'learn'" class="flex gap-x-4">
@@ -134,7 +134,7 @@
   <div @click.outside="showVisitExportModal = false"
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
 
-    <div class="flex justify-between items-center border-b pb-2 mb-4">
+    <div class="flex justify-between items-center pb-2 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">
         Export Visit Data
       </h2>
@@ -150,7 +150,7 @@
         {% crispy visit_export_form %}
       </div>
 
-      <div class="flex justify-end gap-2 border-t pt-4">
+      <div class="flex justify-end gap-2 pt-4">
         <button type="button" class="btn btn-secondary" @click="showVisitExportModal = false">
           Close
         </button>
@@ -173,7 +173,7 @@
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
 
     <!-- Modal Header -->
-    <div class="flex justify-between items-center border-b pb-2 mb-4">
+    <div class="flex justify-between items-center  pb-2 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">
         Import Verified Visits
       </h2>
@@ -192,14 +192,14 @@
         </label>
 
         <input type="file" id="importFile" name="visits" required
-               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple p-2" />
+               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:rand-deep-purple p-2" />
         <p class="mt-2 text-xs text-gray-500" id="importFileHelp">
           The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.
         </p>
       </div>
 
       <!-- Modal Footer -->
-      <div class="flex justify-end gap-2 border-t pt-4">
+      <div class="flex justify-end gap-2 b pt-4">
         <button type="button" @click="showVisitImportModal = false"
                 class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300">
           Close
@@ -224,7 +224,7 @@
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
 
     <!-- Modal Header -->
-    <div class="flex justify-between items-center border-b pb-2 mb-4">
+    <div class="flex justify-between items-center  pb-2 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">
         Import Payment Records
       </h2>
@@ -242,14 +242,14 @@
           Select file to import
         </label>
         <input type="file" id="importPaymentFile" name="payments"
-               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:border-brand-deep-purple p-2" />
+               class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-deep-purple focus:rand-deep-purple p-2" />
         <p class="mt-2 text-xs text-gray-500" id="importFileHelp">
           The file must contain at least the "Username", "Amount" and "Payment Date" columns.
         </p>
       </div>
 
       <!-- Modal Footer -->
-      <div class="flex justify-end gap-2 border-t pt-4">
+      <div class="flex justify-end gap-2 b pt-4">
         <button type="button" @click="showPaymentImportModal = false"
                 class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300">
           Close
@@ -274,7 +274,7 @@
   <div @click.outside="showVisitExportModal = false"
        class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
 
-    <div class="flex justify-between items-center border-b pb-2 mb-4">
+    <div class="flex justify-between items-center  pb-2 mb-4">
       <h2 class="text-lg font-semibold text-brand-deep-purple">
         Export Payments
       </h2>
@@ -290,7 +290,7 @@
         {% crispy export_form %}
       </div>
 
-      <div class="flex justify-end gap-2 border-t pt-4">
+      <div class="flex justify-end gap-2 b pt-4">
         <button type="button" class="btn btn-secondary" @click="showPaymentExportModal = false">
           Close
         </button>
