@@ -13,7 +13,7 @@
           {% for column in table.columns %}
           <th>
             {% if column.orderable %}
-            {% sortable_header column.name column.header table.use_htmx %}
+            {% sortable_header column.name column.header table.use_view_url %}
             {% else %}
             <span>{{ column.header }}</span>
             {% endif %}
