@@ -78,46 +78,29 @@
 
 
   <!-- Message Section -->
-  <template x-for="(message, index) in messages" :key="index">
-    <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
-      <div class="flex items-center gap-4">
-        <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
-        <div class="flex items-center gap-1">
-          <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
-          <span class="flex items-center text-xs text-brand-blue-light">
-            <span class="mr-1 text-2xl text-brand-indigo">•</span>
-            Program Manager Organization Names
-          </span>
-        </div>
-      </div>
-      <div>
-        <div class="flex items-center gap-4 mt-2">
-          <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
-             @click="message.expanded = !message.expanded"></i>
-          <p class="text-xs text-brand-deep-purple">
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus
-            venenatis.
-          </p>
-        </div>
-        <div class="flex items-center gap-4 mt-2" x-show="message.expanded" x-transition>
-          <div></div>
-          <div>
-            <div class="flex items-center gap-1 ml-4">
-              <span class="text-xs text-brand-blue-light">06 May, 2024</span>
-              <span class="flex items-center text-xs text-brand-blue-light">
-                    <span class="mr-1 text-2xl text-brand-indigo">•</span>
-                    Network Manager Organization Names
-                  </span>
-            </div>
-            <p class="ml-5 text-xs text-brand-deep-purple">
-              Lorems ipsum dolor sit amet, consectetur adipiscing elit. Phasellus tempor arcu ac ligula luctus
-              venenatis.
-            </p>
-          </div>
-        </div>
+  {% if user_visit.justification %}
+  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+    <div class="flex items-center gap-4">
+      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <div class="flex items-center gap-1">
+        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+        <span class="flex items-center text-xs text-brand-blue-light">
+          <span class="mr-1 text-2xl text-brand-indigo">•</span>
+          {{ user_visit.opportunity.organization.name }}
+        </span>
       </div>
     </div>
-  </template>
+    <div>
+      <div class="flex items-center gap-4 mt-2">
+        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+           @click="message.expanded = !message.expanded"></i>
+        <p class="text-xs text-brand-deep-purple">
+          {{ user_visit.justification }}
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Information -->
   <div class="grid grid-cols-3 gap-4">
