@@ -16,6 +16,12 @@
 
 {% block content %}
   <ul class="breadcrumb">
+      {% if opportunity.managed %}
+      <li>
+          <a href='{% url "program:home" request.org.slug %}'>Programs</a>
+          <i class="fa-solid fa-chevron-right"></i>
+      </li>
+      {% endif %}
       <li>
           <a href='{% url "opportunity:opportunities_list_new" request.org.slug %}'>Opportunities</a>
           <i class="fa-solid fa-chevron-right"></i>
