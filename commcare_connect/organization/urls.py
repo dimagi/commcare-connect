@@ -12,4 +12,5 @@ urlpatterns = [
     path("organization/member_view", views.org_member_view, name="org_member_view"),
     path("organization/member_table", views.org_member_table, name="org_member_table"),
     path("organization/add_credential", views.tw_add_credential_view, name="tw_add_credential"),
+    path("organization/tw_member", views.tw_add_members_form, name="tw_add_members"),
 ]

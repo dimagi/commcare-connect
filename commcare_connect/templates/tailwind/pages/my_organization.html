@@ -10,6 +10,7 @@
       selectedTab: '{{ request.GET.active_tab|default:'details' }}',
       selectedOption: '',
       isViewPermissionModalOpen: false,
+      showAddMemberModal: false,
       changeTab(tab) {
         this.selectedTab = tab;
         const url = new URL(window.location);
@@ -76,7 +77,9 @@
       <button type="button" class="button-icon">
         <i class="fa-light fa-trash"></i>
       </button>
-      <button class="button button-md outline-style">Add Members</button>
+      <button class="button button-md outline-style" @click="showAddMemberModal = true">
+        Add Members
+      </button>
     </div>
   </div>
 
@@ -89,11 +92,6 @@
           {% csrf_token %}
           {% crispy org_form %}
         </form>
-        <h1 class="mt-16 mb-2 text-lg">Members Invite</h1>
-        <form method="post">
-          {% csrf_token %}
-          {% crispy member_form %}
-        </form>
         <h1 class="mt-16 text-lg mb-2">Add Credential</h1>
         <form action="{% url 'organization:tw_add_credential' request.org.slug %}" method="post">
           {% csrf_token %}
@@ -101,7 +99,6 @@
         </form>
     </div>
 
-    <!-- Members Content (Loaded via HTMX) -->
     <div
     x-show="selectedTab === 'members'"
     id="invoice_members_container"
@@ -111,5 +108,33 @@
     hx-trigger="loadMembers from:body"
   ></div>
   </div>
+
+<div x-show="showAddMemberModal"
+     x-cloak
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+     @keydown.escape.window="showAddMemberModal = false">
+  <div @click.outside="showAddMemberModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <div class="flex justify-between items-center pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        Invite Member
+      </h2>
+      <button @click="showAddMemberModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <form action="{% url 'organization:tw_add_members' request.org.slug %}"  method="post">
+      {% csrf_token %}
+      <div class="mb-4">
+        {% crispy member_form %}
+      </div>
+
+    </form>
+  </div>
+</div>
+
 </div>
 {% endblock content %}
