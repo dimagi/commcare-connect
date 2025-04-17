@@ -1441,6 +1441,14 @@ def user_visit_verification(request, org_slug, opp_id, pk):
     flagged_info = flagged_info.values()
     last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
 
+    filter_date = now().strftime("%Y-%m-%d")
+    if request.GET.get("filter_date"):
+        filter_date = request.GET.get("filter_date")
+    else:
+        first_visit = visits.order_by("visit_date").values("visit_date").first()
+        if first_visit:
+            filter_date = first_visit["visit_date"].strftime("%Y-%m-%d")
+
     tabs = [
         {
             "name": "pending",
@@ -1480,6 +1488,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             "flagged_info": flagged_info,
             "last_payment_details": last_payment_details,
             "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
+            "filter_date": filter_date,
         },
     )
     return response

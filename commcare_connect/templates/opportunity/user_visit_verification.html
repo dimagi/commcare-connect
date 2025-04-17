@@ -204,7 +204,7 @@
               hx-trigger="change, load"
               x-data="{
                 activeTab: '{{ request.GET.filter_status|default:'pending' }}',
-                filter_date: {{ request.GET.filter_date|default:'new Date()' }},
+                filter_date: new Date('{{ filter_date }}'),
               }"
               @load-total-pages.window="totalPages = $event.detail.value">
           <div
@@ -230,8 +230,7 @@
                 <input type="text" id="tableDatePicker" name="filter_date"
                        class="text-center w-32 focus:outline-none text-sm"
                        placeholder="Select Date"
-                       {% if request.GET.filter_date %}value="{{ request.GET.filter_date }}"
-                       {% else %}value="{% now 'Y-m-d' %}"{% endif %}>
+                       value="{{ filter_date }}">
                 <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
               </div>
             </div>
@@ -286,7 +285,7 @@
   <script>
     document.addEventListener('alpine:init', () => {
       Alpine.data('datePicker', (id) => ({
-        selectedDate: new Date("{% if request.GET.filter_date %}{{ request.GET.filter_date }}{% else %}{% now 'Y-m-d' %}{% endif %}"),
+        selectedDate: new Date("{{ filter_date }}"),
         flatpickrInstance: flatpickr(document.getElementById(id), {
           defaultDate: this.selectedDate,
           altInput: true,
