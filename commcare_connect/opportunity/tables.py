@@ -605,7 +605,6 @@ class UserVisitVerificationTable(BaseTailwindTable):
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
-            "hx-on::after-request": "document.dispatchEvent(new Event('visit-loaded'))",
         }
 
     def render_icons(self, record):

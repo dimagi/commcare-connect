@@ -1549,6 +1549,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             "tabs": tabs,
             "flagged_info": flagged_info,
             "last_payment_details": last_payment_details,
+            "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
         },
     )
     return response
@@ -1635,12 +1636,31 @@ def user_visit_details(request, org_slug, opp_id, pk):
             other_lat, other_lon, _, other_precision = loc.location.split(" ")
             dist = distance.distance((lat, lon), (other_lat, other_lon))
             if dist.m <= 250:
+                visit_data = {
+                    "entity_name": loc.entity_name,
+                    "user__name": loc.user.name,
+                    "status": loc.get_status_display(),
+                    "visit_date": loc.visit_date,
+                    "url": reverse(
+                        "opportunity:user_visit_details",
+                        kwargs={"org_slug": request.org.slug, "opp_id": loc.opportunity_id, "pk": loc.pk},
+                    ),
+                }
                 if user_visit.user_id == loc.user_id:
-                    user_forms.append((loc, dist.m, other_lat, other_lon, other_precision))
+                    user_forms.append((visit_data, dist.m, other_lat, other_lon, other_precision))
                 else:
-                    other_forms.append((loc, dist.m, other_lat, other_lon, other_precision))
+                    other_forms.append((visit_data, dist.m, other_lat, other_lon, other_precision))
         user_forms.sort(key=lambda x: x[1])
         other_forms.sort(key=lambda x: x[1])
+        visit_data = {
+            "entity_name": loc.entity_name,
+            "user__name": loc.user.name,
+            "status": loc.get_status_display(),
+            "visit_date": loc.visit_date,
+            "lat": lat,
+            "lon": lon,
+            "precision": precision,
+        }
     return render(
         request,
         "opportunity/user_visit_details.html",
@@ -1649,9 +1669,6 @@ def user_visit_details(request, org_slug, opp_id, pk):
             xform=xform,
             user_forms=user_forms[:5],
             other_forms=other_forms[:5],
-            visit_lat=lat,
-            visit_lon=lon,
-            visit_precision=precision,
-            MAPBOX_TOKEN=settings.MAPBOX_TOKEN,
+            visit_data=visit_data,
         ),
     )

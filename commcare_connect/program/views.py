@@ -301,7 +301,7 @@ def program_home(request, org_slug):
         .order_by("-date_created")
     )
 
-    programs = [app.program for app in apps]
+    programs = [app.program for app in apps if app.status == ProgramApplicationStatus.ACCEPTED]
 
     # Sort by ProgramApplication date first, then Program start_date
     results = sorted(apps, key=lambda x: (x.date_created, x.program.start_date), reverse=True)
