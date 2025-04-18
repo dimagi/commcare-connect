@@ -158,14 +158,6 @@ class DeliverUnitFlagsForm(forms.ModelForm):
             raise ValidationError("Flags are already configured for this Deliver Unit.")
         return deliver_unit
 
-def icon_field(field_name, icon_class, **kwargs):
-    icon_html = f'<i class="fa {icon_class} mr-2 text-gray-500"></i>'
-    return Field(
-        field_name,
-        label=Markup(icon_html + field_name.capitalize()),
-        **kwargs
-    )
-
 
 class FormJsonValidationRulesForm(forms.ModelForm):
     class Meta:
