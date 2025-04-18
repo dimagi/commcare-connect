@@ -45,8 +45,9 @@
         <!-- Navigation Items -->
         <div class="mt-5">
             {% url 'program:home' request.org.slug as program_home_url %}
+            {% url 'opportunity:opportunities_list_new' request.org.slug as opportunity_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
-            {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target='/opportunities' %}
+            {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Analytics' icon='chart-pie'  target='/analytics' %}
             {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target='/organization' %}
         </div>

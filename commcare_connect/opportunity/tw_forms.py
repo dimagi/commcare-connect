@@ -3,15 +3,18 @@ import json
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Submit, Div
+from crispy_forms.templatetags.crispy_forms_field import css_class
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
 from django.utils.timezone import now
+from django.urls import reverse
 
-from commcare_connect.connect_id_client.models import Credential
+from commcare_connect import connect_id_client
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import ManagedOpportunity, Program
+from commcare_connect.users.models import User
 
 from .models import (
     CommCareApp,
@@ -61,7 +64,7 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "duplicate": "Flag duplicate form submissions for an entity.",
             "gps": "Flag forms with no location information.",
             "catchment_areas": "Flag forms outside a user's assigned catchment area",
-        } 
+        }
         labels = {
             "duplicate": "Check Duplicates",
             "gps": "Check GPS",
@@ -81,11 +84,11 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         self.helper = TailwindFormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
-            Row( 
+            Row(
                 Column(
                         Field("duplicate", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
                         Field("gps", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
-                        Field("catchment_areas", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),  
+                        Field("catchment_areas", wrapper_class="grid grid-cols-[1fr_auto] gap-x-4 w-full"),
                 ),Column(
                         Row(Field("location"),css_class="flex-1"),
                         Fieldset(
@@ -157,14 +160,6 @@ class DeliverUnitFlagsForm(forms.ModelForm):
             raise ValidationError("Flags are already configured for this Deliver Unit.")
         return deliver_unit
 
-def icon_field(field_name, icon_class, **kwargs):
-    icon_html = f'<i class="fa {icon_class} mr-2 text-gray-500"></i>'
-    return Field(
-        field_name,
-        label=Markup(icon_html + field_name.capitalize()),
-        **kwargs
-    )
-
 
 class FormJsonValidationRulesForm(forms.ModelForm):
     class Meta:
@@ -213,7 +208,8 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
-        credentials = [Credential(org_slug, org_slug)]  # connect_id_client.fetch_credentials(org_slug)
+        self.opportunity = kwargs.pop("opportunity", None)
+        credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
         self.helper = TailwindFormHelper(self)
@@ -224,9 +220,13 @@ class OpportunityUserInviteForm(forms.Form):
                 Row(
                     Field("filter_country", css_class=BASE_INPUT_CLASS),
                     Field("filter_credential", css_class=BASE_INPUT_CLASS),
+                    css_class="gap-2"
                 ),
             ),
-            Submit("submit", "Submit"),
+            Row(
+                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                css_class="flex justify-end"
+            )
         )
 
         self.fields["users"] = forms.CharField(
@@ -249,6 +249,10 @@ class OpportunityUserInviteForm(forms.Form):
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
+
+        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+            raise ValidationError("Please finish setting up the opportunity before inviting users.")
+
         split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
         return split_users
 
@@ -278,27 +282,27 @@ class OpportunityChangeForm(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Opportunity Details</h6>  <span class='hint'>Edit the details of the opportunity. All fields are mandatory.  </span> </div>"),
                 Column(
                     Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
-                    Field("short_description", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),  
+                    Field("short_description", css_class=BASE_INPUT_CLASS,wrapper_class="w-full"),
                     Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full"),
                 ),
-                Column(  
+                Column(
                     Field("delivery_type", css_class=BASE_INPUT_CLASS),
                     Field("active", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"),
-                    Field("is_test", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"), 
+                    Field("is_test", css_class=CHECKBOX_CLASS,wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg"),
                 ),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg"
-            ), 
+            ),
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Date</h6>  <span class='hint'>Optional: If not specified, the opportunity start & end dates will apply to the form submissions.</span> </div>"),
                 Column(
                     Field("end_date", css_class=BASE_INPUT_CLASS),
                 ),
-                Column( 
+                Column(
                     Field("currency", css_class=SELECT_CLASS),
                     Field("additional_users", css_class=BASE_INPUT_CLASS)
                 ),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg"
-            ),   
+            ),
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Workers</h6></div>"),
                 Row(
@@ -312,8 +316,8 @@ class OpportunityChangeForm(
             Row(
                 Submit("submit", "Submit",css_class="button button-md primary-dark"),
                 css_class="flex justify-end"
-            ) 
-        ) 
+            )
+        )
 
         self.fields["additional_users"] = forms.IntegerField(
             required=False, help_text="Adds budget for additional users."
@@ -366,7 +370,7 @@ class PaymentUnitForm(forms.ModelForm):
                     Field("name", css_class=BASE_INPUT_CLASS),
                     Field("description",css_class=TEXTAREA_CLASS),
                 ),
-                Column( 
+                Column(
                     Row(
                         Field("start_date", css_class=BASE_INPUT_CLASS),
                         Field("end_date", css_class=BASE_INPUT_CLASS),
@@ -523,11 +527,6 @@ class PaymentInvoiceForm(forms.ModelForm):
                     ),
                     css_class="flex flex-col gap-2",
                 ),
-                Row(
-                    Submit("cancel", "Cancel", css_class="button button-md outline-style"),
-                    Submit("submit", "Submit", css_class="button button-md primary-dark"),
-                    css_class="flex justify-end gap-4",
-                ),
                 css_class="flex flex-col gap-4",
             )
         )
@@ -575,9 +574,9 @@ class OpportunityInitForm(forms.ModelForm):
                 Column(
                     Field("name", css_class=BASE_INPUT_CLASS),
                     Field("short_description", css_class=BASE_INPUT_CLASS),
-                    Field("description", css_class=TEXTAREA_CLASS),  
-                ), 
-                Column( 
+                    Field("description", css_class=TEXTAREA_CLASS),
+                ),
+                Column(
                     Field("currency", css_class=BASE_INPUT_CLASS),
                     Field("api_key", css_class=BASE_INPUT_CLASS),
                 ),
@@ -586,41 +585,59 @@ class OpportunityInitForm(forms.ModelForm):
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Apps</h6>  <span class='hint'>Add required apps to the opportunity. All fields are mandatory.</span> </div>"),
                 Column(
-                    "Learn App",
                     Field("learn_app_domain", css_class=SELECT_CLASS),
                     Field("learn_app", css_class=SELECT_CLASS),
                     Field("learn_app_description", css_class=TEXTAREA_CLASS),
                     Field("learn_app_passing_score", css_class=BASE_INPUT_CLASS),
                     data_loading_states=True,
-                ),  
+                ),
                 Column(
-                    "Deliver App",
                     Field("deliver_app_domain", css_class=SELECT_CLASS),
-                    Field("deliver_app", css_class=SELECT_CLASS), 
+                    Field("deliver_app", css_class=SELECT_CLASS),
                     data_loading_states=True,
-                ),  
+                ),
                 css_class="grid grid-cols-2 gap-4 card_bg my-4"
-            ),  
+            ),
             Row(
                 Submit("submit", "Submit",css_class="button button-md primary-dark"),
                 css_class="flex justify-end"
             )
         )
 
-        domain_choices = [(i, f"Domain {i}") for i in range(1, 11)]
+        domain_choices = [(domain, domain) for domain in self.domains]
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
+            widget=forms.Select(
+                attrs={
+                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
+                    "hx-include": "#id_learn_app_domain",
+                    "hx-trigger": "load delay:0.3s, change",
+                    "hx-target": "#id_learn_app",
+                    "data-loading-disable": True,
+                }
+            ),
         )
-        learn_app_choices = [(i, f"Learn App {i}") for i in range(1, 11)]
-        self.fields["learn_app"] = forms.Field(widget=forms.Select(choices=learn_app_choices))
+        self.fields["learn_app"] = forms.Field(
+            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+        )
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
         self.fields["deliver_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
+            widget=forms.Select(
+                attrs={
+                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
+                    "hx-include": "#id_deliver_app_domain",
+                    "hx-trigger": "load delay:0.3s, change",
+                    "hx-target": "#id_deliver_app",
+                    "data-loading-disable": True,
+                }
+            ),
         )
-        deliver_app_choices = [(i, f"Deliver App {i}") for i in range(1, 11)]
-        self.fields["deliver_app"] = forms.Field(widget=forms.Select(choices=deliver_app_choices))
+        self.fields["deliver_app"] = forms.Field(
+            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+        )
         self.fields["api_key"] = forms.CharField(max_length=50)
 
     def clean(self):
@@ -859,7 +876,7 @@ class VisitExportForm(forms.Form):
                 Field("date_range", css_class=SELECT_CLASS),
                 Field("status", css_class=SELECT_CLASS),
                 Field("flatten_form_data", css_class=CHECKBOX_CLASS, wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100"),
-                css_class="flex flex-col" 
+                css_class="flex flex-col"
             ),
         )
         self.helper.form_tag = False
@@ -870,3 +887,128 @@ class VisitExportForm(forms.Form):
             return []
 
         return [VisitValidationStatus(status) for status in statuses]
+
+
+class PaymentExportFormTw(forms.Form):
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = TailwindFormHelper(self)
+        self.helper.layout = Layout(
+            Row(
+                Field("format", css_class=SELECT_CLASS),
+                css_class="flex flex-col"
+            ),
+        )
+        self.helper.form_tag = False
+
+
+class TwMembershipForm(forms.ModelForm):
+    email = forms.CharField(
+        max_length=254,
+        required=True,
+        label="",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Enter email address",
+                "class": BASE_INPUT_CLASS,
+            }
+        ),
+    )
+
+    class Meta:
+        model = UserOrganizationMembership
+        fields = ("role",)
+        labels = {"role": ""}
+        widgets = {
+            "role": forms.Select(attrs={"class": SELECT_CLASS}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.organization = kwargs.pop("organization")
+        super().__init__(*args, **kwargs)
+
+        self.helper = TailwindFormHelper(self)
+        self.helper.add_input(
+                Submit("membership_form", "Submit",css_class="button button-md primary-dark float-end"),
+            )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"]
+        user = User.objects.filter(email=email).exclude(
+            memberships__organization=self.organization
+        ).first()
+
+        if not user:
+            raise ValidationError("User with this email does not exist or is already a member")
+
+        self.instance.user = user
+        return email
+
+
+
+
+class TwAddCredentialForm(forms.Form):
+    credential = forms.CharField(
+        widget=forms.Select(
+            attrs={"class": SELECT_CLASS}
+        )
+    )
+    users = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "class": TEXTAREA_CLASS,
+                "placeholder": (
+                    "Enter the phone numbers of the users you want to add the "
+                    "credential to, one on each line."
+                ),
+            }
+        )
+    )
+
+    def __init__(self, *args, **kwargs):
+        credentials = kwargs.pop("credentials", [])
+        super().__init__(*args, **kwargs)
+
+        self.fields["credential"].widget.choices = [
+            (c.name, c.name) for c in credentials
+        ]
+
+        self.helper = TailwindFormHelper(self)
+        self.helper.add_input(
+            Submit("submit", "Submit", css_class="button button-md primary-dark float-end")
+        )
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
+        return split_users
+
+
+class TwOrganizationChangeForm(forms.ModelForm):
+    name = forms.CharField(
+        max_length=254,
+        required=True,
+        label="Organization Name",
+        widget=forms.TextInput(
+            attrs={
+                "class": BASE_INPUT_CLASS,
+            }
+        ),
+    )
+
+    class Meta:
+        model = Organization
+        fields = ("name",)
+        labels = {
+            "name": "Organization Name",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = TailwindFormHelper(self)
+        self.helper.add_input(
+            Submit("org_form", "Update", css_class="button button-md primary-dark float-end")
+        )
+

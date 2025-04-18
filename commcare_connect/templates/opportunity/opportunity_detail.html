@@ -100,20 +100,22 @@
               {% translate "Configure Verification Flags" %}
             </a>
           </li>
-          <li class="dropdown-divider"></li>
-          <li>
-            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPMReviewModal">
-              <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
-              {% translate "Export PM Review Visits" %}
-            </a>
-          </li>
-          <li>
-            <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importPMReviewModal">
-              <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
-               {% translate "Import PM Review Visits" %}
-            </a>
-          </li>
           {% endif %}
+          {% if object.managed and request.org_membership.is_program_manager %}
+            <li class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPMReviewModal">
+                <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
+                {% translate "Export PM Review Visits" %}
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#importPMReviewModal">
+                <i class="bi bi-file-earmark-arrow-up-fill pe-2"></i>
+                 {% translate "Import PM Review Visits" %}
+              </a>
+            </li>
+          {% endif%}
           <li class="dropdown-divider"></li>
           <li>
             <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportVisitModal">

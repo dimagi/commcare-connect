@@ -197,6 +197,14 @@ class Opportunity(BaseModel):
     def is_active(self):
         return bool(self.active and self.end_date and self.end_date >= now().date())
 
+    @property
+    def status(self):
+        if self.is_active:
+            return "Active"
+        if self.end_date and self.end_date < now().date():
+            return "Ended"
+        return "Inactive"
+
 
 class OpportunityVerificationFlags(models.Model):
     opportunity = models.OneToOneField(Opportunity, on_delete=models.CASCADE)
@@ -646,6 +654,12 @@ class UserVisit(XFormBaseModel):
             except (TypeError, ValueError):
                 pass
         return duration
+
+    @property
+    def flags(self):
+        if self.flag_reason is not None:
+            return [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return []
 
     class Meta:
         constraints = [

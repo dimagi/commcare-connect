@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.opportunity import tw_form_views, tw_views, views
+from commcare_connect.opportunity.tw_views import OpportunityListView
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -54,10 +55,6 @@ from commcare_connect.opportunity.views import (
     user_visits_list,
     verification_flags_config,
     visit_verification,
-    worker_deliver,
-    worker_learn,
-    worker_list,
-    worker_verify,
 )
 
 app_name = "opportunity"
@@ -119,10 +116,6 @@ urlpatterns = [
     path("<int:opp_id>/suspend_user/<int:pk>/", view=suspend_user, name="suspend_user"),
     path("<int:opp_id>/revoke_user_suspension/<int:pk>/", view=revoke_user_suspension, name="revoke_user_suspension"),
     path("<int:opp_id>/delete_form_json_rule/<int:pk>/", view=delete_form_json_rule, name="delete_form_json_rule"),
-    path("<int:opp_id>/workers/list/", view=worker_list, name="worker_list"),
-    path("<int:opp_id>/workers/learn/", view=worker_learn, name="worker_learn"),
-    path("<int:opp_id>/workers/deliver/", view=worker_deliver, name="worker_deliver"),
-    path("<int:opp_id>/workers/verify/", view=worker_verify, name="worker_verify"),
     path("<int:pk>/catchment_area_export/", view=export_catchment_area, name="catchment_area_export"),
     path("<int:pk>/catchment_area_import/", view=import_catchment_area, name="catchment_area_import"),
     path("<int:pk>/payment_report/", payment_report, name="payment_report"),
@@ -139,48 +132,88 @@ urlpatterns = [
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/pm_dashboard/", tw_views.pm_dashboard, name="pm_dashboard"),
     path("<int:opp_id>/tw/worker/", tw_views.worker, name="tw_worker"),
-    path("<int:opp_id>/tw/opportunities/", tw_views.opportunities, name="tw_opportunities"),
+    path("<int:opp_id>/tw/opportunity/", tw_views.opportunity_dashboard, name="tw_opportunity"),
     path("<int:opp_id>/tw/opportunities_list/", tw_views.opportunities_list, name="tw_opportunities"),
     path("<int:opp_id>/tw/pm_opportunities_list/", tw_views.pm_opportunities_list, name="tw_pm_opportunities"),
-    path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_worker_learn"), # TABLE
-    path("<int:opp_id>/tw/worker_delivery/", tw_views.worker_delivery, name="tw_worker_deliver"),
-    path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_opportunities"),  # TABLE
-    path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_opportunities"),  # TABLE
+    path("tw/opportunities_list_new/", OpportunityListView.as_view(), name="opportunities_list_new"),
+    path("<int:opp_id>/tw/worker_learn/", tw_views.worker_learn, name="tw_learn_table"),  # TABLE
+    path("<int:opp_id>/tw/worker_delivery/", tw_views.worker_delivery, name="tw_delivery_table"),
+    path("<int:opp_id>/tw/worker_payments/", tw_views.worker_payments, name="tw_payments_table"),  # TABLE
+    path("<int:opp_id>/tw/worker_main/", tw_views.worker_main, name="tw_worker_table"),  # TABLE
     path("<int:opp_id>/tw/get_worker_last_payment/", tw_views.get_worker_last_payment, name="tw_opportunities"),
-    path("<int:opp_id>/tw/workers_list/", tw_views.opportunity_worker, name="tw_opportunities"),
-    path("<int:opp_id>/tw/workers_list/learn_progress", tw_views.opportunity_worker_learn_progress, name="tw_opportunity_worker_learn_progress"),
-    path("<int:opp_id>/tw/workers_list/payments", tw_views.opportunity_worker_payment, name="tw_opportunity_worker_learn_progress"),
-    path("<int:opp_id>/tw/invoice_list/", tw_views.invoice_list, name="tw_invoice_list"),
+    path("<int:opp_id>/tw/workers_list/", tw_views.opportunity_worker, name="tw_worker_list"),
+    path("<int:opp_id>/tw/import_visit/", tw_views.tw_update_visit_status_import, name="tw_import_visit"),
+    path("<int:opp_id>/tw/export_visit/", tw_views.export_visit_status, name="tw_export_visit"),
+    path("<int:opp_id>/tw/export_payments/", tw_views.export_users_for_payment, name="tw_export_payments"),
+    path("<int:opp_id>/tw/import_payments/", tw_views.payment_import, name="tw_import_payments"),
+    path(
+        "<int:opp_id>/tw/workers_list/learn_progress",
+        tw_views.opportunity_worker_learn_progress,
+        name="tw_opportunity_worker_learn_progress",
+    ),
+    path(
+        "<int:opp_id>/tw/workers_list/payments",
+        tw_views.opportunity_worker_payment,
+        name="tw_opportunity_worker_learn_progress",
+    ),
+    path("<int:pk>/tw/invoice_list/", views.tw_invoice_list, name="tw_invoice_list"),
+    path("<int:pk>/tw/invoice_payment_report/", views.tw_payment_report, name="tw_payment_report"),
     path("<int:opp_id>/tw/my_organization/", tw_views.my_organization, name="tw_my_organization"),
     path("<int:opp_id>/tw/add_budget/", tw_views.add_budget, name="tw_add_budget"),
-    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"), # TODO
-    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"), # TODO 
+    path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),  # TODO
+    path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"),  # TODO
+    # path("<int:opp_id>/tw/login/", tw_views.login, name="tw_login"),
+    # path("<int:opp_id>/tw/signup/", tw_views.signup, name="tw_signup"),
     path("<int:opp_id>/tw/onboarding/", tw_views.onboarding, name="tw_onboarding"),
     path("<int:opp_id>/tw/onboarding/welcome", tw_views.welcome, name="tw_welcome"),
     path("<int:opp_id>/tw/onboarding/setup-org", tw_views.onboarding_org, name="tw_setup_org"),
     path("<int:opp_id>/tw/onboarding/invite", tw_views.onboarding_invite, name="tw_invite"),
     # Tables
     path("<int:opp_id>/tw/tables/flagged_workers/", tw_views.flagged_workers, name="tw_flagged_workers"),
-    path("<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"), # TODO
-    path("<int:opp_id>/tw/tables/pm_opportunities_list/", tw_views.pm_opportunities_list_table_view, name="pm_opp_list"),
+    path(
+        "<int:opp_id>/tw/tables/opportunities_list/", tw_views.opportunities_list_table_view, name="tw_flagged_workers"
+    ),  # TODO
+    path(
+        "<int:opp_id>/tw/tables/pm_opportunities_list/", tw_views.pm_opportunities_list_table_view, name="pm_opp_list"
+    ),
     path("<int:opp_id>/tw/tables/pay_worker", tw_views.pay_worker, name="tw_pay_worker"),
     path("<int:opp_id>/tw/tables/all_invoice", tw_views.all_invoice_table, name="tw_all_invoice"),
     path("<int:opp_id>/tw/tables/invoice_report", tw_views.invoice_report_table, name="tw_invoice_report"),
-    path("<int:opp_id>/tw/tables/my_organization_members", tw_views.my_organization_members_table, name="tw_my_organization_members_table"),
-    path("<int:opp_id>/tw/tables/learn_app",tw_views.learn_app_table, name="tw_learn_app"),
-    path("<int:opp_id>/tw/tables/delivery_app",tw_views.delivery_app_table, name="tw_delivery_app"),
-    path("<int:opp_id>/tw/tables/payment_app",tw_views.payment_app_table, name="tw_payment_app"),
-    path("<int:opp_id>/tw/tables/worker_flagged_table",tw_views.worker_flagged_table, name="tw_flagged_table"),
-    path("<int:opp_id>/tw/tables/worker_review_table",tw_views.worker_review_table, name="tw_review_table"),
-    path("<int:opp_id>/tw/tables/worker_revalidate_table",tw_views.worker_revalidate_table, name="tw_revalidate_table"),
-    path("<int:opp_id>/tw/tables/worker_approved_table",tw_views.worker_approved_table, name="tw_approved_table"),
-    path("<int:opp_id>/tw/tables/worker_rejected_table",tw_views.worker_rejected_table, name="tw_rejected_table"),
-    path("<int:opp_id>/tw/tables/worker_all_table",tw_views.worker_all_table, name="tw_all_table"),
+    path(
+        "<int:opp_id>/tw/tables/my_organization_members",
+        tw_views.my_organization_members_table,
+        name="tw_my_organization_members_table",
+    ),
+    path("<int:opp_id>/tw/tables/learn_app", tw_views.learn_app_table, name="tw_learn_app"),
+    path("<int:opp_id>/tw/tables/learn_module", tw_views.learn_module_table, name="tw_learn_module"),
+    path("<int:opp_id>/tw/tables/delivery_app", tw_views.delivery_app_table, name="tw_delivery_app"),
+    path("<int:opp_id>/tw/tables/deliver_unit", tw_views.deliver_unit_table, name="tw_deliver_unit"),
+    path("<int:opp_id>/tw/tables/payment_app", tw_views.payment_app_table, name="tw_payment_app"),
+    path("<int:opp_id>/tw/tables/payment_unit", tw_views.payment_unit_table, name="tw_payment_unit"),
+    path("<int:opp_id>/tw/tables/worker_flagged_table", tw_views.worker_flagged_table, name="tw_flagged_table"),
+    path("<int:opp_id>/tw/tables/worker_review_table", tw_views.worker_review_table, name="tw_review_table"),
+    path(
+        "<int:opp_id>/tw/tables/worker_revalidate_table", tw_views.worker_revalidate_table, name="tw_revalidate_table"
+    ),
+    path("<int:opp_id>/tw/tables/worker_approved_table", tw_views.worker_approved_table, name="tw_approved_table"),
+    path("<int:opp_id>/tw/tables/worker_rejected_table", tw_views.worker_rejected_table, name="tw_rejected_table"),
+    path("<int:opp_id>/tw/tables/worker_all_table", tw_views.worker_all_table, name="tw_all_table"),
     # API
-    path("<int:opp_id>/tw/api/payment_app_expand",tw_views.payment_app_table_expand, name="tw_payment_app"),
+    path("<int:opp_id>/tw/api/payment_app_expand", tw_views.payment_app_table_expand, name="tw_payment_app"),
     path("<int:opp_id>/tw/api/payment_history/", tw_views.payment_history, name="tw_payment_history"),
     path("<int:opp_id>/tw/api/opportunities/", tw_views.opportunities_card, name="tw_opportunities_card"),
     path("<int:opp_id>/tw/api/invoice_report_card/", tw_views.invoice_report_card, name="tw_invoice_report_card"),
+    path(
+        "<int:opp_id>/user_visit_verification/<int:pk>/",
+        view=views.user_visit_verification,
+        name="user_visit_verification",
+    ),
+    path(
+        "<int:opp_id>/user_visit_verification_table/<int:pk>/",
+        view=views.VisitVerificationTableView.as_view(),
+        name="user_visit_verification_table",
+    ),
+    path("<int:opp_id>/user_visit_details/<int:pk>/", view=views.user_visit_details, name="user_visit_details"),
     path("<int:opp_id>/tw/api/signup/", tw_views.signup_comp, name="signup_comp"),
     path("<int:opp_id>/tw/api/login/", tw_views.login_comp, name="login_comp"),
     path("<int:opp_id>/tw/api/create-org/", tw_views.create_org_comp, name="create_org_comp"),
@@ -190,6 +223,14 @@ urlpatterns = [
     path("<int:opp_id>/tw/api/password-update/", tw_views.password_update_comp, name="password_update_comp"),
     path("<int:opp_id>/tw/api/invite/", tw_views.invite_comp, name="invite_comp"),
     path("<int:opp_id>/tw/api/pm_cards/", tw_views.pm_opportunities_card, name="tw_pm_cards"),
+    path("<int:opp_id>/tw/api/signup/", tw_views.signup_comp, name="signup_comp"),
+    path("<int:opp_id>/tw/api/login/", tw_views.login_comp, name="login_comp"),
+    path("<int:opp_id>/tw/api/create-org/", tw_views.create_org_comp, name="create_org_comp"),
+    path("<int:opp_id>/tw/api/setup-org/", tw_views.setup_org_comp, name="setup_org_comp"),
+    path("<int:opp_id>/tw/api/email-verify/", tw_views.email_verify_comp, name="email_verify_comp"),
+    path("<int:opp_id>/tw/api/password-reset/", tw_views.password_reset_comp, name="password_reset_comp"),
+    path("<int:opp_id>/tw/api/password-update/", tw_views.password_update_comp, name="password_update_comp"),
+    path("<int:opp_id>/tw/api/invite/", tw_views.invite_comp, name="invite_comp"),
     path("<int:opp_id>/tw/opportunity_worker/", tw_views.opportunity_worker, name="tw_opportunities"),
     path("<int:opp_id>/tw/visits/", tw_views.opportunity_visits, name="tw_visits"),  # TODO
     path("<int:opp_id>/tw/create/", tw_views.create_opportunity, name="tw_visits"),  # TODO
@@ -223,4 +264,7 @@ urlpatterns = [
     path("<int:pk>/tw/finalize/", view=tw_form_views.OpportunityFinalize.as_view(), name="tw_finalize"),
     path("<int:pk>/tw/payment_units/create", view=tw_form_views.add_payment_units, name="tw_add_payment_units"),
     path("<int:pk>/tw/visit_export/", view=tw_form_views.export_user_visits, name="tw_visit_export"),
+    path("<int:pk>/tw/invite_user/", view=tw_form_views.opportunity_user_invite, name="tw_invite_user"),
+    path("tw_export_status/<slug:task_id>", view=tw_views.export_status, name="tw_export_status"),
+
 ]
