@@ -11,12 +11,13 @@ from commcare_connect.opportunity.models import LearnModule, DeliverUnit, Paymen
 
 
 from commcare_connect.opportunity.models import OpportunityAccess
+from commcare_connect.organization.models import UserOrganizationMembership
 
 
 class BaseTailwindTable(tables.Table):
     """Base table using Tailwind styling and custom template."""
 
-    use_htmx = False  # This flag is used to make the sort header use HTMX-specific URL.
+    use_view_url = True  # If want to use htmx url then set it to False.
 
     class Meta:
         template_name = "tailwind/base_table.html"  # Use your custom template
@@ -1169,33 +1170,6 @@ class WorkerPaymentsTable(BaseTailwindTable):
         super().__init__(*args, **kwargs)
 
 
-        HEADERS = {
-            "status": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Inactive"},
-                {"type": "radio", "name": "Active"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-        }
-
-        last_active_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': "Last Active",
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        self.base_columns['last_active'].verbose_name = mark_safe(f'''
-            <div class="flex items-center cursor-pointer">
-                {last_active_dropdown_html}
-            </div>
-        ''')
-
-
-
-
     class Meta:
         model= OpportunityAccess
         fields=("user", "suspended", "payment_accrued", "total_paid", "total_confirmed_paid")
@@ -1242,7 +1216,7 @@ class WorkerLearnTable(BaseTailwindTable):
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column(
-        orderable=False,
+        orderable=True,
     )
     started_learning = tables.Column(
     )
@@ -1275,30 +1249,6 @@ class WorkerLearnTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        HEADERS = {
-            "status": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Inactive"},
-                {"type": "radio", "name": "Active"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-        }
-
-        last_active_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': "Last Active",
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        self.base_columns['last_active'].verbose_name = mark_safe(f'''
-            <div class="flex items-center cursor-pointer">
-                {last_active_dropdown_html}
-            </div>
-        ''')
 
 
     class Meta:
@@ -1333,19 +1283,18 @@ class WorkerDeliveryTable(BaseTailwindTable):
     flagged = tables.Column()
     approved = tables.Column()
     rejected = tables.Column()
+    id = tables.Column(visible=False)
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
         template_code="""
-            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
-                <i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>
-            </div>
+
         """
     )
 
     class Meta:
         model=OpportunityAccess
-        fields = ("suspended", "user")
+        fields = ("id","suspended", "user")
         sequence = (
             "index",
             "user",
@@ -1360,10 +1309,19 @@ class WorkerDeliveryTable(BaseTailwindTable):
             "action"
         )
     def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug")
+        self.opp_id = kwargs.pop("opp_id")
         super().__init__(*args, **kwargs)
         self._seen_users = set()
 
-
+    def render_action(self, record):
+        url = reverse("opportunity:user_visit_verification", args=(self.org_slug, self.opp_id, record.id))
+        template = """
+            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>
+        """
+        return format_html(template, url)
 
     def render_user(self, value):
         if value.id in self._seen_users:
@@ -2295,82 +2253,11 @@ class OpportunitiesListViewTable(BaseTailwindTable):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.use_view_url = False
 
-        HEADERS = {
-            "opportunities": [
-                {"type": "radio", "name": "All"},
-                {"type": "radio", "name": "Test"},
-                {"type": "radio", "name": "Live"},
-                {"type": "meta", "meta": {"sort": True}},
-            ],
-            "status": [
-                {
-                    "type": "radio",
-                    "name": "All",
-                },
-                {
-                    "type": "radio",
-                    "name": "Inactive",
-                },
-                {
-                    "type": "radio",
-                    "name": "Active",
-                },
-                {
-                    "type": "radio",
-                    "name": "Ended",
-                },
-            ],
-        }
-
-        opp_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': 'Opportunity',
-                'list': HEADERS['opportunities'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        status_dropdown_html = render_to_string(
-            "tailwind/components/dropdowns/multi_type_dropdown.html",
-            {
-                'text': 'Status',
-                'list': HEADERS['status'],
-                'styles': 'text-sm font-medium text-brand-deep-purple'
-            }
-        )
-
-        self.base_columns['opportunity'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-                @click="sortBy('opportunity')">
-                {opp_dropdown_html}
-                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
-                    :class="{{
-                        'rotate-180': isSorted('opportunity') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('opportunity'),
-                        'opacity-100': isSorted('opportunity'),
-                        'animate-fade-in': isSorted('opportunity') && sortDirection === 'asc'
-                    }}"></i>
-            </div>
-        ''')
-
-        self.base_columns['status'].verbose_name = mark_safe(f'''
-            <div class="flex justify-start items-center text-sm font-medium text-brand-deep-purple cursor-pointer"
-                @click="sortBy('entityStatus')">
-                {status_dropdown_html}
-                <i class="transition-all ml-1 duration-300 ease-in-out fa-duotone fa-caret-down"
-                    :class="{{
-                        'rotate-180': isSorted('entityStatus') && sortDirection === 'desc',
-                        'opacity-0 group-hover:opacity-100': !isSorted('entityStatus'),
-                        'opacity-100': isSorted('entityStatus'),
-                        'animate-fade-in': isSorted('entityStatus') && sortDirection === 'asc'
-                    }}"></i>
-            </div>
-        ''')
 
     index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
-    opportunity = tables.Column(accessor="name", orderable=False)
+    opportunity = tables.Column(accessor="name")
     entityType = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -2410,7 +2297,7 @@ class OpportunitiesListViewTable(BaseTailwindTable):
     status = tables.TemplateColumn(
         verbose_name="Status",
         accessor="status_value",
-        orderable=False,
+        orderable=True,
         template_code="""
             <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
               {% if value == 0 %}
@@ -2504,14 +2391,16 @@ class OpportunitiesListViewTable(BaseTailwindTable):
                 "url": reverse("opportunity:tw_opportunity", args=[record.organization.slug, record.id]),
             },
             {
-                "title": "View Pending Reviews",
-                "url": reverse("opportunity:tw_worker_table", args=[record.organization.slug, record.id])+"?active_tab=delivery",
+                "title": "View Workers",
+                "url": reverse("opportunity:tw_worker_list", args=[record.organization.slug, record.id]),
             },
-            {
-                "title": "View Pending Invoices",
-                "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
-            }
         ]
+
+        if record.managed:
+            actions.append({
+                "title": "View Invoices",
+                "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+            })
 
         html = render_to_string(
             "tailwind/components/dropdowns/text_button_dropdown.html",
@@ -2522,3 +2411,30 @@ class OpportunitiesListViewTable(BaseTailwindTable):
             }
         )
         return mark_safe(html)
+
+
+class OrgMemberTable(BaseTailwindTable):
+    index = IndexColumn()
+    user = tables.Column(verbose_name="member", accessor="user__email")
+    accepted = tables.Column(verbose_name="Status")
+    role = tables.Column()
+
+    class Meta:
+        model = UserOrganizationMembership
+        fields = ("role", "accepted", "user")
+        sequence = ("index", "user", "accepted", "role")
+
+    def render_accepted(self, value):
+        color = "green-600" if value else "orange-600"
+        bg_color = f"{color}/20"
+        text = "Accepted" if value else "Pending"
+
+        return format_html(
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'
+            '<span class="badge badge-sm bg-{} text-{}">{}</span>'
+            '</div>',
+            bg_color, color, text
+        )
+
+    def render_role(self, value):
+        return format_html("<div class=' underline underline-offset-4'>{}</div>", value)

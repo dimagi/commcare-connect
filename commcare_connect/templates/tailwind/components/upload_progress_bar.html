@@ -1,7 +1,7 @@
 <div
   {% if not progress.complete %}
     hx-target="this"
-    hx-get="{% url 'opportunity:export_status' request.org.slug task_id %}?ui=new"
+    hx-get="{% url 'opportunity:tw_export_status' request.org.slug task_id %}"
     hx-trigger="load delay:2s"
     hx-swap="outerHTML"
   {% endif %}
