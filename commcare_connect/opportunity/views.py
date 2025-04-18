@@ -426,16 +426,10 @@ def export_status(request, org_slug, task_id):
     if status == "FAILURE":
         progress["error"] = task_meta.get("result")
 
-    template = (
-        "tailwind/components/upload_progress_bar.html"
-        if request.GET.get("ui") == "new"
-        else "opportunity/upload_progress.html"
-    )
-
 
     return render(
         request,
-        template,
+        "opportunity/upload_progress.html",
         {
             "task_id": task_id,
             "current_time": now().microsecond,

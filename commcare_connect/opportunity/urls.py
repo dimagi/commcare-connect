@@ -232,4 +232,6 @@ urlpatterns = [
     path("<int:pk>/tw/payment_units/create", view=tw_form_views.add_payment_units, name="tw_add_payment_units"),
     path("<int:pk>/tw/visit_export/", view=tw_form_views.export_user_visits, name="tw_visit_export"),
     path("<int:pk>/tw/invite_user/", view=tw_form_views.opportunity_user_invite, name="tw_invite_user"),
+    path("tw_export_status/<slug:task_id>", view=tw_views.export_status, name="tw_export_status"),
+
 ]

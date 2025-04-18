@@ -1,3 +1,4 @@
+from celery.result import AsyncResult
 from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
@@ -5,7 +6,8 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from django.views.decorators.http import require_POST
+from django.utils.timezone import now
+from django.views.decorators.http import require_POST, require_GET
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig
 from django.test.utils import override_settings
@@ -2937,3 +2939,27 @@ def invite_comp(request, org_slug=None, opp_id=None):
 
 def welcome(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/welcome.html")
+
+
+@org_member_required
+@require_GET
+def export_status(request, org_slug, task_id):
+    task_meta = AsyncResult(task_id)._get_task_meta()
+    status = task_meta.get("status")
+    progress = {
+        "complete": status == "SUCCESS",
+    }
+    if status == "FAILURE":
+        progress["error"] = task_meta.get("result")
+
+
+
+    return render(
+        request,
+        "tailwind/components/upload_progress_bar.html",
+        {
+            "task_id": task_id,
+            "current_time": now().microsecond,
+            "progress": progress,
+        },
+    )

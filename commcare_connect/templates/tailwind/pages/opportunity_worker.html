@@ -105,7 +105,7 @@
     {% if export_task_id %}
       <div class="flex">
         <div
-          hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}?ui=new"
+          hx-get="{% url 'opportunity:tw_export_status' request.org.slug export_task_id %}"
           hx-target="this"
           hx-trigger="load"
           hx-swap="outerHTML"
