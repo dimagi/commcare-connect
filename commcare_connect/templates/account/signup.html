@@ -9,8 +9,8 @@
 {% block inner %}
 <form method="post" class="w-full min-h-[620px] h-fit flex flex-col gap-4">
   {% csrf_token %}
-  <h6 class="title text-brand-deep-purple">Signup</h6>
-  <span class="text-sm text-gray-600">Please enter your details</span>
+  <h6 class="title text-brand-deep-purple">{% translate "Signup" %}</h6>
+  <span class="text-sm text-gray-600">{% blocktranslate %}Please enter your details{% endblocktranslate %}</span>
 
   {% if form.non_field_errors %}
     {% for error in form.non_field_errors %}
@@ -21,7 +21,7 @@
   <div class="input-group {% if form.email.errors %}error{% endif %}">
         <div class="simple-input">
             <input type="email"
-                   placeholder="Enter Email ID"
+                   placeholder={% translate "Enter Email ID" %}
                    required
                    id={{ form.email.auto_id }}
                    {% if form.email.value != None %}value="{{ form.email.value|stringformat:'s' }}"{% endif %}
@@ -37,7 +37,7 @@
   <div class="input-group {% if form.password1.errors %}error{% endif %}">
         <div class="simple-input">
             <input type="password"
-                   placeholder="Password"
+                   placeholder={% translate "Password" %}
                    required
                    id={{ form.password1.auto_id }}
                    {% if form.password1.value != None %}value="{{ form.password1.value|stringformat:'s' }}"{% endif %}
@@ -53,7 +53,7 @@
   <div class="input-group {% if form.password2.errors %}error{% endif %}">
         <div class="simple-input">
             <input type="password"
-                   placeholder="Confirm Password"
+                   placeholder={% translate "Confirm Password" %}
                    required
                    id={{ form.password2.auto_id }}
                    {% if form.password2.value != None %}value="{{ form.password2.value|stringformat:'s' }}"{% endif %}
@@ -77,17 +77,17 @@
                        class="simple-checkbox aspect-square"
                        required/>
                  <p class="hint">
-                  <span>By accessing CommCare Connect, you accept our </span>
+                  <span>{% blocktranslate %}By accessing CommCare Connect, you accept our {% endblocktranslate %}</span>
                   <button class="font-medium cursor-pointer text-brand-indigo" x-on:click.prevent="expanded = true">Terms & Conditions and Privacy Policy</button>
                   <div x-show="expanded" x-cloak>
                       {% include "tailwind/components/onboarding/terms-condition-modal.html" %}
                   </div>
                 </p>
             </div>
-            <p class="error-msg">You must accept the terms and conditions</p>
+            <p class="error-msg">{% blocktranslate %}You must accept the terms and conditions{% endblocktranslate %}</p>
         </div>
         <button class="button button-md primary-dark" type="submit">
-            <span class="relative z-20">Signup</span>
+          <span class="relative z-20">{% translate "Signup" %}</span>
         </button>
     </div>
 
@@ -98,75 +98,14 @@
             <div class="w-6 h-6">
                 <img src="{% static 'images/logo-color.svg' %}" alt="Compact Logo" class="w-full">
             </div>
-            <span class="text-sm">Sign up with CommCareHQ</span>
+            <span class="text-sm">{% blocktranslate %}Sign up with CommCareHQ{% endblocktranslate %}</span>
         </a>
     </div>
 
     <!-- Login Link -->
     <div class="pt-4 mt-auto text-sm text-center text-gray-600 border-t-2 border-t-gray-200">
-        Already have an account?
-        <a href="{{ login_url }}" class="font-medium text-brand-indigo">Login</a>
+        {% blocktranslate %}Already have an account?{% endblocktranslate %}
+        <a href="{{ login_url }}" class="font-medium text-brand-indigo">{% translate "Login" %}</a>
     </div>
 </form>
-
-<script>
-document.addEventListener('alpine:init', () => {
-    Alpine.data('signupForm', () => ({
-        email: '',
-        password: '',
-        confirmPassword: '',
-        termsAccepted: false,
-        emailTouched: false,
-        passwordTouched: false,
-        confirmPasswordTouched: false,
-        termsTouched: false,
-        emailValid: true,
-        passwordValid: true,
-        confirmPasswordValid: true,
-        termsValid: true,
-
-        validateEmail() {
-            this.emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email);
-            return this.emailValid;
-        },
-
-        validatePassword() {
-            this.passwordValid = this.password.length >= 8;
-            return this.passwordValid;
-        },
-
-        validateConfirmPassword() {
-            this.confirmPasswordValid = this.confirmPassword.length >= 8 &&
-                                      this.confirmPassword === this.password;
-            return this.confirmPasswordValid;
-        },
-
-        validateTerms() {
-            this.termsValid = this.termsAccepted === true;
-            return this.termsValid;
-        },
-
-        validateAllFields() {
-            this.emailTouched = true;
-            this.passwordTouched = true;
-            this.confirmPasswordTouched = true;
-            this.termsTouched = true;
-
-            const isEmailValid = this.validateEmail();
-            const isPasswordValid = this.validatePassword();
-            const isConfirmPasswordValid = this.validateConfirmPassword();
-            const isTermsValid = this.validateTerms();
-
-            return isEmailValid && isPasswordValid && isConfirmPasswordValid && isTermsValid;
-        },
-
-        submitWithValidation() {
-            if (this.validateAllFields()) {
-                this.$el.dispatchEvent(new CustomEvent('validatedSubmit', { bubbles: true }));
-            }
-        }
-    }));
-});
-</script>
-
 {% endblock %}
