@@ -16,6 +16,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast, Coalesce, Round
 
+from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
 from commcare_connect.program.models import ManagedOpportunity, Program
 
@@ -130,3 +131,16 @@ def get_delivery_performance_report(program: Program, start_date, end_date):
     )
 
     return managed_opportunities
+
+
+@quickcache(vary_on=["current_org_slug", "opp_id"], timeout=24 * 60 * 60)
+def is_org_manages_opportunity_via_program(current_org_slug, opp_id: int):
+    """
+    Check if the current organization manages the given managed opportunity
+    through any of its programs.
+    """
+    programs = Program.objects.filter(organization__slug=current_org_slug)
+    if programs:
+        return ManagedOpportunity.objects.filter(program__in=programs, id=opp_id).exists()
+
+    return False

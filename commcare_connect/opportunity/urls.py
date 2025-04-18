@@ -2,6 +2,8 @@ from django.urls import path
 
 from commcare_connect.opportunity import tw_form_views, tw_views, views
 from commcare_connect.opportunity.tw_views import OpportunityListView
+from commcare_connect.opportunity import views
+from commcare_connect.opportunity.payment_number_report import PaymentNumberReport
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
@@ -128,6 +130,7 @@ urlpatterns = [
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
     path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
+    path("payment_numbers", view=PaymentNumberReport.as_view(), name="payment_number_report"),
     # New tailwind based views
     path("<int:opp_id>/tw/dashboard/", tw_views.dashboard, name="tw_worker"),
     path("<int:opp_id>/tw/pm_dashboard/", tw_views.pm_dashboard, name="pm_dashboard"),
@@ -256,5 +259,4 @@ urlpatterns = [
     path("<int:pk>/tw/visit_export/", view=tw_form_views.export_user_visits, name="tw_visit_export"),
     path("<int:pk>/tw/invite_user/", view=tw_form_views.opportunity_user_invite, name="tw_invite_user"),
     path("tw_export_status/<slug:task_id>", view=tw_views.export_status, name="tw_export_status"),
-
 ]

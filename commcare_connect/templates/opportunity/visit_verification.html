@@ -3,6 +3,7 @@
 {% load crispy_forms_tags %}
 {% load django_tables2 %}
 {% load duration_minutes %}
+{% load permissions %}
 
 {% block css %}
 {{ block.super }}
@@ -145,7 +146,7 @@
     </dl>
     {% endif %}
     <div id="action-buttons" style="margin-bottom: 25px;">
-      {% if request.org_membership.is_admin and request.org.program_manager or request.org_membership.is_viewer %}
+      {% if request.org_membership.is_admin and request|is_program_manager_for_opportunity:visit.opportunity.id or request.org_membership.is_viewer %}
         <button class="btn btn-success" disabled>Approve</button>
         <button class="btn btn-danger" disabled>Reject</button>
       {% else %}
