@@ -2862,6 +2862,10 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         },
 
     ]
+    verified_percentage = opp.approved_deliveries / opp.total_deliveries * 100 if opp.total_deliveries else 0
+    rejected_percentage = opp.rejected_deliveries / opp.total_deliveries * 100 if opp.total_deliveries else 0
+    earned_percentage = opp.total_accrued / opp.total_budget * 100 if opp.total_budget else 0
+    paid_percentage = opp.total_paid / opp.total_accrued * 100 if opp.total_accrued else 0
 
     worker_progress = [
         {"title": "Daily Active Workers",
@@ -2871,12 +2875,12 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
                        "badge_type": False}]},
         {"title": "Service Deliveries",
          "progress": [
-             {"title": "Verified", "total": opp.total_deliveries, "value": f"{opp.approved_deliveries / opp.total_deliveries * 100:.2f}", "badge_type": True},
-             {"title": "Rejected", "total": opp.total_deliveries, "value": f"{opp.rejected_deliveries / opp.total_deliveries * 100:.2f}",
+             {"title": "Verified", "total": opp.total_deliveries, "value": f"{verified_percentage:.2f}", "badge_type": True},
+             {"title": "Rejected", "total": opp.total_deliveries, "value": f"{rejected_percentage:.2f}",
               "badge_type": True}]},
         {"title": "Payments to Workers",
-         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{opp.total_accrued / opp.total_budget * 100:.2f}", "badge_type": True},
-                      {"title": "Paid", "total": opp.total_accrued, "value": f"{opp.total_paid / opp.total_accrued * 100:.2f}" if opp.total_accrued else "0", "badge_type": True}]},
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{earned_percentage:.2f}", "badge_type": True},
+                      {"title": "Paid", "total": opp.total_accrued, "value": f"{paid_percentage:.2f}", "badge_type": True}]},
     ]
 
     funnel_progress = [
