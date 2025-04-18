@@ -19,7 +19,7 @@ from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
 from .tw_forms import VisitExportForm, PaymentExportFormTw
 
-from .tw_tables import  PMOpportunitiesListTable
+from .tw_tables import PMOpportunitiesListTable, ProgramManagerOpportunityList
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
@@ -2700,7 +2700,7 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
 
 class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
     template_name = "tailwind/pages/opportunities_list.html"
-    table_class = OpportunitiesListViewTable
+    table_class = ProgramManagerOpportunityList
     paginate_by = 15
 
     allowed_sort_columns = [
@@ -2717,7 +2717,7 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
     def get_table_data(self):
         org = self.request.org
-        return get_opportunity_list_data(org)
+        return get_opportunity_list_data(org, True)
 
     def get_validated_order_by(self):
         requested_order = self.request.GET.get('sort', 'start_date')
@@ -2737,6 +2737,8 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
             table.order_by = ("-status", "start_date", "end_date")
 
         return table
+
+
 
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
