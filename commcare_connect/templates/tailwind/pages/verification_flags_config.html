@@ -1,0 +1,133 @@
+{% extends "tailwind/base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load duration_minutes %}
+{% load tailwind_filters %}
+
+
+
+{% block content %}
+
+<div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
+  <h2 class="title">Verification Flags Configuration</h2> 
+
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    <div class="space-y-2">
+      <h3 class="title-sm">Location Flags</h3> 
+      <div class="card_bg">
+        <div class="flex flex-col gap-4">
+          {% crispy form 'tailwind' %}
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-2">
+      <h3 class="title-sm">Deliver Unit Flags</h3> 
+      <div class="card_bg">
+        {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+      </div> 
+    </div>
+    <div x-data="form_json_formset" class="space-y-4">
+      <div class="flex justify-between">
+        <h3 class="title-sm">Form Validation Rules</h3>  
+        <button type="button" class="button-icon" @click="addForm()">
+          <i class="fa-light fa-plus-circle"></i>
+        </button>
+      </div>
+      <div>
+        {{ form_json_formset.management_form|crispy }}
+      </div>
+
+      <template>
+        <div class="card_bg" id="form_json_form">
+          <div class="p-4">
+            {% crispy form_json_formset.empty_form form_json_formset.empty_form.helper %}
+          </div>
+          <div class="flex justify-end">
+            <button type="button" class="button-icon text-brand-mango" aria-label="Delete" @click="deleteForm()">
+              <i class="fa-light fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <div id="form_json_forms" class="space-y-4">
+        {% for form in form_json_formset %}
+          <div class="card_bg" id="form_json_form"> 
+              {% crispy form form.helper %} 
+            <div class="flex justify-end">
+              {% if not form.instance.id %}
+                <button type="button" class="button-icon text-brand-mango" aria-label="Delete" @click="deleteForm()">
+              {% else %}
+                <button type="button" class="button-icon text-brand-mango"
+                        aria-label="Delete"
+                        hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.pk pk=form.instance.id %}"
+                        hx-target="closest #form_json_form"
+                        hx-swap="outerHTML"
+                        @click="decrementFormCount()">
+              {% endif %} <i class="fa-light fa-trash"></i>
+                </button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="text-right space-x-4">
+      <button type="submit" class="button button-md outline-style">
+        Prev
+      </button>
+      <button type="submit" class="button button-md primary-dark">
+        Next
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock content %}
+
+{% block inline_javascript %}
+<script>
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("form_json_formset", () => ({
+      init() {
+        this.template = this.$root.querySelector("template");
+        this.formsContainer = this.$root.querySelector("#form_json_forms");
+        this.totalFormsInput = this.$root.querySelector(`input[name$='-TOTAL_FORMS']`);
+        this.initialFormsInput = this.$root.querySelector(`input[name$='-INITIAL_FORMS']`);
+      },
+      addForm() {
+        const newForm = this.template.content.cloneNode(true);
+        const elements = newForm.querySelectorAll("div, input, select, textarea, label");
+        for (let el of elements) {
+          if (el.name && el.name.includes("__prefix__"))
+            el.name = el.name.replace("__prefix__", this.formsContainer.children.length);
+          if (el.id && el.id.includes("__prefix__"))
+            el.id = el.id.replace("__prefix__", this.formsContainer.children.length);
+          if (el.htmlFor && el.htmlFor.includes("__prefix__"))
+            el.htmlFor = el.htmlFor.replace("__prefix__", this.formsContainer.children.length);
+        }
+        this.formsContainer.appendChild(newForm);
+        this.totalFormsInput.value = parseInt(this.totalFormsInput.value) + 1;
+      },
+      deleteForm() {
+        this.$el.closest("#form_json_form").remove();
+        for (let i = 0; i < this.formsContainer.children.length; i++) {
+          const form = this.formsContainer.children[i];
+          const elements = form.querySelectorAll("div, input, select, textarea, label");
+          for (let el of elements) {
+            if (el.name) el.name = el.name.replace(/\d+/, i);
+            if (el.id) el.id = el.id.replace(/\d+/, i);
+            if (el.htmlFor) el.htmlFor = el.htmlFor.replace(/\d+/, i);
+          }
+        }
+        this.decrementFormCount();
+      },
+      decrementFormCount() {
+        this.totalFormsInput.value = Math.max(0, parseInt(this.totalFormsInput.value) - 1);
+      }
+    }));
+  });
+</script>
+{% endblock inline_javascript %}

@@ -19,7 +19,7 @@
 
             <form method="post">
                 {% csrf_token %}
-                {{ form|crispy:"tailwind" }}
+                {{ form|crispy }}
             </form>
             <div class="flex-1 overflow-y-auto bg-white rounded-lg shadow-sm">
                 {% render_table table %}

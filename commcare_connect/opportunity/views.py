@@ -488,7 +488,11 @@ def review_visit_import(request, org_slug=None, pk=None):
 
 
 @org_member_required
-def add_budget_existing_users(request, org_slug=None, pk=None):
+def add_budget_existing_users(
+    request, org_slug=None, pk=None, form_class=AddBudgetExistingUsersForm, template_name=None
+):
+    if template_name is None:
+        template_name = "opportunity/add_visits_existing_users.html"
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
@@ -496,18 +500,14 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
         getattr(request, "org_membership", None) and request.org_membership.is_program_manager
     ) or request.user.is_superuser
 
-    form = AddBudgetExistingUsersForm(
-        opportunity_claims=opportunity_claims,
-        opportunity=opportunity,
-        data=request.POST or None,
-    )
+    form = form_class(opportunity_claims=opportunity_claims, opportunity=opportunity, data=request.POST or None)
     if form.is_valid():
         form.save()
         return redirect("opportunity:detail", org_slug, pk)
 
     return render(
         request,
-        "opportunity/add_visits_existing_users.html",
+        template_name,
         {
             "form": form,
             "opportunity_claims": opportunity_claims,

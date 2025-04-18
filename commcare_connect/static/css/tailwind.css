@@ -27,6 +27,10 @@
   --color-brand-border-light: #e2e8f0;
   --width-screen-sm: var(--breakpoint-sm);
 }
+/* ----- background -------*/
+.card_bg {
+  @apply bg-white rounded-lg shadow-sm p-6;
+}
 
 /* ------ Typography------ */
 
@@ -40,6 +44,10 @@
 
 .title {
   @apply font-medium text-gray-900;
+}
+
+.title-sm {
+  @apply font-medium text-gray-900 text-sm;
 }
 
 .hint {
@@ -107,7 +115,7 @@
 /*-- buttons -------------------------------------*/
 
 .button {
-  @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2 min-w-24;
+  @apply inline-block text-nowrap text-sm font-medium rounded-lg transition-all duration-300 cursor-pointer relative space-x-2;
 }
 
 .button:hover::after {
@@ -165,11 +173,11 @@
 /* Size Variants */
 
 .button-sm {
-  @apply py-1 px-4;
+  @apply py-1 px-4 min-w-16;
 }
 
 .button-md {
-  @apply py-3 px-4;
+  @apply py-3 px-4 min-w-24;
 }
 
 /* Dark Theme */
@@ -215,7 +223,7 @@
 }
 
 .outline-style {
-  @apply border border-gray-200 rounded-lg text-brand-deep-purple;
+  @apply border border-gray-200 rounded-lg text-brand-deep-purple bg-white;
 }
 
 /*-- chips ---------------------------------------*/
@@ -331,7 +339,7 @@
 /*--- base select  list ------------------------- */
 @layer components {
   .base-dropdown {
-    @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+    @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10 w-full;
   }
 
   .base-dropdown:focus {
@@ -370,7 +378,7 @@
 /*--- based input ------------------------- */
 @layer components {
   .base-input {
-    @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10;
+    @apply px-2 border border-gray-300 rounded-lg bg-white text-gray-600 h-10 w-full;
   }
 
   .base-input:focus {
@@ -409,6 +417,14 @@
 
   .input-group.error input {
     @apply border-red-500 ring-2 ring-red-500/80;
+  }
+}
+
+/*--- base textarea-----------------------------*/
+
+@layer components {
+  .base-textarea {
+    @apply p-4 h-fit min-h-20 w-full text-sm text-gray-900 bg-transparent rounded border-1 border-gray-300 focus:outline-none focus:ring-0 focus:border-blue-600;
   }
 }
 
@@ -508,7 +524,7 @@
 
   .base-table tbody::before {
     content: '';
-    @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow -z-20;
+    @apply w-full h-full absolute top-0 left-0 bg-white rounded-lg shadow-sm -z-20;
   }
 
   .base-table tbody tr {
@@ -553,6 +569,58 @@
 
   .tabs li div {
     @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 max-w-10 h-1.5 bg-brand-mango rounded-t-lg;
+  }
+}
+
+@layer components {
+  .stepper {
+    @apply flex justify-between items-center gap-4;
+  }
+
+  .stepper a {
+    @apply flex items-center gap-4;
+  }
+
+  .stepper h6 {
+    @apply w-8 h-8 rounded-full grid place-content-center border border-gray-300 text-brand-deep-purple;
+  }
+
+  .stepper a.active h6 {
+    @apply text-center bg-brand-deep-purple text-white;
+  }
+
+  .stepper span {
+    @apply text-sm text-gray-400 whitespace-nowrap;
+  }
+
+  .stepper a.active span {
+    @apply font-medium text-brand-deep-purple;
+  }
+}
+
+@layer {
+  .modal {
+    @apply bg-white rounded-xl shadow-xl w-full max-w-lg p-6 relative z-50;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-40 bg-black/40 flex items-center justify-center;
+  }
+
+  .modal .dialog-box {
+    @apply bg-white rounded-lg p-6 shadow-sm mx-auto my-auto z-50;
+  }
+
+  .modal .header {
+    @apply flex justify-between items-center;
+  }
+
+  .modal .content {
+    @apply flex flex-col gap-4 py-4;
+  }
+
+  .modal .footer {
+    @apply space-x-4 text-right;
   }
 }
 
