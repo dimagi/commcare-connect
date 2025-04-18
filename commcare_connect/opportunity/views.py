@@ -1,5 +1,6 @@
 import datetime
 import json
+from collections import defaultdict
 from functools import reduce
 from http import HTTPStatus
 
@@ -9,7 +10,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.storage import storages
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
@@ -92,6 +93,7 @@ from commcare_connect.opportunity.tables import (
     UserVisitReviewFilter,
     UserVisitReviewTable,
     UserVisitTable,
+    UserVisitVerificationTable,
 )
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
@@ -974,6 +976,9 @@ def approve_visit(request, org_slug=None, pk=None):
         user_visit.save()
         update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
 
+        if request.htmx:
+            return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
+
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
 
@@ -992,6 +997,8 @@ def reject_visit(request, org_slug=None, pk=None):
     user_visit.save()
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=user_visit.opportunity_id)
     update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    if request.htmx:
+        return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity_id, pk=access.id)
 
 
@@ -1366,6 +1373,7 @@ def resend_user_invite(request, org_slug, opp_id, pk):
 
     return HttpResponse("The invitation has been successfully resent to the user.")
 
+
 def worker_list(request, org_slug=None, opp_id=None):
     return render(request, "opportunity/tailwind/workers.html")
 
@@ -1393,3 +1401,218 @@ def sync_deliver_units(request, org_slug, opp_id):
 
     return HttpResponse(content=message, status=status)
 
+
+@org_member_required
+def user_visit_verification(request, org_slug, opp_id, pk):
+    opportunity_access = get_object_or_404(OpportunityAccess, opportunity=opp_id, pk=pk)
+    user_visit_counts = UserVisit.objects.filter(opportunity_access=opportunity_access).aggregate(
+        pending=Count("id", filter=Q(status=VisitValidationStatus.pending)),
+        pending_review=Count(
+            "id",
+            filter=Q(
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.pending,
+            ),
+        ),
+        revalidate=Count(
+            "id",
+            filter=Q(
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.disagree,
+            ),
+        ),
+        approved=Count(
+            "id",
+            filter=Q(
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.agree,
+            ),
+        ),
+        rejected=Count("id", filter=Q(status=VisitValidationStatus.rejected)),
+        flagged=Count("id", filter=Q(flagged=True)),
+        total=Count("*"),
+    )
+
+    visits = UserVisit.objects.filter(opportunity_access=opportunity_access)
+    flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "rejected": 0})
+    for visit in visits:
+        for flag in visit.flags:
+            if visit.status == VisitValidationStatus.approved:
+                flagged_info[flag]["approved"] += 1
+                flagged_info[flag]["name"] = flag
+            if visit.status == VisitValidationStatus.rejected:
+                flagged_info[flag]["rejected"] += 1
+                flagged_info[flag]["name"] = flag
+    flagged_info = flagged_info.values()
+    last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
+
+    filter_date = now().strftime("%Y-%m-%d")
+    if request.GET.get("filter_date"):
+        filter_date = request.GET.get("filter_date")
+    else:
+        first_visit = visits.order_by("visit_date").values("visit_date").first()
+        if first_visit:
+            filter_date = first_visit["visit_date"].strftime("%Y-%m-%d")
+
+    tabs = [
+        {
+            "name": "pending",
+            "label": "Pending",
+            "count": user_visit_counts.get("pending", 0),
+        },
+        {
+            "name": "pending_review",
+            "label": "Review",
+            "count": user_visit_counts.get("pending_review", 0),
+        },
+        {
+            "name": "revalidate",
+            "label": "Revalidate",
+            "count": user_visit_counts.get("revalidate", 0),
+        },
+        {
+            "name": "approved",
+            "label": "Approved",
+            "count": user_visit_counts.get("approved", 0),
+        },
+        {
+            "name": "rejected",
+            "label": "Rejected",
+            "count": user_visit_counts.get("rejected", 0),
+        },
+        {"name": "all", "label": "All", "count": user_visit_counts.get("total", 0)},
+    ]
+    response = render(
+        request,
+        "opportunity/user_visit_verification.html",
+        context={
+            "header_title": "Worker",
+            "opportunity_access": opportunity_access,
+            "counts": user_visit_counts,
+            "tabs": tabs,
+            "flagged_info": flagged_info,
+            "last_payment_details": last_payment_details,
+            "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
+            "filter_date": filter_date,
+        },
+    )
+    return response
+
+
+class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
+    model = UserVisit
+    table_class = UserVisitVerificationTable
+    template_name = "tailwind/base_table.html"
+    exclude_columns = []
+
+    def get_paginate_by(self, table_data):
+        return self.request.GET.get("per_page", 10)
+
+    def get_table(self, **kwargs):
+        kwargs["exclude"] = self.exclude_columns
+        self.table = super().get_table(**kwargs)
+        return self.table
+
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        url = reverse(
+            "opportunity:user_visit_verification",
+            args=[request.org.slug, self.kwargs["opp_id"], self.kwargs["pk"]],
+        )
+        query_params = request.GET.urlencode()
+        response["HX-Replace-Url"] = f"{url}?{query_params}"
+        response["HX-Trigger"] = json.dumps({"load-total-pages": self.table.paginator.num_pages})
+        return response
+
+    def get_queryset(self):
+        self.filter_status = self.request.GET.get("filter_status")
+        self.filter_date = self.request.GET.get("filter_date")
+        filter_kwargs = {"opportunity_access": self.kwargs["pk"]}
+        if self.filter_date:
+            date = datetime.datetime.strptime(self.filter_date, "%Y-%m-%d")
+            filter_kwargs.update({"visit_date__date": date})
+        if self.filter_status == "pending":
+            filter_kwargs.update({"status": VisitValidationStatus.pending})
+            self.exclude_columns = ["last_activity"]
+        if self.filter_status == "pending_review":
+            filter_kwargs.update(
+                {
+                    "review_status": VisitReviewStatus.pending,
+                    "status": VisitValidationStatus.approved,
+                }
+            )
+        if self.filter_status == "revalidate":
+            filter_kwargs.update(
+                {
+                    "review_status": VisitReviewStatus.disagree,
+                    "status": VisitValidationStatus.approved,
+                }
+            )
+        if self.filter_status == "approved":
+            filter_kwargs.update(
+                {
+                    "review_status": VisitReviewStatus.agree,
+                    "status": VisitValidationStatus.approved,
+                }
+            )
+        if self.filter_status == "rejected":
+            filter_kwargs.update({"status": VisitValidationStatus.rejected})
+        return UserVisit.objects.filter(**filter_kwargs).order_by("visit_date")
+
+
+@org_member_required
+def user_visit_details(request, org_slug, opp_id, pk):
+    user_visit = get_object_or_404(UserVisit, pk=pk)
+    serializer = XFormSerializer(data=user_visit.form_json)
+    serializer.is_valid()
+    xform = serializer.save()
+    user_forms = []
+    other_forms = []
+    lat = None
+    lon = None
+    precision = None
+    if user_visit.location:
+        locations = UserVisit.objects.filter(opportunity=user_visit.opportunity).exclude(pk=pk).select_related("user")
+        lat, lon, _, precision = user_visit.location.split(" ")
+        for loc in locations:
+            if loc.location is None:
+                continue
+            other_lat, other_lon, _, other_precision = loc.location.split(" ")
+            dist = distance.distance((lat, lon), (other_lat, other_lon))
+            if dist.m <= 250:
+                visit_data = {
+                    "entity_name": loc.entity_name,
+                    "user__name": loc.user.name,
+                    "status": loc.get_status_display(),
+                    "visit_date": loc.visit_date,
+                    "url": reverse(
+                        "opportunity:user_visit_details",
+                        kwargs={"org_slug": request.org.slug, "opp_id": loc.opportunity_id, "pk": loc.pk},
+                    ),
+                }
+                if user_visit.user_id == loc.user_id:
+                    user_forms.append((visit_data, dist.m, other_lat, other_lon, other_precision))
+                else:
+                    other_forms.append((visit_data, dist.m, other_lat, other_lon, other_precision))
+        user_forms.sort(key=lambda x: x[1])
+        other_forms.sort(key=lambda x: x[1])
+        visit_data = {
+            "entity_name": loc.entity_name,
+            "user__name": loc.user.name,
+            "status": loc.get_status_display(),
+            "visit_date": loc.visit_date,
+            "lat": lat,
+            "lon": lon,
+            "precision": precision,
+        }
+    return render(
+        request,
+        "opportunity/user_visit_details.html",
+        context=dict(
+            user_visit=user_visit,
+            xform=xform,
+            user_forms=user_forms[:5],
+            other_forms=other_forms[:5],
+            visit_data=visit_data,
+        ),
+    )
