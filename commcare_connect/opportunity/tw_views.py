@@ -2809,8 +2809,8 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "value": opp.deliveries_from_yesterday,
             "url": status_url,
             "panels": [
-                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited,},
-                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation",},
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited},
+                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation", "value": opp.pending_invites},
                 {
                     "icon": "fa-clipboard-list",
                     "name": "Workers",
@@ -2869,12 +2869,12 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
                        "badge_type": False}]},
         {"title": "Service Deliveries",
          "progress": [
-             {"title": "Verified", "total": opp.total_deliveries, "value": opp.approved_deliveries, "badge_type": True},
-             {"title": "Rejected", "total": opp.total_deliveries, "value": opp.rejected_deliveries,
+             {"title": "Verified", "total": opp.total_deliveries, "value": f"{opp.approved_deliveries / opp.total_deliveries * 100:.2f}", "badge_type": True},
+             {"title": "Rejected", "total": opp.total_deliveries, "value": f"{opp.rejected_deliveries / opp.total_deliveries * 100:.2f}",
               "badge_type": True}]},
         {"title": "Payments to Workers",
-         "progress": [{"title": "Earned", "total": opp.total_budget, "value": opp.total_accrued, "badge_type": True},
-                      {"title": "Paid", "total": opp.total_accrued, "value": opp.total_paid, "badge_type": True}]},
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{opp.total_accrued / opp.total_budget * 100:.2f}", "badge_type": True},
+                      {"title": "Paid", "total": opp.total_accrued, "value": f"{opp.total_paid / opp.total_accrued * 100:.2f}", "badge_type": True}]},
     ]
 
     funnel_progress = [
