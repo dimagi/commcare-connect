@@ -2876,7 +2876,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
               "badge_type": True}]},
         {"title": "Payments to Workers",
          "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{opp.total_accrued / opp.total_budget * 100:.2f}", "badge_type": True},
-                      {"title": "Paid", "total": opp.total_accrued, "value": f"{opp.total_paid / opp.total_accrued * 100:.2f}", "badge_type": True}]},
+                      {"title": "Paid", "total": opp.total_accrued, "value": f"{opp.total_paid / opp.total_accrued * 100:.2f}" if opp.total_accrued else "0", "badge_type": True}]},
     ]
 
     funnel_progress = [
