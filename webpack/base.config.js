@@ -10,7 +10,7 @@ module.exports = {
     project: path.resolve(__dirname, '../commcare_connect/static/js/project'),
     dashboard: path.resolve(__dirname, '../commcare_connect/static/js/dashboard'),
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
-    tailwind: path.resolve(__dirname, '../commcare_connect/static/css/tailwind.css'),
+    tailwind: path.resolve(__dirname, '../tailwind/tailwind.css'),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
