@@ -976,6 +976,9 @@ def approve_visit(request, org_slug=None, pk=None):
         user_visit.save()
         update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
 
+        if request.htmx:
+            return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
+
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
 
@@ -994,6 +997,8 @@ def reject_visit(request, org_slug=None, pk=None):
     user_visit.save()
     access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=user_visit.opportunity_id)
     update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+    if request.htmx:
+        return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
     return redirect("opportunity:user_visits_list", org_slug=org_slug, opp_id=user_visit.opportunity_id, pk=access.id)
 
 
