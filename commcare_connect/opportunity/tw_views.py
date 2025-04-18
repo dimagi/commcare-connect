@@ -306,7 +306,9 @@ def payment_unit_table(request, org_slug=None, opp_id=None):
     payment_units = PaymentUnit.objects.filter(opportunity=opp).prefetch_related(
         'deliver_units'
     )
-    table = OpportunityPaymentUnitTable(payment_units)
+    table = OpportunityPaymentUnitTable(payment_units,
+                                        can_edit=not opp.managed or is_program_manager_of_opportunity(request,
+                                                                                                             opp))
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
 
 def payment_app_table_expand(request,org_slug=None, opp_id=None):
@@ -2739,14 +2741,14 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
         return table
 
 
+def is_program_manager_of_opportunity(request, opportunity):
+    return (opportunity.managed and opportunity.managedopportunity.program.organization == request.org.slug
+            and (request.org_membership.is_admin or request.user.is_superuser))
 
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=opp_id).first()
-    is_program_manager = False
-    if opp.managed and request.org.program_manager:
-        is_program_manager = (opp.manageopportunity.program.organization == request.org.slug
-                              and (request.org_membership.is_admin or request.user.is_superuser))
+    is_program_manager = is_program_manager_of_opportunity(request, opp)
 
     learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()

@@ -128,6 +128,11 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
     max_total = tables.Column(verbose_name="Total Deliveries")
     deliver_units = tables.Column(verbose_name="Delivery Units")
 
+    def __init__(self, *args, **kwargs):
+        self.can_edit = kwargs.pop('can_edit', False)
+        super().__init__(*args, **kwargs)
+
+
     class Meta:
         model = PaymentUnit
         orderable = False
@@ -143,17 +148,23 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
                     {''.join([f'<div class="w-full"><span>{unit.name}</span> {"(<i>optional</i>)" if unit.optional else ""}</div>' for unit in deliver_units])}
                 </div>
             '''
+        edit_button=''
+        if self.can_edit:
+            url = reverse('opportunity:tw_edit_payment_unit', args=(record.opportunity.organization.slug,
+                          record.opportunity.id, record.id))
+            edit_button = mark_safe(f'<a href="{url}"><i class="fa-thin fa-pencil me-2"></i></a>')
 
         return format_html('''
             <div class="flex justify-between items-center">
                 <span>{count}</span>
                 <div x-data="{{ expanded: false }}">
-                    <button class="btn btn-primary btn-sm"
+                    {edit_button}
+                    <button class="cursor-pointer btn btn-primary btn-sm"
                             @click="expanded = true; $el.closest('tr').insertAdjacentHTML('afterend', $refs.detailRow.innerHTML)"
                             x-show="!expanded">
                         <i class="fa-light fa-chevron-down"></i>
                     </button>
-                    <button class="btn btn-secondary btn-sm"
+                    <button class="cursor-pointer btn btn-secondary btn-sm"
                             @click.prevent="
                                 const detailRow = $el.closest('tr').nextElementSibling;
                                 if (detailRow && detailRow.classList.contains('detail-row')) {{{{
@@ -178,7 +189,7 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
                     </template>
                 </div>
             </div>
-        ''', count=count, detail_html=mark_safe(detail_html))
+        ''', count=count, edit_button=edit_button, detail_html=mark_safe(detail_html))
 
 
 class LearnAppTable(BaseTailwindTable):
