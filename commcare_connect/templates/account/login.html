@@ -15,17 +15,26 @@
     <h6 class="title text-brand-deep-purple">Login</h6>
     <span class="text-sm text-gray-600">Please enter your details</span>
 
+    {% if form.non_field_errors %}
+      {% for error in form.non_field_errors %}
+        <p class="text-sm text-red-600">* {{ error }}</p>
+      {% endfor %}
+    {% endif %}
+
     <div class="input-group {% if form.login.errors %}error{%endif%}">
         <div class="simple-input">
             <input type="email"
                    placeholder="Enter Email ID"
                    required
                    id="{{ form.login.auto_id }}"
+                   {% if form.login.value != None %}value="{{ form.login.value|stringformat:'s' }}"{% endif %}
                    name="{{ form.login.html_name }}">
             <i class="fa-light fa-envelope"></i>
             <span class="error-icon fa-solid fa-circle-exclamation"></span>
         </div>
-        <p class="error-msg">{{ form.login.errors.as_text }}</p>
+        {% for error in form.login.errors %}
+          <p class="error-msg">* {{ error }}</p>
+        {% endfor %}
     </div>
 
     <div class="input-group {% if form.password.errors %}error{%endif%}">
@@ -34,11 +43,14 @@
                    placeholder="Password"
                    required
                    id="{{ form.password.auto_id }}"
+                   {% if form.password.value != None %}value="{{ form.password.value|stringformat:'s' }}"{% endif %}
                    name="{{ form.password.html_name }}">
             <i class="fa-light fa-lock"></i>
             <span class="error-icon fa-solid fa-circle-exclamation"></span>
         </div>
-        <p class="error-msg">{{ form.password.errors.as_text }}</p>
+        {% for error in form.password.errors %}
+          <p class="error-msg">* {{ error }}</p>
+        {% endfor %}
     </div>
 
     <div class="flex justify-between items-center">
