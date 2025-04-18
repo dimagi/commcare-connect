@@ -13,11 +13,8 @@ module.exports = {
       '../commcare_connect/static/js/dashboard',
     ),
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
-    tailwind: path.resolve(
-      __dirname,
-      '../commcare_connect/static/css/tailwind.css',
-    ),
     mapbox: path.resolve(__dirname, '../commcare_connect/static/js/mapbox'),
+    tailwind: path.resolve(__dirname, '../tailwind/tailwind.css'),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
