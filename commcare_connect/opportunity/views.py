@@ -420,7 +420,6 @@ def review_visit_export(request, org_slug, pk):
 def export_status(request, org_slug, task_id):
     task_meta = AsyncResult(task_id)._get_task_meta()
     status = task_meta.get("status")
-    print(status)
     progress = {
         "complete": status == "SUCCESS",
     }

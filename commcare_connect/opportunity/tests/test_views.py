@@ -318,7 +318,6 @@ def test_get_worker_learn_table_data_all_fields(
         date=three_days_ago,
         duration=timedelta(hours=2),
     )
-    print(OpportunityAccess.objects.filter(id=access.id).count())
     # Passed assessment
     AssessmentFactory(
         user=access.user,
@@ -330,7 +329,6 @@ def test_get_worker_learn_table_data_all_fields(
         date=today,
     )
 
-    print(OpportunityAccess.objects.filter(id=access.id).count())
 
     # Failed assessment (shouldn't affect passed_assessment=True)
     AssessmentFactory(
@@ -343,12 +341,10 @@ def test_get_worker_learn_table_data_all_fields(
         date=three_days_ago,
     )
 
-    print(OpportunityAccess.objects.filter(id=access.id).count())
 
     result = get_worker_learn_table_data(opportunity)
     for r in result:
         print(r.id)
-    print(OpportunityAccess.objects.filter(id=access.id).count())
     row = result.get(id=access.id)
 
     assert row.last_active.date() == three_days_ago

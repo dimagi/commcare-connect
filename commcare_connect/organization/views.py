@@ -134,8 +134,6 @@ def org_member_view(request, org_slug=None, opp_id=None):
     org_form = TwOrganizationChangeForm(instance=request.org)
     form = TwMembershipForm(None, organization=org)
 
-    print(request.POST)
-
     if "org_form" in request.POST:
         org_form = TwOrganizationChangeForm(data=request.POST, instance=request.org)
 
