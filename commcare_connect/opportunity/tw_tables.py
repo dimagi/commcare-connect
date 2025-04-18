@@ -2270,7 +2270,7 @@ class BaseOpportunityList(BaseTailwindTable):
         self.use_view_url = False
 
     index = IndexColumn()
-    opportunity = tables.Column(accessor="name")
+    opportunity = tables.Column(accessor='name')
     entityType = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -2437,6 +2437,19 @@ class ProgramManagerOpportunityList(BaseOpportunityList):
 
     def render_worker_earnings(self, value):
         return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_opportunity(self, record):
+        html =format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            record.name,
+            record.organization.name,
+        )
+        return html
 
 
 class OrgMemberTable(BaseTailwindTable):

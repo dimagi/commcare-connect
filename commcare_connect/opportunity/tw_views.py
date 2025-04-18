@@ -2700,20 +2700,19 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
 
 class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
     template_name = "tailwind/pages/opportunities_list.html"
-    table_class = ProgramManagerOpportunityList
     paginate_by = 15
+    base_columns = ['program', 'start_date', 'end_date', 'status', 'opportunity']
+    pm_columns = ['active_workers', 'total_deliveries', 'verified_deliveries', 'worker_earnings']
+    nm_columns = ['pending_invites', 'inactive_workers', 'pending_approvals', 'payments_due']
 
-    allowed_sort_columns = [
-        'program',
-        'start_date',
-        'end_date',
-        'pending_invites',
-        'inactive_workers',
-        'pending_approvals',
-        'payments_due',
-        'status',
-        'opportunity',
-    ]
+    def get_allowed_columns(self):
+        extra_columns = self.pm_columns if self.request.org.program_manager else self.nm_columns
+        return self.base_columns + extra_columns
+
+    def get_table_class(self):
+        if self.request.org.program_manager:
+            return ProgramManagerOpportunityList
+        return OpportunitiesListViewTable
 
     def get_table_data(self):
         org = self.request.org
@@ -2724,7 +2723,7 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
         is_descending = requested_order.startswith('-')
         column = requested_order[1:] if is_descending else requested_order
-        return requested_order if column in self.allowed_sort_columns else 'start_date'
+        return requested_order if column in self.get_allowed_columns() else 'start_date'
 
     def get_table(self, **kwargs):
         table = super().get_table(**kwargs)
