@@ -425,6 +425,8 @@ def export_status(request, org_slug, task_id):
     }
     if status == "FAILURE":
         progress["error"] = task_meta.get("result")
+
+
     return render(
         request,
         "opportunity/upload_progress.html",
@@ -434,6 +436,7 @@ def export_status(request, org_slug, task_id):
             "progress": progress,
         },
     )
+
 
 
 @org_member_required
@@ -1358,7 +1361,7 @@ def tw_invoice_list(request, org_slug=None, pk=None):
     from commcare_connect.opportunity.tw_forms import PaymentInvoiceForm
     opportunity = get_opportunity_or_404(pk, org_slug)
     if not opportunity.managed:
-        return redirect("opportunity:detail", org_slug, pk)
+        return redirect("opportunity:tw_opportunity", org_slug, pk)
 
     filter_kwargs = dict(opportunity=opportunity)
 

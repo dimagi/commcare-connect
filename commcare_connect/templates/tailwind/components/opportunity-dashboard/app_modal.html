@@ -1,4 +1,4 @@
-<div x-show="showModal" 
+<div x-show="showModal"
     x-transition:enter="transition ease-out duration-300"
     x-transition:enter-start="opacity-0"
     x-transition:enter-end="opacity-100"
@@ -7,7 +7,7 @@
     x-transition:leave-end="opacity-0"
     class="fixed inset-0 z-50 overflow-y-auto"
     style="display: none;">
-    
+
     <!-- Background overlay -->
     <div class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity"
             @click="showModal = false;document.body.style.overflow = '';"></div>
@@ -21,21 +21,21 @@
                 <!-- Tabs -->
                 <div class="flex relative mx-auto items-center shadow rounded-lg justify-between w-full px-3 mb-3 bg-slate-50 h-14">
                     <ul class="tabs">
-                        <li 
-                            @click="selectedTab = 'Learn App'" 
+                        <li
+                            @click="selectedTab = 'Learn App'"
                             :class="{ 'active': selectedTab === 'Learn App' }">
                             <span>Learn App</span>
                             <div x-show="selectedTab === 'Learn App'"></div>
                         </li>
                         <!-- Delivery App Tab -->
-                        <li @click="selectedTab = 'Delivery App'"   
+                        <li @click="selectedTab = 'Delivery App'"
                             :class="{ 'active': selectedTab === 'Delivery App' }">
                             <span>Delivery App</span>
                             <div x-show="selectedTab === 'Delivery App'"></div>
                         </li>
                         <!-- Payment Units Tab -->
-                        <li @click="selectedTab = 'Payments Units'"  
-                            :class="{ 'active': selectedTab === 'Payments Units' }"> 
+                        <li @click="selectedTab = 'Payments Units'"
+                            :class="{ 'active': selectedTab === 'Payments Units' }">
                             <span>Payment Units</span>
                             <div x-show="selectedTab === 'Payments Units'"></div>
                         </li>
@@ -51,7 +51,7 @@
                 <div class="z-50 bg-white ">
                     <!-- Learn App Content -->
                     <div x-show="selectedTab === 'Learn App'"
-                            hx-get="/a/test-1/opportunity/1/tw/tables/learn_app"
+                            hx-get="{% url 'opportunity:tw_learn_module' request.org.slug opp_id %}"
                             hx-trigger="load"
                             hx-swap="innerHTML"
                             class=" rounded-lg h-full w-full">
@@ -62,7 +62,7 @@
 
                     <!-- Delivery App Content -->
                     <div x-show="selectedTab === 'Delivery App'"
-                            hx-get="/a/test-1/opportunity/1/tw/tables/delivery_app"
+                            hx-get="{% url 'opportunity:tw_deliver_unit' request.org.slug opp_id %}"
                             hx-trigger="load"
                             hx-swap="innerHTML"
                             class="rounded-lg h-full w-full">
@@ -73,7 +73,7 @@
 
                     <!-- Payment Units Content -->
                     <div x-show="selectedTab === 'Payments Units'"
-                            hx-get="/a/test-1/opportunity/1/tw/tables/payment_app"
+                            hx-get="{% url 'opportunity:tw_payment_unit' request.org.slug opp_id %}"
                             hx-trigger="load"
                             hx-swap="innerHTML"
                             class="rounded-lg h-full w-full">
@@ -82,7 +82,7 @@
                         </div>
                     </div>
                 </div>
-               
+
             </div>
         </div>
     </div>
