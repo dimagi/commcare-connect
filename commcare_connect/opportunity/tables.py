@@ -531,6 +531,14 @@ class PaymentInvoiceTable(tables.Table):
         return
 
 
+class TWPaymentInvoiceTable(PaymentInvoiceTable):
+    pk = None
+
+    class Meta(PaymentInvoiceTable.Meta):
+        fields = ("amount", "date", "invoice_number", "service_delivery")
+        sequence = ("amount", "date", "invoice_number", "payment_status", "payment_date", "service_delivery")
+
+
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):
     return format_html(
         "<span class='{}' data-bs-toggle='tooltip' data-bs-placement='{}' data-bs-title='{}' {}>{}</span>",

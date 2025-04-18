@@ -1,7 +1,7 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% block table-wrapper %}
-<div class="overflow-hidden">
+<div class="overflow-hidden table-container flex flex-col gap-2">
   {% block table %}
   <div class="w-full max-h-[80vh] overflow-x-auto block">
     <table class="base-table">
@@ -64,5 +64,53 @@
     </table>
   </div>
   {% endblock table %}
-</div> 
+  {% block pagination %}
+  {% if table.page and table.paginator.num_pages > 1 %}
+  <div class="table-footer w-full flex items-center justify-between h-14  bg-slate-50  text-brand-deep-purple py-2 px-4 rounded-lg">
+    <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
+        {% if table.page.has_previous %}
+            <a href="{{ request.path }}{% querystring table.prefixed_page_field=table.page.previous_page_number %}"
+               class="button-icon"
+               aria-label="{% trans 'Previous page' %}">
+                <i class="fa-light fa-chevron-left"></i>
+            </a>
+        {% else %}
+            <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
+                <i class="fa-light fa-chevron-left"></i>
+            </span>
+        {% endif %}
+
+        <span class="whitespace-nowrap">{% trans "Page" %}</span>
+        <input
+            type="number"
+            value="{{ table.page.number }}"
+            min="1"
+            max="{{ table.paginator.num_pages }}"
+            class="base-input w-16 text-center"
+            aria-label="{% blocktrans %}Current page number, input to navigate{% endblocktrans %}"
+            hx-trigger="change"
+            hx-on:change="
+                const url = new URL(window.location.href);
+                url.searchParams.set('{{ table.prefixed_page_field }}', this.value);
+                window.location.href = url.toString();
+            "
+        >        <span class="whitespace-nowrap ml-1">of {{ table.paginator.num_pages }}</span>
+
+        {% if table.page.has_next %}
+            <a href="{{ request.path }}{% querystring table.prefixed_page_field=table.page.next_page_number %}"
+               class="button-icon"
+               aria-label="{% trans 'Next page' %}">
+                <i class="fa-light fa-chevron-right"></i>
+            </a>
+        {% else %}
+            <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
+                <i class="fa-light fa-chevron-right"></i>
+            </span>
+        {% endif %}
+    </div>
+</div>
+  {% endif %}
+
+  {% endblock pagination %}
+</div>
 {% endblock table-wrapper %}
