@@ -2425,6 +2425,7 @@ class ProgramManagerOpportunityList(BaseOpportunityList):
     total_deliveries =tables.Column(verbose_name=header_with_tooltip('Total Deliveries', 'Total services delivered so far.'))
     verified_deliveries = tables.Column(verbose_name=header_with_tooltip('Verified Deliveries', 'Approved service deliveries.'))
     worker_earnings = tables.Column(verbose_name=header_with_tooltip('Worker Earnings', 'Approved service deliveries'), accessor='total_accrued')
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
 
     def render_active_workers(self, value):
         return self.render_div(value, extra_classes=self.stats_style)
@@ -2450,6 +2451,34 @@ class ProgramManagerOpportunityList(BaseOpportunityList):
             record.organization.name,
         )
         return html
+
+    def render_actions(self, record):
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:tw_opportunity", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Workers",
+                "url": reverse("opportunity:tw_worker_list", args=[record.organization.slug, record.id]),
+            },
+        ]
+
+        if record.managed:
+            actions.append({
+                "title": "View Invoices",
+                "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+            })
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            }
+        )
+        return mark_safe(html)
 
 
 class OrgMemberTable(BaseTailwindTable):

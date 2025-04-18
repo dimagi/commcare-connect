@@ -29,6 +29,7 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
 from .views import OrganizationUserMixin, get_opportunity_or_404
 from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status
 from ..organization.decorators import org_member_required
+from ..program.models import ManagedOpportunity
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -2742,6 +2743,10 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=opp_id).first()
+    is_program_manager = False
+    if opp.managed and request.org.program_manager:
+        is_program_manager = (opp.manageopportunity.program.organization == request.org.slug
+                              and (request.org_membership.is_admin or request.user.is_superuser))
 
     learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
@@ -2803,6 +2808,32 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     delivery_url = worker_list_url + "?active_tab=delivery"
     payment_url = worker_list_url + "?active_tab=payments"
 
+    deliveries_panels =  [
+                {
+                    "icon": "fa-clipboard-list-check",
+                    "name": "Deliveries",
+                    "status": "Total",
+                    "value": opp.total_deliveries,
+                    "incr": opp.deliveries_from_yesterday,
+                }
+            ]
+
+    if opp.managed and is_program_manager:
+        deliveries_panels.append({
+            "icon": "fa-clipboard-list-check",
+            "name": "Deliveries",
+            "status": "Pending PM Review",
+            "value": opp.flagged_deliveries_waiting_for_review,
+        })
+    else:
+        deliveries_panels.append({
+            "icon": "fa-clipboard-list-check",
+            "name": "Deliveries",
+            "status": "Awaiting Flag Review",
+            "value": opp.flagged_deliveries_waiting_for_review,
+        })
+
+
     opp_stats = [
         {
             "title": "Workers",
@@ -2827,21 +2858,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "url": delivery_url,
             "sub_heading": "Last Delivery",
             "value": opp.most_recent_delivery or "--",
-            "panels": [
-                {
-                    "icon": "fa-clipboard-list-check",
-                    "name": "Deliveries",
-                    "status": "Total",
-                    "value": opp.total_deliveries,
-                    "incr": opp.deliveries_from_yesterday,
-                },
-                {
-                    "icon": "fa-clipboard-list-check",
-                    "name": "Deliveries",
-                    "status": "Awaiting Flag Review",
-                    "value": opp.flagged_deliveries_waiting_for_review,
-                },
-            ],
+            "panels": deliveries_panels
         },
         {
             "title": "Worker Payments",

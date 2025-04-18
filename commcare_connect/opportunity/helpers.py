@@ -17,7 +17,7 @@ from commcare_connect.opportunity.models import (
     PaymentUnit,
     UserInvite,
     Assessment,
-    VisitValidationStatus, UserInviteStatus, UserVisit, CompletedModule, LearnModule,
+    VisitValidationStatus, UserInviteStatus, UserVisit, CompletedModule, LearnModule, VisitReviewStatus,
 )
 
 
@@ -485,6 +485,10 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
             When(total_days__gt=0, then=F('total_visits') / F('total_days')),
             default=Value(0),
             output_field=FloatField()
+        ),
+        visits_pending_for_pm_review=Count(
+            'uservisit',
+            filter=Q(uservisit__review_status=VisitReviewStatus.pending) & Q(uservisit__review_created_on__isnull=False)
         )
     ).filter(id=opp_id)
 
