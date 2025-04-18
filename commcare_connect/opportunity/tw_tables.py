@@ -78,7 +78,7 @@ class SuspendedIndicatorColumn(tables.Column):
         super().__init__(*args, **kwargs)
 
     def render(self, value):
-        color_class = 'positive-dark' if value else 'negative-dark'
+        color_class = 'negative-dark' if value else 'positive-dark'
         return format_html(
             '<div class="w-10"><div class="w-4 h-2 rounded {}"></div></div>',
             color_class
@@ -1271,6 +1271,21 @@ class WorkerLearnTable(BaseTailwindTable):
 
     def render_assessment(self, value):
         return 'passed' if value else 'failed'
+
+    def render_learning_hours(self, value):
+        if not value:
+            return "-"
+        total_seconds = int(value.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+
+        if hours and minutes:
+            return f"{hours}h {minutes}m"
+        elif hours:
+            return f"{hours}h"
+        elif minutes:
+            return f"{minutes}m"
+        return "0m"
 
 class WorkerDeliveryTable(BaseTailwindTable):
     index = IndexColumn()
