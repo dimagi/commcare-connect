@@ -311,13 +311,16 @@ def program_home(request, org_slug):
     results = sorted(apps, key=lambda x: (x.date_created, x.program.start_date), reverse=True)
     pending_review = (
         UserVisit.objects.filter(
-            status="pending", opportunity__managed=True, opportunity__managedopportunity__program__in=programs
+            status="pending",
+            opportunity__managed=True,
+            opportunity__managedopportunity__program__in=programs,
+            opportunity__organization=org,
         )
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id"))
     )
     access_qs = OpportunityAccess.objects.filter(
-        opportunity__managed=True, opportunity__managedopportunity__program__in=programs
+        opportunity__managed=True, opportunity__managedopportunity__program__in=programs, opportunity__organization=org
     )
     payment_total = Payment.objects.filter(opportunity_access=OuterRef("pk"))
     pending_payments = (
