@@ -17,7 +17,7 @@ from commcare_connect.opportunity.models import (
     PaymentUnit,
     UserInvite,
     Assessment,
-    VisitValidationStatus, UserInviteStatus, UserVisit, CompletedModule, LearnModule,
+    VisitValidationStatus, UserInviteStatus, UserVisit, CompletedModule, LearnModule, VisitReviewStatus,
 )
 
 
@@ -259,7 +259,7 @@ def get_worker_learn_table_data(opportunity):
     return queryset
 
 
-def get_opportunity_list_data(organization):
+def get_opportunity_list_data(organization, program_manager =False):
     today = now().date()
     three_days_ago = now() - timedelta(days=3)
 
@@ -302,6 +302,11 @@ def get_opportunity_list_data(organization):
                         opportunity_access=OuterRef('opportunityaccess'),
                         visit_date__gte=three_days_ago,
                     )
+                ) & ~Exists(
+                    CompletedModule.objects.filter(
+                        opportunity_access=OuterRef('opportunityaccess'),
+                        date__gte=three_days_ago,
+                    )
                 )
             ),
             distinct=True,
@@ -311,8 +316,39 @@ def get_opportunity_list_data(organization):
             When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
             default=Value(2),  # Inactive
             output_field=IntegerField()
-        )
+        ),
     )
+
+    if program_manager:
+        queryset = queryset.annotate(
+            active_workers=Count(
+                "opportunityaccess",
+                filter=Q(
+                    Exists(
+                        UserVisit.objects.filter(
+                            opportunity_access=OuterRef("opportunityaccess"),
+                            visit_date__gte=three_days_ago,
+                        )
+                    ) |
+                    Exists(
+                        CompletedModule.objects.filter(
+                            opportunity_access=OuterRef("opportunityaccess"),
+                            date__gte=three_days_ago,
+                        )
+                    )
+                ),
+                distinct=True,
+            ),
+            total_deliveries=Count(
+                "opportunityaccess__completedwork",
+                distinct=True
+            ),
+            verified_deliveries=Count(
+                "opportunityaccess__completedwork",
+                filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
+                distinct=True
+            )
+        )
 
     return queryset
 
@@ -449,6 +485,10 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
             When(total_days__gt=0, then=F('total_visits') / F('total_days')),
             default=Value(0),
             output_field=FloatField()
+        ),
+        visits_pending_for_pm_review=Count(
+            'uservisit',
+            filter=Q(uservisit__review_status=VisitReviewStatus.pending) & Q(uservisit__review_created_on__isnull=False)
         )
     ).filter(id=opp_id)
 

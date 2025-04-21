@@ -111,6 +111,7 @@ from commcare_connect.opportunity.tasks import (
     send_sms_task,
     update_user_and_send_invite,
 )
+from commcare_connect.opportunity.tests.factories import PaymentInvoiceFactory
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -1367,20 +1368,23 @@ def tw_invoice_list(request, org_slug=None, pk=None):
 
     opportunity = get_opportunity_or_404(pk, org_slug)
     if not opportunity.managed:
-        return redirect("opportunity:tw_opportunity", org_slug, pk)
+         return redirect("opportunity:tw_opportunity", org_slug, pk)
+
+    from commcare_connect.opportunity.tw_views import is_program_manager_of_opportunity
+    program_manager = is_program_manager_of_opportunity(request, opportunity)
 
     filter_kwargs = dict(opportunity=opportunity)
 
     queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
-    table = TWPaymentInvoiceTable(queryset)
+    table = TWPaymentInvoiceTable(queryset, program_manager=program_manager)
 
     form = PaymentInvoiceForm(opportunity=opportunity)
 
-    RequestConfig(request, paginate={"per_page": 2}).configure(table)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(
         request,
         "tailwind/pages/invoice_list.html",
-        {"header_title": "Invoices", "opportunity": opportunity, "table": table, "form": form},
+        {"header_title": "Invoices", "opportunity": opportunity, "table": table, "form": form, "program_manager": program_manager},
     )
 
 

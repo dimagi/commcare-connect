@@ -19,7 +19,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tw_tables import BaseTailwindTable
+from commcare_connect.opportunity.tw_tables import BaseTailwindTable, IndexColumn
 from commcare_connect.users.models import User
 
 
@@ -533,12 +533,60 @@ class PaymentInvoiceTable(tables.Table):
 
 
 class TWPaymentInvoiceTable(PaymentInvoiceTable):
+    index = IndexColumn()
     pk = None
+    payment_date = columns.Column(empty_values=())
+
+    def __init__(self, *args, **kwargs):
+        self.program_manager = kwargs.pop("program_manager", False)
+        super().__init__(*args, **kwargs)
 
     class Meta(PaymentInvoiceTable.Meta):
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        sequence = ("amount", "date", "invoice_number", "payment_status", "payment_date", "service_delivery")
+        sequence = ("index","invoice_number","amount", "date", "payment_status", "payment_date", "service_delivery")
         orderable = True
+
+    def render_payment_status(self, value, record):
+        container_id = f"payment-status-{record.pk}"
+        url = reverse(
+            "opportunity:tw_invoice_approve",
+            args=[record.opportunity.organization.slug, record.opportunity.pk, record.pk]
+        )
+
+        if value:
+            return mark_safe(
+                f'<div id="{container_id}">'
+                f'<span class="badge badge-sm bg-green-600/20 text-green-600">Paid</span>'
+                f'</div>'
+            )
+
+        if not self.program_manager:
+            return mark_safe(
+                f'<div id="{container_id}">'
+                f'<span class="badge badge-sm bg-violet-500/20 text-violet-500">Pending</span>'
+                f'</div>'
+            )
+
+        return mark_safe(
+            f'''
+            <div id="{container_id}">
+                <button
+                    type="button"
+                    class="cursor-pointer text-brand-deep-purple text-sm px-2 py-1 border border-gray-300 rounded hover:bg-gray-100"
+                    hx-post="{url}"
+                    hx-target="#{container_id}"
+                    hx-swap="outerHTML"
+                    hx-disabled-elt="this"
+                    hx-on:click="this.innerHTML='Updating...';"
+                >
+                    Mark as Paid
+                </button>
+            </div>
+            '''
+        )
+
+    def render_payment_date(self, value, record):
+        return mark_safe(f'<div id="payment-date-{record.pk}">{value.date_paid.strftime("%d %b %Y") if value else "--"}</div>')
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):

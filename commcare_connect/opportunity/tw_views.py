@@ -1,27 +1,30 @@
+import time
+from datetime import timedelta
+
 from celery.result import AsyncResult
 from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect, render, get_object_or_404
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils.timezone import now
 from django.views.decorators.http import require_POST, require_GET
 from django.views.generic import TemplateView
-from django_tables2 import SingleTableMixin, RequestConfig
+from django_tables2 import SingleTableMixin, RequestConfig, SingleTableView
 from django.test.utils import override_settings
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, \
     ReviewVisitExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
-from .models import OpportunityAccess
+from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
 from .tw_forms import VisitExportForm, PaymentExportFormTw
 
-from .tw_tables import  PMOpportunitiesListTable
+from .tw_tables import PMOpportunitiesListTable, ProgramManagerOpportunityList, WorkerLearnStatusTable, get_duration_min
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
@@ -29,8 +32,9 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
     AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable, \
     OpportunitiesListViewTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable, WorkerStatusTable
 from .views import OrganizationUserMixin, get_opportunity_or_404
-from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status
+from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status, get_exchange_rate
 from ..organization.decorators import org_member_required
+from ..web.templatetags.duration_minutes import duration_minutes
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -307,7 +311,9 @@ def payment_unit_table(request, org_slug=None, opp_id=None):
     payment_units = PaymentUnit.objects.filter(opportunity=opp).prefetch_related(
         'deliver_units'
     )
-    table = OpportunityPaymentUnitTable(payment_units)
+    table = OpportunityPaymentUnitTable(payment_units,
+                                        can_edit=not opp.managed or is_program_manager_of_opportunity(request,
+                                                                                                             opp))
     return render(request, 'tailwind/components/opportunity-dashboard/tables/table.html', {'table': table})
 
 def payment_app_table_expand(request,org_slug=None, opp_id=None):
@@ -2625,6 +2631,27 @@ def my_organization_members_table(request, org_slug=None, opp_id=None):
     table = MyOrganizationMembersTable(data)
     return render(request, "tailwind/components/tables/index_selectable_table.html",{ "table": table})
 
+
+@org_member_required
+def worker_lear_status_view(request, org_slug, access_id):
+    access = get_object_or_404(OpportunityAccess, pk=access_id)
+    completed_modules = CompletedModule.objects.filter(opportunity_access=access)
+    total_duration = timedelta(0)
+    for cm in completed_modules:
+        total_duration += cm.duration
+    total_duration = get_duration_min(total_duration.total_seconds())
+
+    user_kpi = [
+        {"name": "<span class='font-medium'>Total Time</span> Learning", "icon": "book-open-cover",
+         "count": total_duration},
+    ]
+    table = WorkerLearnStatusTable(completed_modules)
+
+    return render(request, "tailwind/pages/opportunity_worker_extended.html",
+                  {"header_title": "Worker", "kpi": user_kpi, "tab_name": "Learn Progress", "table": table, "access":access})
+
+
+
 def opportunity_worker_learn_progress(request, org_slug=None, opp_id=None):
     user_kpi = [
            {"name":"<span class='font-medium'>Total Time</span> Learning", "icon":"book-open-cover","count":"19hr 12min" },
@@ -2702,31 +2729,30 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
 
 class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
     template_name = "tailwind/pages/opportunities_list.html"
-    table_class = OpportunitiesListViewTable
     paginate_by = 15
+    base_columns = ['program', 'start_date', 'end_date', 'status', 'opportunity']
+    pm_columns = ['active_workers', 'total_deliveries', 'verified_deliveries', 'worker_earnings']
+    nm_columns = ['pending_invites', 'inactive_workers', 'pending_approvals', 'payments_due']
 
-    allowed_sort_columns = [
-        'program',
-        'start_date',
-        'end_date',
-        'pending_invites',
-        'inactive_workers',
-        'pending_approvals',
-        'payments_due',
-        'status',
-        'opportunity',
-    ]
+    def get_allowed_columns(self):
+        extra_columns = self.pm_columns if self.request.org.program_manager else self.nm_columns
+        return self.base_columns + extra_columns
+
+    def get_table_class(self):
+        if self.request.org.program_manager:
+            return ProgramManagerOpportunityList
+        return OpportunitiesListViewTable
 
     def get_table_data(self):
         org = self.request.org
-        return get_opportunity_list_data(org)
+        return get_opportunity_list_data(org, self.request.org.program_manager)
 
     def get_validated_order_by(self):
         requested_order = self.request.GET.get('sort', 'start_date')
 
         is_descending = requested_order.startswith('-')
         column = requested_order[1:] if is_descending else requested_order
-        return requested_order if column in self.allowed_sort_columns else 'start_date'
+        return requested_order if column in self.get_allowed_columns() else 'start_date'
 
     def get_table(self, **kwargs):
         table = super().get_table(**kwargs)
@@ -2740,9 +2766,15 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
         return table
 
+
+def is_program_manager_of_opportunity(request, opportunity):
+    return (opportunity.managed and opportunity.managedopportunity.program.organization == request.org.slug
+            and (request.org_membership.is_admin or request.user.is_superuser))
+
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=opp_id).first()
+    is_program_manager = is_program_manager_of_opportunity(request, opp)
 
     learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
     deliver_unit_count = DeliverUnit.objects.filter(app=opp.deliver_app).count()
@@ -2804,6 +2836,32 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     delivery_url = worker_list_url + "?active_tab=delivery"
     payment_url = worker_list_url + "?active_tab=payments"
 
+    deliveries_panels =  [
+                {
+                    "icon": "fa-clipboard-list-check",
+                    "name": "Deliveries",
+                    "status": "Total",
+                    "value": opp.total_deliveries,
+                    "incr": opp.deliveries_from_yesterday,
+                }
+            ]
+
+    if opp.managed and is_program_manager:
+        deliveries_panels.append({
+            "icon": "fa-clipboard-list-check",
+            "name": "Deliveries",
+            "status": "Pending PM Review",
+            "value": opp.flagged_deliveries_waiting_for_review,
+        })
+    else:
+        deliveries_panels.append({
+            "icon": "fa-clipboard-list-check",
+            "name": "Deliveries",
+            "status": "Awaiting Flag Review",
+            "value": opp.flagged_deliveries_waiting_for_review,
+        })
+
+
     opp_stats = [
         {
             "title": "Workers",
@@ -2828,21 +2886,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "url": delivery_url,
             "sub_heading": "Last Delivery",
             "value": opp.most_recent_delivery or "--",
-            "panels": [
-                {
-                    "icon": "fa-clipboard-list-check",
-                    "name": "Deliveries",
-                    "status": "Total",
-                    "value": opp.total_deliveries,
-                    "incr": opp.deliveries_from_yesterday,
-                },
-                {
-                    "icon": "fa-clipboard-list-check",
-                    "name": "Deliveries",
-                    "status": "Awaiting Flag Review",
-                    "value": opp.flagged_deliveries_waiting_for_review,
-                },
-            ],
+            "panels": deliveries_panels
         },
         {
             "title": "Worker Payments",
@@ -2903,7 +2947,8 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "header_title": "Opportunities",
             "funnel_progress": funnel_progress,
             "worker_progress": worker_progress,
-            'path': path
+            'path': path,
+            'program_manger':is_program_manager
         },
     )
 
@@ -2967,3 +3012,33 @@ def export_status(request, org_slug, task_id):
             "progress": progress,
         },
     )
+
+
+@org_member_required
+@require_POST
+def tw_invoice_approve(request, org_slug, pk, invoice_id):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    if not opportunity.managed or not request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
+    invoice = get_object_or_404(PaymentInvoice, pk=invoice_id, payment__isnull=True)
+    rate = get_exchange_rate(opportunity.currency)
+    amount_in_usd = invoice.amount / rate
+    payment = Payment(
+        amount=invoice.amount,
+        organization=opportunity.organization,
+        amount_usd=amount_in_usd,
+        invoice=invoice,
+    )
+    payment.save()
+
+    payment_date = payment.date_paid.strftime("%d %b %Y")
+
+    html = f"""
+          <div id="payment-status-{invoice.pk}">
+            <span class="badge badge-sm bg-green-600/20 text-green-600">Approved</span>
+          </div>
+          <script>
+            document.getElementById("payment-date-{invoice.pk}").innerHTML = "{payment_date}";
+          </script>
+        """
+    return HttpResponse(html, status=201)
