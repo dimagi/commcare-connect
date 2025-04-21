@@ -512,7 +512,7 @@ class PaymentInvoiceTable(tables.Table):
         },
     )
     payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
-    payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
+    payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=())
 
     class Meta:
         model = PaymentInvoice
@@ -535,7 +535,6 @@ class PaymentInvoiceTable(tables.Table):
 class TWPaymentInvoiceTable(PaymentInvoiceTable):
     index = IndexColumn()
     pk = None
-    payment_date = columns.Column(empty_values=())
 
     def __init__(self, *args, **kwargs):
         self.program_manager = kwargs.pop("program_manager", False)
