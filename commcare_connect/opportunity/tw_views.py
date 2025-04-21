@@ -2965,8 +2965,8 @@ def welcome(request, org_slug=None, opp_id=None):
 @require_POST
 def tw_invoice_approve(request, org_slug, pk, invoice_id):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    # if not opportunity.managed or not request.org_membership.is_program_manager:
-    #     return redirect("opportunity:detail", org_slug, pk)
+    if not opportunity.managed or not request.org_membership.is_program_manager:
+        return redirect("opportunity:detail", org_slug, pk)
     invoice = get_object_or_404(PaymentInvoice, pk=invoice_id, payment__isnull=True)
     rate = 1 #get_exchange_rate(opportunity.currency)
     amount_in_usd = invoice.amount / rate
