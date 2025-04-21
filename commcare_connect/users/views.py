@@ -1,12 +1,15 @@
 from allauth.account.models import transaction
+from crispy_forms.utils import render_crispy_form
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.utils.safestring import mark_safe
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
@@ -41,13 +44,28 @@ class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
     model = User
     fields = ["name"]
     success_message = _("Information successfully updated")
+    template_name = "account/user_update.html"
 
     def get_success_url(self):
         assert self.request.user.is_authenticated  # for mypy to know that the user is authenticated
-        return self.request.user.get_absolute_url()
+        return reverse("account_email")
 
     def get_object(self):
         return self.request.user
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        form = self.get_form()
+        csrf_token = get_token(self.request)
+        form_html = f"""
+            <form id="user-update"
+                  action="{reverse('users:update')}"
+                  method="post">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}">
+                {render_crispy_form(form)}
+            </form>
+            """
+        return HttpResponse(mark_safe(form_html))
 
 
 user_update_view = UserUpdateView.as_view()
