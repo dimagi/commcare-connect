@@ -11,16 +11,16 @@
         <!-- Logo Section -->
         <div class="">
             <div class="flex p-2 justify-start">
-                <div 
+                <div
                     x-show.immediate="!sidebarOpen"
-                    x-cloak 
-                    class=" h-12 transition-none" 
+                    x-cloak
+                    class=" h-12 transition-none"
                 >
                     <img src="{% static 'images/logo.svg' %}" alt="Compact Logo" class="w-8 h-8">
                 </div>
-                <div 
+                <div
                     x-show.immediate="sidebarOpen"
-                    x-cloak 
+                    x-cloak
                     class="h-12 pl-1"
                 >
                     <img src="{% static 'images/logo-full.svg' %}" alt="Full Logo" class="h-12 w-auto">
@@ -33,9 +33,9 @@
                 <i class="fa-light text-lg text-brand-sky"
                     :class="sidebarOpen ? 'fa-xmark-large': 'fa-bars'"
                     @click="sidebarOpen = !sidebarOpen"></i>
-                
+
             </div>
-    
+
             <div class="transition-all duration-300 overflow-hidden flex items-center"
                  :class="sidebarOpen ? 'w-40 ml-4 opacity-100' : 'w-0 opacity-0'">
                 <span class="text-xs whitespace-nowrap">Menu</span>
@@ -46,10 +46,11 @@
         <div class="mt-5">
             {% url 'program:home' request.org.slug as program_home_url %}
             {% url 'opportunity:opportunities_list_new' request.org.slug as opportunity_url %}
+            {% url 'organization:org_member_view' request.org.slug as org_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Analytics' icon='chart-pie'  target='/analytics' %}
-            {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target='/organization' %}
+            {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings' target=org_url %}
         </div>
     </div>
 
