@@ -111,7 +111,6 @@ from commcare_connect.opportunity.tasks import (
     send_sms_task,
     update_user_and_send_invite,
 )
-from commcare_connect.opportunity.tests.factories import PaymentInvoiceFactory
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
