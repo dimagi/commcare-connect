@@ -72,44 +72,48 @@
                   <span class="relative z-20">Apply</span>
                 </button>
               {% elif program_app.status == 'accepted' %}
-                <button class="button button-md outline-style" @click="showOpp = !showOpp">
-                  <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
-                  <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-                </button>
+                {% if program_app.program.managedopportunity_set.all %}
+                  <button class="button button-md outline-style" @click="showOpp = !showOpp">
+                    <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
+                    <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                  </button>
+                {% endif %}
               {% endif %}
             </div>
             {% if program_app.status == 'accepted' %}
-              <div id="opportunity-container" class="flex flex-col gap-y-4 py-4" x-show="showOpp" x-cloak>
-                {% for opportunity in program_app.program.managedopportunity_set.all %}
-                  <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
-                    <div class="flex justify-between w-full">
-                      <div class="flex flex-col gap-5 w-1/2">
-                        <div class="flex items-center gap-2 font-normal">
-                          <div class="w-2 h-2 bg-green-600 rounded-full"></div>
-                          <p class="hint">{{ opportunity.organization.name }}</p>
-                        </div>
-                        <div>
-                          <p class="card_title">{{ opportunity.name }}</p>
-                          <p class="card_description">{{ opportunity.description }}</p>
+              {% if program_app.program.managedopportunity_set.all %}
+                <div id="opportunity-container" class="flex flex-col gap-y-4 py-4" x-show="showOpp" x-cloak>
+                  {% for opportunity in program_app.program.managedopportunity_set.all %}
+                    <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
+                      <div class="flex justify-between w-full">
+                        <div class="flex flex-col gap-5 w-1/2">
+                          <div class="flex items-center gap-2 font-normal">
+                            <div class="w-2 h-2 bg-green-600 rounded-full"></div>
+                            <p class="hint">{{ opportunity.organization.name }}</p>
+                          </div>
+                          <div>
+                            <p class="card_title">{{ opportunity.name }}</p>
+                            <p class="card_description">{{ opportunity.description }}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-6">
-                        {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=opportunity.start_date classname="infocard-dark" %}
-                        {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=opportunity.end_date id='1' classname="infocard-dark" %}
-                      </div>
-                      <a class="button button-md button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug opportunity.id %}">
-                        <div class="flex items-center justify-between gap-4">
-                          <p class="text-sm">View</p>
-                          <i class="fa-light fa-arrow-right"></i>
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-6">
+                          {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=opportunity.start_date classname="infocard-dark" %}
+                          {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=opportunity.end_date id='1' classname="infocard-dark" %}
                         </div>
-                      </a>
+                      <a class="button button-md button-outline-rounded" href="{% url "opportunity:tw_opportunity" request.org.slug opportunity.id %}">
+                          <div class="flex items-center justify-between gap-4">
+                            <p class="text-sm">View</p>
+                            <i class="fa-light fa-arrow-right"></i>
+                          </div>
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                {% endfor %}
-              </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
             {% endif %}
           </div>
         {% endfor %}
