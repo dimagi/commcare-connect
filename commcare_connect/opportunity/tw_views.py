@@ -2745,7 +2745,7 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
     def get_table_data(self):
         org = self.request.org
-        return get_opportunity_list_data(org, True)
+        return get_opportunity_list_data(org, self.request.org.program_manager)
 
     def get_validated_order_by(self):
         requested_order = self.request.GET.get('sort', 'start_date')
