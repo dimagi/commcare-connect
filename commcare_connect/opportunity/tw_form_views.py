@@ -42,6 +42,7 @@ from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, 
 from commcare_connect.organization.decorators import org_admin_required, org_member_required
 from commcare_connect.program import views as program_views
 from commcare_connect.users.models import User
+from commcare_connect.utils.commcarehq_api import get_domains_for_user
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -283,7 +284,7 @@ class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["domains"] = []
+        kwargs["domains"] = get_domains_for_user(self.request.user)
         kwargs["user"] = self.request.user
         kwargs["org_slug"] = self.request.org.slug
         return kwargs

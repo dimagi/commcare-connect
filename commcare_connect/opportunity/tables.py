@@ -655,6 +655,10 @@ class UserVisitVerificationTable(BaseTailwindTable):
             "hx-params": "none",
         }
 
+    def render_last_activity(self, record):
+        if record.review_created_on:
+            return record.review_created_on.strftime("%d %b, %Y")
+
     def render_icons(self, record):
         status_to_icon = {
             # Review Status Pending, Visit Status Approved

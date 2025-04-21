@@ -9,7 +9,6 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
 from django.utils.timezone import now
 from django.urls import reverse
-from markupsafe import Markup
 
 from commcare_connect import connect_id_client
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
@@ -160,14 +159,6 @@ class DeliverUnitFlagsForm(forms.ModelForm):
         ):
             raise ValidationError("Flags are already configured for this Deliver Unit.")
         return deliver_unit
-
-def icon_field(field_name, icon_class, **kwargs):
-    icon_html = f'<i class="fa {icon_class} mr-2 text-gray-500"></i>'
-    return Field(
-        field_name,
-        label=Markup(icon_html + field_name.capitalize()),
-        **kwargs
-    )
 
 
 class FormJsonValidationRulesForm(forms.ModelForm):
@@ -627,15 +618,26 @@ class OpportunityInitForm(forms.ModelForm):
                 }
             ),
         )
-        learn_app_choices = [(i, f"Learn App {i}") for i in range(1, 11)]
-        self.fields["learn_app"] = forms.Field(widget=forms.Select(choices=learn_app_choices))
+        self.fields["learn_app"] = forms.Field(
+            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+        )
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
         self.fields["deliver_app_domain"] = forms.ChoiceField(
             choices=domain_choices,
+            widget=forms.Select(
+                attrs={
+                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
+                    "hx-include": "#id_deliver_app_domain",
+                    "hx-trigger": "load delay:0.3s, change",
+                    "hx-target": "#id_deliver_app",
+                    "data-loading-disable": True,
+                }
+            ),
         )
-        deliver_app_choices = [(i, f"Deliver App {i}") for i in range(1, 11)]
-        self.fields["deliver_app"] = forms.Field(widget=forms.Select(choices=deliver_app_choices))
+        self.fields["deliver_app"] = forms.Field(
+            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+        )
         self.fields["api_key"] = forms.CharField(max_length=50)
 
     def clean(self):

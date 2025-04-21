@@ -220,7 +220,7 @@
         <form class="flex flex-col w-full gap-2"
               hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
               hx-target="#table-container"
-              hx-trigger="change, load"
+              hx-trigger="change, load, reload_table from:body"
               x-data="{
                 activeTab: '{{ request.GET.filter_status|default:'pending' }}',
                 filter_date: new Date('{{ filter_date }}'),
@@ -288,13 +288,7 @@
                 <span class="sr-only">Loading...</span>
               </div>
             </div>
-
-            <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm">
-              <div class="flex gap-4">
-                <button class="button button-md outline-style">Reject</button>
-                <button class="button button-md primary-dark">Approve</button>
-              </div>
-            </div>
+            <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm" id="visit-actions"></div>
           </div>
         </div>
       </div>

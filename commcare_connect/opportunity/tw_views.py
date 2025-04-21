@@ -1,6 +1,7 @@
 import time
 from datetime import timedelta
 
+from celery.result import AsyncResult
 from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
@@ -8,7 +9,8 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render, get_object_or_404
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from django.views.decorators.http import require_POST
+from django.utils.timezone import now
+from django.views.decorators.http import require_POST, require_GET
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig, SingleTableView
 from django.test.utils import override_settings
@@ -20,7 +22,6 @@ from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
-from .tests.factories import CompletedModuleFactory, OpportunityAccessFactory
 from .tw_forms import VisitExportForm, PaymentExportFormTw
 
 from .tw_tables import PMOpportunitiesListTable, ProgramManagerOpportunityList, WorkerLearnStatusTable, get_duration_min
@@ -2652,9 +2653,6 @@ def worker_lear_status_view(request, org_slug, access_id):
 
 
 def opportunity_worker_learn_progress(request, org_slug=None, opp_id=None):
-
-
-
     user_kpi = [
            {"name":"<span class='font-medium'>Total Time</span> Learning", "icon":"book-open-cover","count":"19hr 12min" },
     ]
@@ -2871,8 +2869,8 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "value": opp.deliveries_from_yesterday,
             "url": status_url,
             "panels": [
-                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited,},
-                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation",},
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": opp.workers_invited},
+                {"icon": "fa-user-check", "name": "Workers", "status": "Yet to Accept Invitation", "value": opp.pending_invites},
                 {
                     "icon": "fa-clipboard-list",
                     "name": "Workers",
@@ -2908,6 +2906,10 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         },
 
     ]
+    verified_percentage = opp.approved_deliveries / opp.total_deliveries * 100 if opp.total_deliveries else 0
+    rejected_percentage = opp.rejected_deliveries / opp.total_deliveries * 100 if opp.total_deliveries else 0
+    earned_percentage = opp.total_accrued / opp.total_budget * 100 if opp.total_budget else 0
+    paid_percentage = opp.total_paid / opp.total_accrued * 100 if opp.total_accrued else 0
 
     worker_progress = [
         {"title": "Daily Active Workers",
@@ -2917,12 +2919,12 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
                        "badge_type": False}]},
         {"title": "Service Deliveries",
          "progress": [
-             {"title": "Verified", "total": opp.total_deliveries, "value": opp.approved_deliveries, "badge_type": True},
-             {"title": "Rejected", "total": opp.total_deliveries, "value": opp.rejected_deliveries,
+             {"title": "Verified", "total": opp.total_deliveries, "value": f"{verified_percentage:.2f}", "badge_type": True},
+             {"title": "Rejected", "total": opp.total_deliveries, "value": f"{rejected_percentage:.2f}",
               "badge_type": True}]},
         {"title": "Payments to Workers",
-         "progress": [{"title": "Earned", "total": opp.total_budget, "value": opp.total_accrued, "badge_type": True},
-                      {"title": "Paid", "total": opp.total_accrued, "value": opp.total_paid, "badge_type": True}]},
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{earned_percentage:.2f}", "badge_type": True},
+                      {"title": "Paid", "total": opp.total_accrued, "value": f"{paid_percentage:.2f}", "badge_type": True}]},
     ]
 
     funnel_progress = [
@@ -2986,6 +2988,30 @@ def invite_comp(request, org_slug=None, opp_id=None):
 
 def welcome(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/welcome.html")
+
+
+@org_member_required
+@require_GET
+def export_status(request, org_slug, task_id):
+    task_meta = AsyncResult(task_id)._get_task_meta()
+    status = task_meta.get("status")
+    progress = {
+        "complete": status == "SUCCESS",
+    }
+    if status == "FAILURE":
+        progress["error"] = task_meta.get("result")
+
+
+
+    return render(
+        request,
+        "tailwind/components/upload_progress_bar.html",
+        {
+            "task_id": task_id,
+            "current_time": now().microsecond,
+            "progress": progress,
+        },
+    )
 
 
 @org_member_required

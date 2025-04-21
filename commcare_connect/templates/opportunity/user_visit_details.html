@@ -240,6 +240,75 @@
   </div>
 </div>
 
+
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+  x-data="{showRejectModal: false, showApproveModal: false}"
+  id="visit-actions"
+  hx-swap-oob="true">
+  <div class="flex gap-4">
+    <button class="button button-md outline-style" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
+    <button class="button button-md primary-dark" @click="showRejectModal = false; showApproveModal = true;">Approve</button>
+  </div>
+
+  <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showRejectModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Reason for Rejection</h2>
+        <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <form hx-post="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=user_visit.id  %}"
+        hx-swap="none"
+        @submit="showRejectModal = false">
+        {% csrf_token %}
+        <div class="py-4">
+          <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
+            placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
+        </div>
+        <div class="footer flex justify-end gap-4">
+          <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md negative-dark">
+            Reject
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showApproveModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Justification for Approval</h2>
+        <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <form hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+        hx-swap="none"
+        @submit="showApproveModal = false">
+        {% csrf_token %}
+        <div class="py-4">
+          <textarea required class="base-textarea" id="justification" rows="3" name="justification"
+            placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
+        </div>
+        <div class="footer flex justify-end gap-4">
+          <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md positive-dark">Approve</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+
+
+
 {{ visit_data|json_script:"visit_data" }}
 {{ user_forms|json_script:"user_forms" }}
 {{ other_forms|json_script:"other_forms" }}
