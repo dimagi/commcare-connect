@@ -324,8 +324,10 @@ def program_home(request, org_slug):
     )
     payment_total = Payment.objects.filter(opportunity_access=OuterRef("pk"))
     pending_payments = (
-        access_qs.annotate(payments=Subquery(payment_total.values("amount")))
-        .annotate(pending_payment=F("payment_accrued") - Sum("payments"))
+        access_qs.annotate(
+            pending_payment=F("payment_accrued")
+            - Subquery(payment_total.values("opportunity_access_id").annotate(total=Sum("amount")).values("total"))
+        )
         .filter(pending_payment__gte=0)
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id"))
