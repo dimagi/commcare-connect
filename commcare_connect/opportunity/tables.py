@@ -537,6 +537,10 @@ class TWPaymentInvoiceTable(PaymentInvoiceTable):
     pk = None
     payment_date = columns.Column(empty_values=())
 
+    def __init__(self, *args, **kwargs):
+        self.program_manager = kwargs.pop("program_manager", False)
+        super().__init__(*args, **kwargs)
+
     class Meta(PaymentInvoiceTable.Meta):
         fields = ("amount", "date", "invoice_number", "service_delivery")
         sequence = ("index","invoice_number","amount", "date", "payment_status", "payment_date", "service_delivery")
@@ -552,7 +556,14 @@ class TWPaymentInvoiceTable(PaymentInvoiceTable):
         if value:
             return mark_safe(
                 f'<div id="{container_id}">'
-                f'<span class="badge badge-sm bg-green-600/20 text-green-600">Approved</span>'
+                f'<span class="badge badge-sm bg-green-600/20 text-green-600">Paid</span>'
+                f'</div>'
+            )
+
+        if not self.program_manager:
+            return mark_safe(
+                f'<div id="{container_id}">'
+                f'<span class="badge badge-sm bg-violet-500/20 text-violet-500">Pending</span>'
                 f'</div>'
             )
 
@@ -561,10 +572,12 @@ class TWPaymentInvoiceTable(PaymentInvoiceTable):
             <div id="{container_id}">
                 <button
                     type="button"
-                    class="cursor-pointer text-sm px-2 py-1 border border-gray-300 rounded hover:bg-gray-100"
+                    class="cursor-pointer text-brand-deep-purple text-sm px-2 py-1 border border-gray-300 rounded hover:bg-gray-100"
                     hx-post="{url}"
                     hx-target="#{container_id}"
                     hx-swap="outerHTML"
+                    hx-disabled-elt="this"
+                    hx-on:click="this.innerHTML='Updating...';"
                 >
                     Mark as Paid
                 </button>

@@ -1,3 +1,5 @@
+import time
+
 from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
@@ -29,7 +31,6 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
 from .views import OrganizationUserMixin, get_opportunity_or_404
 from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status, get_exchange_rate
 from ..organization.decorators import org_member_required
-from ..program.models import ManagedOpportunity
 
 
 def home(request, org_slug=None, opp_id=None):
