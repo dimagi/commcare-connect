@@ -1,31 +1,50 @@
-{% extends "account/base.html" %}
+{% extends "tailwind/base.html" %} {# Changed base template #}
 
 {% load i18n %}
-{% load account %}
+{% load account %} {# Keep necessary template tags #}
 
 {% block head_title %}{% translate "Confirm E-mail Address" %}{% endblock %}
 
+{% block content %} {# Changed block name #}
+<div class="max-w-screen-lg mx-auto py-16 px-4 text-center"> {# Added container, padding, centered text #}
 
-{% block inner %}
-<h1 class="mb-4">{% translate "Confirm E-mail Address" %}</h1>
+  <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">{% translate "Confirm E-mail Address" %}</h1> {# Tailwind heading styles #}
 
-{% if confirmation %}
+  {% if confirmation %}
 
-{% user_display confirmation.email_address.user as user_display %}
+    {% user_display confirmation.email_address.user as user_display %}
 
-<p>{% blocktranslate with confirmation.email_address.email as email %}Please confirm that <a href="mailto:{{ email }}">{{ email }}</a> is an e-mail address for user {{ user_display }}.{% endblocktranslate %}</p>
+    {# Original paragraph structure, Tailwind text style applied #}
+    <p class="text-sm text-gray-700 mb-8">
+      {% blocktranslate with confirmation.email_address.email as email %}
+      Please confirm that <a href="mailto:{{ email }}" class="text-brand-indigo hover:text-brand-deep-purple hover:underline font-medium">{{ email }}</a> is an e-mail address for user {{ user_display }}.
+      {% endblocktranslate %}
+      {# Note: Link styling (text-brand-indigo etc.) applied directly to the <a> tag above #}
+    </p>
 
-<form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
-{% csrf_token %}
-    <button class="btn btn-primary" type="submit">{% translate 'Confirm' %}</button>
-</form>
+    {# Original form structure #}
+    <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+      {% csrf_token %} {# Keep CSRF token #}
 
-{% else %}
+      {# Original button structure, replace Bootstrap classes with Tailwind component #}
+      <button class="button button-md primary-dark" type="submit"> {# Use .button component styles #}
+        {% translate 'Confirm' %}
+      </button>
+    </form>
 
-{% url 'account_email' as email_url %}
+  {% else %} {# Original else block structure #}
 
-<p class="mt-2">{% blocktranslate %}This e-mail confirmation link expired or is invalid. Please <a href="{{ email_url }}">issue a new e-mail confirmation request</a>.{% endblocktranslate %}</p>
+    {% url 'account_email' as email_url %}
 
-{% endif %}
+    {# Original paragraph structure, Tailwind text style applied #}
+    <p class="text-sm text-gray-700 mt-4">
+      {% blocktranslate %}
+      This e-mail confirmation link expired or is invalid. Please <a href="{{ email_url }}" class="text-brand-indigo hover:text-brand-deep-purple hover:underline font-medium">issue a new e-mail confirmation request</a>.
+      {% endblocktranslate %}
+       {# Note: Link styling (text-brand-indigo etc.) applied directly to the <a> tag above #}
+    </p>
 
+  {% endif %}
+
+</div> {# End overall container #}
 {% endblock %}
