@@ -1,7 +1,26 @@
 {% extends "tailwind/base.html" %}
 {% load django_tables2 %}
 
+
 {% block content %}
+
+<ul class="breadcrumb">
+  {% if program_manager %}
+    <li>
+      <a class="text-gray-500 cursor-none">{{opportunity.organization.slug}}</a>
+      <i class="fa-solid fa-chevron-right"></i>
+    </li>
+   {% endif %}
+  <li>
+    <a href='{% url "opportunity:tw_opportunity" request.org.slug opportunity.pk %}'>{{ opportunity.name }}</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    <a class="text-gray-500 cursor-none">Invoices</a>
+  </li>
+</ul>
+
+
 <p class="my-5 text-sm font-medium text-brand-deep-purple">{{ opportunity.name }}</p>
 <div class="flex flex-col w-full gap-2">
 

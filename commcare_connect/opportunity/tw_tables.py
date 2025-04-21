@@ -1,4 +1,5 @@
 import itertools
+from datetime import timedelta
 
 import django_tables2 as tables
 from django.db.models.functions import Now
@@ -6,6 +7,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
+from django.utils.timezone import localtime
 
 from commcare_connect.opportunity.models import LearnModule, DeliverUnit, PaymentUnit
 
@@ -23,6 +25,37 @@ class BaseTailwindTable(tables.Table):
         template_name = "tailwind/base_table.html"  # Use your custom template
         attrs = {"class": "w-full text-left text-sm text-brand-deep-purple"}
 
+
+def header_with_tooltip(label, tooltip_text):
+    return mark_safe(f"""
+        <div class="relative inline-flex justify-center items-center group cursor-default">
+            <span>{label}</span>
+            <i class="fa-regular fa-circle-question text-xs text-slate-400 ml-1 cursor-help"></i>
+            <div class="fixed hidden group-hover:block z-50 pointer-events-none -translate-x-[15%] -translate-y-[70%] transform">
+                <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+                <div class="relative bg-white w-28 rounded p-2 text-slate-500 text-xs whitespace-normal break-words">
+                    {tooltip_text}
+                </div>
+            </div>
+        </div>
+    """)
+
+
+def get_duration_min(total_seconds):
+    total_seconds = int(total_seconds)
+    minutes = (total_seconds // 60) % 60
+    hours = total_seconds // 3600
+
+    if hours:
+        return f"{hours} hr {minutes} min" if minutes else f"{hours} hr"
+    return f"{minutes} min"
+
+
+class DurationColumn(tables.Column):
+    def render(self, value):
+        total_seconds = int(value.total_seconds() if isinstance(value, timedelta) else 0)
+        return  get_duration_min(total_seconds)
+
 class DMYDate(tables.DateColumn):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("format", "d-M-Y")
@@ -36,14 +69,12 @@ class IndexColumn(tables.Column):
         super().__init__(*args, **kwargs)
 
     def render(self, value, record, bound_column, bound_row, **kwargs):
-        table = bound_row._table  # Correct way to access table
-
+        table = bound_row._table
         page = getattr(table, 'page', None)
         if page:
             start_index = (page.number - 1) * page.paginator.per_page + 1
         else:
             start_index = 1
-
         if not hasattr(table, '_row_counter') or getattr(table, '_row_counter_start', None) != start_index:
             table._row_counter = itertools.count(start=start_index)
             table._row_counter_start = start_index
@@ -114,6 +145,11 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
     max_total = tables.Column(verbose_name="Total Deliveries")
     deliver_units = tables.Column(verbose_name="Delivery Units")
 
+    def __init__(self, *args, **kwargs):
+        self.can_edit = kwargs.pop('can_edit', False)
+        super().__init__(*args, **kwargs)
+
+
     class Meta:
         model = PaymentUnit
         orderable = False
@@ -129,17 +165,23 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
                     {''.join([f'<div class="w-full"><span>{unit.name}</span> {"(<i>optional</i>)" if unit.optional else ""}</div>' for unit in deliver_units])}
                 </div>
             '''
+        edit_button=''
+        if self.can_edit:
+            url = reverse('opportunity:tw_edit_payment_unit', args=(record.opportunity.organization.slug,
+                          record.opportunity.id, record.id))
+            edit_button = mark_safe(f'<a href="{url}"><i class="fa-thin fa-pencil me-2"></i></a>')
 
         return format_html('''
             <div class="flex justify-between items-center">
                 <span>{count}</span>
                 <div x-data="{{ expanded: false }}">
-                    <button class="btn btn-primary btn-sm"
+                    {edit_button}
+                    <button class="cursor-pointer btn btn-primary btn-sm"
                             @click="expanded = true; $el.closest('tr').insertAdjacentHTML('afterend', $refs.detailRow.innerHTML)"
                             x-show="!expanded">
                         <i class="fa-light fa-chevron-down"></i>
                     </button>
-                    <button class="btn btn-secondary btn-sm"
+                    <button class="cursor-pointer btn btn-secondary btn-sm"
                             @click.prevent="
                                 const detailRow = $el.closest('tr').nextElementSibling;
                                 if (detailRow && detailRow.classList.contains('detail-row')) {{{{
@@ -164,7 +206,7 @@ class OpportunityPaymentUnitTable(BaseTailwindTable):
                     </template>
                 </div>
             </div>
-        ''', count=count, detail_html=mark_safe(detail_html))
+        ''', count=count, edit_button=edit_button, detail_html=mark_safe(detail_html))
 
 
 class LearnAppTable(BaseTailwindTable):
@@ -1242,7 +1284,7 @@ class WorkerLearnTable(BaseTailwindTable):
         orderable=False,
         template_code="""
             <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
-                <i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>
+                <a><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
             </div>
         """
     )
@@ -1271,6 +1313,12 @@ class WorkerLearnTable(BaseTailwindTable):
 
     def render_assessment(self, value):
         return 'passed' if value else 'failed'
+
+    def render_action(self, record):
+        url = reverse('opportunity:tw_worker_learn_progress', args=(record.opportunity.organization.slug, record.id))
+        return format_html(""" <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a href="{url}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>""", url=url)
 
     def render_learning_hours(self, value):
         if not value:
@@ -2263,50 +2311,49 @@ class OpportunityWorkerPaymentTable(BaseTailwindTable):
         )
 
 
-class OpportunitiesListViewTable(BaseTailwindTable):
+class BaseOpportunityList(BaseTailwindTable):
     stats_style = "underline underline-offset-2 justify-center"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.use_view_url = False
 
-
-    index = tables.Column(verbose_name="#", empty_values=(), orderable=False)
-    opportunity = tables.Column(accessor="name")
+    index = IndexColumn()
+    opportunity = tables.Column(accessor='name')
     entityType = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
         template_code="""
-            <div class="flex justify-start text-sm font-normal text-brand-deep-purple w-fit"
-                 x-data="{
-                   showTooltip: false,
-                   tooltipStyle: '',
-                   positionTooltip(el) {
-                     const rect = el.getBoundingClientRect();
-                     const top = rect.top - 30;  /* 30px above the icon */
-                     const left = rect.left + rect.width/2;
-                     this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
-                   }
-                 }">
-                {% if record.is_test %}
-                    <div class="relative">
-                        <i class="fa-light fa-file-dashed-line"
-                           @mouseenter="showTooltip = true; positionTooltip($el)"
-                           @mouseleave="showTooltip = false
-                           "></i>
-                        <span x-show="showTooltip"
-                              :style="tooltipStyle"
-                              class="fixed z-50 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
-                            Test Opportunity
+                <div class="flex justify-start text-sm font-normal text-brand-deep-purple w-fit"
+                     x-data="{
+                       showTooltip: false,
+                       tooltipStyle: '',
+                       positionTooltip(el) {
+                         const rect = el.getBoundingClientRect();
+                         const top = rect.top - 30;  /* 30px above the icon */
+                         const left = rect.left + rect.width/2;
+                         this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
+                       }
+                     }">
+                    {% if record.is_test %}
+                        <div class="relative">
+                            <i class="fa-light fa-file-dashed-line"
+                               @mouseenter="showTooltip = true; positionTooltip($el)"
+                               @mouseleave="showTooltip = false
+                               "></i>
+                            <span x-show="showTooltip"
+                                  :style="tooltipStyle"
+                                  class="fixed z-50 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+                                Test Opportunity
+                            </span>
+                        </div>
+                    {% else %}
+                        <span class="relative">
+                            <i class="invisible fa-light fa-file-dashed-line"></i>
                         </span>
-                    </div>
-                {% else %}
-                    <span class="relative">
-                        <i class="invisible fa-light fa-file-dashed-line"></i>
-                    </span>
-                {% endif %}
-            </div>
-        """,
+                    {% endif %}
+                </div>
+            """,
     )
 
     status = tables.TemplateColumn(
@@ -2314,26 +2361,22 @@ class OpportunitiesListViewTable(BaseTailwindTable):
         accessor="status_value",
         orderable=True,
         template_code="""
-            <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
-              {% if value == 0 %}
-                  <span class="badge badge-sm bg-green-600/20 text-green-600">Active</span>
-              {% elif value == 1 %}
-                    <span class="badge badge-sm bg-orange-600/20 text-orange-600">Ended</span>
-              {% else %}
-                   <span class="badge badge-sm bg-slate-100 text-slate-400">Inactive</span>
-              {% endif %}
-            </div>
-        """,
+                <div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">
+                  {% if value == 0 %}
+                      <span class="badge badge-sm bg-green-600/20 text-green-600">Active</span>
+                  {% elif value == 1 %}
+                        <span class="badge badge-sm bg-orange-600/20 text-orange-600">Ended</span>
+                  {% else %}
+                       <span class="badge badge-sm bg-slate-100 text-slate-400">Inactive</span>
+                  {% endif %}
+                </div>
+            """,
         extra_context={"now": Now()},
     )
+
     program = tables.Column()
-    start_date = tables.Column()
-    end_date = tables.Column()
-    pending_invites = tables.Column()
-    inactive_workers = tables.Column()
-    pending_approvals = tables.Column()
-    payments_due = tables.Column()
-    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+    start_date = DMYDate()
+    end_date = DMYDate()
 
     class Meta:
         sequence = (
@@ -2344,11 +2387,6 @@ class OpportunitiesListViewTable(BaseTailwindTable):
             "program",
             "start_date",
             "end_date",
-            "pending_invites",
-            "inactive_workers",
-            "pending_approvals",
-            "payments_due",
-            "actions"
         )
 
     def render_div(self, value, extra_classes=""):
@@ -2358,19 +2396,6 @@ class OpportunitiesListViewTable(BaseTailwindTable):
         )
         all_classes = f"{base_classes} {extra_classes}".strip()
         return format_html('<div class="{}">{}</div>', all_classes, value)
-
-    def render_index(self, value):
-        page = getattr(self, 'page', None)
-        if page:
-            start_index = (page.number - 1) * page.paginator.per_page + 1
-        else:
-            start_index = 1
-
-        if not hasattr(self, '_row_counter') or self._row_counter_start != start_index:
-            self._row_counter = itertools.count(start=start_index)
-            self._row_counter_start = start_index
-
-        return self.render_div(next(self._row_counter), extra_classes="justify-start")
 
     def render_opportunity(self, value):
         return self.render_div(value, extra_classes="justify-start")
@@ -2383,6 +2408,23 @@ class OpportunitiesListViewTable(BaseTailwindTable):
 
     def render_end_date(self, value):
         return self.render_div(value, extra_classes="justify-center")
+
+
+class OpportunitiesListViewTable(BaseOpportunityList):
+    pending_invites = tables.Column()
+    inactive_workers = tables.Column()
+    pending_approvals = tables.Column()
+    payments_due = tables.Column()
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+    class Meta(BaseOpportunityList.Meta):
+        sequence = BaseOpportunityList.Meta.sequence + (
+            "pending_invites",
+            "inactive_workers",
+            "pending_approvals",
+            "payments_due",
+            "actions"
+        )
 
     def render_pending_invites(self, value):
         return self.render_div(value, extra_classes=self.stats_style)
@@ -2399,7 +2441,67 @@ class OpportunitiesListViewTable(BaseTailwindTable):
         return self.render_div(f"${value}", extra_classes=self.stats_style)
 
     def render_actions(self, record):
-        # TO-DO update the urls once finalize
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:tw_opportunity", args=[record.organization.slug, record.id]),
+            },
+            {
+                "title": "View Workers",
+                "url": reverse("opportunity:tw_worker_list", args=[record.organization.slug, record.id]),
+            },
+        ]
+
+        if record.managed:
+            actions.append({
+                "title": "View Invoices",
+                "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+            })
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            }
+        )
+        return mark_safe(html)
+
+
+class ProgramManagerOpportunityList(BaseOpportunityList):
+    active_workers = tables.Column(verbose_name=header_with_tooltip("Active Workers",tooltip_text='Delivered forms in the last 3 days.'))
+    total_deliveries =tables.Column(verbose_name=header_with_tooltip('Total Deliveries', 'Total services delivered so far.'))
+    verified_deliveries = tables.Column(verbose_name=header_with_tooltip('Verified Deliveries', 'Approved service deliveries.'))
+    worker_earnings = tables.Column(verbose_name=header_with_tooltip('Worker Earnings', 'Approved service deliveries'), accessor='total_accrued')
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+    def render_active_workers(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_total_deliveries(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_verified_deliveries(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_worker_earnings(self, value):
+        return self.render_div(value, extra_classes=self.stats_style)
+
+    def render_opportunity(self, record):
+        html =format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            record.name,
+            record.organization.name,
+        )
+        return html
+
+    def render_actions(self, record):
         actions = [
             {
                 "title": "View Opportunity",
@@ -2453,3 +2555,20 @@ class OrgMemberTable(BaseTailwindTable):
 
     def render_role(self, value):
         return format_html("<div class=' underline underline-offset-4'>{}</div>", value)
+
+
+class WorkerLearnStatusTable(tables.Table):
+    index = IndexColumn()
+    module_name = tables.Column(accessor='module__name', orderable=False)
+    date = DMYDate(verbose_name='Date Completed', accessor='date', orderable=False)
+    duration = DurationColumn(accessor='duration', orderable=False)
+    time = tables.Column(accessor='date', verbose_name='Time Completed', orderable=False)
+
+    def render_time(self, value):
+        if value:
+            value = localtime(value)
+            return value.strftime('%H:%M')
+        return '--'
+
+    class Meta:
+        sequence = ('index', 'module_name', "date", "time", "duration")

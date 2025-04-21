@@ -152,6 +152,11 @@ urlpatterns = [
         name="tw_opportunity_worker_learn_progress",
     ),
     path(
+        "tw/worker_learn_progress/<int:access_id>",
+        tw_views.worker_lear_status_view,
+        name="tw_worker_learn_progress",
+    ),
+    path(
         "<int:opp_id>/tw/workers_list/payments",
         tw_views.opportunity_worker_payment,
         name="tw_opportunity_worker_learn_progress",
@@ -266,5 +271,6 @@ urlpatterns = [
     path("<int:pk>/tw/visit_export/", view=tw_form_views.export_user_visits, name="tw_visit_export"),
     path("<int:pk>/tw/invite_user/", view=tw_form_views.opportunity_user_invite, name="tw_invite_user"),
     path("tw_export_status/<slug:task_id>", view=tw_views.export_status, name="tw_export_status"),
+    path("<int:pk>/tw/invoice/<int:invoice_id>/approve/", tw_views.tw_invoice_approve, name="tw_invoice_approve"),
 
 ]

@@ -88,10 +88,9 @@ def sortable_header(context, field, label, use_view_url=True):
     query_string = urlencode(query_params, doseq=True)
     url = f"{path}?{query_string}" if query_string else path
 
-    label_text = strip_tags(label)
 
     return format_html(
         '<a href="{}" class="flex items-center text-sm font-medium text-brand-deep-purple">{}</a>',
         url,
-        mark_safe(f"{label_text} {icon_element}"),
+        mark_safe(f"{label} {icon_element}"),
     )
