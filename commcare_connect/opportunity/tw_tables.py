@@ -1284,7 +1284,7 @@ class WorkerLearnTable(BaseTailwindTable):
         orderable=False,
         template_code="""
             <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
-                <i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>
+                <a><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
             </div>
         """
     )
@@ -1313,6 +1313,12 @@ class WorkerLearnTable(BaseTailwindTable):
 
     def render_assessment(self, value):
         return 'passed' if value else 'failed'
+
+    def render_action(self, record):
+        url = reverse('opportunity:tw_worker_learn_progress', args=(record.opportunity.organization.slug, record.id))
+        return format_html(""" <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a href="{url}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>""", url=url)
 
 class WorkerDeliveryTable(BaseTailwindTable):
     index = IndexColumn()

@@ -1,7 +1,30 @@
 {% extends "tailwind/base.html" %}
 {% load render_table from django_tables2 %}
 
+
+
 {% block content %}
+
+<ul class="breadcrumb">
+  <li>
+    <a href='{% url "opportunity:opportunities_list_new" request.org.slug %}'>Opportunity List</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    <a href="{% url 'opportunity:tw_opportunity' request.org.slug access.opportunity.pk %}?active_tab=learn">{{ access.opportunity.name }}</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    {% url 'opportunity:tw_worker_list' request.org.slug access.opportunity.pk as opp_url %}
+    <a href="{{ opp_url }}?active_tab=learn">Worker List</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    <a class="text-gray-500 cursor-none">Learn progress</a>
+  </li>
+</ul>
+
+
 <div class="flex flex-col w-full gap-2">
   <!-- KPI Section -->
   <div class="flex items-center w-full gap-4 p-4 overflow-x-auto min-h-32 profile-bg bg-brand-indigo rounded-2xl">
