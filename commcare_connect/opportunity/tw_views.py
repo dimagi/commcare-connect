@@ -2,7 +2,7 @@ from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect, render, get_object_or_404
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
@@ -13,7 +13,7 @@ from django.test.utils import override_settings
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, \
     ReviewVisitExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
-from .models import OpportunityAccess
+from .models import OpportunityAccess, PaymentInvoice, Payment
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
@@ -27,7 +27,7 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
     AddBudgetTable, WorkerDeliveryTable, FlaggedWorkerTable, CommonWorkerTable, AllWorkerTable, \
     OpportunitiesListViewTable, LearnModuleTable, DeliverUnitTable, OpportunityPaymentUnitTable, WorkerStatusTable
 from .views import OrganizationUserMixin, get_opportunity_or_404
-from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status
+from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status, get_exchange_rate
 from ..organization.decorators import org_member_required
 from ..program.models import ManagedOpportunity
 
@@ -2957,3 +2957,33 @@ def invite_comp(request, org_slug=None, opp_id=None):
 
 def welcome(request, org_slug=None, opp_id=None):
     return render(request, "tailwind/pages/welcome.html")
+
+
+@org_member_required
+@require_POST
+def tw_invoice_approve(request, org_slug, pk, invoice_id):
+    opportunity = get_opportunity_or_404(pk, org_slug)
+    # if not opportunity.managed or not request.org_membership.is_program_manager:
+    #     return redirect("opportunity:detail", org_slug, pk)
+    invoice = get_object_or_404(PaymentInvoice, pk=invoice_id, payment__isnull=True)
+    rate = 1 #get_exchange_rate(opportunity.currency)
+    amount_in_usd = invoice.amount / rate
+    payment = Payment(
+        amount=invoice.amount,
+        organization=opportunity.organization,
+        amount_usd=amount_in_usd,
+        invoice=invoice,
+    )
+    payment.save()
+
+    payment_date = payment.date_paid.strftime("%d %b %Y")
+
+    html = f"""
+          <div id="payment-status-{invoice.pk}">
+            <span class="badge badge-sm bg-green-600/20 text-green-600">Approved</span>
+          </div>
+          <script>
+            document.getElementById("payment-date-{invoice.pk}").innerHTML = "{payment_date}";
+          </script>
+        """
+    return HttpResponse(html, status=201)
