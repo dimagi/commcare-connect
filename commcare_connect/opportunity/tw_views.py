@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 from django import forms
 from django.contrib import messages
@@ -9,19 +10,20 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
-from django_tables2 import SingleTableMixin, RequestConfig
+from django_tables2 import SingleTableMixin, RequestConfig, SingleTableView
 from django.test.utils import override_settings
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, \
     ReviewVisitExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
-from .models import OpportunityAccess, PaymentInvoice, Payment
+from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_review_visit_export, generate_payment_export
+from .tests.factories import CompletedModuleFactory, OpportunityAccessFactory
 from .tw_forms import VisitExportForm, PaymentExportFormTw
 
-from .tw_tables import PMOpportunitiesListTable, ProgramManagerOpportunityList
+from .tw_tables import PMOpportunitiesListTable, ProgramManagerOpportunityList, WorkerLearnStatusTable, get_duration_min
 
 from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizationMembersTable, OpportunitiesListTable, \
     OpportunityWorkerLearnProgressTable, OpportunityWorkerPaymentTable, VisitsTable, WorkerFlaggedTable, \
@@ -31,6 +33,7 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
 from .views import OrganizationUserMixin, get_opportunity_or_404
 from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status, get_exchange_rate
 from ..organization.decorators import org_member_required
+from ..web.templatetags.duration_minutes import duration_minutes
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -2627,7 +2630,31 @@ def my_organization_members_table(request, org_slug=None, opp_id=None):
     table = MyOrganizationMembersTable(data)
     return render(request, "tailwind/components/tables/index_selectable_table.html",{ "table": table})
 
+
+@org_member_required
+def worker_lear_status_view(request, org_slug, access_id):
+    access = get_object_or_404(OpportunityAccess, pk=access_id)
+    completed_modules = CompletedModule.objects.filter(opportunity_access=access)
+    total_duration = timedelta(0)
+    for cm in completed_modules:
+        total_duration += cm.duration
+    total_duration = get_duration_min(total_duration.total_seconds())
+
+    user_kpi = [
+        {"name": "<span class='font-medium'>Total Time</span> Learning", "icon": "book-open-cover",
+         "count": total_duration},
+    ]
+    table = WorkerLearnStatusTable(completed_modules)
+
+    return render(request, "tailwind/pages/opportunity_worker_extended.html",
+                  {"header_title": "Worker", "kpi": user_kpi, "tab_name": "Learn Progress", "table": table, "access":access})
+
+
+
 def opportunity_worker_learn_progress(request, org_slug=None, opp_id=None):
+
+
+
     user_kpi = [
            {"name":"<span class='font-medium'>Total Time</span> Learning", "icon":"book-open-cover","count":"19hr 12min" },
     ]

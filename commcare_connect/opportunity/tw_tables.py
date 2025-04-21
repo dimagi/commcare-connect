@@ -1,4 +1,5 @@
 import itertools
+from datetime import timedelta
 
 import django_tables2 as tables
 from django.db.models.functions import Now
@@ -6,6 +7,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
+from django.utils.timezone import localtime
 
 from commcare_connect.opportunity.models import LearnModule, DeliverUnit, PaymentUnit
 
@@ -38,6 +40,21 @@ def header_with_tooltip(label, tooltip_text):
         </div>
     """)
 
+
+def get_duration_min(total_seconds):
+    total_seconds = int(total_seconds)
+    minutes = (total_seconds // 60) % 60
+    hours = total_seconds // 3600
+
+    if hours:
+        return f"{hours} hr {minutes} min" if minutes else f"{hours} hr"
+    return f"{minutes} min"
+
+
+class DurationColumn(tables.Column):
+    def render(self, value):
+        total_seconds = int(value.total_seconds() if isinstance(value, timedelta) else 0)
+        return  get_duration_min(total_seconds)
 
 class DMYDate(tables.DateColumn):
     def __init__(self, *args, **kwargs):
@@ -2517,3 +2534,20 @@ class OrgMemberTable(BaseTailwindTable):
 
     def render_role(self, value):
         return format_html("<div class=' underline underline-offset-4'>{}</div>", value)
+
+
+class WorkerLearnStatusTable(tables.Table):
+    index = IndexColumn()
+    module_name = tables.Column(accessor='module__name', orderable=False)
+    date = DMYDate(verbose_name='Date Completed', accessor='date', orderable=False)
+    duration = DurationColumn(accessor='duration', orderable=False)
+    time = tables.Column(accessor='date', verbose_name='Time Completed', orderable=False)
+
+    def render_time(self, value):
+        if value:
+            value = localtime(value)
+            return value.strftime('%H:%M')
+        return '--'
+
+    class Meta:
+        sequence = ('index', 'module_name', "date", "time", "duration")

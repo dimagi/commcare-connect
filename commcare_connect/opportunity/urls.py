@@ -152,6 +152,11 @@ urlpatterns = [
         name="tw_opportunity_worker_learn_progress",
     ),
     path(
+        "tw/worker_learn_progress/<int:access_id>",
+        tw_views.worker_lear_status_view,
+        name="tw_worker_learn_progress",
+    ),
+    path(
         "<int:opp_id>/tw/workers_list/payments",
         tw_views.opportunity_worker_payment,
         name="tw_opportunity_worker_learn_progress",
