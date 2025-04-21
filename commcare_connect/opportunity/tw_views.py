@@ -2918,7 +2918,8 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "header_title": "Opportunities",
             "funnel_progress": funnel_progress,
             "worker_progress": worker_progress,
-            'path': path
+            'path': path,
+            'program_manger':is_program_manager
         },
     )
 
