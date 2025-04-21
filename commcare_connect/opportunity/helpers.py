@@ -263,7 +263,12 @@ def get_opportunity_list_data(organization, program_manager =False):
     today = now().date()
     three_days_ago = now() - timedelta(days=3)
 
-    queryset = Opportunity.objects.filter(organization=organization).annotate(
+    base_filter = Q(organization=organization)
+
+    if program_manager:
+        base_filter |= Q(managedopportunity__program__organization=organization)
+
+    queryset = Opportunity.objects.filter(base_filter).annotate(
         program=F("managedopportunity__program__name"),
         pending_invites=Count(
             "userinvite",
