@@ -116,8 +116,7 @@ class OpportunityEdit(views.OpportunityEdit):
     form_class = OpportunityChangeForm
 
     def get_success_url(self):
-        return reverse("opportunity:tw_opportunity_detail", args=(self.request.org.slug, self.object.id))
-
+        return reverse("opportunity:tw_opportunity", args=(self.request.org.slug, self.object.id))
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -234,7 +233,7 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             send_push_notification_task.delay(selected_user_ids, title, body)
         if "sms" in message_type:
             send_sms_task.delay(selected_user_ids, body)
-        return redirect("opportunity:tw_opportunity_detail", request.org.slug, pk)
+        return redirect("opportunity:tw_opportunity", request.org.slug, pk)
 
     return render(
         request,
@@ -350,7 +349,7 @@ def export_user_visits(request, org_slug, pk):
 @org_member_required
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def opportunity_user_invite(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(pk, org_slug)
     form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug, opportunity=opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
@@ -358,7 +357,7 @@ def opportunity_user_invite(request, org_slug=None, pk=None):
         filter_credential = form.cleaned_data["filter_credential"]
         if users or filter_country or filter_credential:
             add_connect_users.delay(users, opportunity.id, filter_country, filter_credential)
-        return redirect("opportunity:detail", request.org.slug, pk)
+        return redirect("opportunity:tw_opportunity", request.org.slug, opportunity.pk)
     return render(
         request,
         "tailwind/components/form.html",
