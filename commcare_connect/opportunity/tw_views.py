@@ -3035,7 +3035,7 @@ def tw_invoice_approve(request, org_slug, pk, invoice_id):
 
     html = f"""
           <div id="payment-status-{invoice.pk}">
-            <span class="badge badge-sm bg-green-600/20 text-green-600">Approved</span>
+            <span class="badge badge-sm bg-green-600/20 text-green-600">Paid</span>
           </div>
           <script>
             document.getElementById("payment-date-{invoice.pk}").innerHTML = "{payment_date}";
