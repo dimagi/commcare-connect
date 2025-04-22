@@ -240,7 +240,20 @@
   </div>
 </div>
 
-
+{% if is_program_manager %}
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+  id="visit-actions"
+  hx-swap-oob="true">
+  <div class="flex gap-4">
+    <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity_id %}"
+      hx-swap="none">
+      <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
+      <button class="button button-md outline-style" value="disagree" name="review_status">Disagree</button>
+      <button class="button button-md primary-dark" value="agree" name="review_status">Agree</button>
+    </form>
+  </div>
+</div>
+{% else %}
 <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
   x-data="{showRejectModal: false, showApproveModal: false}"
   id="visit-actions"
@@ -304,7 +317,7 @@
     </div>
   </div>
 </div>
-
+{% endif %}
 
 
 

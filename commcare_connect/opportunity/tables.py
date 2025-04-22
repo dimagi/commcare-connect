@@ -543,32 +543,32 @@ class TWPaymentInvoiceTable(PaymentInvoiceTable):
 
     class Meta(PaymentInvoiceTable.Meta):
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        sequence = ("index","invoice_number","amount", "date", "payment_status", "payment_date", "service_delivery")
+        sequence = ("index", "invoice_number", "amount", "date", "payment_status", "payment_date", "service_delivery")
         orderable = True
 
     def render_payment_status(self, value, record):
         container_id = f"payment-status-{record.pk}"
         url = reverse(
             "opportunity:tw_invoice_approve",
-            args=[record.opportunity.organization.slug, record.opportunity.pk, record.pk]
+            args=[record.opportunity.organization.slug, record.opportunity.pk, record.pk],
         )
 
         if value:
             return mark_safe(
                 f'<div id="{container_id}">'
                 f'<span class="badge badge-sm bg-green-600/20 text-green-600">Paid</span>'
-                f'</div>'
+                f"</div>"
             )
 
         if not self.program_manager:
             return mark_safe(
                 f'<div id="{container_id}">'
                 f'<span class="badge badge-sm bg-violet-500/20 text-violet-500">Pending</span>'
-                f'</div>'
+                f"</div>"
             )
 
         return mark_safe(
-            f'''
+            f"""
             <div id="{container_id}">
                 <button
                     type="button"
@@ -582,11 +582,13 @@ class TWPaymentInvoiceTable(PaymentInvoiceTable):
                     Mark as Paid
                 </button>
             </div>
-            '''
+            """
         )
 
     def render_payment_date(self, value, record):
-        return mark_safe(f'<div id="payment-date-{record.pk}">{value.date_paid.strftime("%d %b %Y") if value else "--"}</div>')
+        return mark_safe(
+            f'<div id="payment-date-{record.pk}">{value.date_paid.strftime("%d %b %Y") if value else "--"}</div>'
+        )
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):
@@ -644,10 +646,14 @@ class UserVisitVerificationTable(BaseTailwindTable):
         )
         fields = []
         empty_text = "No Visits for this filter."
-        row_attrs = {
+
+    def __init__(self, *args, **kwargs):
+        organization = kwargs.pop("organization", None)
+        super().__init__(*args, **kwargs)
+        self.row_attrs = {
             "hx-get": lambda record: reverse(
                 "opportunity:user_visit_details",
-                args=[record.opportunity.organization.slug, record.opportunity_id, record.pk],
+                args=[organization.slug, record.opportunity_id, record.pk],
             ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
