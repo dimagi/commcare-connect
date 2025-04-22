@@ -79,7 +79,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
             return reverse("organization_create")
         organization = self.request.org
         if organization:
-            return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
+            return reverse("opportunity:opportunities_list_new", kwargs={"org_slug": organization.slug})
         return reverse("users:detail", kwargs={"pk": self.request.user.pk})
 
 
