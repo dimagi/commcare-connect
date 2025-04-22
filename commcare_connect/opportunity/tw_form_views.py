@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.db.models import Q
 from django.forms import modelformset_factory
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template import Template
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.views.generic import CreateView
@@ -312,9 +313,11 @@ class OpportunityFinalize(views.OpportunityFinalize):
 class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
     form_class = ProgramForm
 
+    def get_success_url(self):
+        return self.request.path
+
     def get_template_names(self):
-        view = ("add", "edit")[self.object is not None]
-        template = f"tailwind/pages/program_{view}.html"
+        template = "program/program_form.html"
         return template
 
 

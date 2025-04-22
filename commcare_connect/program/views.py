@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import timedelta
 
 from django.contrib import messages
@@ -11,7 +12,15 @@ from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 from django_tables2 import SingleTableView
 
-from commcare_connect.opportunity.models import CompletedModule, OpportunityAccess, Payment, UserVisit
+from commcare_connect.opportunity.models import (
+    CompletedModule,
+    OpportunityAccess,
+    Payment,
+    PaymentInvoice,
+    UserVisit,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.views import OpportunityInit
 from commcare_connect.organization.decorators import (
     org_admin_required,
@@ -209,12 +218,17 @@ def manage_application(request, org_slug, application_id, action):
 
     new_status = status_mapping.get(action, None)
     if new_status is None:
+        if request.htmx:
+            return HttpResponseNotAllowed()
         messages.error(request, "Action not allowed.")
         return redirect(redirect_url)
 
     application.status = new_status
     application.modified_by = request.user.email
     application.save()
+
+    if request.htmx:
+        return HttpResponse(status=200)
 
     messages.success(request, f"Application has been {action}ed successfully.")
     if application.status == ProgramApplicationStatus.ACCEPTED:
@@ -252,9 +266,10 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     application.modified_by = request.user.email
     application.save()
 
-    messages.success(request, action_map[action]["message"])
     if request.htmx:
         return HttpResponse(status=200)
+
+    messages.success(request, action_map[action]["message"])
     return redirect(redirect_url)
 
 
@@ -295,9 +310,68 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
 
 @org_member_required
 def program_home(request, org_slug):
-    # Fetch the organization by slug
     org = Organization.objects.get(slug=org_slug)
+    is_program_manager = (org.program_manager and request.org_membership.is_admin) or request.user.is_superuser
+    if is_program_manager:
+        return program_manager_home(request, org)
+    return network_manager_home(request, org)
 
+
+def program_manager_home(request, org):
+    programs = (
+        Program.objects.filter(organization=org)
+        .order_by("-start_date")
+        .values("id", "name", "description", "start_date", "end_date", "budget", "delivery_type__name")
+    )
+    program_map = defaultdict(lambda: {"accepted": 0, "invited": 0, "applied": 0, "applications": []})
+    for program in programs:
+        program_map[program["id"]].update(program)
+
+    applications = ProgramApplication.objects.filter(program__in=program_map.keys())
+    for application in applications:
+        program_id = application.program_id
+        program_map[program_id]["applications"].append(application)
+        program_map[program_id]["invited"] += 1
+        program_map[program_id]["applied"] += application.status in (
+            ProgramApplicationStatus.APPLIED,
+            ProgramApplicationStatus.ACCEPTED,
+        )
+        program_map[program_id]["accepted"] += application.status == ProgramApplicationStatus.ACCEPTED
+
+    pending_review = (
+        UserVisit.objects.filter(
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.pending,
+            opportunity__managed=True,
+            opportunity__managedopportunity__program__in=program_map.keys(),
+        )
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id"))
+    )
+
+    paid_invoice_ids = Payment.objects.filter(
+        invoice__opportunity__managed=True,
+        invoice__opportunity__managedopportunity__program__in=program_map.keys(),
+    ).values_list("invoice_id", flat=True)
+    pending_payments = (
+        PaymentInvoice.objects.filter(
+            opportunity__managed=True,
+            opportunity__managedopportunity__program__in=program_map.keys(),
+        )
+        .exclude(id__in=paid_invoice_ids)
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id"))
+    )
+
+    context = {
+        "programs": program_map.values(),
+        "pending_review": pending_review,
+        "pending_payments": pending_payments,
+    }
+    return render(request, "program/tailwind/pm_home.html", context)
+
+
+def network_manager_home(request, org):
     # Get ProgramApplications with related Program details
     apps = (
         ProgramApplication.objects.filter(organization=org)

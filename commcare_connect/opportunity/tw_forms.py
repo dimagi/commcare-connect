@@ -803,6 +803,16 @@ class ProgramForm(forms.ModelForm):
         self.organization = kwargs.pop("organization")
         super().__init__(*args, **kwargs)
         self.helper = TailwindFormHelper(self)
+        self.helper.form_tag = True
+        self.helper.form_id = "program-edit-form" if self.instance.id else "program-add-form"
+
+        form_url = reverse("program:tw_init", kwargs={"org_slug": self.organization.slug})
+        if self.instance.id:
+            form_url = reverse("program:tw_edit", kwargs={"org_slug": self.organization.slug, "pk": self.instance.id})
+        self.helper.attrs = {
+            "hx-post": form_url,
+            "hx-swap-oob": "true",
+        }
         self.helper.layout = Layout(
             Row(Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full")),
             Row(Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full")),

@@ -1,0 +1,208 @@
+{% extends 'tailwind/base.html' %}
+
+{% block content %}
+<div id="content-area" class="md:max-w-screen-2xl mx-auto flex flex-col lg:flex-row gap-4 min-h-screen" x-data="{showProgramAddModal: false, showProgramEditModal: false}">
+  <div class="w-full lg:w-2/3">
+    <div class="flex justify-between">
+      <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
+      <div class="flex items-center gap-2">
+        <button class="button button-md button-outline-rounded"
+          hx-get="{% url "program:tw_init" request.org.slug %}"
+          hx-target="#program-add-form"
+          @htmx:after-request="showProgramAddModal = true">
+           <div class="flex items-center justify-between gap-4">
+             <p class="text-sm">
+               Add Programs
+             </p>
+             <i class="fa-light fa-plus-large"></i>
+           </div>
+       </button>
+      </div>
+    </div>
+    <div class="flex flex-col gap-4 mt-5">
+      {% for program in programs %}
+        <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative" x-data="{showOpp: false}">
+            <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+            <div class="flex w-full justify-between">
+              <!-- invitataion program.status -->
+              <div class="flex items-start justify-end gap-6">
+                <div>
+                  <p class="card_title">{{ program.name }}</p>
+                  <p class="card_description w-1/2">{{ program.description }}</p>
+                </div>
+                <button class="button-icon"
+                  hx-get="{% url "program:tw_edit" request.org.slug program.id %}"
+                  hx-target="#program-edit-form"
+                  @htmx:after-request="showProgramEditModal = true">
+                  <i class="fa-light fa-pen-line"></i>
+                </button>
+                <button class="button button-sm outline-style">Invite</button>
+              </div>
+            </div>
+            <div class="flex justify-between items-center">
+              <!-- program info -->
+              <div class="flex items-center gap-6">
+                {% include 'tailwind/components/cards/info.html' with icon="file-check" head="Delivery Type" data=program.delivery_type__name classname="infocard-dark" %}
+                <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+                {% include 'tailwind/components/cards/info.html' with icon="calendar-arrow-up" head="Start Date" data=program.start_date classname="infocard-dark" %}
+                {% include 'tailwind/components/cards/info.html' with icon="arrow-right text-brand-mango" head="End Date" data=program.end_date classname="infocard-dark" %}
+                <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+                {% include 'tailwind/components/cards/info.html' with icon="money-bill-wave" head="Budget" data=program.budget classname="infocard-dark" %}
+              </div>
+
+              <!-- button -->
+              <button class="button button-md outline-style" @click="showOpp = !showOpp">
+                <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
+                <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              </button>
+
+            </div>
+            <!-- progress -->
+            <div class="bg-neutral-100 rounded-lg w-full h-20 flex items-center px-5 justify-between gap-6">
+              {% include 'tailwind/components/cards/info.html' with icon="envelope" head="Invited" data=program.invited classname="infocard-dark2" %}
+              <i class="fa-light fa-arrow-right text-brand-mango "></i>
+              {% include 'tailwind/components/cards/info.html' with icon="file-lines" head="Applied" data=program.applied classname="infocard-dark2" %}
+              <i class="fa-light fa-arrow-right text-brand-mango "></i>
+              {% include 'tailwind/components/cards/info.html' with icon="circle-check" head="Accepted" data=program.accepted classname="infocard-dark2" %}
+            </div>
+            <div class="flex flex-col gap-y-4" x-cloak x-show="showOpp">
+            {% for application in program.applications %}
+              <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
+                <div class="flex justify-between w-full">
+                  <div class="flex flex-col gap-2 w-full">
+                    <div class="flex items-center justify-between gap-2 font-normal">
+                      <p class="hint">{{ item.date }}</p>
+                      <div class="flex items-center gap-2 font-normal">
+                        {% if application.status == 'rejected' %}
+                        <span class="badge badge-md negative-dark">rejected</span>
+                        {% elif application.status == 'declined' %}
+                        <span class="badge badge-md negative-dark">declined</span>
+                        {% elif application.status == 'invited' %}
+                        <span class="badge badge-md warning-dark">invited</span>
+                        {% elif application.status == 'applied' %}
+                        <span class="badge badge-md primary-dark">applied</span>
+                        {% elif application.status == 'accepted' %}
+                        <span class="badge badge-md positive-dark">accepted</span>
+                        {% endif %}
+                      </div>
+                    </div>
+                    <div>
+                      <p class="card_title">{{ application.organization.name }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-end">
+                  {% if application.status == 'applied' %}
+                  <div class="flex gap-2">
+                    <button class="button button-md outline-style" value="reject">Reject</button>
+                    <button class="button button-md primary-dark" value="accept">Accept</button>
+                  </div>
+                  {% elif application.status == 'accepted' %}
+                  <button class="button button-md button-outline-rounded">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-sm">{% if item.labels %}View Opportunity {% else %} Create Opportunity {% endif %}</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </button>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+            </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="w-full lg:w-1/3">
+    <div class="mb-4 text-brand-deep-purple font-medium text-sm">Recent Activities</div>
+    <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
+      <div class="flex flex-col gap-4">
+        {% if pending_review %}
+          <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+            <div class="flex gap-4 items-center">
+              <i class="fa-light fa-clock-rotate-left"></i>
+              <p class="text-base">Pending Review</p>
+            </div>
+            {% for row in pending_review %}
+                <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                  <div>
+                    <p class="title">{{ row.opportunity__name }}</p>
+                    <p class="hint">{{ row.opportunity__organization__name }}</p>
+                  </div>
+                  <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-2xl">{{ row.count }}</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </a>
+                </div>
+            {% endfor %}
+            <div class="flex justify-end" x-show="{{ pending_review|length }} > 2">
+              <button class="button-text" @click="expanded = !expanded">
+                <span x-text="expanded ? 'less' : 'more'"></span>
+                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+              </button>
+            </div>
+          </div>
+        {% endif %}
+
+        {% if pending_payments %}
+          <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+            <div class="flex gap-4 items-center">
+              <i class="fa-light fa-hand-holding-dollar"></i>
+              <p class="text-base">Pending Payments</p>
+            </div>
+            {% for row in pending_payments %}
+              <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+                <div>
+                  <p class="title">{{ row.opportunity__name }}</p>
+                  <p class="hint">{{ row.opportunity__organization__name }}</p>
+                </div>
+                <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                  <div class="flex items-center justify-between gap-4">
+                    <p class="text-2xl">{{ row.count }}</p>
+                    <i class="fa-light fa-arrow-right"></i>
+                  </div>
+                </a>
+              </div>
+            {% endfor %}
+            <div class="flex justify-end" x-show="{{ pending_payments|length }} > 2">
+              <button class="button-text" @click="expanded = !expanded">
+                <span x-text="expanded ? 'less' : 'more'"></span>
+                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+              </button>
+            </div>
+          </div>
+        {% endif %}
+
+      </div>
+  </div>
+
+  <div x-cloak x-show="showProgramAddModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showProgramAddModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Create Program</h2>
+        <button @click="showProgramAddModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <div id="program-add-form"></div>
+    </div>
+  </div>
+
+  <div x-cloak x-show="showProgramEditModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showProgramEditModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Edit Program</h2>
+        <button @click="showProgramEditModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <div id="program-edit-form"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
