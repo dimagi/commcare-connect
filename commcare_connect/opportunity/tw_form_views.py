@@ -350,7 +350,7 @@ def export_user_visits(request, org_slug, pk):
 @org_member_required
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 def opportunity_user_invite(request, org_slug=None, pk=None):
-    opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
+    opportunity = get_opportunity_or_404(pk, org_slug)
     form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug, opportunity=opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
@@ -358,7 +358,7 @@ def opportunity_user_invite(request, org_slug=None, pk=None):
         filter_credential = form.cleaned_data["filter_credential"]
         if users or filter_country or filter_credential:
             add_connect_users.delay(users, opportunity.id, filter_country, filter_credential)
-        return redirect("opportunity:detail", request.org.slug, pk)
+        return redirect("opportunity:tw_opportunity", request.org.slug, opportunity.pk)
     return render(
         request,
         "tailwind/components/form.html",
