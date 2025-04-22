@@ -86,11 +86,11 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             .annotate(
                 payment_unit=Value(payment_unit.name),
                 started_delivery=Min(
-                    "completedwork",
+                    "completedwork__uservisit__visit_date",
                     filter=Q(completedwork__uservisit__isnull=False) & Q(
                         completedwork__payment_unit=payment_unit)
                 ),
-                last_active=Max("completedwork", filter=Q(completedwork__uservisit__isnull=False) & Q(
+                last_active=Max("completedwork__uservisit__visit_date", filter=Q(completedwork__uservisit__isnull=False) & Q(
                     completedwork__payment_unit=payment_unit)),
                 pending=Count(
                     "completedwork",

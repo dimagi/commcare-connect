@@ -15,8 +15,7 @@ from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig, SingleTableView
 from django.test.utils import override_settings
 
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, \
-    ReviewVisitExportForm, DateRanges
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
 from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
@@ -34,7 +33,6 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
 from .views import OrganizationUserMixin, get_opportunity_or_404
 from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status, get_exchange_rate
 from ..organization.decorators import org_member_required
-from ..web.templatetags.duration_minutes import duration_minutes
 
 
 def home(request, org_slug=None, opp_id=None):
