@@ -313,6 +313,11 @@ class OpportunityFinalize(views.OpportunityFinalize):
 class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
     form_class = ProgramForm
 
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        response["HX-Refresh"] = "true"
+        return response
+
     def get_success_url(self):
         return self.request.path
 

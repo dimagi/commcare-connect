@@ -165,6 +165,9 @@ def invite_organization(request, org_slug, pk):
         },
     )
 
+    if request.htmx:
+        return HttpResponse(status=200, headers={"HX-Refresh": "true"})
+
     if created:
         messages.success(request, "Organization invited successfully!")
 
@@ -363,10 +366,13 @@ def program_manager_home(request, org):
         .annotate(count=Count("id"))
     )
 
+    organizations = Organization.objects.filter(program_manager=False).exclude(pk=org.pk)
+
     context = {
         "programs": program_map.values(),
         "pending_review": pending_review,
         "pending_payments": pending_payments,
+        "organizations": organizations,
     }
     return render(request, "program/tailwind/pm_home.html", context)
 
