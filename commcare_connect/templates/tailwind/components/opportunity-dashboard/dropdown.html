@@ -19,6 +19,13 @@
     </li>
     {% endif %}
 
+    <li>
+       <a href="{% url 'opportunity:tw_add_payment_unit' request.org.slug opportunity.id %}"
+        class="block px-4 py-2.5 text-sm text-brand-deep-purple">
+        Add Payment Unit
+      </a>
+    </li>
+
     {% if opportunity.managed %}
     <li>
        <a href="{% url 'opportunity:tw_invoice_list' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
