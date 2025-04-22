@@ -1341,8 +1341,8 @@ class WorkerDeliveryTable(BaseTailwindTable):
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
     payment_unit = tables.Column()
-    started = tables.Column()
-    delivered = tables.Column()
+    started = tables.Column(accessor="started_delivery")
+    delivered = tables.Column(accessor="completed")
     pending = tables.Column()
     approved = tables.Column()
     rejected = tables.Column()
@@ -1426,264 +1426,264 @@ class WorkerDeliveryTable(BaseTailwindTable):
 
 
 
-    def render_delivered(self, value):
-        # Handle both string and dictionary values
-        if not isinstance(value, dict):
-            count = value
-            options = []
-        else:
-            count = value.get('count', 0)
-            options = value.get('options', [])
+    # def render_delivered(self, value):
+    #     # Handle both string and dictionary values
+    #     if not isinstance(value, dict):
+    #         count = value
+    #         options = []
+    #     else:
+    #         count = value.get('count', 0)
+    #         options = value.get('options', [])
+    #
+    #     return format_html(
+    #         """
+    #         <div class="relative"
+    #             x-data="{{
+    #                 isOpen: false,
+    #                 positionDropdown() {{
+    #                     const rect = this.$el.getBoundingClientRect();
+    #                     const dropdown = this.$refs.dropdown;
+    #                     const windowHeight = window.innerHeight;
+    #                     const dropdownHeight = dropdown.offsetHeight;
+    #
+    #                     const spaceBelow = windowHeight - rect.bottom;
+    #                     const showBelow = spaceBelow >= dropdownHeight;
+    #
+    #                     const left = rect.left;
+    #                     const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
+    #
+    #                     dropdown.style.top = `${{top}}px`;
+    #                     dropdown.style.left = `${{left}}px`;
+    #                 }}
+    #             }}">
+    #
+    #             <button class="button-icon"
+    #                     @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
+    #                     @click.outside="isOpen = false">{}</button>
+    #
+    #             <div x-ref="dropdown"
+    #                 x-show="isOpen"
+    #                 x-transition:enter="transition ease-out duration-100"
+    #                 x-transition:enter-start="opacity-0 scale-95"
+    #                 x-transition:enter-end="opacity-100 scale-100"
+    #                 x-transition:leave="transition ease-in duration-75"
+    #                 x-transition:leave-start="opacity-100 scale-100"
+    #                 x-transition:leave-end="opacity-0 scale-95"
+    #                 class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
+    #                 style="display: none">
+    #
+    #                 <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
+    #                     <span class="text-start font-normal">Delivered Info</span>
+    #                 </div>
+    #                 {}
+    #             </div>
+    #         </div>
+    #         """,
+    #         count,
+    #         mark_safe(''.join([
+    #             f"""
+    #             <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
+    #                 <span class="text-start">{option['name']}</span>
+    #                 <span class="text-end">{option['value']}</span>
+    #             </div>
+    #             """
+    #             for option in options
+    #         ]))
+    #     )
+    # def render_pending(self, value):
+    #     # Handle both string and dictionary values
+    #     if not isinstance(value, dict):
+    #         count = value
+    #         options = []
+    #     else:
+    #         count = value.get('count', 0)
+    #         options = value.get('options', [])
+    #
+    #     return format_html(
+    #         """
+    #         <div class="relative"
+    #             x-data="{{
+    #                 isOpen: false,
+    #                 positionDropdown() {{
+    #                     const rect = this.$el.getBoundingClientRect();
+    #                     const dropdown = this.$refs.dropdown;
+    #                     const windowHeight = window.innerHeight;
+    #                     const dropdownHeight = dropdown.offsetHeight;
+    #
+    #                     const spaceBelow = windowHeight - rect.bottom;
+    #                     const showBelow = spaceBelow >= dropdownHeight;
+    #
+    #                     const left = rect.left;
+    #                     const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
+    #
+    #                     dropdown.style.top = `${{top}}px`;
+    #                     dropdown.style.left = `${{left}}px`;
+    #                 }}
+    #             }}">
+    #
+    #             <button class="button-icon"
+    #                     @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
+    #                     @click.outside="isOpen = false">{}</button>
+    #             <div x-ref="dropdown"
+    #                 x-show="isOpen"
+    #                 x-transition:enter="transition ease-out duration-100"
+    #                 x-transition:enter-start="opacity-0 scale-95"
+    #                 x-transition:enter-end="opacity-100 scale-100"
+    #                 x-transition:leave="transition ease-in duration-75"
+    #                 x-transition:leave-start="opacity-100 scale-100"
+    #                 x-transition:leave-end="opacity-0 scale-95"
+    #                 class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
+    #                 style="display: none">
+    #
+    #                 <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
+    #                     <span class="text-start font-normal">Flagged Info</span>
+    #                 </div>
+    #                 {}
+    #             </div>
+    #         </div>
+    #         """,
+    #         count,
+    #         mark_safe(''.join([
+    #             f"""
+    #             <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
+    #                 <span class="text-start">{option['name']}</span>
+    #                 <span class="text-end">{option['value']}</span>
+    #             </div>
+    #             """
+    #             for option in options
+    #         ]))
+    #     )
+    # def render_approved(self, value):
+    # # Handle both string and dictionary values
+    #     if not isinstance(value, dict):
+    #         count = value
+    #         options = []
+    #     else:
+    #         count = value.get('count', 0)
+    #         options = value.get('options', [])
+    #         auto = value.get('auto', 0)
+    #         manual = value.get('manual', 0)
+    #
+    #     return format_html(
+    #         """
+    #         <div class="relative"
+    #             x-data="{{
+    #                 isOpen: false,
+    #                 positionDropdown() {{
+    #                     const rect = this.$el.getBoundingClientRect();
+    #                     const dropdown = this.$refs.dropdown;
+    #                     const windowHeight = window.innerHeight;
+    #                     const dropdownHeight = dropdown.offsetHeight;
+    #
+    #                     const spaceBelow = windowHeight - rect.bottom;
+    #                     const showBelow = spaceBelow >= dropdownHeight;
+    #
+    #                     const left = rect.left;
+    #                     const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
+    #
+    #                     dropdown.style.top = `${{top}}px`;
+    #                     dropdown.style.left = `${{left}}px`;
+    #                 }}
+    #             }}">
+    #
+    #             <button class="button-icon"
+    #                 @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
+    #                 @click.outside="isOpen = false">{}</button>
+    #
+    #             <div x-ref="dropdown"
+    #                 x-show="isOpen"
+    #                 x-transition:enter="transition ease-out duration-100"
+    #                 x-transition:enter-start="opacity-0 scale-95"
+    #                 x-transition:enter-end="opacity-100 scale-100"
+    #                 x-transition:leave="transition ease-in duration-75"
+    #                 x-transition:leave-start="opacity-100 scale-100"
+    #                 x-transition:leave-end="opacity-0 scale-95"
+    #                 class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
+    #                 style="display: none">
+    #
+    #                 <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
+    #                     <span class="text-start font-normal">Approved Info</span>
+    #                 </div>
+    #                 {}
+    #             </div>
+    #         </div>
+    #         """,
+    #         count,
+    #         mark_safe(''.join([
+    #             f"""
+    #             <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
+    #                 <span class="text-start">{option['name']}</span>
+    #                 <span class="text-end">{option['value']}</span>
+    #             </div>
+    #             """
+    #             for option in options
+    #         ]))
+    #     )
 
-        return format_html(
-            """
-            <div class="relative"
-                x-data="{{
-                    isOpen: false,
-                    positionDropdown() {{
-                        const rect = this.$el.getBoundingClientRect();
-                        const dropdown = this.$refs.dropdown;
-                        const windowHeight = window.innerHeight;
-                        const dropdownHeight = dropdown.offsetHeight;
-
-                        const spaceBelow = windowHeight - rect.bottom;
-                        const showBelow = spaceBelow >= dropdownHeight;
-
-                        const left = rect.left;
-                        const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-
-                        dropdown.style.top = `${{top}}px`;
-                        dropdown.style.left = `${{left}}px`;
-                    }}
-                }}">
-
-                <button class="button-icon"
-                        @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
-                        @click.outside="isOpen = false">{}</button>
-
-                <div x-ref="dropdown"
-                    x-show="isOpen"
-                    x-transition:enter="transition ease-out duration-100"
-                    x-transition:enter-start="opacity-0 scale-95"
-                    x-transition:enter-end="opacity-100 scale-100"
-                    x-transition:leave="transition ease-in duration-75"
-                    x-transition:leave-start="opacity-100 scale-100"
-                    x-transition:leave-end="opacity-0 scale-95"
-                    class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
-                    style="display: none">
-
-                    <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
-                        <span class="text-start font-normal">Delivered Info</span>
-                    </div>
-                    {}
-                </div>
-            </div>
-            """,
-            count,
-            mark_safe(''.join([
-                f"""
-                <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
-                    <span class="text-start">{option['name']}</span>
-                    <span class="text-end">{option['value']}</span>
-                </div>
-                """
-                for option in options
-            ]))
-        )
-    def render_pending(self, value):
-        # Handle both string and dictionary values
-        if not isinstance(value, dict):
-            count = value
-            options = []
-        else:
-            count = value.get('count', 0)
-            options = value.get('options', [])
-
-        return format_html(
-            """
-            <div class="relative"
-                x-data="{{
-                    isOpen: false,
-                    positionDropdown() {{
-                        const rect = this.$el.getBoundingClientRect();
-                        const dropdown = this.$refs.dropdown;
-                        const windowHeight = window.innerHeight;
-                        const dropdownHeight = dropdown.offsetHeight;
-
-                        const spaceBelow = windowHeight - rect.bottom;
-                        const showBelow = spaceBelow >= dropdownHeight;
-
-                        const left = rect.left;
-                        const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-
-                        dropdown.style.top = `${{top}}px`;
-                        dropdown.style.left = `${{left}}px`;
-                    }}
-                }}">
-
-                <button class="button-icon"
-                        @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
-                        @click.outside="isOpen = false">{}</button>
-                <div x-ref="dropdown"
-                    x-show="isOpen"
-                    x-transition:enter="transition ease-out duration-100"
-                    x-transition:enter-start="opacity-0 scale-95"
-                    x-transition:enter-end="opacity-100 scale-100"
-                    x-transition:leave="transition ease-in duration-75"
-                    x-transition:leave-start="opacity-100 scale-100"
-                    x-transition:leave-end="opacity-0 scale-95"
-                    class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
-                    style="display: none">
-
-                    <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
-                        <span class="text-start font-normal">Flagged Info</span>
-                    </div>
-                    {}
-                </div>
-            </div>
-            """,
-            count,
-            mark_safe(''.join([
-                f"""
-                <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
-                    <span class="text-start">{option['name']}</span>
-                    <span class="text-end">{option['value']}</span>
-                </div>
-                """
-                for option in options
-            ]))
-        )
-    def render_approved(self, value):
-    # Handle both string and dictionary values
-        if not isinstance(value, dict):
-            count = value
-            options = []
-        else:
-            count = value.get('count', 0)
-            options = value.get('options', [])
-            auto = value.get('auto', 0)
-            manual = value.get('manual', 0)
-
-        return format_html(
-            """
-            <div class="relative"
-                x-data="{{
-                    isOpen: false,
-                    positionDropdown() {{
-                        const rect = this.$el.getBoundingClientRect();
-                        const dropdown = this.$refs.dropdown;
-                        const windowHeight = window.innerHeight;
-                        const dropdownHeight = dropdown.offsetHeight;
-
-                        const spaceBelow = windowHeight - rect.bottom;
-                        const showBelow = spaceBelow >= dropdownHeight;
-
-                        const left = rect.left;
-                        const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-
-                        dropdown.style.top = `${{top}}px`;
-                        dropdown.style.left = `${{left}}px`;
-                    }}
-                }}">
-
-                <button class="button-icon"
-                    @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
-                    @click.outside="isOpen = false">{}</button>
-
-                <div x-ref="dropdown"
-                    x-show="isOpen"
-                    x-transition:enter="transition ease-out duration-100"
-                    x-transition:enter-start="opacity-0 scale-95"
-                    x-transition:enter-end="opacity-100 scale-100"
-                    x-transition:leave="transition ease-in duration-75"
-                    x-transition:leave-start="opacity-100 scale-100"
-                    x-transition:leave-end="opacity-0 scale-95"
-                    class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
-                    style="display: none">
-
-                    <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
-                        <span class="text-start font-normal">Approved Info</span>
-                    </div>
-                    {}
-                </div>
-            </div>
-            """,
-            count,
-            mark_safe(''.join([
-                f"""
-                <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
-                    <span class="text-start">{option['name']}</span>
-                    <span class="text-end">{option['value']}</span>
-                </div>
-                """
-                for option in options
-            ]))
-        )
-
-    def render_rejected(self, value):
-        # Handle both string and dictionary values
-        if not isinstance(value, dict):
-            count = value
-            options = []
-        else:
-            count = value.get('count', 0)
-            options = value.get('options', [])
-
-        return format_html(
-            """
-            <div class="relative"
-                x-data="{{
-                    isOpen: false,
-                    positionDropdown() {{
-                        const rect = this.$el.getBoundingClientRect();
-                        const dropdown = this.$refs.dropdown;
-                        const windowHeight = window.innerHeight;
-                        const dropdownHeight = dropdown.offsetHeight;
-
-                        const spaceBelow = windowHeight - rect.bottom;
-                        const showBelow = spaceBelow >= dropdownHeight;
-
-                        const left = rect.left - dropdown.offsetWidth + rect.width;
-                        const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
-
-                        dropdown.style.top = `${{top}}px`;
-                        dropdown.style.left = `${{left}}px`;
-                    }}
-                }}">
-
-                <button class="button-icon"
-                        @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
-                        @click.outside="isOpen = false">{}</button>
-
-                <div x-ref="dropdown"
-                    x-show="isOpen"
-                    x-transition:enter="transition ease-out duration-100"
-                    x-transition:enter-start="opacity-0 scale-95"
-                    x-transition:enter-end="opacity-100 scale-100"
-                    x-transition:leave="transition ease-in duration-75"
-                    x-transition:leave-start="opacity-100 scale-100"
-                    x-transition:leave-end="opacity-0 scale-95"
-                    class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
-                    style="display: none">
-
-                    <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
-                        <span class="text-start font-normal">Rejected Info</span>
-                    </div>
-                    {}
-                </div>
-            </div>
-            """,
-            count,
-            mark_safe(''.join([
-                f"""
-                <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
-                    <span class="text-start">{option['name']}</span>
-                    <span class="text-end">{option['value']}</span>
-                </div>
-                """
-                for option in options
-            ]))
-        )
+    # def render_rejected(self, value):
+    #     # Handle both string and dictionary values
+    #     if not isinstance(value, dict):
+    #         count = value
+    #         options = []
+    #     else:
+    #         count = value.get('count', 0)
+    #         options = value.get('options', [])
+    #
+    #     return format_html(
+    #         """
+    #         <div class="relative"
+    #             x-data="{{
+    #                 isOpen: false,
+    #                 positionDropdown() {{
+    #                     const rect = this.$el.getBoundingClientRect();
+    #                     const dropdown = this.$refs.dropdown;
+    #                     const windowHeight = window.innerHeight;
+    #                     const dropdownHeight = dropdown.offsetHeight;
+    #
+    #                     const spaceBelow = windowHeight - rect.bottom;
+    #                     const showBelow = spaceBelow >= dropdownHeight;
+    #
+    #                     const left = rect.left - dropdown.offsetWidth + rect.width;
+    #                     const top = showBelow ? rect.bottom + 5 : rect.top - dropdownHeight - 5;
+    #
+    #                     dropdown.style.top = `${{top}}px`;
+    #                     dropdown.style.left = `${{left}}px`;
+    #                 }}
+    #             }}">
+    #
+    #             <button class="button-icon"
+    #                     @click="isOpen = !isOpen; $nextTick(() => {{ if(isOpen) positionDropdown() }})"
+    #                     @click.outside="isOpen = false">{}</button>
+    #
+    #             <div x-ref="dropdown"
+    #                 x-show="isOpen"
+    #                 x-transition:enter="transition ease-out duration-100"
+    #                 x-transition:enter-start="opacity-0 scale-95"
+    #                 x-transition:enter-end="opacity-100 scale-100"
+    #                 x-transition:leave="transition ease-in duration-75"
+    #                 x-transition:leave-start="opacity-100 scale-100"
+    #                 x-transition:leave-end="opacity-0 scale-95"
+    #                 class="fixed z-50 w-48 py-2 bg-white rounded-lg shadow-md"
+    #                 style="display: none">
+    #
+    #                 <div class="px-2 py-2 rounded-md mx-2 text-sm text-brand-blue-light">
+    #                     <span class="text-start font-normal">Rejected Info</span>
+    #                 </div>
+    #                 {}
+    #             </div>
+    #         </div>
+    #         """,
+    #         count,
+    #         mark_safe(''.join([
+    #             f"""
+    #             <div class="px-2 py-2 mx-2 text-sm text-brand-deep-purple flex justify-between">
+    #                 <span class="text-start">{option['name']}</span>
+    #                 <span class="text-end">{option['value']}</span>
+    #             </div>
+    #             """
+    #             for option in options
+    #         ]))
+    #     )
 
 
 class PayWorker(BaseTailwindTable):

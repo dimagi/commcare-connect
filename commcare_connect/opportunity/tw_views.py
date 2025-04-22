@@ -15,13 +15,12 @@ from django.views.generic import TemplateView
 from django_tables2 import SingleTableMixin, RequestConfig, SingleTableView
 from django.test.utils import override_settings
 
-from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, \
-    ReviewVisitExportForm, DateRanges
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
 from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
-from .tasks import generate_review_visit_export, generate_payment_export
+from .tasks import generate_payment_export, generate_visit_export
 from .tw_forms import VisitExportForm, PaymentExportFormTw
 
 from .tw_tables import PMOpportunitiesListTable, ProgramManagerOpportunityList, WorkerLearnStatusTable, get_duration_min
@@ -34,7 +33,6 @@ from .tw_tables import InvoicePaymentReportTable, InvoicesListTable, MyOrganizat
 from .views import OrganizationUserMixin, get_opportunity_or_404
 from .visit_import import bulk_update_visit_status, ImportException, bulk_update_payment_status, get_exchange_rate
 from ..organization.decorators import org_member_required
-from ..web.templatetags.duration_minutes import duration_minutes
 
 
 def home(request, org_slug=None, opp_id=None):
@@ -1740,10 +1738,11 @@ def tw_update_visit_status_import(request, org_slug=None, opp_id=None):
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
     return redirect("opportunity:tw_worker_list", org_slug, opp_id)
 
+
 @org_member_required
 def export_visit_status(request, org_slug, opp_id):
     get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
-    form = ReviewVisitExportForm(data=request.POST)
+    form = VisitExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect("opportunity:tw_worker_list", request.org.slug, opp_id)
@@ -1751,10 +1750,11 @@ def export_visit_status(request, org_slug, opp_id):
     export_format = form.cleaned_data["format"]
     date_range = DateRanges(form.cleaned_data["date_range"])
     status = form.cleaned_data["status"]
-
-    result = generate_review_visit_export.delay(opp_id, date_range, status, export_format)
+    flatten = form.cleaned_data["flatten_form_data"]
+    result = generate_visit_export.delay(opp_id, date_range, status, export_format, flatten)
     redirect_url = reverse("opportunity:tw_worker_list", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
+
 
 
 @org_member_required
