@@ -7,6 +7,7 @@ from crispy_forms.templatetags.crispy_forms_field import css_class
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
+from django.urls.base import reverse
 from django.utils.timezone import now
 from django.urls import reverse
 
@@ -820,6 +821,16 @@ class ProgramForm(forms.ModelForm):
         self.organization = kwargs.pop("organization")
         super().__init__(*args, **kwargs)
         self.helper = TailwindFormHelper(self)
+        self.helper.form_tag = True
+        self.helper.form_id = "program-edit-form" if self.instance.id else "program-add-form"
+
+        form_url = reverse("program:tw_init", kwargs={"org_slug": self.organization.slug})
+        if self.instance.id:
+            form_url = reverse("program:tw_edit", kwargs={"org_slug": self.organization.slug, "pk": self.instance.id})
+        self.helper.attrs = {
+            "hx-post": form_url,
+            "hx-swap-oob": "true",
+        }
         self.helper.layout = Layout(
             Row(Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full")),
             Row(Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full")),
