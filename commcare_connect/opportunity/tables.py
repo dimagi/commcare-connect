@@ -587,10 +587,14 @@ class UserVisitVerificationTable(BaseTailwindTable):
         )
         fields = []
         empty_text = "No Visits for this filter."
-        row_attrs = {
+
+    def __init__(self, *args, **kwargs):
+        organization = kwargs.pop("organization", None)
+        super().__init__(*args, **kwargs)
+        self.row_attrs = {
             "hx-get": lambda record: reverse(
                 "opportunity:user_visit_details",
-                args=[record.opportunity.organization.slug, record.opportunity_id, record.pk],
+                args=[organization.slug, record.opportunity_id, record.pk],
             ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
