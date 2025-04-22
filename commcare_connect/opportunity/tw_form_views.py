@@ -116,8 +116,7 @@ class OpportunityEdit(views.OpportunityEdit):
     form_class = OpportunityChangeForm
 
     def get_success_url(self):
-        return reverse("opportunity:tw_opportunity_detail", args=(self.request.org.slug, self.object.id))
-
+        return reverse("opportunity:tw_opportunity", args=(self.request.org.slug, self.object.id))
 
 
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
@@ -234,7 +233,7 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             send_push_notification_task.delay(selected_user_ids, title, body)
         if "sms" in message_type:
             send_sms_task.delay(selected_user_ids, body)
-        return redirect("opportunity:tw_opportunity_detail", request.org.slug, pk)
+        return redirect("opportunity:tw_opportunity", request.org.slug, pk)
 
     return render(
         request,
