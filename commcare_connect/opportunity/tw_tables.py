@@ -1343,7 +1343,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
     payment_unit = tables.Column()
     started = tables.Column()
     delivered = tables.Column()
-    flagged = tables.Column()
+    pending = tables.Column()
     approved = tables.Column()
     rejected = tables.Column()
     id = tables.Column(visible=False)
@@ -1366,7 +1366,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
             "payment_unit",
             "started",
             "delivered",
-            "flagged",
+            "pending",
             "approved",
             "rejected",
             "action"
@@ -1490,7 +1490,7 @@ class WorkerDeliveryTable(BaseTailwindTable):
                 for option in options
             ]))
         )
-    def render_flagged(self, value):
+    def render_pending(self, value):
         # Handle both string and dictionary values
         if not isinstance(value, dict):
             count = value
@@ -1768,10 +1768,10 @@ class WorkerStatusTable(BaseTailwindTable):
     index = IndexColumn()
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
+    invited_date = DMYDate()
     last_active = DMYDate()
     started_learn = DMYDate()
     completed_learn = DMYDate()
-    invited_date = DMYDate()
     days_to_complete_learn = tables.Column(
         attrs={
             "td": {
@@ -2473,7 +2473,7 @@ class ProgramManagerOpportunityList(BaseOpportunityList):
     active_workers = tables.Column(verbose_name=header_with_tooltip("Active Workers",tooltip_text='Delivered forms in the last 3 days.'))
     total_deliveries =tables.Column(verbose_name=header_with_tooltip('Total Deliveries', 'Total services delivered so far.'))
     verified_deliveries = tables.Column(verbose_name=header_with_tooltip('Verified Deliveries', 'Approved service deliveries.'))
-    worker_earnings = tables.Column(verbose_name=header_with_tooltip('Worker Earnings', 'Approved service deliveries'), accessor='total_accrued')
+    worker_earnings = tables.Column(verbose_name=header_with_tooltip('Worker Earnings', 'Payments accrued by workers'), accessor='total_accrued')
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
 
     def render_active_workers(self, value):
