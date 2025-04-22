@@ -2811,19 +2811,19 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
             "color": "",
         },
         {
-            "name": "Total Workers",
+            "name": "Max Workers",
             "count": opp.number_of_users,
             "icon": "users",
             "color": "brand-mango",
         },
         {
-            "name": "Total Service Deliveries",
+            "name": "Max Service Deliveries",
             "count": opp.allotted_visits,
             "icon": "gears",
             "color": "",
         },
         {
-            "name": "Worker Budget",
+            "name": "Max Budget",
             "count": opp.total_budget,
             "icon": "money-bill",
             "color": "",
@@ -2839,7 +2839,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     deliveries_panels =  [
                 {
                     "icon": "fa-clipboard-list-check",
-                    "name": "Deliveries",
+                    "name": "Services Delivered",
                     "status": "Total",
                     "value": opp.total_deliveries,
                     "incr": opp.deliveries_from_yesterday,
@@ -2849,15 +2849,15 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     if opp.managed and is_program_manager:
         deliveries_panels.append({
             "icon": "fa-clipboard-list-check",
-            "name": "Deliveries",
+            "name": "Services Delivered",
             "status": "Pending PM Review",
             "value": opp.flagged_deliveries_waiting_for_review,
         })
     else:
         deliveries_panels.append({
             "icon": "fa-clipboard-list-check",
-            "name": "Deliveries",
-            "status": "Awaiting Flag Review",
+            "name": "Services Delivered",
+            "status": "Awaiting Review",
             "value": opp.flagged_deliveries_waiting_for_review,
         })
 
@@ -2882,7 +2882,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         },
 
         {
-            "title": "Deliveries",
+            "title": "Services Delivered",
             "url": delivery_url,
             "sub_heading": "Last Delivery",
             "value": opp.most_recent_delivery or "--",
@@ -2914,17 +2914,17 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     worker_progress = [
         {"title": "Daily Active Workers",
          "progress": [{"title": "Maximum", "total": opp.maximum_visit_in_a_day, "value": opp.maximum_visit_in_a_day,
-                       "badge_type": False},
+                       "badge_type": False, "percent": 100},
                       {"title": "Average", "total": opp.average_visits_per_day, "value": opp.average_visits_per_day,
-                       "badge_type": False}]},
+                       "badge_type": False, "percent": 100}]},
         {"title": "Service Deliveries",
          "progress": [
-             {"title": "Verified", "total": opp.total_deliveries, "value": f"{verified_percentage:.2f}", "badge_type": True},
-             {"title": "Rejected", "total": opp.total_deliveries, "value": f"{rejected_percentage:.2f}",
+         {"title": "Verified", "total": opp.total_deliveries, "value": opp.approved_deliveries, "badge_type": True, "percent": verified_percentage},
+         {"title": "Rejected", "total": opp.total_deliveries, "value": opp.rejected_deliveries, "percent": rejected_percentage ,
               "badge_type": True}]},
         {"title": "Payments to Workers",
-         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{earned_percentage:.2f}", "badge_type": True},
-                      {"title": "Paid", "total": opp.total_accrued, "value": f"{paid_percentage:.2f}", "badge_type": True}]},
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{earned_percentage:.2f}", "badge_type": True, "percent": earned_percentage},
+                      {"title": "Paid", "total": opp.total_accrued, "value": f"{paid_percentage:.2f}", "badge_type": True, "percent": paid_percentage}]},
     ]
 
     funnel_progress = [
