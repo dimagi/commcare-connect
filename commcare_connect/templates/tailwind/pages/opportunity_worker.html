@@ -1,7 +1,8 @@
 {% extends "tailwind/base.html" %}
 {% block content %}
 {% load crispy_forms_tags %}
-<p class="py-2 text-sm font-medium text-brand-deep-purple my-2">{{ opportunity.name }}</p>
+
+{% include 'tailwind/components/breadcrumbs.html' with path=path %}
 
 <div class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
   <!-- Tabs -->

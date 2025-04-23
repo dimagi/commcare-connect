@@ -1677,6 +1677,11 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     visit_export_form = VisitExportForm()
     export_form = PaymentExportFormTw()
 
+    path = [{"title": "Opportunity List", "url": reverse("opportunity:opportunities_list_new", args=(org_slug,))},
+            {"title": opp.name, "url": reverse("opportunity:tw_opportunity", args=(org_slug, opp_id))},
+            {"title": "Worker List", "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))},
+            ]
+
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""
 
@@ -1715,7 +1720,8 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
             "tabs": tabs,
             "visit_export_form": visit_export_form,
             "export_form": export_form,
-            "export_task_id": request.GET.get("export_task_id")
+            "export_task_id": request.GET.get("export_task_id"),
+            "path": path
         },
     )
 
@@ -1736,7 +1742,9 @@ def tw_update_visit_status_import(request, org_slug=None, opp_id=None):
         messages.success(request, mark_safe(message))
     if opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
-    return redirect("opportunity:tw_worker_list", org_slug, opp_id)
+
+    url = reverse("opportunity:tw_worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery"
+    return redirect(url)
 
 
 @org_member_required
@@ -2730,13 +2738,6 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
 class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
     template_name = "tailwind/pages/opportunities_list.html"
     paginate_by = 15
-    base_columns = ['program', 'start_date', 'end_date', 'status', 'opportunity']
-    pm_columns = ['active_workers', 'total_deliveries', 'verified_deliveries', 'worker_earnings']
-    nm_columns = ['pending_invites', 'inactive_workers', 'pending_approvals', 'payments_due']
-
-    def get_allowed_columns(self):
-        extra_columns = self.pm_columns if self.request.org.program_manager else self.nm_columns
-        return self.base_columns + extra_columns
 
     def get_table_class(self):
         if self.request.org.program_manager:
@@ -2745,26 +2746,11 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
     def get_table_data(self):
         org = self.request.org
-        return get_opportunity_list_data(org, self.request.org.program_manager)
+        query_set = get_opportunity_list_data(org, self.request.org.program_manager)
+        query_set = query_set.order_by("status_value", "start_date", "end_date")
+        return query_set
 
-    def get_validated_order_by(self):
-        requested_order = self.request.GET.get('sort', 'start_date')
 
-        is_descending = requested_order.startswith('-')
-        column = requested_order[1:] if is_descending else requested_order
-        return requested_order if column in self.get_allowed_columns() else 'start_date'
-
-    def get_table(self, **kwargs):
-        table = super().get_table(**kwargs)
-
-        validated_order = self.get_validated_order_by()
-
-        if validated_order:
-            table.order_by = validated_order
-        else:
-            table.order_by = ("-status", "start_date", "end_date")
-
-        return table
 
 
 def is_program_manager_of_opportunity(request, opportunity):
