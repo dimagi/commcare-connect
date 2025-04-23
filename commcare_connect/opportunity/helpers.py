@@ -205,11 +205,16 @@ def get_worker_table_data(opportunity):
         first_delivery=Min(
             "uservisit__visit_date",
         ),
-        days_to_start_delivery=ExpressionWrapper(
-            Coalesce(
-                Least(Now(), Value(opportunity.end_date)),
-                Now()
-            ) - F("first_delivery"),
+        days_to_start_delivery=Case(
+            When(
+                date_learn_started__isnull=False,
+                first_delivery__isnull=False,
+                then=ExpressionWrapper(
+                    F('date_learn_started') - F("first_delivery"),
+                    output_field=DurationField()
+                )
+            ),
+            default=None,
             output_field=DurationField()
         ),
 
