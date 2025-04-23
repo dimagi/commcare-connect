@@ -357,7 +357,7 @@ def opportunity_user_invite(request, org_slug=None, pk=None):
         filter_credential = form.cleaned_data["filter_credential"]
         if users or filter_country or filter_credential:
             add_connect_users.delay(users, opportunity.id, filter_country, filter_credential)
-        return redirect("opportunity:tw_opportunity", request.org.slug, opportunity.pk)
+        return redirect("opportunity:tw_worker_list", request.org.slug, pk)
     return render(
         request,
         "tailwind/components/form.html",
