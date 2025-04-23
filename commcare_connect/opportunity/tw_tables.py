@@ -1763,13 +1763,7 @@ class WorkerStatusTable(BaseTailwindTable):
     last_active = DMYDate()
     started_learn = DMYDate()
     completed_learn = DMYDate()
-    days_to_complete_learn = tables.Column(
-        attrs={
-            "td": {
-                "class": "p-0",
-            }
-        },
-    )
+    days_to_complete_learn = DurationColumn()
     first_delivery=tables.Column()
     days_to_start_delivery=DurationColumn()
 
