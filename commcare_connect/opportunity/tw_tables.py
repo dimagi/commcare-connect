@@ -44,11 +44,18 @@ def header_with_tooltip(label, tooltip_text):
 def get_duration_min(total_seconds):
     total_seconds = int(total_seconds)
     minutes = (total_seconds // 60) % 60
-    hours = total_seconds // 3600
+    hours = (total_seconds // 3600) % 24
+    days = total_seconds // 86400
 
+    parts = []
+    if days:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
     if hours:
-        return f"{hours} hr {minutes} min" if minutes else f"{hours} hr"
-    return f"{minutes} min"
+        parts.append(f"{hours} hr")
+    if minutes or not parts:
+        parts.append(f"{minutes} min")
+
+    return " ".join(parts)
 
 
 class DurationColumn(tables.Column):
@@ -1277,8 +1284,7 @@ class WorkerLearnTable(BaseTailwindTable):
     attempts = tables.Column(
         accessor="assesment_count"
     )
-    learning_hours = tables.Column(
-    )
+    learning_hours = DurationColumn()
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -1320,22 +1326,8 @@ class WorkerLearnTable(BaseTailwindTable):
                 <a href="{url}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
             </div>""", url=url)
 
-    def render_learning_hours(self, value):
-        if not value:
-            return "-"
-        total_seconds = int(value.total_seconds())
-        hours = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-
-        if hours and minutes:
-            return f"{hours}h {minutes}m"
-        elif hours:
-            return f"{hours}h"
-        elif minutes:
-            return f"{minutes}m"
-        return "0m"
-
 class WorkerDeliveryTable(BaseTailwindTable):
+    id = tables.Column(visible=False)
     index = IndexColumn()
     user = tables.Column(orderable=False, verbose_name="Name")
     suspended = SuspendedIndicatorColumn()
@@ -1346,7 +1338,6 @@ class WorkerDeliveryTable(BaseTailwindTable):
     pending = tables.Column()
     approved = tables.Column()
     rejected = tables.Column()
-    id = tables.Column(visible=False)
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -1780,7 +1771,7 @@ class WorkerStatusTable(BaseTailwindTable):
         },
     )
     first_delivery=tables.Column()
-    days_to_start_delivery=tables.Column()
+    days_to_start_delivery=DurationColumn()
 
     # Commenting Not sure why it is used if used why opacity 0?
     # action = tables.TemplateColumn(

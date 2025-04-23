@@ -1753,7 +1753,7 @@ def export_visit_status(request, org_slug, opp_id):
     flatten = form.cleaned_data["flatten_form_data"]
     result = generate_visit_export.delay(opp_id, date_range, status, export_format, flatten)
     redirect_url = reverse("opportunity:tw_worker_list", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(f"{redirect_url}?active_tab=delivery&export_task_id={result.id}")
 
 
 
