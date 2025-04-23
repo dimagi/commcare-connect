@@ -379,11 +379,6 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
     ).values("user")
 
 
-    started_users_subquery = CompletedModule.objects.filter(
-        opportunity=OuterRef("pk")
-    ).values("user").distinct()
-
-
     effective_end_date = Case(
         When(end_date__isnull=True, then=Value(today)),
         When(end_date__gt=today, then=Value(today)),
@@ -454,7 +449,7 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
         ),
         started_learning_count=Count(
             'opportunityaccess__user',
-            filter=Q(opportunityaccess__user__in=Subquery(started_users_subquery)),
+            filter=Q(opportunityaccess__date_learn_started__isnull=False),
             distinct=True
         ),
         completed_learning=Count(
