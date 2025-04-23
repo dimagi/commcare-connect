@@ -210,7 +210,7 @@ def get_worker_table_data(opportunity):
                 date_learn_started__isnull=False,
                 first_delivery__isnull=False,
                 then=ExpressionWrapper(
-                    F('date_learn_started') - F("first_delivery"),
+                    F("first_delivery") - F('date_learn_started'),
                     output_field=DurationField()
                 )
             ),
