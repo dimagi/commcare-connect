@@ -448,7 +448,7 @@ def get_opportunity_dashboard_data(opp_id: int, org_slug=None) -> QuerySet[Oppor
             distinct=True,
         ),
         started_learning_count=Count(
-            'opportunityaccess__user',
+            'opportunityaccess',
             filter=Q(opportunityaccess__date_learn_started__isnull=False),
             distinct=True
         ),
