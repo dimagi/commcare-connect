@@ -1264,19 +1264,16 @@ class WorkerLearnTable(BaseTailwindTable):
     index = IndexColumn()
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
-    last_active = tables.Column(
-        orderable=True,
-    )
-    started_learning = tables.Column(
-    )
+    last_active = DMYDate()
+    started_learning = DMYDate(accessor="date_learn_started", verbose_name="Started Learning")
     modules_completed = tables.TemplateColumn(
         accessor="modules_completed_percentage",
         template_code="""
                             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value|default:0 %}
                         """,
     )
-    completed_learning = tables.Column(
-        accessor="completed_learn"
+    completed_learning = DMYDate(
+        accessor="completed_learn", verbose_name="Completed Learning"
     )
     assessment = tables.Column(
         accessor="passed_assessment"
@@ -1317,8 +1314,10 @@ class WorkerLearnTable(BaseTailwindTable):
         )
 
 
-    def render_assessment(self, value):
-        return 'passed' if value else 'failed'
+    def render_assessment(self, value, record):
+        if not record.date_learn_started:
+            return "--"
+        return 'Passed' if value else 'Failed'
 
     def render_action(self, record):
         url = reverse('opportunity:tw_worker_learn_progress', args=(record.opportunity.organization.slug, record.id))

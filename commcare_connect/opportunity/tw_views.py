@@ -2895,21 +2895,21 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
     rejected_percentage = opp.rejected_deliveries / opp.total_deliveries * 100 if opp.total_deliveries else 0
     earned_percentage = opp.total_accrued / opp.total_budget * 100 if opp.total_budget else 0
     paid_percentage = opp.total_paid / opp.total_accrued * 100 if opp.total_accrued else 0
-
+    average_visit_per_day = round(opp.average_visits_per_day or 0.0, 1)
     worker_progress = [
         {"title": "Daily Active Workers",
          "progress": [{"title": "Maximum", "total": opp.maximum_visit_in_a_day, "value": opp.maximum_visit_in_a_day,
                        "badge_type": False, "percent": 100},
-                      {"title": "Average", "total": opp.average_visits_per_day, "value": opp.average_visits_per_day,
+                      {"title": "Average", "total": average_visit_per_day, "value": average_visit_per_day,
                        "badge_type": False, "percent": 100}]},
-        {"title": "Service Deliveries",
+        {"title": "Verification",
          "progress": [
          {"title": "Verified", "total": opp.total_deliveries, "value": opp.approved_deliveries, "badge_type": True, "percent": verified_percentage},
          {"title": "Rejected", "total": opp.total_deliveries, "value": opp.rejected_deliveries, "percent": rejected_percentage ,
               "badge_type": True}]},
         {"title": "Payments to Workers",
-         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{earned_percentage:.2f}", "badge_type": True, "percent": earned_percentage},
-                      {"title": "Paid", "total": opp.total_accrued, "value": f"{paid_percentage:.2f}", "badge_type": True, "percent": paid_percentage}]},
+         "progress": [{"title": "Earned", "total": opp.total_budget, "value": f"{earned_percentage:.2f}%", "badge_type": True, "percent": earned_percentage},
+                      {"title": "Paid", "total": opp.total_accrued, "value": f"{paid_percentage:.2f}%", "badge_type": True, "percent": paid_percentage}]},
     ]
 
     funnel_progress = [
