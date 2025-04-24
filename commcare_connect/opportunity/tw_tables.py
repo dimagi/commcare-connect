@@ -1315,7 +1315,7 @@ class WorkerLearnTable(BaseTailwindTable):
 
 
     def render_assessment(self, value, record):
-        if not record.date_learn_started:
+        if not record.assesment_count:
             return "--"
         return 'Passed' if value else 'Failed'
 
