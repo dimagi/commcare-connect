@@ -1677,9 +1677,9 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     visit_export_form = VisitExportForm()
     export_form = PaymentExportFormTw()
 
-    path = [{"title": "Opportunity List", "url": reverse("opportunity:opportunities_list_new", args=(org_slug,))},
+    path = [{"title": "Opportunities", "url": reverse("opportunity:opportunities_list_new", args=(org_slug,))},
             {"title": opp.name, "url": reverse("opportunity:tw_opportunity", args=(org_slug, opp_id))},
-            {"title": "Worker List", "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))},
+            {"title": "Workers", "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))},
             ]
 
     raw_qs = request.GET.urlencode()
@@ -3003,8 +3003,8 @@ def export_status(request, org_slug, task_id):
 @require_POST
 def tw_invoice_approve(request, org_slug, pk, invoice_id):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or not request.org_membership.is_program_manager:
-        return redirect("opportunity:detail", org_slug, pk)
+    if not opportunity.managed or not (request.org_membership != None and request.org_membership.is_program_manager): # noqa: E711
+        return redirect("opportunity:tw_opportunity", org_slug, pk)
     invoice = get_object_or_404(PaymentInvoice, pk=invoice_id, payment__isnull=True)
     rate = get_exchange_rate(opportunity.currency)
     amount_in_usd = invoice.amount / rate
