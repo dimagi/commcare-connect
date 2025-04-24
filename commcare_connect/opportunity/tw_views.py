@@ -5,7 +5,6 @@ from celery.result import AsyncResult
 from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
-from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import redirect, render, get_object_or_404
 from django.urls import reverse
@@ -18,7 +17,7 @@ from django.test.utils import override_settings
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
-from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule, UserVisit
+from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_payment_export, generate_visit_export
@@ -2761,40 +2760,6 @@ def is_program_manager_of_opportunity(request, opportunity):
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=opp_id).first()
-    today = now().date()
-
-    effective_end = today if not opp.end_date or opp.end_date > today else opp.end_date
-
-    total_days = (effective_end - opp.start_date).days
-    average_visits_per_day = round(opp.total_visits / total_days if total_days else 1, 1)
-    maximum_visit_in_a_day = (
-        UserVisit.objects
-        .filter(opportunity_id=opp_id)
-        .annotate(visit_day=TruncDate('visit_date'))
-        .values('visit_day')
-        .annotate(day_count=Count('id'))
-        .order_by('-day_count')
-        .values_list('day_count', flat=True)
-        .first() or 0
-    )
-    total_modules_count = LearnModule.objects.filter(
-        app__opportunity__id=opp_id
-    ).count()
-
-    completed_users = (
-        CompletedModule.objects
-        .filter(opportunity_id=opp_id)
-        .values('user')
-        .annotate(completed_count=Count('module', distinct=True))
-        .filter(completed_count=total_modules_count)
-        .values_list('user', flat=True)
-    )
-    completed_learning = OpportunityAccess.objects.filter(
-        opportunity_id=opp_id,
-        user__in=completed_users
-    ).values('user').distinct().count()
-
-
     is_program_manager = is_program_manager_of_opportunity(request, opp)
 
     learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
@@ -2933,9 +2898,9 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
 
     worker_progress = [
         {"title": "Daily Active Workers",
-         "progress": [{"title": "Maximum", "total": maximum_visit_in_a_day, "value": maximum_visit_in_a_day,
+         "progress": [{"title": "Maximum", "total": opp.maximum_visit_in_a_day, "value": opp.maximum_visit_in_a_day,
                        "badge_type": False, "percent": 100},
-                      {"title": "Average", "total": average_visits_per_day, "value": average_visits_per_day,
+                      {"title": "Average", "total": opp.average_visits_per_day, "value": opp.average_visits_per_day,
                        "badge_type": False, "percent": 100}]},
         {"title": "Service Deliveries",
          "progress": [
@@ -2951,7 +2916,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         {"index": 1, "stage": "invited", "count": opp.workers_invited, "icon": "envelope"},
         {"index": 2, "stage": "Accepted", "count": opp.workers_invited - opp.pending_invites, "icon": "circle-check"},
         {"index": 3, "stage": "Started Learning", "count": opp.started_learning_count, "icon": "book-open-cover"},
-        {"index": 4, "stage": "Completed Learning", "count": completed_learning, "icon": "book-blank"},
+        {"index": 4, "stage": "Completed Learning", "count": opp.completed_learning, "icon": "book-blank"},
         {"index": 5, "stage": "Completed Assessment", "count": opp.completed_assessments, "icon": "award-simple"},
         {"index": 6, "stage": "Claimed Job", "count": opp.claimed_job, "icon": "user-check"},
         {"index": 6, "stage": "Started Delivery", "count": opp.started_deleveries, "icon": "house-chimney-user"},
