@@ -543,6 +543,10 @@
     @apply opacity-100;
   }
 
+  .base-table tbody tr.active::after {
+    @apply opacity-100;
+  }
+
   /* .base-table tbody tr:hover{
       @apply bg-gray-100 rounded-lg;
   }  */
