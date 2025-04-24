@@ -198,7 +198,7 @@ def get_worker_table_data(opportunity):
             default=None,
         ),
         days_to_complete_learn=ExpressionWrapper(
-            F("completed_learn") - F("started_learn"),
+            F("completed_learn") - F("date_learn_started"),
             output_field=DurationField(),
         ),
         first_delivery=Min(
