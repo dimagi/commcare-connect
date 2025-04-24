@@ -5,15 +5,17 @@
 {% block content %}
 <div id="content-area"
   class="md:max-w-screen-2xl mx-auto flex flex-col lg:flex-row gap-4 min-h-screen"
-  x-data="{showProgramAddModal: false, showProgramEditModal: false, showInviteModal: false}">
+  x-data="{showProgramAddModal: false, showProgramEditModal: false}">
   <div class="w-full lg:w-2/3">
     <div class="flex justify-between">
       <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
       <div class="flex items-center gap-2">
         <button class="button button-md button-outline-rounded"
-          hx-get="{% url "program:tw_init" request.org.slug %}"
-         hx-target="#program-add-form"
-          @htmx:after-request="showProgramAddModal = true">
+            @click="document.querySelector('#program-add-form').innerHTML = ''; showProgramAddModal = true;"
+            hx-get="{% url "program:tw_init" request.org.slug %}"
+            hx-target="#program-add-form"
+            hx-indicator="#program-add-loading"
+            @htmx:after-request="showProgramAddModal = true">
            <div class="flex items-center justify-between gap-4">
              <p class="text-sm">
                Add Programs
@@ -35,36 +37,62 @@
                   <p class="card_description w-1/2">{{ program.description }}</p>
                 </div>
                 <button class="button-icon"
+                  @click="document.querySelector('#program-edit-form').innerHTML = ''; showProgramEditModal = true;"
                   hx-get="{% url "program:tw_edit" request.org.slug program.id %}"
                   hx-target="#program-edit-form"
-                  @htmx:after-request="showProgramEditModal = true">
+                  hx-indicator="#program-edit-loading"
+                  @htmx:after-request="showProgramEditModal = true"
+                  >
                   <i class="fa-light fa-pen-line"></i>
                 </button>
-                <button class="button button-sm outline-style" @click="showInviteModal = true">Invite</button>
-                <div x-cloak x-show="showInviteModal" x-transition.opacity class="modal-backdrop" >
-                  <div @click.away="showInviteModal = false" x-transition class="modal">
-                    <div class="header">
-                      <h2 class="title">{% translate "Invite Organizations" %}</h2>
-                      <button @click="showInviteModal = false" class="button-icon" aria-label="Close">
-                        <i class="fa-light fa-xmark text-xl"></i>
-                      </button>
+                <div
+                  x-data="{
+                    open: false,
+                    openModal() { this.open = true },
+                    closeModal() { this.open = false }
+                  }"
+                  @keydown.escape.window="closeModal()"
+                  id="inviteModal-{{ program.id }}"
+                >
+                  <button class="button button-sm outline-style" @click="openModal()">Invite</button>
+                  <div
+                    x-cloak
+                    x-show="open"
+                    x-transition.opacity
+                    class="modal-backdrop"
+                  >
+                    <div
+                      @click.away="closeModal()"
+                      x-show="open"
+                      x-transition
+                      class="modal"
+                      role="dialog"
+                      aria-labelledby="inviteModalLabel-{{ program.id }}"
+                    >
+                      <div class="modal-content">
+                        <div class="header flex justify-between items-center p-4">
+                          <h2 class="title" id="inviteModalLabel-{{ program.id }}">{% translate "Invite Organizations" %}</h2>
+                          <button @click="closeModal()" class="button-icon" aria-label="Close">
+                            <i class="fa-light fa-xmark text-xl"></i>
+                          </button>
+                        </div>
+                        <form hx-post="{% url "program:invite_organization" org_slug=request.org.slug pk=program.id %}">
+                          {% csrf_token %}
+                          <div class="flex flex-col gap-2 py-4 px-4">
+                            <label for="organization" class="title-sm">{% translate "Organization" %}</label>
+                            <select id="organization" name="organization" required class="base-dropdown">
+                              {% for org in organizations %}
+                                <option value="{{ org.slug }}">{{ org.name }}</option>
+                              {% endfor %}
+                            </select>
+                            <span class="hint">{% blocktrans %} Select the organization you want to invite.{% endblocktrans %}</span>
+                          </div>
+                          <div class="footer flex justify-end gap-2 p-4">
+                            <button type="submit" class="button button-md primary-dark">Invite</button>
+                          </div>
+                        </form>
+                      </div>
                     </div>
-                    <form hx-post="{% url "program:invite_organization" org_slug=request.org.slug pk=program.id %}">
-                      {% csrf_token %}
-                      <div class="flex flex-col gap-2 py-4">
-                        <label for="organization" class="title-sm">{% translate "Organization" %}</label>
-                        <select id="organization" name="organization" required class="base-dropdown">
-                          {% for org in organizations %}
-                            <option value="{{ org.slug }}">{{ org.name }}</option>
-                          {% endfor %}
-                        </select>
-                        <span class="hint">{% blocktrans %} Select the organization you want to invite.{% endblocktrans %}</span>
-                      </div>
-                      <div class="footer">
-                        <button type="button" @click="showInviteModal = false" class="button button-md outline-style">Close</button>
-                        <button type="submit" class="button button-md primary-dark">Invite</button>
-                      </div>
-                    </form>
                   </div>
                 </div>
               </div>
@@ -211,6 +239,7 @@
           <i class="fa-light fa-xmark"></i>
         </button>
       </div>
+      <div id="program-add-loading" class="htmx-indicator text-gray-500 flex items-center justify-center animate-pulse">{% translate "Loading..." %}</div>
       <div id="program-add-form"></div>
     </div>
   </div>
@@ -223,6 +252,7 @@
           <i class="fa-light fa-xmark"></i>
         </button>
       </div>
+      <div id="program-edit-loading" class="htmx-indicator text-gray-500 flex items-center justify-center animate-pulse">{% translate "Loading..." %}</div>
       <div id="program-edit-form"></div>
     </div>
   </div>
