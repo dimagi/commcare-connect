@@ -2,14 +2,14 @@ import datetime
 import json
 
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Submit, Div
+from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from crispy_forms.templatetags.crispy_forms_field import css_class
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
+from django.urls import reverse
 from django.urls.base import reverse
 from django.utils.timezone import now
-from django.urls import reverse
 
 from commcare_connect import connect_id_client
 from commcare_connect.opportunity.forms import FILTER_COUNTRIES, DateRanges
@@ -827,10 +827,7 @@ class ProgramForm(forms.ModelForm):
         form_url = reverse("program:tw_init", kwargs={"org_slug": self.organization.slug})
         if self.instance.id:
             form_url = reverse("program:tw_edit", kwargs={"org_slug": self.organization.slug, "pk": self.instance.id})
-        self.helper.attrs = {
-            "hx-post": form_url,
-            "hx-swap-oob": "true",
-        }
+        self.helper.form_action = form_url
         self.helper.layout = Layout(
             Row(Field("name", css_class=BASE_INPUT_CLASS,wrapper_class="w-full")),
             Row(Field("description", css_class=TEXTAREA_CLASS,wrapper_class="w-full")),

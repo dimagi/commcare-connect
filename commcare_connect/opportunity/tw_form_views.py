@@ -1,3 +1,4 @@
+from crispy_forms.utils import render_crispy_form
 from django.contrib import messages
 from django.db.models import Q
 from django.forms import modelformset_factory
@@ -7,23 +8,24 @@ from django.template import Template
 from django.test.utils import override_settings
 from django.urls import reverse
 from django.views.generic import CreateView
-from crispy_forms.utils import render_crispy_form
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
+    Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
-    PaymentUnit, Opportunity,
+    PaymentUnit,
 )
 from commcare_connect.opportunity.tasks import (
+    add_connect_users,
     create_learn_modules_and_deliver_units,
     send_push_notification_task,
-    send_sms_task, add_connect_users,
+    send_sms_task,
 )
 from commcare_connect.opportunity.tw_forms import (
     DeliverUnitFlagsForm,
@@ -31,12 +33,13 @@ from commcare_connect.opportunity.tw_forms import (
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
+    OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentInvoiceForm,
     PaymentUnitForm,
     ProgramForm,
     SendMessageMobileUsersForm,
-    VisitExportForm, OpportunityUserInviteForm,
+    VisitExportForm,
 )
 from commcare_connect.opportunity.tw_views import TWAddBudgetExistingUsersForm
 from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, get_opportunity_or_404
@@ -262,7 +265,6 @@ def invoice_create(request, org_slug=None, pk=None):
     return HttpResponse(render_crispy_form(form))
 
 
-
 @override_settings(CRISPY_TEMPLATE_PACK="tailwind")
 @org_member_required
 def add_budget_existing_users(request, org_slug=None, pk=None):
@@ -320,20 +322,14 @@ class ProgramCreateOrUpdate(program_views.ProgramCreateOrUpdate):
 
     def dispatch(self, request, *args, **kwargs):
         response = super().dispatch(request, *args, **kwargs)
-        response["HX-Refresh"] = "true"
         return response
-
-    def get_success_url(self):
-        return self.request.path
 
     def get_template_names(self):
         template = "program/program_form.html"
         return template
 
     def get_success_url(self):
-        # Todo; update with tailwind URL
-        return reverse("program:list", kwargs={"org_slug": self.request.org.slug})
-
+        return reverse("program:home", kwargs={"org_slug": self.request.org.slug})
 
 
 def invite_organization(request, org_slug=None, pk=None):
@@ -343,7 +339,6 @@ def invite_organization(request, org_slug=None, pk=None):
 def export_user_visits(request, org_slug, pk):
     form = VisitExportForm(data=request.POST or None)
     return render(request, "tailwind/pages/form.html", context=dict(form=form))
-
 
 
 @org_member_required
