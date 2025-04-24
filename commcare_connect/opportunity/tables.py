@@ -553,7 +553,7 @@ def date_with_time_popup(table, date):
 
 
 class UserVisitVerificationTable(BaseTailwindTable):
-    time = columns.TimeColumn(verbose_name="Time", accessor="visit_date", format="H:i")
+    date_time = columns.DateTimeColumn(verbose_name="Date", accessor="visit_date", format="d M, Y H:i")
     entity_name = columns.Column(verbose_name="Entity Name")
     flags = columns.TemplateColumn(
         verbose_name="Flags",
@@ -573,13 +573,13 @@ class UserVisitVerificationTable(BaseTailwindTable):
             </div>
             """,
     )
-    last_activity = columns.DateColumn(verbose_name="Last Activity")
-    icons = columns.Column(verbose_name="", empty_values=("",))
+    last_activity = columns.DateColumn(verbose_name="Last Activity", accessor="status_modified_date", format="d M, Y")
+    icons = columns.Column(verbose_name="", empty_values=("",), orderable=False)
 
     class Meta:
         model = UserVisit
         sequence = (
-            "time",
+            "date_time",
             "entity_name",
             "flags",
             "last_activity",
@@ -604,11 +604,6 @@ class UserVisitVerificationTable(BaseTailwindTable):
             "@click": lambda record: f"selectedRow = {record.id}",
             ":class": lambda record: f"selectedRow == {record.id} && 'active'",
         }
-
-    def render_last_activity(self, record):
-        if record.status_modified_date:
-            return record.status_modified_date.strftime("%d %b, %Y")
-        return record.visit_date.strftime("%d %b, %Y")
 
     def render_icons(self, record):
         status_to_icon = {
