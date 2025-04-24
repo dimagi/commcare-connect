@@ -1677,9 +1677,9 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     visit_export_form = VisitExportForm()
     export_form = PaymentExportFormTw()
 
-    path = [{"title": "Opportunity List", "url": reverse("opportunity:opportunities_list_new", args=(org_slug,))},
+    path = [{"title": "Opportunities", "url": reverse("opportunity:opportunities_list_new", args=(org_slug,))},
             {"title": opp.name, "url": reverse("opportunity:tw_opportunity", args=(org_slug, opp_id))},
-            {"title": "Worker List", "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))},
+            {"title": "Workers", "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))},
             ]
 
     raw_qs = request.GET.urlencode()
