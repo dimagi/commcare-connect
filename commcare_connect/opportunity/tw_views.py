@@ -3003,8 +3003,8 @@ def export_status(request, org_slug, task_id):
 @require_POST
 def tw_invoice_approve(request, org_slug, pk, invoice_id):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or not request.org_membership.is_program_manager:
-        return redirect("opportunity:detail", org_slug, pk)
+    if not opportunity.managed or not (request.org_membership != None and request.org_membership.is_program_manager): # noqa: E711
+        return redirect("opportunity:tw_opportunity", org_slug, pk)
     invoice = get_object_or_404(PaymentInvoice, pk=invoice_id, payment__isnull=True)
     rate = get_exchange_rate(opportunity.currency)
     amount_in_usd = invoice.amount / rate
