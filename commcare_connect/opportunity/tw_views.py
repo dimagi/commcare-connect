@@ -5,6 +5,7 @@ from celery.result import AsyncResult
 from django import forms
 from django.contrib import messages
 from django.db.models import Count, Min, Max
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import redirect, render, get_object_or_404
 from django.urls import reverse
@@ -17,7 +18,7 @@ from django.test.utils import override_settings
 
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, PaymentExportForm, DateRanges
 from .helpers import get_worker_table_data, get_worker_learn_table_data, get_annotated_opportunity_access_deliver_status
-from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule
+from .models import OpportunityAccess, PaymentInvoice, Payment, CompletedModule, UserVisit
 from .helpers import get_opportunity_list_data, get_opportunity_dashboard_data
 from .models import LearnModule, DeliverUnit, PaymentUnit
 from .tasks import generate_payment_export, generate_visit_export
@@ -1677,6 +1678,11 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     visit_export_form = VisitExportForm()
     export_form = PaymentExportFormTw()
 
+    path = [{"title": "Opportunity List", "url": reverse("opportunity:opportunities_list_new", args=(org_slug,))},
+            {"title": opp.name, "url": reverse("opportunity:tw_opportunity", args=(org_slug, opp_id))},
+            {"title": "Worker List", "url": reverse("opportunity:tw_worker_list", args=(org_slug, opp_id))},
+            ]
+
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""
 
@@ -1715,7 +1721,8 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
             "tabs": tabs,
             "visit_export_form": visit_export_form,
             "export_form": export_form,
-            "export_task_id": request.GET.get("export_task_id")
+            "export_task_id": request.GET.get("export_task_id"),
+            "path": path
         },
     )
 
@@ -1736,7 +1743,9 @@ def tw_update_visit_status_import(request, org_slug=None, opp_id=None):
         messages.success(request, mark_safe(message))
     if opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
-    return redirect("opportunity:tw_worker_list", org_slug, opp_id)
+
+    url = reverse("opportunity:tw_worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery"
+    return redirect(url)
 
 
 @org_member_required
@@ -2730,13 +2739,6 @@ def opportunity_worker_payment(request, org_slug=None, opp_id=None):
 class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView):
     template_name = "tailwind/pages/opportunities_list.html"
     paginate_by = 15
-    base_columns = ['program', 'start_date', 'end_date', 'status', 'opportunity']
-    pm_columns = ['active_workers', 'total_deliveries', 'verified_deliveries', 'worker_earnings']
-    nm_columns = ['pending_invites', 'inactive_workers', 'pending_approvals', 'payments_due']
-
-    def get_allowed_columns(self):
-        extra_columns = self.pm_columns if self.request.org.program_manager else self.nm_columns
-        return self.base_columns + extra_columns
 
     def get_table_class(self):
         if self.request.org.program_manager:
@@ -2745,26 +2747,11 @@ class OpportunityListView(OrganizationUserMixin, SingleTableMixin, TemplateView)
 
     def get_table_data(self):
         org = self.request.org
-        return get_opportunity_list_data(org, self.request.org.program_manager)
+        query_set = get_opportunity_list_data(org, self.request.org.program_manager)
+        query_set = query_set.order_by("status_value", "start_date", "end_date")
+        return query_set
 
-    def get_validated_order_by(self):
-        requested_order = self.request.GET.get('sort', 'start_date')
 
-        is_descending = requested_order.startswith('-')
-        column = requested_order[1:] if is_descending else requested_order
-        return requested_order if column in self.get_allowed_columns() else 'start_date'
-
-    def get_table(self, **kwargs):
-        table = super().get_table(**kwargs)
-
-        validated_order = self.get_validated_order_by()
-
-        if validated_order:
-            table.order_by = validated_order
-        else:
-            table.order_by = ("-status", "start_date", "end_date")
-
-        return table
 
 
 def is_program_manager_of_opportunity(request, opportunity):
@@ -2774,6 +2761,40 @@ def is_program_manager_of_opportunity(request, opportunity):
 @org_member_required
 def opportunity_dashboard(request, org_slug=None, opp_id=None):
     opp = get_opportunity_dashboard_data(opp_id=opp_id).first()
+    today = now().date()
+
+    effective_end = today if not opp.end_date or opp.end_date > today else opp.end_date
+
+    total_days = (effective_end - opp.start_date).days
+    average_visits_per_day = round(opp.total_visits / total_days if total_days else 1, 1)
+    maximum_visit_in_a_day = (
+        UserVisit.objects
+        .filter(opportunity_id=opp_id)
+        .annotate(visit_day=TruncDate('visit_date'))
+        .values('visit_day')
+        .annotate(day_count=Count('id'))
+        .order_by('-day_count')
+        .values_list('day_count', flat=True)
+        .first() or 0
+    )
+    total_modules_count = LearnModule.objects.filter(
+        app__opportunity__id=opp_id
+    ).count()
+
+    completed_users = (
+        CompletedModule.objects
+        .filter(opportunity_id=opp_id)
+        .values('user')
+        .annotate(completed_count=Count('module', distinct=True))
+        .filter(completed_count=total_modules_count)
+        .values_list('user', flat=True)
+    )
+    completed_learning = OpportunityAccess.objects.filter(
+        opportunity_id=opp_id,
+        user__in=completed_users
+    ).values('user').distinct().count()
+
+
     is_program_manager = is_program_manager_of_opportunity(request, opp)
 
     learn_module_count = LearnModule.objects.filter(app=opp.learn_app).count()
@@ -2912,9 +2933,9 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
 
     worker_progress = [
         {"title": "Daily Active Workers",
-         "progress": [{"title": "Maximum", "total": opp.maximum_visit_in_a_day, "value": opp.maximum_visit_in_a_day,
+         "progress": [{"title": "Maximum", "total": maximum_visit_in_a_day, "value": maximum_visit_in_a_day,
                        "badge_type": False, "percent": 100},
-                      {"title": "Average", "total": opp.average_visits_per_day, "value": opp.average_visits_per_day,
+                      {"title": "Average", "total": average_visits_per_day, "value": average_visits_per_day,
                        "badge_type": False, "percent": 100}]},
         {"title": "Service Deliveries",
          "progress": [
@@ -2930,7 +2951,7 @@ def opportunity_dashboard(request, org_slug=None, opp_id=None):
         {"index": 1, "stage": "invited", "count": opp.workers_invited, "icon": "envelope"},
         {"index": 2, "stage": "Accepted", "count": opp.workers_invited - opp.pending_invites, "icon": "circle-check"},
         {"index": 3, "stage": "Started Learning", "count": opp.started_learning_count, "icon": "book-open-cover"},
-        {"index": 4, "stage": "Completed Learning", "count": opp.completed_learning, "icon": "book-blank"},
+        {"index": 4, "stage": "Completed Learning", "count": completed_learning, "icon": "book-blank"},
         {"index": 5, "stage": "Completed Assessment", "count": opp.completed_assessments, "icon": "award-simple"},
         {"index": 6, "stage": "Claimed Job", "count": opp.claimed_job, "icon": "user-check"},
         {"index": 6, "stage": "Started Delivery", "count": opp.started_deleveries, "icon": "house-chimney-user"},
