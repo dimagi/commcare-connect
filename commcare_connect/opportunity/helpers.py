@@ -184,7 +184,6 @@ def get_worker_table_data(opportunity):
 
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
         last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date")),
-        started_learn=Min("completedmodule__date"),
         completed_modules_count=Count(
             "completedmodule__module",
             distinct=True,

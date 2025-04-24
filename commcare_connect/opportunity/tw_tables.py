@@ -1760,7 +1760,7 @@ class WorkerStatusTable(BaseTailwindTable):
     suspended = SuspendedIndicatorColumn()
     invited_date = DMYDate()
     last_active = DMYDate()
-    started_learn = DMYDate()
+    started_learn = DMYDate(verbose_name="Started Learn",accessor="date_learn_started")
     completed_learn = DMYDate()
     days_to_complete_learn = DurationColumn()
     first_delivery=tables.Column()
