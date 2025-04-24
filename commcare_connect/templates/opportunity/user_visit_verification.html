@@ -31,6 +31,10 @@
           <i class="fa-solid fa-chevron-right"></i>
       </li>
       <li>
+          <a href='{% url "opportunity:tw_worker_list" request.org.slug opportunity.pk %}'>Worker List</a>
+          <i class="fa-solid fa-chevron-right"></i>
+      </li>
+      <li>
           <a href='{% url "opportunity:user_visit_verification" request.org.slug opportunity.pk opportunity_access.pk %}'>Worker</a>
       </li>
   </ul>
