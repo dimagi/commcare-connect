@@ -591,6 +591,7 @@ class UserVisitVerificationTable(BaseTailwindTable):
     def __init__(self, *args, **kwargs):
         organization = kwargs.pop("organization", None)
         super().__init__(*args, **kwargs)
+        self.attrs = {"x-data": "{selectedRow: null}"}
         self.row_attrs = {
             "hx-get": lambda record: reverse(
                 "opportunity:user_visit_details",
@@ -600,11 +601,14 @@ class UserVisitVerificationTable(BaseTailwindTable):
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
+            "@click": lambda record: f"selectedRow = {record.id}",
+            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
         }
 
     def render_last_activity(self, record):
-        if record.review_created_on:
-            return record.review_created_on.strftime("%d %b, %Y")
+        if record.status_modified_date:
+            return record.status_modified_date.strftime("%d %b, %Y")
+        return record.visit_date.strftime("%d %b, %Y")
 
     def render_icons(self, record):
         status_to_icon = {
@@ -629,12 +633,16 @@ class UserVisitVerificationTable(BaseTailwindTable):
             )
 
         status = []
-        if record.review_status:
+        if record.opportunity.managed and record.review_status:
             if record.review_status == VisitReviewStatus.pending.value:
                 status.append("pending_review")
             else:
                 status.append(record.review_status)
-        if record.status:
+        if record.status in (
+            VisitValidationStatus.approved,
+            VisitValidationStatus.rejected,
+            VisitValidationStatus.pending,
+        ):
             if (
                 record.review_status == VisitReviewStatus.pending.value
                 and record.status == VisitValidationStatus.approved

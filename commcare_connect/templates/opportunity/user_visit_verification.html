@@ -203,8 +203,8 @@
               hx-target="#table-container"
               hx-trigger="change, load, reload_table from:body"
               x-data="{
-                activeTab: '{{ request.GET.filter_status|default:'pending' }}',
-                filter_date: new Date('{{ filter_date }}'),
+                activeTab: '{{ request.GET.filter_status }}',
+                filter_date: new Date(),
               }"
               @load-total-pages.window="totalPages = $event.detail.value">
           <div
@@ -230,7 +230,8 @@
                 <input type="text" id="tableDatePicker" name="filter_date"
                        class="text-center w-32 focus:outline-none text-sm"
                        placeholder="Select Date"
-                       value="{{ filter_date }}">
+                       value="{{ request.GET.filter_date|default:'' }}">
+                <i class="fa-solid fa-xmark text-brand-deep-purple cursor-pointer me-2" x-cloak x-show="selectedDate != ''" @click="clear()"></i>
                 <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
               </div>
             </div>
@@ -247,6 +248,7 @@
             </div>
           </div>
           <input type="hidden" name="page" value="{{ request.GET.page|default:1 }}" />
+          <input type="hidden" name="sort" value="{{ request.GET.sort|default:'' }}" />
         </form>
 
       </div>
@@ -279,7 +281,7 @@
   <script>
     document.addEventListener('alpine:init', () => {
       Alpine.data('datePicker', (id) => ({
-        selectedDate: new Date("{{ filter_date }}"),
+        selectedDate: {% if request.GET.filter_date %} new Date("{{ request.GET.filter_date }}") {% else %} "" {% endif %},
         flatpickrInstance: flatpickr(document.getElementById(id), {
           defaultDate: this.selectedDate,
           altInput: true,
@@ -288,16 +290,16 @@
           enableTime: false,
         }),
         init() {
-          this.$nextTick(() => {
-            this.flatpickrInstance.onChange = (selectedDates) => {
-              if (selectedDates?.[0]) {
-                this.selectedDate = selectedDates[0];
-                this.$dispatch('date-changed', {
-                  date: selectedDates[0],
-                  id: id
-                });
-              }
+          this.flatpickrInstance.config.onChange.push((selectedDates) => {
+            if (selectedDates?.[0]) {
+              this.selectedDate = selectedDates[0];
+              this.$dispatch('date-changed', {
+                date: selectedDates[0],
+                id: id
+              });
             }
+          })
+          this.$nextTick(() => {
             this.flatpickrInstance.setDate(this.selectedDate);
           });
         },
@@ -315,6 +317,10 @@
             date: newDate,
             id: id
           });
+        },
+        clear() {
+          this.selectedDate = "";
+          this.flatpickrInstance.clear();
         }
       }));
     });
