@@ -1525,14 +1525,6 @@ def user_visit_verification(request, org_slug, opp_id, pk):
     flagged_info = flagged_info.values()
     last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
 
-    filter_date = now().strftime("%Y-%m-%d")
-    if request.GET.get("filter_date"):
-        filter_date = request.GET.get("filter_date")
-    else:
-        first_visit = visits.order_by("visit_date").values("visit_date").first()
-        if first_visit:
-            filter_date = first_visit["visit_date"].strftime("%Y-%m-%d")
-
     tabs = [
         {
             "name": "pending",
@@ -1601,7 +1593,6 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             "flagged_info": flagged_info,
             "last_payment_details": last_payment_details,
             "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
-            "filter_date": filter_date,
             "opportunity": opportunity_access.opportunity,
             "is_program_manager": is_program_manager,
         },
@@ -1657,12 +1648,9 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             filter_kwargs.update({"status": VisitValidationStatus.pending})
             self.exclude_columns = ["last_activity"]
         if self.filter_status == "approved":
-            filter_kwargs.update(
-                {
-                    "review_status": VisitReviewStatus.agree,
-                    "status": VisitValidationStatus.approved,
-                }
-            )
+            filter_kwargs.update({"status": VisitValidationStatus.approved})
+            if self.opportunity.managed:
+                filter_kwargs.update({"review_status": VisitReviewStatus.agree})
         if self.filter_status == "rejected":
             filter_kwargs.update({"status": VisitValidationStatus.rejected})
 
