@@ -649,6 +649,7 @@ class UserVisitVerificationTable(BaseTailwindTable):
     def __init__(self, *args, **kwargs):
         organization = kwargs.pop("organization", None)
         super().__init__(*args, **kwargs)
+        self.use_view_url = False
         self.attrs = {"x-data": "{selectedRow: null}"}
         self.row_attrs = {
             "hx-get": lambda record: reverse(
