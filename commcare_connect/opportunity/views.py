@@ -1739,6 +1739,12 @@ def user_visit_details(request, org_slug, opp_id, pk):
     lat = None
     lon = None
     precision = None
+    visit_data = {
+        "entity_name": user_visit.entity_name,
+        "user__name": user_visit.user.name,
+        "status": user_visit.get_status_display(),
+        "visit_date": user_visit.visit_date,
+    }
     if user_visit.location:
         locations = UserVisit.objects.filter(opportunity=user_visit.opportunity).exclude(pk=pk).select_related("user")
         lat, lon, _, precision = user_visit.location.split(" ")
@@ -1764,15 +1770,13 @@ def user_visit_details(request, org_slug, opp_id, pk):
                     other_forms.append((visit_data, dist.m, other_lat, other_lon, other_precision))
         user_forms.sort(key=lambda x: x[1])
         other_forms.sort(key=lambda x: x[1])
-        visit_data = {
-            "entity_name": loc.entity_name,
-            "user__name": loc.user.name,
-            "status": loc.get_status_display(),
-            "visit_date": loc.visit_date,
-            "lat": lat,
-            "lon": lon,
-            "precision": precision,
-        }
+        visit_data.update(
+            {
+                "lat": lat,
+                "lon": lon,
+                "precision": precision,
+            }
+        )
     return render(
         request,
         "opportunity/user_visit_details.html",
