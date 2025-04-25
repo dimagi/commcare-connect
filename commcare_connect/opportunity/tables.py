@@ -649,7 +649,6 @@ class UserVisitVerificationTable(BaseTailwindTable):
     def __init__(self, *args, **kwargs):
         organization = kwargs.pop("organization", None)
         super().__init__(*args, **kwargs)
-        self.use_view_url = False
         self.attrs = {"x-data": "{selectedRow: null}"}
         self.row_attrs = {
             "hx-get": lambda record: reverse(
@@ -660,6 +659,7 @@ class UserVisitVerificationTable(BaseTailwindTable):
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
+            "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
             ":class": lambda record: f"selectedRow == {record.id} && 'active'",
         }
