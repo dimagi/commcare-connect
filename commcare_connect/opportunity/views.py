@@ -1680,15 +1680,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             filter_kwargs.update({"visit_date__date": self.filter_date})
 
         if self.filter_status == "pending":
-            filter_kwargs.update(
-                {
-                    "status__in": [
-                        VisitValidationStatus.pending,
-                        VisitValidationStatus.over_limit,
-                        VisitValidationStatus.duplicate,
-                    ]
-                }
-            )
+            filter_kwargs.update({"status": VisitValidationStatus.pending})
             self.exclude_columns = ["last_activity"]
         if self.filter_status == "approved":
             filter_kwargs.update({"status": VisitValidationStatus.approved})
