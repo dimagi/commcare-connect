@@ -601,6 +601,7 @@ class UserVisitVerificationTable(BaseTailwindTable):
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
+            "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
             ":class": lambda record: f"selectedRow == {record.id} && 'active'",
         }
