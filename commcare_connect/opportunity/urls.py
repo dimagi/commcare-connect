@@ -275,5 +275,8 @@ urlpatterns = [
     path("<int:pk>/tw/invite_user/", view=tw_form_views.opportunity_user_invite, name="tw_invite_user"),
     path("tw_export_status/<slug:task_id>", view=tw_views.export_status, name="tw_export_status"),
     path("<int:pk>/tw/invoice/<int:invoice_id>/approve/", tw_views.tw_invoice_approve, name="tw_invoice_approve"),
+    path("<int:pk>/opportunity_deliveries_stats", tw_views.delivery_stats, name="delivery_stats"),
+    path("<int:pk>/opportunity_worker_progress", tw_views.worker_progress_panels, name="worker_progress_stats"),
+    path("<int:pk>/opportunity_funnel_progress", tw_views.opportunity_funnel_progress, name="funnel_progress_stats")
 
 ]
