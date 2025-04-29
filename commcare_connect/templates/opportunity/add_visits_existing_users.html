@@ -29,11 +29,13 @@
                class="form-check-input" checked>
         <label for="existingUsers" class="form-check-label">{% translate "Add Budget For Existing Users" %}</label>
       </div>
-      <div class="form-check">
-        <input x-bind:disabled="disableAddBudgeNewUsers"
-         type="radio" id="newUsers" name="option" value="new" x-model="selectedOption" class="form-check-input">
-        <label for="newUsers" class="form-check-label">{% translate "Add Budget For New Users" %}</label>
-      </div>
+      {% if not disable_add_budget_for_new_users %}
+        <div class="form-check">
+          <input
+           type="radio" id="newUsers" name="option" value="new" x-model="selectedOption" class="form-check-input">
+          <label for="newUsers" class="form-check-label">{% translate "Add Budget For New Users" %}</label>
+        </div>
+      {% endif %}
   </div>
   <form x-show="selectedOption === 'existing'" method="post"
           x-data="{

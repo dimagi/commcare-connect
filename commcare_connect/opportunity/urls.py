@@ -47,6 +47,7 @@ from commcare_connect.opportunity.views import (
     send_message_mobile_users,
     suspend_user,
     suspended_users_list,
+    sync_deliver_units,
     update_completed_work_status_import,
     update_visit_status_import,
     user_profile,
@@ -127,4 +128,5 @@ urlpatterns = [
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
     path("payment_numbers", view=PaymentNumberReport.as_view(), name="payment_number_report"),
+    path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
 ]

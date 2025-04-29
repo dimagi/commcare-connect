@@ -197,7 +197,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_active(self):
-        return self.active and self.end_date and self.end_date >= now().date()
+        return bool(self.active and self.end_date and self.end_date >= now().date())
 
 
 class OpportunityVerificationFlags(models.Model):
@@ -273,8 +273,11 @@ class OpportunityAccess(models.Model):
 
     @property
     def visit_count(self):
-        return sum(
-            [cw.completed for cw in self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).all()]
+        return (
+            self.completedwork_set.exclude(status=CompletedWorkStatus.over_limit).aggregate(
+                total=Sum("saved_completed_count")
+            )["total"]
+            or 0
         )
 
     @property
@@ -451,6 +454,8 @@ class Payment(models.Model):
     # This is used to indicate Payments made to Network Manager organizations
     organization = models.ForeignKey(Organization, on_delete=models.DO_NOTHING, null=True, blank=True)
     invoice = models.OneToOneField(PaymentInvoice, on_delete=models.DO_NOTHING, null=True, blank=True)
+    payment_method = models.CharField(max_length=50, null=True, blank=True)
+    payment_operator = models.CharField(max_length=50, null=True, blank=True)
 
 
 class CompletedWorkStatus(models.TextChoices):

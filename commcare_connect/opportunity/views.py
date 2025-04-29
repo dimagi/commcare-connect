@@ -1,13 +1,15 @@
 import datetime
 import json
 from functools import reduce
+from http import HTTPStatus
 
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.core.files.storage import storages
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage, storages
 from django.db.models import Q, Sum
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
@@ -18,6 +20,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import now
+from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
@@ -28,6 +31,7 @@ from geopy import distance
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
+from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
@@ -92,6 +96,7 @@ from commcare_connect.opportunity.tables import (
 )
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
+    bulk_update_payments_task,
     create_learn_modules_and_deliver_units,
     generate_catchment_area_export,
     generate_deliver_status_export,
@@ -109,7 +114,6 @@ from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
     bulk_update_completed_work_status,
-    bulk_update_payment_status,
     bulk_update_visit_review_status,
     bulk_update_visit_status,
     get_exchange_rate,
@@ -119,7 +123,9 @@ from commcare_connect.organization.decorators import org_admin_required, org_mem
 from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
 from commcare_connect.program.tables import ProgramInvitationTable
 from commcare_connect.users.models import User
+from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
+from commcare_connect.utils.file import get_file_extension
 
 
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -313,6 +319,10 @@ class OpportunityDetail(OrganizationUserMixin, DetailView):
         context["export_form"] = PaymentExportForm()
         context["review_visit_export_form"] = ReviewVisitExportForm()
         context["user_is_network_manager"] = object.managed and object.organization == self.request.org
+        import_visit_helper_text = _(
+            'The file must contain at least the "Visit ID"{extra} and "Status" column. The import is case-insensitive.'
+        ).format(extra=_(', "Justification"') if object.managed else "")
+        context["import_visit_helper_text"] = import_visit_helper_text
         return context
 
 
@@ -410,11 +420,10 @@ def review_visit_export(request, org_slug, pk):
 @org_member_required
 @require_GET
 def export_status(request, org_slug, task_id):
-    task_meta = AsyncResult(task_id)._get_task_meta()
+    task = AsyncResult(task_id)
+    task_meta = task._get_task_meta()
     status = task_meta.get("status")
-    progress = {
-        "complete": status == "SUCCESS",
-    }
+    progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
     if status == "FAILURE":
         progress["error"] = task_meta.get("result")
     return render(
@@ -580,14 +589,17 @@ def export_users_for_payment(request, org_slug, pk):
 def payment_import(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("payments")
-    try:
-        status = bulk_update_payment_status(opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"Payment status updated successfully for {len(status)} users."
-        messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, pk)
+
+    file_format = get_file_extension(file)
+    if file_format not in ("csv", "xlsx"):
+        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+
+    file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
+    saved_path = default_storage.save(file_path, ContentFile(file.read()))
+    result = bulk_update_payments_task.delay(opportunity.pk, saved_path, file_format)
+
+    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
@@ -608,6 +620,8 @@ def add_payment_unit(request, org_slug=None, pk=None):
         deliver_units=deliver_units,
         data=request.POST or None,
         payment_units=opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
+        org_slug=org_slug,
+        opportunity_id=opportunity.pk,
     )
     if form.is_valid():
         form.instance.opportunity = opportunity
@@ -663,6 +677,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         instance=payment_unit,
         data=request.POST or None,
         payment_units=opportunity_payment_units,
+        org_slug=org_slug,
+        opportunity_id=opportunity.pk,
     )
     if form.is_valid():
         form.save()
@@ -947,6 +963,7 @@ def visit_verification(request, org_slug=None, pk=None):
 
 
 @org_member_required
+@require_POST
 def approve_visit(request, org_slug=None, pk=None):
     user_visit = UserVisit.objects.get(pk=pk)
     opp_id = user_visit.opportunity_id
@@ -954,10 +971,19 @@ def approve_visit(request, org_slug=None, pk=None):
         user_visit.status = VisitValidationStatus.approved
         if user_visit.opportunity.managed:
             user_visit.review_created_on = now()
+
+            if user_visit.flagged:
+                justification = request.POST.get("justification")
+                if not justification:
+                    messages.error(request, "Justification is mandatory for flagged visits.")
+                user_visit.justification = justification
+
         user_visit.save()
         update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user])
+
     if user_visit.opportunity.managed:
         return redirect("opportunity:user_visit_review", org_slug, opp_id)
+
     return redirect(
         "opportunity:user_visits_list", org_slug=org_slug, opp_id=opp_id, pk=user_visit.opportunity_access_id
     )
@@ -1169,7 +1195,7 @@ def import_catchment_area(request, org_slug=None, pk=None):
 @org_member_required
 def opportunity_user_invite(request, org_slug=None, pk=None):
     opportunity = get_object_or_404(Opportunity, organization=request.org, id=pk)
-    form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug)
+    form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug, opportunity=opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
         filter_country = form.cleaned_data["filter_country"]
@@ -1346,3 +1372,15 @@ def resend_user_invite(request, org_slug, opp_id, pk):
         invite_user.delay(user.id, access.pk)
 
     return HttpResponse("The invitation has been successfully resent to the user.")
+
+
+def sync_deliver_units(request, org_slug, opp_id):
+    status = HTTPStatus.OK
+    message = "Delivery unit sync completed."
+    try:
+        create_learn_modules_and_deliver_units(opp_id)
+    except AppNoBuildException:
+        status = HTTPStatus.BAD_REQUEST
+        message = "Failed to retrieve updates. No available build at the moment."
+
+    return HttpResponse(content=message, status=status)

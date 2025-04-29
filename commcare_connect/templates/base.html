@@ -56,11 +56,13 @@
         <ul class="navbar-nav">
           {% if request.user.is_authenticated %}
             {% if request.org %}
-              {% if request.user.is_superuser or request.org_membership.is_admin and request.org.program_manager %}
-              <li class="nav-item">
-                <a class="nav-link {% active_link "list || init || edit || opportunity_list || opportunity_init" namespace='program' %}"
-                   href="{% url 'program:list' request.org.slug %}">{% translate "Programs" %}</a>
-              </li>
+              {% if request.org.program_manager %}
+                {% if request.org_membership.is_admin or request.user.is_superuser %}
+                  <li class="nav-item">
+                    <a class="nav-link {% active_link "list || init || edit || opportunity_list || opportunity_init" namespace='program' %}"
+                       href="{% url 'program:list' request.org.slug %}">{% translate "Programs" %}</a>
+                  </li>
+                {% endif %}
               {% endif %}
               <li class="nav-item">
                 <a class="nav-link {% active_link "list || create || edit || detail" namespace='opportunity' %}"

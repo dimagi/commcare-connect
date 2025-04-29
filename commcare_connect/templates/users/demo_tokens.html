@@ -6,10 +6,24 @@
 
 {% block content %}
 <div class="container">
-  <ul>
-  {% for user in demo_users %}
-  <li>{{ user.phone_number }} - {{ user.token }}</li>
-  {% endfor %}
-  </ul>
+  <h2 class="mb-4">Demo Users</h2>
+  <div class="card shadow-sm p-3">
+    <table class="table table-striped mb-0">
+      <thead>
+        <tr>
+          <th>Phone Number</th>
+          <th>Token</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in demo_users %}
+        <tr>
+          <td>{{ user.phone_number }}</td>
+          <td>{{ user.token }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock content %}

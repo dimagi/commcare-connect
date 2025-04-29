@@ -135,6 +135,14 @@ class TestManagedOpportunityInitForm:
         assert form.errors["learn_app"] == ["Learn app and Deliver app cannot be same"]
         assert form.errors["deliver_app"] == ["Learn app and Deliver app cannot be same"]
 
+    def test_form_validation_missing_data(self):
+        invalid_data = self.form_data.copy()
+        invalid_data["learn_app"] = None
+        form = ManagedOpportunityInitForm(
+            data=invalid_data, program=self.program, domains=self.domains, org_slug=self.organization.slug
+        )
+        assert not form.is_valid()
+
     def test_form_save(self):
         print(self.invited_org)
         form = ManagedOpportunityInitForm(

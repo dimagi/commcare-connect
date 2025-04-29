@@ -6,6 +6,7 @@ import pytest
 from factory.fuzzy import FuzzyDate, FuzzyText
 
 from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm, OpportunityCreationForm
+from commcare_connect.opportunity.models import PaymentUnit
 from commcare_connect.opportunity.tests.factories import (
     ApplicationFactory,
     CommCareAppFactory,
@@ -133,7 +134,7 @@ class TestOpportunityChangeForm:
 
     @pytest.fixture
     def valid_opportunity(self, organization):
-        return OpportunityFactory(
+        opp = OpportunityFactory(
             organization=organization,
             active=True,
             learn_app=CommCareAppFactory(cc_app_id="test_learn_app"),
@@ -145,6 +146,8 @@ class TestOpportunityChangeForm:
             is_test=False,
             end_date=datetime.date.today() + datetime.timedelta(days=30),
         )
+        PaymentUnitFactory(opportunity=opp)
+        return opp
 
     @pytest.fixture
     def base_form_data(self, valid_opportunity):
@@ -266,12 +269,13 @@ class TestOpportunityChangeForm:
         ],
     )
     def test_app_reuse_validation(self, organization, base_form_data, app_scenario):
-        OpportunityFactory(
+        opp1 = OpportunityFactory(
             organization=organization,
             active=True,
             learn_app=CommCareAppFactory(cc_app_id=app_scenario["active_app_ids"][0]),
             deliver_app=CommCareAppFactory(cc_app_id=app_scenario["active_app_ids"][1]),
         )
+        PaymentUnitFactory(opportunity=opp1)
 
         inactive_opp = OpportunityFactory(
             organization=organization,
@@ -279,6 +283,8 @@ class TestOpportunityChangeForm:
             learn_app=CommCareAppFactory(cc_app_id=app_scenario["new_app_ids"][0]),
             deliver_app=CommCareAppFactory(cc_app_id=app_scenario["new_app_ids"][1]),
         )
+
+        PaymentUnitFactory(opportunity=inactive_opp)
 
         form = OpportunityChangeForm(data=base_form_data, instance=inactive_opp, org_slug=organization.slug)
 
@@ -300,6 +306,18 @@ class TestOpportunityChangeForm:
         data.update(data_updates)
         form = OpportunityChangeForm(data=data, instance=valid_opportunity, org_slug=organization.slug)
         assert form.is_valid() == expected_valid
+
+    def test_for_incomplete_opp(self, base_form_data, valid_opportunity, organization):
+        data = data = base_form_data.copy()
+        PaymentUnit.objects.filter(opportunity=valid_opportunity).delete()  # making opp incomplete explicitly
+        form = OpportunityChangeForm(
+            data=data,
+            instance=valid_opportunity,
+            org_slug=organization.slug,
+        )
+        assert not form.is_valid()
+        assert "users" in form.errors
+        assert "Please finish setting up the opportunity before inviting users." in form.errors["users"]
 
 
 class TestAddBudgetNewUsersForm:

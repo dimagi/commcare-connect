@@ -43,10 +43,11 @@ from commcare_connect.opportunity.visit_import import (
     VisitData,
     _bulk_update_catchments,
     _bulk_update_completed_work_status,
-    _bulk_update_payments,
     _bulk_update_visit_review_status,
     _bulk_update_visit_status,
+    bulk_update_payments,
     get_data_by_visit_id,
+    get_missing_justification_message,
     update_payment_accrued,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory
@@ -304,10 +305,10 @@ def test_bulk_update_payments(opportunity: Opportunity):
             "Username",
             "Phone Number",
             "Name",
-            "Payment Accrued",
-            "Payment Completed",
             "Payment Amount",
             "Payment Date (YYYY-MM-DD)",
+            "Payment Method",
+            "Payment Operator",
         ]
     )
 
@@ -318,14 +319,14 @@ def test_bulk_update_payments(opportunity: Opportunity):
                 mobile_user.username,
                 mobile_user.phone_number,
                 mobile_user.name,
-                100,  # Payment Accrued
-                0,  # Payment Completed
                 50,  # Payment Amount
                 payment_date if index != 4 else None,
+                f"method-{index}",
+                f"operator-{index}",
             )
         )
 
-    payment_import_status = _bulk_update_payments(opportunity, dataset)
+    payment_import_status = bulk_update_payments(opportunity.pk, dataset.headers, list(dataset))
 
     assert payment_import_status.seen_users == {user.username for user in mobile_user_seen}
     assert payment_import_status.missing_users == {user.username for user in mobile_user_missing}
@@ -339,6 +340,8 @@ def test_bulk_update_payments(opportunity: Opportunity):
             assert payment.date_paid.date() == datetime.date.today()
         else:
             assert payment.date_paid.strftime("%Y-%m-%d") == payment_date
+        assert payment.payment_method == f"method-{index}"
+        assert payment.payment_operator == f"operator-{index}"
 
 
 @pytest.fixture
@@ -454,6 +457,7 @@ def prepare_opportunity_payment_test_data(opportunity):
             payment_unit=payment_unit,
             status=CompletedWorkStatus.approved.value,
             payment_date=None,
+            status_modified_date=now(),
         )
         completed_works.append(completed_work)
         for deliver_unit in payment_unit.deliver_units.all():
@@ -464,6 +468,7 @@ def prepare_opportunity_payment_test_data(opportunity):
                 status=VisitValidationStatus.approved.value,
                 opportunity_access=access,
                 completed_work=completed_work,
+                status_modified_date=now(),
             )
     return user, access, payment_units, completed_works
 
@@ -512,6 +517,7 @@ def test_update_work_payment_date_fully(opportunity):
 def test_update_work_payment_date_with_precise_dates(opportunity):
     user = MobileUserFactory()
     access = OpportunityAccessFactory(opportunity=opportunity, user=user, accepted=True)
+    now = timezone.now()
 
     payment_units = [
         PaymentUnitFactory(opportunity=opportunity, amount=5),
@@ -526,6 +532,7 @@ def test_update_work_payment_date_with_precise_dates(opportunity):
         payment_unit=payment_units[0],
         status=CompletedWorkStatus.approved.value,
         payment_date=None,
+        status_modified_date=now - timedelta(4),
     )
 
     completed_work_2 = CompletedWorkFactory(
@@ -533,12 +540,11 @@ def test_update_work_payment_date_with_precise_dates(opportunity):
         payment_unit=payment_units[1],
         status=CompletedWorkStatus.approved.value,
         payment_date=None,
+        status_modified_date=now - timedelta(2),
     )
 
     create_user_visits_for_completed_work(opportunity, user, access, payment_units[0], completed_work_1)
     create_user_visits_for_completed_work(opportunity, user, access, payment_units[1], completed_work_2)
-
-    now = timezone.now()
 
     payment_1 = PaymentFactory(opportunity_access=access, amount=7)
     payment_2 = PaymentFactory(opportunity_access=access, amount=3)
@@ -591,7 +597,12 @@ def test_network_manager_flagged_visit_review_status(mobile_user: User, opportun
     assert opportunity.managed
     access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
     visits = UserVisitFactory.create_batch(
-        5, opportunity=opportunity, status=VisitValidationStatus.pending, user=mobile_user, opportunity_access=access
+        5,
+        opportunity=opportunity,
+        status=VisitValidationStatus.pending,
+        user=mobile_user,
+        opportunity_access=access,
+        flagged=True,
     )
     dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
     dataset.extend([[visit.xform_id, visit_status.value, "", "justification"] for visit in visits])
@@ -608,6 +619,25 @@ def test_network_manager_flagged_visit_review_status(mobile_user: User, opportun
             assert before_update <= visit.review_created_on <= after_update
             assert visit.review_status == VisitReviewStatus.pending
             assert visit.justification == "justification"
+
+
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+def test_nm_flagged_visit_review_status_without_justification(mobile_user: User, opportunity: Opportunity):
+    assert opportunity.managed
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    visits = UserVisitFactory.create_batch(
+        5,
+        opportunity=opportunity,
+        status=VisitValidationStatus.pending,
+        user=mobile_user,
+        opportunity_access=access,
+        flagged=True,
+    )
+    dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
+    dataset.extend([[visit.xform_id, VisitValidationStatus.approved, "", ""] for visit in visits])
+    msg = get_missing_justification_message([visit.xform_id for visit in visits])
+    with pytest.raises(ImportException, match=msg):
+        _bulk_update_visit_status(opportunity, dataset)
 
 
 @pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
