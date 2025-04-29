@@ -176,6 +176,9 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                     visit.status = status
                     if opportunity.managed and status == VisitValidationStatus.approved:
                         visit.review_created_on = now()
+                        if visit.flagged and not justification:
+                            missing_justifications.append(visit.xform_id)
+                            continue
                     changed = True
                     if status == VisitValidationStatus.approved:
                         d_counts = deliver_unit_limits.get(visit.deliver_unit_id)
