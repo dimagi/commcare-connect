@@ -1,14 +1,39 @@
 from collections import namedtuple
+from datetime import timedelta
 
-from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When
+from django.db.models import (
+    Case,
+    Count,
+    DecimalField,
+    DurationField,
+    Exists,
+    ExpressionWrapper,
+    F,
+    FloatField,
+    IntegerField,
+    Max,
+    Min,
+    OuterRef,
+    Q,
+    Subquery,
+    Sum,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce, Greatest, Round
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
+    Assessment,
+    CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
+    UserInviteStatus,
+    UserVisit,
     VisitValidationStatus,
 )
 
@@ -151,3 +176,174 @@ def get_payment_report_data(opportunity: Opportunity):
             PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
         )
     return data, total_user_payment_accrued, total_nm_payment_accrued
+
+
+def get_opportunity_list_data(organization, program_manager=False):
+    today = now().date()
+    three_days_ago = now() - timedelta(days=3)
+
+    queryset = Opportunity.objects.filter(organization=organization).annotate(
+        program=F("managedopportunity__program__name"),
+        pending_invites=Count(
+            "userinvite",
+            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            distinct=True,
+        ),
+        pending_approvals=Count(
+            "uservisit",
+            filter=Q(uservisit__status=VisitValidationStatus.pending),
+            distinct=True,
+        ),
+        total_accrued=Coalesce(
+            Sum("opportunityaccess__payment_accrued", distinct=True), Value(0), output_field=DecimalField()
+        ),
+        total_paid=Coalesce(
+            Sum(
+                "opportunityaccess__payment__amount_usd",
+                filter=Q(opportunityaccess__payment__confirmed=True),
+                distinct=True,
+            ),
+            Value(0),
+            output_field=DecimalField(),
+        ),
+        payments_due=ExpressionWrapper(
+            F("total_accrued") - F("total_paid"),
+            output_field=DecimalField(),
+        ),
+        inactive_workers=Count(
+            "opportunityaccess",
+            filter=Q(
+                ~Exists(
+                    UserVisit.objects.filter(
+                        opportunity_access=OuterRef("opportunityaccess"),
+                        visit_date__gte=three_days_ago,
+                    )
+                )
+                & ~Exists(
+                    CompletedModule.objects.filter(
+                        opportunity_access=OuterRef("opportunityaccess"),
+                        date__gte=three_days_ago,
+                    )
+                )
+            ),
+            distinct=True,
+        ),
+        status=Case(
+            When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+            When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+            default=Value(2),  # Inactive
+            output_field=IntegerField(),
+        ),
+    )
+
+    if program_manager:
+        queryset = queryset.annotate(
+            active_workers=Count(
+                "opportunityaccess",
+                filter=Q(
+                    Exists(
+                        UserVisit.objects.filter(
+                            opportunity_access=OuterRef("opportunityaccess"),
+                            visit_date__gte=three_days_ago,
+                        )
+                    )
+                    | Exists(
+                        CompletedModule.objects.filter(
+                            opportunity_access=OuterRef("opportunityaccess"),
+                            date__gte=three_days_ago,
+                        )
+                    )
+                ),
+                distinct=True,
+            ),
+            total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
+            verified_deliveries=Count(
+                "opportunityaccess__completedwork",
+                filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
+                distinct=True,
+            ),
+        )
+
+    return queryset
+
+
+def get_worker_table_data(opportunity):
+    learn_modules_count = opportunity.learn_app.learn_modules.count()
+
+    min_dates_per_module = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
+        .values("module")
+        .annotate(min_date=Min("date"))
+        .values("min_date")
+    )
+
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date")),
+        completed_modules_count=Count(
+            "completedmodule__module",
+            distinct=True,
+        ),
+        completed_learn=Case(
+            When(
+                Q(completed_modules_count=learn_modules_count),
+                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+            ),
+            default=None,
+        ),
+        days_to_complete_learn=ExpressionWrapper(
+            F("completed_learn") - F("date_learn_started"),
+            output_field=DurationField(),
+        ),
+        first_delivery=Min(
+            "uservisit__visit_date",
+        ),
+        days_to_start_delivery=Case(
+            When(
+                date_learn_started__isnull=False,
+                first_delivery__isnull=False,
+                then=ExpressionWrapper(F("first_delivery") - F("date_learn_started"), output_field=DurationField()),
+            ),
+            default=None,
+            output_field=DurationField(),
+        ),
+    )
+
+    return queryset
+
+
+def get_worker_learn_table_data(opportunity):
+    learn_modules_count = opportunity.learn_app.learn_modules.count()
+    min_dates_per_module = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
+        .values("module")
+        .annotate(min_date=Min("date"))
+        .values("min_date")
+    )
+
+    assessments_qs = Assessment.objects.filter(user=OuterRef("user"), opportunity=OuterRef("opportunity"), passed=True)
+
+    duration_subquery = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
+        .values("opportunity_access")
+        .annotate(total_duration=Sum("duration"))
+        .values("total_duration")[:1]
+    )
+
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date")),
+        completed_modules_count=Count("completedmodule__module", distinct=True),
+        completed_learn=Case(
+            When(
+                Q(completed_modules_count=learn_modules_count),
+                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+            ),
+            default=None,
+        ),
+        passed_assessment=Exists(assessments_qs),
+        assesment_count=Count("assessment", distinct=True),
+        learning_hours=Subquery(duration_subquery, output_field=DurationField()),
+        modules_completed_percentage=Round(
+            ExpressionWrapper(F("completed_modules_count") * 100.0 / learn_modules_count, output_field=FloatField()), 1
+        ),
+    )
+    return queryset

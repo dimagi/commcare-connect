@@ -34,6 +34,10 @@ from commcare_connect.users.models import User
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 
+SELECT_CLASS = "base-dropdown"
+CHECKBOX_CLASS = "simple-toggle"
+
+
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         org_slug = kwargs.pop("org_slug", None)
@@ -584,10 +588,17 @@ class VisitExportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format")),
-            Row(Field("date_range")),
-            Row(Field("status")),
-            Row(Field("flatten_form_data", css_class="form-check-input", wrapper_class="form-check form-switch")),
+            Row(
+                Field("format", css_class=SELECT_CLASS),
+                Field("date_range", css_class=SELECT_CLASS),
+                Field("status", css_class=SELECT_CLASS),
+                Field(
+                    "flatten_form_data",
+                    css_class=CHECKBOX_CLASS,
+                    wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
+                css_class="flex flex-col",
+            ),
         )
         self.helper.form_tag = False
 
@@ -629,7 +640,7 @@ class PaymentExportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format")),
+            Row(Field("format", css_class=SELECT_CLASS), css_class="flex flex-col"),
         )
         self.helper.form_tag = False
 

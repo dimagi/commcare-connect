@@ -1,0 +1,306 @@
+{% load duration_minutes %}
+{% load static %}
+
+<div class="flex flex-col gap-6" x-data="{
+    slides: [
+      {% for image in user_visit.images %}
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug blob_id=image.blob_id %}' },
+      {% endfor %}
+    ],
+    currentIndex: 0,
+    modalCurrentIndex: 0,
+    visibleSlides: 3,
+    modalVisibleSlides: 5,
+    popupOpen: false,
+    messages: [{ expanded: false }],
+
+    get visibleImages() {
+        const start = this.currentIndex;
+        return this.slides.slice(start, start + this.visibleSlides);
+    },
+
+    get modalThumbnails() {
+        const totalSlides = this.slides.length;
+        const halfVisible = Math.floor(this.modalVisibleSlides / 2);
+        let start = this.modalCurrentIndex - halfVisible;
+
+        if (start < 0) start = 0;
+        if (start + this.modalVisibleSlides > totalSlides) {
+            start = Math.max(0, totalSlides - this.modalVisibleSlides);
+        }
+
+        return this.slides.slice(start, Math.min(start + this.modalVisibleSlides, totalSlides));
+    },
+
+    // Carousel navigation
+    nextSlide() {
+        if (this.currentIndex + this.visibleSlides < this.slides.length) {
+            this.currentIndex++;
+        }
+    },
+
+    prevSlide() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+        }
+    },
+
+    // Modal navigation
+    nextModal() {
+        if (this.modalCurrentIndex < this.slides.length - 1) {
+            this.modalCurrentIndex++;
+        }
+    },
+
+    prevModal() {
+        if (this.modalCurrentIndex > 0) {
+            this.modalCurrentIndex--;
+        }
+    },
+
+    openPopup(index) {
+        this.modalCurrentIndex = index;
+        this.popupOpen = true;
+    },
+
+    closePopup() {
+        this.popupOpen = false;
+    },
+
+    setModalImage(index) {
+        this.modalCurrentIndex = index;
+    }
+}">
+
+
+  <!-- Message Section -->
+  {% if user_visit.justification %}
+  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+    <div class="flex items-center gap-4">
+      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <div class="flex items-center gap-1">
+        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+        <span class="flex items-center text-xs text-brand-blue-light">
+          <span class="mr-1 text-2xl text-brand-indigo">•</span>
+          {{ user_visit.opportunity.organization.name }}
+        </span>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center gap-4 mt-2">
+        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+           @click="message.expanded = !message.expanded"></i>
+        <p class="text-xs text-brand-deep-purple">
+          {{ user_visit.justification }}
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Information -->
+  <div class="grid grid-cols-3 gap-4">
+    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Information</p>
+    <div>
+      <div class="text-sm text-brand-blue-light">Payment Unit</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.completed_work.payment_unit.name }}</div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">Entity Name</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_name }}</div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">Entity ID</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_id }}</div>
+    </div>
+  </div>
+
+  <hr class="h-px bg-gray-200 border-0">
+
+  <!-- Media Section -->
+  {% if user_visit.images %}
+  <div class="flex justify-between">
+    <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+    <div class="flex gap-2">
+      <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
+        <i class="cursor-pointer fa-light fa-arrow-left"
+           :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+      </button>
+      <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
+        <i class="cursor-pointer fa-light fa-arrow-right"
+           :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-9 gap-4 cursor-pointer values">
+    <template x-for="(slide, index) in visibleImages" :key="index">
+      <img :src="slide.src"
+           :alt="slide.alt"
+           class="object-cover col-span-3 imageopen rounded-2xl aspect-square hover:opacity-90 transition-opacity"
+           @click="openPopup(index + currentIndex)"/>
+    </template>
+  </div>
+
+  <hr class="h-px bg-gray-200 border-0">
+  {% endif %}
+
+  <!-- Verification Flags -->
+  <div class="grid grid-cols-3 gap-4">
+    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
+    {% if user_visit.flagged %}
+      {% for flag in user_visit.flag_reason.flags %}
+        <div>
+          <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
+          <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+        </div>
+      {% endfor %}
+    {% endif %}
+    <div>
+      <div class="text-sm text-brand-blue-light">Form Duration</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">Photos</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
+    </div>
+  </div>
+
+  <hr class="h-px bg-gray-200 border-0">
+
+  <!-- Map -->
+  <div>
+    <p class="mb-3 text-sm font-medium text-brand-deep-purple">Map</p>
+    <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
+  </div>
+
+  <!-- Popup Modal -->
+  <div x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+       x-show="popupOpen"
+       @click.self="closePopup()"
+       x-transition.opacity>
+    <div class="relative max-w-lg p-4 bg-white rounded-lg popup-content">
+      <div class="flex justify-between mb-2">
+        <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+        <button class="button-icon cursor-pointer" @click="closePopup()">
+          <i class="fa-light fa-xmark-large"></i>
+        </button>
+      </div>
+
+      <!-- Main Image -->
+      <div class="relative">
+        <img :src="slides[modalCurrentIndex].src"
+             :alt="slides[modalCurrentIndex].alt"
+             class="object-contain w-full rounded-lg max-h-[60vh]"/>
+        <button
+          class="absolute bottom-2 right-2 button-icon">
+          <a :href="slides[modalCurrentIndex].src"
+             download="downloaded-image.jpg"
+             aria-label="Download Image">
+            <i class="fa-light fa-download text-brand-deep-purple"></i>
+          </a>
+        </button>
+      </div>
+
+      <!-- Thumbnails -->
+      <div class="relative w-full flex items-center justify-center gap-4 mt-4">
+        <button class="absolute -left-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
+                @click="prevModal()"
+                :disabled="modalCurrentIndex === 0"
+                :class="{'opacity-50': modalCurrentIndex === 0}">
+          <i class="fa-light fa-arrow-left"></i>
+        </button>
+
+        <div class="flex justify-center gap-2 px-16 overflow-hidden">
+          <template x-for="(slide, idx) in modalThumbnails" :key="idx">
+            <div class="relative w-16 h-16 flex-shrink-0 cursor-pointer" @click="setModalImage(slides.indexOf(slide))">
+              <img
+                :src="slide.src"
+                :alt="slide.alt"
+                class="object-cover w-full h-full rounded-lg"
+              />
+              <div
+                x-show="slides.indexOf(slide) === modalCurrentIndex"
+                class="absolute inset-0 bg-black/40 rounded-lg pointer-events-none transition-all duration-300">
+              </div>
+            </div>
+          </template>
+        </div>
+
+
+        <button class="absolute -right-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
+                @click="nextModal()"
+                :disabled="modalCurrentIndex >= slides.length - 1"
+                :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">
+          <i class="fa-light fa-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+  x-data="{showRejectModal: false, showApproveModal: false}"
+  id="visit-actions"
+  hx-swap-oob="true">
+  <div class="flex gap-4">
+    <button class="button button-md outline-style" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
+    <button class="button button-md primary-dark" @click="showRejectModal = false; showApproveModal = true;">Approve</button>
+  </div>
+
+  <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showRejectModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Reason for Rejection</h2>
+        <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <form hx-post="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=user_visit.id  %}"
+        hx-swap="none"
+        @submit="showRejectModal = false">
+        {% csrf_token %}
+        <div class="py-4">
+          <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
+            placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
+        </div>
+        <div class="footer flex justify-end gap-4">
+          <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md negative-dark">
+            Reject
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showApproveModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Justification for Approval</h2>
+        <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <form hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+        hx-swap="none"
+        @submit="showApproveModal = false">
+        {% csrf_token %}
+        <div class="py-4">
+          <textarea required class="base-textarea" id="justification" rows="3" name="justification"
+            placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
+        </div>
+        <div class="footer flex justify-end gap-4">
+          <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md positive-dark">Approve</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

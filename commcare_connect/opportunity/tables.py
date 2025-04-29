@@ -1,10 +1,16 @@
+import itertools
+from datetime import timedelta
+
+import django_tables2 as tables
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Layout, Row
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.utils.timezone import localtime
 from django_filters import ChoiceFilter, DateRangeFilter, FilterSet, ModelChoiceFilter
-from django_tables2 import columns, tables, utils
+from django_tables2 import columns, utils
 
 from commcare_connect.opportunity.models import (
     CatchmentArea,
@@ -549,3 +555,682 @@ def date_with_time_popup(table, date):
         date.strftime("%d %b, %Y"),
         date.strftime("%d %b %Y, %I:%M%p"),
     )
+
+
+def header_with_tooltip(label, tooltip_text):
+    return mark_safe(
+        f"""
+        <div class="relative inline-flex justify-center items-center group cursor-default">
+            <span>{label}</span>
+            <i class="fa-regular fa-circle-question text-xs text-slate-400 ml-1 cursor-help"></i>
+            <div class="fixed hidden group-hover:block z-50 pointer-events-none -translate-x-[15%] -translate-y-[70%] transform">
+                <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+                <div class="relative bg-white w-28 rounded p-2 text-slate-500 text-xs whitespace-normal break-words">
+                    {tooltip_text}
+                </div>
+            </div>
+        </div>
+    """
+    )
+
+
+class IndexColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "#")
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault("empty_values", ())
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record, bound_column, bound_row, **kwargs):
+        table = bound_row._table
+        page = getattr(table, "page", None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+        if not hasattr(table, "_row_counter") or getattr(table, "_row_counter_start", None) != start_index:
+            table._row_counter = itertools.count(start=start_index)
+            table._row_counter_start = start_index
+        value = next(table._row_counter)
+        return value
+
+
+class BaseOpportunityList(OrgContextTable):
+    stats_style = "underline underline-offset-2 justify-center"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.use_view_url = False
+
+    index = IndexColumn()
+    opportunity = tables.Column(accessor="name")
+    entity_type = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+                <div class="flex justify-start text-sm font-normal text-brand-deep-purple w-fit"
+                     x-data="{
+                       showTooltip: false,
+                       tooltipStyle: '',
+                       positionTooltip(el) {
+                         const rect = el.getBoundingClientRect();
+                         const top = rect.top - 30;  /* 30px above the icon */
+                         const left = rect.left + rect.width/2;
+                         this.tooltipStyle = `top:${top}px; left:${left}px; transform:translateX(-50%)`;
+                       }
+                     }">
+                    {% if record.is_test %}
+                        <div class="relative">
+                            <i class="fa-light fa-file-dashed-line"
+                               @mouseenter="showTooltip = true; positionTooltip($el)"
+                               @mouseleave="showTooltip = false
+                               "></i>
+                            <span x-show="showTooltip"
+                                  :style="tooltipStyle"
+                                  class="fixed z-50 bg-white shadow-sm text-brand-deep-purple text-xs py-0.5 px-4 rounded-lg whitespace-nowrap">
+                                Test Opportunity
+                            </span>
+                        </div>
+                    {% else %}
+                        <span class="relative">
+                            <i class="invisible fa-light fa-file-dashed-line"></i>
+                        </span>
+                    {% endif %}
+                </div>
+            """,
+    )
+
+    status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
+
+    program = tables.Column()
+    start_date = tables.DateColumn(format="d-M-Y")
+    end_date = tables.DateColumn(format="d-M-Y")
+
+    class Meta:
+        sequence = (
+            "index",
+            "opportunity",
+            "entity_type",
+            "status",
+            "program",
+            "start_date",
+            "end_date",
+        )
+
+    def render_status(self, value):
+        if value == 0:
+            badge_class = "badge badge-sm bg-green-600/20 text-green-600"
+            text = "Active"
+        elif value == 1:
+            badge_class = "badge badge-sm bg-orange-600/20 text-orange-600"
+            text = "Ended"
+        else:
+            badge_class = "badge badge-sm bg-slate-100 text-slate-400"
+            text = "Inactive"
+
+        return format_html(
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'
+            '  <span class="{}">{}</span>'
+            "</div>",
+            badge_class,
+            text,
+        )
+
+    def _render_div(self, value, extra_classes=""):
+        base_classes = "flex text-sm font-normal truncate text-brand-deep-purple " "overflow-clip overflow-ellipsis"
+        all_classes = f"{base_classes} {extra_classes}".strip()
+        return format_html('<div class="{}">{}</div>', all_classes, value)
+
+    def render_opportunity(self, value):
+        return self._render_div(value, extra_classes="justify-start")
+
+    def render_program(self, value):
+        return self._render_div(value if value else "--", extra_classes="justify-start")
+
+    def render_start_date(self, value):
+        return self._render_div(value, extra_classes="justify-center")
+
+    def render_end_date(self, value):
+        return self._render_div(value, extra_classes="justify-center")
+
+
+class OpportunityTable(BaseOpportunityList):
+    pending_invites = tables.Column()
+    inactive_workers = tables.Column()
+    pending_approvals = tables.Column()
+    payments_due = tables.Column()
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+    class Meta(BaseOpportunityList.Meta):
+        sequence = BaseOpportunityList.Meta.sequence + (
+            "pending_invites",
+            "inactive_workers",
+            "pending_approvals",
+            "payments_due",
+            "actions",
+        )
+
+    def render_pending_invites(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_inactive_workers(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_pending_approvals(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_payments_due(self, value):
+        if value is None:
+            value = 0
+        return self._render_div(f"${value}", extra_classes=self.stats_style)
+
+    def render_actions(self, record):
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
+            },
+            {
+                "title": "View Workers",
+                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.id]),
+            },
+        ]
+
+        if record.managed:
+            actions.append(
+                {
+                    "title": "View Invoices",
+                    "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
+                    # "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+                }
+            )
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            },
+        )
+        return mark_safe(html)
+
+
+class ProgramManagerOpportunityTable(BaseOpportunityList):
+    active_workers = tables.Column(
+        verbose_name=header_with_tooltip("Active Workers", tooltip_text="Delivered forms in the last 3 days.")
+    )
+    total_deliveries = tables.Column(
+        verbose_name=header_with_tooltip("Total Deliveries", "Total services delivered so far.")
+    )
+    verified_deliveries = tables.Column(
+        verbose_name=header_with_tooltip("Verified Deliveries", "Approved service deliveries.")
+    )
+    worker_earnings = tables.Column(
+        verbose_name=header_with_tooltip("Worker Earnings", "Approved service deliveries"), accessor="total_accrued"
+    )
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
+
+    class Meta(BaseOpportunityList.Meta):
+        sequence = BaseOpportunityList.Meta.sequence + (
+            "active_workers",
+            "total_deliveries",
+            "verified_deliveries",
+            "worker_earnings",
+            "actions",
+        )
+
+    def render_active_workers(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_total_deliveries(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_verified_deliveries(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_worker_earnings(self, value):
+        return self._render_div(value, extra_classes=self.stats_style)
+
+    def render_opportunity(self, record):
+        html = format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            record.name,
+            record.organization.name,
+        )
+        return html
+
+    def render_actions(self, record):
+        actions = [
+            {
+                "title": "View Opportunity",
+                "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
+            },
+            {
+                "title": "View Workers",
+                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.id]),
+            },
+        ]
+
+        if record.managed:
+            actions.append(
+                {
+                    "title": "View Invoices",
+                    "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
+                    # "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+                }
+            )
+
+        html = render_to_string(
+            "tailwind/components/dropdowns/text_button_dropdown.html",
+            context={
+                "text": "...",
+                "list": actions,
+                "styles": "text-sm",
+            },
+        )
+        return mark_safe(html)
+
+
+class UserVisitVerificationTable(tables.Table):
+    date_time = columns.DateTimeColumn(verbose_name="Date", accessor="visit_date", format="d M, Y H:i")
+    entity_name = columns.Column(verbose_name="Entity Name")
+    flags = columns.TemplateColumn(
+        verbose_name="Flags",
+        orderable=False,
+        template_code="""
+            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
+                {% if value %}
+                    {% for flag in value|slice:":2" %}
+                        <span class="badge badge-sm primary-light mx-1">
+                            {{ flag }}
+                        </span>
+                    {% endfor %}
+                    {% if value|length > 2 %}
+                    {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
+                    {% endif %}
+                {% endif %}
+            </div>
+            """,
+    )
+    last_activity = columns.DateColumn(verbose_name="Last Activity", accessor="status_modified_date", format="d M, Y")
+    icons = columns.Column(verbose_name="", empty_values=("",), orderable=False)
+
+    class Meta:
+        model = UserVisit
+        sequence = (
+            "date_time",
+            "entity_name",
+            "flags",
+            "last_activity",
+            "icons",
+        )
+        fields = []
+        empty_text = "No Visits for this filter."
+
+    def __init__(self, *args, **kwargs):
+        organization = kwargs.pop("organization", None)
+        super().__init__(*args, **kwargs)
+        self.use_view_url = False
+        self.attrs = {"x-data": "{selectedRow: null}"}
+        self.row_attrs = {
+            "hx-get": lambda record: reverse(
+                "opportunity:user_visit_details",
+                args=[organization.slug, record.opportunity_id, record.pk],
+            ),
+            "hx-trigger": "click",
+            "hx-indicator": "#visit-loading-indicator",
+            "hx-target": "#visit-details",
+            "hx-params": "none",
+            "@click": lambda record: f"selectedRow = {record.id}",
+            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
+        }
+
+    def render_icons(self, record):
+        status_to_icon = {
+            # Review Status Pending, Visit Status Approved
+            "approved_pending_review": "fa-solid fa-circle-check text-slate-300/50",
+            VisitValidationStatus.approved: "fa-solid fa-circle-check",
+            VisitValidationStatus.rejected: "fa-light fa-ban",
+            VisitValidationStatus.pending: "fa-light fa-flag-swallowtail",
+            VisitValidationStatus.duplicate: "fa-light fa-clone",
+            VisitValidationStatus.trial: "fa-light fa-marker",
+            VisitValidationStatus.over_limit: "fa-light fa-marker",
+            VisitReviewStatus.disagree: "fa-light fa-thumbs-down",
+            VisitReviewStatus.agree: "fa-light fa-thumbs-up",
+            # Review Status Pending (custom name, original choice clashes with Visit Pending)
+            "pending_review": "fa-light fa-timer",
+        }
+
+        if record.status == VisitValidationStatus.pending.value:
+            icon_class = status_to_icon[VisitValidationStatus.pending]
+            icons_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+            return format_html(
+                '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
+                "justify-end",
+                mark_safe(icons_html),
+            )
+
+        status = []
+        if record.opportunity.managed and record.review_status:
+            if record.review_status == VisitReviewStatus.pending.value:
+                status.append("pending_review")
+            else:
+                status.append(record.review_status)
+        if record.status in (
+            VisitValidationStatus.approved,
+            VisitValidationStatus.rejected,
+            VisitValidationStatus.pending,
+        ):
+            if (
+                record.review_status == VisitReviewStatus.pending.value
+                and record.status == VisitValidationStatus.approved
+            ):
+                status.append("approved_pending_review")
+            else:
+                status.append(record.status)
+
+        icons_html = ""
+        for status in status:
+            icon_class = status_to_icon[status]
+            if icon_class:
+                icons_html += f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+        justify_class = "justify-end" if len(status) == 1 else "justify-between"
+
+        return format_html(
+            '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
+            justify_class,
+            mark_safe(icons_html),
+        )
+
+
+class UserInfoColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("orderable", True)
+        kwargs.setdefault("verbose_name", "Name")
+        super().__init__(*args, **kwargs)
+
+    def render(self, value):
+        return format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            value.name,
+            value.username,
+        )
+
+
+class SuspendedIndicatorColumn(tables.Column):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("orderable", False)
+        kwargs.setdefault(
+            "verbose_name", mark_safe('<div class="w-[40px]"><div class="w-4 h-2 bg-black rounded"></div></div>')
+        )
+        super().__init__(*args, **kwargs)
+
+    def render(self, value):
+        color_class = "negative-dark" if value else "positive-dark"
+        return format_html('<div class="w-10"><div class="w-4 h-2 rounded {}"></div></div>', color_class)
+
+
+def get_duration_min(total_seconds):
+    total_seconds = int(total_seconds)
+    minutes = (total_seconds // 60) % 60
+    hours = (total_seconds // 3600) % 24
+    days = total_seconds // 86400
+
+    parts = []
+    if days:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if hours:
+        parts.append(f"{hours} hr")
+    if minutes or not parts:
+        parts.append(f"{minutes} min")
+
+    return " ".join(parts)
+
+
+class DurationColumn(tables.Column):
+    def render(self, value):
+        total_seconds = int(value.total_seconds() if isinstance(value, timedelta) else 0)
+        return get_duration_min(total_seconds)
+
+
+class WorkerStatusTable(tables.Table):
+    index = IndexColumn()
+    user = UserInfoColumn()
+    suspended = SuspendedIndicatorColumn()
+    invited_date = tables.DateColumn(format="d-M-Y")
+    last_active = tables.DateColumn(format="d-M-Y")
+    started_learn = tables.DateColumn(format="d-M-Y", verbose_name="Started Learn", accessor="date_learn_started")
+    completed_learn = tables.DateColumn(format="d-M-Y")
+    days_to_complete_learn = DurationColumn()
+    first_delivery = tables.Column()
+    days_to_start_delivery = DurationColumn()
+
+    def __init__(self, *args, **kwargs):
+        self.use_view_url = True
+        super().__init__(*args, **kwargs)
+
+    def render_lastActive(self, value):
+        return format_html(
+            """
+            <div class="flex flex-col items-start">
+                <p class="text-sm text-slate-900 ">{}</p>
+            </div>
+            """,
+            value,
+        )
+
+
+class WorkerPaymentsTable(tables.Table):
+    index = IndexColumn()
+    user = UserInfoColumn()
+    suspended = SuspendedIndicatorColumn()
+    last_active = tables.Column()
+    payment_accrued = tables.Column(verbose_name="Accrued")
+    total_paid = tables.Column()
+    last_paid = tables.DateColumn(format="d-M-Y")
+    total_confirmed_paid = tables.Column(verbose_name="Confirm")
+
+    def __init__(self, *args, **kwargs):
+        self.use_view_url = True
+        super().__init__(*args, **kwargs)
+
+    class Meta:
+        model = OpportunityAccess
+        fields = ("user", "suspended", "payment_accrued", "total_paid", "total_confirmed_paid")
+        sequence = (
+            "index",
+            "user",
+            "suspended",
+            "last_active",
+            "payment_accrued",
+            "total_paid",
+            "last_paid",
+            "total_confirmed_paid",
+        )
+
+
+class WorkerLearnTable(OrgContextTable):
+    index = IndexColumn()
+    user = UserInfoColumn()
+    suspended = SuspendedIndicatorColumn()
+    last_active = tables.DateColumn(format="d-M-Y")
+    started_learning = tables.DateColumn(
+        format="d-M-Y", accessor="date_learn_started", verbose_name="Started Learning"
+    )
+    modules_completed = tables.TemplateColumn(
+        accessor="modules_completed_percentage",
+        template_code="""
+                            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value|default:0 %}
+                        """,
+    )
+    completed_learning = tables.DateColumn(
+        format="d-M-Y", accessor="completed_learn", verbose_name="Completed Learning"
+    )
+    assessment = tables.Column(accessor="passed_assessment")
+    attempts = tables.Column(accessor="assesment_count")
+    learning_hours = DurationColumn()
+    action = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>
+        """,
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.use_view_url = True
+        super().__init__(*args, **kwargs)
+
+    class Meta:
+        model = OpportunityAccess
+        fields = ("suspended", "user")
+        sequence = (
+            "index",
+            "user",
+            "suspended",
+            "last_active",
+            "started_learning",
+            "modules_completed",
+            "completed_learning",
+            "assessment",
+            "attempts",
+            "learning_hours",
+            "action",
+        )
+
+    def render_assessment(self, value, record):
+        if not record.date_learn_started:
+            return "--"
+        return "Passed" if value else "Failed"
+
+    def render_action(self, record):
+        url = reverse("opportunity:worker_learn_progress", args=(self.org_slug, record.id))
+        return format_html(
+            """ <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a href="{url}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>""",
+            url=url,
+        )
+
+
+class WorkerDeliveryTable(tables.Table):
+    use_view_url = True
+
+    id = tables.Column(visible=False)
+    index = IndexColumn()
+    user = tables.Column(orderable=False, verbose_name="Name")
+    suspended = SuspendedIndicatorColumn()
+    last_active = tables.Column()
+    payment_unit = tables.Column()
+    started = tables.Column(accessor="started_delivery")
+    delivered = tables.Column(accessor="completed")
+    pending = tables.Column()
+    approved = tables.Column()
+    rejected = tables.Column()
+    action = tables.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+
+        """,
+    )
+
+    class Meta:
+        model = OpportunityAccess
+        fields = ("id", "suspended", "user")
+        sequence = (
+            "index",
+            "user",
+            "suspended",
+            "last_active",
+            "payment_unit",
+            "started",
+            "delivered",
+            "pending",
+            "approved",
+            "rejected",
+            "action",
+        )
+
+    def __init__(self, *args, **kwargs):
+        self.org_slug = kwargs.pop("org_slug")
+        self.opp_id = kwargs.pop("opp_id")
+        self.use_view_url = True
+        super().__init__(*args, **kwargs)
+        self._seen_users = set()
+
+    def render_action(self, record):
+        url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
+        template = """
+            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
+                <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
+            </div>
+        """
+        return format_html(template, url)
+
+    def render_user(self, value):
+        if value.id in self._seen_users:
+            return ""
+        self._seen_users.add(value.id)
+        return format_html(
+            """
+            <div class="flex flex-col items-start w-40">
+                <p class="text-sm text-slate-900">{}</p>
+                <p class="text-xs text-slate-400">{}</p>
+            </div>
+            """,
+            value.name,
+            value.username,
+        )
+
+    def render_index(self, value, record):
+        page = getattr(self, "page", None)
+        if page:
+            start_index = (page.number - 1) * page.paginator.per_page + 1
+        else:
+            start_index = 1
+
+        if record.user.id in self._seen_users:
+            return ""
+
+        if (
+            not hasattr(self, "_row_counter")
+            or not hasattr(self, "_row_counter_start")
+            or self._row_counter_start != start_index
+        ):
+            self._row_counter = itertools.count(start=start_index)
+            self._row_counter_start = start_index
+
+        display_index = next(self._row_counter)
+
+        return display_index
+
+
+class WorkerLearnStatusTable(tables.Table):
+    index = IndexColumn()
+    module_name = tables.Column(accessor="module__name", orderable=False)
+    date = tables.DateColumn(format="d-M-Y", verbose_name="Date Completed", accessor="date", orderable=False)
+    duration = DurationColumn(accessor="duration", orderable=False)
+    time = tables.Column(accessor="date", verbose_name="Time Completed", orderable=False)
+
+    def render_time(self, value):
+        if value:
+            value = localtime(value)
+            return value.strftime("%H:%M")
+        return "--"
+
+    class Meta:
+        sequence = ("index", "module_name", "date", "time", "duration")

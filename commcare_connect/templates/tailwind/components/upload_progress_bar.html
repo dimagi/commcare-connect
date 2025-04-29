@@ -1,0 +1,39 @@
+<div
+  {% if not progress.complete %}
+    hx-target="this"
+    hx-get="{% url 'opportunity:export_status' request.org.slug task_id %}"
+    hx-trigger="load delay:2s"
+    hx-swap="outerHTML"
+  {% endif %}
+>
+  {% if progress.error %}
+    <div class="rounded-lg bg-red-100 text-red-700 px-4 py-3">
+      <p class="font-medium">Export Failed</p>
+      <p class="text-sm mt-1">{{ progress.error }}</p>
+    </div>
+
+  {% elif not progress.complete %}
+    <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-4">
+      <div class="h-full bg-purple-600 rounded-full animate-[progress_2s_linear_infinite]"
+           style="width: 80%; background-image: linear-gradient(to right, #8b5cf6, #a78bfa, #8b5cf6); background-size: 200% 100%;"></div>
+    </div>
+    <p class="text-sm text-gray-700">Preparing export, hang tight...</p>
+
+    <style>
+      @keyframes progress {
+        0% { background-position: 0% 50%; }
+        100% { background-position: 200% 50%; }
+      }
+    </style>
+
+  {% else %}
+    <div class="rounded-lg bg-green-100 text-green-800 px-2 py-1">
+      <p class="text-sm mt-1">
+        <a class="text-purple-700 underline font-medium hover:text-purple-900 transition"
+           href="{% url 'opportunity:download_export' request.org.slug task_id %}">
+          Download your export
+        </a>
+      </p>
+    </div>
+  {% endif %}
+</div>
