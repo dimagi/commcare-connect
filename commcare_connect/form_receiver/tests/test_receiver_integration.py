@@ -173,6 +173,7 @@ def test_form_receiver_assessment(
     ).exists()
 
 
+@pytest.mark.parametrize("num_paymentunits", [1])
 @pytest.mark.django_db
 def test_receiver_deliver_form(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
@@ -607,6 +608,7 @@ def test_receiver_verification_flags_catchment_areas(
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
 
 
+@pytest.mark.parametrize("num_paymentunits", [1])
 @pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
 @pytest.mark.parametrize(
     "visit_status, review_status",
@@ -630,6 +632,7 @@ def test_receiver_visit_review_status(
     assert visit.review_status == review_status
 
 
+@pytest.mark.parametrize("num_paymentunits", [1])
 @pytest.mark.parametrize(
     "opportunity, paymentunit_options, visit_status",
     [
