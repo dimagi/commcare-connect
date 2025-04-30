@@ -1,0 +1,115 @@
+{% load django_tables2 %}
+{% load i18n %}
+{% block table-wrapper %}
+{% load sort_link %}
+<div class="overflow-hidden table-container flex flex-col gap-2">
+  {% block table %}
+  <div class="w-full max-h-[80vh] overflow-x-auto block">
+    <table class="base-table">
+      {% block table.thead %}
+      {% if table.show_header %}
+      <thead {{ table.attrs.thead.as_html }}>
+        <tr>
+          {% for column in table.columns %}
+          <th>
+            {% if column.orderable %}
+            {% sortable_header column.name column.header table.use_view_url %}
+            {% else %}
+            <span>{{ column.header }}</span>
+            {% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      {% endif %}
+      {% endblock table.thead %}
+
+          {% block table.tbody %}
+            <tbody>
+            <div style="overflow:hidden; border-radius:8px;">
+              {% for row in table.paginated_rows %}
+                {% block table.tbody.row %}
+                  <tr class="group" {{ row.attrs.as_html }}>
+                    {% for column, cell in row.items %}
+                      <td>
+                        {% if column.localize == None %}
+                          {{ cell }}
+                        {% else %}
+                          {% if column.localize %}
+                            {{ cell|localize }}
+                          {% else %}
+                            {{ cell|unlocalize }}
+                          {% endif %}
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endblock table.tbody.row %}
+                {% empty %}
+                {% if table.empty_text %}
+                  {% block table.tbody.empty_text %}
+                    <tr>
+                      <td colspan="{{ table.columns|length }}" class="text-center py-4">
+                        {{ table.empty_text }}
+                      </td>
+                    </tr>
+                  {% endblock table.tbody.empty_text %}
+                {% endif %}
+              {% endfor %}
+            </div>
+            </tbody>
+          {% endblock table.tbody %}
+
+    </table>
+  </div>
+  {% endblock table %}
+  {% block pagination %}
+  {% if table.page and table.paginator.num_pages > 1 %}
+  <div class="table-footer w-full flex items-center justify-between h-14  bg-slate-50  text-brand-deep-purple py-2 px-4 rounded-lg">
+    <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
+        {% if table.page.has_previous %}
+            <a href="{{ request.path }}{% querystring table.prefixed_page_field=table.page.previous_page_number %}"
+               class="button-icon"
+               aria-label="{% trans 'Previous page' %}">
+                <i class="fa-light fa-chevron-left"></i>
+            </a>
+        {% else %}
+            <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
+                <i class="fa-light fa-chevron-left"></i>
+            </span>
+        {% endif %}
+
+        <span class="whitespace-nowrap">{% trans "Page" %}</span>
+        <input
+            type="number"
+            value="{{ table.page.number }}"
+            min="1"
+            max="{{ table.paginator.num_pages }}"
+            class="base-input w-16 text-center"
+            aria-label="{% blocktrans %}Current page number, input to navigate{% endblocktrans %}"
+            hx-trigger="change"
+            hx-on:change="
+                const url = new URL(window.location.href);
+                url.searchParams.set('{{ table.prefixed_page_field }}', this.value);
+                window.location.href = url.toString();
+            "
+        >        <span class="whitespace-nowrap ml-1">of {{ table.paginator.num_pages }}</span>
+
+        {% if table.page.has_next %}
+            <a href="{{ request.path }}{% querystring table.prefixed_page_field=table.page.next_page_number %}"
+               class="button-icon"
+               aria-label="{% trans 'Next page' %}">
+                <i class="fa-light fa-chevron-right"></i>
+            </a>
+        {% else %}
+            <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
+                <i class="fa-light fa-chevron-right"></i>
+            </span>
+        {% endif %}
+    </div>
+</div>
+  {% endif %}
+
+  {% endblock pagination %}
+</div>
+{% endblock table-wrapper %}

@@ -1,3 +1,5 @@
+from datetime import timedelta
+from decimal import Decimal
 from http import HTTPStatus
 
 import pytest
@@ -5,10 +7,12 @@ from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect.opportunity.helpers import get_opportunity_list_data
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    UserInviteStatus,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -17,7 +21,9 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
+    PaymentFactory,
     PaymentUnitFactory,
+    UserInviteFactory,
     UserVisitFactory,
 )
 from commcare_connect.organization.models import Organization
@@ -215,3 +221,59 @@ def test_approve_visit(
         )
     assert response.redirect_chain[-1][0] == expected_redirect_url
     assert response.status_code == HTTPStatus.OK
+
+
+@pytest.mark.django_db
+def test_get_opportunity_list_data_all_annotations(opportunity):
+    today = now().date()
+    three_days_ago = now() - timedelta(days=3)
+
+    opportunity.end_date = today + timedelta(days=1)
+    opportunity.active = True
+    opportunity.save()
+
+    # Create OpportunityAccesses
+    oa1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=300)
+    oa2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=200)
+    oa3 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=0)
+
+    # Payments
+    PaymentFactory(opportunity_access=oa1, amount_usd=100, confirmed=True)
+    PaymentFactory(opportunity_access=oa2, amount_usd=50, confirmed=True)
+    PaymentFactory(opportunity_access=oa1, amount_usd=999, confirmed=False)
+    PaymentFactory(opportunity_access=oa3, amount_usd=0, confirmed=True)
+
+    # Invites
+    for _ in range(3):
+        UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.invited)
+    UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted)
+
+    # Visits
+    UserVisitFactory(
+        opportunity=opportunity, opportunity_access=oa1, status=VisitValidationStatus.pending, visit_date=now()
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=oa2,
+        status=VisitValidationStatus.approved,
+        visit_date=three_days_ago - timedelta(days=1),
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=oa3,
+        status=VisitValidationStatus.rejected,
+        visit_date=three_days_ago - timedelta(days=1),
+    )
+
+    queryset = get_opportunity_list_data(opportunity.organization)
+    opp = queryset[0]
+
+    assert opp.pending_invites == 3
+    assert opp.pending_approvals == 1
+    assert opp.total_accrued == Decimal("500")
+    assert opp.total_paid == Decimal("150")
+    assert opp.payments_due == Decimal("350")
+    assert opp.inactive_workers == 2
+    assert opp.status == 0

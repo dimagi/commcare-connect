@@ -1,14 +1,35 @@
 from collections import namedtuple
+from datetime import timedelta
 
-from django.db.models import Case, Count, F, Max, Min, Q, Sum, Value, When
+from django.db.models import (
+    Case,
+    Count,
+    DecimalField,
+    Exists,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    Max,
+    Min,
+    OuterRef,
+    Q,
+    Sum,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
+    CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
     Opportunity,
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
+    UserInviteStatus,
+    UserVisit,
     VisitValidationStatus,
 )
 
@@ -151,3 +172,96 @@ def get_payment_report_data(opportunity: Opportunity):
             PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
         )
     return data, total_user_payment_accrued, total_nm_payment_accrued
+
+
+def get_opportunity_list_data(organization, program_manager=False):
+    today = now().date()
+    three_days_ago = now() - timedelta(days=3)
+
+    base_filter = Q(organization=organization)
+    if program_manager:
+        base_filter |= Q(managedopportunity__program__organization=organization)
+
+    queryset = Opportunity.objects.filter(base_filter).annotate(
+        program=F("managedopportunity__program__name"),
+        pending_invites=Count(
+            "userinvite",
+            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            distinct=True,
+        ),
+        pending_approvals=Count(
+            "uservisit",
+            filter=Q(uservisit__status=VisitValidationStatus.pending),
+            distinct=True,
+        ),
+        total_accrued=Coalesce(
+            Sum("opportunityaccess__payment_accrued", distinct=True), Value(0), output_field=DecimalField()
+        ),
+        total_paid=Coalesce(
+            Sum(
+                "opportunityaccess__payment__amount_usd",
+                filter=Q(opportunityaccess__payment__confirmed=True),
+                distinct=True,
+            ),
+            Value(0),
+            output_field=DecimalField(),
+        ),
+        payments_due=ExpressionWrapper(
+            F("total_accrued") - F("total_paid"),
+            output_field=DecimalField(),
+        ),
+        inactive_workers=Count(
+            "opportunityaccess",
+            filter=Q(
+                ~Exists(
+                    UserVisit.objects.filter(
+                        opportunity_access=OuterRef("opportunityaccess"),
+                        visit_date__gte=three_days_ago,
+                    )
+                )
+                & ~Exists(
+                    CompletedModule.objects.filter(
+                        opportunity_access=OuterRef("opportunityaccess"),
+                        date__gte=three_days_ago,
+                    )
+                )
+            ),
+            distinct=True,
+        ),
+        status=Case(
+            When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+            When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+            default=Value(2),  # Inactive
+            output_field=IntegerField(),
+        ),
+    )
+
+    if program_manager:
+        queryset = queryset.annotate(
+            active_workers=Count(
+                "opportunityaccess",
+                filter=Q(
+                    Exists(
+                        UserVisit.objects.filter(
+                            opportunity_access=OuterRef("opportunityaccess"),
+                            visit_date__gte=three_days_ago,
+                        )
+                    )
+                    | Exists(
+                        CompletedModule.objects.filter(
+                            opportunity_access=OuterRef("opportunityaccess"),
+                            date__gte=three_days_ago,
+                        )
+                    )
+                ),
+                distinct=True,
+            ),
+            total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
+            verified_deliveries=Count(
+                "opportunityaccess__completedwork",
+                filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
+                distinct=True,
+            ),
+        )
+
+    return queryset
