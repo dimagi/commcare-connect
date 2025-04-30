@@ -168,61 +168,12 @@
     </div>
 
     <div class="w-full grid grid-cols-10 gap-2">
+
       <div class="col-span-6" hx-indicator="#loading-spinner">
-        <form class="flex flex-col w-full gap-2"
-              hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
-              hx-target="#table-container"
-              hx-trigger="change, load, reload_table from:body"
-              x-data="{
-                activeTab: '{{ request.GET.filter_status }}',
-                filter_date: new Date(),
-              }"
-              @load-total-pages.window="totalPages = $event.detail.value">
-          <div
-            class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
-
-            <div class="tabs">
-              {% for tab in tabs %}
-                <label class="tab" :class="{ 'tab-active': activeTab == '{{ tab.name }}'}">
-                  <input class="peer sr-only" type="radio" value="{{ tab.name }}" name="filter_status"
-                         x-model="activeTab"
-                    {% if not request.GET.filter_status and forloop.first %}
-                         checked="checked" {% elif request.GET.filter_status == tab.name %}
-                         checked="checked" {% endif %}/>
-                  {{ tab.label }}
-                  <span x-show="activeTab == '{{ tab.name }}'">(<span>{{ tab.count }}</span>)</span>
-                </label>
-              {% endfor %}
-            </div>
-
-            <div x-data="datePicker('tableDatePicker')" class="flex gap-x-4 items-center">
-              <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
-                <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
-                <input type="text" id="tableDatePicker" name="filter_date"
-                       class="text-center w-32 focus:outline-none text-sm"
-                       placeholder="Select Date"
-                       value="{{ request.GET.filter_date|default:'' }}">
-                <i class="fa-solid fa-xmark text-brand-deep-purple cursor-pointer me-2" x-cloak x-show="selectedDate != ''" @click="clear()"></i>
-                <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
-              </div>
-            </div>
-
-          </div>
-
-          <!-- Tab Content Container with Loading Animation -->
-          <div class="w-full relative shadow-sm flex-1 rounded-lg">
-            <div id="table-container" class="flex flex-col w-full gap-2 min-h-160" hx-boost="true"></div>
-            <div id="loading-spinner" role="status"
-                 class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
-              <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
-              <span class="sr-only">Loading...</span>
-            </div>
-          </div>
-          <input type="hidden" name="page" value="{{ request.GET.page|default:1 }}" />
-          <input type="hidden" name="sort" value="{{ request.GET.sort|default:'' }}" />
-        </form>
-
+        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}{% querystring %}"
+              hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
+
       <div class="col-span-4 relative" hx-indicator="#visit-loading-indicator">
         <div class="absolute inset-0">
           <div class="flex flex-col gap-2 h-full">
@@ -254,8 +205,8 @@
   {{ block.super }}
   <script type="text/javascript">
     document.addEventListener('alpine:init', () => {
-      Alpine.data('datePicker', (id) => ({
-        selectedDate: {% if request.GET.filter_date %} new Date("{{ request.GET.filter_date }}") {% else %} "" {% endif %},
+      Alpine.data('datePicker', (id, defaultDate) => ({
+        selectedDate: defaultDate,
         flatpickrInstance: flatpickr(document.getElementById(id), {
           defaultDate: this.selectedDate,
           altInput: true,
@@ -278,6 +229,7 @@
           });
         },
         navigateDate(direction) {
+          if (this.selectedDate == "") return;
           const currentDate = this.selectedDate;
           const newDate = new Date(currentDate);
           newDate.setDate(newDate.getDate() + direction);

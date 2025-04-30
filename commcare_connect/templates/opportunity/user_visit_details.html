@@ -247,7 +247,12 @@
   hx-swap-oob="true">
   <div class="flex gap-4">
     <button class="button button-md outline-style" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
+    {% if user_visit.opportunity.managed %}
     <button class="button button-md primary-dark" @click="showRejectModal = false; showApproveModal = true;">Approve</button>
+    {% else %}
+    <button hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      hx-swap="none" type="submit" class="button button-md positive-dark">Approve</button>
+    {% endif %}
   </div>
 
   <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
@@ -278,6 +283,7 @@
     </div>
   </div>
 
+  {% if user_visit.opportunity.managed %}
   <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showApproveModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
@@ -303,4 +309,9 @@
       </form>
     </div>
   </div>
+  {% endif %}
 </div>
+
+{{ visit_data|json_script:"visit_data" }}
+{{ user_forms|json_script:"user_forms" }}
+{{ other_forms|json_script:"other_forms" }}
