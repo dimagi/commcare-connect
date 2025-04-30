@@ -1,0 +1,54 @@
+{% extends "tailwind/base.html" %}
+{% load render_table from django_tables2 %}
+
+
+
+{% block content %}
+
+<ul class="breadcrumb">
+  <li>
+    <a href='{% url "opportunity:list" request.org.slug %}'>Opportunity List</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    <!-- Todo; update link to opp dashboard -->
+    <a href="{% url 'opportunity:detail' request.org.slug access.opportunity.pk %}">{{ access.opportunity.name }}</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    {% url 'opportunity:worker_list' request.org.slug access.opportunity.pk as workers_url %}
+    <a href="{{ workers_url }}?active_tab=learn">Worker List</a>
+    <i class="fa-solid fa-chevron-right"></i>
+  </li>
+  <li>
+    <a class="text-gray-500 cursor-none">Learn progress</a>
+  </li>
+</ul>
+
+
+<div class="flex flex-col w-full gap-2">
+  <div class="flex items-center w-full gap-4 p-4 overflow-x-auto min-h-32 profile-bg bg-brand-indigo rounded-2xl">
+    {% include "tailwind/components/worker_page/profile.html" with user=access.user %}
+    <div class="flex items-center gap-4 w-full">
+      <div class="w-1/5 h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ total_learn_duration }}</div>
+          <div class="hidden lg:block">
+            <i class="fa-light fa-book-open-cover text-xl"></i>
+          </div>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Total Time Learning</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="relative flex items-center justify-between w-full px-4 mx-auto mb-2 rounded-lg shadow-sm bg-slate-50 h-14">
+    <p class="text-sm font-medium text-brand-deep-purple">Learn Progress</p>
+  </div>
+
+</div>
+{% render_table table %}
+{% endblock content %}

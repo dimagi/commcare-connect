@@ -6,6 +6,11 @@
 [x-cloak] {
   display: none !important;
 }
+
+:root {
+  --breakpoint-sm: 640px;
+}
+
 @theme {
   --font-sans: 'Work Sans', 'sans-serif';
   --breakpoint-sm: 5rem;
@@ -19,6 +24,11 @@
   --color-brand-blue-light: #94a3b8;
   --color-brand-sunset-light: #fc5f3633;
   --color-brand-border-light: #e2e8f0;
+  --width-screen-sm: var(--breakpoint-sm);
+}
+/* ----- background -------*/
+.card_bg {
+  @apply rounded-lg bg-white p-6 shadow-sm;
 }
 
 /* ------ Typography------ */
@@ -30,12 +40,44 @@
 .card_description {
   @apply text-sm font-normal text-gray-600;
 }
+
 .title {
   @apply font-medium text-gray-900;
 }
 
+.title-sm {
+  @apply text-sm font-medium text-gray-900;
+}
+
 .hint {
   @apply text-xs text-gray-400;
+}
+
+@layer utilities {
+  @keyframes scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(calc(-100% + 2rem));
+    }
+  }
+
+  .animate-scroll {
+    animation: scroll 4s linear forwards;
+  }
+
+  .hover\:animate-scroll:hover {
+    animation: scroll 4s linear forwards;
+  }
+
+  .animate-marquee {
+    @apply w-full overflow-hidden;
+  }
+
+  .animate-marquee p {
+    @apply truncate text-nowrap hover:overflow-visible;
+  }
 }
 
 /*-- status ----------------------------------*/
@@ -72,7 +114,7 @@
 /*-- buttons -------------------------------------*/
 
 .button {
-  @apply relative inline-block min-w-24 cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
+  @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
 }
 
 .button:hover::after {
@@ -130,11 +172,11 @@
 /* Size Variants */
 
 .button-sm {
-  @apply px-4 py-1;
+  @apply min-w-16 px-4 py-1;
 }
 
 .button-md {
-  @apply px-4 py-3;
+  @apply min-w-24 px-4 py-3;
 }
 
 /* Dark Theme */
@@ -175,17 +217,276 @@
   @apply bg-slate-100 text-slate-300;
 }
 
+.label {
+  @apply text-brand-deep-purple bg-slate-100;
+}
+
 .outline-style {
-  @apply text-brand-deep-purple rounded-lg border border-gray-200;
+  @apply text-brand-deep-purple rounded-lg border border-gray-200 bg-gray-50;
 }
 
 /*-- chips ---------------------------------------*/
 .chip {
-  @apply inline-block cursor-pointer text-nowrap rounded-full text-sm font-medium transition-all duration-300;
+  @apply inline-block cursor-pointer text-nowrap rounded-full border border-gray-200 text-sm font-medium transition-all duration-300;
 }
 
 .chip-md {
   @apply px-4 py-1;
+}
+
+/*-- tooltips ---------------------------------------*/
+@layer components {
+  .tooltip {
+    @apply text-brand-deep-purple relative rounded-sm bg-white px-2 py-2 text-sm shadow-sm;
+  }
+
+  .tooltip::before {
+    content: '';
+    @apply absolute -bottom-1/3 left-1/2 z-10 h-0 w-0 -translate-x-1/2 -translate-y-1/2 transform border-x-8 border-t-8 border-gray-400 border-x-transparent blur-xl;
+  }
+
+  .tooltip::after {
+    content: '';
+    @apply absolute -bottom-1/3 left-1/2 z-10 h-0 w-0 -translate-x-1/2 -translate-y-1/2 transform border-x-8 border-t-8 border-white border-x-transparent;
+  }
+}
+
+/*--- breadcrumb--------------------------*/
+@layer components {
+  .breadcrumb {
+    @apply inline-flex cursor-pointer list-none py-4;
+  }
+
+  .breadcrumb li {
+    @apply flex items-center gap-0.5 pr-0.5;
+  }
+
+  .breadcrumb li a {
+    @apply text-xs;
+  }
+
+  .breadcrumb li i {
+    @apply text-xs;
+  }
+
+  .breadcrumb li:last-child {
+    @apply text-brand-deep-purple font-medium;
+  }
+
+  .breadcrumb li:last-child > i {
+    @apply opacity-0;
+  }
+}
+
+/*--- Info card dark ------------------------- */
+
+@layer components {
+  .infocard-dark {
+    @apply flex w-full gap-3;
+  }
+
+  .infocard-dark i {
+    @apply mt-1 text-gray-400;
+  }
+
+  .infocard-dark h6 {
+    @apply text-xs text-gray-400;
+  }
+
+  .infocard-dark p {
+    @apply text-brand-deep-purple whitespace-nowrap text-sm font-medium;
+  }
+}
+
+@layer components {
+  .infocard-dark2 {
+    @apply flex w-full justify-center gap-3;
+  }
+
+  .infocard-dark2 i {
+    @apply mt-1 text-gray-400;
+  }
+
+  .infocard-dark2 h6 {
+    @apply text-xs text-slate-400;
+  }
+
+  .infocard-dark2 p {
+    @apply whitespace-nowrap text-sm font-normal text-slate-700;
+  }
+}
+
+/*--- Info card light ------------------------- */
+@layer components {
+  .infocard-light {
+    @apply flex w-full gap-3;
+  }
+
+  .infocard-light i {
+    @apply text-brand-sky mt-1;
+  }
+
+  .infocard-light h6 {
+    @apply text-brand-sky text-xs;
+  }
+
+  .infocard-light p {
+    @apply whitespace-nowrap text-sm font-medium text-white;
+  }
+}
+
+/*--- base select  list ------------------------- */
+@layer components {
+  .base-dropdown {
+    @apply h-10 w-full rounded-lg border border-gray-300 bg-white px-2 text-gray-600;
+  }
+
+  .base-dropdown:focus {
+    @apply outline-brand-indigo outline-1;
+  }
+
+  .base-dropdown option {
+    @apply w-full px-2 text-gray-900;
+  }
+}
+
+/*--- simple select list ------------------------- */
+@layer components {
+  .simple-dropdown {
+    @apply relative h-12;
+  }
+
+  .simple-dropdown select {
+    @apply border-1 h-full w-full rounded border-gray-300 bg-transparent px-10 text-sm text-gray-900 invalid:text-gray-200 focus:border-blue-600 focus:outline-none focus:ring-0;
+  }
+
+  .simple-dropdown i {
+    @apply absolute left-3 top-1/2 z-10 -translate-y-1/2;
+  }
+
+  .simple-dropdown select:invalid {
+    @apply text-gray-200;
+    /* Change to desired color */
+  }
+
+  .simple-dropdown option {
+    @apply px-1;
+  }
+}
+
+/*--- based input ------------------------- */
+@layer components {
+  .base-input {
+    @apply h-10 w-full rounded-lg border border-gray-300 bg-white px-2 text-gray-600;
+  }
+
+  .base-input:focus {
+    @apply outline-brand-indigo outline-1;
+  }
+}
+
+/*--- simple input  ------------------------- */
+@layer components {
+  .simple-input {
+    @apply relative h-12;
+  }
+
+  .simple-input input {
+    @apply border-1 h-full w-full rounded border-gray-300 bg-transparent pl-10 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0;
+  }
+
+  .simple-input i {
+    @apply absolute left-3 top-1/2 z-10 -translate-y-1/2;
+  }
+}
+
+@layer components {
+  .input-group .error-icon {
+    @apply invisible absolute right-3 top-1/2 -translate-y-1/2 text-red-500;
+  }
+
+  .input-group .error-msg {
+    @apply mt-1 hidden text-xs font-light text-red-500;
+  }
+
+  .input-group.error .error-icon,
+  .input-group.error .error-msg {
+    @apply visible block;
+  }
+
+  .input-group.error input {
+    @apply border-red-500 ring-2 ring-red-500/80;
+  }
+}
+
+/*--- base textarea-----------------------------*/
+
+@layer components {
+  .base-textarea {
+    @apply border-1 h-fit min-h-20 w-full rounded border-gray-300 bg-transparent p-4 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0;
+  }
+}
+
+/*--- simple textarea ------------------------- */
+@layer components {
+  .simple-textarea {
+    @apply relative h-28;
+  }
+
+  .simple-textarea textarea {
+    @apply border-1 h-full w-full rounded border-gray-300 bg-transparent pl-10 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0;
+  }
+
+  .simple-textarea i {
+    @apply absolute left-3 top-5 z-10 -translate-y-1/2;
+  }
+}
+
+/*--- simple toggle switch ------------------------- */
+@layer components {
+  .simple-toggle {
+    @apply relative h-6 w-11 cursor-pointer appearance-none rounded-full bg-gray-200 transition;
+  }
+
+  .simple-toggle::before {
+    content: '';
+    @apply absolute left-1 top-1 h-4 w-4 transform rounded-full bg-white transition;
+  }
+
+  .simple-toggle:checked {
+    @apply bg-green-600;
+  }
+
+  .simple-toggle:checked::before {
+    @apply translate-x-5;
+  }
+}
+
+/*--- simple date picker ------------------------- */
+@layer components {
+  .simple-date-picker {
+    @apply relative h-12;
+  }
+
+  .simple-date-picker input {
+    @apply border-1 h-full w-full rounded border-gray-300 bg-transparent pl-10 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0;
+  }
+
+  .simple-date-picker i {
+    @apply absolute left-3 top-1/2 z-10 -translate-y-1/2;
+  }
+}
+
+/*--- simple checbox ------------------------- */
+@layer components {
+  .simple-checkbox {
+    @apply h-4 w-4 cursor-pointer appearance-none rounded-sm border-2 border-gray-400 bg-white bg-contain bg-center bg-no-repeat transition-all duration-200;
+  }
+
+  .simple-checkbox:checked {
+    border-color: gray; /* blue-500 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z'/%3E%3C/svg%3E");
+  }
 }
 
 /*---- table class -----------*/
@@ -221,7 +522,7 @@
 
   .base-table tbody::before {
     content: '';
-    @apply absolute left-0 top-0 -z-20 h-full w-full rounded-lg bg-white shadow-lg;
+    @apply absolute left-0 top-0 -z-20 h-full w-full rounded-lg bg-white shadow-sm;
   }
 
   .base-table tbody tr {
@@ -242,12 +543,86 @@
     @apply opacity-100;
   }
 
-  /* .base-table tbody tr:hover{
-        @apply bg-gray-100 rounded-lg;
-    }  */
+  .base-table tbody tr.active::after {
+    @apply opacity-100;
+  }
 
+  /* .base-table tbody tr:hover{
+      @apply bg-gray-100 rounded-lg;
+  }  */
   .base-table tbody td {
     @apply whitespace-nowrap border-b-[1px] border-gray-100 p-4 text-left;
+  }
+}
+
+/*------------ Tabs --------------*/
+@layer {
+  .tabs {
+    @apply flex h-full gap-x-8 px-2;
+  }
+
+  .tabs li {
+    @apply relative flex h-full cursor-pointer items-center text-sm text-gray-500;
+  }
+
+  .tabs li.active {
+    @apply text-brand-deep-purple font-medium;
+  }
+
+  .tabs li div {
+    @apply bg-brand-mango absolute bottom-0 left-1/2 h-1.5 w-2/3 max-w-10 -translate-x-1/2 rounded-t-lg;
+  }
+}
+
+@layer components {
+  .stepper {
+    @apply flex items-center justify-between gap-4;
+  }
+
+  .stepper a {
+    @apply flex items-center gap-4;
+  }
+
+  .stepper h6 {
+    @apply text-brand-deep-purple grid h-8 w-8 place-content-center rounded-full border border-gray-300;
+  }
+
+  .stepper a.active h6 {
+    @apply bg-brand-deep-purple text-center text-white;
+  }
+
+  .stepper span {
+    @apply whitespace-nowrap text-sm text-gray-400;
+  }
+
+  .stepper a.active span {
+    @apply text-brand-deep-purple font-medium;
+  }
+}
+
+@layer {
+  .modal {
+    @apply relative z-50 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
+  }
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-40 flex items-center justify-center bg-black/40;
+  }
+
+  .modal .dialog-box {
+    @apply z-50 mx-auto my-auto rounded-lg bg-white p-6 shadow-sm;
+  }
+
+  .modal .header {
+    @apply flex items-center justify-between;
+  }
+
+  .modal .content {
+    @apply flex flex-col gap-4 py-4;
+  }
+
+  .modal .footer {
+    @apply space-x-4 text-right;
   }
 }
 
@@ -260,4 +635,30 @@
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+
+.better-tabs {
+  .tabs {
+    @apply flex h-full flex-wrap gap-x-8 px-2;
+  }
+
+  .tab {
+    @apply relative flex h-full cursor-pointer items-center gap-1 text-sm text-gray-500;
+
+    /* Active Tabs */
+    &:is(.tab-active, [aria-selected='true']):not(.tab-disabled, [disabled]),
+    &:is(input:checked),
+    &:is(label:has(:checked)) {
+      &:before {
+        @apply bg-brand-mango text-brand-mango absolute bottom-0 left-1/2 h-1.5 w-10 w-2/3 max-w-10 -translate-x-1/2 rounded-t-lg;
+        --tw-content: '';
+        content: var(--tw-content);
+        transition: background-color 0.2s ease;
+      }
+    }
+  }
+
+  .tab-active {
+    @apply text-brand-deep-purple font-medium;
+  }
 }

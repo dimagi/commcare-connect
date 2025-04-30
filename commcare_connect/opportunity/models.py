@@ -647,6 +647,12 @@ class UserVisit(XFormBaseModel):
                 pass
         return duration
 
+    @property
+    def flags(self):
+        if self.flag_reason is not None:
+            return [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return []
+
     class Meta:
         constraints = [
             models.UniqueConstraint(

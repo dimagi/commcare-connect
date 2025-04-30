@@ -51,7 +51,6 @@ from commcare_connect.opportunity.views import (
     update_visit_status_import,
     user_profile,
     user_visit_review,
-    user_visits_list,
     verification_flags_config,
     visit_verification,
 )
@@ -98,7 +97,17 @@ urlpatterns = [
     path("<int:pk>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<int:pk>/deliver_status_table/", view=OpportunityDeliverStatusTable.as_view(), name="deliver_status_table"),
     path("<int:pk>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
-    path("<int:opp_id>/user_visits/<int:pk>/", view=user_visits_list, name="user_visits_list"),
+    path(
+        "<int:opp_id>/user_visits/<int:pk>/",
+        view=views.user_visit_verification,
+        name="user_visits_list",
+    ),
+    path(
+        "<int:opp_id>/user_visit_verification_table/<int:pk>/",
+        view=views.VisitVerificationTableView.as_view(),
+        name="user_visit_verification_table",
+    ),
+    path("<int:opp_id>/user_visit_details/<int:pk>/", view=views.user_visit_details, name="user_visit_details"),
     path("<int:opp_id>/payment/<int:access_id>/delete/<int:pk>/", view=payment_delete, name="payment_delete"),
     path("<int:opp_id>/user_profile/<int:pk>/", view=user_profile, name="user_profile"),
     path("<int:pk>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
@@ -127,4 +136,15 @@ urlpatterns = [
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
     path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
+    # Worker List
+    path("<int:opp_id>/worker_list/", views.opportunity_worker, name="worker_list"),
+    path("<int:opp_id>/worker_main/", views.worker_main, name="worker_table"),
+    path("<int:opp_id>/worker_learn/", views.worker_learn, name="learn_table"),
+    path("<int:opp_id>/worker_delivery/", views.worker_delivery, name="delivery_table"),
+    path("<int:opp_id>/worker_payments/", views.worker_payments, name="payments_table"),
+    path(
+        "tw/worker_learn_progress/<int:access_id>",
+        views.worker_learn_status_view,
+        name="worker_learn_progress",
+    ),
 ]
