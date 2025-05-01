@@ -134,6 +134,21 @@
                     Accept
                     </button>
                   </div>
+                  {% elif application.status == 'accepted' %}
+                  <a class="button button-md button-outline-rounded me-1"
+                    href="{% url "program:opportunity_init" request.org.slug program.id %}">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-sm">Create Opportunity</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </a>
+                  <a class="button button-md button-outline-rounded"
+                    href="{% url "opportunity:list" request.org.slug %}">
+                    <div class="flex items-center justify-between gap-4">
+                      <p class="text-sm">View Opportunities</p>
+                      <i class="fa-light fa-arrow-right"></i>
+                    </div>
+                  </a>
                   {% endif %}
                 </div>
               </div>
