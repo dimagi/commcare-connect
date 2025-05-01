@@ -124,10 +124,16 @@
 
                 <div class="flex items-center justify-end">
                   {% if application.status == 'applied' %}
-                    <div class="flex gap-2">
-                      <button class="button button-md outline-style" value="reject">Reject</button>
-                      <button class="button button-md primary-dark" value="accept">Accept</button>
-                    </div>
+                  <div class="flex gap-2">
+                    <button class="button button-md outline-style" value="reject"
+                      hx-post="{% url 'program:manage_application' request.org.slug application.id 'reject' %}">
+                      Reject
+                    </button>
+                    <button class="button button-md primary-dark" value="accept"
+                      hx-post="{% url 'program:manage_application' request.org.slug application.id 'accept' %}">
+                    Accept
+                    </button>
+                  </div>
                   {% endif %}
                 </div>
               </div>

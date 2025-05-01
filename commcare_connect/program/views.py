@@ -231,7 +231,7 @@ def manage_application(request, org_slug, application_id, action):
     application.save()
 
     if request.htmx:
-        return HttpResponse(status=200)
+        return HttpResponse(status=200, headers={"HX-Refresh": "true"})
 
     messages.success(request, f"Application has been {action}ed successfully.")
     if application.status == ProgramApplicationStatus.ACCEPTED:
