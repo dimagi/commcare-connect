@@ -564,13 +564,14 @@ class UserVisitVerificationTable(BaseTailwindTable):
                     {% if record.status == 'over_limit' %}
                     <span class="badge badge-sm negative-light mx-1">{{ record.get_status_display|lower }}</span>
                     {% endif %}
-                    {% if record.status == 'duplicate' %}
-                    <span class="badge badge-sm warning-light mx-1">{{ record.get_status_display|lower }}</span>
-                    {% endif %}
                 {% endif %}
                 {% if value %}
                     {% for flag in value|slice:":2" %}
+                        {% if flag == "duplicate"%}
+                        <span class="badge badge-sm warning-light mx-1">
+                        {% else %}
                         <span class="badge badge-sm primary-light mx-1">
+                        {% endif %}
                             {{ flag }}
                         </span>
                     {% endfor %}
