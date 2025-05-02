@@ -172,13 +172,7 @@ class OrgContextSingleTableView(SingleTableView):
 class OpportunityList(OrganizationUserMixin, SingleTableMixin, TemplateView):
     template_name = "tailwind/pages/opportunities_list.html"
     paginate_by = 15
-    base_columns = ["program", "start_date", "end_date", "status", "opportunity"]
-    pm_columns = ["active_workers", "total_deliveries", "verified_deliveries", "worker_earnings"]
-    nm_columns = ["pending_invites", "inactive_workers", "pending_approvals", "payments_due"]
 
-    def get_allowed_columns(self):
-        extra_columns = self.pm_columns if self.request.org.program_manager else self.nm_columns
-        return self.base_columns + extra_columns
 
     def get_table_class(self):
         if self.request.org.program_manager:
@@ -192,7 +186,9 @@ class OpportunityList(OrganizationUserMixin, SingleTableMixin, TemplateView):
 
     def get_table_data(self):
         org = self.request.org
-        return get_opportunity_list_data(org, self.request.org.program_manager)
+        query_set = get_opportunity_list_data(org, self.request.org.program_manager)
+        query_set = query_set.order_by("status", "start_date", "end_date")
+        return query_set
 
 
 class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):

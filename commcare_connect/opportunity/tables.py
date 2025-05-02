@@ -676,6 +676,10 @@ class BaseOpportunityList(OrgContextTable):
             text,
         )
 
+    def format_date(self, date):
+       return date.strftime("%d-%b-%Y") if date else '--'
+
+
     def _render_div(self, value, extra_classes=""):
         base_classes = "flex text-sm font-normal truncate text-brand-deep-purple " "overflow-clip overflow-ellipsis"
         all_classes = f"{base_classes} {extra_classes}".strip()
@@ -688,10 +692,10 @@ class BaseOpportunityList(OrgContextTable):
         return self._render_div(value if value else "--", extra_classes="justify-start")
 
     def render_start_date(self, value):
-        return self._render_div(value, extra_classes="justify-center")
+        return self._render_div(self.format_date(value), extra_classes="justify-center")
 
     def render_end_date(self, value):
-        return self._render_div(value, extra_classes="justify-center")
+        return self._render_div(self.format_date(value), extra_classes="justify-center")
 
 
 class OpportunityTable(BaseOpportunityList):
@@ -722,7 +726,7 @@ class OpportunityTable(BaseOpportunityList):
     def render_payments_due(self, value):
         if value is None:
             value = 0
-        return self._render_div(f"${value}", extra_classes=self.stats_style)
+        return self._render_div(value, extra_classes=self.stats_style)
 
     def render_actions(self, record):
         actions = [
@@ -758,17 +762,15 @@ class OpportunityTable(BaseOpportunityList):
 
 class ProgramManagerOpportunityTable(BaseOpportunityList):
     active_workers = tables.Column(
-        verbose_name=header_with_tooltip("Active Workers", tooltip_text="Delivered forms in the last 3 days.")
+        verbose_name="Active Workers"
     )
     total_deliveries = tables.Column(
-        verbose_name=header_with_tooltip("Total Deliveries", "Total services delivered so far.")
+        verbose_name="Total Deliveries"
     )
     verified_deliveries = tables.Column(
-        verbose_name=header_with_tooltip("Verified Deliveries", "Approved service deliveries.")
+        verbose_name="Verified Deliveries"
     )
-    worker_earnings = tables.Column(
-        verbose_name=header_with_tooltip("Worker Earnings", "Approved service deliveries"), accessor="total_accrued"
-    )
+    worker_earnings = tables.Column(verbose_name="Worker Earnings", accessor="total_accrued")
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
 
     class Meta(BaseOpportunityList.Meta):

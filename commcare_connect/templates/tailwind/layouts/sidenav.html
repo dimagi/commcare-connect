@@ -49,12 +49,8 @@
 
             {% url 'organization:home' request.org.slug as organization_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url %}
+
         </div>
     </div>
 
-    <!-- Bottom Section -->
-    <div>
-        {% include "tailwind/components/sidenav-items.html" with name='Help & FAQ' icon='circle-question'  target='/help & FAQ' %}
-        {% include "tailwind/components/sidenav-items.html" with name='Settings' icon='gear'  target='/settings' %}
-    </div>
 </div>

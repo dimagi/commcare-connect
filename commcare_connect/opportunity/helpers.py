@@ -182,7 +182,11 @@ def get_opportunity_list_data(organization, program_manager=False):
     today = now().date()
     three_days_ago = now() - timedelta(days=3)
 
-    queryset = Opportunity.objects.filter(organization=organization).annotate(
+    base_filter = Q(organization=organization)
+    if program_manager:
+        base_filter |= Q(managedopportunity__program__organization=organization)
+
+    queryset = Opportunity.objects.filter(base_filter).annotate(
         program=F("managedopportunity__program__name"),
         pending_invites=Count(
             "userinvite",
@@ -199,7 +203,7 @@ def get_opportunity_list_data(organization, program_manager=False):
         ),
         total_paid=Coalesce(
             Sum(
-                "opportunityaccess__payment__amount_usd",
+                "opportunityaccess__payment__amount",
                 filter=Q(opportunityaccess__payment__confirmed=True),
                 distinct=True,
             ),
@@ -238,30 +242,10 @@ def get_opportunity_list_data(organization, program_manager=False):
 
     if program_manager:
         queryset = queryset.annotate(
-            active_workers=Count(
-                "opportunityaccess",
-                filter=Q(
-                    Exists(
-                        UserVisit.objects.filter(
-                            opportunity_access=OuterRef("opportunityaccess"),
-                            visit_date__gte=three_days_ago,
-                        )
-                    )
-                    | Exists(
-                        CompletedModule.objects.filter(
-                            opportunity_access=OuterRef("opportunityaccess"),
-                            date__gte=three_days_ago,
-                        )
-                    )
-                ),
-                distinct=True,
-            ),
-            total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
-            verified_deliveries=Count(
-                "opportunityaccess__completedwork",
-                filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
-                distinct=True,
-            ),
+            total_workers=Count("opportunityaccess", distinct=True),
+            active_workers=F("total_workers") - F("inactive_workers"),
+            total_deliveries=Sum("opportunityaccess__completedwork__saved_completed_count", distinct=True),
+            verified_deliveries=Sum("opportunityaccess__completedwork__saved_approved_count", distinct=True)
         )
 
     return queryset
