@@ -608,16 +608,6 @@ def export_users_for_payment(request, org_slug, pk):
 def payment_import(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("payments")
-<<<<<<< HEAD
-    try:
-        status = bulk_update_payment_status(opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
-    else:
-        message = f"Payment status updated successfully for {len(status)} users."
-        messages.success(request, mark_safe(message))
-    return redirect(f"{reverse('opportunity:worker_list', args=[org_slug, pk])}?active_tab=payments")
-=======
     file_format = get_file_extension(file)
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
@@ -629,7 +619,6 @@ def payment_import(request, org_slug=None, pk=None):
     return redirect(
         f"{reverse('opportunity:worker_list', args=[org_slug, pk])}?active_tab=payments&export_task_id={result.id}"
     )
->>>>>>> sr/worker-lists
 
 
 @org_member_required
