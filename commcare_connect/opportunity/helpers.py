@@ -102,6 +102,8 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             .select_related("user")
             .annotate(
                 payment_unit=Value(payment_unit.name),
+                last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
+                started_delivery=Min("uservisit__visit_date"),
                 pending=Count(
                     "completedwork",
                     filter=Q(
@@ -262,7 +264,7 @@ def get_worker_table_data(opportunity):
     )
 
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
-        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date")),
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
         completed_modules_count=Count(
             "completedmodule__module",
             distinct=True,
@@ -312,9 +314,8 @@ def get_worker_learn_table_data(opportunity):
         .annotate(total_duration=Sum("duration"))
         .values("total_duration")[:1]
     )
-
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
-        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date")),
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
         completed_modules_count=Count("completedmodule__module", distinct=True),
         completed_learn=Case(
             When(

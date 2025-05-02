@@ -145,7 +145,7 @@ urlpatterns = [
     path("<int:opp_id>/worker_delivery/", views.worker_delivery, name="delivery_table"),
     path("<int:opp_id>/worker_payments/", views.worker_payments, name="payments_table"),
     path(
-        "tw/worker_learn_progress/<int:access_id>",
+        "<int:opp_id>/worker_learn_progress/<int:access_id>",
         views.worker_learn_status_view,
         name="worker_learn_progress",
     ),

@@ -240,14 +240,35 @@
   </div>
 </div>
 
-
+{% if is_program_manager %}
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+  id="visit-actions"
+  hx-swap-oob="true">
+  <div class="flex gap-4">
+    <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity_id %}"
+      hx-swap="none">
+      <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
+      <button class="button button-md outline-style" value="disagree" name="review_status">Disagree</button>
+      <button class="button button-md primary-dark" value="agree" name="review_status">Agree</button>
+    </form>
+  </div>
+</div>
+{% else %}
 <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
   x-data="{showRejectModal: false, showApproveModal: false}"
   id="visit-actions"
   hx-swap-oob="true">
-  <div class="flex gap-4">
-    <button class="button button-md outline-style" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
-    <button class="button button-md primary-dark" @click="showRejectModal = false; showApproveModal = true;">Approve</button>
+  <div>
+    <button class="button button-md positive-light"
+    {% if user_visit.opportunity.managed %}
+      @click="showRejectModal = false; showApproveModal = true;"
+    {% else %}
+      hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      hx-swap="none"
+    {% endif %}>
+      Approve
+    </button>
+    <button class="button button-md negative-light" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
   </div>
 
   <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
@@ -266,7 +287,7 @@
           <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
             placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
         </div>
-        <div class="footer flex justify-end gap-4">
+        <div class="footer flex justify-end">
           <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
             Close
           </button>
@@ -278,6 +299,7 @@
     </div>
   </div>
 
+  {% if user_visit.opportunity.managed %}
   <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showApproveModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
@@ -294,7 +316,7 @@
           <textarea required class="base-textarea" id="justification" rows="3" name="justification"
             placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
         </div>
-        <div class="footer flex justify-end gap-4">
+        <div class="footer flex justify-end">
           <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
             Close
           </button>
@@ -303,4 +325,10 @@
       </form>
     </div>
   </div>
+  {% endif %}
 </div>
+{% endif %}
+
+{{ visit_data|json_script:"visit_data" }}
+{{ user_forms|json_script:"user_forms" }}
+{{ other_forms|json_script:"other_forms" }}

@@ -847,9 +847,18 @@ class UserVisitVerificationTable(tables.Table):
         orderable=False,
         template_code="""
             <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
+                {% if record %}
+                    {% if record.status == 'over_limit' %}
+                    <span class="badge badge-sm negative-light mx-1">{{ record.get_status_display|lower }}</span>
+                    {% endif %}
+                {% endif %}
                 {% if value %}
                     {% for flag in value|slice:":2" %}
+                        {% if flag == "duplicate"%}
+                        <span class="badge badge-sm warning-light mx-1">
+                        {% else %}
                         <span class="badge badge-sm primary-light mx-1">
+                        {% endif %}
                             {{ flag }}
                         </span>
                     {% endfor %}
@@ -878,7 +887,7 @@ class UserVisitVerificationTable(tables.Table):
     def __init__(self, *args, **kwargs):
         organization = kwargs.pop("organization", None)
         super().__init__(*args, **kwargs)
-        self.use_view_url = False
+        self.use_view_url = True
         self.attrs = {"x-data": "{selectedRow: null}"}
         self.row_attrs = {
             "hx-get": lambda record: reverse(
@@ -889,6 +898,7 @@ class UserVisitVerificationTable(tables.Table):
             "hx-indicator": "#visit-loading-indicator",
             "hx-target": "#visit-details",
             "hx-params": "none",
+            "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
             ":class": lambda record: f"selectedRow == {record.id} && 'active'",
         }
@@ -992,9 +1002,9 @@ def get_duration_min(total_seconds):
     parts = []
     if days:
         parts.append(f"{days} day{'s' if days != 1 else ''}")
-    if hours:
+    elif hours:
         parts.append(f"{hours} hr")
-    if minutes or not parts:
+    elif minutes or not parts:
         parts.append(f"{minutes} min")
 
     return " ".join(parts)
@@ -1039,9 +1049,9 @@ class WorkerPaymentsTable(tables.Table):
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
     payment_accrued = tables.Column(verbose_name="Accrued")
-    total_paid = tables.Column()
+    total_paid = tables.Column(accessor="total_paid_d")
     last_paid = tables.DateColumn(format="d-M-Y")
-    total_confirmed_paid = tables.Column(verbose_name="Confirm")
+    confirmed_paid = tables.Column(verbose_name="Confirm")
 
     def __init__(self, *args, **kwargs):
         self.use_view_url = True
@@ -1049,7 +1059,7 @@ class WorkerPaymentsTable(tables.Table):
 
     class Meta:
         model = OpportunityAccess
-        fields = ("user", "suspended", "payment_accrued", "total_paid", "total_confirmed_paid")
+        fields = ("user", "suspended", "payment_accrued", "confirmed_paid")
         sequence = (
             "index",
             "user",
@@ -1058,7 +1068,7 @@ class WorkerPaymentsTable(tables.Table):
             "payment_accrued",
             "total_paid",
             "last_paid",
-            "total_confirmed_paid",
+            "confirmed_paid",
         )
 
 
@@ -1086,14 +1096,12 @@ class WorkerLearnTable(OrgContextTable):
         verbose_name="",
         orderable=False,
         template_code="""
-            <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
-                <a><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
-            </div>
         """,
     )
 
     def __init__(self, *args, **kwargs):
         self.use_view_url = True
+        self.opp_id = kwargs.pop("opp_id")
         super().__init__(*args, **kwargs)
 
     class Meta:
@@ -1119,7 +1127,7 @@ class WorkerLearnTable(OrgContextTable):
         return "Passed" if value else "Failed"
 
     def render_action(self, record):
-        url = reverse("opportunity:worker_learn_progress", args=(self.org_slug, record.id))
+        url = reverse("opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.id))
         return format_html(
             """ <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
                 <a href="{url}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
@@ -1128,7 +1136,7 @@ class WorkerLearnTable(OrgContextTable):
         )
 
 
-class WorkerDeliveryTable(tables.Table):
+class WorkerDeliveryTable(OrgContextTable):
     use_view_url = True
 
     id = tables.Column(visible=False)
@@ -1136,7 +1144,7 @@ class WorkerDeliveryTable(tables.Table):
     user = tables.Column(orderable=False, verbose_name="Name")
     suspended = SuspendedIndicatorColumn()
     last_active = tables.Column()
-    payment_unit = tables.Column()
+    payment_unit = tables.Column(orderable=False)
     started = tables.Column(accessor="started_delivery")
     delivered = tables.Column(accessor="completed")
     pending = tables.Column()
@@ -1168,7 +1176,6 @@ class WorkerDeliveryTable(tables.Table):
         )
 
     def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug")
         self.opp_id = kwargs.pop("opp_id")
         self.use_view_url = True
         super().__init__(*args, **kwargs)
