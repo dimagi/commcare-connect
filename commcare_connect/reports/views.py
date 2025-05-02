@@ -16,6 +16,8 @@ from django.urls import reverse
 from django.utils.functional import cached_property
 from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -318,7 +320,8 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
         return get_table_data_for_year_month(**self.filter_values)
 
 
-@login_required
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 @user_passes_test(lambda u: u.is_superuser)
 def dashboard_stats_api(request):
     filterset = DashboardFilters(request.GET)
