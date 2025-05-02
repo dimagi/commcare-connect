@@ -53,7 +53,6 @@ from commcare_connect.opportunity.views import (
     user_profile,
     user_visit_review,
     verification_flags_config,
-    visit_verification,
 )
 
 app_name = "opportunity"
@@ -113,7 +112,6 @@ urlpatterns = [
     path("<int:opp_id>/user_profile/<int:pk>/", view=user_profile, name="user_profile"),
     path("<int:pk>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
     path("applications/", get_application, name="get_applications_by_domain"),
-    path("verification/<int:pk>/", view=visit_verification, name="visit_verification"),
     path("approve/<int:pk>/", view=approve_visit, name="approve_visit"),
     path("reject/<int:pk>/", view=reject_visit, name="reject_visit"),
     path("fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),

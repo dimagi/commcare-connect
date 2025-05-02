@@ -1,31 +1,41 @@
-<div class="profile-card w=full h-full flex gap-4 text-white relative">
-  <div class="profile-left flex flex-col justify-center items-center">
-    <div class="h-12 w-12 rounded-full overflow-hidden relative">
-      <div class="absolute z-10 top-0 left-0 w-full h-full">
-        <svg viewBox="-600 -600 1200 1200" xmlns="http://www.w3.org/2000/svg">
-          <g transform="rotate(45)">
-            <circle r="500" stroke="red" stroke-width="200" stroke-linecap="round" pathLength="360" stroke-dasharray="90 270" fill="none"/>
-          </g>
-        </svg>
-      </div>
-      <img
-        src="https://gravatar.com/avatar/27205e5c51cb03f862138b22bcb5dc20f94a342e744ff6df1b8dc8af3c865109"
-        alt="Profile Image z-0"
-      />
-    </div>
-    <div class="share-icon flex justify-center mt-4">
-      <div class="relative">
-        <i class="fa-light fa-code-merge"></i>
+      <div x-data="{ isStatusModalOpen: false }"
+           class="profile-card w=full h-full flex gap-4 text-white relative">
+        <div class="profile-left flex flex-col justify-center items-center">
+          <div class="h-12 w-12 rounded-full overflow-hidden relative">
+            <div class="absolute z-10 top-0 left-0 w-full h-full"
+                 @click="isStatusModalOpen = true">
+              {% if opportunity_access.suspended %}
+                <svg viewBox="-600 -600 1200 1200" xmlns="http://www.w3.org/2000/svg">
+                  <g transform="rotate(45)">
+                    <circle r="500" stroke="red" stroke-width="200" stroke-linecap="round" pathLength="360"
+                            stroke-dasharray="90 270" fill="none"/>
+                  </g>
+                </svg>
+              {% endif %}
+            </div>
+            <img src="https://gravatar.com/avatar/27205e5c51cb03f862138b22bcb5dc20f94a342e744ff6df1b8dc8af3c865109"
+                 alt="Profile Image z-0"/>
+          </div>
+          <div class="share-icon flex justify-center mt-4">
+            <div class="relative">
+              <!-- Status Modal -->
+              <div x-show="isStatusModalOpen"
+                   x-cloak
+                   class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity z-40"
+                   @click="isStatusModalOpen = false"></div>
+              <div x-show="isStatusModalOpen"
+                   x-cloak
+                   class="absolute top-15 -left-8  bg-white rounded-2xl shadow-xl z-50"
+                   @click.stop>{% include "tailwind/components/cards/user_status_card.html" %}</div>
+            </div>
+          </div>
         </div>
-    </div>
-  </div>
-
-  <div class="flex flex-col py-2">
-    <h2 class="text-base whitespace-nowrap">{{user.name}}</h2>
-    <p class="text-xs">{{user.username}}</p>
-    <p class="mt-2 whitespace-nowrap">
-      <i class="fa-light fa-phone"></i>
-      <span class="text-xs">{{ user.phone_number|default:"--" }}</span>
-    </p>
-  </div>
-</div>
+        <div class="py-2 basis-sm">
+          <h2 class="text-base whitespace-nowrap">{{ opportunity_access.user.name }}</h2>
+          <p class="text-xs">{{ opportunity_access.user.username }}</p>
+          <p class="mt-2 whitespace-nowrap">
+            <i class="fa-light fa-phone"></i>
+            <span class="text-xs">{{ opportunity_access.user.phone_number }}</span>
+          </p>
+        </div>
+      </div>
