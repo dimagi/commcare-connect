@@ -11,7 +11,8 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage, storages
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
+from django.db.models.functions import Greatest
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
@@ -25,7 +26,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import CreateView, DetailView, TemplateView, UpdateView
-from django_tables2 import SingleTableMixin, SingleTableView
+from django_tables2 import RequestConfig, SingleTableMixin, SingleTableView
 from django_tables2.export import TableExport
 from geopy import distance
 
@@ -57,10 +58,13 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_list_data,
     get_payment_report_data,
+    get_worker_learn_table_data,
+    get_worker_table_data,
 )
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CatchmentArea,
+    CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
@@ -94,6 +98,12 @@ from commcare_connect.opportunity.tables import (
     UserPaymentsTable,
     UserStatusTable,
     UserVisitVerificationTable,
+    WorkerDeliveryTable,
+    WorkerLearnStatusTable,
+    WorkerLearnTable,
+    WorkerPaymentsTable,
+    WorkerStatusTable,
+    get_duration_min,
 )
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
@@ -175,6 +185,11 @@ class OpportunityList(OrganizationUserMixin, SingleTableMixin, TemplateView):
         if self.request.org.program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["org_slug"] = self.request.org.slug
+        return kwargs
 
     def get_table_data(self):
         org = self.request.org
@@ -388,16 +403,15 @@ def export_user_visits(request, org_slug, pk):
     form = VisitExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, pk)
+        return redirect("opportunity:worker_list", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
     date_range = DateRanges(form.cleaned_data["date_range"])
     status = form.cleaned_data["status"]
     flatten = form.cleaned_data["flatten_form_data"]
-
     result = generate_visit_export.delay(pk, date_range, status, export_format, flatten)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, pk))
+    return redirect(f"{redirect_url}?active_tab=delivery&export_task_id={result.id}")
 
 
 @org_member_required
@@ -428,7 +442,7 @@ def export_status(request, org_slug, task_id):
         progress["error"] = task_meta.get("result")
     return render(
         request,
-        "opportunity/upload_progress.html",
+        "tailwind/components/upload_progress_bar.html",
         {
             "task_id": task_id,
             "current_time": now().microsecond,
@@ -468,7 +482,8 @@ def update_visit_status_import(request, org_slug=None, pk=None):
         if status.missing_visits:
             message += status.get_missing_message()
         messages.success(request, mark_safe(message))
-    return redirect("opportunity:detail", org_slug, pk)
+    url = reverse("opportunity:worker_list", args=(org_slug, pk)) + "?active_tab=delivery"
+    return redirect(url)
 
 
 def review_visit_import(request, org_slug=None, pk=None):
@@ -572,12 +587,12 @@ def export_users_for_payment(request, org_slug, pk):
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, pk)
+        return redirect(f"{reverse('opportunity:worker_list', args=[org_slug, pk])}?active_tab=payments")
 
     export_format = form.cleaned_data["format"]
     result = generate_payment_export.delay(pk, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, pk))
+    return redirect(f"{redirect_url}?export_task_id={result.id}&active_tab=payments")
 
 
 @org_member_required
@@ -585,7 +600,6 @@ def export_users_for_payment(request, org_slug, pk):
 def payment_import(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     file = request.FILES.get("payments")
-
     file_format = get_file_extension(file)
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
@@ -594,8 +608,9 @@ def payment_import(request, org_slug=None, pk=None):
     saved_path = default_storage.save(file_path, ContentFile(file.read()))
     result = bulk_update_payments_task.delay(opportunity.pk, saved_path, file_format)
 
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(
+        f"{reverse('opportunity:worker_list', args=[org_slug, pk])}?active_tab=payments&export_task_id={result.id}"
+    )
 
 
 @org_member_required
@@ -724,11 +739,11 @@ def export_user_status(request, org_slug, pk):
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect("opportunity:detail", request.org.slug, pk)
+        return redirect("opportunity:worker_list", request.org.slug, pk)
 
     export_format = form.cleaned_data["format"]
     result = generate_user_status_export.delay(pk, export_format)
-    redirect_url = reverse("opportunity:detail", args=(request.org.slug, pk))
+    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, pk))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
@@ -1587,4 +1602,123 @@ def user_visit_details(request, org_slug, opp_id, pk):
             visit_data=visit_data,
             is_program_manager=is_program_manager_of_opportunity(request, opportunity),
         ),
+    )
+
+
+def opportunity_worker(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
+    visit_export_form = VisitExportForm()
+    export_form = PaymentExportForm()
+
+    path = [
+        {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+        {"title": opp.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+        {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
+    ]
+
+    raw_qs = request.GET.urlencode()
+    query = f"?{raw_qs}" if raw_qs else ""
+
+    tabs = [
+        {
+            "key": "workers",
+            "label": "Workers",
+            "url": reverse("opportunity:worker_table", kwargs=base_kwargs) + query,
+            "trigger": "loadWorkers",
+        },
+        {
+            "key": "learn",
+            "label": "Learn",
+            "url": reverse("opportunity:learn_table", kwargs=base_kwargs) + query,
+            "trigger": "loadLearn",
+        },
+        {
+            "key": "delivery",
+            "label": "Delivery",
+            "url": reverse("opportunity:delivery_table", kwargs=base_kwargs) + query,
+            "trigger": "loadDelivery",
+        },
+        {
+            "key": "payments",
+            "label": "Payments",
+            "url": reverse("opportunity:payments_table", kwargs=base_kwargs) + query,
+            "trigger": "loadPayments",
+        },
+    ]
+
+    return render(
+        request,
+        "tailwind/pages/opportunity_worker.html",
+        {
+            "opportunity": opp,
+            "tabs": tabs,
+            "visit_export_form": visit_export_form,
+            # This same form is used for multiple types of export
+            "export_form": export_form,
+            "export_task_id": request.GET.get("export_task_id"),
+            "path": path,
+        },
+    )
+
+
+@org_member_required
+def worker_main(request, org_slug=None, opp_id=None):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    data = get_worker_table_data(opportunity)
+    table = WorkerStatusTable(data)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
+
+
+@org_member_required
+def worker_learn(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    data = get_worker_learn_table_data(opp)
+    table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opp_id)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
+
+
+@org_member_required
+def worker_delivery(request, org_slug=None, opp_id=None):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    data = get_annotated_opportunity_access_deliver_status(opportunity)
+    table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opp_id)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
+
+
+@org_member_required
+def worker_payments(request, org_slug=None, opp_id=None):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
+        "-payment_accrued"
+    )
+    query_set = query_set.annotate(
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
+        last_paid=Max("payment__date_paid"),
+        confirmed_paid=Sum("payment__amount", filter=Q(payment__confirmed=True)),
+        total_paid_d=Sum("payment__amount")
+    )
+    table = WorkerPaymentsTable(query_set)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    return render(request, "tailwind/components/tables/table.html", {"table": table})
+
+
+@org_member_required
+def worker_learn_status_view(request, org_slug, opp_id, access_id):
+    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    completed_modules = CompletedModule.objects.filter(opportunity_access=access)
+    total_duration = datetime.timedelta(0)
+    for cm in completed_modules:
+        total_duration += cm.duration
+    total_duration = get_duration_min(total_duration.total_seconds())
+
+    table = WorkerLearnStatusTable(completed_modules)
+
+    return render(
+        request,
+        "tailwind/pages/opportunity_worker_learn.html",
+        {"header_title": "Worker", "total_learn_duration": total_duration, "table": table, "access": access},
     )

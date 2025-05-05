@@ -134,4 +134,15 @@ urlpatterns = [
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
     path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
+    # Worker List
+    path("<int:opp_id>/worker_list/", views.opportunity_worker, name="worker_list"),
+    path("<int:opp_id>/worker_main/", views.worker_main, name="worker_table"),
+    path("<int:opp_id>/worker_learn/", views.worker_learn, name="learn_table"),
+    path("<int:opp_id>/worker_delivery/", views.worker_delivery, name="delivery_table"),
+    path("<int:opp_id>/worker_payments/", views.worker_payments, name="payments_table"),
+    path(
+        "<int:opp_id>/worker_learn_progress/<int:access_id>",
+        views.worker_learn_status_view,
+        name="worker_learn_progress",
+    ),
 ]

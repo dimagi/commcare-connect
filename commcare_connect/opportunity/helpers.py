@@ -5,22 +5,26 @@ from django.db.models import (
     Case,
     Count,
     DecimalField,
+    DurationField,
     Exists,
     ExpressionWrapper,
     F,
+    FloatField,
     IntegerField,
     Max,
     Min,
     OuterRef,
     Q,
+    Subquery,
     Sum,
     Value,
     When,
 )
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Greatest, Round
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
+    Assessment,
     CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
@@ -98,6 +102,8 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             .select_related("user")
             .annotate(
                 payment_unit=Value(payment_unit.name),
+                last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
+                started_delivery=Min("uservisit__visit_date"),
                 pending=Count(
                     "completedwork",
                     filter=Q(
@@ -244,4 +250,85 @@ def get_opportunity_list_data(organization, program_manager=False):
             verified_deliveries=Sum("opportunityaccess__completedwork__saved_approved_count", distinct=True)
         )
 
+    return queryset
+
+
+def get_worker_table_data(opportunity):
+    learn_modules_count = opportunity.learn_app.learn_modules.count()
+
+    min_dates_per_module = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
+        .values("module")
+        .annotate(min_date=Min("date"))
+        .values("min_date")
+    )
+
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
+        completed_modules_count=Count(
+            "completedmodule__module",
+            distinct=True,
+        ),
+        completed_learn=Case(
+            When(
+                Q(completed_modules_count=learn_modules_count),
+                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+            ),
+            default=None,
+        ),
+        days_to_complete_learn=ExpressionWrapper(
+            F("completed_learn") - F("date_learn_started"),
+            output_field=DurationField(),
+        ),
+        first_delivery=Min(
+            "uservisit__visit_date",
+        ),
+        days_to_start_delivery=Case(
+            When(
+                date_learn_started__isnull=False,
+                first_delivery__isnull=False,
+                then=ExpressionWrapper(F("first_delivery") - F("date_learn_started"), output_field=DurationField()),
+            ),
+            default=None,
+            output_field=DurationField(),
+        ),
+    )
+
+    return queryset
+
+
+def get_worker_learn_table_data(opportunity):
+    learn_modules_count = opportunity.learn_app.learn_modules.count()
+    min_dates_per_module = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
+        .values("module")
+        .annotate(min_date=Min("date"))
+        .values("min_date")
+    )
+
+    assessments_qs = Assessment.objects.filter(user=OuterRef("user"), opportunity=OuterRef("opportunity"), passed=True)
+
+    duration_subquery = (
+        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
+        .values("opportunity_access")
+        .annotate(total_duration=Sum("duration"))
+        .values("total_duration")[:1]
+    )
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
+        completed_modules_count=Count("completedmodule__module", distinct=True),
+        completed_learn=Case(
+            When(
+                Q(completed_modules_count=learn_modules_count),
+                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+            ),
+            default=None,
+        ),
+        passed_assessment=Exists(assessments_qs),
+        assesment_count=Count("assessment", distinct=True),
+        learning_hours=Subquery(duration_subquery, output_field=DurationField()),
+        modules_completed_percentage=Round(
+            ExpressionWrapper(F("completed_modules_count") * 100.0 / learn_modules_count, output_field=FloatField()), 1
+        ),
+    )
     return queryset

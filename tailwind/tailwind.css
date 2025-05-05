@@ -222,7 +222,7 @@
 }
 
 .outline-style {
-  @apply text-brand-deep-purple rounded-lg border border-gray-200 bg-white;
+  @apply text-brand-deep-purple rounded-lg border border-gray-200 bg-gray-50;
 }
 
 /*-- chips ---------------------------------------*/
