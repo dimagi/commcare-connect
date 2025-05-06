@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage, storages
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.db.models.functions import Greatest
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
@@ -512,6 +512,8 @@ def update_visit_status_import(request, org_slug=None, pk=None):
         message = f"Visit status updated successfully for {len(status)} visits."
         if status.missing_visits:
             message += status.get_missing_message()
+        if status.over_limit_count:
+            messages.warning(request, mark_safe(status.get_over_limit_count_message()))
         messages.success(request, mark_safe(message))
     url = reverse("opportunity:worker_list", args=(org_slug, pk)) + "?active_tab=delivery"
     return redirect(url)
