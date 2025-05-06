@@ -166,25 +166,16 @@ class OpportunityPaymentTable(OrgContextTable):
 
     def render_view_payments(self, record):
         url = reverse(
-            "opportunity:user_payments_table",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+            "opportunity:worker_list",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id},
         )
-        return mark_safe(f'<a href="{url}">View Details</a>')
+        return mark_safe(f'<a href="{url}&active_tab=payments">View Details</a>')
 
     class Meta:
         model = OpportunityAccess
         fields = ("display_name", "username", "payment_accrued", "total_paid", "total_confirmed_paid")
         orderable = False
         empty_text = "No user have payments accrued yet."
-
-
-class UserPaymentsTable(tables.Table):
-    class Meta:
-        model = Payment
-        fields = ("amount", "date_paid", "payment_method", "payment_operator")
-        orderable = False
-        empty_text = "No payments made for this user"
-        template_name = "django_tables2/bootstrap5.html"
 
 
 class AggregateColumn(columns.Column):
@@ -1023,11 +1014,13 @@ class WorkerPaymentsTable(tables.Table):
     last_active = tables.Column()
     payment_accrued = tables.Column(verbose_name="Accrued")
     total_paid = tables.Column(accessor="total_paid_d")
-    last_paid = tables.DateColumn(format="d-M-Y")
+    last_paid = tables.Column()
     confirmed_paid = tables.Column(verbose_name="Confirm")
 
     def __init__(self, *args, **kwargs):
         self.use_view_url = True
+        self.org_slug = kwargs.pop("org_slug", "")
+        self.opp_id = kwargs.pop("opp_id", "")
         super().__init__(*args, **kwargs)
 
     class Meta:
@@ -1042,6 +1035,17 @@ class WorkerPaymentsTable(tables.Table):
             "total_paid",
             "last_paid",
             "confirmed_paid",
+        )
+
+    def render_last_paid(self, record, value):
+        return render_to_string(
+            "tailwind/components/worker_page/last_paid.html",
+            {
+                "record": record,
+                "value": value.strftime("%d-%b-%Y %H:%M") if value else "--",
+                "org_slug": self.org_slug,
+                "opp_id": self.opp_id,
+            },
         )
 
 
@@ -1199,6 +1203,21 @@ class WorkerDeliveryTable(OrgContextTable):
         display_index = next(self._row_counter)
 
         return display_index
+
+    def render_delivered(self, record, value):
+        rows = [
+            {"label": "Completed", "value": record.completed},
+            {"label": "Incomplete", "value": record.incomplete},
+            {"label": "Duplicate", "value": record.duplicate},
+            {"label": "Over limit", "value": record.over_limit},
+        ]
+        return render_to_string(
+            "tailwind/components/worker_page/deliver_column.html",
+            {
+                "value": value,
+                "rows": rows,
+            },
+        )
 
 
 class WorkerLearnStatusTable(tables.Table):

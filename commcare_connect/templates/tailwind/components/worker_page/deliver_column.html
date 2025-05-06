@@ -1,0 +1,42 @@
+{% load i18n %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+<div class="relative underline"
+     x-data="{
+         isOpen: false,
+         positionMenu() {
+             const rect = this.$el.getBoundingClientRect();
+             const menu = this.$refs.menu;
+             const top = rect.bottom + 5;
+             const left = rect.left + rect.width/2 - menu.offsetWidth/2;
+             menu.style.top = top + 'px';
+             menu.style.left = left + 'px';
+         }
+     }"
+     x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })"
+     >
+
+    <span class="px-3 py-1 rounded-lg cursor-pointer hover:bg-slate-200 underline">
+        {{value}}
+    </span>
+
+    <div x-ref="menu"
+         x-show="isOpen"
+         x-on:click.outside="isOpen = false"
+         x-transition
+         class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
+         style="display: none">
+
+            <p class="text-xs text-slate-400">Deliveries Info</p>
+
+            {% for item in rows %}
+                <div class="flex justify-between py-1 my-1 items-center w-32">
+                    <p class="text-xs text-brand-deep-purple">
+                        {{ item.label }}
+                    </p>
+                    <p class="text-sm text-slate-900">{{ item.value }}</p>
+                </div>
+            {% endfor %}
+    </div>
+</div>
