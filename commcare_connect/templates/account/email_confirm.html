@@ -1,13 +1,12 @@
-{% extends "account/base.html" %}
+{% extends "account/base.tailwind.html" %}
 
 {% load i18n %}
 {% load account %}
 
 {% block head_title %}{% translate "Confirm E-mail Address" %}{% endblock %}
 
-
 {% block inner %}
-<h1 class="mb-4">{% translate "Confirm E-mail Address" %}</h1>
+<h1 class="title text-brand-deep-purple mb-4">{% translate "Confirm E-mail Address" %}</h1>
 
 {% if confirmation %}
 
@@ -17,7 +16,7 @@
 
 <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
 {% csrf_token %}
-    <button class="btn btn-primary" type="submit">{% translate 'Confirm' %}</button>
+    <button class="button button-md primary-dark" type="submit">{% translate 'Confirm' %}</button>
 </form>
 
 {% else %}
