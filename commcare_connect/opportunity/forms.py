@@ -2,7 +2,7 @@ import datetime
 import json
 
 from crispy_forms.helper import FormHelper, Layout
-from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
+from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
@@ -34,6 +34,7 @@ from commcare_connect.users.models import User
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 
+BASE_INPUT_CLASS = "base-input"
 SELECT_CLASS = "base-dropdown"
 CHECKBOX_CLASS = "simple-toggle"
 
@@ -1053,7 +1054,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     class Meta:
         model = PaymentInvoice
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": "form-control"})}
+        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": BASE_INPUT_CLASS})}
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
@@ -1061,17 +1062,74 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("amount")),
-            Row(Field("date")),
-            Row(Field("invoice_number")),
-            Row(Field("service_delivery")),
+            Column(
+                Row(
+                    Row(
+                        Div(
+                            Field(
+                                "amount",
+                                css_class=f"{BASE_INPUT_CLASS} {'border-red-500 ring-2 ring-red-500/70  pr-8 mb-1' if self.errors.get('amount') else ''}",
+                            ),
+                            HTML(
+                                '<i class="fas fa-exclamation-circle text-red-500 absolute right-2 top-1/2 transform -translate-y-1/2 mt-1"></i>'
+                            )
+                            if self.errors.get("amount")
+                            else HTML(""),
+                            css_class="relative w-full",
+                        ),
+                        css_class="flex-1",
+                    ),
+                    Row(
+                        Div(
+                            Field(
+                                "date",
+                                css_class=f"{BASE_INPUT_CLASS} {'border-red-500 ring-2 ring-red-500/70 pr-8 mb-1' if self.errors.get('date') else ''}",
+                            ),
+                            HTML(
+                                '<i class="fas fa-exclamation-circle text-red-500 absolute right-2 top-1/2 transform -translate-y-1/2 mt-1"></i>'
+                            )
+                            if self.errors.get("date")
+                            else HTML(""),
+                            css_class="relative w-full",
+                        ),
+                        css_class="flex-1",
+                    ),
+                    Row(
+                        Div(
+                            Field(
+                                "invoice_number",
+                                css_class=f"{BASE_INPUT_CLASS} {'border-red-500 ring-2 ring-red-500/70  pr-8 mb-1' if self.errors.get('invoice_number') else ''}",
+                            ),
+                            HTML(
+                                '<i class="fas fa-exclamation-circle text-red-500 absolute right-2 top-1/2 transform -translate-y-1/2 mt-1"></i>'
+                            )
+                            if self.errors.get("invoice_number")
+                            else HTML(""),
+                            css_class="relative w-full",
+                        ),
+                        css_class="flex-1",
+                    ),
+                    Row(
+                        Field(
+                            "service_delivery",
+                            css_class=CHECKBOX_CLASS,
+                            wrapper_class="w-full bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                        ),
+                    ),
+                    css_class="flex flex-col gap-2",
+                ),
+                css_class="flex flex-col gap-4",
+            )
         )
         self.helper.form_tag = False
 
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
         if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
-            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
+            raise ValidationError(
+                f'Invoice "{invoice_number}" already exists',
+                code="invoice_number_reused",
+            )
         return invoice_number
 
     def save(self, commit=True):

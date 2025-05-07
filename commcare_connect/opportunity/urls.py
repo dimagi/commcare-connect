@@ -128,7 +128,6 @@ urlpatterns = [
     path("<int:opp_id>/user_visit_review/", user_visit_review, name="user_visit_review"),
     path("<int:pk>/user_invite/", view=opportunity_user_invite, name="user_invite"),
     path("<int:pk>/invoice/", views.invoice_list, name="invoice_list"),
-    path("<int:pk>/invoice_table/", views.PaymentInvoiceTableView.as_view(), name="invoice_table"),
     path("<int:pk>/invoice/create/", views.invoice_create, name="invoice_create"),
     path("<int:pk>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
