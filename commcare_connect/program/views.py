@@ -192,8 +192,6 @@ def manage_application(request, org_slug, application_id, action):
     application.save()
 
     messages.success(request, f"Application has been {action}ed successfully.")
-    if application.status == ProgramApplicationStatus.ACCEPTED:
-        return redirect("program:opportunity_init", request.org.slug, application.program.id)
     return redirect(redirect_url)
 
 

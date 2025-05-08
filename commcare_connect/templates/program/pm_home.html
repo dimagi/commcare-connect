@@ -148,7 +148,9 @@
                 {% if application.status == 'applied' %}
                 <div class="flex gap-2">
                   <button class="button button-md outline-style" value="reject"
-                    hx-post="{% url 'program:manage_application' request.org.slug application.id 'reject' %}">
+                    hx-post="{% url 'program:manage_application' request.org.slug application.id 'reject' %}"
+                    hx-swap="outerHTML"
+                    hx-target="body">
                     Reject
                   </button>
                   <button class="button button-md primary-dark" value="accept"
