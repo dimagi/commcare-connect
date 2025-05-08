@@ -1,0 +1,38 @@
+{% load crispy_forms_tags %}
+
+<div x-show="{{ modal_name }}"
+     x-cloak
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+     @keydown.escape.window="{{ modal_name }} = false">
+  <div @click.outside="{{ modal_name }} = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <div class="flex justify-between items-center pb-2 mb-4">
+      <h2 class="text-lg font-medium text-brand-deep-purple">
+        {{ modal_title }}
+      </h2>
+      <button @click="{{ modal_name }} = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <form action="{{ export_url }}"
+          method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-4">
+        {% crispy export_form %}
+      </div>
+
+      <div class="flex justify-end gap-2 pt-4">
+        <button type="button" class="button button-md outline-style" @click="{{ modal_name }} = false">
+          Close
+        </button>
+        <button type="submit" class="button button-md primary-dark">
+          <i class="bi bi-filetype-xls"></i>
+          Export
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

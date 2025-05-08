@@ -1,0 +1,55 @@
+{% load django_tables2 %}
+
+<form class="flex flex-col w-full gap-2"
+      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
+      hx-trigger="change, reload_table from:body"
+      hx-swap="outerHTML"
+      x-data="{
+        activeTab: '{{ request.GET.filter_status }}',
+        page: 1,
+      }">
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
+    <div class="tabs !gap-x-6">
+      {% for tab in tabs %}
+        <label class="tab" :class="{ 'tab-active': activeTab == '{{ tab.name }}'}">
+          <input class="peer sr-only" type="radio" value="{{ tab.name }}" name="filter_status"
+                 x-model="activeTab"
+                 @click="page = 1"
+            {% if not request.GET.filter_status and forloop.first %}
+                 checked="checked" {% elif request.GET.filter_status == tab.name %}
+                 checked="checked" {% endif %}/>
+          {{ tab.label }}
+        <span>(<span>{{ tab.count }}</span>)</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    <div x-data="datePicker('tableDatePicker', {% if request.GET.filter_date %} new Date('{{ request.GET.filter_date }}') {% else %} '' {% endif %})"
+      class="flex gap-x-4 items-center">
+      <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
+        <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
+        <input type="text" id="tableDatePicker" name="filter_date"
+               class="text-center w-32 focus:outline-none text-sm"
+               placeholder="Select Date"
+               value="{{ request.GET.filter_date|default:'' }}">
+        <i class="fa-solid fa-xmark text-brand-deep-purple cursor-pointer me-2" x-cloak x-show="selectedDate != ''" @click="clear()"></i>
+        <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Tab Content Container with Loading Animation -->
+  <div class="w-full relative shadow-sm flex-1 rounded-lg">
+    <div class="flex flex-col w-full gap-2 min-h-160">
+      {% render_table table %}
+    </div>
+    <div id="loading-spinner" role="status"
+         class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+      <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+      <span class="sr-only">Loading...</span>
+    </div>
+  </div>
+  <input type="hidden" name="page" value="{{ request.GET.page|default:1 }}" x-model="page" />
+  <input type="hidden" name="sort" value="{{ request.GET.sort|default:'' }}" />
+</form>

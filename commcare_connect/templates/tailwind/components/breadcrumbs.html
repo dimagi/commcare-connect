@@ -1,0 +1,8 @@
+<ul class="breadcrumb">
+    {% for data in path %}
+    <li>
+        <a href="{{ data.url }}">{{ data.title }}</a>
+        <i class="fa-solid fa-chevron-right"></i>
+    </li>
+    {% endfor %}
+</ul>

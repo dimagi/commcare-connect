@@ -175,15 +175,16 @@ class Opportunity(BaseModel):
 
     @property
     def max_visits_per_user_new(self):
-        return self.paymentunit_set.aggregate(max_total=Sum("max_total")).get("max_total", 0)
+        # aggregates return None
+        return self.paymentunit_set.aggregate(max_total=Sum("max_total")).get("max_total", 0) or 0
 
     @property
     def daily_max_visits_per_user_new(self):
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0)
+        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
 
     @property
     def budget_per_visit_new(self):
-        return self.paymentunit_set.aggregate(amount=Max("amount")).get("amount", 0)
+        return self.paymentunit_set.aggregate(amount=Max("amount")).get("amount", 0) or 0
 
     @property
     def budget_per_user(self):
@@ -646,6 +647,12 @@ class UserVisit(XFormBaseModel):
             except (TypeError, ValueError):
                 pass
         return duration
+
+    @property
+    def flags(self):
+        if self.flag_reason is not None:
+            return [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return []
 
     class Meta:
         constraints = [

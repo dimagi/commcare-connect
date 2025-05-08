@@ -1,0 +1,73 @@
+{% load static i18n %}
+<header class="fixed top-0 left-16 right-0 bg-gray-100 z-30">
+    <div class="flex items-center justify-between w-full px-4 py-2">
+        <!-- Left Section: Module Name -->
+        <h1 class="text-lg text-brand-deep-purple font-medium">{{ header_title|default:"CommCare Connect" }}</h1>
+
+        <!-- Right Section: Org, Profile Dropdown -->
+        <div class="flex items-center gap-x-2">
+
+            <!-- Organization selector -->
+            <div x-data="{ open: false }" class="relative mx-8">
+                <button @click="open = !open" class="flex items-center gap-2 focus:outline-none">
+                    <div class="text-left">
+                        <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{{ request.org.name }}</p>
+                        <p class="text-xs text-gray-400">{% if request.org.program_manager %}Program Manager{% else %}Network Manager{% endif %}</p>
+                    </div>
+
+                    <!-- Dropdown Toggle Icon -->
+                    <i :class="open ? 'rotate-180' : ''" class="fa-light fa-chevron-down transition-all text-xs"></i>
+                </button>
+
+                <!-- Organization Selector -->
+                <div x-show="open" x-transition.opacity x-cloak class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
+                    <ul class="p-2 w-full">
+                        {% for membership in request.memberships %}
+                        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+                          <a href="{% url 'opportunity:list' membership.organization.slug %}">
+                            <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
+                            <p class="text-xs text-gray-400">{% if membership.organization.program_manager %}Program Manager{% else %}Network Manager{% endif %}</p>
+                          </a>
+                        </li>
+                        {% endfor %}
+                        <li class="p-2 rounded cursor-pointer text-left">
+                            <a class="bg-brand-indigo text-white px-6 py-2 rounded-lg shadow-md hover:bg-blue-800 transition" href="{% url 'organization_create' %}">
+                            Add Organization
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- User Profile -->
+            <div x-data="{ open: false }" class="relative">
+                <button @click="open = !open" class="focus:outline-none">
+                    <!-- Avatar (Not Clickable) -->
+                    <div class="w-10 h-10 aspect-square rounded-full border border-gray-300 pointer-events-none overflow-hidden bg-grey-500">
+                        <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=JohnDoe" class="w-full h-full object-fill" />
+                    </div>
+                </button>
+
+                <!-- User Profile Selector -->
+                <div x-show="open" x-transition.opacity x-cloak class="absolute top-12 right-0 min-w-56 w-56 bg-white shadow rounded-lg z-50">
+                    <ul class="p-2 w-full">
+                        <li class="p-2 text-left">
+                            <p class="text-brand-deep-purple font-medium">{{ request.user.username }}</p>
+                            {% if request.org %}
+                                <span class="text-gray-400 text-sm">{{ request.org_membership.role }}</span>
+                            {% endif %}
+                        </li>
+                        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+                            <p class="text-brand-deep-purple"><a href="{% url 'users:detail' request.user.pk %}">{% translate "Profile" %}</a></p>
+                        </li>
+                        <li class="p-2 cursor-pointer">
+                            <div class="bg-brand-indigo text-white px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">
+                                <a href="{% url 'account_logout' %}">{% translate "Logout" %}</a>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>

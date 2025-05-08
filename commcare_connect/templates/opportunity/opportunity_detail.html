@@ -45,13 +45,6 @@
             </a>
           </li>
           {% if object.managed %}
-          <li>
-            <a class="dropdown-item"
-               href="{% url "opportunity:user_visit_review" org_slug=request.org.slug opp_id=opportunity.pk %}">
-              <i class="bi bi-clipboard2-data-fill pe-2"></i>
-             {% translate "Review User Visits" %}
-            </a>
-          </li>
             {% if request.org_membership.is_program_manager or request.user.is_superuser %}
               <li>
                 <a class="dropdown-item"

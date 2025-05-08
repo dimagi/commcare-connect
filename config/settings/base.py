@@ -330,7 +330,7 @@ CACHES = {
     }
 }
 
-DJANGO_TABLES2_TEMPLATE = "tables/tabbed_table.html"
+DJANGO_TABLES2_TEMPLATE = "tailwind/base_table.html"
 DJANGO_TABLES2_TABLE_ATTRS = {
     "class": "table table-bordered mb-0",
     "thead": {
