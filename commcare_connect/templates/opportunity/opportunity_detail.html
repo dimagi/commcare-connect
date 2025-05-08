@@ -123,6 +123,15 @@
             </a>
           </li>
           <li class="dropdown-divider"></li>
+          {% if opportunity.payment_info_required %}
+          <li>
+            <a class="dropdown-item"
+               href="{% url 'opportunity:payment_number_report' org_slug=request.org.slug %}">
+              <i class="bi bi-plus-circle-fill pe-2"></i>
+              {% translate "Review Payment Phone Numbers" %}
+            </a>
+          </li>
+          {% endif %}
           <li>
             <a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#exportPaymentModal">
               <i class="bi bi-file-earmark-arrow-down-fill pe-2"></i>
