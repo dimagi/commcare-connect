@@ -396,22 +396,31 @@ def get_opportunity_worker_progress(opp_id):
     opportunity = Opportunity.objects.filter(id=opp_id).values("start_date", "end_date", "total_budget").first()
 
     aggregates = Opportunity.objects.filter(id=opp_id).aggregate(
-        total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
-        approved_deliveries=Count(
-            "opportunityaccess__completedwork",
-            filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
-            distinct=True,
-        ),
-        rejected_deliveries=Count(
-            "opportunityaccess__completedwork",
-            filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.rejected),
-            distinct=True,
-        ),
         total_accrued=OpportunityAnnotations.total_accrued(),
         total_paid=OpportunityAnnotations.total_paid(),
         total_visits=Count("uservisit", distinct=True),
     )
+    user_visits = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
+        total_visits=Count("id", distinct=True),
+
+    )
+    cw = OpportunityAccess.objects.filter(opportunity_id=opp_id).aggregate(
+        total_deliveries=Count("completedwork", distinct=True),
+        approved_deliveries=Count(
+            "completedwork",
+            filter=Q(completedwork__status=CompletedWorkStatus.approved),
+            distinct=True,
+        ),
+        rejected_deliveries=Count(
+            "completedwork",
+            filter=Q(completedwork__status=CompletedWorkStatus.rejected),
+            distinct=True,
+        ),
+    )
+
     aggregates.update(opportunity)
+    aggregates.update(cw)
+    aggregates.update(user_visits)
 
     start_date = aggregates["start_date"]
     end_date = aggregates["end_date"] or today
@@ -441,36 +450,23 @@ def get_opportunity_worker_progress(opp_id):
 
 
 def get_opportunity_funnel_progress(opp_id):
-    completed_user_ids = (
-        CompletedModule.objects.filter(opportunity=OuterRef("pk"))
-        .values("user")
-        .annotate(
-            completed_modules=Count("module", distinct=True),
-            total_modules=Subquery(
-                LearnModule.objects.filter(app=OuterRef("opportunity__learn_app"))
-                .values("app")
-                .annotate(count=Count("id"))
-                .values("count")[:1]
-            ),
-        )
-        .filter(completed_modules=F("total_modules"))
-        .values("user")
-    )
-
     aggregates = Opportunity.objects.filter(id=opp_id).aggregate(
         workers_invited=OpportunityAnnotations.workers_invited(),
         pending_invites=OpportunityAnnotations.pending_invites(),
         started_learning_count=Count(
-            "opportunityaccess__user", filter=Q(opportunityaccess__date_learn_started__isnull=False), distinct=True
+            "opportunityaccess", filter=Q(opportunityaccess__date_learn_started__isnull=False), distinct=True
         ),
         claimed_job=Count("opportunityaccess__opportunityclaim", distinct=True),
         started_deliveries=Count("uservisit__user", distinct=True),
         completed_assessments=Count("assessment__user", filter=Q(assessment__passed=True), distinct=True),
         completed_learning=Count(
-            "opportunityaccess__user",
-            filter=Q(opportunityaccess__user__in=Subquery(completed_user_ids)),
-            distinct=True,
+            "opportunityaccess", filter=Q(opportunityaccess__completed_learn_date__isnull=False), distinct=True
         ),
     )
+
+    uv = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
+        started_deliveries=Count("user_id", distinct=True),
+    )
+    aggregates.update(uv)
 
     return aggregates
