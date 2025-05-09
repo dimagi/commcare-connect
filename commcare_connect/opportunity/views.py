@@ -166,7 +166,15 @@ def is_program_manager_of_opportunity(request, opportunity):
     return (
         opportunity.managed
         and opportunity.managedopportunity.program.organization.slug == request.org.slug
-        and (request.org.program_manager and (request.org_membership.is_admin or request.user.is_superuser))
+        and (
+            request.org.program_manager
+            and
+            (
+                (request.org_membership and request.org_membership.is_admin)
+                or
+                request.user.is_superuser
+            )
+        )
     )
 
 
@@ -1174,40 +1182,44 @@ def payment_report(request, org_slug, pk):
     )
     data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity)
     table = PaymentReportTable(data)
+    RequestConfig(request, paginate={"per_page": 15}).configure(table)
+
+    cards = [
+        {
+            "amount": f"{opportunity.currency} {total_user_payment_accrued}",
+            "icon": "fa-user-friends",
+            "label": "Worker",
+            "subtext": "Total Accrued",
+        },
+        {
+            "amount": f"{opportunity.currency} {total_paid_users}",
+            "icon": "fa-user-friends",
+            "label": "Worker",
+            "subtext": "Total Paid",
+        },
+        {
+            "amount": f"{opportunity.currency} {total_nm_payment_accrued}",
+            "icon": "fa-building",
+            "label": "Organization",
+            "subtext": "Total Accrued",
+        },
+        {
+            "amount": f"{opportunity.currency} {total_paid_nm}",
+            "icon": "fa-building",
+            "label": "Organization",
+            "subtext": "Total Paid",
+        },
+    ]
+
     return render(
         request,
-        "opportunity/payment_report.html",
+        "tailwind/pages/invoice_payment_report.html",
         context=dict(
             table=table,
             opportunity=opportunity,
-            total_paid_users=total_paid_users,
-            total_user_payment_accrued=total_user_payment_accrued,
-            total_paid_nm=total_paid_nm,
-            total_nm_payment_accrued=total_nm_payment_accrued,
+            cards=cards,
         ),
     )
-
-
-class PaymentInvoiceTableView(OrganizationUserMixin, SingleTableView):
-    model = PaymentInvoice
-    paginate_by = 25
-    table_class = PaymentInvoiceTable
-    template_name = "tables/single_table.html"
-
-    def get_table_kwargs(self):
-        kwargs = super().get_table_kwargs()
-        if self.request.org_membership != None and not self.request.org_membership.is_program_manager:  # noqa: E711
-            kwargs["exclude"] = ("pk",)
-        return kwargs
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["pk"]
-        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
-        filter_kwargs = dict(opportunity=opportunity)
-        table_filter = self.request.GET.get("filter")
-        if table_filter is not None and table_filter in ["paid", "pending"]:
-            filter_kwargs["payment__isnull"] = table_filter == "pending"
-        return PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
 
 
 @org_member_required
@@ -1215,24 +1227,55 @@ def invoice_list(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, pk)
+
+    program_manager = is_program_manager_of_opportunity(request, opportunity)
+
+    filter_kwargs = dict(opportunity=opportunity)
+
+    queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+    csrf_token = get_token(request)
+
+    table = PaymentInvoiceTable(
+        queryset,
+        org_slug=org_slug,
+        opp_id=pk,
+        exclude=("actions",) if not program_manager else tuple(),
+        csrf_token=csrf_token,
+    )
+
     form = PaymentInvoiceForm(opportunity=opportunity)
+    RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(
         request,
-        "opportunity/invoice_list.html",
-        context=dict(opportunity=opportunity, form=form),
+        "tailwind/pages/invoice_list.html",
+        {
+            "header_title": "Invoices",
+            "opportunity": opportunity,
+            "table": table,
+            "form": form,
+            "program_manager": program_manager,
+            "path": [
+                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, pk))},
+                {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, pk))},
+            ],
+        },
     )
 
 
 @org_member_required
-def invoice_create(request, org_slug, pk):
+def invoice_create(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or request.org_membership.is_program_manager:
+    if not opportunity.managed or is_program_manager_of_opportunity(request, opportunity):
         return redirect("opportunity:detail", org_slug, pk)
     form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
     if request.POST and form.is_valid():
         form.save()
         form = PaymentInvoiceForm(opportunity=opportunity)
-        return HttpResponse(render_crispy_form(form), headers={"HX-Trigger": "newInvoice"})
+        redirect_url = reverse("opportunity:invoice_list", args=[org_slug, pk])
+        response = HttpResponse(status=200)
+        response['HX-Redirect'] = redirect_url
+        return response
     return HttpResponse(render_crispy_form(form))
 
 
@@ -1240,7 +1283,7 @@ def invoice_create(request, org_slug, pk):
 @require_POST
 def invoice_approve(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
-    if not opportunity.managed or not request.org_membership.is_program_manager:
+    if not opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
         return redirect("opportunity:detail", org_slug, pk)
     invoice_ids = request.POST.getlist("pk")
     invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)
@@ -1254,7 +1297,7 @@ def invoice_approve(request, org_slug, pk):
             invoice=invoice,
         )
         payment.save()
-    return HttpResponse(headers={"HX-Trigger": "newInvoice"})
+    return redirect("opportunity:invoice_list", org_slug, pk)
 
 
 @org_member_required

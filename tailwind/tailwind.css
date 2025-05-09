@@ -122,6 +122,10 @@
   @apply bg-brand-deep-purple/10 absolute left-0 top-0 z-0 h-full w-full rounded-lg;
 }
 
+.button:disabled {
+  @apply pointer-events-none opacity-50;
+}
+
 .button-outline-rounded {
   @apply text-brand-deep-purple rounded-full border border-gray-200;
 }

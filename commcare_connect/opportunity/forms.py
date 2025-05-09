@@ -2,7 +2,7 @@ import datetime
 import json
 
 from crispy_forms.helper import FormHelper, Layout
-from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
+from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
@@ -33,8 +33,6 @@ from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
-
-SELECT_CLASS = "base-dropdown"
 CHECKBOX_CLASS = "simple-toggle"
 
 
@@ -584,9 +582,9 @@ class VisitExportForm(forms.Form):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field("format", css_class=SELECT_CLASS),
-                Field("date_range", css_class=SELECT_CLASS),
-                Field("status", css_class=SELECT_CLASS),
+                Field("format"),
+                Field("date_range"),
+                Field("status"),
                 Field(
                     "flatten_form_data",
                     css_class=CHECKBOX_CLASS,
@@ -635,7 +633,7 @@ class PaymentExportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format", css_class=SELECT_CLASS), css_class="flex flex-col"),
+            Row(Field("format"), css_class="flex flex-col"),
         )
         self.helper.form_tag = False
 
@@ -1053,7 +1051,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     class Meta:
         model = PaymentInvoice
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": "form-control"})}
+        widgets = {"date": forms.DateInput(attrs={"type": "date"})}
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
@@ -1061,17 +1059,27 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("amount")),
-            Row(Field("date")),
-            Row(Field("invoice_number")),
-            Row(Field("service_delivery")),
+            Row(
+                Field("amount"),
+                Field("date"),
+                Field("invoice_number"),
+                Field(
+                    "service_delivery",
+                    css_class=CHECKBOX_CLASS,
+                    wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
+                css_class="flex flex-col",
+            ),
         )
         self.helper.form_tag = False
 
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
         if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
-            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
+            raise ValidationError(
+                f'Invoice "{invoice_number}" already exists',
+                code="invoice_number_reused",
+            )
         return invoice_number
 
     def save(self, commit=True):

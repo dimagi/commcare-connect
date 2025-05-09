@@ -77,6 +77,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "crispy_forms",
     "crispy_bootstrap5",
+    "crispy_tailwind",
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
@@ -191,8 +192,8 @@ TEMPLATES = [
 ]
 
 FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
-CRISPY_TEMPLATE_PACK = "bootstrap5"
-CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = "tailwind"
+CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
 
 # FIXTURES
 # ------------------------------------------------------------------------------
