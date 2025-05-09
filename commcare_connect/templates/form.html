@@ -1,9 +1,12 @@
-{% extends "base.html" %}
+{% extends "tailwind/base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
-
-
+{% load tailwind_filters %}
 {% if title %}{% block title %}{{ title }}{% endblock %} {% endif %}
+
 {% block content %}
+<div class="md:max-w-screen-lg mx-auto">
+  {% include "tailwind/components/breadcrumbs.html" with path=path %}
   {% include "partial_form.html" %}
+</div>
 {% endblock content %}

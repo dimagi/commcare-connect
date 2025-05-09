@@ -2,7 +2,7 @@ import datetime
 import json
 
 from crispy_forms.helper import FormHelper, Layout
-from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
+from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit, Div
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
@@ -33,10 +33,8 @@ from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
-
 SELECT_CLASS = "base-dropdown"
 CHECKBOX_CLASS = "simple-toggle"
-
 
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
@@ -730,9 +728,8 @@ class AddBudgetNewUsersForm(forms.Form):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("add_users")),
-            Row(Field("total_budget")),
-            Submit(name="submit", value="Submit"),
+            Row(Field("add_users"), Field("total_budget"), css_class="grid grid-cols-2 gap-4"),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
@@ -808,8 +805,8 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -822,31 +819,35 @@ class PaymentUnitForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("amount")),
-            Row(Column("start_date"), Column("end_date")),
-            Row(Field("required_deliver_units")),
-            Row(Field("optional_deliver_units")),
-            HTML(
-                f"""
-                <button type="button" class="btn btn-sm btn-outline-info mb-3" id="sync-button"
-                hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
-                hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
-                event.detail.successful && location.reload();
-                this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
-                hx-disabled-elt="this"
-                hx-on:click="this.innerHTML=&quot;<span class=\\
-                'spinner-border spinner-border-sm'></span> Syncing...&quot;;">
-                <span id="sync-text">Sync Deliver Units</span>
-                </button>
+            Div(
+                Row(
+                    Column(Field("name"), Field("description")),
+                    Column(
+                        Field("amount"),
+                        Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
+                        Field("start_date"),
+                        Field("end_date")),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg"),
+                Row(
+                    Field("required_deliver_units"),
+                    Field("payment_units"),
+                    Field("optional_deliver_units"), Div(HTML(
+                        f"""
+                    <button type="button" class="button button-md outline-style" id="sync-button"
+                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
+                    hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
+                    event.detail.successful && location.reload();
+                    this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
+                    hx-disabled-elt="this"
+                    hx-on:click="this.innerHTML = 'Syncing...';">
+                    <span id="sync-text">Sync Deliver Units</span>
+                    </button>
+
                 """
-            ),
-            Row(Field("payment_units")),
-            Field("max_total", wrapper_class="form-group col-md-4 mb-0"),
-            Field("max_daily", wrapper_class="form-group col-md-4 mb-0"),
-            Submit(name="submit", value="Submit"),
-        )
+                    )),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg"),
+                Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
+                , css_class="flex flex-col gap-4"))
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
         self.fields["required_deliver_units"] = forms.MultipleChoiceField(
