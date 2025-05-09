@@ -21,47 +21,7 @@ class BaseProgramTest:
         self.user = program_manager_org_user_admin
         self.client = client
         client.force_login(self.user)
-        self.list_url = reverse("program:list", kwargs={"org_slug": self.organization.slug})
-
-
-@pytest.mark.django_db
-class TestProgramListView(BaseProgramTest):
-    @pytest.fixture(autouse=True)
-    def test_setup(self):
-        self.list_url = reverse("program:list", kwargs={"org_slug": self.organization.slug})
-        self.programs = ProgramFactory.create_batch(15, organization=self.organization)
-
-    def test_view_url_exists_at_desired_location(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-
-    def test_pagination_is_ten(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        programs = response.context["page_obj"].object_list
-        assert len(programs) == 10
-
-    def test_pagination_next_page(self):
-        response = self.client.get(f"{self.list_url}?page=2")
-        assert response.status_code == HTTPStatus.OK
-        programs = response.context["page_obj"].object_list
-        assert len(programs) == 5
-
-    def test_default_ordering(self, client):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        table = response.context["table"]
-        programs = table.data
-        expected_programs = sorted(self.programs, key=lambda p: p.start_date)
-        self.check_order(programs, expected_programs)
-
-    @staticmethod
-    def check_order(actual, expected):
-        assert len(actual) == len(expected)
-        for i, (program, expected_program) in enumerate(zip(actual, expected)):
-            assert (
-                program.name == expected_program.name
-            ), f"Order mismatch at index {i}: got '{program.name}', expected '{expected_program.name}'"
+        self.list_url = reverse("program:home", kwargs={"org_slug": self.organization.slug})
 
 
 @pytest.mark.django_db
@@ -76,7 +36,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
     def test_create_view(self):
         response = self.client.get(self.init_url)
         assert response.status_code == HTTPStatus.OK
-        assert "program/program_add.html" in response.templates[0].name
+        assert "program/program_form.html" in response.templates[0].name
 
     def test_create_program(self):
         data = {
@@ -101,7 +61,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
     def test_update_view(self):
         response = self.client.get(self.edit_url)
         assert response.status_code == HTTPStatus.OK
-        assert "program/program_edit.html" in response.templates[0].name
+        assert "program/program_form.html" in response.templates[0].name
 
     def test_update_program(self):
         data = {
