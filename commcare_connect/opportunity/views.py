@@ -232,7 +232,7 @@ class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
         kwargs["org_slug"] = self.request.org.slug
         return kwargs
 
-    def form_valid(self, form: OpportunityInitForm) -> HttpResponse:
+    def form_valid(self, form: OpportunityInitForm):
         response = super().form_valid(form)
         create_learn_modules_and_deliver_units(self.object.id)
         return response
