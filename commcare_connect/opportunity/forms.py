@@ -3,6 +3,7 @@ import json
 
 from crispy_forms.helper import FormHelper, Layout
 from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
+from crispy_tailwind.tailwind import CSSContainer
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
@@ -30,6 +31,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User
+from commcare_connect.utils.forms import FORM_BASE_STYLE
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
@@ -921,6 +923,7 @@ class SendMessageMobileUsersForm(forms.Form):
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
+        self.helper.css_container = CSSContainer(FORM_BASE_STYLE)
         self.helper.layout = Layout(
             Row(Field("selected_users")),
             Row(Field("title")),
@@ -961,18 +964,22 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+        self.helper.css_container = CSSContainer(FORM_BASE_STYLE)
+
         self.helper.layout = Layout(
             Row(
-                Field("duplicate", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                Field("gps", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                Field("catchment_areas", css_class="form-check-input", wrapper_class="form-check form-switch"),
+                Field("duplicate", css_class="block"),
+                Field("gps", css_class="block"),
+                Field("catchment_areas", css_class="block"),
+                css_class="grid grid-cols-3 gap-2",
             ),
             Row(Field("location")),
             Fieldset(
                 "Form Submission Hours",
                 Row(
-                    Column(Field("form_submission_start")),
-                    Column(Field("form_submission_end")),
+                    Field("form_submission_start"),
+                    Field("form_submission_end"),
+                    css_class="grid grid-cols-2 gap-2",
                 ),
             ),
         )
@@ -999,14 +1006,13 @@ class DeliverUnitFlagsForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+        self.helper.css_container = CSSContainer(FORM_BASE_STYLE)
         self.helper.layout = Layout(
             Row(
                 Column(Field("deliver_unit")),
-                Column(
-                    HTML("<div class='fw-bold mb-3'>Attachments</div>"),
-                    Field("check_attachments", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                ),
+                Column(Field("check_attachments")),
                 Column(Field("duration")),
+                css_class="grid grid-cols-3 gap-2",
             ),
         )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
@@ -1034,13 +1040,15 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+        self.helper.css_container = CSSContainer(FORM_BASE_STYLE)
         self.helper.layout = Layout(
             Row(
                 Column(Field("name")),
                 Column(Field("question_path")),
                 Column(Field("question_value")),
+                css_class="grid grid-cols-3 gap-2",
             ),
-            Row(Column(Field("deliver_unit"))),
+            Field("deliver_unit"),
         )
         self.helper.render_hidden_fields = True
 
