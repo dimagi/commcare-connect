@@ -109,18 +109,22 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
         if completed_modules:
             CompletedModule.objects.bulk_create(completed_modules)
 
-        if not access.completed_learn_date and access.learn_progress == 100.0:
-            # Get the earliest completion date for each unique module
-            earliest_dates = (
-                CompletedModule.objects
-                .filter(opportunity_access=access)
-                .values("module")
-                .annotate(earliest_date=Min("date"))
-            )
-            completed_learn_date = max(entry["earliest_date"] for entry in earliest_dates)
-            access.completed_learn_date = completed_learn_date
-            access.save()
+        update_completed_learn_date(access)
 
+
+
+def update_completed_learn_date(access):
+    if not access.completed_learn_date and access.learn_progress == 100.0:
+        # Get the earliest completion date for each unique module
+        earliest_dates = (
+            CompletedModule.objects
+            .filter(opportunity_access=access)
+            .values("module")
+            .annotate(earliest_date=Min("date"))
+        )
+        completed_learn_date = max(entry["earliest_date"] for entry in earliest_dates)
+        access.completed_learn_date = completed_learn_date
+        access.save()
 
 
 def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):

@@ -9,6 +9,7 @@ import pytest
 from django.utils.timezone import now
 from rest_framework.test import APIClient
 
+from commcare_connect.form_receiver.processor import update_completed_learn_date
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
     AssessmentStubFactory,
@@ -39,7 +40,7 @@ from commcare_connect.opportunity.tests.factories import (
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
-    PaymentUnitFactory,
+    PaymentUnitFactory, CompletedModuleFactory,
 )
 from commcare_connect.opportunity.tests.helpers import validate_saved_fields
 from commcare_connect.opportunity.visit_import import update_payment_accrued
@@ -690,3 +691,46 @@ def test_receiver_same_visit_twice(
     make_request(api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK)
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 1
+
+
+@pytest.mark.django_db
+def test_update_completed_learn_date(opportunity, mobile_user):
+    today = now()
+    two_days_ago = today - timedelta(days=2)
+    three_days_ago = today - timedelta(days=3)
+    tomorrow = today + timedelta(days=1)
+    future_date = today + timedelta(days=4)
+
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+    module3 = LearnModuleFactory(app=opportunity.learn_app)
+    learn_modules = LearnModule.objects.filter(app=opportunity.learn_app)
+    learn_modules_count = learn_modules.count()
+
+    assert learn_modules_count == 3
+
+    # module1 submissions the first date which module one completed should be: three_days_ago
+    CompletedModuleFactory(user=mobile_user, opportunity=opportunity, module=module1, date=two_days_ago,
+                           opportunity_access=access, xform_id=uuid4())
+    CompletedModuleFactory(user=mobile_user, opportunity=opportunity, module=module1, date=future_date,
+                           opportunity_access=access, xform_id=uuid4())
+    CompletedModuleFactory(user=mobile_user, opportunity=opportunity, module=module1, date=three_days_ago,
+                           opportunity_access=access, xform_id=uuid4())
+
+    # module2 submission the first date which module2 completed should be: today
+    CompletedModuleFactory(user=mobile_user, opportunity=opportunity, module=module2, date=today,
+                           opportunity_access=access, xform_id=uuid4())
+
+    # module3 submission the first date which module3 completed should be: tomorrow
+    CompletedModuleFactory(user=mobile_user, opportunity=opportunity, module=module3, date=tomorrow,
+                           opportunity_access=access, xform_id=uuid4())
+    CompletedModuleFactory(user=mobile_user, opportunity=opportunity, module=module3, date=future_date,
+                           opportunity_access=access, xform_id=uuid4())
+
+    # the completed learn date should be of tomorrow
+    update_completed_learn_date(access)
+
+    access.refresh_from_db()
+    assert access.completed_learn_date == tomorrow

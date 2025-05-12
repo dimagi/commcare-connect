@@ -366,30 +366,43 @@ def get_opportunity_delivery_progress(opp_id):
     yesterday = today - timedelta(days=1)
 
     aggregates = Opportunity.objects.filter(id=opp_id).aggregate(
-        inactive_workers=OpportunityAnnotations.inactive_workers(three_days_ago),
-        deliveries_from_yesterday=Count(
-            "uservisit",
-            filter=Q(uservisit__visit_date__gte=yesterday),
-            distinct=True,
-        ),
-        most_recent_delivery=Max("uservisit__visit_date"),
-        total_deliveries=Count("opportunityaccess__uservisit", distinct=True),
-        flagged_deliveries_waiting_for_review=Count(
-            "opportunityaccess__uservisit",
-            filter=Q(opportunityaccess__uservisit__status=VisitValidationStatus.pending),
-            distinct=True,
-        ),
-        visits_pending_for_pm_review=Count(
-            "uservisit",
-            filter=Q(uservisit__review_status=VisitReviewStatus.pending)
-            & Q(uservisit__review_created_on__isnull=False),
-        ),
         recent_payment=Max("opportunityaccess__payment__date_paid"),
         total_accrued=OpportunityAnnotations.total_accrued(),
         total_paid=OpportunityAnnotations.total_paid(),
         workers_invited=OpportunityAnnotations.workers_invited(),
         pending_invites=OpportunityAnnotations.pending_invites()
     )
+
+    user_visits_agg = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
+        inactive_workers =Count(
+            "user_id",
+            filter=~Q(visit_date__gte=three_days_ago)
+                   & ~Q(opportunity_access__completedmodule__date__gte=three_days_ago),
+            distinct=True,
+        ),
+        total_deliveries=Count("id", distinct=True),
+        deliveries_from_yesterday=Count(
+            "id",
+            filter=Q(visit_date__gte=yesterday),
+            distinct=True,
+        ),
+        most_recent_delivery=Max("visit_date"),
+        flagged_deliveries_waiting_for_review=Count(
+            "id",
+            filter=Q(status=VisitValidationStatus.pending),
+            distinct=True,
+        ),
+        visits_pending_for_pm_review=Count(
+            "id",
+            filter=Q(status=VisitValidationStatus.rejected) & Q(review_created_on__isnull=False),
+            distinct=True,
+        ),
+
+    )
+
+    aggregates.update(user_visits_agg)
+
+
     aggregates["payments_due"] = aggregates["total_accrued"] - aggregates["total_paid"]
 
 
@@ -403,29 +416,24 @@ def get_opportunity_worker_progress(opp_id):
     aggregates = Opportunity.objects.filter(id=opp_id).aggregate(
         total_accrued=OpportunityAnnotations.total_accrued(),
         total_paid=OpportunityAnnotations.total_paid(),
-        total_visits=Count("uservisit", distinct=True),
     )
-    user_visits = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
-        total_visits=Count("id", distinct=True),
-
-    )
-    cw = OpportunityAccess.objects.filter(opportunity_id=opp_id).aggregate(
-        total_deliveries=Count("completedwork", distinct=True),
+    user_visits_agg = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
+        total_deliveries=Count("id", distinct=True),
         approved_deliveries=Count(
-            "completedwork",
-            filter=Q(completedwork__status=CompletedWorkStatus.approved),
+            "id",
+            filter=Q(status=VisitValidationStatus.approved),
             distinct=True,
         ),
         rejected_deliveries=Count(
-            "completedwork",
-            filter=Q(completedwork__status=CompletedWorkStatus.rejected),
+            "id",
+            filter=Q(status=VisitValidationStatus.rejected),
             distinct=True,
         ),
+
     )
 
     aggregates.update(opportunity)
-    aggregates.update(cw)
-    aggregates.update(user_visits)
+    aggregates.update(user_visits_agg)
 
     start_date = aggregates["start_date"]
     end_date = aggregates["end_date"] or today
@@ -446,7 +454,7 @@ def get_opportunity_worker_progress(opp_id):
 
     aggregates["total_days"] = total_days
     aggregates["average_visits_per_day"] = (
-        round(float(aggregates["total_visits"]) / total_days, 1) if aggregates["total_visits"] and total_days else 0
+        round(float(aggregates["total_deliveries"]) / total_days, 1) if aggregates["total_deliveries"] and total_days else 0
     )
 
     aggregates["maximum_visit_in_a_day"] = maximum_visit_in_a_day
@@ -469,9 +477,9 @@ def get_opportunity_funnel_progress(opp_id):
         ),
     )
 
-    uv = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
+    user_visit_agg = UserVisit.objects.filter(opportunity_id=opp_id).aggregate(
         started_deliveries=Count("user_id", distinct=True),
     )
-    aggregates.update(uv)
+    aggregates.update(user_visit_agg)
 
     return aggregates
