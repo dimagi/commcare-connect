@@ -77,14 +77,13 @@
   {% url 'opportunity:user_status_export' org_slug=request.org.slug pk=opportunity.pk as user_status_export_url %}
   {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
 
-  {% url 'opportunity:visit_export' org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
-  {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showVisitExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=visit_export_form %}
+  {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showVisitExportModal" modal_title=_("Export Workers") export_url=import_export_delivery_urls.export_url export_form=visit_export_form %}
 
   {% url 'opportunity:payment_export' org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
   {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
-  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=_("Import Verified Visits") import_url=visit_import_url input_name="visits" input_help_text=_('The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.') %}
+  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=_("Import Verified Visits") export_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=_('The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.') %}
 
   {% url 'opportunity:payment_import' request.org.slug opportunity.pk as payment_import_url %}
   {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showPaymentImportModal" modal_title=_("Import Payment Records") import_url=payment_import_url input_name="payments" input_help_text=_('The file must contain at least the "Username", "Amount" and "Payment Date" columns.') %}
@@ -110,22 +109,38 @@ function opportunityTabs() {
     init() {
       const urlParams = new URLSearchParams(window.location.search);
       const tab = urlParams.get('active_tab') || 'workers';
-      this.setTab(tab, true);
+      this.setTab(tab, true, true);
     },
-    setTab(tab, updateUrl = true) {
+    setTab(tab, updateUrl = true, isInit = false) {
+      if (this.selectedTab == tab) return;
+
       this.selectedTab = tab;
       this.selectedOption = '';
 
       if (updateUrl) {
         const url = new URL(window.location.href);
         url.searchParams.set('active_tab', tab);
+
+        // removed page param from main url on tab change
+        if (!isInit) {
+          url.searchParams.delete('page');
+        }
+
         window.history.replaceState({}, '', url);
       }
 
       this.$nextTick(() => {
         const tabElement = document.querySelector(`#${tab}-tab`);
         const container = document.querySelector('#opportunity_worker_container');
-        const url = tabElement?.dataset?.url;
+        let url = tabElement?.dataset?.url;
+
+        // removed page param from htmx url on tab change
+        if (!isInit) {
+          const cleanUrl = new URL(url, window.location.origin);
+          cleanUrl.searchParams.delete('page');
+          url = cleanUrl.toString();
+        }
+
         if (url && container) {
           htmx.ajax('GET', url, {
             target: container,

@@ -34,6 +34,12 @@ class OrgContextTable(tables.Table):
         super().__init__(*args, **kwargs)
 
 
+class OpportunityContextTable(OrgContextTable):
+    def __init__(self, *args, **kwargs):
+        self.opp_id = kwargs.pop("opp_id", None)
+        super().__init__(*args, **kwargs)
+
+
 class LearnStatusTable(OrgContextTable):
     display_name = columns.Column(verbose_name="Name")
     learn_progress = columns.Column(verbose_name="Modules Completed")
@@ -507,24 +513,29 @@ class PaymentReportTable(tables.Table):
         orderable = False
 
 
-class PaymentInvoiceTable(tables.Table):
-    pk = columns.CheckBoxColumn(
-        accessor="pk",
-        verbose_name="",
-        attrs={
-            "input": {"x-model": "selected"},
-            "th__input": {"@click": "toggleSelectAll()", "x-bind:checked": "selectAll"},
-        },
-    )
+class PaymentInvoiceTable(OpportunityContextTable):
     payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
+    actions = tables.Column(empty_values=(), orderable=False, verbose_name="Pay")
 
     class Meta:
         model = PaymentInvoice
         orderable = False
-        fields = ("pk", "amount", "date", "invoice_number", "service_delivery")
-        sequence = ("pk", "amount", "date", "invoice_number", "payment_status", "payment_date", "service_delivery")
+        fields = ("amount", "date", "invoice_number", "service_delivery")
+        sequence = (
+            "amount",
+            "date",
+            "invoice_number",
+            "payment_status",
+            "payment_date",
+            "service_delivery",
+            "actions",
+        )
         empty_text = "No Payment Invoices"
+
+    def __init__(self, *args, **kwargs):
+        self.csrf_token = kwargs.pop("csrf_token")
+        super().__init__(*args, **kwargs)
 
     def render_payment_status(self, value):
         if value is not None:
@@ -535,6 +546,17 @@ class PaymentInvoiceTable(tables.Table):
         if value is not None:
             return value.date_paid
         return
+
+    def render_actions(self, record):
+        invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opp_id])
+        template_string = f"""
+            <form method="POST" action="{ invoice_approve_url  }">
+                <input type="hidden" name="csrfmiddlewaretoken" value="{ self.csrf_token }">
+                <input type="hidden" name="pk" value="{ record.pk }">
+                <button type="submit" class="button button-md outline-style" {'disabled' if getattr(record, 'payment', None) else ''}>Pay</button>
+            </form>
+        """
+        return mark_safe(template_string)
 
 
 def popup_html(value, popup_title, popup_direction="top", popup_class="", popup_attributes=""):
@@ -744,8 +766,7 @@ class OpportunityTable(BaseOpportunityList):
             actions.append(
                 {
                     "title": "View Invoices",
-                    "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
-                    # "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.id]),
                 }
             )
 
@@ -823,8 +844,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             actions.append(
                 {
                     "title": "View Invoices",
-                    "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
-                    # "url": reverse("opportunity:tw_invoice_list", args=[record.organization.slug, record.id]),
+                    "url": reverse("opportunity:invoice_list", args=[record.organization.slug, record.id]),
                 }
             )
 

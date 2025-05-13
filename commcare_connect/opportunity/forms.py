@@ -1,8 +1,8 @@
 import datetime
 import json
 
-from crispy_forms.helper import FormHelper, Layout
-from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
@@ -33,8 +33,6 @@ from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
-
-SELECT_CLASS = "base-dropdown"
 CHECKBOX_CLASS = "simple-toggle"
 
 
@@ -104,38 +102,66 @@ class OpportunityChangeForm(
         ]
 
     def __init__(self, *args, **kwargs):
-        kwargs["opportunity"] = kwargs.get(
-            "instance", None
-        )  # passing the opportunity instance to OpportunityUserInviteForm
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("active", css_class="form-check-input", wrapper_class="form-check form-switch")),
-            Row(Field("is_test", css_class="form-check-input", wrapper_class="form-check form-switch")),
-            Row(Field("delivery_type")),
-            Row(Field("description")),
-            Row(Field("short_description")),
-            Row(Field("payment_info_required")),
             Row(
-                Field("currency", wrapper_class="form-group col-md-6 mb-0"),
-                Field("end_date", wrapper_class="form-group col-md-6 mb-0"),
-            ),
-            HTML("<hr />"),
-            Fieldset(
-                "Invite Users",
-                Row(Field("users")),
-                Row(
-                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
-                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
+                HTML(
+                    "<div class='col-span-2'>"
+                    "<h6 class='title-sm'>Opportunity Details</h6>"
+                    "<span class='hint'>Edit the details of the opportunity. All fields are mandatory.</span>"
+                    "</div>"
                 ),
+                Column(
+                    Field("name", wrapper_class="w-full"),
+                    Field("short_description", wrapper_class="w-full"),
+                    Field("description", wrapper_class="w-full"),
+                ),
+                Column(
+                    Field("delivery_type"),
+                    Field(
+                        "active",
+                        css_class=CHECKBOX_CLASS,
+                        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                    ),
+                    Field(
+                        "is_test",
+                        css_class=CHECKBOX_CLASS,
+                        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                    ),
+                ),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
-            Submit("submit", "Submit"),
+            Row(
+                HTML(
+                    "<div class='col-span-2'>"
+                    "<h6 class='title-sm'>Date</h6>"
+                    "<span class='hint'>Optional: If not specified, the opportunity start & end dates will"
+                    " apply to the form submissions.</span>"
+                    "</div>"
+                ),
+                Column(
+                    Field("end_date"),
+                ),
+                Column(Field("currency"), Field("additional_users")),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+            ),
+            Row(
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Workers</h6></div>"),
+                Row(
+                    Field("filter_country", wrapper_class="w-full"),
+                    Field("filter_credential", wrapper_class="w-full"),
+                    css_class="flex gap-2",
+                ),
+                Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+            ),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
-        self.fields["payment_info_required"] = forms.BooleanField(
-            label="Require Phone Numbers from users for payments", required=False
+        self.fields["additional_users"] = forms.IntegerField(
+            required=False, help_text="Adds budget for additional users."
         )
         self.fields["end_date"] = forms.DateField(
             widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
@@ -146,9 +172,6 @@ class OpportunityChangeForm(
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
-
-        if self.instance.managed:
-            self.fields["currency"].disabled = True
 
     def clean_active(self):
         active = self.cleaned_data["active"]
@@ -178,27 +201,46 @@ class OpportunityInitForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("short_description")),
-            Fieldset(
-                "Learn App",
-                Row(Field("learn_app_domain")),
-                Row(Field("learn_app")),
-                Row(Field("learn_app_description")),
-                Row(Field("learn_app_passing_score")),
-                data_loading_states=True,
+            Row(
+                HTML(
+                    "<div class='col-span-2'>"
+                    "<h6 class='title-sm'>Opportunity Details</h6>"
+                    "<span class='hint'>Add the details of the opportunity. All fields are mandatory.</span>"
+                    "</div>"
+                ),
+                Column(
+                    Field("name"),
+                    Field("short_description"),
+                    Field("description"),
+                ),
+                Column(
+                    Field("currency"),
+                    Field("api_key"),
+                ),
+                css_class="grid grid-cols-2 gap-4 card_bg",
             ),
-            Fieldset(
-                "Deliver App",
-                Row(Field("deliver_app_domain")),
-                Row(Field("deliver_app")),
-                data_loading_states=True,
+            Row(
+                HTML(
+                    "<div class='col-span-2'>"
+                    "<h6 class='title-sm'>Apps</h6>"
+                    "<span class='hint'>Add required apps to the opportunity. All fields are mandatory.</span>"
+                    "</div>"
+                ),
+                Column(
+                    Field("learn_app_domain"),
+                    Field("learn_app"),
+                    Field("learn_app_description"),
+                    Field("learn_app_passing_score"),
+                    data_loading_states=True,
+                ),
+                Column(
+                    Field("deliver_app_domain"),
+                    Field("deliver_app"),
+                    data_loading_states=True,
+                ),
+                css_class="grid grid-cols-2 gap-4 card_bg my-4",
             ),
-            Row(Field("currency")),
-            Row(Field("payment_info_required")),
-            Row(Field("api_key")),
-            Submit("submit", "Submit"),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
         domain_choices = [(domain, domain) for domain in self.domains]
@@ -244,15 +286,12 @@ class OpportunityInitForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
-            try:
-                cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
-                cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
+            cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
+            cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
 
-                if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
-                    self.add_error("learn_app", "Learn app and Deliver app cannot be same")
-                    self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
-            except KeyError:
-                raise forms.ValidationError("Invalid app data")
+            if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
+                self.add_error("learn_app", "Learn app and Deliver app cannot be same")
+                self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
             return cleaned_data
 
     def save(self, commit=True):
@@ -309,8 +348,8 @@ class OpportunityFinalizeForm(forms.ModelForm):
             "total_budget",
         ]
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -321,21 +360,25 @@ class OpportunityFinalizeForm(forms.ModelForm):
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper()
+        self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Field(
-                "start_date",
-                help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
+            Row(
+                Field(
+                    "start_date",
+                    help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
+                    wrapper_class="flex-1",
+                ),
+                Field("end_date", wrapper_class="flex-1"),
+                Field(
+                    "max_users",
+                    oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
+                    f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
+                    f"* parseInt(this.value || 0)",
+                ),
+                Field("total_budget", readonly=True, wrapper_class="form-group "),
+                css_class="grid grid-cols-2 gap-6",
             ),
-            Field("end_date"),
-            Field(
-                "max_users",
-                oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
-                f"* parseInt(this.value || 0)",
-            ),
-            Field("total_budget", readonly=True, wrapper_class="form-group col-md-4 mb-0"),
-            Submit("submit", "Submit"),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
         if self.opportunity.managed:
@@ -589,9 +632,9 @@ class VisitExportForm(forms.Form):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field("format", css_class=SELECT_CLASS),
-                Field("date_range", css_class=SELECT_CLASS),
-                Field("status", css_class=SELECT_CLASS),
+                Field("format"),
+                Field("date_range"),
+                Field("status"),
                 Field(
                     "flatten_form_data",
                     css_class=CHECKBOX_CLASS,
@@ -619,9 +662,12 @@ class ReviewVisitExportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format")),
-            Row(Field("date_range")),
-            Row(Field("status")),
+            Row(
+                Field("format"),
+                Field("date_range"),
+                Field("status"),
+                css_class="flex flex-col",
+            ),
         )
         self.helper.form_tag = False
 
@@ -640,7 +686,7 @@ class PaymentExportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format", css_class=SELECT_CLASS), css_class="flex flex-col"),
+            Row(Field("format"), css_class="flex flex-col"),
         )
         self.helper.form_tag = False
 
@@ -813,8 +859,8 @@ class PaymentUnitForm(forms.ModelForm):
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -827,15 +873,30 @@ class PaymentUnitForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("amount")),
-            Row(Column("start_date"), Column("end_date")),
-            Row(Field("required_deliver_units")),
-            Row(Field("optional_deliver_units")),
+            Row(
+                Column(
+                    Field("name"),
+                    Field("description"),
+                ),
+                Column(
+                    Row(Field("start_date"), Field("end_date"), css_class="grid grid-cols-2 gap-4"),
+                    Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
+                    Field("amount"),
+                ),
+                css_class="grid grid-cols-2 gap-4",
+            ),
+            HTML('<div class="bg-gray-200 h-0.5 w-full my-8"></div>'),
+            Row(
+                Column(
+                    Field("required_deliver_units", css_class=CHECKBOX_CLASS),
+                    Field("optional_deliver_units", css_class=CHECKBOX_CLASS),
+                ),
+                Column(Field("payment_units", css_class=CHECKBOX_CLASS)),
+                css_class="grid grid-cols-2 gap-4",
+            ),
             HTML(
                 f"""
-                <button type="button" class="btn btn-sm btn-outline-info mb-3" id="sync-button"
+                <button type="button" class="button button-sm warning-dark" id="sync-button"
                 hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
                 hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
                 event.detail.successful && location.reload();
@@ -847,10 +908,10 @@ class PaymentUnitForm(forms.ModelForm):
                 </button>
                 """
             ),
-            Row(Field("payment_units")),
-            Field("max_total", wrapper_class="form-group col-md-4 mb-0"),
-            Field("max_daily", wrapper_class="form-group col-md-4 mb-0"),
-            Submit(name="submit", value="Submit"),
+            Row(
+                Submit(name="submit", value="Submit", css_class="button button-md primary-dark"),
+                css_class="flex justify-end",
+            ),
         )
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
@@ -888,27 +949,6 @@ class PaymentUnitForm(forms.ModelForm):
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
 
-    def clean(self):
-        cleaned_data = super().clean()
-        if cleaned_data:
-            if cleaned_data["max_daily"] > cleaned_data["max_total"]:
-                self.add_error(
-                    "max_daily",
-                    "Daily max visits per user cannot be greater than total Max visits per user",
-                )
-            common_deliver_units = set(cleaned_data.get("required_deliver_units", [])) & set(
-                cleaned_data.get("optional_deliver_units", [])
-            )
-            for deliver_unit in common_deliver_units:
-                deliver_unit_obj = DeliverUnit.objects.get(pk=deliver_unit)
-                self.add_error(
-                    "optional_deliver_units",
-                    error=f"{deliver_unit_obj.name} cannot be marked both Required and Optional",
-                )
-            if cleaned_data["end_date"] and cleaned_data["end_date"] < now().date():
-                self.add_error("end_date", "Please provide a valid end date.")
-        return cleaned_data
-
 
 class SendMessageMobileUsersForm(forms.Form):
     title = forms.CharField(
@@ -927,10 +967,10 @@ class SendMessageMobileUsersForm(forms.Form):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("selected_users")),
-            Row(Field("title")),
-            Row(Field("body")),
-            Row(Field("message_type")),
+            Field("selected_users"),
+            Field("title"),
+            Field("body"),
+            Field("message_type"),
             Submit(name="submit", value="Submit"),
         )
 
@@ -966,18 +1006,21 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+
         self.helper.layout = Layout(
             Row(
-                Field("duplicate", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                Field("gps", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                Field("catchment_areas", css_class="form-check-input", wrapper_class="form-check form-switch"),
+                Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
+                Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
+                Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
+                css_class="grid grid-cols-3 gap-2",
             ),
             Row(Field("location")),
             Fieldset(
                 "Form Submission Hours",
                 Row(
-                    Column(Field("form_submission_start")),
-                    Column(Field("form_submission_end")),
+                    Field("form_submission_start"),
+                    Field("form_submission_end"),
+                    css_class="grid grid-cols-2 gap-2",
                 ),
             ),
         )
@@ -1007,11 +1050,9 @@ class DeliverUnitFlagsForm(forms.ModelForm):
         self.helper.layout = Layout(
             Row(
                 Column(Field("deliver_unit")),
-                Column(
-                    HTML("<div class='fw-bold mb-3'>Attachments</div>"),
-                    Field("check_attachments", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                ),
+                Column(Field("check_attachments", css_class=CHECKBOX_CLASS)),
                 Column(Field("duration")),
+                css_class="grid grid-cols-3 gap-2",
             ),
         )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
@@ -1044,13 +1085,15 @@ class FormJsonValidationRulesForm(forms.ModelForm):
                 Column(Field("name")),
                 Column(Field("question_path")),
                 Column(Field("question_value")),
+                css_class="grid grid-cols-3 gap-2",
             ),
-            Row(Column(Field("deliver_unit"))),
+            Field("deliver_unit"),
         )
         self.helper.render_hidden_fields = True
 
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), widget=forms.CheckboxSelectMultiple
+            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            widget=forms.CheckboxSelectMultiple,
         )
 
 
@@ -1058,7 +1101,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     class Meta:
         model = PaymentInvoice
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": "form-control"})}
+        widgets = {"date": forms.DateInput(attrs={"type": "date"})}
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
@@ -1066,17 +1109,27 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("amount")),
-            Row(Field("date")),
-            Row(Field("invoice_number")),
-            Row(Field("service_delivery")),
+            Row(
+                Field("amount"),
+                Field("date"),
+                Field("invoice_number"),
+                Field(
+                    "service_delivery",
+                    css_class=CHECKBOX_CLASS,
+                    wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
+                css_class="flex flex-col",
+            ),
         )
         self.helper.form_tag = False
 
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
         if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
-            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
+            raise ValidationError(
+                f'Invoice "{invoice_number}" already exists',
+                code="invoice_number_reused",
+            )
         return invoice_number
 
     def save(self, commit=True):

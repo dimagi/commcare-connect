@@ -6,7 +6,7 @@
     <div>
       {% if opportunity_access.suspended %}
         <a class="button button-sm primary-light"
-        href="{% url "opportunity:revoke_user_suspension" org_slug=request.org opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}?next={{ request.path|urlencode }}">
+        href="{% url "opportunity:revoke_user_suspension" org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}?next={{ request.path|urlencode }}">
           {% translate "Revoke Suspension" %}
         </a>
       {% else %}
@@ -30,7 +30,7 @@
         </button>
       </div>
       <form method="post"
-          action="{% url "opportunity:suspend_user" org_slug=request.org opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}"
+          action="{% url "opportunity:suspend_user" org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}"
           @submit="showSuspendModal = false">
           {% csrf_token %}
           <div class="mb-2">
