@@ -1,0 +1,54 @@
+{% load i18n %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+<div x-data="{rollbackPaymentModal: false}">
+
+  <p class="text-xs text-slate-400">Payment History</p>
+  {% for payment in payments %}
+  <div class="flex justify-between py-1 my-1 items-center">
+      <p class="text-xs text-brand-deep-purple">{{payment.date_paid | date:"d-m-Y" }}</p>
+      <p class="text-sm text-slate-900">{{payment.amount}}</p>
+  </div>
+  {% endfor %}
+
+  {% if not request.org_membership.is_viewer %}
+  <button class="button button-md mt-3 negative-light"
+  @click="rollbackPaymentModal = true">Rollback Last Payment</button>
+  {% endif %}
+
+  <div x-show="rollbackPaymentModal"
+       x-cloak
+       x-transition.opacity
+       class="modal-backdrop"
+       @keydown.escape.window="rollbackPaymentModal = false">
+    <div @click.away="rollbackPaymentModal = false"
+         x-transition
+         class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Rollback Last Payment</h2>
+        <button @click="rollbackPaymentModal = false" class="text-gray-500 hover:text-gray-700 ">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+      <div class="py-4 text-gray-700 whitespace-normal">
+          Please confirm to rollback the payment of <b>{{ latest_payment.amount }} {{ opportunity.currency }}</b> 
+          paid on <b>{{ latest_payment.date_paid|date }}</b> to <b>{{ access.display_name }}</b>.
+      </div>
+      <div class="footer flex justify-end gap-4">
+        <form action="{% url "opportunity:payment_delete" org_slug=request.org.slug opp_id=access.opportunity_id access_id=access.pk pk=latest_payment.pk %}" method="post">
+          {% csrf_token %}
+          <div class="flex justify-end gap-2 pt-4">
+            <button type="button" class="button button-md outline-style" @click="rollbackPaymentModal = false">
+              Close
+            </button>
+            <button type="submit" class="button button-md negative-dark">
+              <i class="bi bi-filetype-xls"></i>
+              Rollback
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
