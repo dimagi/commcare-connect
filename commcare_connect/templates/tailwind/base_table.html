@@ -2,7 +2,7 @@
 {% load i18n %}
 {% block table-wrapper %}
 {% load sort_link %}
-<div class="overflow-hidden table-container flex flex-col gap-2">
+<div class="overflow-hidden table-container flex flex-col gap-2 mb-1">
   {% block table %}
   <div class="w-full max-h-[80vh] overflow-x-auto block">
     <table class="base-table" {% render_attrs table.attrs %}>
@@ -56,9 +56,19 @@
                   {% endblock table.tbody.empty_text %}
                 {% endif %}
               {% endfor %}
+              {% block table.tfoot %}
+              {% if table.has_footer %}
+                     <tr class="border-2 border-gray-100 font-bold">
+                     {% for column in table.columns %}
+                          <td {{ column.attrs.tf.as_html }}>{{column.footer }}</td>
+                     {% endfor %}
+                     </tr>
+              {% endif %}
+              {% endblock table.tfoot %}
             </div>
             </tbody>
           {% endblock table.tbody %}
+
 
     </table>
   </div>

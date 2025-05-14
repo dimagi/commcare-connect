@@ -1,6 +1,6 @@
 import datetime
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from functools import reduce
 from http import HTTPStatus
 
@@ -95,7 +95,6 @@ from commcare_connect.opportunity.tables import (
     PaymentUnitTable,
     ProgramManagerOpportunityTable,
     SuspendedUsersTable,
-    UserPaymentsTable,
     UserStatusTable,
     UserVisitVerificationTable,
     WorkerDeliveryTable,
@@ -369,28 +368,6 @@ class OpportunityPaymentTableView(OrganizationUserMixin, OrgContextSingleTableVi
         return OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
             "-payment_accrued"
         )
-
-
-class UserPaymentsTableView(OrganizationUserMixin, SingleTableView):
-    model = Payment
-    paginate_by = 25
-    table_class = UserPaymentsTable
-    template_name = "opportunity/opportunity_user_payments_list.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["latest_payment"] = self.object_list.all().first()
-        context["access"] = self.access
-        context["opportunity"] = self.opportunity
-        return context
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["opp_id"]
-        org_slug = self.kwargs["org_slug"]
-        self.opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-        access_id = self.kwargs["pk"]
-        self.access = get_object_or_404(OpportunityAccess, opportunity=self.opportunity, pk=access_id)
-        return Payment.objects.filter(opportunity_access=self.access).order_by("-date_paid")
 
 
 class OpportunityUserLearnProgress(OrganizationUserMixin, DetailView):
@@ -787,7 +764,8 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     opportunity_access = get_object_or_404(OpportunityAccess, pk=access_id, opportunity=opportunity)
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, pk=pk)
     payment.delete()
-    return redirect("opportunity:user_payments_table", org_slug=org_slug, opp_id=opp_id, pk=access_id)
+    redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
+    return redirect(f"{redirect_url}?active_tab=payments")
 
 
 @org_viewer_required
@@ -1770,7 +1748,7 @@ def worker_payments(request, org_slug=None, opp_id=None):
         confirmed_paid=Sum("payment__amount", filter=Q(payment__confirmed=True)),
         total_paid_d=Sum("payment__amount"),
     )
-    table = WorkerPaymentsTable(query_set)
+    table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opp_id)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
@@ -1790,4 +1768,43 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
         request,
         "tailwind/pages/opportunity_worker_learn.html",
         {"header_title": "Worker", "total_learn_duration": total_duration, "table": table, "access": access},
+    )
+
+
+@org_member_required
+def worker_payment_history(request, org_slug, opp_id, access_id):
+    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    queryset = Payment.objects.filter(opportunity_access=access).order_by("-date_paid")
+    payments = queryset.values("date_paid", "amount")
+
+    return render(
+        request,
+        "tailwind/components/worker_page/payment_history.html",
+        context=dict(access=access, payments=payments, latest_payment=queryset.first()),
+    )
+
+
+@org_member_required
+def worker_flag_counts(request, org_slug, opp_id, access_id):
+    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    status = request.GET.get("status", CompletedWorkStatus.pending)
+    payment_unit_id = request.GET.get("payment_unit_id")
+
+    visits = UserVisit.objects.filter(
+        completed_work__opportunity_access=access,
+        completed_work__status=status,
+    )
+
+    if payment_unit_id:
+        visits = visits.filter(completed_work__payment_unit__id=payment_unit_id)
+
+    all_flags = [flag for visit in visits.all() for flag in visit.flags]
+    counts = Counter(all_flags)
+    return render(
+        request,
+        "tailwind/components/worker_page/flag_counts.html",
+        context=dict(
+            access=access,
+            flag_counts=counts.items(),
+        ),
     )
