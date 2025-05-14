@@ -904,8 +904,8 @@ class UserVisitVerificationTable(tables.Table):
             "pending_review": "fa-light fa-timer",
         }
 
-        if record.status == VisitValidationStatus.pending.value:
-            icon_class = status_to_icon[VisitValidationStatus.pending]
+        if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
+            icon_class = status_to_icon[record.status]
             icons_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
             return format_html(
                 '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
@@ -919,13 +919,9 @@ class UserVisitVerificationTable(tables.Table):
                 status.append("pending_review")
             else:
                 status.append(record.review_status)
-        if record.status in (
-            VisitValidationStatus.approved,
-            VisitValidationStatus.rejected,
-            VisitValidationStatus.pending,
-        ):
+        if record.status in VisitValidationStatus:
             if (
-                record.review_status == VisitReviewStatus.pending.value
+                record.review_status in VisitReviewStatus.pending.value
                 and record.status == VisitValidationStatus.approved
             ):
                 status.append("approved_pending_review")

@@ -1,23 +1,35 @@
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db.models import Count, F, Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.timezone import now
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 from django_tables2 import SingleTableView
 
+from commcare_connect.opportunity.models import (
+    OpportunityAccess,
+    PaymentInvoice,
+    UserVisit,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.views import OpportunityInit
-from commcare_connect.organization.decorators import org_admin_required, org_program_manager_required
+from commcare_connect.organization.decorators import (
+    org_admin_required,
+    org_member_required,
+    org_program_manager_required,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
 from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tables import (
-    DeliveryPerformanceTable,
-    FunnelPerformanceTable,
-    ProgramApplicationTable,
-    ProgramTable,
-)
+from commcare_connect.program.tables import DeliveryPerformanceTable, FunnelPerformanceTable, ProgramApplicationTable
+
+from .utils import is_program_manager
 
 
 class ProgramManagerMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -39,18 +51,10 @@ ALLOWED_ORDERINGS = {
 }
 
 
-class ProgramList(ProgramManagerMixin, SingleTableView):
-    model = Program
-    paginate_by = 10
-    table_class = ProgramTable
-
-    def get_queryset(self):
-        return Program.objects.filter(organization=self.request.org).order_by("start_date")
-
-
 class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
     model = Program
     form_class = ProgramForm
+    template_name = "program/program_form.html"
 
     def get_object(self, queryset=None):
         pk = self.kwargs.get("pk")
@@ -73,17 +77,7 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
         return response
 
     def get_success_url(self):
-        return reverse("program:list", kwargs={"org_slug": self.request.org.slug})
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["is_edit"] = self.object is not None
-        return context
-
-    def get_template_names(self):
-        view = ("add", "edit")[self.object is not None]
-        template = f"program/program_{view}.html"
-        return template
+        return reverse("program:home", kwargs={"org_slug": self.request.org.slug})
 
 
 class ManagedOpportunityList(ProgramManagerMixin, ListView):
@@ -117,7 +111,7 @@ class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
             self.program = Program.objects.get(pk=self.kwargs.get("pk"))
         except Program.DoesNotExist:
             messages.error(request, "Program not found.")
-            return redirect(reverse("program:list", kwargs={"org_slug": request.org.slug}))
+            return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
@@ -151,7 +145,7 @@ def invite_organization(request, org_slug, pk):
     else:
         messages.info(request, "The invitation for this organization has been updated.")
 
-    return redirect(reverse("program:applications", kwargs={"org_slug": org_slug, "pk": pk}))
+    return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
 
 class ProgramApplicationList(ProgramManagerMixin, SingleTableView):
@@ -183,13 +177,7 @@ class ProgramApplicationList(ProgramManagerMixin, SingleTableView):
 @require_POST
 def manage_application(request, org_slug, application_id, action):
     application = get_object_or_404(ProgramApplication, id=application_id)
-    redirect_url = reverse(
-        "program:applications",
-        kwargs={
-            "org_slug": org_slug,
-            "pk": application.program.id,
-        },
-    )
+    redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
     status_mapping = {
         "accept": ProgramApplicationStatus.ACCEPTED,
@@ -198,16 +186,12 @@ def manage_application(request, org_slug, application_id, action):
 
     new_status = status_mapping.get(action, None)
     if new_status is None:
-        messages.error(request, "Action not allowed.")
         return redirect(redirect_url)
 
     application.status = new_status
     application.modified_by = request.user.email
     application.save()
 
-    messages.success(request, f"Application has been {action}ed successfully.")
-    if application.status == ProgramApplicationStatus.ACCEPTED:
-        return redirect("program:opportunity_init", request.org.slug, application.program.id)
     return redirect(redirect_url)
 
 
@@ -216,7 +200,7 @@ def manage_application(request, org_slug, application_id, action):
 def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
     application = get_object_or_404(ProgramApplication, id=application_id, status=ProgramApplicationStatus.INVITED)
 
-    redirect_url = reverse("opportunity:list", kwargs={"org_slug": org_slug})
+    redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
     action_map = {
         "apply": {
@@ -232,14 +216,11 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     }
 
     if action not in action_map:
-        messages.error(request, "Action not allowed.")
         return redirect(redirect_url)
 
     application.status = action_map[action]["status"]
     application.modified_by = request.user.email
     application.save()
-
-    messages.success(request, action_map[action]["message"])
 
     return redirect(redirect_url)
 
@@ -277,3 +258,116 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
         start_date = self.request.GET.get("start_date") or None
         end_date = self.request.GET.get("end_date") or None
         return get_delivery_performance_report(program, start_date, end_date)
+
+
+@org_member_required
+def program_home(request, org_slug):
+    org = Organization.objects.get(slug=org_slug)
+    if is_program_manager(request):
+        return program_manager_home(request, org)
+    return network_manager_home(request, org)
+
+
+def program_manager_home(request, org):
+    programs = (
+        Program.objects.filter(organization=org)
+        .order_by("-start_date")
+        .annotate(
+            invited=Count("programapplication"),
+            applied=Count(
+                "programapplication",
+                filter=Q(
+                    programapplication__status__in=[
+                        ProgramApplicationStatus.APPLIED,
+                        ProgramApplicationStatus.ACCEPTED,
+                    ]
+                ),
+            ),
+            accepted=Count(
+                "programapplication",
+                filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
+            ),
+        )
+    )
+
+    pending_review = (
+        UserVisit.objects.filter(
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.pending,
+            opportunity__managed=True,
+            opportunity__managedopportunity__program__in=programs,
+        )
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id"))
+    )
+
+    pending_payments = (
+        PaymentInvoice.objects.filter(
+            opportunity__managed=True,
+            opportunity__managedopportunity__program__in=programs,
+            payment__isnull=True,
+        )
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id"))
+    )
+
+    organizations = Organization.objects.exclude(pk=org.pk)
+    recent_activities = [
+        {"title": "Pending Review", "rows": pending_review},
+        {"title": "Pending Payments", "rows": pending_payments},
+    ]
+
+    context = {
+        "programs": programs,
+        "organizations": organizations,
+        "recent_activities": recent_activities,
+        "is_program_manager": True,
+    }
+    return render(request, "program/pm_home.html", context)
+
+
+def network_manager_home(request, org):
+    programs = Program.objects.filter(programapplication__organization=org).annotate(
+        status=F("programapplication__status"),
+        invite_date=F("programapplication__date_created"),
+        application_id=F("programapplication__id"),
+    )
+    results = sorted(programs, key=lambda x: (x.invite_date, x.start_date), reverse=True)
+
+    pending_review = (
+        UserVisit.objects.filter(
+            status="pending",
+            opportunity__managed=True,
+            opportunity__organization=org,
+        )
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id", distinct=True))
+    )
+    access_qs = OpportunityAccess.objects.filter(opportunity__managed=True, opportunity__organization=org)
+    pending_payments = (
+        access_qs.annotate(pending_payment=F("payment_accrued") - Sum("payment__amount"))
+        .filter(pending_payment__gte=0)
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id", distinct=True))
+    )
+    three_days_before = now() - timedelta(days=3)
+    inactive_workers = (
+        access_qs.annotate(
+            learn_module_date=Max("completedmodule__date"),
+            user_visit_date=Max("uservisit__visit_date"),
+        )
+        .filter(Q(user_visit_date__lte=three_days_before) | Q(learn_module_date__lte=three_days_before))
+        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .annotate(count=Count("id", distinct=True))
+    )
+    recent_activities = [
+        {"title": "Pending Review", "rows": pending_review},
+        {"title": "Pending Payments", "rows": pending_payments},
+        {"title": "Inactive Workers", "rows": inactive_workers},
+    ]
+    context = {
+        "programs": results,
+        "recent_activities": recent_activities,
+        "is_program_manager": False,
+    }
+    return render(request, "program/nm_home.html", context)
