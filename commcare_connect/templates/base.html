@@ -75,7 +75,7 @@
           {% if request.user.is_authenticated %}
             <li class="nav-item">
               <a class="nav-link {% active_link "users:detail" %}"
-                 href="{% url 'users:detail' request.user.pk %}">{% translate "My Profile" %}</a>
+                 href="{% url 'account_email' %}">{% translate "My Profile" %}</a>
             </li>
             <li class="nav-item">
               {# URL provided by django-allauth/account/urls.py #}
