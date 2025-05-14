@@ -56,7 +56,7 @@ class OpportunityUserInviteForm(forms.Form):
 
         self.fields["users"] = forms.CharField(
             widget=forms.Textarea,
-            help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
+            help_text="Enter the phone numbers of users to add to this opportunity, one per line, starting with '+'.",
             required=False,
         )
         self.fields["filter_country"] = forms.CharField(
