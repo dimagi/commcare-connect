@@ -413,6 +413,7 @@ def get_opportunity_delivery_progress(opp_id):
             "uservisit",
             filter=Q(uservisit__review_status=VisitReviewStatus.pending)
             & Q(uservisit__review_created_on__isnull=False),
+            distinct=True
         ),
         recent_payment=Max("opportunityaccess__payment__date_paid"),
         total_accrued=OpportunityAnnotations.total_accrued(),
