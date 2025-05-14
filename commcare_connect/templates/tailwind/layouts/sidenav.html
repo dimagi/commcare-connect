@@ -41,7 +41,7 @@
 
         <!-- Navigation Items -->
         <div class="mt-5">
-            {% url 'program:list' request.org.slug as program_home_url %}
+            {% url 'program:home' request.org.slug as program_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
 
             {% url 'opportunity:list' request.org.slug as opportunity_url %}
