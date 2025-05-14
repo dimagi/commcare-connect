@@ -22,7 +22,6 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import now
-from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import CreateView, DetailView, TemplateView, UpdateView
@@ -56,7 +55,10 @@ from commcare_connect.opportunity.forms import (
 from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access,
     get_annotated_opportunity_access_deliver_status,
+    get_opportunity_delivery_progress,
+    get_opportunity_funnel_progress,
     get_opportunity_list_data,
+    get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_learn_table_data,
     get_worker_table_data,
@@ -70,6 +72,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
+    LearnModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -87,6 +90,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     CompletedWorkTable,
     DeliverStatusTable,
+    DeliverUnitTable,
+    LearnModuleTable,
     LearnStatusTable,
     OpportunityPaymentTable,
     OpportunityTable,
@@ -317,29 +322,78 @@ class OpportunityFinalize(OrganizationUserMemberRoleMixin, UpdateView):
         return response
 
 
-class OpportunityDetail(OrganizationUserMixin, DetailView):
+class OpportunityDashboard(OrganizationUserMixin, DetailView):
     model = Opportunity
-    template_name = "opportunity/opportunity_detail.html"
+    template_name = "tailwind/pages/opportunity_dashboard/dashboard.html"
 
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
         if not self.object.is_setup_complete:
             messages.warning(request, "Please complete the opportunity setup to view it")
             return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=self.object.id)
-        context = self.get_context_data(object=self.object)
+        context = self.get_context_data(object=self.object, request=request)
         return self.render_to_response(context)
 
-    def get_context_data(self, object, **kwargs):
+    def get_context_data(self, object, request, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["export_task_id"] = self.request.GET.get("export_task_id")
-        context["visit_export_form"] = VisitExportForm()
-        context["export_form"] = PaymentExportForm()
-        context["review_visit_export_form"] = ReviewVisitExportForm()
-        context["user_is_network_manager"] = object.managed and object.organization == self.request.org
-        import_visit_helper_text = _(
-            'The file must contain at least the "Visit ID"{extra} and "Status" column. The import is case-insensitive.'
-        ).format(extra=_(', "Justification"') if object.managed else "")
-        context["import_visit_helper_text"] = import_visit_helper_text
+
+        learn_module_count = LearnModule.objects.filter(app=object.learn_app).count()
+        deliver_unit_count = DeliverUnit.objects.filter(app=object.deliver_app).count()
+        payment_unit_count = object.paymentunit_set.count()
+
+        def safe_display(value):
+            if value is None:
+                return "---"
+            if isinstance(value, datetime.date):
+                return value.strftime("%Y-%m-%d")
+            return str(value)
+
+        context["path"] = [
+            {"title": "opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {"title": object.name, "url": reverse("opportunity:detail", args=(request.org.slug, object.id))},
+        ]
+
+        context["resources"] = [
+            {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},
+            {"name": "Delivery App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
+            {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
+        ]
+
+        context["basic_details"] = [
+            {
+                "name": "Delivery Type",
+                "count": safe_display(object.delivery_type and object.delivery_type.name),
+                "icon": "fa-file-check",
+            },
+            {
+                "name": "Start Date",
+                "count": safe_display(object.start_date),
+                "icon": "fa-calendar-range",
+            },
+            {
+                "name": "End Date",
+                "count": safe_display(object.end_date),
+                "icon": "fa-arrow-right",
+            },
+            {
+                "name": "Max Workers",
+                "count": safe_display(object.number_of_users),
+                "icon": "fa-users",
+                "color": "brand-mango",
+            },
+            {
+                "name": "Max Service Deliveries",
+                "count": safe_display(object.allotted_visits),
+                "icon": "fa-gears",
+            },
+            {
+                "name": "Max Budget",
+                "count": safe_display(object.total_budget),
+                "icon": "fa-money-bill",
+            },
+        ]
+        context["is_program_manager"] = is_program_manager_of_opportunity(request, object)
+
         return context
 
 
@@ -702,19 +756,6 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         "form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form),
     )
-
-
-class OpportunityPaymentUnitTableView(OrganizationUserMixin, OrgContextSingleTableView):
-    model = PaymentUnit
-    paginate_by = 25
-    table_class = PaymentUnitTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["pk"]
-        org_slug = self.kwargs["org_slug"]
-        opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-        return PaymentUnit.objects.filter(opportunity=opportunity).order_by("name")
 
 
 @org_member_required
@@ -1807,4 +1848,250 @@ def worker_flag_counts(request, org_slug, opp_id, access_id):
             access=access,
             flag_counts=counts.items(),
         ),
+    )
+
+
+@org_member_required
+def learn_module_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    data = LearnModule.objects.filter(app=opp.learn_app)
+    table = LearnModuleTable(data)
+    return render(request, "tables/single_table.html", {"table": table})
+
+
+@org_member_required
+def deliver_unit_table(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    unit = DeliverUnit.objects.filter(app=opp.deliver_app)
+    table = DeliverUnitTable(unit)
+    return render(
+        request,
+        "tables/single_table.html",
+        {
+            "table": table,
+        },
+    )
+
+
+class OpportunityPaymentUnitTableView(OrganizationUserMixin, OrgContextSingleTableView):
+    model = PaymentUnit
+    table_class = PaymentUnitTable
+    template_name = "tables/single_table.html"
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        org_slug = self.kwargs["org_slug"]
+        self.opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
+        return (
+            PaymentUnit.objects.filter(opportunity=self.opportunity).prefetch_related("deliver_units").order_by("name")
+        )
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["org_slug"] = self.request.org.slug
+        program_manager = is_program_manager_of_opportunity(self.request, self.opportunity)
+        kwargs["can_edit"] = not self.opportunity.managed or program_manager
+        return kwargs
+
+
+@org_member_required
+def opportunity_funnel_progress(request, org_slug, opp_id):
+    aggregates = get_opportunity_funnel_progress(opp_id)
+
+    funnel_progress = [
+        {"stage": "Invited", "count": aggregates["workers_invited"], "icon": "envelope"},
+        {
+            "stage": "Accepted",
+            "count": aggregates["workers_invited"] - aggregates["pending_invites"],
+            "icon": "circle-check",
+        },
+        {"stage": "Started Learning", "count": aggregates["started_learning_count"], "icon": "book-open-cover"},
+        {"stage": "Completed Learning", "count": aggregates["completed_learning"], "icon": "book-blank"},
+        {"stage": "Completed Assessment", "count": aggregates["completed_assessments"], "icon": "award-simple"},
+        {"stage": "Claimed Job", "count": aggregates["claimed_job"], "icon": "user-check"},
+        {"stage": "Started Delivery", "count": aggregates["started_deliveries"], "icon": "house-chimney-user"},
+    ]
+
+    return render(
+        request,
+        "tailwind/pages/opportunity_dashboard/opportunity_funnel_progress.html",
+        {"funnel_progress": funnel_progress},
+    )
+
+
+@org_member_required
+def opportunity_worker_progress(request, org_slug, opp_id):
+    aggregates = get_opportunity_worker_progress(opp_id)
+
+    def safe_percent(numerator, denominator):
+        return (numerator / denominator) * 100 if denominator else 0
+
+    verified_percentage = safe_percent(aggregates["approved_deliveries"], aggregates["total_deliveries"])
+    rejected_percentage = safe_percent(aggregates["rejected_deliveries"], aggregates["total_deliveries"])
+    earned_percentage = safe_percent(aggregates["total_accrued"], aggregates["total_budget"])
+    paid_percentage = safe_percent(aggregates["total_paid"], aggregates["total_accrued"])
+
+    worker_progress = [
+        {
+            "title": "Daily Active Workers",
+            "progress": [
+                {
+                    "title": "Maximum",
+                    "total": aggregates["maximum_visit_in_a_day"],
+                    "value": aggregates["maximum_visit_in_a_day"],
+                    "badge_type": False,
+                    "percent": 100,
+                },
+                {
+                    "title": "Average",
+                    "total": aggregates["average_visits_per_day"],
+                    "value": aggregates["average_visits_per_day"],
+                    "badge_type": False,
+                    "percent": 100,
+                },
+            ],
+        },
+        {
+            "title": "Verification",
+            "progress": [
+                {
+                    "title": "Verified",
+                    "total": aggregates["total_deliveries"],
+                    "value": aggregates["approved_deliveries"],
+                    "badge_type": True,
+                    "percent": verified_percentage,
+                },
+                {
+                    "title": "Rejected",
+                    "total": aggregates["total_deliveries"],
+                    "value": aggregates["rejected_deliveries"],
+                    "badge_type": True,
+                    "percent": rejected_percentage,
+                },
+            ],
+        },
+        {
+            "title": "Payments to Workers",
+            "progress": [
+                {
+                    "title": "Earned",
+                    "total": aggregates["total_budget"],
+                    "value": f"{earned_percentage:.2f}%",
+                    "badge_type": True,
+                    "percent": earned_percentage,
+                },
+                {
+                    "title": "Paid",
+                    "total": aggregates["total_accrued"],
+                    "value": f"{paid_percentage:.2f}%",
+                    "badge_type": True,
+                    "percent": paid_percentage,
+                },
+            ],
+        },
+    ]
+
+    return render(
+        request,
+        "tailwind/pages/opportunity_dashboard/opportunity_worker_progress.html",
+        {"worker_progress": worker_progress},
+    )
+
+
+@org_member_required
+def opportunity_delivery_stats(request, org_slug, opp_id):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    is_program_manager = is_program_manager_of_opportunity(request, opportunity)
+
+    stats = get_opportunity_delivery_progress(opportunity.id)
+
+    worker_list_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
+    status_url = worker_list_url + "?active_tab=workers"
+    delivery_url = worker_list_url + "?active_tab=delivery"
+    payment_url = worker_list_url + "?active_tab=payments"
+
+    deliveries_panels = [
+        {
+            "icon": "fa-clipboard-list-check",
+            "name": "Services Delivered",
+            "status": "Total",
+            "value": stats["total_deliveries"],
+            "incr": stats["deliveries_from_yesterday"],
+        }
+    ]
+
+    if opportunity.managed and is_program_manager:
+        deliveries_panels.append(
+            {
+                "icon": "fa-clipboard-list-check",
+                "name": "Services Delivered",
+                "status": "Pending PM Review",
+                "value": stats["visits_pending_for_pm_review"],
+            }
+        )
+    else:
+        deliveries_panels.append(
+            {
+                "icon": "fa-clipboard-list-check",
+                "name": "Services Delivered",
+                "status": "Awaiting Review",
+                "value": stats["flagged_deliveries_waiting_for_review"],
+            }
+        )
+
+    opp_stats = [
+        {
+            "title": "Workers",
+            "sub_heading": "Active Yesterday",
+            "value": stats["deliveries_from_yesterday"],
+            "url": status_url,
+            "panels": [
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": stats["workers_invited"]},
+                {
+                    "icon": "fa-user-check",
+                    "name": "Workers",
+                    "status": "Yet to Accept Invitation",
+                    "value": stats["pending_invites"],
+                },
+                {
+                    "icon": "fa-clipboard-list",
+                    "name": "Workers",
+                    "status": "Inactive last 3 days",
+                    "value": stats["inactive_workers"],
+                    "type": "2",
+                    "url": status_url,
+                },
+            ],
+        },
+        {
+            "title": "Services Delivered",
+            "url": delivery_url,
+            "sub_heading": "Last Delivery",
+            "value": stats["most_recent_delivery"] or "--",
+            "panels": deliveries_panels,
+        },
+        {
+            "title": "Worker Payments",
+            "sub_heading": "Last Payment",
+            "url": payment_url,
+            "value": stats["recent_payment"] or "--",
+            "panels": [
+                {
+                    "icon": "fa-hand-holding-dollar",
+                    "name": "Payments",
+                    "status": "Earned",
+                    "value": stats["total_accrued"],
+                },
+                {
+                    "icon": "fa-hand-holding-droplet",
+                    "name": "Payments",
+                    "status": "Due",
+                    "value": stats["payments_due"],
+                },
+            ],
+        },
+    ]
+
+    return render(
+        request, "tailwind/pages/opportunity_dashboard/opportunity_delivery_stat.html", {"opp_stats": opp_stats}
     )
