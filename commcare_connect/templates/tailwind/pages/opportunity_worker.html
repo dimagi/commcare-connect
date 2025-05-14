@@ -121,9 +121,14 @@ function opportunityTabs() {
         const url = new URL(window.location.href);
         url.searchParams.set('active_tab', tab);
 
-        // removed page param from main url on tab change
+        // removed page all other params other than active_tab
         if (!isInit) {
-          url.searchParams.delete('page');
+          const activeTab = url.searchParams.get('active_tab');
+          url.search = ''; // Clear all search parameters
+          if (activeTab !== null) {
+            url.searchParams.set('active_tab', activeTab);
+         }
+
         }
 
         window.history.replaceState({}, '', url);

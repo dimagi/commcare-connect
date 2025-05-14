@@ -1,6 +1,6 @@
 {% load static i18n %}
 
-<div x-data="{ sidebarOpen: false }"
+<div x-data="{ sidebarOpen: false }" x-cloak
     @click.outside="sidebarOpen = false"
     class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
     :class="sidebarOpen ? 'w-64' : 'w-16'">

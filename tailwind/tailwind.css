@@ -127,7 +127,7 @@
 }
 
 .button-outline-rounded {
-  @apply text-brand-deep-purple rounded-full border border-gray-200;
+  @apply text-brand-deep-purple rounded-full border border-gray-400;
 }
 
 .button-outline-rounded:not(:disabled):hover::after {
@@ -226,7 +226,7 @@
 }
 
 .outline-style {
-  @apply text-brand-deep-purple rounded-lg border border-gray-200 bg-gray-50;
+  @apply text-brand-deep-purple rounded-lg border border-gray-400 bg-gray-50;
 }
 
 /*-- chips ---------------------------------------*/
