@@ -131,6 +131,7 @@ from commcare_connect.opportunity.visit_import import (
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
 from commcare_connect.program.models import ManagedOpportunity
+from commcare_connect.program.utils import is_program_manager, is_program_manager_of_opportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
@@ -159,17 +160,6 @@ def get_opportunity_or_404(pk, org_slug):
         return opp
 
     raise Http404("Opportunity not found.")
-
-
-def is_program_manager_of_opportunity(request, opportunity):
-    return (
-        opportunity.managed
-        and opportunity.managedopportunity.program.organization.slug == request.org.slug
-        and (
-            request.org.program_manager
-            and ((request.org_membership and request.org_membership.is_admin) or request.user.is_superuser)
-        )
-    )
 
 
 class OrgContextSingleTableView(SingleTableView):
@@ -489,9 +479,7 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
     opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access)
-    program_manager = (
-        getattr(request, "org_membership", None) and request.org_membership.is_program_manager
-    ) or request.user.is_superuser
+    program_manager = is_program_manager(request)
 
     form = AddBudgetExistingUsersForm(
         opportunity_claims=opportunity_claims,
@@ -518,9 +506,7 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
 @org_member_required
 def add_budget_new_users(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=pk)
-    program_manager = (
-        getattr(request, "org_membership", None) and request.org_membership.is_program_manager
-    ) or request.user.is_superuser
+    program_manager = is_program_manager(request)
 
     form = AddBudgetNewUsersForm(
         opportunity=opportunity,
@@ -1209,6 +1195,28 @@ def payment_report(request, org_slug, pk):
     )
 
 
+class PaymentInvoiceTableView(OrganizationUserMixin, SingleTableView):
+    model = PaymentInvoice
+    paginate_by = 25
+    table_class = PaymentInvoiceTable
+    template_name = "tables/single_table.html"
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        if not is_program_manager(self.request):  # noqa: E711
+            kwargs["exclude"] = ("pk",)
+        return kwargs
+
+    def get_queryset(self):
+        opportunity_id = self.kwargs["pk"]
+        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
+        filter_kwargs = dict(opportunity=opportunity)
+        table_filter = self.request.GET.get("filter")
+        if table_filter is not None and table_filter in ["paid", "pending"]:
+            filter_kwargs["payment__isnull"] = table_filter == "pending"
+        return PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+
+
 @org_member_required
 def invoice_list(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
@@ -1681,17 +1689,15 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     import_export_delivery_urls = {
         "export_url": reverse(
             "opportunity:review_visit_export" if is_program_manager else "opportunity:visit_export",
-            args=(request.org.slug, opp_id)
+            args=(request.org.slug, opp_id),
         ),
         "import_url": reverse(
             "opportunity:review_visit_import" if is_program_manager else "opportunity:visit_import",
-            args=(request.org.slug, opp_id)
-        )
+            args=(request.org.slug, opp_id),
+        ),
     }
 
     visit_export_form = ReviewVisitExportForm() if is_program_manager else VisitExportForm()
-
-
 
     return render(
         request,
@@ -1704,7 +1710,7 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
             "export_form": export_form,
             "export_task_id": request.GET.get("export_task_id"),
             "path": path,
-            "import_export_delivery_urls": import_export_delivery_urls
+            "import_export_delivery_urls": import_export_delivery_urls,
         },
     )
 
