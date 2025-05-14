@@ -643,7 +643,7 @@
 
 .better-tabs {
   .tabs {
-    @apply flex h-full flex-wrap gap-x-8 px-2;
+    @apply flex h-full gap-x-8 px-2 overflow-x-scroll;
   }
 
   .tab {
