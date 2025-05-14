@@ -546,11 +546,32 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
         form.save()
         return redirect("opportunity:detail", org_slug, pk)
 
+    tabs = [
+        {
+            "key": "existing_users",
+            "label": "Existing Users",
+        },]
+    # Nm are not allowed to increase the managed opportunity budget so do not provide that tab.
+    if not opportunity.managed or is_program_manager_of_opportunity(request, opportunity):
+        tabs.append({
+            "key": "new_users",
+            "label": "New Users",
+        })
+
+    path = [
+        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.pk))},
+        {"title": "Add budget", }
+    ]
+
+
     return render(
         request,
         "opportunity/add_visits_existing_users.html",
         {
             "form": form,
+            "tabs": tabs,
+            "path": path,
             "opportunity_claims": opportunity_claims,
             "budget_per_visit": opportunity.budget_per_visit_new,
             "opportunity": opportunity,
@@ -681,10 +702,16 @@ def add_payment_unit(request, org_slug=None, pk=None):
     elif request.POST:
         messages.error(request, "Invalid Data")
         return redirect("opportunity:add_payment_units", org_slug=request.org.slug, pk=opportunity.id)
+
+    path = [
+        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.pk))},
+        {"title": "Payment unit",}
+    ]
     return render(
         request,
         "partial_form.html" if request.GET.get("partial") == "True" else "form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Create", form=form),
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Create", form=form, path=path),
     )
 
 
@@ -737,10 +764,16 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         )
         messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
         return redirect("opportunity:finalize", org_slug=request.org.slug, pk=opportunity.id)
+
+    path = [
+        {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
+        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.pk))},
+        {"title": "Payment unit", }
+    ]
     return render(
         request,
         "form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form),
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form, path=path),
     )
 
 
