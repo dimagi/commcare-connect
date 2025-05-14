@@ -485,6 +485,8 @@ def update_visit_status_import(request, org_slug=None, pk=None):
         message = f"Visit status updated successfully for {len(status)} visits."
         if status.missing_visits:
             message += status.get_missing_message()
+        if status.over_limit_count:
+            messages.warning(request, mark_safe(status.get_over_limit_count_message()))
         messages.success(request, mark_safe(message))
     url = reverse("opportunity:worker_list", args=(org_slug, pk)) + "?active_tab=delivery"
     return redirect(url)
@@ -1703,17 +1705,15 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     import_export_delivery_urls = {
         "export_url": reverse(
             "opportunity:review_visit_export" if is_program_manager else "opportunity:visit_export",
-            args=(request.org.slug, opp_id)
+            args=(request.org.slug, opp_id),
         ),
         "import_url": reverse(
             "opportunity:review_visit_import" if is_program_manager else "opportunity:visit_import",
-            args=(request.org.slug, opp_id)
-        )
+            args=(request.org.slug, opp_id),
+        ),
     }
 
     visit_export_form = ReviewVisitExportForm() if is_program_manager else VisitExportForm()
-
-
 
     return render(
         request,
@@ -1726,7 +1726,7 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
             "export_form": export_form,
             "export_task_id": request.GET.get("export_task_id"),
             "path": path,
-            "import_export_delivery_urls": import_export_delivery_urls
+            "import_export_delivery_urls": import_export_delivery_urls,
         },
     )
 
