@@ -5,8 +5,8 @@ from commcare_connect.opportunity.payment_number_report import PaymentNumberRepo
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityCreate,
+    OpportunityDashboard,
     OpportunityDeliverStatusTable,
-    OpportunityDetail,
     OpportunityEdit,
     OpportunityFinalize,
     OpportunityInit,
@@ -61,7 +61,7 @@ urlpatterns = [
     path("init/", view=OpportunityInit.as_view(), name="init"),
     path("<int:pk>/finalize/", view=OpportunityFinalize.as_view(), name="finalize"),
     path("<int:pk>/edit", view=OpportunityEdit.as_view(), name="edit"),
-    path("<int:pk>/", view=OpportunityDetail.as_view(), name="detail"),
+    path("<int:pk>/", view=OpportunityDashboard.as_view(), name="detail"),
     path("<int:pk>/user_table/", view=OpportunityLearnStatusTableView.as_view(), name="user_table"),
     path("<int:pk>/user_status_table/", view=OpportunityUserStatusTableView.as_view(), name="user_status_table"),
     path("<int:pk>/visit_export/", view=export_user_visits, name="visit_export"),
@@ -150,4 +150,17 @@ urlpatterns = [
         name="worker_payment_history",
     ),
     path("<int:opp_id>/worker_flag_counts/<int:access_id>", views.worker_flag_counts, name="worker_flag_counts"),
+    path("<int:opp_id>/opportunity_delivery_stats/", views.opportunity_delivery_stats, name="delivery_stats"),
+    path(
+        "<int:opp_id>/opportunity_worker_progress_stats/",
+        views.opportunity_worker_progress,
+        name="worker_progress_stats",
+    ),
+    path(
+        "<int:opp_id>/opportunity_funnel_progress_stats/",
+        views.opportunity_funnel_progress,
+        name="funnel_progress_stats",
+    ),
+    path("<int:opp_id>/learn_module_table", views.learn_module_table, name="learn_module_table"),
+    path("<int:opp_id>/deliver_unit_table", views.deliver_unit_table, name="deliver_unit_table"),
 ]
