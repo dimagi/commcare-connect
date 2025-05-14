@@ -1,11 +1,17 @@
 import datetime
 import json
 import random
+from unittest.mock import patch
 
 import pytest
 from factory.fuzzy import FuzzyDate, FuzzyText
 
-from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm, OpportunityCreationForm
+from commcare_connect.opportunity.forms import (
+    AddBudgetNewUsersForm,
+    OpportunityChangeForm,
+    OpportunityCreationForm,
+    OpportunityUserInviteForm,
+)
 from commcare_connect.opportunity.models import PaymentUnit
 from commcare_connect.opportunity.tests.factories import (
     ApplicationFactory,
@@ -392,3 +398,34 @@ class TestAddBudgetNewUsersForm:
             assert not form.is_valid()
             assert "total_budget" in form.errors
             assert form.errors["total_budget"][0] == "Total budget exceeds program budget."
+
+
+@pytest.mark.django_db
+class TestOpportunityUserInviteForm:
+    @pytest.fixture
+    def valid_opportunity(self, organization):
+        opp = OpportunityFactory(
+            organization=organization,
+            active=True,
+            learn_app=CommCareAppFactory(cc_app_id="test_learn_app"),
+            deliver_app=CommCareAppFactory(cc_app_id="test_deliver_app"),
+            name="Test Opportunity",
+            description="Test Description",
+            short_description="Short Description",
+            currency="USD",
+            is_test=False,
+            end_date=datetime.date.today() + datetime.timedelta(days=30),
+        )
+        PaymentUnitFactory(opportunity=opp)
+        return opp
+
+    @patch("commcare_connect.opportunity.forms.connect_id_client")
+    def test_valid_numbers(self, connect_id_client_mock, valid_opportunity):
+        form = OpportunityUserInviteForm(data={"users": "+27787878796"}, opportunity=valid_opportunity)
+        assert form.is_valid()
+
+    @patch("commcare_connect.opportunity.forms.connect_id_client")
+    def test_invalid_numbers(self, connect_id_client_mock, valid_opportunity):
+        form = OpportunityUserInviteForm(data={"users": "27787878796"}, opportunity=valid_opportunity)
+        assert not form.is_valid()
+        assert form.errors["users"][0] == "Please ensure all numbers start with '+'."
