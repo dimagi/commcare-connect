@@ -998,7 +998,8 @@ class WorkerPaymentsTable(tables.Table):
     user = UserInfoColumn(footer="Total")
     suspended = SuspendedIndicatorColumn()
     last_active = DMYTColumn()
-    payment_accrued = tables.Column(verbose_name="Accrued", footer=lambda table: sum(x.payment_accrued or 0 for x in table.data))
+    payment_accrued = tables.Column(verbose_name="Accrued",
+                                    footer=lambda table: sum(x.payment_accrued or 0 for x in table.data))
     total_paid = tables.Column(accessor="total_paid_d", footer=lambda table: sum(x.total_paid_d or 0 for x in table.data))
     last_paid = DMYTColumn()
     confirmed_paid = tables.Column(verbose_name="Confirm")
