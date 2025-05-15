@@ -8,7 +8,7 @@
         <div class="flex items-center gap-x-2">
 
             <!-- Organization selector -->
-            <div x-data="{ open: false }" class="relative mx-8">
+            <div x-data="{ open: false }" @click.away="open = false" class="relative mx-8">
                 <button @click="open = !open" class="flex items-center gap-2 focus:outline-none">
                     <div class="text-left">
                         <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{{ request.org.name }}</p>
@@ -40,7 +40,7 @@
             </div>
 
             <!-- User Profile -->
-            <div x-data="{ open: false }" class="relative">
+            <div x-data="{ open: false }" @click.away="open = false" class="relative">
                 <button @click="open = !open" class="focus:outline-none">
                     <!-- Avatar (Not Clickable) -->
                     <div class="w-10 h-10 aspect-square rounded-full border border-gray-300 pointer-events-none overflow-hidden bg-grey-500">
