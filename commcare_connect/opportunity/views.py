@@ -107,8 +107,8 @@ from commcare_connect.opportunity.tables import (
     WorkerLearnTable,
     WorkerPaymentsTable,
     WorkerStatusTable,
-    get_duration_min,
 )
+from commcare_connect.utils.tables import get_duration_min
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
     bulk_update_payments_task,
