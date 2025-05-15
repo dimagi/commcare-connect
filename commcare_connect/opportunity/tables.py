@@ -14,6 +14,7 @@ from django_tables2 import columns, utils
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
+    CompletedWorkStatus,
     OpportunityAccess,
     Payment,
     PaymentInvoice,
@@ -165,25 +166,16 @@ class OpportunityPaymentTable(OrgContextTable):
 
     def render_view_payments(self, record):
         url = reverse(
-            "opportunity:user_payments_table",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
+            "opportunity:worker_list",
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id},
         )
-        return mark_safe(f'<a href="{url}">View Details</a>')
+        return mark_safe(f'<a href="{url}?active_tab=payments">View Details</a>')
 
     class Meta:
         model = OpportunityAccess
         fields = ("display_name", "username", "payment_accrued", "total_paid", "total_confirmed_paid")
         orderable = False
         empty_text = "No user have payments accrued yet."
-
-
-class UserPaymentsTable(tables.Table):
-    class Meta:
-        model = Payment
-        fields = ("amount", "date_paid", "payment_method", "payment_operator")
-        orderable = False
-        empty_text = "No payments made for this user"
-        template_name = "django_tables2/bootstrap5.html"
 
 
 class AggregateColumn(columns.Column):
@@ -1027,16 +1019,18 @@ class WorkerStatusTable(tables.Table):
 
 class WorkerPaymentsTable(tables.Table):
     index = IndexColumn()
-    user = UserInfoColumn()
+    user = UserInfoColumn(footer="Total")
     suspended = SuspendedIndicatorColumn()
     last_active = DMYTColumn()
-    payment_accrued = tables.Column(verbose_name="Accrued")
-    total_paid = tables.Column(accessor="total_paid_d")
+    payment_accrued = tables.Column(verbose_name="Accrued", footer=lambda table: sum(x.payment_accrued or 0 for x in table.data))
+    total_paid = tables.Column(accessor="total_paid_d", footer=lambda table: sum(x.total_paid_d or 0 for x in table.data))
     last_paid = DMYTColumn()
     confirmed_paid = tables.Column(verbose_name="Confirm")
 
     def __init__(self, *args, **kwargs):
         self.use_view_url = True
+        self.org_slug = kwargs.pop("org_slug", "")
+        self.opp_id = kwargs.pop("opp_id", "")
         super().__init__(*args, **kwargs)
 
     class Meta:
@@ -1053,6 +1047,17 @@ class WorkerPaymentsTable(tables.Table):
             "confirmed_paid",
         )
         order_by = ("-last_active",)
+
+    def render_last_paid(self, record, value):
+        return render_to_string(
+            "tailwind/components/worker_page/last_paid.html",
+            {
+                "record": record,
+                "value": value.strftime("%d-%b-%Y %H:%M") if value else "--",
+                "org_slug": self.org_slug,
+                "opp_id": self.opp_id,
+            },
+        )
 
 
 class WorkerLearnTable(ClickableRowsTable):
@@ -1125,15 +1130,15 @@ class WorkerDeliveryTable(ClickableRowsTable):
 
     id = tables.Column(visible=False)
     index = IndexColumn()
-    user = tables.Column(orderable=False, verbose_name="Name")
+    user = tables.Column(orderable=False, verbose_name="Name", footer="Total")
     suspended = SuspendedIndicatorColumn()
     last_active = DMYTColumn()
-    payment_unit = tables.Column(orderable=False)
+    payment_unit = tables.Column(accessor="payment_unit__name", orderable=False)
     started = DMYTColumn(accessor="started_delivery")
-    delivered = tables.Column(accessor="completed")
-    pending = tables.Column()
-    approved = tables.Column()
-    rejected = tables.Column()
+    delivered = tables.Column(accessor="completed", footer=lambda table: sum(x.completed for x in table.data))
+    pending = tables.Column(footer=lambda table: sum(x.pending for x in table.data))
+    approved = tables.Column(footer=lambda table: sum(x.approved for x in table.data))
+    rejected = tables.Column(footer=lambda table: sum(x.rejected for x in table.data))
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
@@ -1183,7 +1188,6 @@ class WorkerDeliveryTable(ClickableRowsTable):
     def render_user(self, value):
         if value.id in self._seen_users:
             return ""
-
         self._seen_users.add(value.id)
         return format_html(
             """
@@ -1217,6 +1221,48 @@ class WorkerDeliveryTable(ClickableRowsTable):
         display_index = next(self._row_counter)
 
         return display_index
+
+    def render_delivered(self, record, value):
+        rows = [
+            {"label": "Completed", "value": record.completed},
+            {"label": "Incomplete", "value": record.incomplete},
+            {"label": "Duplicate", "value": record.duplicate},
+            {"label": "Over limit", "value": record.over_limit},
+        ]
+        return render_to_string(
+            "tailwind/components/worker_page/deliver_column.html",
+            {
+                "value": value,
+                "rows": rows,
+            },
+        )
+
+    def _render_flag_counts(self, record, value, status, status_title):
+        return render_to_string(
+            "tailwind/components/worker_page/fetch_flag_counts.html",
+            {
+                "record": record,
+                "payment_unit_id": record.payment_unit_id,
+                "value": value,
+                "org_slug": self.org_slug,
+                "opp_id": self.opp_id,
+                "status_title": status_title,
+                "status": status,
+            },
+        )
+
+    def render_pending(self, record, value):
+        return self._render_flag_counts(record, value, status=CompletedWorkStatus.pending, status_title="Pending Info")
+
+    def render_approved(self, record, value):
+        return self._render_flag_counts(
+            record, value, status=CompletedWorkStatus.approved, status_title="Approved Info"
+        )
+
+    def render_rejected(self, record, value):
+        return self._render_flag_counts(
+            record, value, status=CompletedWorkStatus.rejected, status_title="Rejected Info"
+        )
 
 
 class WorkerLearnStatusTable(tables.Table):
