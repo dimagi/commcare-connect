@@ -1,62 +1,135 @@
-{% extends "base.html" %}
-{% load i18n %}
+{% extends "tailwind/base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
-
-{% block title %}{{ request.org }}{% endblock title %}
-
+{% load django_tables2 %}
 {% block content %}
-  <div class="container">
-    <div class="mt-2 pt-4 px-4">
-      <div>
-        <h1 class="display-5 mb-0">{{ organization.name }}</h1>
-        <p class="fw-lighter">{{ organization.slug }}</p>
-      </div>
 
-      <section class="shadow-sm p-3 mb-5 bg-white rounded">
-        <form method="post">
+<p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">{{request.org.name}}</p>
+
+<div
+  class="flex flex-col max-w-screen-lg mx-auto gap-2"
+  x-cloak
+  x-data="orgTabs()"
+>
+  <!-- Tabs -->
+    <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+      <ul class="tabs">
+        <!-- Details Tab -->
+        <li @click="selectedTab = 'details';" :class="{'active': selectedTab !== 'details'}">
+          <span>Details</span>
+          <div  x-show="selectedTab === 'details'"></div>
+        </li>
+
+        <li @click="selectedTab = 'members';" :class="{'active': selectedTab !== 'members'}">
+          <span>Members</span>
+          <div  x-show="selectedTab === 'members'"></div>
+        </li>
+      </ul>
+
+    <!-- Options -->
+      <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
+        <button class="button button-md outline-style" @click="showAddMemberModal = true">
+          Add Members
+        </button>
+      </div>
+  </div>
+
+  <!-- Tab Content Containers -->
+  <div class="w-full">
+    <!-- Details Content (Already rendered) -->
+    <div x-show="selectedTab === 'details'" class="w-full mt-6">
+      <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">Organization</h2>
+      <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-10">
+        <form method="post" class="bg-white">
           {% csrf_token %}
           {% crispy form %}
         </form>
-      </section>
-
-      <section class="shadow-sm p-3 mb-5 bg-white rounded">
-        <h3 class="mb-4">{% translate "Members" %}</h3>
+      </div>
+       <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">Add Credential</h2>
+      <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
         <form method="post" action="{% url 'organization:add_members' org_slug=organization.slug %}">
-          {% csrf_token %}
-          {% crispy membership_form %}
-        </form>
-
-        <div class='table table-responsive'>
-          <table class="table pg-table ">
-            <thead>
-            <tr>
-              <th>{% translate "Member" %}</th>
-              <th>{% translate "Role" %}</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for membership in organization.memberships.all %}
-              <tr>
-                <td>
-                  {{ membership.user }}
-                </td>
-                <td>{{ membership.get_role_display }}</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="shadow-sm p-3 mb-5 bg-white rounded">
-        <h3 class="mb-4">{% translate "Add Credential" %}</h3>
-        <form method="post" action="{% url 'organization:add_credential' org_slug=organization.slug %}">
           {% csrf_token %}
           {% crispy add_credential_form %}
         </form>
-      </section>
-
+      </div>
     </div>
+
+    <div
+    x-show="selectedTab === 'members'"
+    id="invoice_members_container"
+    class="w-full"
+    hx-get="{% url 'organization:org_member_table' request.org.slug %}?{% querystring %}"
+    hx-swap="innerHTML"
+    hx-trigger="loadMembers from:body"
+  ></div>
   </div>
+
+
+<!-- Add Member Modal -->
+<div x-show="showAddMemberModal"
+     x-cloak
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+     @keydown.escape.window="showAddMemberModal = false">
+  <div @click.outside="showAddMemberModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <div class="flex justify-between items-center pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        Invite Member
+      </h2>
+      <button @click="showAddMemberModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <form action="{% url 'organization:add_members' request.org.slug %}" method="post">
+      {% csrf_token %}
+      <div class="mb-4">
+        {% crispy membership_form %}
+      </div>
+    </form>
+  </div>
+</div>
+
+
+</div>
 {% endblock content %}
+
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('orgTabs', () => ({
+      selectedTab: '{{ request.GET.active_tab|default:"details" }}',
+      showAddMemberModal: false,
+      isHistoryAvailable: false,
+
+      init() {
+        this.updateUrl(this.selectedTab);
+        this.loadTabContent(this.selectedTab);
+
+        this.$watch('selectedTab', (value) => {
+          this.updateUrl(value);
+          this.loadTabContent(value);
+        });
+      },
+
+      updateUrl(tab) {
+        const url = new URL(window.location);
+        url.searchParams.set('active_tab', tab);
+        window.history.pushState({}, '', url);
+      },
+
+      loadTabContent(tab) {
+        if (tab === 'members' && !this.isHistoryAvailable) {
+          htmx.trigger('#invoice_members_container', 'loadMembers');
+          this.isHistoryAvailable = true;
+        }
+      },
+    }));
+  });
+</script>
+{% endblock %}
+
