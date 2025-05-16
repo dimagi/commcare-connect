@@ -1,0 +1,71 @@
+<span
+  x-data="{
+    open: false,
+    dropdownStyle: '',
+    originalOverflow: '',
+    calculatePosition() {
+    const badge = this.$el;
+    const badgeRect = badge.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Calculate available space
+    const spaceBelow = viewportHeight - badgeRect.bottom;
+    const shouldShowAbove = spaceBelow < 70 && badgeRect.top > 200;
+
+    // Corrected: remove window.scrollY
+    let top = shouldShowAbove
+      ? badgeRect.top - 115
+      : badgeRect.bottom;
+
+    // Adjust for right edge
+    let left = Math.min(
+      badgeRect.left,
+      viewportWidth - 220
+    );
+
+    this.dropdownStyle = `position: fixed; top: ${top}px; left: ${left}px;`;
+  },
+    toggleDropdown() {
+      if (!this.open) {
+        this.originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        this.calculatePosition();
+      } else {
+        document.body.style.overflow = this.originalOverflow || '';
+      }
+      this.open = !this.open;
+    }
+  }"
+  @click="toggleDropdown()"
+  @click.outside="open = false; document.body.style.overflow = originalOverflow || '';"
+  :class="{
+    'primary-dark': open,
+    'primary-light': !open
+  }"
+  class="badge inline-block py-0.5 px-3.5 mx-1 text-nowrap rounded-3xl text-xs cursor-pointer relative transition-colors duration-200"
+>
+  +{{ list|length|add:-2 }}
+
+  <!-- Dropdown -->
+  <div
+    x-show="open"
+    x-cloak
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0 scale-95"
+    x-transition:enter-end="opacity-100 scale-100"
+    x-transition:leave="transition ease-in duration-75"
+    x-transition:leave-start="opacity-100 scale-100"
+    x-transition:leave-end="opacity-0 scale-95"
+    :style="dropdownStyle"
+    class="z-[9999] w-48 rounded-lg bg-white shadow-lg py-2 px-3 border border-gray-200"
+    style="min-width: 200px; max-height: 200px;"
+  >
+    <p class="text-[#94A3B8] text-xs mb-1">{{ title|default:'Flags' }}</p>
+    <div class="overflow-y-auto" style="max-height: 160px;">
+      {% for item in list %}
+        <p class="text-[#16006d] text-xs py-1">{{ item }}</p>
+      {% endfor %}
+    </div>
+  </div>
+</span>

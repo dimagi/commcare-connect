@@ -83,6 +83,8 @@ class Opportunity(BaseModel):
     # to be removed
     budget_per_visit = models.IntegerField(null=True)
     total_budget = models.PositiveBigIntegerField(null=True)
+    # Whether users payment phone numbers are required or not
+    payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency = models.CharField(max_length=3, null=True)
     auto_approve_visits = models.BooleanField(default=True)
@@ -175,15 +177,16 @@ class Opportunity(BaseModel):
 
     @property
     def max_visits_per_user_new(self):
-        return self.paymentunit_set.aggregate(max_total=Sum("max_total")).get("max_total", 0)
+        # aggregates return None
+        return self.paymentunit_set.aggregate(max_total=Sum("max_total")).get("max_total", 0) or 0
 
     @property
     def daily_max_visits_per_user_new(self):
-        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0)
+        return self.paymentunit_set.aggregate(max_daily=Sum("max_daily")).get("max_daily", 0) or 0
 
     @property
     def budget_per_visit_new(self):
-        return self.paymentunit_set.aggregate(amount=Max("amount")).get("amount", 0)
+        return self.paymentunit_set.aggregate(amount=Max("amount")).get("amount", 0) or 0
 
     @property
     def budget_per_user(self):
@@ -646,6 +649,12 @@ class UserVisit(XFormBaseModel):
             except (TypeError, ValueError):
                 pass
         return duration
+
+    @property
+    def flags(self):
+        if self.flag_reason is not None:
+            return [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return []
 
     class Meta:
         constraints = [

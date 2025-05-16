@@ -1,72 +1,83 @@
-{% extends "opportunity/base.html" %}
+{% extends "tailwind/base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
 {% load duration_minutes %}
-
-{% block breadcrumbs_inner %}
-  {{ block.super }}
-  <li class="breadcrumb-item">
-    <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.pk %}">
-      {{ opportunity.name }}
-    </a>
-  </li>
-  <li class="breadcrumb-item active" aria-current="page">Verification Flags Configuration</li>
-{% endblock %}
+{% load tailwind_filters %}
 
 {% block content %}
-  <h2 class="mb-2">Verification Flags Configuration</h2>
-  <hr/>
-  <form method="post">
+{% include 'tailwind/components/breadcrumbs.html' with path=path %}
+
+<div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
+  <h2 class="title">Verification Flags Configuration</h2>
+
+  <form method="post" class="flex flex-col gap-4 space-y-6">
     {% csrf_token %}
-    <div class="mb-2">
-      {% crispy form %}
+
+    <div class="space-y-2">
+      <div class="card_bg">
+        <div class="flex flex-col gap-4">
+          {% crispy form %}
+        </div>
+      </div>
     </div>
-    <div class="my-2">
-      <h3 class="mb-2">Deliver Unit Flags</h3>
-      {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+
+    <div class="space-y-2">
+      <h3 class="title-sm">Deliver Unit Flags</h3>
+      <div class="card_bg">
+        {% crispy deliver_unit_formset deliver_unit_formset.empty_form.helper %}
+      </div>
     </div>
-    <div class="my-2" x-data="form_json_formset">
-      <h3 class="mb-2">
-        Form Validation Rules
-        <button type="button" class="btn btn-success ms-2" @click="addForm()"><i class="bi bi-plus-circle-fill pe-1"></i> Add</button>
-      </h3>
+
+    <div x-data="form_json_formset" class="space-y-4">
+      <div class="flex justify-between mb-2">
+        <h3 class="title-sm">Form Validation Rules</h3>
+        <button type="button" class="button-icon primary-dark" @click="addForm()">
+          <i class="fa-regular fa-plus"></i>
+        </button>
+      </div>
+
       {{ form_json_formset.management_form|crispy }}
+
       <template>
-        <div class="card my-1" id="form_json_form">
-          <div class="card-body">
-            {% crispy form_json_formset.empty_form form_json_formset.empty_form.helper %}
-          </div>
-          <div class="card-footer">
-            <button type="button" class="btn btn-danger" aria-label="Delete" @click="deleteForm()">
-              <i class="bi bi-trash-fill pe-1"></i> Delete
+        <div class="card_bg" id="form_json_form">
+          <div class="flex justify-end">
+            <button type="button" class="button-icon negative-light" aria-label="Delete" @click="deleteForm()">
+              <i class="fa-regular fa-trash"></i>
             </button>
+          </div>
+          <div class="p-4">
+            {% crispy form_json_formset.empty_form form_json_formset.empty_form.helper %}
           </div>
         </div>
       </template>
-      <div id="form_json_forms">
+
+      <div id="form_json_forms" class="flex flex-col gap-4 space-y-2">
         {% for form in form_json_formset %}
-          <div class="card my-1" id="form_json_form">
-            <div class="card-body">
-              {% crispy form form.helper %}
+          <div class="card_bg" id="form_json_form">
+            <div class="flex justify-end">
+              <button type="button" class="button-icon negative-light" aria-label="Delete"
+                {% if not form.instance.id %}
+                  @click="deleteForm()"
+                {% else %}
+                  hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.pk pk=form.instance.id %}"
+                  hx-target="closest #form_json_form"
+                  hx-swap="outerHTML"
+                  @click="decrementFormCount()"
+                {% endif %}>
+                <i class="fa-regular fa-trash"></i>
+              </button>
             </div>
-            <div class="card-footer">
-              {% if not form.instance.id %}
-                <button type="button" class="btn btn-danger" aria-label="Delete" @click="deleteForm()">
-              {% else %}
-                <button type="button" class="btn btn-danger" aria-label="Delete"
-                        hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.pk pk=form.instance.id %}"
-                        hx-target="closest #form_json_form" hx-swap="outerHTML" @click="decrementFormCount()">
-              {% endif %}
-                  <i class="bi bi-trash-fill pe-1"></i> Delete
-                </button>
-            </div>
+            {% crispy form form.helper %}
           </div>
         {% endfor %}
       </div>
     </div>
 
-    <button type="submit" class="btn btn-primary">Save</button>
+    <div class="flex justify-end">
+      <button type="submit" class="button button-md primary-dark mb-2">Save</button>
+    </div>
   </form>
+</div>
 {% endblock content %}
 
 {% block inline_javascript %}

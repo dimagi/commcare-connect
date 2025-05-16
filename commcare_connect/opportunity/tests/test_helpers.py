@@ -1,11 +1,23 @@
-import pytest
+import uuid
+from datetime import timedelta
 
-from commcare_connect.opportunity.helpers import get_annotated_opportunity_access_deliver_status
+import pytest
+from django.utils.timezone import now
+
+from commcare_connect.opportunity.helpers import (
+    get_annotated_opportunity_access_deliver_status,
+    get_worker_learn_table_data,
+    get_worker_table_data,
+)
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.tests.factories import (
+    AssessmentFactory,
+    CompletedModuleFactory,
     CompletedWorkFactory,
+    LearnModuleFactory,
     OpportunityAccessFactory,
     PaymentUnitFactory,
+    UserVisitFactory,
 )
 from commcare_connect.users.tests.factories import MobileUserFactory
 
@@ -69,3 +81,133 @@ def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunit
         assert access.rejected == 0
         assert access.pending == 0
         assert access.completed == 0
+
+
+@pytest.mark.django_db
+def test_get_worker_table_data_all_fields(opportunity):
+    today = now().date()
+    five_days_ago = today - timedelta(days=5)
+    three_days_ago = today - timedelta(days=3)
+    two_days_ago = today - timedelta(days=2)
+
+    opportunity.end_date = today + timedelta(days=5)
+    opportunity.save()
+    opportunity.refresh_from_db()
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+
+    access = OpportunityAccessFactory(opportunity=opportunity)
+
+    # Completed modules
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=five_days_ago,
+    )
+    CompletedModuleFactory(
+        xform_id=uuid.uuid4(),
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=today,
+    )
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module2,
+        date=three_days_ago,
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        visit_date=two_days_ago,
+    )
+
+    access.date_learn_started = five_days_ago
+    access.save()
+    result = get_worker_table_data(opportunity)
+    row = result.get(id=access.id)
+
+    assert row.completed_learn.date() == three_days_ago
+    assert row.days_to_complete_learn.days == 2
+    assert row.first_delivery.date() == two_days_ago
+    assert row.days_to_start_delivery.days == (row.first_delivery.date() - access.date_learn_started).days
+    assert row.last_active.date() == today
+
+
+@pytest.mark.django_db
+def test_get_worker_learn_table_data_all_fields(
+    opportunity,
+):
+    today = now().date()
+    five_days_ago = today - timedelta(days=5)
+    three_days_ago = today - timedelta(days=3)
+
+    opportunity.end_date = today + timedelta(days=5)
+    opportunity.save()
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+    module3 = LearnModuleFactory(app=opportunity.learn_app)
+
+    access = OpportunityAccessFactory(opportunity=opportunity)
+
+    # Completed 2 out of 3 modules
+    CompletedModuleFactory(
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module1,
+        date=five_days_ago,
+        duration=timedelta(hours=1),
+    )
+    CompletedModuleFactory(
+        xform_id=uuid.uuid4(),
+        opportunity=opportunity,
+        opportunity_access=access,
+        user=access.user,
+        module=module2,
+        date=three_days_ago,
+        duration=timedelta(hours=2),
+    )
+    # Passed assessment
+    AssessmentFactory(
+        user=access.user,
+        opportunity=opportunity,
+        opportunity_access=access,
+        passed=True,
+        score=85,
+        passing_score=70,
+        date=today,
+    )
+
+    # Failed assessment (shouldn't affect passed_assessment=True)
+    AssessmentFactory(
+        user=access.user,
+        opportunity=opportunity,
+        opportunity_access=access,
+        passed=False,
+        score=50,
+        passing_score=70,
+        date=three_days_ago,
+    )
+
+    result = get_worker_learn_table_data(opportunity)
+    for r in result:
+        print(r.id)
+    row = result.get(id=access.id)
+
+    assert row.last_active.date() == three_days_ago
+    assert row.completed_learn == None
+    assert row.passed_assessment is True
+    assert row.assesment_count == 2
+    assert row.learning_hours.total_seconds() == 10800
+    assert row.completed_modules_count == 2
+    assert row.modules_completed_percentage == round(2 * 100.0 / 3, 1)

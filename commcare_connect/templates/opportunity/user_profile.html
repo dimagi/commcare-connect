@@ -190,7 +190,7 @@
         <h1 class="modal-title fs-5" id="suspendUserModalLabel">Suspend User: {{ access.user.name }}</h1>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="{% url "opportunity:suspend_user" org_slug=request.org opp_id=access.opportunity_id pk=access.pk %}">
+      <form method="post" action="{% url "opportunity:suspend_user" org_slug=request.org.slug opp_id=access.opportunity_id pk=access.pk %}">
         <div class="modal-body">
           {% csrf_token %}
           <div class="mb-3">
