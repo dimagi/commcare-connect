@@ -37,7 +37,6 @@ CHECKBOX_CLASS = "simple-toggle"
 
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
-        self.org_slug = kwargs.pop("org_slug", None)
         self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
 
@@ -62,10 +61,7 @@ class OpportunityUserInviteForm(forms.Form):
         return split_users
 
 
-class OpportunityChangeForm(
-    OpportunityUserInviteForm,
-    forms.ModelForm,
-):
+class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
     class Meta:
         model = Opportunity
         fields = [
@@ -80,6 +76,7 @@ class OpportunityChangeForm(
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.opportunity = self.instance
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
