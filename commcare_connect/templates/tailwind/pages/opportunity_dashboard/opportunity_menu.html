@@ -47,11 +47,13 @@
         >Add Worker Budget</a
       >
     </li>
+    {% if not opportunity.managed or is_program_manager %}
     <li>
       <a  href="{% url 'opportunity:verification_flags_config' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Verification Flags</a
       >
     </li>
+    {% endif %}
     <li>
       <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Send Message</a
