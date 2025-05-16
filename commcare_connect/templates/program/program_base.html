@@ -45,7 +45,7 @@
                 <p class="title">{{ row.opportunity__name }}</p>
                 <p class="hint">{{ row.opportunity__organization__name }}</p>
               </div>
-              <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+              <a class="button button-sm button-outline-rounded" href="{{ row.url }}">
                 <div class="flex items-center justify-between gap-4">
                   <p class="text-2xl">{{ row.count }}</p>
                   <i class="fa-light fa-arrow-right"></i>

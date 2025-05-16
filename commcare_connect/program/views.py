@@ -290,7 +290,7 @@ def program_manager_home(request, org):
         )
     )
 
-    pending_review = (
+    pending_review_data = (
         UserVisit.objects.filter(
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.pending,
@@ -301,7 +301,11 @@ def program_manager_home(request, org):
         .annotate(count=Count("id"))
     )
 
-    pending_payments = (
+    pending_review = _make_recent_activity_data(
+        pending_review_data, org.slug, "opportunity:worker_list", {"active_tab": "delivery"}
+    )
+
+    pending_payments_data = (
         PaymentInvoice.objects.filter(
             opportunity__managed=True,
             opportunity__managedopportunity__program__in=programs,
@@ -309,6 +313,10 @@ def program_manager_home(request, org):
         )
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id"))
+    )
+
+    pending_payments = _make_recent_activity_data(
+        pending_payments_data, org.slug, "opportunity:worker_list", {"active_tab": "payments"}
     )
 
     organizations = Organization.objects.exclude(pk=org.pk)
@@ -334,7 +342,7 @@ def network_manager_home(request, org):
     )
     results = sorted(programs, key=lambda x: (x.invite_date, x.start_date), reverse=True)
 
-    pending_review = (
+    pending_review_data = (
         UserVisit.objects.filter(
             status="pending",
             opportunity__managed=True,
@@ -343,15 +351,21 @@ def network_manager_home(request, org):
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id", distinct=True))
     )
+    pending_review = _make_recent_activity_data(
+        pending_review_data, org.slug, "opportunity:worker_list", {"active_tab": "delivery"}
+    )
     access_qs = OpportunityAccess.objects.filter(opportunity__managed=True, opportunity__organization=org)
-    pending_payments = (
+    pending_payments_data = (
         access_qs.annotate(pending_payment=F("payment_accrued") - Sum("payment__amount"))
         .filter(pending_payment__gte=0)
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id", distinct=True))
     )
+    pending_payments = _make_recent_activity_data(
+        pending_payments_data, org.slug, "opportunity:worker_list", {"active_tab": "payments"}
+    )
     three_days_before = now() - timedelta(days=3)
-    inactive_workers = (
+    inactive_workers_data = (
         access_qs.annotate(
             learn_module_date=Max("completedmodule__date"),
             user_visit_date=Max("uservisit__visit_date"),
@@ -359,6 +373,9 @@ def network_manager_home(request, org):
         .filter(Q(user_visit_date__lte=three_days_before) | Q(learn_module_date__lte=three_days_before))
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id", distinct=True))
+    )
+    inactive_workers = _make_recent_activity_data(
+        inactive_workers_data, org.slug, "opportunity:worker_list", {"active_tab": "workers"}
     )
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
@@ -371,3 +388,17 @@ def network_manager_home(request, org):
         "is_program_manager": False,
     }
     return render(request, "program/nm_home.html", context)
+
+
+def _make_recent_activity_data(data: list[dict], org_slug: str, url_slug: str, url_get_kwargs: dict = {}):
+    get_string = "&".join([f"{key}={value}" for key, value in url_get_kwargs.items()])
+    return [
+        {
+            "opportunity__name": row["opportunity__name"],
+            "opportunity__organization__name": row["opportunity__organization__name"],
+            "count": row.get("count", 0),
+            "url": reverse(url_slug, kwargs={"org_slug": org_slug, "opp_id": row["opportunity__id"]})
+            + f"?{get_string}",
+        }
+        for row in data
+    ]
