@@ -38,7 +38,7 @@ from commcare_connect.opportunity.models import (
     UserInviteStatus,
     UserVisit,
     VisitReviewStatus,
-    VisitValidationStatus,
+    VisitValidationStatus, OpportunityClaimLimit,
 )
 
 
@@ -101,13 +101,20 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
 def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
     access_objects = []
     for payment_unit in opportunity.paymentunit_set.all():
-        started_delivery_sq = Subquery(
-            UserVisit.objects.filter(opportunity_access_id=OuterRef("pk"))
-            .values("opportunity_access_id")
-            .annotate(min_visit_date=Min("visit_date"))
-            .values("min_visit_date")[:1],
-            output_field=DateTimeField(null=True)
-        )
+
+        total_visits_sq = Subquery(OpportunityClaimLimit.objects.filter(
+            opportunity_claim__opportunity_access_id=OuterRef("pk"),
+            payment_unit=payment_unit
+        ).values("max_visits")[:1], output_field=IntegerField())
+
+        completed_visit_sq = Subquery(UserVisit.objects.filter(
+            opportunity_access_id=OuterRef("pk"),
+            deliver_unit__payment_unit=payment_unit
+        ).exclude(
+            status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial]
+        ).values("opportunity_access_id").annotate(
+            total=Count("*")
+        ).values("total")[:1], output_field=IntegerField())
 
         last_visit_sq = Subquery(
             UserVisit.objects.filter(opportunity_access_id=OuterRef("pk"))
@@ -161,7 +168,8 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             .annotate(
                 payment_unit_id=Value(payment_unit.pk),
                 payment_unit=Value(payment_unit.name, output_field=CharField()),
-                started_delivery=Coalesce(started_delivery_sq, Value(None, output_field=DateTimeField())),
+                total_visits=Coalesce(total_visits_sq, Value(None, output_field=IntegerField())),  # Optional
+                completed_visits=Coalesce(completed_visit_sq, Value(0)),
                 _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
                 _last_module_val=Coalesce(last_module_sq, Value(None, output_field=DateTimeField())),
                 pending=Coalesce(pending_count_sq, Value(0)),
