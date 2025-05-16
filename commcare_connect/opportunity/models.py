@@ -198,6 +198,14 @@ class Opportunity(BaseModel):
     def is_active(self):
         return bool(self.active and self.end_date and self.end_date >= now().date())
 
+    @property
+    def program_name(self):
+        return self.managedopportunity.program.name if self.managed else None
+
+    @property
+    def has_ended(self):
+        return bool(self.end_date and self.end_date < now().date())
+
 
 class OpportunityVerificationFlags(models.Model):
     opportunity = models.OneToOneField(Opportunity, on_delete=models.CASCADE)
