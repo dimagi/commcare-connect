@@ -1,0 +1,54 @@
+{% if skeleton %}
+<div
+  id="opp-funnel-container"
+  hx-get="{% url 'opportunity:funnel_progress_stats' request.org.slug object.id %}"
+  hx-trigger="load"
+  hx-target="#opp-funnel-container"
+  hx-swap="innerHTML"
+>
+  <div class="flex flex-col gap-8 w-full p-8 shadow-sm rounded-xl bg-white animate-pulse">
+    <h4 class="text-brand-deep-purple font-medium">Worker Progress Funnel</h4>
+    <div class="flex flex-col md:flex-row gap-4 justify-between">
+      {% for _ in "1234567" %}
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <div class="bg-indigo-100 h-12 w-12 rounded flex items-center justify-center">
+            <div class="bg-indigo-300 h-6 w-6 rounded"></div>
+          </div>
+          {% if not forloop.last %}
+          <div class="relative w-32 h-0.5 bg-transparent border-dashed border-t-2 border-gray-300 my-6">
+            <div class="absolute -right-1 -top-[6.5px] w-2.5 h-2.5 border-t-2 border-r-2 border-gray-300 rotate-45"></div>
+          </div>
+          {% endif %}
+        </div>
+        <div class="h-6 w-12 bg-gray-200 rounded"></div>
+        <div class="h-3 w-20 bg-gray-200 rounded"></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="flex flex-col gap-8 w-full p-8 shadow-sm rounded-xl bg-white">
+  <h4 class="text-brand-deep-purple font-medium">Worker Progress Funnel</h4>
+  <div class="flex flex-col md:flex-row gap-4 justify-between">
+    {% for data in funnel_progress %}
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <div class="text-brand-indigo text-lg p-2 rounded bg-indigo-100 aspect-square text-center h-12 w-12 place-content-center">
+          <i class="fa-light fa-{{ data.icon }}"></i>
+        </div>
+        {% if not forloop.last %}
+        <div class="relative w-32 h-0.5 bg-transparent border-dashed border-t-2 border-gray-400 my-6">
+          <div class="absolute -right-1 -top-[6.5px] w-2.5 h-2.5 border-t-2 border-r-2 border-gray-400 rotate-45"></div>
+        </div>
+        {% endif %}
+      </div>
+      <p class="text-xl w-12 text-center font-semibold text-brand-deep-purple">{{ data.count }}</p>
+      <p class="text-xs font-normal text-gray-500 whitespace-nowrap">{{ data.stage }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
