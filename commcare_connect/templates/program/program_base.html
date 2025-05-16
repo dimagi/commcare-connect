@@ -1,0 +1,81 @@
+{% extends 'tailwind/base.html' %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4" x-data="{showProgramAddModal: false}">
+  <div class="col-span-2">
+    <div class="flex justify-between">
+      <h2 class="mb-4 text-brand-deep-purple font-medium text-sm">Programs</h2>
+      {% if is_program_manager %}
+      <div class="flex items-center gap-2">
+        <button class="button button-md button-outline-rounded"
+          hx-get="{% url "program:init" request.org.slug %}"
+          hx-target="#program-add-form"
+          @htmx:after-request="showProgramAddModal = true">
+           <div class="flex items-center justify-between gap-4">
+             <p class="text-sm">
+               Add Programs
+             </p>
+             <i class="fa-light fa-plus-large"></i>
+           </div>
+       </button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-span-1">
+    <div class="mb-4 text-brand-deep-purple font-medium text-sm">Recent Activities</div>
+  </div>
+
+  <div class="col-span-2">
+    {% block inner %}
+    {% endblock inner %}
+  </div>
+  <div class="col-span-1">
+    <div class="bg-gray-100 rounded-lg overflow-y-hidden hover:overflow-y-auto">
+      <div class="flex flex-col gap-4">
+        {% for data in recent_activities %}
+          <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
+            <div class="flex gap-4 items-center">
+              <i class="fa-light fa-clock-rotate-left"></i>
+              <p class="text-base">{{ data.title }}</p>
+            </div>
+            {% for row in data.rows %}
+            <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+              <div>
+                <p class="title">{{ row.opportunity__name }}</p>
+                <p class="hint">{{ row.opportunity__organization__name }}</p>
+              </div>
+              <a class="button button-sm button-outline-rounded" href="{% url "opportunity:detail" request.org.slug row.opportunity__id %}">
+                <div class="flex items-center justify-between gap-4">
+                  <p class="text-2xl">{{ row.count }}</p>
+                  <i class="fa-light fa-arrow-right"></i>
+                </div>
+              </a>
+            </div>
+            {% endfor %}
+            <div class="flex justify-end" x-show="{{ data.rows|length }} > 2">
+              <button class="button-text" @click="expanded = !expanded">
+                <span x-text="expanded ? 'less' : 'more'"></span>
+                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+              </button>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% if is_program_manager %}
+  <div x-cloak x-show="showProgramAddModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showProgramAddModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center mb-2">
+        <h2 class="title">Create Program</h2>
+        <button @click="showProgramAddModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-light fa-xmark"></i>
+        </button>
+      </div>
+      <div id="program-add-form"></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

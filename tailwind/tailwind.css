@@ -117,7 +117,7 @@
   @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
 }
 
-.button:hover::after {
+.button:not(:disabled):hover::after {
   content: '';
   @apply bg-brand-deep-purple/10 absolute left-0 top-0 z-0 h-full w-full rounded-lg;
 }
@@ -643,7 +643,7 @@
 
 .better-tabs {
   .tabs {
-    @apply flex h-full flex-wrap gap-x-8 px-2;
+    @apply flex h-full gap-x-8 px-2 overflow-x-scroll;
   }
 
   .tab {

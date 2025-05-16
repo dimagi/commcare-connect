@@ -1,13 +1,12 @@
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Field, Layout, Row, Submit
+from crispy_forms.layout import Button, Field, Layout, Row, Submit
 from django import forms
 
 from commcare_connect.opportunity.forms import OpportunityInitForm
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 
-HALF_WIDTH_FIELD = "form-group col-md-6 mb-0"
-DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"})
+DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
 
 
 class ProgramForm(forms.ModelForm):
@@ -22,7 +21,7 @@ class ProgramForm(forms.ModelForm):
             "start_date",
             "end_date",
         ]
-        widgets = {"start_date": DATE_INPUT, "end_date": DATE_INPUT}
+        widgets = {"start_date": DATE_INPUT, "end_date": DATE_INPUT, "description": forms.Textarea}
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
@@ -30,18 +29,29 @@ class ProgramForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("delivery_type")),
+            Field("name"),
+            Field("description"),
+            Field("delivery_type"),
             Row(
-                Field("budget", wrapper_class=HALF_WIDTH_FIELD),
-                Field("currency", wrapper_class=HALF_WIDTH_FIELD),
+                Field("budget"),
+                Field("currency"),
+                css_class="grid grid-cols-2 gap-2",
             ),
             Row(
-                Field("start_date", wrapper_class=HALF_WIDTH_FIELD),
-                Field("end_date", wrapper_class=HALF_WIDTH_FIELD),
+                Field("start_date"),
+                Field("end_date"),
+                css_class="grid grid-cols-2 gap-2",
             ),
-            Submit("submit", "Submit"),
+            Row(
+                Button(
+                    "close",
+                    "Close",
+                    css_class="button button-md outline-style",
+                    **{"@click": "showProgramAddModal = showProgramEditModal = false"},
+                ),
+                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                css_class="float-end",
+            ),
         )
 
     def clean(self):
@@ -57,11 +67,8 @@ class ProgramForm(forms.ModelForm):
         if not self.instance.pk:
             self.instance.organization = self.organization
             self.instance.created_by = self.user.email
-
         self.instance.modified_by = self.user.email
-
         self.instance.currency = self.cleaned_data["currency"].upper()
-
         return super().save(commit=commit)
 
 

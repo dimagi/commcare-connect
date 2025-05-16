@@ -15,26 +15,7 @@
 {% endblock javascript %}
 
 {% block content %}
-  <ul class="breadcrumb">
-      {% if opportunity.managed %}
-      <li>
-          <!-- Todo; update to program:home -->
-          <a href='{% url "program:list" request.org.slug %}'>Programs</a>
-          <i class="fa-solid fa-chevron-right"></i>
-      </li>
-      {% endif %}
-      <li>
-          <a href='{% url "opportunity:list" request.org.slug %}'>Opportunities</a>
-          <i class="fa-solid fa-chevron-right"></i>
-      </li>
-      <li>
-          <a href='{% url "opportunity:detail" request.org.slug opportunity.pk %}'>{{ opportunity.name }}</a>
-          <i class="fa-solid fa-chevron-right"></i>
-      </li>
-      <li>
-          <a href='{% url "opportunity:user_visits_list" request.org.slug opportunity.pk opportunity_access.pk %}'>Worker</a>
-      </li>
-  </ul>
+  {% include 'tailwind/components/breadcrumbs.html' with path=path %}
   <div class="w-full space-y-4">
     <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
       {% include "tailwind/components/worker_page/profile.html" with opportunity_access=opportunity_access %}
@@ -75,13 +56,13 @@
               <div class="flex justify-between items-center py-3">
                 <span class="text-xs w-27">Name</span>
                 <i class="fa-light fa-circle-check text-green-600"></i>
-                <i class="fa-light fa-circle-xmark text-brand-sunset "></i>
+                <i class="fa-light fa-clock text-gray-300"></i>
               </div>
               {% for flag in flagged_info %}
                 <div class="flex justify-between items-center py-3 pr-1">
                   <span class="text-xs w-25">{{ flag.name }}</span>
                   <span class="text-xs">{{ flag.approved }}</span>
-                  <span class="text-xs">{{ flag.rejected }}</span>
+                  <span class="text-xs">{{ flag.pending }}</span>
                 </div>
               {% endfor %}
             </div>
@@ -192,7 +173,7 @@
                 <span class="sr-only">Loading...</span>
               </div>
             </div>
-            <div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm" id="visit-actions"></div>
+            <div id="visit-actions"></div>
           </div>
         </div>
       </div>
