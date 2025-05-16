@@ -1159,7 +1159,7 @@ class WorkerDeliveryTable(OrgContextTable):
         verbose_name=header_with_tooltip(
             "Approved", "Payment units that are fully approved automatically or manually by NM and PM",
         ),
-    footer=lambda table: sum(x.approved for x in table.data)
+        footer=lambda table: sum(x.approved for x in table.data)
     )
     rejected = tables.Column(verbose_name=header_with_tooltip("Rejected", "Payment units that are rejected"),
                              footer=lambda table: sum(x.rejected for x in table.data))
