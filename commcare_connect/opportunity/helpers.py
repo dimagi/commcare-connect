@@ -125,6 +125,18 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             output_field=DateTimeField(null=True)
         )
 
+        duplicate_sq = Subquery(
+            CompletedWork.objects.filter(
+                opportunity_access_id=OuterRef("pk"),
+                payment_unit=payment_unit,
+                saved_completed_count__gt=1,
+            )
+            .values("opportunity_access_id")
+            .annotate(duplicate_count=Count("id", distinct=True))
+            .values("duplicate_count")[:1],
+            output_field=IntegerField()
+        )
+
         def completed_work_status_subquery(status_value):
             return Subquery(
                 CompletedWork.objects.filter(
@@ -147,6 +159,7 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
         queryset = (
             OpportunityAccess.objects.filter(opportunity=opportunity)
             .annotate(
+                payment_unit_id=Value(payment_unit.pk),
                 payment_unit=Value(payment_unit.name, output_field=CharField()),
                 started_delivery=Coalesce(started_delivery_sq, Value(None, output_field=DateTimeField())),
                 _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
@@ -154,6 +167,7 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 pending=Coalesce(pending_count_sq, Value(0)),
                 approved=Coalesce(approved_count_sq, Value(0)),
                 rejected=Coalesce(rejected_count_sq, Value(0)),
+                duplicate=Coalesce(duplicate_sq, Value(0)),
                 over_limit=Coalesce(over_limit_count_sq, Value(0)),
                 incomplete=Coalesce(incomplete_count_sq, Value(0)),
             )
@@ -173,7 +187,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
         access_objects += queryset
     access_objects.sort(key=lambda a: a.user.name)
     return access_objects
-
 
 
 def get_payment_report_data(opportunity: Opportunity):

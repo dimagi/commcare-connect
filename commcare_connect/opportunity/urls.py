@@ -15,7 +15,6 @@ from commcare_connect.opportunity.views import (
     OpportunityPaymentUnitTableView,
     OpportunityUserLearnProgress,
     OpportunityUserStatusTableView,
-    UserPaymentsTableView,
     add_budget_existing_users,
     add_budget_new_users,
     add_payment_unit,
@@ -92,7 +91,6 @@ urlpatterns = [
     path("<int:pk>/payment_units/create", view=add_payment_units, name="add_payment_units"),
     path("<int:pk>/payment_unit_table/", view=OpportunityPaymentUnitTableView.as_view(), name="payment_unit_table"),
     path("<int:opp_id>/payment_unit/<int:pk>/edit", view=edit_payment_unit, name="edit_payment_unit"),
-    path("<int:opp_id>/user_payment_table/<int:pk>", view=UserPaymentsTableView.as_view(), name="user_payments_table"),
     path("<int:pk>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<int:pk>/deliver_status_table/", view=OpportunityDeliverStatusTable.as_view(), name="deliver_status_table"),
     path("<int:pk>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
@@ -144,4 +142,10 @@ urlpatterns = [
         views.worker_learn_status_view,
         name="worker_learn_progress",
     ),
+    path(
+        "<int:opp_id>/worker_payment_history/<int:access_id>",
+        views.worker_payment_history,
+        name="worker_payment_history",
+    ),
+    path("<int:opp_id>/worker_flag_counts/<int:access_id>", views.worker_flag_counts, name="worker_flag_counts"),
 ]
