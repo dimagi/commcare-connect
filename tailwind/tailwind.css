@@ -666,3 +666,7 @@
     @apply text-brand-deep-purple font-medium;
   }
 }
+
+.relative > .pointer-events-none > svg {
+    display: none;        /* https://github.com/django-crispy-forms/crispy-tailwind/issues/124 */
+}
