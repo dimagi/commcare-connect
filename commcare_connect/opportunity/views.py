@@ -1126,7 +1126,7 @@ def import_catchment_area(request, org_slug=None, pk=None):
 @org_member_required
 def opportunity_user_invite(request, org_slug=None, pk=None):
     opportunity = get_opportunity_or_404(org_slug=request.org.slug, pk=pk)
-    form = OpportunityUserInviteForm(data=request.POST or None, org_slug=request.org.slug, opportunity=opportunity)
+    form = OpportunityUserInviteForm(data=request.POST or None, opportunity=opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
         if users:
@@ -1363,18 +1363,37 @@ def user_visit_verification(request, org_slug, opp_id, pk):
 
     user_visit_counts = get_user_visit_counts(opportunity_access_id=pk)
     visits = UserVisit.objects.filter(opportunity_access=opportunity_access)
-    flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "rejected": 0})
+    flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
     for visit in visits:
         for flag in visit.flags:
-            if visit.status in (VisitValidationStatus.approved, VisitValidationStatus.rejected):
-                flagged_info[flag][visit.status] += 1
-                flagged_info[flag]["name"] = flag
+            if visit.status == VisitValidationStatus.approved:
+                flagged_info[flag]["approved"] += 1
+            if visit.status == VisitValidationStatus.rejected:
+                flagged_info[flag]["rejected"] += 1
+            if visit.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
+                flagged_info[flag]["pending"] += 1
+            flagged_info[flag]["name"] = flag
     flagged_info = flagged_info.values()
     last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
     pending_payment = max(opportunity_access.payment_accrued - opportunity_access.total_paid, 0)
     pending_completed_work_count = CompletedWork.objects.filter(
         opportunity_access=opportunity_access, status=CompletedWorkStatus.pending, saved_approved_count__gt=0
     ).count()
+
+    path = []
+    if opportunity.managed:
+        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
+        path.append(
+            {"title": opportunity.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))}
+        )
+    path.extend(
+        [
+            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+            {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
+            {"title": "Worker", "url": request.path},
+        ]
+    )
 
     response = render(
         request,
@@ -1390,6 +1409,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             "is_program_manager": is_program_manager,
             "pending_completed_work_count": pending_completed_work_count,
             "pending_payment": pending_payment,
+            "path": path,
         },
     )
     return response
@@ -1433,7 +1453,7 @@ def get_user_visit_counts(opportunity_access_id: int, date=None):
     user_visit_counts = UserVisit.objects.filter(**filter_kwargs).aggregate(
         **visit_count_kwargs,
         approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
-        pending=Count("id", filter=Q(status=VisitValidationStatus.pending)),
+        pending=Count("id", filter=Q(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])),
         rejected=Count("id", filter=Q(status=VisitValidationStatus.rejected)),
         flagged=Count("id", filter=Q(flagged=True)),
         total=Count("*"),
@@ -1477,7 +1497,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             tabs = [
                 {
                     "name": "pending_review",
-                    "label": "Pending",
+                    "label": "Pending Review",
                     "count": user_visit_counts.get("pending_review", 0),
                 },
                 {
@@ -1560,7 +1580,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             filter_kwargs.update({"visit_date__date": date})
 
         if self.filter_status == "pending":
-            filter_kwargs.update({"status": VisitValidationStatus.pending})
+            filter_kwargs.update({"status__in": [VisitValidationStatus.pending, VisitValidationStatus.duplicate]})
             self.exclude_columns = ["last_activity"]
         if self.filter_status == "approved":
             filter_kwargs.update({"status": VisitValidationStatus.approved})
@@ -1661,11 +1681,17 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
     export_form = PaymentExportForm()
 
-    path = [
-        {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-        {"title": opp.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-        {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
-    ]
+    path = []
+    if opp.managed:
+        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
+        path.append({"title": opp.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))})
+    path.extend(
+        [
+            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": opp.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+            {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
+        ]
+    )
 
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""

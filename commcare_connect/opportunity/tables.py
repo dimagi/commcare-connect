@@ -25,8 +25,16 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.users.models import User
-from commcare_connect.utils.tables import OrgContextTable, IndexColumn, ClickableRowsTable, \
-    DurationColumn, DMYTColumn, TEXT_CENTER_ATTR, STOP_CLICK_PROPAGATION_ATTR, merge_attrs
+from commcare_connect.utils.tables import (
+    STOP_CLICK_PROPAGATION_ATTR,
+    TEXT_CENTER_ATTR,
+    ClickableRowsTable,
+    DMYTColumn,
+    DurationColumn,
+    IndexColumn,
+    OrgContextTable,
+    merge_attrs,
+)
 
 
 class OpportunityContextTable(OrgContextTable):
@@ -656,7 +664,6 @@ class BaseOpportunityList(ClickableRowsTable):
     def row_click_url(self, record):
         return reverse("opportunity:detail", args=(self.org_slug, record.id))
 
-
     def render_status(self, value):
         if value == 0:
             badge_class = "badge badge-sm bg-green-600/20 text-green-600"
@@ -692,10 +699,9 @@ class BaseOpportunityList(ClickableRowsTable):
         url = f"{url}?active_tab={active_tab}"
 
         if sort:
-            url += "&"+sort
+            url += "&" + sort
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
-
 
 
 class OpportunityTable(BaseOpportunityList):
@@ -703,7 +709,7 @@ class OpportunityTable(BaseOpportunityList):
 
     pending_invites = tables.Column(attrs=col_attrs)
     inactive_workers = tables.Column(attrs=col_attrs)
-    pending_approvals =tables.Column(attrs=col_attrs)
+    pending_approvals = tables.Column(attrs=col_attrs)
     payments_due = tables.Column(attrs=col_attrs)
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="", attrs=STOP_CLICK_PROPAGATION_ATTR)
 
@@ -720,17 +726,19 @@ class OpportunityTable(BaseOpportunityList):
         return self.render_worker_list_url_column(value=value, opp_id=record.id)
 
     def render_inactive_workers(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort='sort=last_active')
+        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort="sort=last_active")
 
     def render_pending_approvals(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, active_tab="delivery",
-                                                  sort='sort=-pending')
+        return self.render_worker_list_url_column(
+            value=value, opp_id=record.id, active_tab="delivery", sort="sort=-pending"
+        )
 
     def render_payments_due(self, value, record):
         if value is None:
             value = 0
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, active_tab="payments",
-                                                  sort='sort=-total_paid')
+        return self.render_worker_list_url_column(
+            value=value, opp_id=record.id, active_tab="payments", sort="sort=-total_paid"
+        )
 
     def render_actions(self, record):
         actions = [
@@ -766,17 +774,10 @@ class OpportunityTable(BaseOpportunityList):
 class ProgramManagerOpportunityTable(BaseOpportunityList):
     col_attrs = merge_attrs(TEXT_CENTER_ATTR, STOP_CLICK_PROPAGATION_ATTR)
 
-    active_workers = tables.Column(
-        verbose_name="Active Workers", attrs=col_attrs
-    )
-    total_deliveries = tables.Column(
-        verbose_name="Total Deliveries", attrs=col_attrs
-    )
-    verified_deliveries = tables.Column(
-        verbose_name="Verified Deliveries", attrs=col_attrs
-    )
-    worker_earnings = tables.Column(verbose_name="Worker Earnings", accessor="total_accrued",
-                                    attrs=col_attrs)
+    active_workers = tables.Column(verbose_name="Active Workers", attrs=col_attrs)
+    total_deliveries = tables.Column(verbose_name="Total Deliveries", attrs=col_attrs)
+    verified_deliveries = tables.Column(verbose_name="Verified Deliveries", attrs=col_attrs)
+    worker_earnings = tables.Column(verbose_name="Worker Earnings", accessor="total_accrued", attrs=col_attrs)
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="", attrs=STOP_CLICK_PROPAGATION_ATTR)
 
     class Meta(BaseOpportunityList.Meta):
@@ -788,16 +789,18 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             "actions",
         )
 
-
     def render_active_workers(self, value, record):
         return self.render_worker_list_url_column(value=value, opp_id=record.id)
 
-
     def render_total_deliveries(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, active_tab="delivery", sort="sort=-delivered")
+        return self.render_worker_list_url_column(
+            value=value, opp_id=record.id, active_tab="delivery", sort="sort=-delivered"
+        )
 
     def render_verified_deliveries(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, active_tab="delivery", sort="sort=-approved")
+        return self.render_worker_list_url_column(
+            value=value, opp_id=record.id, active_tab="delivery", sort="sort=-approved"
+        )
 
     def render_worker_earnings(self, value, record):
         url = reverse("opportunity:worker_list", args=(self.org_slug, record.id))
@@ -929,8 +932,8 @@ class UserVisitVerificationTable(tables.Table):
             "pending_review": "fa-light fa-timer",
         }
 
-        if record.status == VisitValidationStatus.pending.value:
-            icon_class = status_to_icon[VisitValidationStatus.pending]
+        if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
+            icon_class = status_to_icon[record.status]
             icons_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
             return format_html(
                 '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
@@ -944,13 +947,9 @@ class UserVisitVerificationTable(tables.Table):
                 status.append("pending_review")
             else:
                 status.append(record.review_status)
-        if record.status in (
-            VisitValidationStatus.approved,
-            VisitValidationStatus.rejected,
-            VisitValidationStatus.pending,
-        ):
+        if record.status in VisitValidationStatus:
             if (
-                record.review_status == VisitReviewStatus.pending.value
+                record.review_status in VisitReviewStatus.pending.value
                 and record.status == VisitValidationStatus.approved
             ):
                 status.append("approved_pending_review")
@@ -1020,7 +1019,6 @@ class WorkerStatusTable(tables.Table):
         self.use_view_url = True
         super().__init__(*args, **kwargs)
 
-
     class Meta:
         order_by = ("-last_active",)
 
@@ -1067,7 +1065,7 @@ class WorkerLearnTable(ClickableRowsTable):
                             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag progress=value|default:0 %}
                         """,
     )
-    completed_learning = DMYTColumn( accessor="completed_learn", verbose_name="Completed Learning")
+    completed_learning = DMYTColumn(accessor="completed_learn", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="passed_assessment")
     attempts = tables.Column(accessor="assesment_count")
     learning_hours = DurationColumn()
@@ -1160,7 +1158,6 @@ class WorkerDeliveryTable(ClickableRowsTable):
         )
         order_by = ("-last_active",)
 
-
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
         self.use_view_url = True
@@ -1169,7 +1166,6 @@ class WorkerDeliveryTable(ClickableRowsTable):
 
     def row_click_url(self, record):
         return reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
-
 
     def render_action(self, record):
         url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
