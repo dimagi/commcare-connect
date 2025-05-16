@@ -19,7 +19,7 @@
       {% if opportunity.managed %}
       <li>
           <!-- Todo; update to program:home -->
-          <a href='{% url "program:list" request.org.slug %}'>Programs</a>
+          <a href='{% url "program:home" request.org.slug %}'>Programs</a>
           <i class="fa-solid fa-chevron-right"></i>
       </li>
       {% endif %}
