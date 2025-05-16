@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from http import HTTPStatus
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import Client
@@ -15,6 +16,7 @@ from commcare_connect.opportunity.models import (
     UserInviteStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.payment_number_report import update_payment_number_statuses
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -24,10 +26,10 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import Organization, OrgUserPaymentNumberStatus
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MembershipFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory, MembershipFactory
 
 
 @pytest.mark.django_db

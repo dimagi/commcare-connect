@@ -60,7 +60,7 @@
                 {% if request.org_membership.is_admin or request.user.is_superuser %}
                   <li class="nav-item">
                     <a class="nav-link {% active_link "list || init || edit || opportunity_list || opportunity_init" namespace='program' %}"
-                       href="{% url 'program:list' request.org.slug %}">{% translate "Programs" %}</a>
+                       href="{% url 'program:home' request.org.slug %}">{% translate "Programs" %}</a>
                   </li>
                 {% endif %}
               {% endif %}
