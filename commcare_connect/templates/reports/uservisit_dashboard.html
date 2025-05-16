@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+{% block javascript %}
+{{ block.super }}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h2 class="my-2">Program Visits Dashboard</h2>
+<div x-data="dashboard()">
+    <div class="filters">
+        {% crispy filter.form %}
+    </div>
+
+    <div class="results-container mt-4">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Total Visits</h6>
+                        <h1 class="display-4 mb-0" x-text="results?.summary?.total_visits || 0"></h1>
+                        <small class="text-muted">
+                            + <span x-text="results?.summary_lastday?.total_visits || 0"></span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Approved Visits</h6>
+                        <h1 class="display-4 mb-0" x-text="results?.summary?.approved_visits || 0"></h1>
+                        <small class="text-muted">
+                            + <span x-text="results?.summary_lastday?.approved_visits || 0"></span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Rejected Visits</h6>
+                        <h1 class="display-4 mb-0" x-text="results?.summary?.rejected_visits || 0"></h1>
+                        <small class="text-muted">
+                            + <span x-text="results?.summary_lastday?.rejected_visits || 0"></span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Flag Distribution</h6>
+                        <div id="flagsPieChart" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Visit Trends</h6>
+                        <div id="timeSeriesChart" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="text-muted text-uppercase mb-2">Conversion</h6>
+                        <div id="funnelChart" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+function dashboard() {
+    let flagsPieChart;
+    let timeSeriesChart;
+    let funnelChart;
+
+    return {
+        dateStart: '',
+        dateEnd: '',
+        selectedOpportunities: [],
+        results: '',
+
+        init() {
+            flagsPieChart = echarts.init(document.getElementById('flagsPieChart'));
+            timeSeriesChart = echarts.init(document.getElementById('timeSeriesChart'));
+            funnelChart = echarts.init(document.getElementById('funnelChart'));
+            this.fetchData();
+        },
+
+        updatePieChart() {
+            if (!this.results?.summary) return;
+
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{b}: {c} ({d}%)'
+                },
+                legend: {
+                    orient: 'horizontal',
+                    top: 'top'
+                },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    label: {
+                        show: true,
+                        position: 'center',
+                        formatter: function() {
+                        var total = 0;
+                        // Calculate total sum of values
+                        for (var i = 0; i < option.series[0].data.length; i++) {
+                            total += option.series[0].data[i].value;
+                        }
+                        return total; // Display total in center
+                        },
+                    },
+                    data: [
+                        { value: this.results.summary.duration_flags, name: 'Duration Flags' },
+                        { value: this.results.summary.location_flags, name: 'Location Flags' },
+                        { value: this.results.summary.gps_flags, name: 'GPS Flags' }
+                    ],
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowOffsetX: 0,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
+                    }
+                }]
+            };
+            flagsPieChart.setOption(option);
+        },
+
+        updateTimeSeriesChart() {
+            if (!this.results?.time_series) return;
+
+            const dates = this.results.time_series.map(item => item.visit_date_only);
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    }
+                },
+                legend: {
+                    data: ['Total Visits', 'Duplicate Flags', 'GPS Flags', 'Location Flags', 'Duration Flags'],
+                    top: 'top'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: dates,
+                    axisLabel: {
+                        rotate: 45
+                    }
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: [
+                    {
+                        name: 'Total Visits',
+                        type: 'bar',
+                        stack: 'total',
+                        emphasis: { focus: 'series' },
+                        data: this.results.time_series.map(item => item.total_visits)
+                    },
+                    {
+                        name: 'Duplicate Flags',
+                        type: 'bar',
+                        stack: 'flags',
+                        emphasis: { focus: 'series' },
+                        data: this.results.time_series.map(item => item.duplicate_flags)
+                    },
+                    {
+                        name: 'GPS Flags',
+                        type: 'bar',
+                        stack: 'flags',
+                        emphasis: { focus: 'series' },
+                        data: this.results.time_series.map(item => item.gps_flags)
+                    },
+                    {
+                        name: 'Location Flags',
+                        type: 'bar',
+                        stack: 'flags',
+                        emphasis: { focus: 'series' },
+                        data: this.results.time_series.map(item => item.location_flags)
+                    },
+                    {
+                        name: 'Duration Flags',
+                        type: 'bar',
+                        stack: 'flags',
+                        emphasis: { focus: 'series' },
+                        data: this.results.time_series.map(item => item.duration_flags)
+                    }
+                ]
+            };
+            timeSeriesChart.setOption(option);
+        },
+
+        updateFunnelChart() {
+            if (!this.results?.funnel) return;
+
+            const option = {
+                color: ['#91cc75', '#5470c6', '#ee6666'],
+                grid: {
+                    top: '10%',
+                    right: '15%'
+                },
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{b}: {c}'
+                },
+                legend: {
+                    orient: 'vertical',
+                    right: '5%',
+                    top: 'top'
+                },
+                series: [{
+                    name: 'Funnel',
+                    type: 'funnel',
+                    orient: 'horizontal',
+                    left: '5%',
+                    width: '70%',
+                    height: '60%',
+                    sort: 'none',
+                    gap: 2,
+                    label: {
+                        show: true,
+                        position: 'top'
+                    },
+                    emphasis: {
+                        label: {
+                            fontSize: 20
+                        }
+                    },
+                    data: this.results.funnel
+                }]
+            };
+
+            funnelChart.setOption(option);
+        },
+
+        async fetchData() {
+            const params = new URLSearchParams({
+                date_start: this.dateStart,
+                date_end: this.dateEnd,
+                json: true
+            });
+            if (!this.selectedOpportunities.includes('')) {
+                this.selectedOpportunities.forEach(opp => {
+                    params.append('opportunities', opp);
+                });
+            }
+            const response = await fetch(`${window.location.pathname}?${params}`);
+            this.results = await response.json();
+            this.updatePieChart();
+            this.updateTimeSeriesChart();
+            this.updateFunnelChart();
+        }
+    }
+}
+</script>
+{% endblock %}

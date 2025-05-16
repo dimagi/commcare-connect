@@ -72,6 +72,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             "short_description",
             "is_test",
             "delivery_type",
+            "payment_info_required",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -160,12 +161,7 @@ class OpportunityInitForm(forms.ModelForm):
 
     class Meta:
         model = Opportunity
-        fields = [
-            "name",
-            "description",
-            "short_description",
-            "currency",
-        ]
+        fields = ["name", "description", "short_description", "currency", "payment_info_required"]
 
     def __init__(self, *args, **kwargs):
         self.domains = kwargs.pop("domains", [])
@@ -251,6 +247,10 @@ class OpportunityInitForm(forms.ModelForm):
         self.fields["deliver_app"] = forms.Field(
             widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
         )
+        self.fields["payment_info_required"] = forms.BooleanField(
+            label="Require Phone Numbers from users for payments", required=False
+        )
+
         self.fields["api_key"] = forms.CharField(max_length=50)
 
     def clean(self):
