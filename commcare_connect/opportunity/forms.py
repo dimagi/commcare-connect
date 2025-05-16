@@ -10,7 +10,6 @@ from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
 
-from commcare_connect import connect_id_client
 from commcare_connect.opportunity.models import (
     CommCareApp,
     DeliverUnit,
@@ -38,41 +37,19 @@ CHECKBOX_CLASS = "simple-toggle"
 
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
-        org_slug = kwargs.pop("org_slug", None)
         self.opportunity = kwargs.pop("opportunity", None)
-        credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Fieldset(
-                "",
-                Row(Field("users")),
-                Row(
-                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
-                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
-                ),
-            ),
-            Submit("submit", "Submit"),
+            Field("users"),
+            Submit("submit", "Submit", css_class="button button-md primary-dark float-end"),
         )
-
         self.fields["users"] = forms.CharField(
             widget=forms.Textarea,
+            required=False,
             help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
-            required=False,
         )
-        self.fields["filter_country"] = forms.CharField(
-            label="Filter By Country",
-            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
-            required=False,
-        )
-        self.fields["filter_credential"] = forms.CharField(
-            label="Filter By Credential",
-            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
-            required=False,
-        )
-        self.initial["filter_country"] = [""]
-        self.initial["filter_credential"] = [""]
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
@@ -84,10 +61,7 @@ class OpportunityUserInviteForm(forms.Form):
         return split_users
 
 
-class OpportunityChangeForm(
-    OpportunityUserInviteForm,
-    forms.ModelForm,
-):
+class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
     class Meta:
         model = Opportunity
         fields = [
@@ -103,6 +77,7 @@ class OpportunityChangeForm(
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.opportunity = self.instance
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
@@ -149,11 +124,6 @@ class OpportunityChangeForm(
             ),
             Row(
                 HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Workers</h6></div>"),
-                Row(
-                    Field("filter_country", wrapper_class="w-full"),
-                    Field("filter_credential", wrapper_class="w-full"),
-                    css_class="flex gap-2",
-                ),
                 Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),

@@ -3,7 +3,9 @@ from datetime import timedelta
 
 from django.db.models import (
     Case,
+    CharField,
     Count,
+    DateTimeField,
     DecimalField,
     DurationField,
     Exists,
@@ -20,7 +22,7 @@ from django.db.models import (
     Value,
     When,
 )
-from django.db.models.functions import Coalesce, Greatest, Round
+from django.db.models.functions import Coalesce, Greatest, Round, TruncDate
 from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
@@ -28,12 +30,14 @@ from commcare_connect.opportunity.models import (
     CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
+    LearnModule,
     Opportunity,
     OpportunityAccess,
     PaymentUnit,
     UserInvite,
     UserInviteStatus,
     UserVisit,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 
@@ -97,64 +101,79 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
 def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
     access_objects = []
     for payment_unit in opportunity.paymentunit_set.all():
-        access_objects += (
-            OpportunityAccess.objects.filter(opportunity=opportunity)
-            .select_related("user")
-            .annotate(
-                payment_unit=Value(payment_unit.name),
-                last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
-                started_delivery=Min("uservisit__visit_date"),
-                pending=Count(
-                    "completedwork",
-                    filter=Q(
-                        completedwork__opportunity_access_id=F("pk"),
-                        completedwork__payment_unit=payment_unit,
-                        completedwork__status=CompletedWorkStatus.pending,
-                    ),
-                    distinct=True,
-                ),
-                approved=Count(
-                    "completedwork",
-                    filter=Q(
-                        completedwork__opportunity_access_id=F("pk"),
-                        completedwork__payment_unit=payment_unit,
-                        completedwork__status=CompletedWorkStatus.approved,
-                    ),
-                    distinct=True,
-                ),
-                rejected=Count(
-                    "completedwork",
-                    filter=Q(
-                        completedwork__opportunity_access_id=F("pk"),
-                        completedwork__payment_unit=payment_unit,
-                        completedwork__status=CompletedWorkStatus.rejected,
-                    ),
-                    distinct=True,
-                ),
-                over_limit=Count(
-                    "completedwork",
-                    filter=Q(
-                        completedwork__opportunity_access_id=F("pk"),
-                        completedwork__payment_unit=payment_unit,
-                        completedwork__status=CompletedWorkStatus.over_limit,
-                    ),
-                    distinct=True,
-                ),
-                incomplete=Count(
-                    "completedwork",
-                    filter=Q(
-                        completedwork__opportunity_access_id=F("pk"),
-                        completedwork__payment_unit=payment_unit,
-                        completedwork__status=CompletedWorkStatus.incomplete,
-                    ),
-                    distinct=True,
-                ),
-                completed=F("approved") + F("rejected") + F("pending") + F("over_limit"),
-            )
-            .order_by("user__name")
+        started_delivery_sq = Subquery(
+            UserVisit.objects.filter(opportunity_access_id=OuterRef("pk"))
+            .values("opportunity_access_id")
+            .annotate(min_visit_date=Min("visit_date"))
+            .values("min_visit_date")[:1],
+            output_field=DateTimeField(null=True)
         )
+
+        last_visit_sq = Subquery(
+            UserVisit.objects.filter(opportunity_access_id=OuterRef("pk"))
+            .values("opportunity_access_id")
+            .annotate(max_visit_date=Max("visit_date"))
+            .values("max_visit_date")[:1],
+            output_field=DateTimeField(null=True)
+        )
+
+        last_module_sq = Subquery(
+            CompletedModule.objects.filter(opportunity_access_id=OuterRef("pk"))
+            .values("opportunity_access_id")
+            .annotate(max_module_date=Max("date"))
+            .values("max_module_date")[:1],
+            output_field=DateTimeField(null=True)
+        )
+
+        def completed_work_status_subquery(status_value):
+            return Subquery(
+                CompletedWork.objects.filter(
+                    opportunity_access_id=OuterRef("pk"),
+                    payment_unit=payment_unit,
+                    status=status_value
+                )
+                .values("opportunity_access_id")
+                .annotate(status_count=Count("id", distinct=True))
+                .values("status_count")[:1],
+                output_field=IntegerField()
+            )
+
+        pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
+        approved_count_sq = completed_work_status_subquery(CompletedWorkStatus.approved)
+        rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
+        over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
+        incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
+
+        queryset = (
+            OpportunityAccess.objects.filter(opportunity=opportunity)
+            .annotate(
+                payment_unit=Value(payment_unit.name, output_field=CharField()),
+                started_delivery=Coalesce(started_delivery_sq, Value(None, output_field=DateTimeField())),
+                _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
+                _last_module_val=Coalesce(last_module_sq, Value(None, output_field=DateTimeField())),
+                pending=Coalesce(pending_count_sq, Value(0)),
+                approved=Coalesce(approved_count_sq, Value(0)),
+                rejected=Coalesce(rejected_count_sq, Value(0)),
+                over_limit=Coalesce(over_limit_count_sq, Value(0)),
+                incomplete=Coalesce(incomplete_count_sq, Value(0)),
+            )
+            .annotate(
+                last_active=Greatest(
+                    F('_last_visit_val'),
+                    F('_last_module_val'),
+                    F('date_learn_started')
+                ),
+                completed=(
+                    F('pending') + F('approved') + F('rejected') + F('over_limit')
+                )
+            )
+            .select_related('user')
+            .order_by('user__name')
+        )
+        access_objects += queryset
     access_objects.sort(key=lambda a: a.user.name)
     return access_objects
+
 
 
 def get_payment_report_data(opportunity: Opportunity):

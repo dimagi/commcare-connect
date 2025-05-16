@@ -5,6 +5,7 @@
     hx-trigger="load delay:2s"
     hx-swap="outerHTML"
   {% endif %}
+  class="flex items-center justify-center"
 >
   {% if progress.error %}
     <div class="rounded-lg bg-red-100 text-red-700 px-4 py-3">
@@ -13,11 +14,13 @@
     </div>
 
   {% elif not progress.complete %}
+  <div>
     <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-4">
       <div class="h-full bg-purple-600 rounded-full animate-[progress_2s_linear_infinite]"
            style="width: 80%; background-image: linear-gradient(to right, #8b5cf6, #a78bfa, #8b5cf6); background-size: 200% 100%;"></div>
     </div>
-    <p class="text-sm text-gray-700">Preparing export, hang tight...</p>
+    <p class="w-full text-sm text-gray-700">Preparing export, hang tight...</p>
+  </div>
 
     <style>
       @keyframes progress {
@@ -27,13 +30,9 @@
     </style>
 
   {% else %}
-    <div class="rounded-lg bg-green-100 text-green-800 px-2 py-1">
-      <p class="text-sm mt-1">
-        <a class="text-purple-700 underline font-medium hover:text-purple-900 transition"
-           href="{% url 'opportunity:download_export' request.org.slug task_id %}">
-          Download your export
-        </a>
-      </p>
-    </div>
+  <a class="button button-sm text-brand-deep-purple"
+     href="{% url 'opportunity:download_export' request.org.slug task_id %}">
+    <i class="fa-regular fa-circle-down"></i>  Download Export
+  </a>
   {% endif %}
 </div>

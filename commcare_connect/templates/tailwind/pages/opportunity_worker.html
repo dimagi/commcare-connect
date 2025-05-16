@@ -83,7 +83,7 @@
   {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
-  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=_("Import Verified Visits") export_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=_('The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.') %}
+  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=_("Import Verified Visits") import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=_('The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.') %}
 
   {% url 'opportunity:payment_import' request.org.slug opportunity.pk as payment_import_url %}
   {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showPaymentImportModal" modal_title=_("Import Payment Records") import_url=payment_import_url input_name="payments" input_help_text=_('The file must contain at least the "Username", "Amount" and "Payment Date" columns.') %}
@@ -121,9 +121,14 @@ function opportunityTabs() {
         const url = new URL(window.location.href);
         url.searchParams.set('active_tab', tab);
 
-        // removed page param from main url on tab change
+        // removed page all other params other than active_tab
         if (!isInit) {
-          url.searchParams.delete('page');
+          const activeTab = url.searchParams.get('active_tab');
+          url.search = ''; // Clear all search parameters
+          if (activeTab !== null) {
+            url.searchParams.set('active_tab', activeTab);
+         }
+
         }
 
         window.history.replaceState({}, '', url);
