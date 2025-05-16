@@ -1031,9 +1031,9 @@ class WorkerPaymentsTable(tables.Table):
     suspended = SuspendedIndicatorColumn()
     last_active = DMYTColumn()
     payment_accrued = tables.Column(verbose_name="Accrued")
-    total_paid = tables.Column(accessor="total_paid_d")
+    total_paid = tables.Column()
     last_paid = DMYTColumn()
-    confirmed_paid = tables.Column(verbose_name="Confirm")
+    confirmed_paid = tables.Column(verbose_name="Confirm", accessor="total_confirmed_paid")
 
     def __init__(self, *args, **kwargs):
         self.use_view_url = True
@@ -1068,7 +1068,7 @@ class WorkerLearnTable(ClickableRowsTable):
                         """,
     )
     completed_learning = DMYTColumn( accessor="completed_learn", verbose_name="Completed Learning")
-    assessment = tables.Column(accessor="passed_assessment")
+    assessment = tables.Column(accessor="assessment_status")
     attempts = tables.Column(accessor="assesment_count")
     learning_hours = DurationColumn()
     action = tables.TemplateColumn(
@@ -1104,11 +1104,6 @@ class WorkerLearnTable(ClickableRowsTable):
 
     def row_click_url(self, record):
         return reverse("opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.id))
-
-    def render_assessment(self, value, record):
-        if not record.date_learn_started:
-            return "--"
-        return "Passed" if value else "Failed"
 
     def render_action(self, record):
         url = reverse("opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.id))
@@ -1222,15 +1217,10 @@ class WorkerDeliveryTable(ClickableRowsTable):
 class WorkerLearnStatusTable(tables.Table):
     index = IndexColumn()
     module_name = tables.Column(accessor="module__name", orderable=False)
-    date = tables.DateColumn(format="d-M-Y", verbose_name="Date Completed", accessor="date", orderable=False)
+    date = DMYTColumn(verbose_name="Date Completed", accessor="date", orderable=False)
     duration = DurationColumn(accessor="duration", orderable=False)
     time = tables.Column(accessor="date", verbose_name="Time Completed", orderable=False)
 
-    def render_time(self, value):
-        if value:
-            value = localtime(value)
-            return value.strftime("%H:%M")
-        return "--"
 
     class Meta:
-        sequence = ("index", "module_name", "date", "time", "duration")
+        sequence = ("index", "module_name", "date", "duration")

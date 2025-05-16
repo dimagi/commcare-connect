@@ -330,7 +330,7 @@ class OpportunityAccess(models.Model):
         elif assessments.get("failed", 0) > 0:
             status = "Failed"
         else:
-            status = "Not completed"
+            status = "-"
         return status
 
     @property

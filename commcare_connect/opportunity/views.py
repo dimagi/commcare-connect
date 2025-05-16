@@ -11,7 +11,8 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage, storages
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Q, Sum, Case, When, F, OuterRef, Subquery
+from django.db.models.fields import DecimalField
 from django.db.models.functions import Greatest
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
@@ -1662,10 +1663,13 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""
 
+    workers_count = UserInvite.objects.filter(opportunity_id=opp_id).count()
+    worker_label = f"Workers ({workers_count})"
+
     tabs = [
         {
             "key": "workers",
-            "label": "Workers",
+            "label": worker_label,
             "url": reverse("opportunity:worker_table", kwargs=base_kwargs) + query,
             "trigger": "loadWorkers",
         },
@@ -1750,14 +1754,13 @@ def worker_delivery(request, org_slug=None, opp_id=None):
 @org_member_required
 def worker_payments(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
+
     query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
         "-payment_accrued"
     )
     query_set = query_set.annotate(
         last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
         last_paid=Max("payment__date_paid"),
-        confirmed_paid=Sum("payment__amount", filter=Q(payment__confirmed=True)),
-        total_paid_d=Sum("payment__amount"),
     )
     table = WorkerPaymentsTable(query_set)
     RequestConfig(request, paginate={"per_page": 10}).configure(table)
