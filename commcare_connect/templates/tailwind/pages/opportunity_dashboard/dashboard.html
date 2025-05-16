@@ -4,8 +4,29 @@
 {% block title %}{{ request.org }} - {{ object.name }}{% endblock %}
 
 {% block content %}
-    <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }} }" class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
+    <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }}, showCatchmentImportModal: false, showCatchmentExportModal: false }"
+        class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
       {% include 'tailwind/components/breadcrumbs.html' with path=path %}
+        {% if export_task_id %}
+          <div class="flex items-center justify-end">
+            <div
+              hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
+              hx-target="this"
+              hx-trigger="load"
+              hx-swap="outerHTML"
+              class="flex items-center justify-center"
+            >
+              <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+              <span class="sr-only">Loading...</span>
+            </div>
+            <button type="button"
+                    class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+                    aria-label="Close"
+                    onclick="this.parentElement.remove()">
+                    <i class="fa-solid fa-circle-xmark text-brand-deep-purple"></i>
+            </button>
+          </div>
+        {% endif %}
         <div class="flex flex-col gap-8 w-full rounded-lg p-4" :class="isTest ? 'bg-white shadow-xs' : 'bg-brand-deep-purple'">
           <div class="flex items-center relative" :class="{'gap-6': isTest}"  x-data="{ isOpen: false }">
               <h3 class="text-sm font-medium text-brand-sky flex-1">{% if object.managed %}{{ object.program_name }}{% endif %}</h3>
@@ -95,5 +116,10 @@
            {% include "tailwind/pages/opportunity_dashboard/opportunity_worker_progress.html" with skeleton=True %}
            {% include "tailwind/pages/opportunity_dashboard/opportunity_funnel_progress.html" with skeleton=True %}
         </div>
+      {% url 'opportunity:catchment_area_export' org_slug=request.org.slug pk=opportunity.pk as catchment_export_url %}
+      {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showCatchmentExportModal" modal_title=_("Export Catchment Area") export_url=catchment_export_url export_form=export_form %}
+
+      {% url 'opportunity:catchment_area_import' request.org.slug opportunity.pk as catchment_import_url %}
+      {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showCatchmentImportModal" modal_title=_("Import Catchment Area") import_url=catchment_import_url input_name="catchments" input_help_text=_('The file must contain at least the "Area Name", "Active", "Latitude", "Longitude", "Site code" and "Radius" column.') %}
     </div>
 {% endblock %}

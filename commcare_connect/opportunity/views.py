@@ -386,7 +386,8 @@ class OpportunityDashboard(OrganizationUserMixin, DetailView):
             },
         ]
         context["is_program_manager"] = is_program_manager_of_opportunity(request, object)
-
+        context["export_form"] = PaymentExportForm()
+        context["export_task_id"] = request.GET.get("export_task_id")
         return context
 
 

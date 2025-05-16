@@ -10,7 +10,7 @@
   x-transition:leave-end="opacity-0 scale-95"
   class="absolute right-0 top-8 w-50 py-2 bg-white rounded-lg shadow-xl z-20"
 >
-  <ul class="">
+  <ul>
      {% if not opportunity.managed or is_program_manager %}
     <li>
        <a href="{% url 'opportunity:edit' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
@@ -32,10 +32,16 @@
       >
     </li>
     {% endif %}
-    <li>
-      <a href="#" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >Catchment Areas</a
-      >
+    <li x-data="{showMoreOptions: false}">
+      <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showMoreOptions = true">Catchment Areas</a>
+      <div x-show="showMoreOptions"
+          x-cloak
+          @click.away="showMoreOptions = false"
+          class="ms-4"
+        >
+        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentImportModal = true">Import</a>
+        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentExportModal = true">Export</a>
+      </div>
     </li>
     <li>
       <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
@@ -47,11 +53,13 @@
         >Add Worker Budget</a
       >
     </li>
+    {% if not opportunity.managed or is_program_manager %}
     <li>
       <a  href="{% url 'opportunity:verification_flags_config' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Verification Flags</a
       >
     </li>
+    {% endif %}
     <li>
       <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Send Message</a
