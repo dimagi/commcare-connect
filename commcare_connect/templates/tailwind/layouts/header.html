@@ -1,4 +1,6 @@
 {% load static i18n %}
+{% load avatar %}
+
 <header class="fixed top-0 left-16 right-0 bg-gray-100 z-30">
     <div class="flex items-center justify-between w-full px-4 py-2">
         <!-- Left Section: Module Name -->
@@ -42,9 +44,8 @@
             <!-- User Profile -->
             <div x-data="{ open: false }" @click.away="open = false" class="relative">
                 <button @click="open = !open" class="focus:outline-none">
-                    <!-- Avatar (Not Clickable) -->
-                    <div class="w-10 h-10 aspect-square rounded-full border border-gray-300 pointer-events-none overflow-hidden bg-grey-500">
-                        <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=JohnDoe" class="w-full h-full object-fill" />
+                    <div class="cursor-pointer overflow-hidden">
+                        {% user_avatar user=request.user size="small" color_classes="bg-brand-cornflower-blue text-white" %}
                     </div>
                 </button>
 
