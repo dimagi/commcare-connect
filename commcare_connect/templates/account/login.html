@@ -1,63 +1,82 @@
 {% extends "account/base.html" %}
 
+{% load static %}
 {% load i18n %}
-{% load account socialaccount %}
-{% load crispy_forms_tags %}
+{% load socialaccount %}
 
 {% block head_title %}{% translate "Sign In" %}{% endblock %}
 
 {% block inner %}
-
-<h1 class="mb-4 text-center">{% translate "Sign In" %}</h1>
-
-{% get_providers as socialaccount_providers %}
-
-{% if socialaccount_providers %}
-  <p>
-    {% translate "Please sign in with one of your existing third party accounts:" %}
-    {% if ACCOUNT_ALLOW_REGISTRATION %}
-      {% blocktranslate trimmed %}
-        Or, <a href="{{ signup_url }}">sign up</a>
-        for a {{ site_name }} account and sign in below:
-      {% endblocktranslate %}
+<div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+  <form method="post" class="w-full flex flex-col gap-4">
+    {% csrf_token %}
+    {% if redirect_field_value %}
+      <input type="hidden"
+             name="{{ redirect_field_name }}"
+             value="{{ redirect_field_value }}" />
     {% endif %}
-  </p>
-
-  <div class="socialaccount_ballot">
-
-    <ul class="socialaccount_providers">
-      {% include "socialaccount/snippets/provider_list.html" with process="login" %}
-    </ul>
-
-    <div class="login-or text-center mb-2">{% translate "or" %}</div>
-
+    <h6 class="title text-brand-deep-purple">Login</h6>
+    <span class="text-sm text-gray-600">Please enter your details</span>
+    {% if form.non_field_errors %}
+      {% for error in form.non_field_errors %}<p class="text-sm text-red-600">* {{ error }}</p>{% endfor %}
+    {% endif %}
+    <div class="input-group {% if form.login.errors %}error{% endif %}">
+      <div class="simple-input">
+        <input type="email"
+               placeholder="Enter Email ID"
+               required
+               id="{{ form.login.auto_id }}"
+               {% if form.login.value != None %}value="{{ form.login.value|stringformat:'s' }}"{% endif %}
+               name="{{ form.login.html_name }}">
+        <i class="fa-light fa-envelope"></i>
+        <span class="error-icon fa-solid fa-circle-exclamation"></span>
+      </div>
+      {% for error in form.login.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+    </div>
+    <div class="input-group {% if form.password.errors %}error{% endif %}">
+      <div class="simple-input">
+        <input type="password"
+               placeholder="Password"
+               required
+               id="{{ form.password.auto_id }}"
+               {% if form.password.value != None %}value="{{ form.password.value|stringformat:'s' }}"{% endif %}
+               name="{{ form.password.html_name }}">
+        <i class="fa-light fa-lock"></i>
+        <span class="error-icon fa-solid fa-circle-exclamation"></span>
+      </div>
+      {% for error in form.password.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+    </div>
+    <div class="flex justify-between items-center">
+      <p class="text-sm text-gray-400">
+        Forgot Password?
+        <a href="{% url 'account_reset_password' %}"
+           type="button"
+           class="block text-brand-indigo font-medium">Reset</a>
+      </p>
+      <button class="button button-md primary-dark" type="submit">
+        <span class="relative z-20">Login</span>
+      </button>
+    </div>
+  </form>
+  <span class="text-sm text-gray-400 text-center">or</span>
+  <div class="space-y-2 place-items-center">
+    <form method="post"
+          action="{% provider_login_url "commcarehq" process="login" %}">
+      <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer"
+              type="submit">
+        {% csrf_token %}
+        <div class="w-6 h-6">
+          <img src="{% static 'images/logo-color.svg' %}"
+               alt="Compact Logo"
+               class="w-full">
+        </div>
+        <span class="text-sm">Login with CommCareHQ</span>
+      </button>
+    </form>
   </div>
-
-  {% include "socialaccount/snippets/login_extra.html" %}
-
-{% else %}
-  {% if ACCOUNT_ALLOW_REGISTRATION %}
-    <p>
-      {% blocktranslate trimmed %}
-        If you have not created an account yet, then please
-        <a href="{{ signup_url }}">sign up</a> first.
-      {% endblocktranslate %}
-    </p>
-  {% endif %}
-{% endif %}
-
-<form class="login" method="POST" action="{% url 'account_login' %}">
-  {% csrf_token %}
-  {{ form|crispy }}
-  {% if redirect_field_value %}
-    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
-  {% endif %}
-
-  <button class="primaryAction btn btn-primary w-100" type="submit">{% translate "Sign In" %}</button>
-
-  <div class="text-center mt-2">
-    <a class="button secondaryAction " href="{% url 'account_reset_password' %}"><small>{% translate "Forgot Password?" %}</small></a>
+  <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
+    Don't have an account?
+    <a href="{{ signup_url }}" class="text-brand-indigo font-medium">Signup</a>
   </div>
-</form>
-
+</div>
 {% endblock %}

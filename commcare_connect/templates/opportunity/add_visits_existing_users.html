@@ -1,147 +1,219 @@
-{% extends "opportunity/base.html" %}
+{% extends "tailwind/base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
 {% load i18n %}
 
+
 {% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
-
-{% block breadcrumbs_inner %}
-  {{ block.super }}
-  <li class="breadcrumb-item">
-    <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.pk %}">
-      {{ opportunity.name }}
-    </a>
-  </li>
-  <li class="breadcrumb-item active" aria-current="page">{% translate "Add Budget" %}</li>
-{% endblock %}
-
 {% block content %}
-  <h2>{% translate "Edit Opportunity" %}</h2>
-  <h4 class="mb-2">{% translate "Add Budget" %}</h4>
-  <hr>
-  <div x-data="{
-    selectedOption: 'existing',
-    disableAddBudgeNewUsers: {{ disable_add_budget_for_new_users|yesno:'true,false' }}
-  }">
-    <div class="mb-3">
-      <div class="form-check">
-        <input type="radio" id="existingUsers" name="option" value="existing" x-model="selectedOption"
-               class="form-check-input" checked>
-        <label for="existingUsers" class="form-check-label">{% translate "Add Budget For Existing Users" %}</label>
-      </div>
-      {% if not disable_add_budget_for_new_users %}
-        <div class="form-check">
-          <input
-           type="radio" id="newUsers" name="option" value="new" x-model="selectedOption" class="form-check-input">
-          <label for="newUsers" class="form-check-label">{% translate "Add Budget For New Users" %}</label>
-        </div>
-      {% endif %}
-  </div>
-  <form x-show="selectedOption === 'existing'" method="post"
-          x-data="{
-            additionalVisits: 0,
-            selected_users: [],
-            end_date: '',
-            isSelected (id) { return this.selected_users.find(el => el === id)},
-            totalVisits() { return this.selected_users.length * this.additionalVisits },
-            calculatedBudget() { return this.totalVisits() * '{{ budget_per_visit }}' }
-          }"
-    >
-      {% csrf_token %}
 
-      {% if form.selected_users.errors %}
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-          {% translate "Please select users to update." %}
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-      {% endif %}
+{% block extra_js %}
+<script>
+   function opportunityBudgetComponent(initialTab, availableTabs) {
+    // extract the available tabs.
+    const tabs = availableTabs.map(t => t.key);
+    return {
+      selectedTab: tabs.includes(initialTab) ? initialTab : 'existing_users',
+      newUsersLoaded: false,
+      setTab(tab) {
+        this.selectedTab = tab;
 
-      {% if opportunity_claims %}
-        <table class="table table-responsive table-bordered">
-          <thead class="table-primary">
-          <tr>
-            <th></th>
-            <th>Name</th>
-            <th>Username</th>
-            <th>Max Visits</th>
-            <th>Used Visits</th>
-            <th>End date</th>
-          </tr>
-          </thead>
-          <tbody>
-          {% for opp_claim in opportunity_claims %}
-            <tr>
-              <td>
-                <input type="checkbox" name="selected_users" id="id_selected_users" value="{{ opp_claim.id }}"
-                       x-model="selected_users"
-                       class="form-check-input border-dark shadow {% if form.selected_users.errors %}is-invalid{% endif %}"/>
-              </td>
-              <td>{{ opp_claim.opportunity_access.user.name }}</td>
-              <td>{{ opp_claim.opportunity_access.user.username }}</td>
-              <!-- Todo; replace by climitlimit.max_visits -->
-              <td>{{ opp_claim.max_payments }}</td>
-              <td>{{ opp_claim.opportunity_access.visit_count }}</td>
-              <td>{{ opp_claim.end_date }}</td>
-            </tr>
+        // set tab on url
+        const url = new URL(window.location);
+        url.searchParams.set('active_tab', tab);
+        window.history.pushState({}, '', url);
+
+         // initially load the form once
+        if (tab === 'new_users' && !this.newUsersLoaded) {
+          htmx.trigger('#new_user_container', 'loadNewUserForm');
+        }
+
+      }
+    }
+  }
+
+  function handleExistingBudgetComponent(budgetPerVisit) {
+    return {
+      modalOpen: false,
+      additionalVisits: 0,
+      budgetPerVisit: budgetPerVisit,
+      selected_users: [],
+      end_date: '',
+      openModal() {
+        this.modalOpen = true;
+      },
+      closeModal() {
+        this.modalOpen = false;
+      },
+      isSelected(id) {
+      return this.selected_users.includes(id);
+    },
+      toggleSelectAll() {
+      const checkboxes = document.querySelectorAll('input[name="selected_users"]');
+      if (this.selected_users.length === checkboxes.length - 1) {
+        this.selected_users = [];
+      } else {
+        this.selected_users = Array.from(checkboxes)
+          .filter(cb => cb.id !== 'select_all_users')
+          .map(cb => cb.value);
+      }
+    },
+      totalVisits() {
+        return this.selected_users.length * (parseInt(this.additionalVisits) || 0);;
+      },
+      calculatedBudget() {
+        return (this.totalVisits() * budgetPerVisit)
+      }
+    };
+}
+
+
+</script>
+{% endblock extra_js %}
+
+
+<div class="md:max-w-screen-lg mx-auto flex flex-col gap-6"
+    x-data="opportunityBudgetComponent('{{ request.GET.active_tab|default:"existing_users" }}', {{ tabs|safe }})"
+    x-clock
+    x-effect="setTab(selectedTab)">
+  {% include "tailwind/components/breadcrumbs.html" with path=path %}
+      <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+        <ul class="tabs">
+          {% for tab in tabs %}
+          <li
+            @click="setTab('{{ tab.key }}')"
+            id="{{ tab.key }}-tab"
+            :class="{ 'active': selectedTab === '{{ tab.key }}' }"
+          >
+            <span>{{ tab.label }}</span>
+            <div x-show="selectedTab === '{{ tab.key }}'"></div>
+          </li>
           {% endfor %}
-          </tbody>
-        </table>
-        <div class="row mb-2 py-2">
-          <div class="col-md">
-            {{ form.additional_visits|as_crispy_field }}
-          </div>
-          <div class="col-md">
-            {{ form.end_date|as_crispy_field }}
-          </div>
-        </div>
-         <button type="button" class="btn btn-primary float-end" data-bs-toggle="modal"
-                data-bs-target="#confirm-modal-add-visits">
-          {% translate "Save" %}
-        </button>
-      {% else %}
-        <div class="text-center">
-          <b>No Opportunity Claims yet.</b> <br/>
-          <a class="btn btn-primary mt-2" href="{% url "opportunity:list" org_slug=request.org.slug %}">All
-            Opportunities</a>
-        </div>
-      {% endif %}
+        </ul>
+      </div>
+      <div class="mt-2 card_bg">
+        <!-- Add budget for existing users-->
+        <div x-show="selectedTab === 'existing_users'">
+          <form method="post"
+                x-data="handleExistingBudgetComponent({{ budget_per_visit }})"
+          >
+            {% csrf_token %}
 
-
-
-      <!-- Modal -->
-      <div class="modal fade" id="confirm-modal-add-visits" tabindex="-1" aria-labelledby="exampleModalLabel"
-           aria-hidden="true">
-        <div class="modal-dialog">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title" id="exampleModalLabel">Confirm</h5>
-              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            {% if form.selected_users.errors %}
+            <div class="flex rounded-lg border border-red-300 bg-red-50 text-red-800 px-4 py-3 mb-4" role="alert">
+              <span class="text-red-800 flex-1">Please select users to update.</span>
+              <button type="button"
+                      class="text-red-500 hover:text-red-700"
+                      aria-label="Close"
+                      @click="event.target.closest('div[role=alert]').remove()">
+                &times;
+              </button>
             </div>
-            <div class="modal-body">
-              You are about to allocate an additional <b x-text="totalVisits()"></b> visits which will result in an
-              additional budget allocation of <b x-text="calculatedBudget()"></b> to this Opportunity.
-              <div x-show="!!end_date">
-                You are changing the end date for the selected users to <b
-                x-text="new Date(end_date).toLocaleDateString()"></b>.
+            {% endif %}
+
+            {% if opportunity_claims %}
+            <h3 class="mb-2">Add Visits for Existing Users</h3>
+            <table class="base-table">
+              <thead>
+              <tr>
+                <th>
+                  <input type="checkbox" name="selected_users" id="select_all_users" value="{{ opp_claim.id }}"
+                         x-model="selected_users"
+                         @click="toggleSelectAll()"
+                         :checked="selected_users.length === {{ opportunity_claims|length }}"
+                         class="simple-checkbox {% if form.selected_users.errors %}is-invalid{% endif %}"/>
+                </th>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Max Visits</th>
+                <th>Used Visits</th>
+                <th>End date</th>
+              </tr>
+              </thead>
+              <tbody>
+              {% for opp_claim in opportunity_claims %}
+              <tr>
+                <td>
+                  <input type="checkbox" name="selected_users"  id="id_selected_users_{{ opp_claim.id }}" value="{{ opp_claim.id }}"
+                         x-model="selected_users"
+                         class="simple-checkbox {% if form.selected_users.errors %}is-invalid{% endif %}"/>
+                </td>
+                <td>{{ opp_claim.opportunity_access.user.name }}</td>
+                <td>{{ opp_claim.opportunity_access.user.username }}</td>
+                <!-- Todo; replace by climitlimit.max_visits -->
+                <td>{{ opp_claim.max_payments }}</td>
+                <td>{{ opp_claim.opportunity_access.visit_count }}</td>
+                <td>{{ opp_claim.end_date }}</td>
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            <div class="flex items-center gap-4 pt-6 border-t-2 border-gray-100">
+              <div class="flex-1 flex justify-stretch gap-4">
+                <div class="flex-1">{{ form.additional_visits|as_crispy_field }}</div>
+                <div class="flex-1">{{ form.end_date|as_crispy_field }}</div>
               </div>
             </div>
-            <div class="modal-footer">
-              <button class="btn btn-primary" type="submit">Confirm</button>
+            <button type="button" class="button button-md primary-dark mt-4 float-end"
+                    @click="openModal(); end_date = document.getElementById('id_end_date').value">
+              Save
+            </button>
+            {% else %}
+            <div class="text-center">
+              <b>No Opportunity Claims yet.</b> <br/>
+              <a class="button button-md primary-dark mt-2" href="{% url "opportunity:list" org_slug=request.org.slug %}">All
+              Opportunities</a>
             </div>
+            {% endif %}
+
+
+            <!-- Modal -->
+            <div x-cloak x-show="modalOpen" x-transition.opacity class="modal-backdrop">
+              <div @click.away="closeModal()" x-transition class="modal">
+                <div class="header flex justify-between items-center">
+                  <h2 class="title">Confirm</h2>
+                  <button @click="closeModal()" class="button-icon" aria-label="Close">
+                    <i class="fa-light fa-xmark"></i>
+                  </button>
+                </div>
+                <div class="py-4">
+                  You are about to allocate an additional <b x-text="totalVisits()"></b> visits which will result in an
+                  additional budget allocation of
+                  <b x-text="calculatedBudget()"></b> to this Opportunity.
+                  <div x-show="!!end_date" class="mt-2">
+                    You are changing the end date for the selected users to <b
+                    x-text="new Date(end_date).toLocaleDateString()"></b>.
+                  </div>
+                </div>
+                <div class="footer flex justify-end gap-4">
+                  <button @click="closeModal()" type="button" class="button button-md outline-style">
+                    Close
+                  </button>
+                  <button type="submit" class="button button-md primary-dark">
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!--Add budget for New Users-->
+        <div
+          x-show="selectedTab === 'new_users'"
+        >
+          <h3 class="mb-2">Add Budget for New Users</h3>
+          <div
+            id="new_user_container"
+            hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug pk=opportunity.pk %}"
+            hx-swap="innerHTML"
+            hx-trigger="loadNewUserForm from:body">
+            <h2 class="text-center text-gray-500 italic animate-pulse py-4">Loading...</h2>
           </div>
         </div>
-      </div>
-  </form>
-    <div x-show="selectedOption === 'new' && !disableAddBudgeNewUsers" id="form-container">
-      <div id="loading-text" x-show="true">Loading...</div>
-      <div
-        x-init="$watch('selectedOption', value => {
-         if (value === 'new' && !disableAddBudgeNewUsers) {
-           htmx.ajax('GET', '{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug pk=opportunity.pk %}', {target: '#form-container', swap: 'innerHTML'});
-         }
-       })">
-      </div>
-    </div>
 
-  </div>
+      </div>
 {% endblock content %}
+
+
+

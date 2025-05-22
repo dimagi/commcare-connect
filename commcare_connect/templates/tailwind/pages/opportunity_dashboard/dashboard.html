@@ -1,0 +1,125 @@
+{% extends 'tailwind/base.html' %}
+{% load i18n %}
+
+{% block title %}{{ request.org }} - {{ object.name }}{% endblock %}
+
+{% block content %}
+    <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }}, showCatchmentImportModal: false, showCatchmentExportModal: false }"
+        class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
+      {% include 'tailwind/components/breadcrumbs.html' with path=path %}
+        {% if export_task_id %}
+          <div class="flex items-center justify-end">
+            <div
+              hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
+              hx-target="this"
+              hx-trigger="load"
+              hx-swap="outerHTML"
+              class="flex items-center justify-center"
+            >
+              <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+              <span class="sr-only">Loading...</span>
+            </div>
+            <button type="button"
+                    class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+                    aria-label="Close"
+                    onclick="this.parentElement.remove()">
+                    <i class="fa-solid fa-circle-xmark text-brand-deep-purple"></i>
+            </button>
+          </div>
+        {% endif %}
+        <div class="flex flex-col gap-8 w-full rounded-lg p-4" :class="isTest ? 'bg-white shadow-xs' : 'bg-brand-deep-purple'">
+          <div class="flex items-center relative" :class="{'gap-6': isTest}"  x-data="{ isOpen: false }">
+              <h3 class="text-sm font-medium text-brand-sky flex-1">{% if object.managed %}{{ object.program_name }}{% endif %}</h3>
+              {% if object.is_test %}
+              <span class="badge badge-md primary-light">Test</span>
+              {% endif %}
+              <i class="fa-light cursor-pointer"
+                 :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark-large' : 'fa-bars']"
+                 @click="isOpen = !isOpen"></i>
+              <!-- Dropdown Menu -->
+              {% include "tailwind/pages/opportunity_dashboard/opportunity_menu.html" with request=request opportunity=object is_program_manager=is_program_manager %}
+          </div>
+          <div class="flex justify-between items-end">
+              <div class="flex flex-col gap-2">
+                  <h1 class="text-2xl font-medium block" :class="isTest? 'text-brand-deep-purple': 'text-white' ">{{ object.name }}</h1>
+                <p class="text-sm font-regular w-6/12" :class="isTest ? 'text-gray-600' : 'text-gray-100'">{{ object.description }}</p>
+              </div>
+              <div class="flex mt-6">
+
+              <!-- Opportunity resources: payment unit, learn app deliver app and its display modal-->
+                <div class="flex gap-4" x-data="{
+                      showModal: false,
+                      selectedTab: '',
+                      selectedOption: '',
+                      historyLoaded: false,
+                  }"
+                     x-init="$watch('showModal', value => {
+                            document.body.classList.toggle('overflow-hidden', value);
+                             if (value && !historyLoaded) {
+                               $dispatch('tabShown');
+                               historyLoaded = true;
+                              }
+                        })">
+                      <!-- apps list -->
+                      {% for app in resources %}
+                      <div class="min-w-48 flex flex-row items-center justify-between px-4 h-10 bg-brand-indigo rounded cursor-pointer"
+                           @click="showModal = !showModal; ; selectedTab = '{{app.name}}'; selectedOption = '{{app.name}}'">
+                          <div class="flex items-center">
+                              <i class="fa-light {{app.icon}} text-white text-sm"></i>
+                              <h3 class="text-sm font-normal text-white flex-1 pl-2 whitespace-nowrap">{{app.name}}</h3>
+                          </div>
+                          <h3 class="text-sm font-medium text-white">{{app.count}}</h3>
+                      </div>
+                      {% endfor %}
+
+                      <!-- Modal -->
+                      {% include "tailwind/pages/opportunity_dashboard/opportunity_resource_modal.html" with opp_id=object.id %}
+                  </div>
+              </div>
+          </div>
+          <!-- opportunity info -->
+            <div class="p-4 rounded-lg w-full" :class="isTest ? 'bg-slate-100' : 'bg-black/20'">
+              <div class="flex gap-2 w-full items-center justify-between">
+                  {% for data in basic_details %}
+                  <div class="flex gap-2 items-start">
+                    <div :class="isTest? 'infocard-dark' : 'infocard-light'">
+                          <i class="fa-light {{data.icon}}"
+                             :class="{'!text-brand-cornflower-blue': isTest}"
+                          ></i>
+                          <div>
+                            <h6 :class="{ '!text-brand-cornflower-blue': isTest }">{{data.name}}</h6>
+                              <p>{{data.count}}</p>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!--Separator Between basic detail columns-->
+                  {% if not forloop.last and forloop.counter != 2 %}
+                      <div class="w-0.5 h-10 {% if not object.is_test %}bg-white{% else %}bg-slate-200{% endif %} bg-opacity-30"></div>
+                  {% endif %}
+                  {% endfor %}
+                  <div>
+                    {% if object.is_active %}
+                        <span class="badge badge-md positive-dark">Active</span>
+                    {% elif object.has_ended %}
+                        <span class="badge badge-md warning-dark">Ended</span>
+                    {% else %}
+                        <span class="badge badge-md negative-dark">Inactive</span>
+                    {% endif %}
+                  </div>
+              </div>
+          </div>
+      </div>
+         <div>
+            <!--Skeletons -->
+           {% include "tailwind/pages/opportunity_dashboard/opportunity_delivery_stat.html" with skeleton=True %}
+           {% include "tailwind/pages/opportunity_dashboard/opportunity_worker_progress.html" with skeleton=True %}
+           {% include "tailwind/pages/opportunity_dashboard/opportunity_funnel_progress.html" with skeleton=True %}
+        </div>
+      {% url 'opportunity:catchment_area_export' org_slug=request.org.slug pk=opportunity.pk as catchment_export_url %}
+      {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showCatchmentExportModal" modal_title=_("Export Catchment Area") export_url=catchment_export_url export_form=export_form %}
+
+      {% url 'opportunity:catchment_area_import' request.org.slug opportunity.pk as catchment_import_url %}
+      {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showCatchmentImportModal" modal_title=_("Import Catchment Area") import_url=catchment_import_url input_name="catchments" input_help_text=_('The file must contain at least the "Area Name", "Active", "Latitude", "Longitude", "Site code" and "Radius" column.') %}
+    </div>
+{% endblock %}

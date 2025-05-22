@@ -5,7 +5,9 @@
 {% block head_title %}{% translate "Sign Up Closed" %}{% endblock %}
 
 {% block inner %}
-<h1 class="mb-4">{% translate "Sign Up Closed" %}</h1>
+  <div class="w-full min-h-[620px] h-fit">
+    <h1 class="title text-brand-deep-purple mb-4">{% translate "Sign Up Closed" %}</h1>
 
-<p>{% translate "We are sorry, but the sign up is currently closed." %}</p>
+    <p class="text-sm">{% translate "We are sorry, but the sign up is currently closed." %}</p>
+  </div>
 {% endblock %}

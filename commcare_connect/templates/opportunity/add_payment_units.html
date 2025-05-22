@@ -20,7 +20,9 @@
           <i class="fa-light fa-plus mr-2"></i>
           Add Payment Unit
         </button>
-        <a class="button button-md primary-dark" type="button" href="{% url 'opportunity:finalize' org_slug=request.org.slug pk=opportunity.id %}">
+        <a href="{% if paymentunit_count %}{% url 'opportunity:finalize' org_slug=request.org.slug pk=opportunity.id %}{% else %}#{% endif %}"
+          class="button button-md primary-dark {% if not paymentunit_count %}pointer-events-none opacity-50 cursor-not-allowed{% endif %}"
+        >
           Setup Budget
         </a>
       </div>
