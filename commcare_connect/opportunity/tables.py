@@ -1264,7 +1264,7 @@ class WorkerDeliveryTable(OrgContextTable):
             "rejected",
             "action",
         )
-        order_by = ("-last_active",)
+        orderable = False
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")

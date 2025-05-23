@@ -342,7 +342,7 @@ class OpportunityDashboard(OrganizationUserMixin, DetailView):
 
         context["resources"] = [
             {"name": "Learn App", "count": learn_module_count, "icon": "fa-book-open-cover"},
-            {"name": "Delivery App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
+            {"name": "Deliver App", "count": deliver_unit_count, "icon": "fa-clipboard-check"},
             {"name": "Payments Units", "count": payment_unit_count, "icon": "fa-hand-holding-dollar"},
         ]
 
@@ -365,7 +365,7 @@ class OpportunityDashboard(OrganizationUserMixin, DetailView):
             {
                 "name": "Max Workers",
                 "count": header_with_tooltip(safe_display(object.number_of_users),
-                                             "Maximum number of payment units that can be delivered. Each payment unit is a service delivery"),
+                                             "Maximum allowed workers in the Opportunity"),
                 "icon": "fa-users"
             },
             {
@@ -2028,7 +2028,7 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
                                                                      "Workers that have completed all Learn modules but not assessment"),
          "icon": "book-blank"},
         {"stage": "Completed Assessment",
-         "count": header_with_tooltip(result["completed_assessments"], "Workers that passed the assessment"),
+         "count": header_with_tooltip(result.completed_assessments, "Workers that passed the assessment"),
          "icon": "award-simple"},
         {"stage": "Claimed Job", "count": header_with_tooltip(result.claimed_job,
                                                               "Workers that have read the Opportunity terms and started download of the Deliver app"),
@@ -2149,6 +2149,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "status": "Total",
             "value": header_with_tooltip(stats.total_deliveries,
                                          "Total delivered so far excluding duplicates"),
+            "url": delivery_url,
             "incr": stats.deliveries_from_yesterday,
         },
         {
@@ -2178,9 +2179,9 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "title": "Workers",
             "sub_heading": "",
             "value": "",
-            "url": status_url,
             "panels": [
-                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": stats.workers_invited},
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": stats.workers_invited,
+                 "url": status_url, },
                 {
                     "icon": "fa-user-check",
                     "name": "Workers",
@@ -2200,7 +2201,6 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
         },
         {
             "title": "Services Delivered",
-            "url": delivery_url,
             "sub_heading": "Last Delivery",
             "value": stats.most_recent_delivery or "--",
             "panels": deliveries_panels,
@@ -2208,7 +2208,6 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
         {
             "title": f"Worker Payments ({opportunity.currency})",
             "sub_heading": "Last Payment",
-            "url": payment_url,
             "value": stats.recent_payment or "--",
             "panels": [
                 {
@@ -2217,6 +2216,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "status": "Earned",
                     "value": header_with_tooltip(intcomma(stats.total_accrued),
                                                  "Worker payment accrued based on approved service deliveries"),
+                    "url": payment_url,
                     "incr": stats.accrued_since_yesterday
                 },
                 {
