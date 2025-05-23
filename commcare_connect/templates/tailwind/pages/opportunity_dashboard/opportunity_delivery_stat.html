@@ -57,8 +57,8 @@
         <h3 class="text-2xl font-medium text-white {{ panel.text_color }}">
           {{ panel.value }}
         </h3>
-        {% if panel.incr %}
-        <span class="badge badge-md positive-dark">{{ panel.incr }} ↑</span>
+        {% if panel.incr %}'
+        <span  x-data x-tooltip.raw="Increment in last 24 hours" class="badge badge-md positive-dark">{{ panel.incr }} ↑</span>
         {% endif %}
         <div>
           <i class="fa-light fa-arrow-up-right text-brand-sky text-lg {{ panel.text_color }}"></i>

@@ -107,7 +107,7 @@ from commcare_connect.opportunity.tables import (
     WorkerLearnStatusTable,
     WorkerLearnTable,
     WorkerPaymentsTable,
-    WorkerStatusTable,
+    WorkerStatusTable, header_with_tooltip,
 )
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
@@ -142,6 +142,9 @@ from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.tables import get_duration_min
+from django.utils.translation import gettext as _
+
+from django.contrib.humanize.templatetags.humanize import intcomma
 
 
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -361,17 +364,20 @@ class OpportunityDashboard(OrganizationUserMixin, DetailView):
             },
             {
                 "name": "Max Workers",
-                "count": safe_display(object.number_of_users),
+                "count": header_with_tooltip(safe_display(object.number_of_users),
+                                             "Maximum number of payment units that can be delivered. Each payment unit is a service delivery"),
                 "icon": "fa-users"
             },
             {
                 "name": "Max Service Deliveries",
-                "count": safe_display(object.allotted_visits),
+                "count": header_with_tooltip(safe_display(object.allotted_visits),
+                                             "Maximum number of payment units that can be delivered. Each payment unit is a service delivery"),
                 "icon": "fa-gears",
             },
             {
                 "name": "Max Budget",
-                "count": safe_display(object.total_budget),
+                "count": header_with_tooltip(f"{object.currency} {intcomma(object.total_budget)}",
+                                             "Maximum payments that can be made for workers and organization"),
                 "icon": "fa-money-bill",
             },
         ]
@@ -535,18 +541,35 @@ def add_budget_existing_users(request, org_slug=None, pk=None):
     )
     if form.is_valid():
         form.save()
-        return redirect("opportunity:detail", org_slug, pk)
+
+        additional_visits = form.cleaned_data.get("additional_visits")
+        selected_users = form.cleaned_data.get("selected_users")
+        end_date = form.cleaned_data.get("end_date")
+        message_parts = []
+
+        if additional_visits and selected_users:
+            visit_text = f"{additional_visits} visit{'s' if additional_visits != 1 else ''}"
+            user_text = f"{len(selected_users)} worker{'s' if len(selected_users) != 1 else ''}"
+            message_parts.append(f"Added {visit_text} to {user_text}.")
+            if not opportunity.managed:
+                message_parts.append(f"Budget increased by {form.budget_increase:.2f}.")
+
+        if end_date:
+            message_parts.append(f"Extended opportunity end date to {end_date} for selected workers.")
+
+        messages.success(request, " ".join(message_parts))
+        return redirect("opportunity:add_budget_existing_users", org_slug, pk)
 
     tabs = [
         {
-            "key": "existing_users",
-            "label": "Existing Users",
+            "key": "existing_workers",
+            "label": "Existing Workers",
         },]
     # Nm are not allowed to increase the managed opportunity budget so do not provide that tab.
     if not opportunity.managed or is_program_manager_of_opportunity(request, opportunity):
         tabs.append({
-            "key": "new_users",
-            "label": "New Users",
+            "key": "new_workers",
+            "label": "New Workers",
         })
 
     path = [
@@ -583,7 +606,15 @@ def add_budget_new_users(request, org_slug=None, pk=None):
 
     if form.is_valid():
         form.save()
-        redirect_url = reverse("opportunity:detail", args=[org_slug, pk])
+        budget_increase = form.budget_increase
+        direction = "added to" if budget_increase >= 0 else "removed from"
+        messages.success(
+            request,
+            f"{opportunity.currency} {abs(form.budget_increase)} was {direction} the opportunity budget."
+        )
+
+        redirect_url = reverse("opportunity:add_budget_existing_users", args=[org_slug, pk])
+        redirect_url += "?active_tab=new_users"
         response = HttpResponse()
         response["HX-Redirect"] = redirect_url
         return response
@@ -1726,6 +1757,8 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
     export_form = PaymentExportForm()
+    visit_export_form = VisitExportForm()
+    review_visit_export_form = ReviewVisitExportForm()
 
     path = []
     if opp.managed:
@@ -1742,8 +1775,7 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     raw_qs = request.GET.urlencode()
     query = f"?{raw_qs}" if raw_qs else ""
 
-    workers_count = UserInvite.objects.filter(opportunity_id=opp_id).count()
-
+    workers_count = UserInvite.objects.filter(opportunity_id=opp_id).exclude(status=UserInviteStatus.not_found).count()
     tabs = [
         {
             "key": "workers",
@@ -1773,9 +1805,14 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
 
     is_program_manager = opp.managed and is_program_manager_of_opportunity(request, opp)
 
+
     import_export_delivery_urls = {
-        "export_url": reverse(
-            "opportunity:review_visit_export" if is_program_manager else "opportunity:visit_export",
+        "export_url_for_pm": reverse(
+            "opportunity:review_visit_export",
+            args=(request.org.slug, opp_id),
+        ),
+        "export_url_for_nm": reverse(
+            "opportunity:visit_export",
             args=(request.org.slug, opp_id),
         ),
         "import_url": reverse(
@@ -1784,7 +1821,11 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
         ),
     }
 
-    visit_export_form = ReviewVisitExportForm() if is_program_manager else VisitExportForm()
+    import_visit_helper_text = _(
+        'The file must contain at least the "Visit ID"{extra} and "Status" column. The import is case-insensitive.'
+    ).format(extra=_(', "Justification"') if opp.managed else "")
+
+    export_user_visit_title = _("Import PM Review Sheet" if is_program_manager else "Import Verified Visits")
 
     return render(
         request,
@@ -1798,6 +1839,9 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
             "export_task_id": request.GET.get("export_task_id"),
             "path": path,
             "import_export_delivery_urls": import_export_delivery_urls,
+            "import_visit_helper_text": import_visit_helper_text,
+            "export_user_visit_title": export_user_visit_title,
+            "review_visit_export_form": review_visit_export_form
         },
     )
 
@@ -1833,7 +1877,8 @@ def worker_delivery(request, org_slug=None, opp_id=None):
 def worker_payments(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
 
-    query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
+    query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0,
+                                                 accepted=True).order_by(
         "-payment_accrued"
     )
     query_set = query_set.annotate(
@@ -1959,20 +2004,38 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OrgContextSingleTab
 
 @org_member_required
 def opportunity_funnel_progress(request, org_slug, opp_id):
-    aggregates = get_opportunity_funnel_progress(opp_id)
+    result = get_opportunity_funnel_progress(opp_id)
+
+    accepted = result.workers_invited - result.pending_invites
 
     funnel_progress = [
-        {"stage": "Invited", "count": aggregates["workers_invited"], "icon": "envelope"},
+        {"stage": "Invited",
+         "count": header_with_tooltip(result.workers_invited,
+                                      "Number of phone numbers to whom an SMS or push notification was sent and ConnectID exists"),
+         "icon": "envelope"},
         {
             "stage": "Accepted",
-            "count": aggregates["workers_invited"] - aggregates["pending_invites"],
+            "count": header_with_tooltip(accepted,
+                                         "Workers that have clicked on the SMS or push notification or gone into Learn app"),
             "icon": "circle-check",
         },
-        {"stage": "Started Learning", "count": aggregates["started_learning_count"], "icon": "book-open-cover"},
-        {"stage": "Completed Learning", "count": aggregates["completed_learning"], "icon": "book-blank"},
-        {"stage": "Completed Assessment", "count": aggregates["completed_assessments"], "icon": "award-simple"},
-        {"stage": "Claimed Job", "count": aggregates["claimed_job"], "icon": "user-check"},
-        {"stage": "Started Delivery", "count": aggregates["started_deliveries"], "icon": "house-chimney-user"},
+        {"stage": "Started Learning",
+         "count": header_with_tooltip(result.started_learning_count,
+                                      "Workers that have submitted the first Learn form"),
+         "icon": "book-open-cover"
+         },
+        {"stage": "Completed Learning", "count": header_with_tooltip(result.completed_learning,
+                                                                     "Workers that have completed all Learn modules but not assessment"),
+         "icon": "book-blank"},
+        {"stage": "Completed Assessment",
+         "count": header_with_tooltip(result["completed_assessments"], "Workers that passed the assessment"),
+         "icon": "award-simple"},
+        {"stage": "Claimed Job", "count": header_with_tooltip(result.claimed_job,
+                                                              "Workers that have read the Opportunity terms and started download of the Deliver app"),
+         "icon": "user-check"},
+        {"stage": "Started Delivery", "count": header_with_tooltip(result.started_deliveries,
+                                                                   "Workers that have submitted at least 1 Learn form"),
+         "icon": "house-chimney-user"},
     ]
 
     return render(
@@ -1984,71 +2047,68 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 
 @org_member_required
 def opportunity_worker_progress(request, org_slug, opp_id):
-    aggregates = get_opportunity_worker_progress(opp_id)
+    result = get_opportunity_worker_progress(opp_id)
 
     def safe_percent(numerator, denominator):
         return (numerator / denominator) * 100 if denominator else 0
 
-    verified_percentage = safe_percent(aggregates["approved_deliveries"], aggregates["total_deliveries"])
-    rejected_percentage = safe_percent(aggregates["rejected_deliveries"], aggregates["total_deliveries"])
-    earned_percentage = safe_percent(aggregates["total_accrued"], aggregates["total_budget"])
-    paid_percentage = safe_percent(aggregates["total_paid"], aggregates["total_accrued"])
-    visits_since_yesterday_percent = safe_percent(aggregates["visits_since_yesterday"],
-                                                  aggregates["maximum_visit_in_a_day"])
+    verified_percentage = safe_percent(
+        result.approved_deliveries or 0,
+        result.total_deliveries or 0
+    )
+    rejected_percentage = safe_percent(
+        result.rejected_deliveries or 0,
+        result.total_deliveries or 0
+    )
+    earned_percentage = safe_percent(
+        result.total_accrued or 0,
+        result.total_budget or 0
+    )
+    paid_percentage = safe_percent(
+        result.total_paid or 0,
+        result.total_accrued or 0
+    )
 
     worker_progress = [
-        {
-            "title": "Daily Active Workers",
-            "progress": [
-                {
-                    "title": "Maximum Achieved",
-                    "total": aggregates["maximum_visit_in_a_day"],
-                    "value": aggregates["maximum_visit_in_a_day"],
-                    "badge_type": False,
-                    "percent": 100 if aggregates["maximum_visit_in_a_day"] else 0,
-                },
-                {
-                    "title": "Active Yesterday",
-                    "total": aggregates["visits_since_yesterday"],
-                    "value": aggregates["visits_since_yesterday"],
-                    "badge_type": False,
-                    "percent": visits_since_yesterday_percent,
-                },
-            ],
-        },
         {
             "title": "Verification",
             "progress": [
                 {
                     "title": "Approved",
-                    "total": aggregates["total_deliveries"],
-                    "value": f"{verified_percentage:.2f}%",
+                    "total": header_with_tooltip(result.approved_deliveries,
+                                                 "Number of Service Deliveries Approved by both PM and NM or Auto-approved"),
+                    "value": header_with_tooltip(f"{verified_percentage:.2f}%",
+                                                 "Percentage Approved out of Delivered"),
                     "badge_type": True,
-                    "percent": verified_percentage
+                    "percent": verified_percentage,
                 },
                 {
                     "title": "Rejected",
-                    "total": aggregates["total_deliveries"],
-                    "value": f"{rejected_percentage:.2f}%",
+                    "total": header_with_tooltip(result.rejected_deliveries,
+                                                 "Number of Service Deliveries Rejected"),
+                    "value": header_with_tooltip(f"{rejected_percentage:.2f}%",
+                                                 "Percentage Rejected out of Delivered"),
                     "badge_type": True,
                     "percent": rejected_percentage,
                 },
             ],
         },
         {
-            "title": "Payments to Workers",
+            "title": f"Payments to Workers ({result.currency})",
             "progress": [
                 {
                     "title": "Earned",
-                    "total": aggregates["total_budget"],
-                    "value": f"{earned_percentage:.2f}%",
+                    "total": header_with_tooltip(result.total_accrued, "Earned Amount"),
+                    "value": header_with_tooltip(f"{earned_percentage:.2f}%",
+                                                 "Percentage Earned by all workers out of Max Budget in the Opportunity"),
                     "badge_type": True,
                     "percent": earned_percentage,
                 },
                 {
                     "title": "Paid",
-                    "total": aggregates["total_accrued"],
-                    "value": f"{paid_percentage:.2f}%",
+                    "total": header_with_tooltip(result.total_paid, "Paid Amount to All Workers"),
+                    "value": header_with_tooltip(f"{paid_percentage:.2f}%",
+                                                 "Percentage Paid to all  workers out of Earned amount"),
                     "badge_type": True,
                     "percent": paid_percentage,
                 },
@@ -2087,15 +2147,17 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "icon": "fa-clipboard-list-check",
             "name": "Services Delivered",
             "status": "Total",
-            "value": stats["total_deliveries"],
-            "incr": stats["deliveries_from_yesterday"],
+            "value": header_with_tooltip(stats.total_deliveries,
+                                         "Total delivered so far excluding duplicates"),
+            "incr": stats.deliveries_from_yesterday,
         },
         {
             "icon": "fa-clipboard-list-check",
             "name": "Services Delivered",
-            "status": "Awaiting NM Review",
-            "value": stats["flagged_deliveries_waiting_for_review"],
-            "incr": stats["flagged_deliveries_waiting_for_review_since_yesterday"],
+            "status": "Pending NM Review",
+            "value": header_with_tooltip(stats.flagged_deliveries_waiting_for_review,
+                                         "Flagged and pending review with NM"),
+            "incr": stats.flagged_deliveries_waiting_for_review_since_yesterday,
         },
     ]
 
@@ -2105,8 +2167,9 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                 "icon": "fa-clipboard-list-check",
                 "name": "Services Delivered",
                 "status": "Pending PM Review",
-                "value": stats["visits_pending_for_pm_review"],
-                "incr": stats["visits_pending_for_pm_review_since_yesterday"],
+                "value": header_with_tooltip(stats.visits_pending_for_pm_review,
+                                             "Flagged and pending review with PM"),
+                "incr": stats.visits_pending_for_pm_review_since_yesterday,
             }
         )
 
@@ -2117,18 +2180,19 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "value": "",
             "url": status_url,
             "panels": [
-                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": stats["workers_invited"]},
+                {"icon": "fa-user-group", "name": "Workers", "status": "Invited", "value": stats.workers_invited},
                 {
                     "icon": "fa-user-check",
                     "name": "Workers",
                     "status": "Yet to Accept Invitation",
-                    "value": stats["pending_invites"],
+                    "value": stats.pending_invites,
                 },
                 {
                     "icon": "fa-clipboard-list",
                     "name": "Workers",
                     "status": "Inactive last 3 days",
-                    "value": stats["inactive_workers"],
+                    "value": header_with_tooltip(stats.inactive_workers,
+                                                 "Did not submit a Learn or Deliver form in the last 3 days"),
                     "url": status_url,
                     **panel_type_2,
                 },
@@ -2138,27 +2202,29 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "title": "Services Delivered",
             "url": delivery_url,
             "sub_heading": "Last Delivery",
-            "value": stats["most_recent_delivery"] or "--",
+            "value": stats.most_recent_delivery or "--",
             "panels": deliveries_panels,
         },
         {
-            "title": "Worker Payments",
+            "title": f"Worker Payments ({opportunity.currency})",
             "sub_heading": "Last Payment",
             "url": payment_url,
-            "value": stats["recent_payment"] or "--",
+            "value": stats.recent_payment or "--",
             "panels": [
                 {
                     "icon": "fa-hand-holding-dollar",
                     "name": "Payments",
                     "status": "Earned",
-                    "value": stats["total_accrued"],
-                    "incr": stats["accrued_since_yesterday"]
+                    "value": header_with_tooltip(intcomma(stats.total_accrued),
+                                                 "Worker payment accrued based on approved service deliveries"),
+                    "incr": stats.accrued_since_yesterday
                 },
                 {
                     "icon": "fa-hand-holding-droplet",
                     "name": "Payments",
                     "status": "Due",
-                    "value": stats["payments_due"],
+                    "value": header_with_tooltip(intcomma(stats.payments_due),
+                                                 "Worker payments reported as paid"),
                 },
             ],
         },

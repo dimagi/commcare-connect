@@ -733,14 +733,13 @@ class AddBudgetExistingUsersForm(forms.Form):
 class AddBudgetNewUsersForm(forms.Form):
     add_users = forms.IntegerField(
         required=False,
-        label="Number Of Users",
-        help_text="New Budget = Existing Budget + sum of (Amount × Max Total × Number of Users) "
-        "for all payment units.",
+        label="Number Of Workers",
+        help_text="New Budget Added = Workers Added x Sum of Budget for Each Payment Unit.",
     )
     total_budget = forms.IntegerField(
         required=False,
         label="Opportunity Total Budget",
-        help_text="Set a new total budget or leave it unchanged when using Number of Users.",
+        help_text="Set a new total budget or leave it unchanged when using Number of workers.",
     )
 
     def __init__(self, *args, **kwargs):
