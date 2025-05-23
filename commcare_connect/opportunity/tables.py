@@ -1018,7 +1018,7 @@ class WorkerStatusTable(tables.Table):
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
     invited_date = DMYTColumn()
-    last_active = DMYTColumn(verbose_name=header_with_tooltip("Last Active", "Submitted a Learn or Deliver form"), accessor="last_active_d")
+    last_active = DMYTColumn(verbose_name=header_with_tooltip("Last Active", "Submitted a Learn or Deliver form"))
     started_learn = DMYTColumn(
         verbose_name=header_with_tooltip("Started Learn", "Submitted the first Learn form"),
         accessor="date_learn_started",
@@ -1042,7 +1042,7 @@ class WorkerPaymentsTable(tables.Table):
     index = IndexColumn()
     user = UserInfoColumn(footer="Total")
     suspended = SuspendedIndicatorColumn()
-    last_active = DMYTColumn(accessor="last_active_d")
+    last_active = DMYTColumn()
     payment_accrued = tables.Column(verbose_name="Accrued",
                                     footer=lambda table: intcomma(
                                         sum(x.payment_accrued or 0 for x in table.data)))
@@ -1098,7 +1098,7 @@ class WorkerLearnTable(OrgContextTable):
     index = IndexColumn()
     user = UserInfoColumn()
     suspended = SuspendedIndicatorColumn()
-    last_active = DMYTColumn(accessor="last_active_d")
+    last_active = DMYTColumn()
     started_learning = DMYTColumn(accessor="date_learn_started", verbose_name="Started Learning")
     modules_completed = tables.TemplateColumn(
         accessor="modules_completed_percentage",
@@ -1219,7 +1219,7 @@ class WorkerDeliveryTable(OrgContextTable):
     index = IndexColumn()
     user = tables.Column(orderable=False, verbose_name="Name", footer="Total")
     suspended = SuspendedIndicatorColumn()
-    last_active = DMYTColumn(accessor="last_active_d")
+    last_active = DMYTColumn()
     payment_unit = tables.Column(orderable=False)
     delivery_progress = tables.Column(accessor="total_visits", empty_values=())
     delivered = TotalDeliveredColumn(
