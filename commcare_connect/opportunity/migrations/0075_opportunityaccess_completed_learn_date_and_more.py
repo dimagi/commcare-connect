@@ -72,7 +72,7 @@ def back_fill_completed_learn_date(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0073_payment_payment_method_payment_payment_operator"),
+        ("opportunity", "0074_payment_created_at"),
     ]
 
     operations = [

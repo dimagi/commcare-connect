@@ -448,6 +448,7 @@ class PaymentInvoice(models.Model):
 
 
 class Payment(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
     amount = models.PositiveIntegerField()
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     date_paid = models.DateTimeField(default=datetime.datetime.utcnow)
