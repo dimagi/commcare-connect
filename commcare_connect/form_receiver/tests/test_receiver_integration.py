@@ -1,5 +1,6 @@
 import datetime
 import random
+import importlib
 from copy import deepcopy
 from datetime import timedelta
 from http import HTTPStatus
@@ -7,9 +8,12 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from django.utils.timezone import now
 from rest_framework.test import APIClient
 
+from commcare_connect.form_receiver.processor import update_completed_learn_date
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
     AssessmentStubFactory,
@@ -34,6 +38,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import bulk_approve_completed_work
 from commcare_connect.opportunity.tests.factories import (
     CatchmentAreaFactory,
+    CompletedModuleFactory,
     DeliverUnitFactory,
     DeliverUnitFlagRulesFactory,
     FormJsonValidationRulesFactory,
@@ -41,6 +46,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     PaymentUnitFactory,
+    UserVisitFactory,
 )
 from commcare_connect.opportunity.tests.helpers import validate_saved_fields
 from commcare_connect.opportunity.visit_import import update_payment_accrued
@@ -693,3 +699,95 @@ def test_receiver_same_visit_twice(
     make_request(api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK)
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 1
+
+
+def create_learn_module_data(opportunity, mobile_user, access):
+    today = now()
+    two_days_ago = today - timedelta(days=2)
+    three_days_ago = today - timedelta(days=3)
+    tomorrow = today + timedelta(days=1)
+    future_date = today + timedelta(days=4)
+
+    module1 = LearnModuleFactory(app=opportunity.learn_app)
+    module2 = LearnModuleFactory(app=opportunity.learn_app)
+    module3 = LearnModuleFactory(app=opportunity.learn_app)
+
+    completions = [
+        # module1 completions
+        (module1, two_days_ago),
+        (module1, future_date),
+        (module1, three_days_ago),
+        # module2 completion
+        (module2, today),
+        # module3 completions
+        (module3, tomorrow),
+        (module3, future_date),
+    ]
+
+    for module, date in completions:
+        CompletedModuleFactory(
+            user=mobile_user,
+            opportunity=opportunity,
+            module=module,
+            date=date,
+            opportunity_access=access,
+            xform_id=uuid4(),
+        )
+
+    return {
+        "today": today,
+        "two_days_ago": two_days_ago,
+        "three_days_ago": three_days_ago,
+        "tomorrow": tomorrow,
+        "future_date": future_date,
+    }
+
+
+@pytest.mark.django_db
+def test_update_completed_learn_date(opportunity, mobile_user):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+
+    dates = create_learn_module_data(opportunity, mobile_user, access)
+    assert LearnModule.objects.filter(app=opportunity.learn_app).count() == 3
+
+    update_completed_learn_date(access)
+
+    access.refresh_from_db()
+    assert access.completed_learn_date == dates["tomorrow"]
+
+
+@pytest.mark.django_db
+def test_update_completed_learn_date_migration(opportunity, mobile_user):
+    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+    access2 = OpportunityAccessFactory(opportunity=opportunity)
+
+    dates = create_learn_module_data(opportunity, mobile_user, access)
+
+    access.date_learn_started = dates["three_days_ago"]
+    access.save()
+
+    UserVisitFactory(
+        user=mobile_user,
+        opportunity=opportunity,
+        opportunity_access=access,
+        visit_date=dates["future_date"] + timedelta(days=1),
+    )
+
+    migration_module = importlib.import_module(
+        "commcare_connect.opportunity.migrations.0074_opportunityaccess_completed_learn_date_and_more"
+    )
+    back_fill_completed_learn_date = migration_module.back_fill_completed_learn_date
+
+    executor = MigrationExecutor(connection)
+    apps = executor.loader.project_state(("opportunity", "0074_opportunityaccess_completed_learn_date_and_more")).apps
+    schema_editor = connection.schema_editor()
+
+    back_fill_completed_learn_date(apps, schema_editor)
+
+    access.refresh_from_db()
+    access2.refresh_from_db()
+
+    assert access.last_active == dates["future_date"] + timedelta(days=1)
+    assert access.completed_learn_date == dates["tomorrow"]
+    assert access2.completed_learn_date is None
+    assert access2.last_active is None

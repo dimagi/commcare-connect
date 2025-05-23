@@ -2,7 +2,7 @@ import datetime
 from functools import partial
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Min, Q
 from django.utils.timezone import now
 from geopy.distance import distance
 from jsonpath_ng import JSONPathError
@@ -91,6 +91,7 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
     with transaction.atomic():
         access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
         completed_modules = []
+        save_access = False
         for module_data in blocks:
             module = get_or_create_learn_module(app, module_data)
             completed_module = CompletedModule(
@@ -105,9 +106,29 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
                 app_build_version=xform.metadata.app_build_version,
             )
             completed_modules.append(completed_module)
+            if not access.last_active or access.last_active < completed_module.date:
+                access.last_active = completed_module.date
+                save_access = True
 
         if completed_modules:
             CompletedModule.objects.bulk_create(completed_modules)
+            update_completed_learn_date(access, save_access)
+
+
+def update_completed_learn_date(access, save_access=False):
+    if not access.completed_learn_date and access.learn_progress == 100.0:
+        # Get the earliest completion date for each unique module
+        earliest_dates = (
+            CompletedModule.objects.filter(opportunity_access=access)
+            .values("module")
+            .annotate(earliest_date=Min("date"))
+        )
+        completed_learn_date = max(entry["earliest_date"] for entry in earliest_dates)
+        access.completed_learn_date = completed_learn_date
+        save_access = True
+
+    if save_access:
+        access.save()
 
 
 def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
@@ -313,6 +334,10 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.review_status = VisitReviewStatus.agree
 
         user_visit.save()
+
+        if not access.last_active or access.last_active < user_visit.visit_date:
+            access.last_active = user_visit.visit_date
+            access.save()
 
         if completed_work is not None:
             if completed_work.completed_count > 0 and completed_work.status == CompletedWorkStatus.incomplete:

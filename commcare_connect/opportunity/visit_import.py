@@ -254,9 +254,11 @@ def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
         except KeyError:
             invalid_rows.append((row, f"status must be one of {VisitValidationStatus.values}"))
         if status_raw == VisitValidationStatus.rejected.value:
-            visit_data.reason = str(row[reason_col_index])
+            visit_data.reason = str(row[reason_col_index]) if row[reason_col_index] is not None else None
         if justification_col_index > 0:
-            visit_data.justification = str(row[justification_col_index])
+            visit_data.justification = (
+                str(row[justification_col_index]) if row[justification_col_index] is not None else None
+            )
         data_by_visit_id[visit_id] = visit_data
 
     if invalid_rows:
@@ -491,7 +493,7 @@ def get_status_by_completed_work_id(dataset):
         except KeyError:
             invalid_rows.append((row, f"status must be one of {CompletedWorkStatus.values}"))
         if status_raw == CompletedWorkStatus.rejected.value:
-            reason_by_work_id[work_id] = str(row[reason_col_index])
+            reason_by_work_id[work_id] = str(row[reason_col_index]) if row[reason_col_index] is not None else None
 
     if invalid_rows:
         raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)

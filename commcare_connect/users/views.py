@@ -112,6 +112,10 @@ def start_learn_app(request):
     with transaction.atomic():
         if access_object.date_learn_started is None:
             access_object.date_learn_started = now()
+
+            if not access_object.last_active or access_object.last_active < access_object.date_learn_started:
+                access_object.last_active = access_object.date_learn_started
+
         access_object.accepted = True
         access_object.save()
         user_invite = UserInvite.objects.get(opportunity_access=access_object)
