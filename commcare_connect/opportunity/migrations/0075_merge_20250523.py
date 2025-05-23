@@ -6,6 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
     dependencies = [
         ("opportunity", "0074_merge_20250327_0852"),
+        ("opportunity", "0074_payment_created_at"),
         ("opportunity", "0074_opportunityaccess_completed_learn_date_and_more"),
     ]
 
