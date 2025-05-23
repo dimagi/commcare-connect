@@ -3,6 +3,7 @@
 {% load static %}
 {% load django_tables2 %}
 {% load i18n %}
+{% load humanize %}
 
 {% block css %}
   {{ block.super }}
@@ -105,26 +106,26 @@
 
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
           <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ opportunity_access.payment_accrued }}</div>
+            <div class="text-2xl">{{ opportunity_access.payment_accrued|intcomma }}</div>
             <div class="hidden lg:block">
               <i class="fa-light fa-light fa-money-bill-simple-wave text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Accrued Amount</span>
+            <span>Accrued Amount ({{opportunity_access.opportunity.currency}})</span>
           </div>
         </div>
 
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
              x-data="{ isOpen: false }">
           <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ opportunity_access.total_paid }}</div>
+            <div class="text-2xl">{{ opportunity_access.total_paid|intcomma  }}</div>
             <div class="hidden lg:block">
               <i class="fa-light fa-hand-holding-dollar text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Paid Amount</span>
+            <span>Paid Amount ({{opportunity_access.opportunity.currency}})</span>
           {% if last_payment_details %}
             <i class="fa-solid ml-2 cursor-pointer"
                :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
