@@ -17,14 +17,14 @@
                 <!-- Tabs -->
                 <div class="flex relative mx-auto items-center shadow rounded-lg justify-between w-full px-3 mb-3 bg-slate-50 h-14">
                     <ul class="tabs">
-                        <li x-tooltip.raw.html.interactive.theme.light="<a href='{{ opportunity.learn_app.url }}' target='_blank' class='underline'>{{ opportunity.learn_app.name }}</a>"
+                        <li x-tooltip.raw.html.interactive="<a href='{{ opportunity.learn_app.url }}' target='_blank' class='underline'>{{ opportunity.learn_app.name }}</a>"
                             @click="selectedTab = 'Learn App'"
                             :class="{ 'active': selectedTab === 'Learn App' }">
                             <span>Learn App</span>
                             <div x-show="selectedTab === 'Learn App'"></div>
                         </li>
                         <!-- Delivery App Tab -->
-                        <li x-tooltip.raw.html.interactive.theme.light="<a href='{{ opportunity.deliver_app.url }}' target='_blank' class='underline'>{{ opportunity.deliver_app.name }}</a>"
+                        <li x-tooltip.raw.html.interactive="<a href='{{ opportunity.deliver_app.url }}' target='_blank' class='underline'>{{ opportunity.deliver_app.name }}</a>"
                             @click="selectedTab = 'Deliver App'"
                             :class="{ 'active': selectedTab === 'Deliver App' }">
                             <span>Deliver App</span>

@@ -233,14 +233,30 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 output_field=IntegerField(),
             )
 
+        def completed_work_status_total_subquery(status_value):
+            return Subquery(
+                CompletedWork.objects.filter(
+                    opportunity_access_id=OuterRef("pk"), status=status_value
+                )
+                .values("opportunity_access_id")
+                .annotate(status_count=Count("id", distinct=True))
+                .values("status_count")[:1],
+                output_field=IntegerField(),
+            )
+
         pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
         approved_count_sq = completed_work_status_subquery(CompletedWorkStatus.approved)
         rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
         over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
         incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
 
+        total_pending_for_user =completed_work_status_total_subquery(CompletedWorkStatus.pending)
+        total_approved_for_user =completed_work_status_total_subquery(CompletedWorkStatus.approved)
+        total_rejected_for_user =completed_work_status_total_subquery(CompletedWorkStatus.rejected)
+        total_over_limit_for_user =completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
+
         queryset = (
-            OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
+            OpportunityAccess.objects.filter(opportunity=opportunity)
             .annotate(
                 payment_unit_id=Value(payment_unit.pk),
                 payment_unit=Value(payment_unit.name, output_field=CharField()),
@@ -253,11 +269,17 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 duplicate=Coalesce(duplicate_sq, Value(0)),
                 over_limit=Coalesce(over_limit_count_sq, Value(0)),
                 incomplete=Coalesce(incomplete_count_sq, Value(0)),
+                total_pending=Coalesce(total_pending_for_user, Value(0)),
+                total_approved=Coalesce(total_approved_for_user, Value(0)),
+                total_rejected=Coalesce(total_rejected_for_user, Value(0)),
+                total_over_limit=Coalesce(total_over_limit_for_user, Value(0)),
             )
             .annotate(
                 completed=(
                     F('pending') + F('approved') + F('rejected') + F('over_limit')
-                )
+                ),
+                total_completed=(F('total_pending') + F('total_approved') + F('total_rejected') + F('total_over_limit'))
+
             )
             .select_related('user')
             .order_by('user__name')

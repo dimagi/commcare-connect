@@ -1882,7 +1882,6 @@ def worker_payments(request, org_slug=None, opp_id=None):
         "-payment_accrued"
     )
     query_set = query_set.annotate(
-        last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
         last_paid=Max("payment__date_paid"),
     )
     table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opp_id)
@@ -2224,7 +2223,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": "Payments",
                     "status": "Due",
                     "value": header_with_tooltip(intcomma(stats.payments_due),
-                                                 "Worker payments reported as paid"),
+                                                 "Worker payments reported as due"),
                 },
             ],
         },

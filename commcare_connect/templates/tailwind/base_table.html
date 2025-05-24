@@ -4,7 +4,7 @@
 {% load sort_link %}
 <div class="overflow-hidden table-container flex flex-col gap-2 mb-1">
   {% block table %}
-  <div class="w-full max-h-[80vh] overflow-x-auto block">
+  <div class="w-full overflow-x-auto block">
     <table class="base-table" {% render_attrs table.attrs %}>
       {% block table.thead %}
       {% if table.show_header %}
