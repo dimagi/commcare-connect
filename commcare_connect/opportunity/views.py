@@ -1251,11 +1251,16 @@ def payment_report(request, org_slug, pk):
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, pk)
     total_paid_users = (
-        Payment.objects.filter(opportunity_access__opportunity=opportunity).aggregate(total=Sum("amount"))["total"]
-        or 0
+        Payment.objects
+        .filter(
+            opportunity_access__opportunity=opportunity,
+            organization__isnull=True
+        )
+        .aggregate(total=Sum("amount"))["total"] or 0
     )
     total_paid_nm = (
-        Payment.objects.filter(organization=opportunity.organization).aggregate(total=Sum("amount"))["total"] or 0
+        Payment.objects.filter(organization=opportunity.organization,
+                               opportunity_access__opportunity=opportunity).aggregate(total=Sum("amount"))["total"] or 0
     )
     data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity)
     table = PaymentReportTable(data)
@@ -2223,7 +2228,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "name": "Payments",
                     "status": "Due",
                     "value": header_with_tooltip(intcomma(stats.payments_due),
-                                                 "Worker payments reported as due"),
+                                                 "Worker payments earned but yet unpaid"),
                 },
             ],
         },
