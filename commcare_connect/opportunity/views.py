@@ -1251,16 +1251,13 @@ def payment_report(request, org_slug, pk):
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, pk)
     total_paid_users = (
-        Payment.objects
-        .filter(
-            opportunity_access__opportunity=opportunity,
-            organization__isnull=True
-        )
-        .aggregate(total=Sum("amount"))["total"] or 0
+        Payment.objects.filter(opportunity_access__opportunity=opportunity, organization__isnull=True).aggregate(
+            total=Sum("amount"))["total"]
+        or 0
     )
     total_paid_nm = (
         Payment.objects.filter(organization=opportunity.organization,
-                               opportunity_access__opportunity=opportunity).aggregate(total=Sum("amount"))["total"] or 0
+                               invoice__opportunity=opportunity).aggregate(total=Sum("amount"))["total"] or 0
     )
     data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity)
     table = PaymentReportTable(data)
@@ -2025,7 +2022,7 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
         },
         {"stage": "Started Learning",
          "count": header_with_tooltip(result.started_learning_count,
-                                      "Workers that have submitted the first Learn form"),
+                                      "Workers who started downloading the Learn app"),
          "icon": "book-open-cover"
          },
         {"stage": "Completed Learning", "count": header_with_tooltip(result.completed_learning,

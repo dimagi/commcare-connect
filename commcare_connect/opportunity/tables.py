@@ -1288,8 +1288,9 @@ class WorkerDeliveryTable(OrgContextTable):
         percentage = round((current / total) * 100, 2)
 
         context = {
+            "current": current,
             "percentage": percentage,
-            "total": current,
+            "total": total,
             "number_style": True,
         }
 
