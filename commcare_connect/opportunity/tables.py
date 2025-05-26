@@ -863,7 +863,7 @@ class UserVisitVerificationTable(tables.Table):
         verbose_name="Flags",
         orderable=False,
         template_code="""
-            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
+            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal">
                 {% if record %}
                     {% if record.status == 'over_limit' %}
                     <span class="badge badge-sm negative-light mx-1">{{ record.get_status_display|lower }}</span>

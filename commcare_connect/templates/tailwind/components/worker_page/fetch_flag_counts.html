@@ -9,10 +9,17 @@
          positionMenu() {
              const rect = this.$el.getBoundingClientRect();
              const menu = this.$refs.menu;
-             const top = rect.bottom + 5;
-             const left = rect.left + rect.width/2 - menu.offsetWidth/2;
-             menu.style.top = top + 'px';
-             menu.style.left = left + 'px';
+             if (window.innerHeight - rect.bottom > rect.height + 20) {
+               const top = rect.bottom + 5;
+               const left = rect.left + rect.width/2 - menu.offsetWidth/2;
+               menu.style.top = top + 'px';
+               menu.style.left = left + 'px';
+             } else {
+               const bottom = (2 * rect.height);
+               const left = rect.left + rect.width/2 - menu.offsetWidth/2;
+               menu.style.bottom = bottom + 'px';
+               menu.style.left = left + 'px';
+             }
          }
      }"
      x-init="$watch('isOpen', value => {
