@@ -1,13 +1,29 @@
 {% load django_tables2 %}
 
 <form class="flex flex-col w-full gap-2"
-      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
-      hx-trigger="change, reload_table from:body"
-      hx-swap="outerHTML"
+      x-cloak
       x-data="{
-        activeTab: '{{ request.GET.filter_status|default:'all' }}',
-        page: 1,
-      }">
+        activeTab: '{{ request.GET.filter_status|default:"all" }}',
+        page: {{ request.GET.page|default:"1" }},
+        updateUrlAndRequest() {
+          const url = new URL(window.location);
+          const formData = new FormData(this.$el);
+          const params = new URLSearchParams();
+          for (let [key, value] of formData.entries()) {
+            if (value && String(value).trim() !== '') {
+              params.set(key, value);
+            }
+          }
+          url.search = params.toString();
+          window.history.pushState({}, '', url.toString());
+          this.$el.dispatchEvent(new CustomEvent('reload_table', { bubbles: true, detail: { reason: 'filters_changed' } }));
+        }
+      }"
+      @change="updateUrlAndRequest()"
+      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
+      hx-trigger="reload_table from:body"
+      hx-swap="outerHTML"
+>
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
     <div class="tabs">
       {% for tab in tabs %}

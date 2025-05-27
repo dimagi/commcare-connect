@@ -923,28 +923,36 @@ class UserVisitVerificationTable(tables.Table):
         }
 
     def render_icons(self, record):
-        status_to_icon = {
+        status_meta = {
             # Review Status Pending, Visit Status Approved
-            "approved_pending_review": "fa-solid fa-circle-check text-slate-300/50",
-            VisitValidationStatus.approved: "fa-solid fa-circle-check",
-            VisitValidationStatus.rejected: "fa-light fa-ban",
-            VisitValidationStatus.pending: "fa-light fa-flag-swallowtail",
-            VisitValidationStatus.duplicate: "fa-light fa-clone",
-            VisitValidationStatus.trial: "fa-light fa-marker",
-            VisitValidationStatus.over_limit: "fa-light fa-marker",
-            VisitReviewStatus.disagree: "fa-light fa-thumbs-down",
-            VisitReviewStatus.agree: "fa-light fa-thumbs-up",
+            "approved_pending_review": {"icon": "fa-solid fa-circle-check text-slate-300/50",
+                                        "tooltip": "Manually approved by NM"},
+            VisitValidationStatus.approved: {"icon": "fa-solid fa-circle-check", "tooltip": "Auto-approved"},
+            VisitValidationStatus.rejected: {"icon": "fa-light fa-ban"},
+            VisitValidationStatus.pending: {"icon": "fa-light fa-flag-swallowtail"},
+            VisitValidationStatus.duplicate: {"icon": "fa-light fa-clone"},
+            VisitValidationStatus.trial: {"icon": "fa-light fa-marker"},
+            VisitValidationStatus.over_limit: {"icon": "fa-light fa-marker"},
+            VisitReviewStatus.disagree: {"icon": "fa-light fa-thumbs-down", "tooltip": "Disagreed by PM"},
+            VisitReviewStatus.agree: {"icon": "fa-light fa-thumbs-up", "tooltip": "Agreed by PM"},
             # Review Status Pending (custom name, original choice clashes with Visit Pending)
-            "pending_review": "fa-light fa-timer",
+            "pending_review": {"icon": "fa-light fa-timer", "tooltip": "Pending Review by PM"},
         }
 
         if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
-            icon_class = status_to_icon[record.status]
-            icons_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+            meta = status_meta.get(record.status)
+            icon_class = meta["icon"]
+            tooltip = meta.get("tooltip")
+
+            icon_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+
+            if tooltip:
+                icon_html = header_with_tooltip(icon_html, tooltip)
+
             return format_html(
                 '<div class=" {} text-end text-brand-deep-purple text-lg">{}</div>',
                 "justify-end",
-                mark_safe(icons_html),
+                mark_safe(icon_html),
             )
 
         status = []
@@ -965,9 +973,15 @@ class UserVisitVerificationTable(tables.Table):
 
         icons_html = ""
         for status in status:
-            icon_class = status_to_icon[status]
+            meta = status_meta.get(status)
+            icon_class = icon_class = meta["icon"]
             if icon_class:
-                icons_html += f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+                tooltip = meta.get("tooltip")
+                icon_html = f'<i class="{icon_class} text-brand-deep-purple ml-4"></i>'
+                if tooltip:
+                    icon_html = header_with_tooltip(icon_html, tooltip)
+                icons_html += icon_html
+
         justify_class = "justify-end" if len(status) == 1 else "justify-between"
 
         return format_html(

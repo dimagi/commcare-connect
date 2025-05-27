@@ -18,7 +18,8 @@
     </div>
 
     <!-- Selected -->
-     {% if sidenav_active == name %}
+
+     {% if request.resolver_match.namespace == namespace %}
      <div class="absolute left-0 top-0 w-full h-full bg-brand-mango/20 rounded-lg"></div>
      <div class="absolute right-0 w-1 h-1/2 top-1/2 -translate-y-1/2 bg-brand-mango rounded-2xl"></div>
      {% endif %}
