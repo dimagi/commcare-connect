@@ -31,7 +31,6 @@ from .models import ConnectIDUserLink
 User = get_user_model()
 
 
-
 class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
     model = User
     fields = ["name"]
@@ -46,7 +45,6 @@ class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
         return self.request.user
 
 
-
 user_update_view = UserUpdateView.as_view()
 
 
@@ -55,7 +53,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self):
         if not self.request.user.memberships.exists():
-            return reverse("organization_create")
+            return reverse("home")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})

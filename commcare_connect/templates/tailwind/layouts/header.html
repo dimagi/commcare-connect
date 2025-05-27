@@ -6,15 +6,19 @@
         <!-- Left Section: Module Name -->
         <h1 class="text-lg text-brand-deep-purple font-medium">{{ header_title|default:"CommCare Connect" }}</h1>
 
+        {% if request.user.is_authenticated %}
         <!-- Right Section: Org, Profile Dropdown -->
         <div class="flex items-center gap-x-2">
-
             <!-- Organization selector -->
             <div x-data="{ open: false }" @click.away="open = false" class="relative mx-8">
                 <button @click="open = !open" class="flex items-center gap-2 focus:outline-none">
                     <div class="text-left">
-                        <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">{{ request.org.name }}</p>
-                        <p class="text-xs text-gray-400">{% if request.org.program_manager %}Program Manager{% else %}Network Manager{% endif %}</p>
+                        <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
+                          {{ request.org.name|default:"Select Organization" }}
+                        </p>
+                        {% if request.user.memberships.exists %}
+                        <p class="text-xs text-gray-400">{{ request.org.program_manager|yesno:"Program,Network"}} Manager</p>
+                        {% endif %}
                     </div>
 
                     <!-- Dropdown Toggle Icon -->
@@ -24,11 +28,11 @@
                 <!-- Organization Selector -->
                 <div x-show="open" x-transition.opacity x-cloak class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
                     <ul class="p-2 w-full">
-                        {% for membership in request.memberships %}
+                        {% for membership in request.user.memberships.all %}
                         <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
                           <a href="{% url 'opportunity:list' membership.organization.slug %}">
                             <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
-                            <p class="text-xs text-gray-400">{% if membership.organization.program_manager %}Program Manager{% else %}Network Manager{% endif %}</p>
+                            <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
                           </a>
                         </li>
                         {% endfor %}
@@ -70,5 +74,15 @@
                 </div>
             </div>
         </div>
+        {% else %}
+        <div class="flex items-center gap-x-4">
+          {% if ACCOUNT_ALLOW_REGISTRATION %}
+            <a id="sign-up-link" class="text-brand-deep-purple font-medium"
+               href="{% url 'account_signup' %}">{% translate "Sign Up" %}</a>
+          {% endif %}
+            <a id="log-in-link" class="text-brand-deep-purple font-medium"
+             href="{% url 'account_login' %}">{% translate "Sign In" %}</a>
+        </div>
+        {% endif %}
     </div>
 </header>
