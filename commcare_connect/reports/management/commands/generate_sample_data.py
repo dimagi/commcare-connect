@@ -244,6 +244,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{num_visits} test visits and associated invoices/payments generated successfully for organization {org.name}!"
+                f"{num_visits} test visits and associated invoices/payments generated successfully for organization {org.name}!"  # noqa: E501
             )
         )

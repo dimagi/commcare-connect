@@ -115,6 +115,8 @@ class Opportunity(BaseModel):
 
     @property
     def remaining_budget(self) -> int:
+        if self.total_budget is None:
+            return 0
         return self.total_budget - self.claimed_budget
 
     @property
@@ -160,6 +162,8 @@ class Opportunity(BaseModel):
 
     @property
     def number_of_users(self):
+        if not self.total_budget:
+            return 0
         if not self.managed:
             return self.total_budget / self.budget_per_user
 
@@ -664,7 +668,10 @@ class UserVisit(XFormBaseModel):
     @property
     def flags(self):
         if self.flag_reason is not None:
-            return [flag for flag, _ in self.flag_reason.get("flags", [])]
+            from commcare_connect.utils.flags import FlagLabels
+
+            flags = [FlagLabels.get_label(flag) for flag, _ in self.flag_reason.get("flags", [])]
+            return flags
         return []
 
     class Meta:

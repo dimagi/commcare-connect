@@ -308,6 +308,16 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
     def report_url(self):
         return reverse("reports:delivery_stats_report")
 
+    def get_template_names(self):
+        if self.request.htmx:
+            return ["tailwind/base_table.html"]
+        return ["reports/report_table.html"]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["report_url"] = reverse("reports:delivery_stats_report")
+        return context
+
     @cached_property
     def filter_values(self):
         filters = {}

@@ -1,1 +1,31 @@
-{% extends "base.html" %}
+{% extends "tailwind/base.html" %}
+
+{% load i18n %}
+
+{% block content %}
+{% if not request.user.is_authenticated %}
+<div class="py-8 px-4 mx-auto max-w-screen-xl text-center lg:py-16">
+    <h1 class="mb-4 text-4xl font-extrabold tracking-tight leading-none text-gray-900 md:text-5xl lg:text-6xl">CommCare Connect</h1>
+    <p class="mb-8 text-lg font-normal text-gray-500 lg:text-xl sm:px-16 lg:px-48">
+      {% blocktrans %}Unlocking more impact from Frontline Workers{% endblocktrans %}
+    </p>
+    <div class="flex flex-col space-y-4 sm:flex-row sm:justify-center sm:space-y-0">
+      <a href="{% url 'account_signup' %}" class="button button-md primary-dark !inline-flex items-center">
+            Create Account
+            <svg class="w-3.5 h-3.5 ms-2 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 10">
+                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 5h12m0 0L9 1m4 4L9 9"/>
+            </svg>
+      </a>
+    </div>
+</div>
+{% else %}
+<div class="card_bg">
+  <div class="flex flex-col item-center justify-center gap-4 h-[80vh]">
+    <p class="max-w-1/2 mx-auto text-center text-gray-500 text-sm">
+      Welcome to CommCare Connect. You can enter an organisational workspace or create a new one through the dropdown on the top right of this page
+    </p>
+    <i class="fa-light fa-box-open text-5xl mx-auto text-gray-500"></i>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

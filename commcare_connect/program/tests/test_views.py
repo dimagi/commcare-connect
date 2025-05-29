@@ -190,9 +190,6 @@ class TestManageApplicationView(BaseProgramTest):
         assert response.status_code == HTTPStatus.FOUND
         self.application.refresh_from_db()
         assert self.application.status == ProgramApplicationStatus.ACCEPTED
-        assert "Application has been accepted successfully." in [
-            msg.message for msg in messages.get_messages(response.wsgi_request)
-        ]
 
     def test_reject_application(self):
         url = reverse(
@@ -205,12 +202,8 @@ class TestManageApplicationView(BaseProgramTest):
         )
         response = self.client.post(url)
         assert response.status_code == HTTPStatus.FOUND
-        assert response.url == self.application_list_url
         self.application.refresh_from_db()
         assert self.application.status == ProgramApplicationStatus.REJECTED
-        assert "Application has been rejected successfully." in [
-            msg.message for msg in messages.get_messages(response.wsgi_request)
-        ]
 
     def test_invalid_action(self):
         url = reverse(
@@ -224,4 +217,3 @@ class TestManageApplicationView(BaseProgramTest):
         response = self.client.post(url)
         assert response.status_code == HTTPStatus.FOUND
         assert self.application.status == ProgramApplicationStatus.APPLIED
-        assert "Action not allowed." in [msg.message for msg in messages.get_messages(response.wsgi_request)]

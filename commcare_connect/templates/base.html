@@ -74,7 +74,7 @@
         <ul class="navbar-nav ms-auto">
           {% if request.user.is_authenticated %}
             <li class="nav-item">
-              <a class="nav-link {% active_link "users:detail" %}"
+              <a class="nav-link {% active_link "account_email" %}"
                  href="{% url 'account_email' %}">{% translate "My Profile" %}</a>
             </li>
             <li class="nav-item">

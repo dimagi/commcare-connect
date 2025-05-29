@@ -171,12 +171,14 @@
   <!-- Verification Flags -->
   <div class="grid grid-cols-3 gap-4">
     <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
+    {% if user_visit.location %}
     <div>
       <div class="text-sm text-brand-blue-light">Location</div>
       <div class="text-sm font-normal text-brand-deep-purple">Less than {{ closest_distance }} metres</div>
     </div>
+    {% endif %}
     {% if user_visit.flagged %}
-      {% for flag in user_visit.flag_reason.flags %}
+      {% for flag in flags %}
         <div>
           <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
           <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
@@ -314,19 +316,20 @@
 {% else %}
   <div>
     <button class="button button-md positive-light"
-    {% if user_visit.status == "approved"%}
-      disabled
+    {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %}
       {% if user_visit.opportunity.managed %}
       @click="showRejectModal = false; showApproveModal = true;"
       {% else %}
       hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
       hx-swap="none"
       {% endif %}
+    {% else %}
+      disabled
     {% endif %}>
       Approve
     </button>
     <button class="button button-md negative-light"
-    {% if user_visit.status != "rejected" %}
+    {% if user_visit.status != "rejected" or user_visit.review_status == "disagree" %}
       @click="showRejectModal = true; showApproveModal = false;"
     {% else %}
       disabled

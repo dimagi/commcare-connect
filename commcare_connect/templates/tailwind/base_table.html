@@ -4,7 +4,7 @@
 {% load sort_link %}
 <div class="overflow-hidden table-container flex flex-col gap-2 mb-1">
   {% block table %}
-  <div class="w-full max-h-[80vh] overflow-x-auto block">
+  <div class="w-full overflow-x-auto block">
     <table class="base-table" {% render_attrs table.attrs %}>
       {% block table.thead %}
       {% if table.show_header %}
@@ -74,7 +74,7 @@
   </div>
   {% endblock table %}
   {% block pagination %}
-  {% if table.page and table.paginator.num_pages > 1 %}
+  {% if table.page and table.paginator.count > DEFAULT_PAGE_SIZE %}
   <div x-data class="table-footer w-full flex items-center justify-between h-14  bg-slate-50  text-brand-deep-purple py-2 px-4 rounded-lg">
     <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
         {% if table.page.has_previous %}
@@ -116,7 +116,19 @@
                 <i class="fa-light fa-chevron-right"></i>
             </span>
         {% endif %}
-    </div>
+       <!-- Right: Page Size Selector -->
+      <div class="flex items-center gap-2 text-sm">
+        <label for="page-size" class="whitespace-nowrap">{% trans "Rows per page" %}</label>
+        <select
+          id="page-size"
+          name="page_size"
+          class="base-input w-16"
+          @change="goToPage('page_size', $event.target.value)">
+          {% for size in PAGE_SIZE_OPTIONS %}
+             <option value="{{ size }}" {% if request.GET.page_size == size|stringformat:"s" %}selected{% endif %}>{{ size }}</option>
+          {% endfor %}
+        </select>
+      </div>
 </div>
   {% endif %}
 

@@ -1,5 +1,5 @@
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Button, Field, Layout, Row, Submit, Column
+from crispy_forms.layout import Button, Column, Field, Layout, Row, Submit
 from django import forms
 
 from commcare_connect.opportunity.forms import OpportunityInitForm
@@ -98,9 +98,8 @@ class ManagedOpportunityInitForm(OpportunityInitForm):
         )
         opportunity_details_row = self.helper.layout[0]
         organization_field_layout = Column(
-                    Field("organization"),
-                    css_class="col-span-2"  # This makes the field take the full width of the grid row
-                )
+            Field("organization"), css_class="col-span-2"  # This makes the field take the full width of the grid row
+        )
         opportunity_details_row.fields.insert(1, organization_field_layout)
 
     def save(self, commit=True):

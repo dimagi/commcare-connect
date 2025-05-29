@@ -126,15 +126,15 @@
                     <p class="hint">{{ application.date_created|date }}</p>
                     <div class="flex items-center gap-2 font-normal">
                       {% if application.status == 'rejected' %}
-                      <span class="badge badge-md negative-dark">rejected</span>
+                      <span class="badge badge-md negative-dark">Rejected</span>
                       {% elif application.status == 'declined' %}
-                      <span class="badge badge-md negative-dark">declined</span>
+                      <span class="badge badge-md negative-dark">Declined</span>
                       {% elif application.status == 'invited' %}
-                      <span class="badge badge-md warning-dark">invited</span>
+                      <span class="badge badge-md warning-dark">Invited</span>
                       {% elif application.status == 'applied' %}
-                      <span class="badge badge-md primary-dark">applied</span>
+                      <span class="badge badge-md primary-dark">Applied</span>
                       {% elif application.status == 'accepted' %}
-                      <span class="badge badge-md positive-dark">accepted</span>
+                      <span class="badge badge-md positive-dark">Accepted</span>
                       {% endif %}
                     </div>
                   </div>

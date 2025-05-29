@@ -23,7 +23,7 @@ class OrganizationChangeForm(forms.ModelForm):
             layout.Field("name"),
             layout.Div(
                 layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
-                css_class="flex justify-end"
+                css_class="flex justify-end",
             ),
         )
 
@@ -51,8 +51,9 @@ class MembershipForm(forms.ModelForm):
                 layout.Field("email", wrapper_class="col-md-5"),
                 layout.Field("role", wrapper_class="col-md-5"),
                 layout.Div(
-                    layout.Submit("submit", gettext("Submit"), css_class="button button-md primary-dark float-end")),
-                css_class="flex flex-col"
+                    layout.Submit("submit", gettext("Submit"), css_class="button button-md primary-dark float-end")
+                ),
+                css_class="flex flex-col",
             ),
         )
 
@@ -73,7 +74,7 @@ class AddCredentialForm(forms.Form):
         widget=forms.Textarea(
             attrs=dict(
                 placeholder="Enter the phone numbers of the users you want to add the "
-                            "credential to, one on each line.",
+                "credential to, one on each line.",
             )
         ),
     )
@@ -86,9 +87,14 @@ class AddCredentialForm(forms.Form):
 
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
-            layout.Row(layout.Field("credential"), layout.Field("users"), layout.Div(
-                layout.Submit("submit", gettext("Submit"), css_class="button button-md primary-dark float-end")),
-                       css_class="flex flex-col"),
+            layout.Row(
+                layout.Field("credential"),
+                layout.Field("users"),
+                layout.Div(
+                    layout.Submit("submit", gettext("Submit"), css_class="button button-md primary-dark float-end")
+                ),
+                css_class="flex flex-col",
+            ),
         )
 
     def clean_users(self):

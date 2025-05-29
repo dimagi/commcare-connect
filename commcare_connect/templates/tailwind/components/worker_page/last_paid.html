@@ -18,8 +18,8 @@
      x-init="$watch('isOpen', value => {
          if (value && !historyLoaded) {
              // Only hx-trigger first time
-             $dispatch('load-payment-history'); 
-             historyLoaded = true; 
+             $dispatch('load-payment-history');
+             historyLoaded = true;
          }
      })"
      x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })"
@@ -36,10 +36,10 @@
          class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap"
          style="display: none">
 
-        <div 
-            hx-get="{% url 'opportunity:worker_payment_history' org_slug=org_slug opp_id=opp_id access_id=record.pk %}" 
+        <div
+            hx-get="{% url 'opportunity:worker_payment_history' org_slug=org_slug opp_id=opp_id access_id=record.pk %}"
             hx-trigger="load-payment-history from:closest div[x-data]" hx-swap="outerHTML">
-            <p class="text-slate-500">Loading payment history...</p> 
+            <p class="text-slate-500">Loading payment history...</p>
         </div>
     </div>
 </div>

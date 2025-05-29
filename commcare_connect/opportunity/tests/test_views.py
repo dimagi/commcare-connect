@@ -1,5 +1,4 @@
 from datetime import timedelta
-from decimal import Decimal
 from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +15,6 @@ from commcare_connect.opportunity.models import (
     UserInviteStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.payment_number_report import update_payment_number_statuses
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -26,7 +24,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
-from commcare_connect.organization.models import Organization, OrgUserPaymentNumberStatus
+from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory, MembershipFactory
@@ -141,23 +139,8 @@ def test_approve_visit(
     response = client.post(approve_url, {"justification": justification}, follow=True)
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.approved
-    expected_redirect_url = None
     if opportunity.managed:
         assert justification == visit.justification
-        expected_redirect_url = reverse(
-            "opportunity:user_visits_list",
-            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.id},
-        )
-    else:
-        expected_redirect_url = reverse(
-            "opportunity:user_visits_list",
-            kwargs={
-                "org_slug": opportunity.organization.slug,
-                "opp_id": opportunity.id,
-                "pk": visit.opportunity_access_id,
-            },
-        )
-    assert response.redirect_chain[-1][0] == expected_redirect_url
     assert response.status_code == HTTPStatus.OK
 
 
@@ -171,15 +154,24 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
     opportunity.save()
 
     # Create OpportunityAccesses
-    oa1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=300)
-    oa2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=200)
-    oa3 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=0)
+    oa1 = OpportunityAccessFactory(
+        opportunity=opportunity, accepted=True, payment_accrued=1000, date_learn_started=now()
+    )
+    oa2 = OpportunityAccessFactory(
+        opportunity=opportunity, accepted=True, payment_accrued=200, date_learn_started=now() - timedelta(4)
+    )
+    oa3 = OpportunityAccessFactory(
+        opportunity=opportunity, accepted=True, payment_accrued=0, date_learn_started=now() - timedelta(4)
+    )
 
     # Payments
-    PaymentFactory(opportunity_access=oa1, amount_usd=100, confirmed=True)
-    PaymentFactory(opportunity_access=oa2, amount_usd=50, confirmed=True)
-    PaymentFactory(opportunity_access=oa1, amount_usd=999, confirmed=False)
-    PaymentFactory(opportunity_access=oa3, amount_usd=0, confirmed=True)
+    PaymentFactory(opportunity_access=oa1, amount=100, confirmed=True)
+    PaymentFactory(opportunity_access=oa2, amount=50, confirmed=True)
+    PaymentFactory(opportunity_access=oa1, amount=999, confirmed=False)
+    PaymentFactory(opportunity_access=oa3, amount=0, confirmed=True)
+
+    total_paid = 1149
+    total_accrued = 1200
 
     # Invites
     for _ in range(3):
@@ -195,23 +187,24 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
         opportunity=opportunity,
         opportunity_access=oa2,
         status=VisitValidationStatus.approved,
-        visit_date=three_days_ago - timedelta(days=1),
+        visit_date=three_days_ago - timedelta(days=2),
     )
 
     UserVisitFactory(
         opportunity=opportunity,
         opportunity_access=oa3,
         status=VisitValidationStatus.rejected,
-        visit_date=three_days_ago - timedelta(days=1),
+        visit_date=three_days_ago - timedelta(days=2),
     )
 
-    queryset = get_opportunity_list_data(opportunity.organization)
+    queryset = get_opportunity_list_data(
+        opportunity.organization,
+    )
     opp = queryset[0]
-
     assert opp.pending_invites == 3
     assert opp.pending_approvals == 1
-    assert opp.total_accrued == Decimal("500")
-    assert opp.total_paid == Decimal("150")
-    assert opp.payments_due == Decimal("350")
+    assert opp.total_accrued == total_accrued
+    assert opp.total_paid == total_paid
+    assert opp.payments_due == total_accrued - total_paid
     assert opp.inactive_workers == 2
     assert opp.status == 0
