@@ -71,9 +71,32 @@
         this.modalCurrentIndex = index;
     }
 }">
-
-
   <!-- Message Section -->
+
+  {% if user_visit.reason %}
+  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+    <div class="flex items-center gap-4">
+      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <div class="flex items-center gap-1">
+        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+        <span class="flex items-center text-xs text-brand-blue-light">
+          <span class="mr-1 text-2xl text-brand-indigo">•</span>
+          {{ user_visit.opportunity.organization.name }}
+        </span>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center gap-4 mt-2">
+        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+           @click="message.expanded = !message.expanded"></i>
+        <p class="text-xs text-brand-deep-purple">
+          {{ user_visit.reason }}
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if user_visit.justification %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
@@ -148,6 +171,12 @@
   <!-- Verification Flags -->
   <div class="grid grid-cols-3 gap-4">
     <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
+    {% if user_visit.location %}
+    <div>
+      <div class="text-sm text-brand-blue-light">Location</div>
+      <div class="text-sm font-normal text-brand-deep-purple">Less than {{ closest_distance }} metres</div>
+    </div>
+    {% endif %}
     {% if user_visit.flagged %}
       {% for flag in user_visit.flag_reason.flags %}
         <div>
@@ -160,19 +189,40 @@
       <div class="text-sm text-brand-blue-light">Form Duration</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
     </div>
+    {% if deliver_unit_flags_config.require_attachments %}
     <div>
       <div class="text-sm text-brand-blue-light">Photos</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
     </div>
+    {% endif %}
   </div>
 
   <hr class="h-px bg-gray-200 border-0">
 
   <!-- Map -->
+  {% if user_visit.location %}
   <div>
     <p class="mb-3 text-sm font-medium text-brand-deep-purple">Map</p>
-    <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
+    <div class="relative">
+      <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
+      <div id="mapbox-menu" class="absolute top-0 left-0 m-1 inline-flex primary-light rounded-lg">
+        <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
+          <input class="hidden" type="radio" name="options" id="streets-v12" checked> Streets
+        </label>
+        <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
+          <input class="hidden" type="radio" name="options" id="satellite-streets-v12"> Satellite
+        </label>
+      </div>
+
+      <div id="legend" class="absolute right-0 top-0 bg-white/75 p-2 rounded-lg m-1">
+        <h4 class="text-sm font-bold">Service Records</h4>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-green-600"></i> Under review</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-sky-600"></i> Closest from this user</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-red-600"></i> Closest from others</div>
+      </div>
+    </div>
   </div>
+  {% endif %}
 
   <!-- Popup Modal -->
   <div x-cloak
@@ -240,35 +290,51 @@
   </div>
 </div>
 
-{% if is_program_manager %}
-<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm pe-2"
+  x-data="{showRejectModal: false, showApproveModal: false}"
   id="visit-actions"
   hx-swap-oob="true">
+{% if is_program_manager %}
+  {% if user_visit.review_created_on %}
   <div class="flex gap-4">
     <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity_id %}"
       hx-swap="none">
       <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
-      <button class="button button-md outline-style" value="disagree" name="review_status">Disagree</button>
-      <button class="button button-md primary-dark" value="agree" name="review_status">Agree</button>
+      <button class="button button-md outline-style"
+        {% if user_visit.review_status != "disagree" %}value="disagree"{% else %}disabled{% endif %}
+        name="review_status">
+        Disagree
+      </button>
+      <button class="button button-md primary-dark"
+        {% if user_visit.review_status != "agree" %}value="agree"{% else %}disabled{% endif %}
+        name="review_status">
+        Agree
+      </button>
     </form>
   </div>
-</div>
+  {% endif %}
 {% else %}
-<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
-  x-data="{showRejectModal: false, showApproveModal: false}"
-  id="visit-actions"
-  hx-swap-oob="true">
   <div>
     <button class="button button-md positive-light"
-    {% if user_visit.opportunity.managed %}
+    {% if user_visit.status == "approved"%}
+      disabled
+      {% if user_visit.opportunity.managed %}
       @click="showRejectModal = false; showApproveModal = true;"
-    {% else %}
+      {% else %}
       hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
       hx-swap="none"
+      {% endif %}
     {% endif %}>
       Approve
     </button>
-    <button class="button button-md negative-light" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
+    <button class="button button-md negative-light"
+    {% if user_visit.status != "rejected" %}
+      @click="showRejectModal = true; showApproveModal = false;"
+    {% else %}
+      disabled
+    {% endif %}>
+      Reject
+    </button>
   </div>
 
   <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
@@ -326,8 +392,8 @@
     </div>
   </div>
   {% endif %}
-</div>
 {% endif %}
+</div>
 
 {{ visit_data|json_script:"visit_data" }}
 {{ user_forms|json_script:"user_forms" }}

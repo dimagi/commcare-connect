@@ -1,0 +1,135 @@
+{% extends 'program/program_base.html' %}
+
+{% block inner %}
+  <div class="flex flex-col gap-4">
+    {% for program in programs %}
+        <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative"
+             x-data="{ showOpp: false, status: '{{ program.status }}' }">
+        <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+        <div class="flex w-full justify-between">
+          <!-- program details -->
+          <div class="flex items-center gap-2 font-normal">
+            {% if program.status == 'invited' %}
+              <div class="h-2 w-2 bg-brand-marigold rounded-full"></div>
+            {% elif program.status == 'applied' %}
+              <div class="h-2 w-2 bg-brand-deep-purple rounded-full"></div>
+            {% elif program.status == 'accepted' %}
+              <div class="h-2 w-2 bg-green-600 rounded-full"></div>
+            {% endif %}
+            <p class="hint">{{ program.organization.name }}</p>
+          </div>
+
+          <!-- invitataion status -->
+          <div class="flex items-center justify-end gap-6">
+            {% if program.status %}
+              <span class="badge badge-md"
+                    :class="{
+                      'warning-dark': status == 'invited',
+                      'primary-dark': status == 'applied',
+                      'positive-dark': status == 'accepted'
+                    }"
+                    x-text="status"></span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="w-full">
+          <p class="card_title">{{ program.name }}</p>
+          <p class="card_description w-full max-w-1/2">{{ program.description }}</p>
+        </div>
+        <div class="flex justify-between items-center">
+          <!-- program info -->
+          <div class="flex items-center gap-6">
+              <div class="infocard-dark">
+                  <i class="fa-light fa-file-check"></i>
+                  <div>
+                      <h6>Delivery Type</h6>
+                      <p>{{ program.delivery_type.name }}</p>
+                  </div>
+              </div>
+              <div class="line my-2 h-8 w-1 bg-gray-200"></div>
+              <div class="infocard-dark">
+                  <i class="fa-light fa-calendar-arrow-up"></i>
+                  <div>
+                      <h6>Start Date</h6>
+                      <p>{{ program.start_date }}</p>
+                  </div>
+              </div>
+              <div class="infocard-dark">
+                  <i class="fa-light fa-arrow-right text-brand-mango"></i>
+                  <div>
+                      <h6>End Date</h6>
+                      <p>{{ program.end_date }}</p>
+                  </div>
+              </div>
+          </div>
+
+          <!-- button -->
+          {% if program.status == 'invited' %}
+            <button hx-post="{% url "program:apply_or_decline_application" request.org.slug program.id program.application_id "apply" %}"
+                  hx-swap="outerHTML"
+                  hx-target="body"
+                  class="button button-md primary-dark">
+              Apply
+            </button>
+          {% elif program.status == 'applied' %}
+            <button class="button button-md neutral" disabled>Apply</button>
+          {% elif program.status == 'accepted' %}
+            {% if program.managedopportunity_set.all %}
+              <button class="button button-md outline-style" @click="showOpp = !showOpp">
+                <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
+                <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              </button>
+            {% endif %}
+          {% endif %}
+        </div>
+        {% if program.status == 'accepted' %}
+          {% if program.managedopportunity_set.all %}
+            <div id="opportunity-container" class="flex flex-col gap-y-4 py-4" style="display:none;" x-cloak x-show="showOpp">
+              {% for opportunity in program.managedopportunity_set.all %}
+                <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
+                  <div class="flex justify-between w-full">
+                    <div class="flex flex-col gap-5 w-1/2">
+                      <div class="flex items-center gap-2 font-normal">
+                        <div class="w-2 h-2 bg-green-600 rounded-full"></div>
+                        <p class="hint">{{ opportunity.organization.name }}</p>
+                      </div>
+                      <div>
+                        <p class="card_title">{{ opportunity.name }}</p>
+                        <p class="card_description">{{ opportunity.description }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-6">
+                      <div class="infocard-dark">
+                          <i class="fa-light fa-calendar-arrow-up"></i>
+                          <div>
+                              <h6>Start Date</h6>
+                              <p>{{opportunity.start_date}}</p>
+                          </div>
+                      </div>
+                      <div class="infocard-dark">
+                          <i class="fa-light fa-arrow-right text-brand-mango"></i>
+                          <div>
+                              <h6>End Date</h6>
+                              <p>{{opportunity.end_date}}</p>
+                          </div>
+                      </div>
+                    </div>
+                    <a class="button button-md button-outline-rounded" href="{% url "opportunity:detail" request.org.slug opportunity.id %}">
+                      <div class="flex items-center justify-between gap-4">
+                        <p class="text-sm">View</p>
+                        <i class="fa-light fa-arrow-right"></i>
+                      </div>
+                    </a>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

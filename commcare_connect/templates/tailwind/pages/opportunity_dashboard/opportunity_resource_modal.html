@@ -1,0 +1,86 @@
+<div x-show="showModal"
+    class="fixed inset-0 z-50 overflow-y-auto">
+
+    <!-- Background overlay -->
+    <div class="fixed inset-0 bg-black/50 bg-opacity-50 transition-opacity"
+            @click="showModal = false;"></div>
+
+    <!-- Modal content -->
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="relative rounded-2xl bg-gray-100 shadow-xl w-2/3 h-1/2 mx-auto overflow-hidden p-3"
+                @click.away="showModal = false;">
+            <!-- Modal header with tabs -->
+            <div class="flex flex-col w-full"
+                 x-init="selectedTab='Learn App'">
+
+
+                <!-- Tabs -->
+                <div class="flex relative mx-auto items-center shadow rounded-lg justify-between w-full px-3 mb-3 bg-slate-50 h-14">
+                    <ul class="tabs">
+                        <li x-tooltip.raw.html.interactive="<a href='{{ opportunity.learn_app.url }}' target='_blank' class='underline'>{{ opportunity.learn_app.name }}</a>"
+                            @click="selectedTab = 'Learn App'"
+                            :class="{ 'active': selectedTab === 'Learn App' }">
+                            <span>Learn App</span>
+                            <div x-show="selectedTab === 'Learn App'"></div>
+                        </li>
+                        <!-- Delivery App Tab -->
+                        <li x-tooltip.raw.html.interactive="<a href='{{ opportunity.deliver_app.url }}' target='_blank' class='underline'>{{ opportunity.deliver_app.name }}</a>"
+                            @click="selectedTab = 'Deliver App'"
+                            :class="{ 'active': selectedTab === 'Deliver App' }">
+                            <span>Deliver App</span>
+                            <div x-show="selectedTab === 'Deliver App'"></div>
+                        </li>
+                        <!-- Payment Units Tab -->
+                        <li @click="selectedTab = 'Payments Units'"
+                            :class="{ 'active': selectedTab === 'Payments Units' }">
+                            <span>Payment Units</span>
+                            <div x-show="selectedTab === 'Payments Units'"></div>
+                        </li>
+                    </ul>
+
+                    <!-- Close button -->
+                    <button @click="showModal = false;" id="button" class="button-icon" >
+                        <i class="fa-light fa-xmark-large text-brand-deep-purple"></i>
+                    </button>
+                </div>
+
+                <!-- Modal body / Tab content -->
+                <div class="z-50 bg-white ">
+                    <div x-show="selectedTab === 'Learn App'"
+                            hx-get="{% url 'opportunity:learn_module_table' request.org.slug opportunity.id %}"
+                            hx-trigger="tabShown from:body"
+                            hx-swap="innerHTML"
+                            class=" rounded-lg h-full w-full">
+                        <div class="flex justify-center items-center h-full">
+                            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
+                        </div>
+                    </div>
+
+                    <!-- Deliver App Content -->
+                    <div x-show="selectedTab === 'Deliver App'"
+                            hx-get="{% url 'opportunity:deliver_unit_table' request.org.slug opportunity.id %}"
+                            hx-trigger="tabShown from:body"
+                            hx-swap="innerHTML"
+                            class="rounded-lg h-full w-full">
+                        <div class="flex justify-center items-center h-full">
+                            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Units Content -->
+                    <div x-show="selectedTab === 'Payments Units'"
+                            hx-get="{% url 'opportunity:payment_unit_table' request.org.slug opportunity.id %}"
+                           hx-trigger="tabShown from:body"
+                            hx-swap="innerHTML"
+                            class="rounded-lg h-full w-full">
+                        <div class="flex justify-center items-center h-full">
+                            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-deep-purple"></div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>

@@ -149,12 +149,10 @@ The project has a staging environment at [https://connect-staging.dimagi.com/](h
 which is connected to the staging environment of CommCare HQ at
 [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
 
-By convention, the `pkv/staging` branch is used for changes that are on the staging environment.
-To put your own changes on the staging environment, you can create merge your own branch into
-`pkv/staging` and then push it to GitHub.
-
-After that, you can deploy to the staging environment by manually running the `deploy`
-[workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
+- Update [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml) with the branches you need to include.
+- Run `.deploy/rebuildstaging` to build the `autostaging` branch
+- After this, you can deploy to the staging environment by manually running the `deploy`
+  [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
 ### Custom Bootstrap Compilation
 

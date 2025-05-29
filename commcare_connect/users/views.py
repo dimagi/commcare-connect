@@ -11,7 +11,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
-from django.views.generic import DetailView, RedirectView, UpdateView, View
+from django.views.generic import RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -28,23 +28,15 @@ from .models import ConnectIDUserLink
 User = get_user_model()
 
 
-class UserDetailView(LoginRequiredMixin, DetailView):
-    model = User
-    slug_field = "id"
-    slug_url_kwarg = "id"
-
-
-user_detail_view = UserDetailView.as_view()
-
-
 class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
     model = User
     fields = ["name"]
     success_message = _("Information successfully updated")
+    template_name = "users/user_form.html"
 
     def get_success_url(self):
         assert self.request.user.is_authenticated  # for mypy to know that the user is authenticated
-        return self.request.user.get_absolute_url()
+        return reverse("account_email")
 
     def get_object(self):
         return self.request.user
@@ -62,7 +54,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
-        return reverse("users:detail", kwargs={"pk": self.request.user.pk})
+        return reverse("account_email")
 
 
 user_redirect_view = UserRedirectView.as_view()
@@ -115,6 +107,10 @@ def start_learn_app(request):
     with transaction.atomic():
         if access_object.date_learn_started is None:
             access_object.date_learn_started = now()
+
+            if not access_object.last_active or access_object.last_active < access_object.date_learn_started:
+                access_object.last_active = access_object.date_learn_started
+
         access_object.accepted = True
         access_object.save()
         user_invite = UserInvite.objects.get(opportunity_access=access_object)

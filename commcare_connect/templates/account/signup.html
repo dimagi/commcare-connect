@@ -1,26 +1,97 @@
 {% extends "account/base.html" %}
 
+{% load static %}
 {% load i18n %}
-{% load crispy_forms_tags %}
+{% load socialaccount %}
 
 {% block head_title %}{% translate "Signup" %}{% endblock %}
 
 {% block inner %}
-<h1 class="mb-4 text-center">{% translate "Sign Up" %}</h1>
+<div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+  <form method="post" class="flex flex-col gap-4">
+    {% csrf_token %}
+    <h6 class="title text-brand-deep-purple">{% translate "Signup" %}</h6>
+    <span class="text-sm text-gray-600">{% blocktranslate %}Please enter your details{% endblocktranslate %}</span>
+    {% if form.non_field_errors %}
+      {% for error in form.non_field_errors %}<p class="text-sm text-red-600">* {{ error }}</p>{% endfor %}
+    {% endif %}
+    <div class="input-group {% if form.email.errors %}error{% endif %}">
+      <div class="simple-input">
+        <input type="email"
+               placeholder="{% translate "Enter Email ID" %}"
+               required
+               id="{{ form.email.auto_id }}"
+               {% if form.email.value != None %}value="{{ form.email.value|stringformat:'s' }}"{% endif %}
+               name="{{ form.email.html_name }}">
+        <i class="fa-light fa-envelope"></i>
+        <span class="error-icon fa-solid fa-circle-exclamation"></span>
+      </div>
+      {% for error in form.email.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+    </div>
+    <div class="input-group {% if form.password1.errors %}error{% endif %}">
+      <div class="simple-input">
+        <input type="password"
+               placeholder="{% translate "Password" %}"
+               required
+               id="{{ form.password1.auto_id }}"
+               {% if form.password1.value != None %}value="{{ form.password1.value|stringformat:'s' }}"{% endif %}
+               name="{{ form.password1.html_name }}">
+        <i class="fa-light fa-lock"></i>
+        <span class="error-icon fa-solid fa-circle-exclamation"></span>
+      </div>
+      {% for error in form.password1.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+    </div>
+    <div class="input-group {% if form.password2.errors %}error{% endif %}">
+      <div class="simple-input">
+        <input type="password"
+               placeholder="{% translate "Confirm Password" %}"
+               required
+               id="{{ form.password2.auto_id }}"
+               {% if form.password2.value != None %}value="{{ form.password2.value|stringformat:'s' }}"{% endif %}
+               name="{{ form.password2.html_name }}">
+        <i class="fa-light fa-lock"></i>
+        <span class="error-icon fa-solid fa-circle-exclamation"></span>
+      </div>
+      {% for error in form.password2.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+    </div>
+    <!-- Checkbox and Submit -->
+    <div class="flex flex-col items-end gap-3">
+      <div class="input-group"
+           x-data="{ expanded: false }"
+           x-effect="document.body.style.overflow = expanded ? 'hidden' : 'auto'"
+           :class="{'error': !termsValid && termsTouched}">
+        <div class="flex items-start w-full gap-2">
+          <input type="checkbox" class="simple-checkbox aspect-square" required />
+          <p class="hint">
+            <span>{% blocktranslate %}By accessing CommCare Connect, you accept our {% endblocktranslate %}</span>
+            <button class="font-medium cursor-pointer text-brand-indigo"
+                    x-on:click.prevent="expanded = true">Terms & Conditions and Privacy Policy</button>
+            <div x-show="expanded" x-cloak>{% include "account/terms-and-conditions-modal.html" %}</div>
+          </p>
+        </div>
+        <p class="error-msg">{% blocktranslate %}You must accept the terms and conditions{% endblocktranslate %}</p>
+      </div>
+      <button class="button button-md primary-dark" type="submit">
+        <span class="relative z-20">{% translate "Signup" %}</span>
+      </button>
+    </div>
+  </form>
 
-<form class="signup" id="signup_form" method="post" action="{% url 'account_signup' %}">
-  {% csrf_token %}
-  {{ form|crispy }}
-  {% if redirect_field_value %}
-  <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
-  {% endif %}
+  <span class="text-sm text-center text-gray-600">or</span>
 
-  <button class="btn btn-primary mt-1 w-100" type="submit">{% translate "Sign Up" %} &raquo;</button>
+  <div class="space-y-2 place-items-center">
+    <form method="post" action="{% provider_login_url "commcarehq" process="login" %}">
+      <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer" type="submit">
+          {% csrf_token %}
+          <div class="w-6 h-6"><img src="{% static 'images/logo-color.svg' %}" alt="Compact Logo" class="w-full"></div>
+      <span class="text-sm">{% blocktranslate %}Sign up with CommCareHQ{% endblocktranslate %}</span>
+      </button>
+    </form>
+  </div>
 
-</form>
-
-<div class="text-center mt-2">
-  <small>{% blocktranslate %}Already have an account? Then please <a href="{{ login_url }}">sign in</a>.{% endblocktranslate %}</small>
+  <div class="pt-4 mt-auto text-sm text-center text-gray-600 border-t-2 border-t-gray-200">
+    {% blocktranslate %}Already have an account?{% endblocktranslate %}
+    <a href="{{ login_url }}" class="font-medium text-brand-indigo">{% translate "Login" %}</a>
+  </div>
 </div>
-
 {% endblock %}

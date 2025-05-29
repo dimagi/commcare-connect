@@ -9,7 +9,7 @@
         page: 1,
       }">
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
-    <div class="tabs !gap-x-6">
+    <div class="tabs">
       {% for tab in tabs %}
         <label class="tab" :class="{ 'tab-active': activeTab == '{{ tab.name }}'}">
           <input class="peer sr-only" type="radio" value="{{ tab.name }}" name="filter_status"

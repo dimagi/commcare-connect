@@ -60,7 +60,7 @@
                 {% if request.org_membership.is_admin or request.user.is_superuser %}
                   <li class="nav-item">
                     <a class="nav-link {% active_link "list || init || edit || opportunity_list || opportunity_init" namespace='program' %}"
-                       href="{% url 'program:list' request.org.slug %}">{% translate "Programs" %}</a>
+                       href="{% url 'program:home' request.org.slug %}">{% translate "Programs" %}</a>
                   </li>
                 {% endif %}
               {% endif %}
@@ -74,8 +74,8 @@
         <ul class="navbar-nav ms-auto">
           {% if request.user.is_authenticated %}
             <li class="nav-item">
-              <a class="nav-link {% active_link "users:detail" %}"
-                 href="{% url 'users:detail' request.user.pk %}">{% translate "My Profile" %}</a>
+              <a class="nav-link {% active_link "account_email" %}"
+                 href="{% url 'account_email' %}">{% translate "My Profile" %}</a>
             </li>
             <li class="nav-item">
               {# URL provided by django-allauth/account/urls.py #}

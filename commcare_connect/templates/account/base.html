@@ -1,10 +1,54 @@
-{% extends "base.html" %}
-{% block title %}{% block head_title %}{% endblock head_title %}{% endblock title %}
+{% load static i18n %}
 
-{% block content %}
-<div class="row mt-5">
-  <div class="col-md-6 offset-md-3 p-4 rounded bg-white shadow ">
-    {% block inner %}{% endblock %}
-  </div>
-</div>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}CommCare Connect - {% block head_title %}{% endblock head_title %}{% endblock title %}</title>
+    {% load static %}
+    {% block css %}
+      <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+      <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/aquawolf04/font-awesome-pro@5cd1511/css/all.css" />
+    {% endblock %}
+    {% block javascript %}
+      <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
+      <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
+    {% endblock javascript %}
+  </head>
+  <body class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
+    <div class="container relative flex items-center justify-center h-screen mx-auto md:max-w-screen-md">
+      <div class="relative w-full h-fit">
+        <div class="grid grid-cols-2 gap-2 p-2 bg-gray-100 rounded-lg shadow-sm h-fit">
+          <div class="flex flex-col gap-2">
+            <div class="flex flex-col items-end justify-between flex-1 w-full p-2 rounded-lg bg-brand-cornflower-blue">
+              <img src="{% static 'images/logo-full.svg' %}" alt="Compact Logo" class="w-48 pt-4 pr-6" />
+              <img src="{% static 'images/onboarding-graphics.svg' %}" alt="Compact Logo" class="w-full" />
+            </div>
+            <div class="grid grid-cols-2 gap-2 h-1/4">
+              <div class="flex flex-col justify-center p-6 pt-12 text-white rounded-lg bg-brand-deep-purple">
+                <h3 class="text-3xl">10.5k +</h3>
+                <p class="mt-auto text-xs leading-snug">health services delivered</p>
+              </div>
+              <div class="flex flex-col justify-center p-6 pt-12 text-white rounded-lg bg-brand-indigo">
+                <h3 class="text-3xl">10 +</h3>
+                <span class="mt-auto text-xs">Countries</span>
+              </div>
+            </div>
+          </div>
+          <div id="onboarding-container" class="h-full bg-white rounded-lg py-6 px-8">
+            {% block inner %}
+            {% endblock %}
+          </div>
+        </div>
+        <div class="absolute -translate-x-1/2 -left-0 -bottom-1/2 -translate-y-1/4 -z-10" class="w-8">
+          <img src="{% static 'images/bg-graphics-bottom-left.svg' %}" alt="Compact Logo" class="w-full h-full aspect-auto" />
+        </div>
+        <div class="absolute top-0 right-0 rotate-90 translate-x-1/2 -translate-y-1/2 -z-10" class="w-1/2">
+          <img src="{% static 'images/bg-graphics-top-right.svg' %}" alt="Compact Logo" class="w-full h-full" />
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

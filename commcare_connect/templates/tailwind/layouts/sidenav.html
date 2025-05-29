@@ -1,6 +1,6 @@
 {% load static i18n %}
 
-<div x-data="{ sidebarOpen: false }"
+<div x-data="{ sidebarOpen: false }" x-cloak
     @click.outside="sidebarOpen = false"
     class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
     :class="sidebarOpen ? 'w-64' : 'w-16'">
@@ -41,7 +41,7 @@
 
         <!-- Navigation Items -->
         <div class="mt-5">
-            {% url 'program:list' request.org.slug as program_home_url %}
+            {% url 'program:home' request.org.slug as program_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
 
             {% url 'opportunity:list' request.org.slug as opportunity_url %}

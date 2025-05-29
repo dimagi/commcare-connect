@@ -38,7 +38,10 @@ click==8.1.6
     # via
     #   -c requirements/base.txt
     #   black
+    #   git-build-branch
     #   pip-tools
+contextlib2==21.6.0
+    # via git-build-branch
 coverage==7.2.7
     # via -r requirements/dev.in
 decorator==5.1.1
@@ -70,6 +73,16 @@ flake8==6.1.0
     #   flake8-isort
 flake8-isort==6.0.0
     # via -r requirements/dev.in
+gevent==24.11.1
+    # via
+    #   -c requirements/base.txt
+    #   git-build-branch
+git-build-branch @ git+https://github.com/dimagi/git-build-branch
+    # via -r requirements/dev.in
+greenlet==3.1.1
+    # via
+    #   -c requirements/base.txt
+    #   gevent
 h11==0.14.0
     # via
     #   -c requirements/base.txt
@@ -103,6 +116,8 @@ isort==5.12.0
     #   pylint
 jedi==0.18.2
     # via ipython
+jsonobject==2.3.1
+    # via git-build-branch
 lazy-object-proxy==1.9.0
     # via astroid
 lxml==4.9.3
@@ -190,7 +205,10 @@ python-dateutil==2.8.2
 pyyaml==6.0.1
     # via
     #   -c requirements/base.txt
+    #   git-build-branch
     #   pre-commit
+sh==2.2.2
+    # via git-build-branch
 six==1.16.0
     # via
     #   -c requirements/base.txt
@@ -235,6 +253,14 @@ wrapt==1.15.0
     #   astroid
 xml2json @ git+https://github.com/dimagi/xml2json@041b1ef
     # via -r requirements/dev.in
+zope-event==5.0
+    # via
+    #   -c requirements/base.txt
+    #   gevent
+zope-interface==7.2
+    # via
+    #   -c requirements/base.txt
+    #   gevent
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip

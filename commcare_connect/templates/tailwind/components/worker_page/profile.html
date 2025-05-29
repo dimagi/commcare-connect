@@ -1,20 +1,20 @@
+{% load avatar %}
       <div x-data="{ isStatusModalOpen: false }"
            class="profile-card w=full h-full flex gap-4 text-white relative">
         <div class="profile-left flex flex-col justify-center items-center">
-          <div class="h-12 w-12 rounded-full overflow-hidden relative">
+          <div class="cursor-pointer">
             <div class="absolute z-10 top-0 left-0 w-full h-full"
                  @click="isStatusModalOpen = true">
               {% if opportunity_access.suspended %}
-                <svg viewBox="-600 -600 1200 1200" xmlns="http://www.w3.org/2000/svg">
+                <svg viewBox="-165 -250 1200 1200" xmlns="http://www.w3.org/2000/svg">
                   <g transform="rotate(45)">
-                    <circle r="500" stroke="red" stroke-width="200" stroke-linecap="round" pathLength="360"
-                            stroke-dasharray="90 270" fill="none"/>
+                    <circle r="120" stroke="red" stroke-width="60" stroke-linecap="round"
+                            pathLength="360" stroke-dasharray="90 270" fill="none"></circle>
                   </g>
                 </svg>
               {% endif %}
             </div>
-            <img src="https://gravatar.com/avatar/27205e5c51cb03f862138b22bcb5dc20f94a342e744ff6df1b8dc8af3c865109"
-                 alt="Profile Image z-0"/>
+            {% user_avatar user=opportunity_access.user size="large" %}
           </div>
           <div class="share-icon flex justify-center mt-4">
             <div class="relative">
@@ -26,7 +26,7 @@
               <div x-show="isStatusModalOpen"
                    x-cloak
                    class="absolute top-15 -left-8  bg-white rounded-2xl shadow-xl z-50"
-                   @click.stop>{% include "tailwind/components/cards/user_status_card.html" %}</div>
+                   @click.stop>{% include "tailwind/components/cards/user_status_card.html" with opportunity_access=opportunity_access %}</div>
             </div>
           </div>
         </div>

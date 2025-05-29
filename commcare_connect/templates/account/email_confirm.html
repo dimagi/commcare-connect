@@ -5,27 +5,27 @@
 
 {% block head_title %}{% translate "Confirm E-mail Address" %}{% endblock %}
 
-
 {% block inner %}
-<h1 class="mb-4">{% translate "Confirm E-mail Address" %}</h1>
-
-{% if confirmation %}
-
-{% user_display confirmation.email_address.user as user_display %}
-
-<p>{% blocktranslate with confirmation.email_address.email as email %}Please confirm that <a href="mailto:{{ email }}">{{ email }}</a> is an e-mail address for user {{ user_display }}.{% endblocktranslate %}</p>
-
-<form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
-{% csrf_token %}
-    <button class="btn btn-primary" type="submit">{% translate 'Confirm' %}</button>
-</form>
-
-{% else %}
-
-{% url 'account_email' as email_url %}
-
-<p class="mt-2">{% blocktranslate %}This e-mail confirmation link expired or is invalid. Please <a href="{{ email_url }}">issue a new e-mail confirmation request</a>.{% endblocktranslate %}</p>
-
-{% endif %}
-
+<div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+  <h1 class="title text-brand-deep-purple mb-4">{% translate "Confirm E-mail Address" %}</h1>
+  {% if confirmation %}
+    {% user_display confirmation.email_address.user as user_display %}
+    <p>
+      {% blocktranslate with confirmation.email_address.email as email %}
+        Please confirm that <a href="mailto:{{ email }}">{{ email }}</a> is an e-mail address for user {{ user_display }}.
+      {% endblocktranslate %}
+    </p>
+    <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+      {% csrf_token %}
+      <button class="button button-md primary-dark" type="submit">{% translate 'Confirm' %}</button>
+    </form>
+  {% else %}
+    {% url 'account_email' as email_url %}
+    <p class="mt-2">
+      {% blocktranslate %}
+        This e-mail confirmation link expired or is invalid. Please <a href="{{ email_url }}">issue a new e-mail confirmation request</a>.
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
+</div>
 {% endblock %}
