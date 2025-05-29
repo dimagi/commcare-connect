@@ -30,7 +30,7 @@ def _calculate_initials_internal(name):
 def user_avatar(user, size="small", color_classes="bg-brand-mango text-white"):
     display_name = ""
     if user:
-        if user.name:
+        if getattr(user, "name", None):
             display_name = user.name
         elif hasattr(user, "first_name") and hasattr(user, "last_name") and (user.first_name or user.last_name):
             display_name = f"{user.first_name or ''} {user.last_name or ''}".strip()

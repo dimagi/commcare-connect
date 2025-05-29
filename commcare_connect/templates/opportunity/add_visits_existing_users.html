@@ -13,7 +13,7 @@
     // extract the available tabs.
     const tabs = availableTabs.map(t => t.key);
     return {
-      selectedTab: tabs.includes(initialTab) ? initialTab : 'existing_users',
+      selectedTab: tabs.includes(initialTab) ? initialTab : 'existing_workers',
       newUsersLoaded: false,
       setTab(tab) {
         this.selectedTab = tab;
@@ -24,7 +24,7 @@
         window.history.pushState({}, '', url);
 
          // initially load the form once
-        if (tab === 'new_users' && !this.newUsersLoaded) {
+        if (tab === 'new_workers' && !this.newUsersLoaded) {
           htmx.trigger('#new_user_container', 'loadNewUserForm');
         }
 
@@ -73,7 +73,7 @@
 
 
 <div class="md:max-w-screen-lg mx-auto flex flex-col gap-6"
-    x-data="opportunityBudgetComponent('{{ request.GET.active_tab|default:"existing_users" }}', {{ tabs|safe }})"
+    x-data="opportunityBudgetComponent('{{ request.GET.active_tab|default:"existing_workers" }}', {{ tabs|safe }})"
     x-clock
     x-effect="setTab(selectedTab)">
   {% include "tailwind/components/breadcrumbs.html" with path=path %}
@@ -93,7 +93,7 @@
       </div>
       <div class="mt-2 card_bg">
         <!-- Add budget for existing users-->
-        <div x-show="selectedTab === 'existing_users'">
+        <div x-show="selectedTab === 'existing_workers'">
           <form method="post"
                 x-data="handleExistingBudgetComponent({{ budget_per_visit }})"
           >
@@ -101,7 +101,7 @@
 
             {% if form.selected_users.errors %}
             <div class="flex rounded-lg border border-red-300 bg-red-50 text-red-800 px-4 py-3 mb-4" role="alert">
-              <span class="text-red-800 flex-1">Please select users to update.</span>
+              <span class="text-red-800 flex-1">Please select workers to update.</span>
               <button type="button"
                       class="text-red-500 hover:text-red-700"
                       aria-label="Close"
@@ -112,7 +112,7 @@
             {% endif %}
 
             {% if opportunity_claims %}
-            <h3 class="mb-2">Add Visits for Existing Users</h3>
+            <h3 class="mb-2">Add Visits for Existing Workers</h3>
             <table class="base-table">
               <thead>
               <tr>
@@ -149,7 +149,7 @@
               </tbody>
             </table>
             <div class="flex items-center gap-4 pt-6 border-t-2 border-gray-100">
-              <div class="flex-1 flex justify-stretch gap-4">
+              <div class="flex-1 flex justify-stretch gap-4 mt-4">
                 <div class="flex-1">{{ form.additional_visits|as_crispy_field }}</div>
                 <div class="flex-1">{{ form.end_date|as_crispy_field }}</div>
               </div>
@@ -181,7 +181,7 @@
                   additional budget allocation of
                   <b x-text="calculatedBudget()"></b> to this Opportunity.
                   <div x-show="!!end_date" class="mt-2">
-                    You are changing the end date for the selected users to <b
+                    You are changing the end date for the selected workers to <b
                     x-text="new Date(end_date).toLocaleDateString()"></b>.
                   </div>
                 </div>
@@ -200,9 +200,9 @@
 
         <!--Add budget for New Users-->
         <div
-          x-show="selectedTab === 'new_users'"
+          x-show="selectedTab === 'new_workers'"
         >
-          <h3 class="mb-2">Add Budget for New Users</h3>
+          <h3 class="mb-2">Add Budget for New Workers</h3>
           <div
             id="new_user_container"
             hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug pk=opportunity.pk %}"

@@ -34,12 +34,13 @@ from commcare_connect.opportunity.models import (
     LearnModule,
     Opportunity,
     OpportunityAccess,
+    OpportunityClaimLimit,
     PaymentUnit,
     UserInvite,
     UserInviteStatus,
     UserVisit,
     VisitReviewStatus,
-    VisitValidationStatus, OpportunityClaimLimit,
+    VisitValidationStatus,
 )
 
 
@@ -47,10 +48,10 @@ class OpportunityAnnotations:
     @staticmethod
     def inactive_workers(days_ago):
         return Count(
-            "opportunityaccess__id",
-            filter=~Q(opportunityaccess__uservisit__visit_date__gte=days_ago)
-                   & ~Q(opportunityaccess__completedmodule__date__gte=days_ago)
-                   & Q(opportunityaccess__date_learn_started__isnull=False),
+            "opportunityaccess",
+            filter=Q(opportunityaccess__date_learn_started__isnull=False) &
+                   ~Q(opportunityaccess__uservisit__visit_date__gte=days_ago) &
+                   ~Q(opportunityaccess__completedmodule__date__gte=days_ago),
             distinct=True,
         )
 
@@ -85,13 +86,14 @@ class OpportunityAnnotations:
     def pending_invites():
         return Count(
             "userinvite",
-            filter=~Q(userinvite__status=UserInviteStatus.accepted),
+            filter=~Q(userinvite__status=UserInviteStatus.not_found)
+                   & ~Q(userinvite__status=UserInviteStatus.accepted),
             distinct=True,
         )
 
     @staticmethod
     def workers_invited():
-        return Count("userinvite", distinct=True)
+        return Count("userinvite", distinct=True, filter=~Q(userinvite__status=UserInviteStatus.not_found))
 
     @staticmethod
     def started_learning():
@@ -165,15 +167,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             payment_unit=payment_unit
         ).values("max_visits")[:1], output_field=IntegerField())
 
-        completed_visit_sq = Subquery(UserVisit.objects.filter(
-            opportunity_access_id=OuterRef("pk"),
-            deliver_unit__payment_unit=payment_unit
-        ).exclude(
-            status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial]
-        ).values("opportunity_access_id").annotate(
-            total=Count("*")
-        ).values("total")[:1], output_field=IntegerField())
-
         last_visit_sq = Subquery(
             UserVisit.objects.filter(opportunity_access_id=OuterRef("pk"))
             .values("opportunity_access_id")
@@ -213,11 +206,27 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 output_field=IntegerField(),
             )
 
+        def completed_work_status_total_subquery(status_value):
+            return Subquery(
+                CompletedWork.objects.filter(
+                    opportunity_access_id=OuterRef("pk"), status=status_value
+                )
+                .values("opportunity_access_id")
+                .annotate(status_count=Count("id", distinct=True))
+                .values("status_count")[:1],
+                output_field=IntegerField(),
+            )
+
         pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
         approved_count_sq = completed_work_status_subquery(CompletedWorkStatus.approved)
         rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
         over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
         incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
+
+        total_pending_for_user =completed_work_status_total_subquery(CompletedWorkStatus.pending)
+        total_approved_for_user =completed_work_status_total_subquery(CompletedWorkStatus.approved)
+        total_rejected_for_user =completed_work_status_total_subquery(CompletedWorkStatus.rejected)
+        total_over_limit_for_user =completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
         queryset = (
             OpportunityAccess.objects.filter(opportunity=opportunity)
@@ -225,7 +234,6 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 payment_unit_id=Value(payment_unit.pk),
                 payment_unit=Value(payment_unit.name, output_field=CharField()),
                 total_visits=Coalesce(total_visits_sq, Value(None, output_field=IntegerField())),  # Optional
-                completed_visits=Coalesce(completed_visit_sq, Value(0)),
                 _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
                 _last_module_val=Coalesce(last_module_sq, Value(None, output_field=DateTimeField())),
                 pending=Coalesce(pending_count_sq, Value(0)),
@@ -234,6 +242,10 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 duplicate=Coalesce(duplicate_sq, Value(0)),
                 over_limit=Coalesce(over_limit_count_sq, Value(0)),
                 incomplete=Coalesce(incomplete_count_sq, Value(0)),
+                total_pending=Coalesce(total_pending_for_user, Value(0)),
+                total_approved=Coalesce(total_approved_for_user, Value(0)),
+                total_rejected=Coalesce(total_rejected_for_user, Value(0)),
+                total_over_limit=Coalesce(total_over_limit_for_user, Value(0)),
             )
             .annotate(
                 last_active=Greatest(
@@ -243,7 +255,9 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
                 ),
                 completed=(
                     F('pending') + F('approved') + F('rejected') + F('over_limit')
-                )
+                ),
+                total_completed=(F('total_pending') + F('total_approved') + F('total_rejected') + F('total_over_limit'))
+
             )
             .select_related('user')
             .order_by('user__name')
@@ -280,6 +294,14 @@ def get_opportunity_list_data(organization, program_manager=False):
     today = now().date()
     three_days_ago = now() - timedelta(days=3)
 
+    pending_approvals_sq = Subquery(
+        UserVisit.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"), status="pending")
+        .values("opportunity_access__opportunity_id")
+        .annotate(count=Count("id", distinct=True))
+        .values("count")[:1],
+        output_field=IntegerField(),
+    )
+
     base_filter = Q(organization=organization)
     if program_manager:
         base_filter |= Q(managedopportunity__program__organization=organization)
@@ -287,11 +309,7 @@ def get_opportunity_list_data(organization, program_manager=False):
     queryset = Opportunity.objects.filter(base_filter).annotate(
         program=F("managedopportunity__program__name"),
         pending_invites=OpportunityAnnotations.pending_invites(),
-        pending_approvals=Count(
-            "uservisit",
-            filter=Q(uservisit__status=VisitValidationStatus.pending),
-            distinct=True,
-        ),
+        pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
         total_accrued=OpportunityAnnotations.total_accrued(),
         total_paid=OpportunityAnnotations.total_paid(),
         payments_due=ExpressionWrapper(
@@ -308,17 +326,28 @@ def get_opportunity_list_data(organization, program_manager=False):
     )
 
     if program_manager:
+        total_deliveries_sq = Subquery(
+            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
+            .values("opportunity_access__opportunity_id")
+            .annotate(total=Sum("saved_completed_count", distinct=True))
+            .values("total")[:1],
+            output_field=IntegerField(),
+        )
+
+        verified_deliveries_sq = Subquery(
+            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
+            .values("opportunity_access__opportunity_id")
+            .annotate(total=Sum("saved_approved_count", distinct=True))
+            .values("total")[:1],
+            output_field=IntegerField(),
+        )
+
         queryset = queryset.annotate(
             total_workers=Count("opportunityaccess", distinct=True),
             started_learning=OpportunityAnnotations.started_learning(),
+            total_deliveries=Coalesce(total_deliveries_sq, Value(0)),
+            verified_deliveries=Coalesce(verified_deliveries_sq, Value(0)),
             active_workers=F("started_learning") - F("inactive_workers"),
-            total_deliveries=Coalesce(
-                Sum("opportunityaccess__completedwork__saved_completed_count", distinct=True),
-                Value(0)
-            ),
-            verified_deliveries=Coalesce(
-                Sum("opportunityaccess__completedwork__saved_approved_count", distinct=True),
-                Value(0)),
         )
 
     return queryset
@@ -383,7 +412,7 @@ def get_worker_learn_table_data(opportunity):
         .annotate(total_duration=Sum("duration"))
         .values("total_duration")[:1]
     )
-    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
+    queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).annotate(
         last_active=OpportunityAnnotations.last_active(),
         completed_modules_count=Count("completedmodule__module", distinct=True),
         completed_learn=Case(
@@ -403,7 +432,7 @@ def get_worker_learn_table_data(opportunity):
 
 
 def get_opportunity_delivery_progress(opp_id):
-    today = now()
+    today = now().replace(hour=0, minute=0, second=0, microsecond=0)
     three_days_ago = today - timedelta(days=3)
     yesterday = today - timedelta(days=1)
 
@@ -424,7 +453,8 @@ def get_opportunity_delivery_progress(opp_id):
             distinct=True,
         ),
         most_recent_delivery=Max("uservisit__visit_date"),
-        total_deliveries=Count("opportunityaccess__uservisit", distinct=True),
+        total_deliveries=Count("opportunityaccess__completedwork",
+                               distinct=True),
         flagged_deliveries_waiting_for_review=Count(
             "opportunityaccess__uservisit",
             filter=Q(opportunityaccess__uservisit__status=VisitValidationStatus.pending),
@@ -467,40 +497,25 @@ def get_opportunity_delivery_progress(opp_id):
 def get_opportunity_worker_progress(opp_id):
     today = now().date()
     yesterday = today - timedelta(days=1)
-    opportunity = Opportunity.objects.filter(id=opp_id).values("start_date", "end_date", "total_budget").first()
+    opportunity = Opportunity.objects.filter(id=opp_id).values("start_date", "end_date", "total_budget", "currency").first()
 
     aggregates = Opportunity.objects.filter(id=opp_id).aggregate(
-        total_deliveries=Count("opportunityaccess__uservisit", distinct=True),
+        total_deliveries=Count("opportunityaccess__completedwork", distinct=True),
         approved_deliveries=Count(
-            "opportunityaccess__uservisit",
-            filter=Q(opportunityaccess__uservisit__status=VisitValidationStatus.approved),
+            "opportunityaccess__completedwork",
+            filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.approved),
             distinct=True,
         ),
         rejected_deliveries=Count(
-            "opportunityaccess__uservisit",
-            filter=Q(opportunityaccess__uservisit__status=VisitValidationStatus.rejected),
+            "opportunityaccess__completedwork",
+            filter=Q(opportunityaccess__completedwork__status=CompletedWorkStatus.rejected),
             distinct=True,
         ),
         total_accrued=OpportunityAnnotations.total_accrued(),
         total_paid=OpportunityAnnotations.total_paid(),
-        total_visits=Count("uservisit", distinct=True),
         visits_since_yesterday=Count("uservisit", filter=Q(uservisit__visit_date__gte=yesterday), distinct=True)
     )
     aggregates.update(opportunity)
-
-
-    max_visits_qs = (
-        UserVisit.objects.filter(opportunity_id=opp_id)
-        .annotate(visit_day=TruncDate("visit_date"))
-        .values("visit_day")
-        .annotate(day_count=Count("id"))
-        .order_by("-day_count")
-        .values_list("day_count", flat=True)
-    )
-
-    maximum_visit_in_a_day = max_visits_qs.first() or 0
-
-    aggregates["maximum_visit_in_a_day"] = maximum_visit_in_a_day
 
     return aggregates
 

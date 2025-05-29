@@ -38,6 +38,7 @@ from commcare_connect.utils.tables import (
     OrgContextTable,
     merge_attrs,
 )
+from django.contrib.humanize.templatetags.humanize import intcomma
 
 
 class OpportunityContextTable(OrgContextTable):
@@ -557,9 +558,9 @@ def date_with_time_popup(table, date):
 def header_with_tooltip(label, tooltip_text):
     return mark_safe(
         f"""
-        <div x-data x-tooltip.raw="{tooltip_text}">
+        <span x-data x-tooltip.raw="{tooltip_text}">
             {label}
-        </div>
+        </span>
         """
     )
 
@@ -656,7 +657,7 @@ class BaseOpportunityList(OrgContextTable):
     def render_opportunity(self, value, record):
         url = reverse("opportunity:detail", args=(self.org_slug, record.id))
         value = format_html('<a href="{}">{}</a>', url, value)
-        return self._render_div(value, extra_classes="justify-start")
+        return self._render_div(value, extra_classes="justify-start text-wrap")
 
     def render_program(self, value):
         return self._render_div(value if value else "--", extra_classes="justify-start")
@@ -719,6 +720,8 @@ class OpportunityTable(BaseOpportunityList):
     def render_payments_due(self, value, record):
         if value is None:
             value = 0
+
+        value = f"{record.currency} {intcomma(value)}"
         return self.render_worker_list_url_column(
             value=value, opp_id=record.id, active_tab="payments", sort="sort=-total_paid"
         )
@@ -801,6 +804,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
     def render_worker_earnings(self, value, record):
         url = reverse("opportunity:worker_list", args=(self.org_slug, record.id))
         url += "?active_tab=payments&sort=-payment_accrued"
+        value = f"{record.currency} {intcomma(value)}"
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
 
@@ -808,7 +812,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         url = reverse("opportunity:detail", args=(self.org_slug, record.id))
         html = format_html(
             """
-            <a href={} class="flex flex-col items-start w-40">
+            <a href={} class="flex flex-col items-start text-wrap w-50">
                 <p class="text-sm text-slate-900">{}</p>
                 <p class="text-xs text-slate-400">{}</p>
             </a>
@@ -835,7 +839,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             actions.append(
                 {
                     "title": "View Invoices",
-                    "url": reverse("opportunity:invoice_list", args=[record.organization.slug, record.id]),
+                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.id]),
                 }
             )
 
@@ -980,7 +984,10 @@ class UserInfoColumn(tables.Column):
         kwargs.setdefault("order_by", "user__name")
         super().__init__(*args, **kwargs)
 
-    def render(self, value):
+    def render(self, value, record):
+        if not record.accepted:
+            return "-"
+
         return format_html(
             """
             <div class="flex flex-col items-start w-40">
@@ -1036,8 +1043,11 @@ class WorkerPaymentsTable(tables.Table):
     user = UserInfoColumn(footer="Total")
     suspended = SuspendedIndicatorColumn()
     last_active = DMYTColumn()
-    payment_accrued = tables.Column(verbose_name="Accrued", footer=lambda table: sum(x.payment_accrued or 0 for x in table.data))
-    total_paid = tables.Column(verbose_name="Total Paid", footer=lambda table: sum(x.total_paid or 0 for x in table.data))
+    payment_accrued = tables.Column(verbose_name="Accrued",
+                                    footer=lambda table: intcomma(
+                                        sum(x.payment_accrued or 0 for x in table.data)))
+    total_paid = tables.Column(verbose_name="Total Paid",
+                               footer=lambda table: intcomma(sum(x.total_paid or 0 for x in table.data)))
     last_paid = DMYTColumn()
     confirmed_paid = tables.Column(verbose_name="Confirm", accessor="total_confirmed_paid")
 
@@ -1046,6 +1056,16 @@ class WorkerPaymentsTable(tables.Table):
         self.org_slug = kwargs.pop("org_slug", "")
         self.opp_id = kwargs.pop("opp_id", "")
         super().__init__(*args, **kwargs)
+
+        try:
+            currency = self.data[0].opportunity.currency
+        except (IndexError, AttributeError):
+            currency = ""
+
+            # Update column headers with currency
+        self.columns["payment_accrued"].column.verbose_name = f"Accrued ({currency})"
+        self.columns["total_paid"].column.verbose_name = f"Total Paid ({currency})"
+        self.columns["confirmed_paid"].column.verbose_name = f"Confirm ({currency})"
 
     class Meta:
         model = OpportunityAccess
@@ -1067,7 +1087,7 @@ class WorkerPaymentsTable(tables.Table):
             "tailwind/components/worker_page/last_paid.html",
             {
                 "record": record,
-                "value": value.strftime("%d-%b-%Y %H:%M") if value else "--",
+                "value": value.strftime("%d-%b-%Y") if value else "--",
                 "org_slug": self.org_slug,
                 "opp_id": self.opp_id,
             },
@@ -1199,26 +1219,31 @@ class WorkerDeliveryTable(OrgContextTable):
     index = IndexColumn()
     user = tables.Column(orderable=False, verbose_name="Name", footer="Total")
     suspended = SuspendedIndicatorColumn()
-    last_active = DMYTColumn()
+    last_active = DMYTColumn(empty_values=())
     payment_unit = tables.Column(orderable=False)
-    delivery_progress = tables.Column(accessor="total_visits", empty_values=())
+    delivery_progress = tables.Column(accessor="total_visits", empty_values=(), orderable=False)
     delivered = TotalDeliveredColumn(
         verbose_name=header_with_tooltip("Delivered", "Delivered number of payment units"),
-        accessor="completed"
+        accessor="completed",
+        order_by="total_completed",
     )
     pending = TotalFlagCountsColumn(
         verbose_name=header_with_tooltip("Pending", "Payment units with pending approvals with NM or PM"),
-        status=CompletedWorkStatus.pending
+        status=CompletedWorkStatus.pending,
+        order_by="total_pending",
     )
     approved = TotalFlagCountsColumn(
         verbose_name=header_with_tooltip(
             "Approved", "Payment units that are fully approved automatically or manually by NM and PM"
         ),
-        status=CompletedWorkStatus.approved
+        status=CompletedWorkStatus.approved,
+        order_by="total_approved",
     )
     rejected = TotalFlagCountsColumn(
         verbose_name=header_with_tooltip("Rejected", "Payment units that are rejected"),
-        status=CompletedWorkStatus.rejected)
+        status=CompletedWorkStatus.rejected,
+        order_by="total_rejected",
+    )
 
     action = tables.TemplateColumn(
         verbose_name="",
@@ -1244,7 +1269,7 @@ class WorkerDeliveryTable(OrgContextTable):
             "rejected",
             "action",
         )
-        order_by = ("-last_active",)
+
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
@@ -1254,7 +1279,7 @@ class WorkerDeliveryTable(OrgContextTable):
 
 
     def render_delivery_progress(self, record):
-        current = record.completed_visits
+        current = record.completed
         total = record.total_visits
 
         if not total:
@@ -1279,13 +1304,13 @@ class WorkerDeliveryTable(OrgContextTable):
                 <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
             </div>
         """
+        self.run_after_every_row(record)
         return format_html(template, url)
 
     def render_user(self, value, record):
-        if value.id in self._seen_users:
+        if record.id in self._seen_users:
             return ""
 
-        self._seen_users.add(value.id)
 
         url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
 
@@ -1301,27 +1326,36 @@ class WorkerDeliveryTable(OrgContextTable):
             value.username,
         )
 
+    def render_suspended(self, record, value):
+        if record.id in self._seen_users:
+            return ""
+        return SuspendedIndicatorColumn().render(value)
+
+
+    def run_after_every_row(self, record):
+        self._seen_users.add(record.id)
+
     def render_index(self, value, record):
         page = getattr(self, "page", None)
-        if page:
-            start_index = (page.number - 1) * page.paginator.per_page + 1
-        else:
-            start_index = 1
 
-        if record.user.id in self._seen_users:
+        if not hasattr(self, "_row_counter"):
+            seen_ids = set()
+            unique_before_page = 0
+
+            per_page = page.paginator.per_page
+            page_start_index = (page.number - 1) * per_page
+
+            for d in self.data[:page_start_index]:
+                if d.id not in seen_ids:
+                    seen_ids.add(d.id)
+                    unique_before_page += 1
+
+            self._row_counter = itertools.count(start=unique_before_page + 1)
+
+        if record.id in self._seen_users:
             return ""
 
-        if (
-            not hasattr(self, "_row_counter")
-            or not hasattr(self, "_row_counter_start")
-            or self._row_counter_start != start_index
-        ):
-            self._row_counter = itertools.count(start=start_index)
-            self._row_counter_start = start_index
-
-        display_index = next(self._row_counter)
-
-        return display_index
+        return next(self._row_counter)
 
     def render_delivered(self, record, value):
         rows = [
@@ -1364,6 +1398,12 @@ class WorkerDeliveryTable(OrgContextTable):
 
     def render_rejected(self, record, value):
         return self._render_flag_counts(record, value, status=CompletedWorkStatus.rejected)
+
+    def render_last_active(self, record, value):
+        if record.id in self._seen_users:
+            return ""
+
+        return DMYTColumn().render(value)
 
 
 class WorkerLearnStatusTable(tables.Table):

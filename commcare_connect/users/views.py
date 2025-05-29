@@ -1,20 +1,17 @@
 from allauth.account.models import transaction
-from crispy_forms.utils import render_crispy_form
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse
-from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
-from django.utils.safestring import mark_safe
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
-from django.views.generic import DetailView, RedirectView, UpdateView, View
+from django.views.generic import RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -31,7 +28,6 @@ from .models import ConnectIDUserLink
 User = get_user_model()
 
 
-
 class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
     model = User
     fields = ["name"]
@@ -46,7 +42,6 @@ class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
         return self.request.user
 
 
-
 user_update_view = UserUpdateView.as_view()
 
 
@@ -59,7 +54,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
-        return reverse("users:detail", kwargs={"pk": self.request.user.pk})
+        return reverse("account_email")
 
 
 user_redirect_view = UserRedirectView.as_view()
@@ -112,6 +107,10 @@ def start_learn_app(request):
     with transaction.atomic():
         if access_object.date_learn_started is None:
             access_object.date_learn_started = now()
+
+            if not access_object.last_active or access_object.last_active < access_object.date_learn_started:
+                access_object.last_active = access_object.date_learn_started
+
         access_object.accepted = True
         access_object.save()
         user_invite = UserInvite.objects.get(opportunity_access=access_object)

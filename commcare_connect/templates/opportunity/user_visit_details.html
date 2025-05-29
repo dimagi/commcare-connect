@@ -171,10 +171,12 @@
   <!-- Verification Flags -->
   <div class="grid grid-cols-3 gap-4">
     <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
+    {% if user_visit.location %}
     <div>
       <div class="text-sm text-brand-blue-light">Location</div>
       <div class="text-sm font-normal text-brand-deep-purple">Less than {{ closest_distance }} metres</div>
     </div>
+    {% endif %}
     {% if user_visit.flagged %}
       {% for flag in user_visit.flag_reason.flags %}
         <div>

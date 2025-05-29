@@ -4,7 +4,7 @@
 
 {% include 'tailwind/components/breadcrumbs.html' with path=path %}
 
-<div class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
+<div x-cloak class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
   <!-- Tabs -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <ul class="tabs">
@@ -77,16 +77,67 @@
   {% url 'opportunity:user_status_export' org_slug=request.org.slug pk=opportunity.pk as user_status_export_url %}
   {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
 
-  {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showVisitExportModal" modal_title=_("Export Workers") export_url=import_export_delivery_urls.export_url export_form=visit_export_form %}
-
   {% url 'opportunity:payment_export' org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
   {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
-  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=_("Import Verified Visits") import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=_('The file must contain at least the "Visit ID" and "Status" column. The import is case-insensitive.') %}
+  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}
 
   {% url 'opportunity:payment_import' request.org.slug opportunity.pk as payment_import_url %}
   {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showPaymentImportModal" modal_title=_("Import Payment Records") import_url=payment_import_url input_name="payments" input_help_text=_('The file must contain at least the "Username", "Amount" and "Payment Date" columns.') %}
+
+<!--User visit export modal-->
+<div x-show="showVisitExportModal" class="modal-backdrop">
+    <div x-clock x-data="{ selectedForm: 'nm_review' }"  class="modal">
+        <div class="header text-lg font-semibold text-brand-deep-purple">
+          <h1>Export</h1>
+          <button @click="showVisitExportModal = false">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <form class="content" method="post"
+              :action="selectedForm === 'nm_review' ? '{{ import_export_delivery_urls.export_url_for_nm }}' : '{{ import_export_delivery_urls.export_url_for_pm }}'">
+          {% csrf_token %}
+          <div class="modal-body">
+
+            <div class="mb-4">
+              <label class="inline-flex items-center">
+                <input type="radio" name="form_type" value="nm_review" x-model="selectedForm"
+                       class="text-primary">
+                <span class="ml-2">User Visits Sheet</span>
+              </label>
+              {% if opportunity.managed %}
+                <label class="inline-flex items-center mr-4">
+                  <input type="radio" name="form_type" value="pm_review" x-model="selectedForm"
+                         class="text-primary" checked>
+                  <span class="ml-2">PM Review Sheet</span>
+                </label>
+              {% endif %}
+            </div>
+
+            <!-- VisitExportForm -->
+            <div x-show="selectedForm === 'nm_review'">
+              {% crispy visit_export_form %}
+            </div>
+
+            <!-- ReviewVisitExportForm -->
+            <div x-show="selectedForm === 'pm_review'">
+              {% crispy review_visit_export_form %}
+            </div>
+
+          </div>
+
+          <div class="footer">
+            <button type="button" @click="showVisitExportModal = false" class="button button-md outline-style">Close</button>
+            <button type="submit" class="button button-md primary-dark">Export</button>
+          </div>
+        </form>
+    </div>
+  </div>
+
+
+
 
 
 </div>
