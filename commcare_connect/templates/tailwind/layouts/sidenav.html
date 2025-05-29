@@ -42,13 +42,13 @@
         <!-- Navigation Items -->
         <div class="mt-5">
             {% url 'program:home' request.org.slug as program_home_url %}
-            {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url %}
+            {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
 
             {% url 'opportunity:list' request.org.slug as opportunity_url %}
-            {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url %}
+            {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url namespace='opportunity' %}
 
             {% url 'organization:home' request.org.slug as organization_home_url %}
-            {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url %}
+            {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url namespace='organization' %}
 
         </div>
     </div>

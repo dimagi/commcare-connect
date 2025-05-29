@@ -20,6 +20,7 @@ from commcare_connect.organization.forms import (
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable
 from commcare_connect.organization.tasks import add_credential_task, send_org_invite
+from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
@@ -116,5 +117,5 @@ def add_credential_view(request, org_slug):
 def org_member_table(request, org_slug=None):
     members = UserOrganizationMembership.objects.filter(organization=request.org)
     table = OrgMemberTable(members)
-    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})

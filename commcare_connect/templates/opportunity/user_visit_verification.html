@@ -23,7 +23,10 @@
       <div class="grid grid-cols-5 gap-4 w-full">
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
           <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ counts.total }}</div>
+            <div class="text-2xl"
+             x-data
+             x-tooltip.raw="Includes all Deliver app forms submitted by this worker across all payment units including duplicates"
+             >{{ counts.total }}</div>
             <div class="hidden lg:block">
               <i class="fa-light fa-memo text-xl"></i>
             </div>

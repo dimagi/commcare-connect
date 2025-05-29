@@ -12,8 +12,8 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage, storages
-from django.db.models import Count, Max, Q, Sum
-from django.db.models.functions import Greatest
+from django.db.models import Count, Max, Q, Sum, Subquery, OuterRef, Value
+from django.db.models.functions import Greatest, Coalesce
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
@@ -141,7 +141,7 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 from commcare_connect.utils.file import get_file_extension
-from commcare_connect.utils.tables import get_duration_min
+from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
 from django.utils.translation import gettext as _
 
 from django.contrib.humanize.templatetags.humanize import intcomma
@@ -186,6 +186,9 @@ class OpportunityList(OrganizationUserMixin, SingleTableMixin, TemplateView):
         if self.request.org.program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
+
+    def get_paginate_by(self, table):
+        return get_validated_page_size(self.request)
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
@@ -1263,7 +1266,7 @@ def payment_report(request, org_slug, pk):
     )
     data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity)
     table = PaymentReportTable(data)
-    RequestConfig(request, paginate={"per_page": 15}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
 
     cards = [
         {
@@ -1325,7 +1328,7 @@ def invoice_list(request, org_slug, pk):
     )
 
     form = PaymentInvoiceForm(opportunity=opportunity)
-    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(
         request,
         "tailwind/pages/invoice_list.html",
@@ -1468,7 +1471,8 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         [
             {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
             {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-            {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
+            {"title": "Workers",
+             "url": reverse("opportunity:worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery"},
             {"title": "Worker", "url": request.path},
         ]
     )
@@ -1544,7 +1548,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
     exclude_columns = []
 
     def get_paginate_by(self, table_data):
-        return self.request.GET.get("per_page", 10)
+        return get_validated_page_size(self.request)
 
     def get_table(self, **kwargs):
         kwargs["exclude"] = self.exclude_columns
@@ -1573,7 +1577,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             tabs = [
                 {
                     "name": "pending_review",
-                    "label": "Pending Review",
+                    "label": "Pending PM Review",
                     "count": user_visit_counts.get("pending_review", 0),
                 },
                 {
@@ -1592,7 +1596,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             tabs = [
                 {
                     "name": "pending",
-                    "label": "Pending",
+                    "label": "Pending NM Review",
                     "count": user_visit_counts.get("pending", 0),
                 }
             ]
@@ -1601,7 +1605,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
                 dynamic_tabs = [
                     {
                         "name": "pending_review",
-                        "label": "PM Review",
+                        "label": "Pending PM Review",
                         "count": user_visit_counts.get("pending_review", 0),
                     },
                     {
@@ -1756,7 +1760,7 @@ def user_visit_details(request, org_slug, opp_id, pk):
         ),
     )
 
-
+@org_member_required
 def opportunity_worker(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
@@ -1855,7 +1859,7 @@ def worker_main(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_table_data(opportunity)
     table = WorkerStatusTable(data)
-    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 
@@ -1864,7 +1868,7 @@ def worker_learn(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     data = get_worker_learn_table_data(opp)
     table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opp_id)
-    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 
@@ -1873,13 +1877,22 @@ def worker_delivery(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     data = get_annotated_opportunity_access_deliver_status(opportunity)
     table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opp_id)
-    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 
 @org_member_required
 def worker_payments(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
+
+    def get_payment_subquery(confirmed: bool = False) -> Subquery:
+        qs = Payment.objects.filter(opportunity_access=OuterRef("pk"))
+        if confirmed:
+            qs = qs.filter(confirmed=True)
+        subquery = qs.values("opportunity_access").annotate(
+            total=Sum("amount")
+        ).values("total")[:1]
+        return Coalesce(Subquery(subquery), Value(0))
 
     query_set = OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0,
                                                  accepted=True).order_by(
@@ -1888,9 +1901,11 @@ def worker_payments(request, org_slug=None, opp_id=None):
     query_set = query_set.annotate(
         last_active=Greatest(Max("uservisit__visit_date"), Max("completedmodule__date"), "date_learn_started"),
         last_paid=Max("payment__date_paid"),
+        total_paid_d=get_payment_subquery(),
+        confirmed_paid_d=get_payment_subquery(True),
     )
     table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opp_id)
-    RequestConfig(request, paginate={"per_page": 10}).configure(table)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(request, "tailwind/components/tables/table.html", {"table": table})
 
 
@@ -2025,7 +2040,7 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
         },
         {"stage": "Started Learning",
          "count": header_with_tooltip(aggregates["started_learning_count"],
-                                      "Workers who started downloading the Learn app"),
+                                      "Started download of the Learn app"),
          "icon": "book-open-cover"
          },
         {"stage": "Completed Learning", "count": header_with_tooltip(aggregates["completed_learning"],
@@ -2130,7 +2145,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
     stats = get_opportunity_delivery_progress(opportunity.id)
 
     worker_list_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
-    status_url = worker_list_url + "?active_tab=workers&sort=last_active"
+    status_url = worker_list_url + "?active_tab=workers&sort=-last_active"
     delivery_url = worker_list_url + "?active_tab=delivery&sort=-pending"
     payment_url = worker_list_url + "?active_tab=payments"
 

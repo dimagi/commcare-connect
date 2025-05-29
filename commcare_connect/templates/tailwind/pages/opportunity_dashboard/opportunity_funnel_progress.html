@@ -35,13 +35,13 @@
   <h4 class="text-brand-deep-purple font-medium">Worker Progress Funnel</h4>
   <div class="flex flex-col md:flex-row gap-4 justify-between">
     {% for data in funnel_progress %}
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-2 {% if not forloop.last %} flex-1 {% endif %}">
       <div class="flex items-center gap-2">
         <div class="text-brand-indigo text-lg p-2 rounded bg-indigo-100 aspect-square text-center h-12 w-12 place-content-center">
           <i class="fa-light fa-{{ data.icon }}"></i>
         </div>
         {% if not forloop.last %}
-        <div class="relative w-32 h-0.5 bg-transparent border-dashed border-t-2 border-gray-400 my-6">
+        <div class="relative w-full grow h-0.5 bg-transparent border-dashed border-t-2 border-gray-400 my-6">
           <div class="absolute -right-1 -top-[6.5px] w-2.5 h-2.5 border-t-2 border-r-2 border-gray-400 rotate-45"></div>
         </div>
         {% endif %}

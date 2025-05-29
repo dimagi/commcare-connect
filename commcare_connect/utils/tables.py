@@ -13,6 +13,9 @@ TEXT_CENTER_ATTR = {"td": {"class": "text-center"}}
 DATE_TIME_FORMAT  ="%d-%b-%Y %H:%M"
 DATE_FORMAT = "%d-%b-%Y"
 
+DEFAULT_PAGE_SIZE = 20
+PAGE_SIZE_OPTIONS = [20, 30, 50, 100]
+
 def merge_attrs(*dicts):
     merged = {}
     for d in dicts:
@@ -101,3 +104,11 @@ class DMYTColumn(tables.Column):
             final_value = value.strftime(DATE_FORMAT)
 
         return final_value
+
+
+def get_validated_page_size(request):
+    try:
+        page_size = int(request.GET.get("page_size", DEFAULT_PAGE_SIZE))
+        return page_size if page_size in PAGE_SIZE_OPTIONS else DEFAULT_PAGE_SIZE
+    except (ValueError, TypeError):
+        return DEFAULT_PAGE_SIZE

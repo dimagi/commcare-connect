@@ -406,6 +406,12 @@ def get_worker_learn_table_data(opportunity):
         .values("min_date")
     )
 
+    def assessment_exists_subquery(passed: bool):
+        return Assessment.objects.filter(
+            opportunity_access_id=OuterRef('pk'),
+            passed=passed
+        )
+
     duration_subquery = (
         CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
         .values("opportunity_access")
@@ -427,6 +433,12 @@ def get_worker_learn_table_data(opportunity):
         modules_completed_percentage=Round(
             ExpressionWrapper(F("completed_modules_count") * 100.0 / learn_modules_count, output_field=FloatField()), 1
         ),
+        assessment_status_rank=Case(
+            When(Exists(assessment_exists_subquery(passed=True)), then=Value(2)),  # Passed
+            When(Exists(assessment_exists_subquery(passed=False)), then=Value(1)),  # Failed
+            default=Value(0),
+            output_field=IntegerField(),
+        )
     )
     return queryset
 
