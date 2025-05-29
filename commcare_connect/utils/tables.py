@@ -1,20 +1,19 @@
+import datetime
 import itertools
 from datetime import timedelta
 
 import django_tables2 as tables
-from django.utils.html import escape
-from django.utils.timezone import is_aware, localtime # For timezone handling
-import datetime
-
+from django.utils.timezone import is_aware, localtime  # For timezone handling
 
 STOP_CLICK_PROPAGATION_ATTR = {"td": {"@click.stop": ""}}
 TEXT_CENTER_ATTR = {"td": {"class": "text-center"}}
 
-DATE_TIME_FORMAT  ="%d-%b-%Y %H:%M"
+DATE_TIME_FORMAT = "%d-%b-%Y %H:%M"
 DATE_FORMAT = "%d-%b-%Y"
 
 DEFAULT_PAGE_SIZE = 20
 PAGE_SIZE_OPTIONS = [20, 30, 50, 100]
+
 
 def merge_attrs(*dicts):
     merged = {}

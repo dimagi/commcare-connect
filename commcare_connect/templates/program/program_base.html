@@ -47,7 +47,7 @@
               </div>
               <a class="button button-sm button-outline-rounded" href="{{ row.url }}">
                 <div class="flex items-center justify-between gap-4">
-                  <p class="text-2xl">{{ row.count }}</p>
+                  <p class="{% if row.small_text %}text-sm{%else%}text-2xl{%endif%}">{{ row.count }}</p>
                   <i class="fa-light fa-arrow-right"></i>
                 </div>
               </a>

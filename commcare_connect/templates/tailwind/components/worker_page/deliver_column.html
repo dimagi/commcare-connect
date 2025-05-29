@@ -8,14 +8,17 @@
          positionMenu() {
              const rect = this.$el.getBoundingClientRect();
              const menu = this.$refs.menu;
-             const top = rect.bottom + 5;
+
              const left = rect.left + rect.width/2 - menu.offsetWidth/2;
-             menu.style.top = top + 'px';
              menu.style.left = left + 'px';
+             let top = rect.bottom + 5;
+             if (window.innerHeight - rect.bottom < rect.height + menu.clientHeight) {
+               top = rect.bottom - rect.height - menu.clientHeight;
+             }
+             menu.style.top = top + 'px';
          }
      }"
-     x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })"
-     >
+     x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })">
 
     <span class="rounded-lg cursor-pointer hover:bg-slate-200 underline">
         {{value}}
@@ -29,7 +32,7 @@
          style="display: none">
 
             {% for item in rows %}
-                <div class="flex justify-between py-1 my-1 items-center w-32">
+                <div class="flex justify-between py-1 my-1 items-center w-32 font-normal">
                     <p class="text-xs text-brand-deep-purple">
                         {{ item.label }}
                     </p>

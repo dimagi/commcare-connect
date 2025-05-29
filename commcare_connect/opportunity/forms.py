@@ -34,6 +34,7 @@ FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Afri
 
 CHECKBOX_CLASS = "simple-toggle"
 
+
 class OpportunityUserInviteForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
@@ -255,12 +256,15 @@ class OpportunityInitForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data:
-            cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
-            cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
+            try:
+                cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
+                cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
 
-            if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
-                self.add_error("learn_app", "Learn app and Deliver app cannot be same")
-                self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
+                if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
+                    self.add_error("learn_app", "Learn app and Deliver app cannot be same")
+                    self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
+            except KeyError:
+                raise forms.ValidationError("Invalid app data")
             return cleaned_data
 
     def save(self, commit=True):
@@ -363,8 +367,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 ),
             )
             self.fields["org_pay_per_visit"] = forms.IntegerField(
-                required=True, widget=forms.NumberInput(),
-                initial=self.instance.org_pay_per_visit
+                required=True, widget=forms.NumberInput(), initial=self.instance.org_pay_per_visit
             )
 
         self.fields["max_users"] = forms.IntegerField(label="Max Workers", initial=int(self.instance.number_of_users))
@@ -750,7 +753,7 @@ class AddBudgetNewUsersForm(forms.Form):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(Field("add_users"), Field("total_budget"), css_class="grid grid-cols-2 gap-4"),
-            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
@@ -847,13 +850,17 @@ class PaymentUnitForm(forms.ModelForm):
                         Field("amount"),
                         Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
                         Field("start_date"),
-                        Field("end_date")),
-                    css_class="grid grid-cols-2 gap-4 p-6 card_bg"),
+                        Field("end_date"),
+                    ),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                ),
                 Row(
                     Field("required_deliver_units"),
                     Field("payment_units"),
-                    Field("optional_deliver_units"), Div(HTML(
-                        f"""
+                    Field("optional_deliver_units"),
+                    Div(
+                        HTML(
+                            f"""
                     <button type="button" class="button button-md outline-style" id="sync-button"
                     hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
                     hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
@@ -865,10 +872,16 @@ class PaymentUnitForm(forms.ModelForm):
                     </button>
 
                 """
-                    )),
-                    css_class="grid grid-cols-2 gap-4 p-6 card_bg"),
-                Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
-                , css_class="flex flex-col gap-4"))
+                        )
+                    ),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                ),
+                Row(
+                    Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"
+                ),
+                css_class="flex flex-col gap-4",
+            )
+        )
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
         self.fields["required_deliver_units"] = forms.MultipleChoiceField(

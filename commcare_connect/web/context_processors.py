@@ -1,4 +1,4 @@
-from commcare_connect.utils.tables import PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE
+from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS
 
 
 def page_settings(request):

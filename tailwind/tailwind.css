@@ -643,11 +643,11 @@
 
 .better-tabs {
   .tabs {
-    @apply flex h-full gap-x-8 px-2 overflow-x-scroll;
+    @apply flex h-full gap-x-8 overflow-x-scroll px-2;
   }
 
   .tab {
-    @apply relative flex h-full cursor-pointer items-center gap-1 text-sm text-gray-500 text-nowrap;
+    @apply relative flex h-full cursor-pointer items-center gap-1 text-nowrap text-sm text-gray-500;
 
     /* Active Tabs */
     &:is(.tab-active, [aria-selected='true']):not(.tab-disabled, [disabled]),
@@ -668,5 +668,5 @@
 }
 
 .relative > .pointer-events-none > svg {
-    display: none;        /* https://github.com/django-crispy-forms/crispy-tailwind/issues/124 */
+  display: none; /* https://github.com/django-crispy-forms/crispy-tailwind/issues/124 */
 }

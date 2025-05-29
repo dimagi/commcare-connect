@@ -1,23 +1,17 @@
-{% extends "base.html" %}
+{% extends "tailwind/base.html" %}
 {% load i18n %}
 {% load static %}
 {% load crispy_forms_tags %}
 
-{% block title %}New Organization - CommCare Connect{% endblock title %}
+{% block title %}CommCare Connect - New Organization{% endblock title %}
 
 {% block content %}
-<div class="my-2">
+<div class="container md:max-w-screen-lg mx-auto flex flex-col gap-4">
+  <div class="title text-brand-deep-purple">Create a New Organization</div>
   <form action="{% url 'organization_create' %}" method="post">
-    <div class="card">
-      <div class="card-header">Create a New Organization</div>
-      <div class="card-body">
-          {% csrf_token %}
-          {{ form|crispy }}
-      </div>
-      <div class="card-footer">
-        <button class="btn btn-primary" type="submit">Create Organization</button>
-      </div>
-    </div>
+    {% csrf_token %}
+    {{ form|crispy }}
+    <button class="button button-md primary-dark float-end" type="submit">Create Organization</button>
   </form>
 </div>
 {% endblock content %}

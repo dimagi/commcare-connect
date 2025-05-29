@@ -4,22 +4,21 @@ from urllib.parse import urlencode
 import django_tables2 as tables
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Layout, Row
+from django.contrib.humanize.templatetags.humanize import intcomma
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from django.utils.timezone import localtime
 from django_filters import ChoiceFilter, DateRangeFilter, FilterSet, ModelChoiceFilter
 from django_tables2 import columns, utils
 
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
+    CompletedWorkStatus,
     DeliverUnit,
     LearnModule,
-    CompletedWorkStatus,
     OpportunityAccess,
-    Payment,
     PaymentInvoice,
     PaymentUnit,
     UserInvite,
@@ -38,7 +37,6 @@ from commcare_connect.utils.tables import (
     OrgContextTable,
     merge_attrs,
 )
-from django.contrib.humanize.templatetags.humanize import intcomma
 
 
 class OpportunityContextTable(OrgContextTable):
@@ -525,13 +523,15 @@ class PaymentInvoiceTable(OpportunityContextTable):
 
     def render_actions(self, record):
         invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opp_id])
+        disabled = "disabled" if getattr(record, "payment", None) else ""
         template_string = f"""
             <form method="POST" action="{ invoice_approve_url  }">
                 <input type="hidden" name="csrfmiddlewaretoken" value="{ self.csrf_token }">
                 <input type="hidden" name="pk" value="{ record.pk }">
-                <button type="submit" class="button button-md outline-style" {'disabled' if getattr(record, 'payment', None) else ''}>Pay</button>
+                <button type="submit" class="button button-md outline-style" { disabled }>
+                Pay</button>
             </form>
-        """
+        """  # noqa: E501
         return mark_safe(template_string)
 
 
@@ -607,7 +607,7 @@ class BaseOpportunityList(OrgContextTable):
                         </span>
                     {% endif %}
                 </div>
-            """,
+            """,  # noqa: E501
     )
 
     status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
@@ -639,7 +639,7 @@ class BaseOpportunityList(OrgContextTable):
             text = "Inactive"
 
         return format_html(
-            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'  # noqa: E501
             '  <span class="{}">{}</span>'
             "</div>",
             badge_class,
@@ -758,7 +758,6 @@ class OpportunityTable(BaseOpportunityList):
 
 
 class ProgramManagerOpportunityTable(BaseOpportunityList):
-
     active_workers = tables.Column(
         verbose_name=header_with_tooltip(
             "Active Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
@@ -863,7 +862,7 @@ class UserVisitVerificationTable(tables.Table):
         verbose_name="Flags",
         orderable=False,
         template_code="""
-            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal w-72">
+            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal">
                 {% if record %}
                     {% if record.status == 'over_limit' %}
                     <span class="badge badge-sm negative-light mx-1">{{ record.get_status_display|lower }}</span>
@@ -925,11 +924,16 @@ class UserVisitVerificationTable(tables.Table):
     def get_icons(self, statuses):
         status_meta = {
             # Review Status Pending, Visit Status Approved
-            "approved_pending_review": {"icon": "fa-solid fa-circle-check text-slate-300/50",
-                                        "tooltip": "Manually approved by NM"},
+            "approved_pending_review": {
+                "icon": "fa-solid fa-circle-check text-slate-300/50",
+                "tooltip": "Manually approved by NM",
+            },
             VisitValidationStatus.approved: {"icon": "fa-solid fa-circle-check", "tooltip": "Auto-approved"},
             VisitValidationStatus.rejected: {"icon": "fa-light fa-ban", "tooltip": "Rejected by NM"},
-            VisitValidationStatus.pending: {"icon": "fa-light fa-flag-swallowtail", "tooltip": "Waiting for NM Review"},
+            VisitValidationStatus.pending: {
+                "icon": "fa-light fa-flag-swallowtail",
+                "tooltip": "Waiting for NM Review",
+            },
             VisitValidationStatus.duplicate: {"icon": "fa-light fa-clone", "tooltip": "Duplicate Visit"},
             VisitValidationStatus.trial: {"icon": "fa-light fa-marker", "tooltip": "Trail Visit"},
             VisitValidationStatus.over_limit: {"icon": "fa-light fa-marker", "tooltip": "Daily limit exceeded"},
@@ -946,10 +950,7 @@ class UserVisitVerificationTable(tables.Table):
             icon_class = meta.get("icon")
             if icon_class:
                 tooltip = meta.get("tooltip")
-                icon_html = format_html(
-                    '<i class="{} text-brand-deep-purple ml-4"></i>',
-                    icon_class
-                )
+                icon_html = format_html('<i class="{} text-brand-deep-purple ml-4"></i>', icon_class)
                 if tooltip:
                     icon_html = header_with_tooltip(icon_html, tooltip)
                 icons_html.append(icon_html)
@@ -957,11 +958,8 @@ class UserVisitVerificationTable(tables.Table):
         justify_class = "justify-end" if len(statuses) == 1 else "justify-between"
         icons = "".join(icons_html)
         return format_html(
-            '<div class="{} text-end text-brand-deep-purple text-lg">{}</div>',
-            justify_class,
-            mark_safe(icons)
+            '<div class="{} text-end text-brand-deep-purple text-lg">{}</div>', justify_class, mark_safe(icons)
         )
-
 
     def render_icons(self, record):
         if record.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
@@ -1035,12 +1033,19 @@ class WorkerStatusTable(tables.Table):
     completed_learn = DMYTColumn(
         verbose_name=header_with_tooltip("Completed Learn", "Completed all Learn modules except assessment")
     )
-    days_to_complete_learn = DurationColumn(verbose_name=header_with_tooltip("Time to Complete Learning",
-                                                                             "Difference between Completed Learn and Started Learn"))
+    days_to_complete_learn = DurationColumn(
+        verbose_name=header_with_tooltip(
+            "Time to Complete Learning", "Difference between Completed Learn and Started Learn"
+        )
+    )
     first_delivery = DMYTColumn(
-        verbose_name=header_with_tooltip("First Delivery", "Time stamp of when the first learn form was delivered"))
-    days_to_start_delivery = DurationColumn(verbose_name=header_with_tooltip("Time to Start Deliver",
-                                                                             "Time it took to deliver the first deliver form after invitation"))
+        verbose_name=header_with_tooltip("First Delivery", "Time stamp of when the first learn form was delivered")
+    )
+    days_to_start_delivery = DurationColumn(
+        verbose_name=header_with_tooltip(
+            "Time to Start Deliver", "Time it took to deliver the first deliver form after invitation"
+        )
+    )
 
     def __init__(self, *args, **kwargs):
         self.use_view_url = True
@@ -1055,11 +1060,14 @@ class WorkerPaymentsTable(tables.Table):
     user = UserInfoColumn(footer="Total")
     suspended = SuspendedIndicatorColumn()
     last_active = DMYTColumn()
-    payment_accrued = tables.Column(verbose_name="Accrued",
-                                    footer=lambda table: intcomma(
-                                        sum(x.payment_accrued or 0 for x in table.data)))
-    total_paid = tables.Column(verbose_name="Total Paid", accessor="total_paid_d",
-                               footer=lambda table: intcomma(sum(x.total_paid or 0 for x in table.data)))
+    payment_accrued = tables.Column(
+        verbose_name="Accrued", footer=lambda table: intcomma(sum(x.payment_accrued or 0 for x in table.data))
+    )
+    total_paid = tables.Column(
+        verbose_name="Total Paid",
+        accessor="total_paid_d",
+        footer=lambda table: intcomma(sum(x.total_paid or 0 for x in table.data)),
+    )
     last_paid = DMYTColumn()
     confirmed_paid = tables.Column(verbose_name="Confirm", accessor="confirmed_paid_d")
 
@@ -1115,8 +1123,8 @@ class WorkerLearnTable(OrgContextTable):
     modules_completed = tables.TemplateColumn(
         accessor="modules_completed_percentage",
         template_code="""
-                            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
-                        """,
+            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
+        """,  # noqa: E501
     )
     completed_learning = DMYTColumn(accessor="completed_learn", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="assessment_status_rank")
@@ -1155,7 +1163,6 @@ class WorkerLearnTable(OrgContextTable):
         order_by = ("-last_active",)
 
     def render_user(self, value, record):
-
         if not record.accepted:
             return "-"
 
@@ -1182,14 +1189,13 @@ class WorkerLearnTable(OrgContextTable):
         )
 
     def render_assessment(self, value):
-        status = '-'
+        status = "-"
         if value == 2:
-            status = 'Passed'
+            status = "Passed"
         elif value == 1:
-            status = 'Failed'
+            status = "Failed"
 
         return status
-
 
 
 class TotalFlagCountsColumn(tables.Column):
@@ -1291,16 +1297,13 @@ class WorkerDeliveryTable(OrgContextTable):
             "rejected",
             "action",
         )
-        order_by=("user.name", "-last_active")
-
-
+        order_by = ("user.name", "-last_active")
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
         self.use_view_url = True
         super().__init__(*args, **kwargs)
         self._seen_users = set()
-
 
     def render_delivery_progress(self, record):
         current = record.completed
@@ -1320,7 +1323,6 @@ class WorkerDeliveryTable(OrgContextTable):
 
         return render_to_string("tailwind/components/progressbar/simple-progressbar.html", context)
 
-
     def render_action(self, record):
         url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
         template = """
@@ -1334,7 +1336,6 @@ class WorkerDeliveryTable(OrgContextTable):
     def render_user(self, value, record):
         if record.id in self._seen_users:
             return ""
-
 
         url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
 
@@ -1354,7 +1355,6 @@ class WorkerDeliveryTable(OrgContextTable):
         if record.id in self._seen_users:
             return ""
         return SuspendedIndicatorColumn().render(value)
-
 
     def run_after_every_row(self, record):
         self._seen_users.add(record.id)
@@ -1485,7 +1485,17 @@ class PaymentUnitTable(OrgContextTable):
     class Meta:
         model = PaymentUnit
         orderable = False
-        fields = ("index", "name", "start_date", "end_date", "amount", "org_pay", "max_total", "max_daily", "deliver_units")
+        fields = (
+            "index",
+            "name",
+            "start_date",
+            "end_date",
+            "amount",
+            "org_pay",
+            "max_total",
+            "max_daily",
+            "deliver_units",
+        )
         empty_text = "No payment units for this opportunity."
 
     def render_org_pay(self, record):

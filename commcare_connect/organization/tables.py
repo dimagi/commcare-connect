@@ -25,10 +25,12 @@ class OrgMemberTable(tables.Table):
         text = "Accepted" if value else "Pending"
 
         return format_html(
-            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'
+            '<div class="flex justify-start text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis">'  # noqa: E501
             '<span class="badge badge-sm {} {}">{}</span>'
-            '</div>',
-            bg_color, text_color, text
+            "</div>",
+            bg_color,
+            text_color,
+            text,
         )
 
     def render_role(self, value):

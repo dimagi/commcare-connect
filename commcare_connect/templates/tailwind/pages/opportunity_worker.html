@@ -117,14 +117,14 @@
             </div>
 
             <!-- VisitExportForm -->
-            <div x-show="selectedForm === 'nm_review'">
-              {% crispy visit_export_form %}
-            </div>
+            <template x-if="selectedForm === 'nm_review'">
+              <div>{% crispy visit_export_form %}</div>
+            </template>
 
             <!-- ReviewVisitExportForm -->
-            <div x-show="selectedForm === 'pm_review'">
-              {% crispy review_visit_export_form %}
-            </div>
+            <template x-if="selectedForm === 'pm_review'">
+              <div>{% crispy review_visit_export_form %} </div>
+            </template>
 
           </div>
 

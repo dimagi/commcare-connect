@@ -40,6 +40,7 @@
         </div>
 
         <!-- Navigation Items -->
+        {% if request.user.is_authenticated and request.user.memberships.exists %}
         <div class="mt-5">
             {% url 'program:home' request.org.slug as program_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
@@ -49,8 +50,8 @@
 
             {% url 'organization:home' request.org.slug as organization_home_url %}
             {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url namespace='organization' %}
-
         </div>
+        {% endif %}
     </div>
 
 </div>

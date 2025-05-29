@@ -8,7 +8,13 @@
 
 {% block inner %}
 <div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
-  <form method="post" class="flex flex-col gap-4">
+  <form method="post" class="flex flex-col gap-4"
+    x-data="{
+      email: '', password: '', confirmPassword: '', termsChecked: false,
+      isFormValid() {
+        return this.termsChecked && this.email && this.password && this.confirmPassword;
+      }
+    }">
     {% csrf_token %}
     <h6 class="title text-brand-deep-purple">{% translate "Signup" %}</h6>
     <span class="text-sm text-gray-600">{% blocktranslate %}Please enter your details{% endblocktranslate %}</span>
@@ -22,7 +28,7 @@
                required
                id="{{ form.email.auto_id }}"
                {% if form.email.value != None %}value="{{ form.email.value|stringformat:'s' }}"{% endif %}
-               name="{{ form.email.html_name }}">
+               name="{{ form.email.html_name }}" x-model="email">
         <i class="fa-light fa-envelope"></i>
         <span class="error-icon fa-solid fa-circle-exclamation"></span>
       </div>
@@ -35,7 +41,7 @@
                required
                id="{{ form.password1.auto_id }}"
                {% if form.password1.value != None %}value="{{ form.password1.value|stringformat:'s' }}"{% endif %}
-               name="{{ form.password1.html_name }}">
+               name="{{ form.password1.html_name }}" x-model="password">
         <i class="fa-light fa-lock"></i>
         <span class="error-icon fa-solid fa-circle-exclamation"></span>
       </div>
@@ -48,7 +54,7 @@
                required
                id="{{ form.password2.auto_id }}"
                {% if form.password2.value != None %}value="{{ form.password2.value|stringformat:'s' }}"{% endif %}
-               name="{{ form.password2.html_name }}">
+               name="{{ form.password2.html_name }}" x-model="confirmPassword">
         <i class="fa-light fa-lock"></i>
         <span class="error-icon fa-solid fa-circle-exclamation"></span>
       </div>
@@ -56,22 +62,16 @@
     </div>
     <!-- Checkbox and Submit -->
     <div class="flex flex-col items-end gap-3">
-      <div class="input-group"
-           x-data="{ expanded: false }"
-           x-effect="document.body.style.overflow = expanded ? 'hidden' : 'auto'"
-           :class="{'error': !termsValid && termsTouched}">
+      <div class="input-group">
         <div class="flex items-start w-full gap-2">
-          <input type="checkbox" class="simple-checkbox aspect-square" required />
+          <div><input type="checkbox" class="simple-checkbox" required x-model="termsChecked" /></div>
           <p class="hint">
-            <span>{% blocktranslate %}By accessing CommCare Connect, you accept our {% endblocktranslate %}</span>
-            <button class="font-medium cursor-pointer text-brand-indigo"
-                    x-on:click.prevent="expanded = true">Terms & Conditions and Privacy Policy</button>
-            <div x-show="expanded" x-cloak>{% include "account/terms-and-conditions-modal.html" %}</div>
+            <span>{% blocktranslate %}I have read and agree to Dimagi's <a class="text-brand-indigo font-medium" href="https://dimagi.com/terms-privacy-dimagi/" target="_blank">Privacy Policy</a> and <a class="text-brand-indigo font-medium" href="http://www.dimagi.com/terms/latest/aup/" target="_blank">Acceptable Use Policy</a>.{% endblocktranslate %}</span>
           </p>
         </div>
         <p class="error-msg">{% blocktranslate %}You must accept the terms and conditions{% endblocktranslate %}</p>
       </div>
-      <button class="button button-md primary-dark" type="submit">
+      <button class="button button-md primary-dark" type="submit" :disabled="!isFormValid()">
         <span class="relative z-20">{% translate "Signup" %}</span>
       </button>
     </div>

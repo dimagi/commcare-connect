@@ -155,7 +155,7 @@ def test_get_worker_learn_table_data_all_fields(
 
     module1 = LearnModuleFactory(app=opportunity.learn_app)
     module2 = LearnModuleFactory(app=opportunity.learn_app)
-    module3 = LearnModuleFactory(app=opportunity.learn_app)
+    LearnModuleFactory(app=opportunity.learn_app)
 
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
 
@@ -205,7 +205,7 @@ def test_get_worker_learn_table_data_all_fields(
     row = result.get(id=access.id)
 
     assert row.last_active.date() == three_days_ago
-    assert row.completed_learn == None
+    assert row.completed_learn is None
     assert row.assesment_count == 2
     assert row.learning_hours.total_seconds() == 10800
     assert row.completed_modules_count == 2
