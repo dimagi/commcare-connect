@@ -56,7 +56,7 @@ class OpportunityUserInviteForm(forms.Form):
 
         self.fields["users"] = forms.CharField(
             widget=forms.Textarea,
-            help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
+            help_text="Enter the phone numbers of users to add to this opportunity, one per line, starting with '+'.",
             required=False,
         )
         self.fields["filter_country"] = forms.CharField(
@@ -78,8 +78,13 @@ class OpportunityUserInviteForm(forms.Form):
         if user_data and self.opportunity and not self.opportunity.is_setup_complete:
             raise ValidationError("Please finish setting up the opportunity before inviting users.")
 
-        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
-        return split_users
+        user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
+
+        for user_number in user_numbers:
+            if not user_number.startswith("+"):
+                raise ValidationError("Please ensure all numbers start with '+'.")
+
+        return user_numbers
 
 
 class OpportunityChangeForm(
