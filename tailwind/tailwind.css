@@ -149,7 +149,7 @@
   }
 
   .button-icon:disabled {
-    @apply pointer-events-none opacity-50 bg-transparent text-slate-400;
+    @apply pointer-events-none bg-transparent text-slate-400 opacity-50;
   }
 }
 

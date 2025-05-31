@@ -198,9 +198,27 @@ class OpportunityList(OrganizationUserMixin, SingleTableMixin, TemplateView):
 
     def get_table_data(self):
         org = self.request.org
-        query_set = get_opportunity_list_data(org, self.request.org.program_manager)
-        query_set = query_set.order_by("status", "start_date", "end_date")
-        return query_set
+        is_program_manager = self.request.org.program_manager
+
+        queryset = get_opportunity_list_data(org, is_program_manager)
+        queryset = queryset.order_by("status", "start_date", "end_date")
+
+        # patch .count() to avoid slowness that comes from queryset
+        # the count is used for pagination
+        def fast_count():
+            if is_program_manager:
+                return (
+                    Opportunity.objects.filter(
+                        Q(organization=org) | Q(managedopportunity__program__organization=org)
+                    )  # noqa: E501
+                    .distinct()
+                    .count()
+                )
+            else:
+                return Opportunity.objects.filter(organization=org).count()
+
+        queryset.count = fast_count
+        return queryset
 
 
 class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):
