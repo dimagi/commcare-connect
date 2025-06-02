@@ -50,6 +50,7 @@ class User(AbstractUser):
 
     class Meta:
         constraints = [UniqueConstraint(fields=["email"], name="unique_user_email", condition=Q(email__isnull=False))]
+        permissions = [("demo_users_access", "Allow viewing OTPs for demo users")]
 
     def __str__(self):
         return self.email or self.username
