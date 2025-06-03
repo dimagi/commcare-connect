@@ -22,8 +22,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.views import OpportunityInit
 from commcare_connect.organization.decorators import (
     org_admin_required,
-    org_member_required,
     org_program_manager_required,
+    org_viewer_required,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
@@ -262,7 +262,7 @@ class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
         return get_delivery_performance_report(program, start_date, end_date)
 
 
-@org_member_required
+@org_viewer_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
     if is_program_manager(request):
@@ -318,13 +318,13 @@ def program_manager_home(request, org):
     )
 
     pending_payments = _make_recent_activity_data(
-        pending_payments_data, org.slug, "opportunity:worker_list", {"active_tab": "payments"}, small_text=True
+        pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="pk"
     )
 
     organizations = Organization.objects.exclude(pk=org.pk)
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
-        {"title": "Pending Payments", "rows": pending_payments},
+        {"title": "Pending Invoices", "rows": pending_payments},
     ]
 
     context = {
@@ -405,7 +405,12 @@ def network_manager_home(request, org):
 
 
 def _make_recent_activity_data(
-    data: list[dict], org_slug: str, url_slug: str, url_get_kwargs: dict = {}, small_text=False
+    data: list[dict],
+    org_slug: str,
+    url_slug: str,
+    url_get_kwargs: dict = {},
+    small_text=False,
+    opportunity_slug="opp_id",
 ):
     get_string = "&".join([f"{key}={value}" for key, value in url_get_kwargs.items()])
     return [
@@ -413,7 +418,7 @@ def _make_recent_activity_data(
             "opportunity__name": row["opportunity__name"],
             "opportunity__organization__name": row["opportunity__organization__name"],
             "count": row.get("count", 0),
-            "url": reverse(url_slug, kwargs={"org_slug": org_slug, "opp_id": row["opportunity__id"]})
+            "url": reverse(url_slug, kwargs={"org_slug": org_slug, opportunity_slug: row["opportunity__id"]})
             + f"?{get_string}",
             "small_text": small_text,
         }

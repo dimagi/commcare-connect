@@ -154,14 +154,12 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
     opportunity.save()
 
     # Create OpportunityAccesses
-    oa1 = OpportunityAccessFactory(
-        opportunity=opportunity, accepted=True, payment_accrued=1000, date_learn_started=now()
-    )
+    oa1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=1000, last_active=now())
     oa2 = OpportunityAccessFactory(
-        opportunity=opportunity, accepted=True, payment_accrued=200, date_learn_started=now() - timedelta(4)
+        opportunity=opportunity, accepted=True, payment_accrued=200, last_active=now() - timedelta(4)
     )
     oa3 = OpportunityAccessFactory(
-        opportunity=opportunity, accepted=True, payment_accrued=0, date_learn_started=now() - timedelta(4)
+        opportunity=opportunity, accepted=True, payment_accrued=0, last_active=now() - timedelta(4)
     )
 
     # Payments

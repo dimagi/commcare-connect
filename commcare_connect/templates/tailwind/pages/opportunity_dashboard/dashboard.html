@@ -33,9 +33,15 @@
               {% if object.is_test %}
               <span class="badge badge-md primary-light">Test</span>
               {% endif %}
-              <i class="fa-light cursor-pointer"
+              {% if request.org_membership.is_viewer %}
+               <i class="fa-light opacity-50"
+                 :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark-large' : 'fa-bars']"
+                 ></i>
+              {% else %}
+                <i class="fa-light cursor-pointer"
                  :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark-large' : 'fa-bars']"
                  @click="isOpen = !isOpen"></i>
+              {% endif %}
               <!-- Dropdown Menu -->
               {% include "tailwind/pages/opportunity_dashboard/opportunity_menu.html" with request=request opportunity=object is_program_manager=is_program_manager %}
           </div>
@@ -47,7 +53,7 @@
               <div class="flex mt-6">
 
               <!-- Opportunity resources: payment unit, learn app deliver app and its display modal-->
-                <div class="flex gap-4" x-data="{
+                <div x-cloak class="flex gap-4" x-data="{
                       showModal: false,
                       selectedTab: '',
                       selectedOption: '',

@@ -612,9 +612,9 @@ class BaseOpportunityList(OrgContextTable):
 
     status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
 
-    program = tables.Column(attrs=TEXT_CENTER_ATTR)
-    start_date = DMYTColumn(attrs=TEXT_CENTER_ATTR)
-    end_date = DMYTColumn(attrs=TEXT_CENTER_ATTR)
+    program = tables.Column()
+    start_date = DMYTColumn()
+    end_date = DMYTColumn()
 
     class Meta:
         sequence = (
@@ -626,6 +626,7 @@ class BaseOpportunityList(OrgContextTable):
             "start_date",
             "end_date",
         )
+        order_by = ("status", "start_date", "end_date")
 
     def render_status(self, value):
         if value == 0:
@@ -1126,7 +1127,7 @@ class WorkerLearnTable(OrgContextTable):
             {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
         """,  # noqa: E501
     )
-    completed_learning = DMYTColumn(accessor="completed_learn", verbose_name="Completed Learning")
+    completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
     assessment = tables.Column(accessor="assessment_status_rank")
 
     attempts = tables.Column(accessor="assesment_count")

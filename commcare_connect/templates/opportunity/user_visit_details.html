@@ -316,6 +316,7 @@
 {% else %}
   <div>
     <button class="button button-md positive-light"
+    {% if request.org_membership.is_viewer %} disabled {% else %}
     {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %}
       {% if user_visit.opportunity.managed %}
       @click="showRejectModal = false; showApproveModal = true;"
@@ -325,14 +326,17 @@
       {% endif %}
     {% else %}
       disabled
+    {% endif %}
     {% endif %}>
       Approve
     </button>
     <button class="button button-md negative-light"
+    {% if request.org_membership.is_viewer %} disabled {% else %}
     {% if user_visit.status != "rejected" or user_visit.review_status == "disagree" %}
       @click="showRejectModal = true; showApproveModal = false;"
     {% else %}
       disabled
+    {% endif %}
     {% endif %}>
       Reject
     </button>

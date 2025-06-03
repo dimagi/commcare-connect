@@ -147,6 +147,10 @@
   .button-icon:focus {
     @apply bg-brand-mango/10;
   }
+
+  .button-icon:disabled {
+    @apply pointer-events-none bg-transparent text-slate-400 opacity-50;
+  }
 }
 
 @layer components {

@@ -6,14 +6,16 @@
   <div class="flex flex-col gap-2 w-full">
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
-      <div class="flex gap-x-6">
-        <a
-        class="button button-md primary-dark"
-        href="{% url 'opportunity:init' request.org.slug %}"
-      >
+    <div class="flex gap-x-6">
+      {% if request.org_membership.is_viewer %}
+      <button disabled class="button button-md primary-dark">Add Opportunity</button>
+      {% else %}
+      <a class="button button-md primary-dark" href="{% url 'opportunity:init' request.org.slug %}">
         Add Opportunity
       </a>
-      </div>
+      {% endif %}
+
+    </div>
     </div>
 
     <!-- Table Header -->

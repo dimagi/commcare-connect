@@ -12,6 +12,7 @@ class Flags(Enum):
     ATTACHMENT_MISSING = "attachment_missing"
     DURATION = "duration"
     FORM_VALUE_NOT_FOUND = "form_value_not_found"
+    USER_SUSPENDED = "user_suspended"
 
 
 class FlagDescription(Enum):
@@ -22,6 +23,7 @@ class FlagDescription(Enum):
     FORM_SUBMISSION_PERIOD = "Form was submitted before the start time"
     ATTACHMENT_MISSING = "Form was submitted without attachements."
     DURATION = "The form was completed too quickly."
+    USER_SUSPENDED = "This user is suspended from the opportunity."
 
     @staticmethod
     def FORM_VALUE_NOT_FOUND(form_json_rule: FormJsonValidationRules):
@@ -44,6 +46,7 @@ class FlagLabels(Enum):
     ATTACHMENT_MISSING = "No Attachment"
     DURATION = "Duration"
     FORM_VALUE_NOT_FOUND = "Missing Form Value"
+    USER_SUSPENDED = "User Suspended"
 
     @classmethod
     def get_label(cls, flag):

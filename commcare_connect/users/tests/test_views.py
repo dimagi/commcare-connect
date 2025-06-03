@@ -73,7 +73,7 @@ class TestUserRedirectView:
         request.org = None
 
         view.request = request
-        assert view.get_redirect_url() == "/register/organization/"
+        assert view.get_redirect_url() == "/"
 
     def test_get_redirect_url_for_org_user(
         self, organization: Organization, org_user_member: User, rf: RequestFactory

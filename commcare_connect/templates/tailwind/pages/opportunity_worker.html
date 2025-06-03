@@ -4,7 +4,19 @@
 
 {% include 'tailwind/components/breadcrumbs.html' with path=path %}
 
-<div x-cloak class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
+<div class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
+  <div
+    x-show="isLoading"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+  >
+    <div class="flex flex-col items-center justify-center rounded-lg bg-white p-8 shadow-xl">
+      <svg class="h-12 w-12 animate-spin text-brand-indigo" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <p class="mt-4 text-lg font-medium text-brand-deep-purple">Loading...</p>
+    </div>
+  </div>
   <!-- Tabs -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <ul class="tabs">
@@ -23,29 +35,42 @@
     <div class="flex justify-end gap-2">
     <!-- Tab Options -->
     <div x-show="selectedTab === 'workers'" class="flex gap-x-4 items-center">
-      <button type="button" class="button-icon" @click="showWorkerExportModal = true">
+      <button type="button" class="button-icon" @click="showWorkerExportModal = true"
+              {% if request.org_membership.is_viewer %} disabled {% endif %}
+      >
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
-      <!-- Todo; update user invite to new view -->
-      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="button button-md outline-style">
-        Add Worker
-      </a>
+      {% if request.org_membership.is_viewer %}
+        <button disabled class="button button-md outline-style">
+          Add Worker
+        </button>
+      {% else %}
+        <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="button button-md outline-style">
+          Add Worker
+        </a>
+      {% endif %}
     </div>
 
     <div x-show="selectedTab === 'delivery'" class="flex gap-x-4">
-      <button type="button" @click="showVisitImportModal = true" class="button-icon">
-        <i class="fa-light fa-upload text-brand-deep-purple"></i>
-      </button>
-      <button type="button" class="button-icon" @click="showVisitExportModal = true">
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
-      </button>
+        <button type="button" @click="showVisitImportModal = true" class="button-icon"
+                {% if request.org_membership.is_viewer %} disabled {% endif %}>
+          <i class="fa-light fa-upload text-brand-deep-purple"></i>
+        </button>
+        <button type="button" class="button-icon" @click="showVisitExportModal = true"
+                {% if request.org_membership.is_viewer %} disabled {% endif %}>
+          <i class="fa-light fa-download text-brand-deep-purple"></i>
+        </button>
     </div>
 
     <div x-show="selectedTab === 'payments'" class="flex gap-x-4">
-      <button type="button" class="button-icon"  @click="showPaymentImportModal= true" >
+      <button type="button" class="button-icon" @click="showPaymentImportModal= true"
+              {% if request.org_membership.is_viewer %} disabled {% endif %}
+      >
         <i class="fa-light fa-upload text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon" @click="showPaymentExportModal = true" >
+      <button type="button" class="button-icon" @click="showPaymentExportModal = true"
+              {% if request.org_membership.is_viewer %} disabled {% endif %}
+      >
         <i class="fa-light fa-download text-brand-deep-purple"></i>
       </button>
     </div>
@@ -157,14 +182,15 @@ function opportunityTabs() {
     showVisitImportModal: false,
     showPaymentImportModal: false,
     showPaymentExportModal: false,
+    isLoading: true,
     init() {
       const urlParams = new URLSearchParams(window.location.search);
       const tab = urlParams.get('active_tab') || 'workers';
       this.setTab(tab, true, true);
     },
     setTab(tab, updateUrl = true, isInit = false) {
-      if (this.selectedTab == tab) return;
 
+      if (this.selectedTab == tab && !isInit) return;
       this.selectedTab = tab;
       this.selectedOption = '';
 
@@ -178,10 +204,8 @@ function opportunityTabs() {
           url.search = ''; // Clear all search parameters
           if (activeTab !== null) {
             url.searchParams.set('active_tab', activeTab);
-         }
-
+          }
         }
-
         window.history.replaceState({}, '', url);
       }
 
@@ -190,18 +214,23 @@ function opportunityTabs() {
         const container = document.querySelector('#opportunity_worker_container');
         let url = tabElement?.dataset?.url;
 
-        // removed page param from htmx url on tab change
         if (!isInit) {
           const cleanUrl = new URL(url, window.location.origin);
           cleanUrl.searchParams.delete('page');
           url = cleanUrl.toString();
         }
-
         if (url && container) {
+          this.isLoading = true;
           htmx.ajax('GET', url, {
             target: container,
             swap: 'innerHTML',
+          }).then(() => {
+            this.isLoading = false;
+          }).catch(() => {
+            this.isLoading = false;
           });
+        } else if (!url) {
+            this.isLoading = false;
         }
       });
     }

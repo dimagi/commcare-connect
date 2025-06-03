@@ -65,9 +65,13 @@
 
           <!-- button -->
           {% if program.status == 'invited' %}
-            <button hx-post="{% url "program:apply_or_decline_application" request.org.slug program.id program.application_id "apply" %}"
-                  hx-swap="outerHTML"
-                  hx-target="body"
+            <button {% if request.org_membership.is_viewer %}
+                    disabled
+                    {% else %}
+                    hx-post="{% url "program:apply_or_decline_application" request.org.slug program.id program.application_id "apply" %}"
+                    hx-swap="outerHTML"
+                    hx-target="body"
+                    {% endif %}
                   class="button button-md primary-dark">
               Apply
             </button>

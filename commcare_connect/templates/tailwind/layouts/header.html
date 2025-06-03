@@ -26,8 +26,9 @@
                 </button>
 
                 <!-- Organization Selector -->
-                <div x-show="open" x-transition.opacity x-cloak class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
-                    <ul class="p-2 w-full">
+                <div x-show="open" x-transition.opacity x-cloak
+                     class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
+                    <ul class="p-2 w-full max-h-80 overflow-y-auto">
                         {% if request.user.memberships.exists %}
                         {% for membership in request.memberships %}
                         <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
@@ -38,12 +39,12 @@
                         </li>
                         {% endfor %}
                         {% endif %}
-                        <li class="p-2 rounded cursor-pointer text-left">
-                            <a class="bg-brand-indigo text-white px-6 py-2 rounded-lg shadow-md hover:bg-blue-800 transition" href="{% url 'organization_create' %}">
-                            Add Organization
-                            </a>
-                        </li>
                     </ul>
+                    <div class="p-2">
+                        <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
+                        Add Organization
+                        </a>
+                    </div>
                 </div>
             </div>
 
