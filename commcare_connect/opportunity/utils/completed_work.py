@@ -34,7 +34,9 @@ def _update_status_set_saved_fields_and_get_payment_accrued(completed_work, oppo
     amount_accrued = 0
     made_changes = False
     if opportunity_access.opportunity.auto_approve_payments:
-        visits = completed_work.uservisit_set.values_list("status", "reason", "review_status")
+        visits = completed_work.uservisit_set.exclude(status__in=[VisitValidationStatus.duplicate]).values_list(
+            "status", "reason", "review_status"
+        )
         if any(status == VisitValidationStatus.rejected for status, *_ in visits):
             completed_work.status = CompletedWorkStatus.rejected
             completed_work.reason = "\n".join(reason for _, reason, _ in visits if reason)
