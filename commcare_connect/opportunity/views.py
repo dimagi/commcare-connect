@@ -1259,21 +1259,23 @@ def user_visit_review(request, org_slug, opp_id):
 @org_member_required
 def payment_report(request, org_slug, pk):
     opportunity = get_opportunity_or_404(pk, org_slug)
+    usd = request.GET.get("usd")
+    amount_field = "amount_usd" if usd else "amount"
     if not opportunity.managed:
         return redirect("opportunity:detail", org_slug, pk)
     total_paid_users = (
         Payment.objects.filter(opportunity_access__opportunity=opportunity, organization__isnull=True).aggregate(
-            total=Sum("amount")
+            total=Sum(amount_field)
         )["total"]
         or 0
     )
     total_paid_nm = (
         Payment.objects.filter(organization=opportunity.organization, invoice__opportunity=opportunity).aggregate(
-            total=Sum("amount")
+            total=Sum(amount_field)
         )["total"]
         or 0
     )
-    data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity)
+    data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity, usd)
     table = PaymentReportTable(data)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
 
