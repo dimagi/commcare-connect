@@ -316,9 +316,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             continue
 
         try:
-            amount = int(amount_raw)
-        except ValueError:
-            invalid_rows.append((row, "amount must be an integer"))
+            amount = Decimal(amount_raw)
+        except InvalidOperation:
+            invalid_rows.append((row, "amount must be a number"))
             continue
 
         try:

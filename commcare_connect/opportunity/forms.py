@@ -1079,7 +1079,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field("amount"),
+                Field("amount", min=0),
                 Field("date"),
                 Field("invoice_number"),
                 Field(
