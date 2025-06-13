@@ -358,7 +358,7 @@ def get_exchange_rate(currency_code, date=None):
     rate_date = date or now().date()
     rate = None
 
-    rate = ExchangeRate.latest_exchange_rate(currency_code=currency_code, rate_date=rate_date).rate
+    rate = ExchangeRate.latest_exchange_rate(currency_code=currency_code, date=rate_date).rate
     if not rate:
         raise ImportException("Rate not found for opportunity currency")
 
