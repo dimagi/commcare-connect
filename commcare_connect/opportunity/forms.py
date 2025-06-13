@@ -14,6 +14,7 @@ from commcare_connect.opportunity.models import (
     CommCareApp,
     DeliverUnit,
     DeliverUnitFlagRules,
+    ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
     Opportunity,
@@ -1067,21 +1068,57 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 
 class PaymentInvoiceForm(forms.ModelForm):
+    usd_currency = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="USD Currency",
+        widget=forms.CheckboxInput(),
+    )
+
     class Meta:
         model = PaymentInvoice
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        widgets = {"date": forms.DateInput(attrs={"type": "date"})}
+        widgets = {
+            "date": forms.DateInput(attrs={"type": "date"}),
+            "amount": forms.NumberInput(attrs={"min": "0"}),
+        }
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
+        self.fields["usd_currency"].widget.attrs.update(
+            {
+                "x-ref": "currencyToggle",
+                "x-on:change": "currency = $event.target.checked; convert(true)",
+            }
+        )
+
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field("amount", min=0),
-                Field("date"),
+                Field(
+                    "date",
+                    **{
+                        "x-ref": "date",
+                        "x-on:change": "convert()",
+                    },
+                ),
+                Field(
+                    "amount",
+                    label=f"Amount ({self.opportunity.currency})",
+                    **{
+                        "x-ref": "amount",
+                        "x-on:input.debounce.300ms": "convert()",
+                    },
+                ),
+                Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
                 Field("invoice_number"),
+                Field(
+                    "usd_currency",
+                    css_class=CHECKBOX_CLASS,
+                    wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
                 Field(
                     "service_delivery",
                     css_class=CHECKBOX_CLASS,
@@ -1101,9 +1138,36 @@ class PaymentInvoiceForm(forms.ModelForm):
             )
         return invoice_number
 
+    def clean(self):
+        cleaned_data = super().clean()
+        amount = cleaned_data.get("amount")
+        usd_currency = cleaned_data.get("usd_currency")
+        date = cleaned_data.get("date")
+
+        if amount is None or date is None:
+            return cleaned_data  # Let individual field errors handle missing values
+
+        exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+        if not exchange_rate:
+            raise ValidationError("Exchange rate not available for selected date.")
+
+        cleaned_data["exchange_rate"] = exchange_rate
+
+        if usd_currency:
+            cleaned_data["amount_usd"] = amount
+            cleaned_data["amount"] = round(amount * exchange_rate.rate, 2)
+        else:
+            cleaned_data["amount"] = amount
+            cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
+
+        return cleaned_data
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
+        instance.amount_usd = self.cleaned_data["amount_usd"]
+        instance.exchange_rate = self.cleaned_data["exchange_rate"]
+
         if commit:
             instance.save()
         return instance
