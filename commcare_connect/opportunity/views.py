@@ -1448,11 +1448,17 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         for flag, _description in visit.flag_reason.get("flags", []):
             flag_label = FlagLabels.get_label(flag)
             if visit.status == VisitValidationStatus.approved:
-                flagged_info[flag_label]["approved"] += 1
-            if visit.status == VisitValidationStatus.rejected:
-                flagged_info[flag_label]["rejected"] += 1
+                if opportunity.managed and visit.review_created_on is not None:
+                    if visit.review_status == VisitReviewStatus.agree:
+                        flagged_info[flag_label]["approved"] += 1
+                    else:
+                        flagged_info[flag_label]["pending"] += 1
+                else:
+                    flagged_info[flag_label]["approved"] += 1
             if visit.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
                 flagged_info[flag_label]["pending"] += 1
+            if visit.status == VisitValidationStatus.rejected:
+                flagged_info[flag_label]["rejected"] += 1
             flagged_info[flag_label]["name"] = flag_label
     flagged_info = flagged_info.values()
     last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
