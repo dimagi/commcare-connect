@@ -28,7 +28,7 @@
     </span>
 
     <div x-ref="menu" x-show="isOpen" x-on:click.outside="isOpen = false" x-transition x-cloak
-         class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-nowrap whitespace-nowrap font-normal">
+         class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-wrap font-normal">
         <div class="flags_counter"
              @htmx:after-swap="$refs.menu.style.display = 'initial';
                                $refs.menu.style.display = 'none';">
