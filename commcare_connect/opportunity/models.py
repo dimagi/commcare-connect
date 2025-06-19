@@ -439,6 +439,29 @@ class VisitValidationStatus(models.TextChoices):
     trial = "trial", gettext("Trial")
 
 
+class ExchangeRate(models.Model):
+    currency_code = models.CharField(max_length=3)
+    rate = models.DecimalField(max_digits=10, decimal_places=6)
+    rate_date = models.DateField(db_index=True)
+    fetched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["currency_code", "rate_date"], name="unique_currency_code_date")
+        ]
+
+    @classmethod
+    def latest_exchange_rate(cls, currency_code, date):
+        from commcare_connect.opportunity.tasks import fetch_exchange_rates
+
+        latest_rates = cls.objects.filter(currency_code=currency_code, rate_date__lte=date).order_by("-rate_date")
+        if latest_rates:
+            return latest_rates.first()
+        else:
+            date = date.replace(day=1)
+            return fetch_exchange_rates(date, currency_code)
+
+
 class PaymentInvoice(models.Model):
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
@@ -446,13 +469,10 @@ class PaymentInvoice(models.Model):
     date = models.DateField()
     invoice_number = models.CharField(max_length=50)
     service_delivery = models.BooleanField(default=True)
+    exchange_rate = models.ForeignKey(ExchangeRate, on_delete=models.DO_NOTHING, null=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
-
-    @property
-    def exchange_rate(self):
-        return ExchangeRate.latest_exchange_rate(self.opportunity.currency, self.date)
 
 
 class Payment(models.Model):
@@ -802,19 +822,3 @@ class CatchmentArea(models.Model):
 
     class Meta:
         unique_together = ("site_code", "opportunity")
-
-
-class ExchangeRate(models.Model):
-    currency_code = models.CharField(max_length=3)
-    rate = models.DecimalField(max_digits=10, decimal_places=6)
-    rate_date = models.DateField(db_index=True)
-    fetched_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["currency_code", "rate_date"], name="unique_currency_code_date")
-        ]
-
-    @classmethod
-    def latest_exchange_rate(cls, currency_code, date):
-        cls.objects.filter(currency_code=currency_code, rate_date__gte=date).order_by("-rate_date").first()

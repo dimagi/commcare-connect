@@ -396,7 +396,7 @@ def bulk_update_payment_accrued(opportunity_id, user_ids: list):
 
 
 @celery_app.task()
-def fetch_exchange_rates(date=None):
+def fetch_exchange_rates(date=None, currency=None):
     base_url = "https://openexchangerates.org/api"
 
     if date is None:
@@ -407,7 +407,11 @@ def fetch_exchange_rates(date=None):
     response = httpx.get(url)
     rates = response.json()["rates"]
 
-    currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
-    for currency in currencies:
+    if currency is None:
+        currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
+        for currencies in currency:
+            rate = rates[currency]
+            ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+    else:
         rate = rates[currency]
-        ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+        return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
