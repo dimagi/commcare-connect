@@ -1,5 +1,6 @@
 from datetime import timedelta
 from http import HTTPStatus
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import Client
@@ -26,7 +27,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MembershipFactory
+from commcare_connect.users.tests.factories import MobileUserFactory, OrganizationFactory, MembershipFactory
 
 
 @pytest.mark.django_db
