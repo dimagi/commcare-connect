@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from commcare_connect.opportunity.app_xml import Module, get_connect_blocks_for_app, get_form_xml_for_app
+from commcare_connect.opportunity.tests.factories import CommCareAppFactory
 
 
 @pytest.fixture
@@ -22,10 +23,11 @@ def demo_app_ccz_content():
         return file.read()
 
 
+@pytest.mark.django_db
 def test_get_form_xml_for_app(httpx_mock, demo_app_ccz_content):
     httpx_mock.add_response(content=demo_app_ccz_content)
-
-    form_xml = get_form_xml_for_app("demo_domain", "app_id")
+    app = CommCareAppFactory(cc_domain="demo_domain", cc_app_id="app_id")
+    form_xml = get_form_xml_for_app(app)
     assert len(form_xml) == 4
     assert "http://openrosa.org/formdesigner/52F02F3E-320D-4D91-9EBF-FF4F06226E98" in form_xml[0]
     assert "http://openrosa.org/formdesigner/EC1AD740-D2C9-4532-AECC-2D5CF5364696" in form_xml[1]
@@ -33,10 +35,11 @@ def test_get_form_xml_for_app(httpx_mock, demo_app_ccz_content):
     assert "http://openrosa.org/formdesigner/BD70B3D5-6CB4-4A2E-AD5B-C8E3E7BC37A7" in form_xml[3]
 
 
+@pytest.mark.django_db
 def test_get_connect_blocks_for_app(httpx_mock, demo_app_ccz_content):
     httpx_mock.add_response(content=demo_app_ccz_content)
-
-    blocks = get_connect_blocks_for_app("demo_domain", "app_id")
+    app = CommCareAppFactory(cc_domain="demo_domain", cc_app_id="app_id")
+    blocks = get_connect_blocks_for_app(app)
     assert blocks == [
         Module(
             id="module_1",

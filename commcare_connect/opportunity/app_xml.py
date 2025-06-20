@@ -6,8 +6,8 @@ import zipfile
 from dataclasses import dataclass
 
 import httpx
-from django.conf import settings
 
+from commcare_connect.opportunity.models import CommCareApp
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 XMLNS = "http://commcareconnect.com/data/v1/learn"
@@ -32,21 +32,24 @@ class AppNoBuildException(CommCareHQAPIException):
     pass
 
 
-def get_connect_blocks_for_app(domain: str, app_id: str) -> list[Module]:
-    form_xmls = get_form_xml_for_app(domain, app_id)
+def get_connect_blocks_for_app(learn_app) -> list[Module]:
+    form_xmls = get_form_xml_for_app(learn_app)
     return list(itertools.chain.from_iterable(extract_connect_blocks(form_xml) for form_xml in form_xmls))
 
 
-def get_deliver_units_for_app(domain: str, app_id: str) -> list[DeliverUnit]:
-    form_xmls = get_form_xml_for_app(domain, app_id)
+def get_deliver_units_for_app(deliver_app) -> list[DeliverUnit]:
+    form_xmls = get_form_xml_for_app(deliver_app)
     return list(itertools.chain.from_iterable(extract_deliver_units(form_xml) for form_xml in form_xmls))
 
 
-def get_form_xml_for_app(domain: str, app_id: str) -> list[str]:
+def get_form_xml_for_app(app: CommCareApp) -> list[str]:
     """Download the CCZ for the given app and return the XML for each form."""
+    app_id = app.cc_app_id
+    domain = app.cc_domain
+    url = app.hq_server.url
 
     for latest in ["release", "build", "save"]:
-        ccz_url = f"{settings.COMMCARE_HQ_URL}/a/{domain}/apps/api/download_ccz/"
+        ccz_url = f"{url}/a/{domain}/apps/api/download_ccz/"
         params = {
             "app_id": app_id,
             "latest": latest,

@@ -1,5 +1,4 @@
 import httpx
-from django.conf import settings
 
 from commcare_connect.organization.models import Organization
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -21,7 +20,7 @@ def get_organization_for_request(request, view_kwargs):
 
 
 def create_hq_user(user, domain, api_key):
-    mobile_worker_api_url = f"{settings.COMMCARE_HQ_URL}/a/{domain}/api/v0.5/user/"
+    mobile_worker_api_url = f"{api_key.hq_server.url}/a/{domain}/api/v0.5/user/"
     hq_request = httpx.post(
         mobile_worker_api_url,
         json={

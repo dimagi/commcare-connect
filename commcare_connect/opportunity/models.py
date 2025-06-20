@@ -3,7 +3,6 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
-from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Count, F, Max, Q, Sum
@@ -15,6 +14,16 @@ from django.utils.translation import gettext
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
+
+
+class HQServer(models.Model):
+    name = models.CharField(max_length=255)
+    url = models.URLField(unique=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.url})"
 
 
 class CommCareApp(BaseModel):
@@ -29,13 +38,14 @@ class CommCareApp(BaseModel):
     name = models.CharField(max_length=255)
     description = models.TextField()
     passing_score = models.IntegerField(null=True)
+    hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def __str__(self):
         return self.name
 
     @property
     def url(self):
-        return f"{settings.COMMCARE_HQ_URL}/a/{self.cc_domain}/apps/view/{self.cc_app_id}"
+        return f"{self.hq_server.url}/a/{self.cc_domain}/apps/view/{self.cc_app_id}"
 
 
 class HQApiKey(models.Model):
@@ -44,6 +54,8 @@ class HQApiKey(models.Model):
         User,
         on_delete=models.CASCADE,
     )
+    hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
 
 
 class DeliveryType(models.Model):
@@ -92,6 +104,7 @@ class Opportunity(BaseModel):
     is_test = models.BooleanField(default=True)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
     managed = models.BooleanField(default=False)
+    hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def __str__(self):
         return self.name
