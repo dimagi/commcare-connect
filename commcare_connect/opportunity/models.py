@@ -99,6 +99,8 @@ class Opportunity(BaseModel):
     # to be removed
     budget_per_visit = models.IntegerField(null=True)
     total_budget = models.PositiveBigIntegerField(null=True)
+    # Whether users payment phone numbers are required or not
+    payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency = models.CharField(max_length=3, null=True)
     auto_approve_visits = models.BooleanField(default=True)

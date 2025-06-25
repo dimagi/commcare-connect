@@ -12,7 +12,7 @@ def backfill_payment_created_date(apps, schema):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0073_payment_payment_method_payment_payment_operator"),
+        ("opportunity", "0074_opportunityaccess_completed_learn_date_and_more"),
     ]
 
     operations = [

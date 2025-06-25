@@ -497,6 +497,8 @@ def update_visit_status_import(request, org_slug=None, pk=None):
         message = f"Visit status updated successfully for {len(status)} visits."
         if status.missing_visits:
             message += status.get_missing_message()
+        if status.over_limit_count:
+            messages.warning(request, mark_safe(status.get_over_limit_count_message()))
         messages.success(request, mark_safe(message))
     url = reverse("opportunity:worker_list", args=(org_slug, pk)) + "?active_tab=delivery"
     return redirect(url)
