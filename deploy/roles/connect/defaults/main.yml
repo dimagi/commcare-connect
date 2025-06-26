@@ -15,6 +15,6 @@ aws_region: us-east-1
 connectid_url: https://connectid.dimagi.com
 django_admin_url: admin/
 django_email_backend: anymail.backends.amazon_ses.EmailBackend
-sentry_environment: staging
+deploy_environment: staging
 django_allow_registrations: True
 commcare_hq_url: https://staging.commcarehq.org

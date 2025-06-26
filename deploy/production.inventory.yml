@@ -10,4 +10,4 @@ webservers:
     ansible_user: ubuntu
     secrets_file: 'Ansible Secrets - Production'
     commcare_hq_url: 'https://www.commcarehq.org'
-    sentry_environment: 'production'
+    deploy_environment: 'production'
