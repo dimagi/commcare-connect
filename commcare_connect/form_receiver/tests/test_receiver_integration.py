@@ -59,10 +59,11 @@ def test_form_receiver_learn_module(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     module_id = "learn_module_1"
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _get_form_json(opportunity.learn_app, module_id)
     assert CompletedModule.objects.count() == 0
     learn_module = LearnModuleFactory(app=opportunity.learn_app, slug=module_id)
-    make_request(api_client, form_json, mobile_user_with_connect_link)
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     assert CompletedModule.objects.count() == 1
     assert CompletedModule.objects.filter(
@@ -79,10 +80,11 @@ def test_form_receiver_learn_module_create(
 ):
     """Test that a new learn module is created if it doesn't exist."""
     module = LearnModuleJsonFactory()
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
     assert CompletedModule.objects.count() == 0
 
-    make_request(api_client, form_json, mobile_user_with_connect_link)
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     assert CompletedModule.objects.count() == 1
     assert CompletedModule.objects.filter(
         module__slug=module.id,
@@ -115,6 +117,7 @@ def test_form_receiver_multiple_module_submissions(
     subsequent_date_offset: int,
 ):
     modules = [LearnModuleJsonFactory() for _ in range(module_count)]
+    oauth_application = opportunity.hq_server.oauth_application
     current = now()
     past_date = current - timedelta(days=initial_date_offset)
     future_date = current + timedelta(days=subsequent_date_offset)
@@ -123,14 +126,14 @@ def test_form_receiver_multiple_module_submissions(
     for module in modules:
         form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
         form_json["received_on"] = past_date
-        make_request(api_client, form_json, mobile_user_with_connect_link)
+        make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     # Subsequent submissions
     for module in modules:
         form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
         form_json["received_on"] = future_date
         form_json["id"] = str(uuid4())  # Change form ID to simulate a new submission
-        make_request(api_client, form_json, mobile_user_with_connect_link)
+        make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     assert CompletedModule.objects.count() == module_count * 2  # Initial + subsequent submissions
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user_with_connect_link)
@@ -150,7 +153,9 @@ def test_form_receiver_multiple_module_submissions(
     with patch("commcare_connect.form_receiver.views.logger") as mock_logger:
         form_json = _get_form_json(opportunity.learn_app, modules[0].id, modules[0].json)
         form_json["received_on"] = past_date
-        make_request(api_client, form_json, mobile_user_with_connect_link, HTTPStatus.OK)
+        make_request(
+            api_client, form_json, mobile_user_with_connect_link, HTTPStatus.OK, oauth_application=oauth_application
+        )
         xform_id = form_json["id"]
         mock_logger.info.assert_any_call(f"Learn Module is already completed with form ID: {xform_id}.")
 
@@ -160,6 +165,7 @@ def test_form_receiver_assessment(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     passing_score = opportunity.learn_app.passing_score
+    oauth_application = opportunity.hq_server.oauth_application
     score = passing_score + 5
     assessment = AssessmentStubFactory(score=score).json
     form_json = get_form_json(
@@ -169,7 +175,7 @@ def test_form_receiver_assessment(
     )
     assert Assessment.objects.count() == 0
 
-    make_request(api_client, form_json, mobile_user_with_connect_link)
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     assert Assessment.objects.count() == 1
     assert Assessment.objects.filter(
         score=score,
@@ -184,6 +190,7 @@ def test_form_receiver_assessment(
 @pytest.mark.django_db
 def test_receiver_deliver_form(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    oauth_application = opportunity.hq_server.oauth_application
     stub = DeliverUnitStubFactory(id=deliver_unit.slug)
     form_json = get_form_json(
         form_block=stub.json,
@@ -192,7 +199,7 @@ def test_receiver_deliver_form(mobile_user_with_connect_link: User, api_client: 
     )
     assert UserVisit.objects.filter(user=mobile_user_with_connect_link).count() == 0
 
-    make_request(api_client, form_json, mobile_user_with_connect_link)
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=mobile_user_with_connect_link).count() == 1
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     assert visit.deliver_unit == deliver_unit
@@ -228,9 +235,10 @@ def _create_opp_and_form_json(
 def test_receiver_deliver_form_daily_visits_reached(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
@@ -241,10 +249,12 @@ def test_receiver_deliver_form_daily_visits_reached(
 def test_receiver_deliver_form_max_visits_reached(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
+    oauth_application = opportunity.hq_server.oauth_application
+
     def submit_form_for_random_entity(form_json):
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
-        make_request(api_client, duplicate_json, mobile_user_with_connect_link)
+        make_request(api_client, duplicate_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     payment_units = opportunity.paymentunit_set.all()
     form_json1 = get_form_json_for_payment_unit(payment_units[0])
@@ -267,12 +277,13 @@ def test_receiver_deliver_form_max_visits_reached(
 def test_receiver_deliver_form_end_date_reached(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(
         opportunity, user=user_with_connectid_link, end_date=datetime.date.today() - datetime.timedelta(days=100)
     )
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
     assert CompletedWork.objects.count() == 0
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     assert CompletedWork.objects.count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
@@ -285,11 +296,12 @@ def test_receiver_deliver_form_before_start_date(
 ):
     opportunity.start_date = datetime.date.today() + datetime.timedelta(days=10)
     opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(
         opportunity, user=user_with_connectid_link, end_date=datetime.date.today() + datetime.timedelta(days=100)
     )
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.trial
@@ -297,13 +309,14 @@ def test_receiver_deliver_form_before_start_date(
 
 
 def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.approved
     duplicate_json = deepcopy(form_json)
     duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link)
+    make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
     assert visit.status == VisitValidationStatus.duplicate
     assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit.flag_reason.get("flags", [])
@@ -311,10 +324,11 @@ def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClien
 
 def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
     # The mock data for form fails with duration flag
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.pending
     assert visit.flagged
@@ -324,11 +338,12 @@ def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opp
 def test_auto_approve_unflagged_visits(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
+    oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
     opportunity.auto_approve_visits = True
     opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.approved
@@ -338,9 +353,10 @@ def test_auto_approve_flagged_visits(user_with_connectid_link: User, api_client:
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     opportunity.auto_approve_visits = True
     opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert visit.status == VisitValidationStatus.pending
@@ -353,9 +369,10 @@ def test_auto_approve_payments_flagged_visit(
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     opportunity.auto_approve_payments = True
     opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
-    make_request(api_client, form_json, user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert visit.status == VisitValidationStatus.pending
@@ -377,7 +394,8 @@ def test_auto_approve_payments_unflagged_visit(
     opportunity.auto_approve_payments = True
     opportunity.auto_approve_visits = False
     opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.pending
@@ -398,7 +416,8 @@ def test_auto_approve_payments_approved_visit(
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
     opportunity.auto_approve_payments = True
     opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     visit.status = VisitValidationStatus.approved
     visit.save()
@@ -423,7 +442,8 @@ def test_auto_approve_payments_rejected_visit_functions(
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
     opportunity.auto_approve_payments = True
     opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     rejected_reason = []
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     visit.status = VisitValidationStatus.rejected
@@ -451,7 +471,8 @@ def test_auto_approve_payments_approved_visit_task(
     form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
     opportunity.auto_approve_payments = True
     opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     visit.status = VisitValidationStatus.approved
     visit.save()
@@ -474,7 +495,8 @@ def test_auto_approve_visits_and_payments(
     opportunity.auto_approve_visits = True
     opportunity.auto_approve_payments = True
     opportunity.save()
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
     assert visit.status == VisitValidationStatus.approved
@@ -517,8 +539,8 @@ def test_reciever_verification_flags_form_submission(
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     submission_time = datetime.datetime(2024, 5, 17, hour=submission_time_hour, minute=0)
     form_json["metadata"]["timeStart"] = submission_time
-
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
 
     visit = UserVisit.objects.get(user=user_with_connectid_link)
 
@@ -536,8 +558,8 @@ def test_receiver_verification_flags_duration(
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
-
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert ["duration", "The form was completed too quickly."] in visit.flag_reason.get("flags", [])
@@ -549,8 +571,8 @@ def test_receiver_verification_flags_check_attachments(
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     deliver_unit = opportunity.deliver_app.deliver_units.first()
     DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=0, check_attachments=True)
-
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert ["attachment_missing", "Form was submitted without attachements."] in visit.flag_reason.get("flags", [])
@@ -568,8 +590,8 @@ def test_receiver_verification_flags_form_json_rule(
         question_value="123",
     )
     form_json_rule.deliver_unit.add(deliver_unit)
-
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert not visit.flagged
 
@@ -586,8 +608,8 @@ def test_receiver_verification_flags_form_json_rule_flagged(
         question_value="123",
     )
     form_json_rule.deliver_unit.add(deliver_unit)
-
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert [
@@ -608,8 +630,8 @@ def test_receiver_verification_flags_catchment_areas(
 
     access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
     CatchmentAreaFactory(opportunity=opportunity, opportunity_access=access, active=True)
-
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.flagged
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
@@ -666,7 +688,8 @@ def test_receiver_visit_review_status(
     form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
     if visit_status != VisitValidationStatus.approved:
         form_json["metadata"]["location"] = None
-    make_request(api_client, form_json, mobile_user_with_connect_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     if visit_status != VisitValidationStatus.approved:
         assert visit.flagged
@@ -679,7 +702,8 @@ def test_receiver_duplicate_managed_opportunity(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    make_request(api_client, form_json, user_with_connectid_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user_with_connectid_link)
     payment_unit = PaymentUnit.objects.get(opportunity=opportunity)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
@@ -688,7 +712,7 @@ def test_receiver_duplicate_managed_opportunity(
 
     duplicate_json = deepcopy(form_json)
     duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link)
+    make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
     access.refresh_from_db()
     assert visit.status == VisitValidationStatus.duplicate
@@ -714,7 +738,8 @@ def test_receiver_visit_payment_unit_dates(
 ):
     form_json = get_form_json_for_payment_unit(opportunity.paymentunit_set.first())
     form_json["metadata"]["timeStart"] = now() - datetime.timedelta(minutes=2)
-    make_request(api_client, form_json, mobile_user_with_connect_link)
+    oauth_application = opportunity.hq_server.oauth_application
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
     assert visit.status == visit_status
 
@@ -739,8 +764,8 @@ def _get_form_json(learn_app, module_id, form_block=None):
     return form_json
 
 
-def make_request(api_client, form_json, user, expected_status_code=200):
-    add_credentials(api_client, user)
+def make_request(api_client, form_json, user, expected_status_code=200, oauth_application=None):
+    add_credentials(api_client, user, oauth_application)
     response = api_client.post("/api/receiver/", data=form_json, format="json")
     assert response.status_code == expected_status_code, response.data
 
@@ -750,10 +775,13 @@ def test_receiver_same_visit_twice(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     payment_units = opportunity.paymentunit_set.all()
+    oauth_application = opportunity.hq_server.oauth_application
     form_json1 = get_form_json_for_payment_unit(payment_units[0])
     form_json2 = deepcopy(form_json1)
-    make_request(api_client, form_json1, mobile_user_with_connect_link)
-    make_request(api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK)
+    make_request(api_client, form_json1, mobile_user_with_connect_link, oauth_application=oauth_application)
+    make_request(
+        api_client, form_json2, mobile_user_with_connect_link, HTTPStatus.OK, oauth_application=oauth_application
+    )
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 1
 

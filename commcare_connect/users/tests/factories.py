@@ -6,6 +6,25 @@ from commcare_connect.organization.models import Organization, UserOrganizationM
 from commcare_connect.users.models import ConnectIDUserLink
 
 
+class OauthApplicationFactory(DjangoModelFactory):
+    name = Faker("name")
+    client_id = Faker("uuid4")
+    client_secret = Faker("uuid4")
+
+    class Meta:
+        model = "oauth2_provider.Application"
+
+
+class HQServerFactory(DjangoModelFactory):
+    name = Faker("name")
+    url = Faker("url")
+    oauth_application = SubFactory(OauthApplicationFactory)
+
+    class Meta:
+        model = "opportunity.HQServer"
+        django_get_or_create = ["url"]
+
+
 class UserFactory(DjangoModelFactory):
     email = Faker("email")
     name = Faker("name")
@@ -28,6 +47,7 @@ class UserFactory(DjangoModelFactory):
 class ConnectIdUserLinkFactory(DjangoModelFactory):
     user = SubFactory(UserFactory)
     commcare_username = Faker("word")
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = ConnectIDUserLink
