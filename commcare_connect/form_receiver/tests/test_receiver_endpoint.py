@@ -7,6 +7,7 @@ from rest_framework.test import APIClient, APIRequestFactory
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.tests.xforms import get_form_json
 from commcare_connect.form_receiver.views import FormReceiver
+from commcare_connect.opportunity.tests.factories import HQServerFactory
 from commcare_connect.users.models import User
 
 receiver_view = FormReceiver.as_view()
@@ -32,7 +33,9 @@ def test_form_receiver_validation(user: User, api_client: APIClient):
 
 
 def test_process_xform_error(user: User, api_client: APIClient):
-    add_credentials(api_client, user)
+    hq_server = HQServerFactory()
+    oauth_application = hq_server.oauth_application
+    add_credentials(api_client, user, oauth_application=oauth_application)
     with (mock.patch("commcare_connect.form_receiver.views.process_xform") as process_xform,):
         process_xform.side_effect = ProcessingError("oops, something went wrong")
         response = api_client.post("/api/receiver/", data=get_form_json(), format="json")
@@ -40,10 +43,18 @@ def test_process_xform_error(user: User, api_client: APIClient):
     assert response.data == {"detail": "oops, something went wrong"}
 
 
-def add_credentials(api_client: APIClient, user: User):
+def test_processor_view_hq_server_not_found_error(user: User, api_client: APIClient):
+    add_credentials(api_client, user)
+    response = api_client.post("/api/receiver/", data=get_form_json(), format="json")
+    assert response.status_code == 400, response.data
+    assert response.data == {"detail": "A server error occurred."}
+
+
+def add_credentials(api_client: APIClient, user: User, oauth_application=None):
     token, _ = user.oauth2_provider_accesstoken.get_or_create(
         token="token",
         scope="read write",
         defaults={"expires": now() + datetime.timedelta(hours=1)},
+        application=oauth_application,
     )
     api_client.credentials(Authorization=f"Bearer {token}")

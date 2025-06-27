@@ -13,6 +13,25 @@ class ApplicationFactory(DictFactory):
     domain = Faker("name")
 
 
+class OauthApplicationFactory(DjangoModelFactory):
+    name = Faker("name")
+    client_id = Faker("uuid4")
+    client_secret = Faker("uuid4")
+
+    class Meta:
+        model = "oauth2_provider.Application"
+
+
+class HQServerFactory(DjangoModelFactory):
+    name = Faker("name")
+    url = Faker("url")
+    oauth_application = SubFactory(OauthApplicationFactory)
+
+    class Meta:
+        model = "opportunity.HQServer"
+        django_get_or_create = ["url"]
+
+
 class CommCareAppFactory(DjangoModelFactory):
     organization = SubFactory(OrganizationFactory)
     cc_domain = Faker("name")
@@ -20,6 +39,7 @@ class CommCareAppFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     passing_score = Faker("pyint", min_value=50, max_value=100, step=5)
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.CommCareApp"
@@ -28,6 +48,7 @@ class CommCareAppFactory(DjangoModelFactory):
 class HQApiKeyFactory(DjangoModelFactory):
     api_key = Faker("uuid4")
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.HQApiKey"
@@ -57,6 +78,7 @@ class OpportunityFactory(DjangoModelFactory):
     api_key = SubFactory(HQApiKeyFactory)
     delivery_type = SubFactory(DeliveryTypeFactory)
     currency = "USD"
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.Opportunity"

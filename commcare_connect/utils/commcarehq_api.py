@@ -6,6 +6,8 @@ from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.utils import timezone
 
+from commcare_connect.opportunity.models import HQApiKey
+
 
 class CommCareHQAPIException(Exception):
     pass
@@ -48,32 +50,39 @@ def refresh_access_token(user, force=False):
     return social_token
 
 
-def get_domains_for_user(user):
-    social_token = refresh_access_token(user)
+def get_domains_for_user(api_key):
     response = httpx.get(
-        f"{settings.COMMCARE_HQ_URL}/api/v0.5/user_domains/?limit=100",
-        headers={"Authorization": f"Bearer {social_token}"},
+        f"{api_key.hq_server.url}/api/v0.5/user_domains/?limit=100",
+        headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
     )
     data = response.json()
     domains = [domain["domain_name"] for domain in data["objects"]]
     return domains
 
 
-def get_applications_for_user_by_domain(user, domain):
-    social_token = refresh_access_token(user)
-    return _get_applications_for_domain(social_token, domain)
+def get_applications_for_user_by_domain(api_key: HQApiKey, domain):
+    user_email = api_key.user.email
+    hq_server_url = api_key.hq_server.url
+    api_key = api_key.api_key
+    return _get_applications_for_domain(user_email, api_key, domain, hq_server_url)
 
 
 @async_to_sync
-async def _get_applications_for_domain(social_token, domain):
-    async with httpx.AsyncClient(timeout=300, headers={"Authorization": f"Bearer {social_token}"}) as client:
+async def _get_applications_for_domain(user_email, api_key, domain, hq_server_url):
+    async with httpx.AsyncClient(
+        timeout=300,
+        headers={
+            "Authorization": f"ApiKey {user_email}:{api_key}",
+        },
+        base_url=hq_server_url,
+    ) as client:
         applications = await _get_commcare_app_json(client, domain)
     return applications
 
 
 async def _get_commcare_app_json(client, domain):
     applications = []
-    response = await client.get(f"{settings.COMMCARE_HQ_URL}/a/{domain}/api/v0.5/application/")
+    response = await client.get(f"/a/{domain}/api/v0.5/application/")
     data = response.json()
 
     for application in data.get("objects", []):

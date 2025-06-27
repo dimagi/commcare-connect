@@ -20,6 +20,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
+    HQServer,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -39,9 +40,9 @@ ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
 
 
-def process_xform(xform: XForm):
+def process_xform(xform: XForm, hq_server: HQServer):
     """Process a form received from CommCare HQ."""
-    app = get_app(xform.domain, xform.app_id)
+    app = get_app(xform.domain, xform.app_id, hq_server)
     user = get_user(xform)
 
     opportunity = get_opportunity(deliver_app=app)
@@ -265,14 +266,12 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
-    counts = (
-        UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
-        .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
-        .aggregate(
-            daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
-            total=Count("*"),
-            entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
-        )
+    counts = UserVisit.objects.filter(
+        opportunity_access=access, deliver_unit=deliver_unit, status=VisitValidationStatus.approved
+    ).aggregate(
+        daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
+        total=Count("*"),
+        entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
     )
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
@@ -383,8 +382,8 @@ def get_opportunity(*, learn_app=None, deliver_app=None):
         raise ProcessingError(f"Multiple active opportunities found for CommCare app {app.cc_app_id}.")
 
 
-def get_app(domain, app_id):
-    app = CommCareApp.objects.filter(cc_domain=domain, cc_app_id=app_id).first()
+def get_app(domain, app_id, hq_server):
+    app = CommCareApp.objects.filter(cc_domain=domain, cc_app_id=app_id, hq_server=hq_server).first()
     if not app:
         raise ProcessingError(f"CommCare app {app_id} not found.")
     return app

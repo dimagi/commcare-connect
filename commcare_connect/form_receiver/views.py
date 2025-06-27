@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from commcare_connect.form_receiver.processor import process_xform
 from commcare_connect.form_receiver.serializers import XFormSerializer
+from commcare_connect.opportunity.models import HQServer
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,14 @@ class FormReceiver(APIView):
         serializer.is_valid(raise_exception=True)
         xform = serializer.save()
         try:
-            process_xform(xform)
+            hq_server = HQServer.objects.get(oauth_application=request.auth.application)
+        except HQServer.DoesNotExist as e:
+            from commcare_connect.form_receiver.exceptions import ProcessingError
+
+            raise ProcessingError from e
+
+        try:
+            process_xform(xform, hq_server)
         except IntegrityError as e:
             if "unique_xform_entity_deliver_unit" in str(e):
                 logger.info(f"Duplicate form with ID: {xform.id} received.")

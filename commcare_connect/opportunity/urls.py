@@ -1,9 +1,9 @@
 from django.urls import path
 
 from commcare_connect.opportunity import views
+from commcare_connect.opportunity.payment_number_report import PaymentNumberReport
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
-    OpportunityCreate,
     OpportunityDashboard,
     OpportunityDeliverStatusTable,
     OpportunityEdit,
@@ -31,7 +31,6 @@ from commcare_connect.opportunity.views import (
     export_user_visits,
     export_users_for_payment,
     fetch_attachment,
-    get_application,
     import_catchment_area,
     opportunity_user_invite,
     payment_delete,
@@ -56,7 +55,6 @@ from commcare_connect.opportunity.views import (
 app_name = "opportunity"
 urlpatterns = [
     path("", view=OpportunityList.as_view(), name="list"),
-    path("create/", view=OpportunityCreate.as_view(), name="create"),
     path("init/", view=OpportunityInit.as_view(), name="init"),
     path("<int:pk>/finalize/", view=OpportunityFinalize.as_view(), name="finalize"),
     path("<int:pk>/edit", view=OpportunityEdit.as_view(), name="edit"),
@@ -108,7 +106,9 @@ urlpatterns = [
     path("<int:opp_id>/payment/<int:access_id>/delete/<int:pk>/", view=payment_delete, name="payment_delete"),
     path("<int:opp_id>/user_profile/<int:pk>/", view=user_profile, name="user_profile"),
     path("<int:pk>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
-    path("applications/", get_application, name="get_applications_by_domain"),
+    path("api_keys/", views.get_api_keys, name="get_api_keys"),
+    path("domains/", views.get_domains, name="get_domains"),
+    path("applications/", views.get_application, name="get_applications_by_domain"),
     path("approve/<int:pk>/", view=approve_visit, name="approve_visit"),
     path("reject/<int:pk>/", view=reject_visit, name="reject_visit"),
     path("fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
@@ -130,6 +130,7 @@ urlpatterns = [
     path("<int:pk>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
     path("<int:opp_id>/user_invite_delete/<int:pk>/", views.user_invite_delete, name="user_invite_delete"),
     path("<int:opp_id>/resend_invite/<int:pk>", resend_user_invite, name="resend_user_invite"),
+    path("payment_numbers", view=PaymentNumberReport.as_view(), name="payment_number_report"),
     path("<int:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
     # Worker List
     path("<int:opp_id>/worker_list/", views.opportunity_worker, name="worker_list"),
@@ -161,4 +162,5 @@ urlpatterns = [
         name="worker_payment_history",
     ),
     path("<int:opp_id>/worker_flag_counts/", views.worker_flag_counts, name="worker_flag_counts"),
+    path("add_api_key/", views.add_api_key, name="add_api_key"),
 ]
