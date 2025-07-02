@@ -1,5 +1,4 @@
 import datetime
-import json
 import sys
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -10,6 +9,7 @@ from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.core.files.base import ContentFile
@@ -21,7 +21,6 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import now
@@ -43,8 +42,8 @@ from commcare_connect.opportunity.forms import (
     DateRanges,
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
+    HQApiKeyCreateForm,
     OpportunityChangeForm,
-    OpportunityCreationForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
     OpportunityUserInviteForm,
@@ -142,7 +141,6 @@ from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager, is_program_manager_of_opportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
-from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels
 from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
@@ -199,26 +197,6 @@ class OpportunityList(OrganizationUserMixin, SingleTableView):
         return get_opportunity_list_data_lite(org, is_program_manager)
 
 
-class OpportunityCreate(OrganizationUserMemberRoleMixin, CreateView):
-    template_name = "opportunity/opportunity_create.html"
-    form_class = OpportunityCreationForm
-
-    def get_success_url(self):
-        return reverse("opportunity:list", args=(self.request.org.slug,))
-
-    def get_form_kwargs(self):
-        kwargs = super().get_form_kwargs()
-        kwargs["domains"] = get_domains_for_user(self.request.user)
-        kwargs["user"] = self.request.user
-        kwargs["org_slug"] = self.request.org.slug
-        return kwargs
-
-    def form_valid(self, form: OpportunityCreationForm) -> HttpResponse:
-        response = super().form_valid(form)
-        create_learn_modules_and_deliver_units.delay(self.object.id)
-        return response
-
-
 class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
@@ -228,10 +206,14 @@ class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs["domains"] = get_domains_for_user(self.request.user)
         kwargs["user"] = self.request.user
         kwargs["org_slug"] = self.request.org.slug
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        return context
 
     def form_valid(self, form: OpportunityInitForm):
         response = super().form_valid(form)
@@ -963,31 +945,6 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             path=path,
         ),
     )
-
-
-# used for loading learn_app and deliver_app dropdowns
-@org_member_required
-def get_application(request, org_slug=None):
-    domain = request.GET.get("learn_app_domain") or request.GET.get("deliver_app_domain")
-    applications = get_applications_for_user_by_domain(request.user, domain)
-    active_opps = Opportunity.objects.filter(
-        Q(learn_app__cc_domain=domain) | Q(deliver_app__cc_domain=domain),
-        active=True,
-        end_date__lt=datetime.date.today(),
-    ).select_related("learn_app", "deliver_app")
-    existing_apps = set()
-    for opp in active_opps:
-        if opp.learn_app.cc_domain == domain:
-            existing_apps.add(opp.learn_app.cc_app_id)
-        if opp.deliver_app.cc_domain == domain:
-            existing_apps.add(opp.deliver_app.cc_app_id)
-    options = []
-    for app in applications:
-        if app["id"] not in existing_apps:
-            value = json.dumps(app)
-            name = app["name"]
-            options.append(format_html("<option value='{}'>{}</option>", value, name))
-    return HttpResponse("\n".join(options))
 
 
 @org_member_required
@@ -2313,3 +2270,16 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
     ]
 
     return render(request, "opportunity/opportunity_delivery_stat.html", {"opp_stats": opp_stats})
+
+
+@login_required
+@require_POST
+def add_api_key(request, org_slug):
+    form = HQApiKeyCreateForm(data=request.POST, auto_id="api_key_form_id_for_%s")
+
+    if form.is_valid():
+        api_key = form.save(commit=False)
+        api_key.user = request.user
+        api_key.save()
+        form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+    return HttpResponse(render_crispy_form(form))

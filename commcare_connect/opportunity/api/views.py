@@ -22,8 +22,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
 )
-from commcare_connect.users.helpers import create_hq_user
-from commcare_connect.users.models import ConnectIDUserLink
+from commcare_connect.users.helpers import create_hq_user_and_link
 
 
 class OpportunityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -95,12 +94,9 @@ class ClaimOpportunityView(APIView):
             OpportunityClaimLimit.create_claim_limits(opportunity, claim)
 
         domain = opportunity.deliver_app.cc_domain
-        if not ConnectIDUserLink.objects.filter(user=self.request.user, domain=domain).exists():
-            user_created = create_hq_user(self.request.user, domain, opportunity.api_key)
-            if not user_created:
-                return Response("Failed to create user", status=400)
-            cc_username = f"{self.request.user.username.lower()}@{domain}.commcarehq.org"
-            ConnectIDUserLink.objects.create(commcare_username=cc_username, user=self.request.user, domain=domain)
+        user_created = create_hq_user_and_link(self.request.user, domain, opportunity)
+        if not user_created:
+            return Response("Failed to create user", status=400)
         return Response(status=201)
 
 
