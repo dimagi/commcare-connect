@@ -7,8 +7,8 @@ from rest_framework.test import APIClient, APIRequestFactory
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.tests.xforms import get_form_json
 from commcare_connect.form_receiver.views import FormReceiver
-from commcare_connect.opportunity.tests.factories import HQServerFactory
 from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import HQServerFactory
 
 receiver_view = FormReceiver.as_view()
 

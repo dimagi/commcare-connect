@@ -1,5 +1,6 @@
 from django.urls import path
 
+from commcare_connect.users import views
 from commcare_connect.users.views import (
     CheckInvitedUserView,
     ResendInvitesView,
@@ -23,4 +24,7 @@ urlpatterns = [
     path("sms_status_callback/", SMSStatusCallbackView.as_view(), name="sms_status_callback"),
     path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
     path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
+    path("api_keys/", views.get_api_keys, name="get_api_keys"),
+    path("domains/", views.get_domains, name="get_domains"),
+    path("applications/", views.get_application, name="get_applications_by_domain"),
 ]

@@ -10,22 +10,10 @@ from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext
-from oauth2_provider import settings
 
 from commcare_connect.organization.models import Organization
-from commcare_connect.users.models import User
+from commcare_connect.users.models import HQServer, User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
-
-
-class HQServer(models.Model):
-    name = models.CharField(max_length=255)
-    url = models.URLField(unique=True)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_modified = models.DateTimeField(auto_now=True)
-    oauth_application = models.ForeignKey(settings.APPLICATION_MODEL, on_delete=models.DO_NOTHING)
-
-    def __str__(self):
-        return f"{self.name} ({self.url})"
 
 
 class CommCareApp(BaseModel):

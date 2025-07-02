@@ -258,7 +258,7 @@ class OpportunityInitForm(forms.ModelForm):
 
         def get_domain_select_attrs():
             return get_htmx_swap_attrs(
-                "opportunity:get_domains",
+                "users:get_domains",
                 "#id_hq_server, #id_api_key",
                 "change from:#id_api_key",
             )
@@ -266,7 +266,7 @@ class OpportunityInitForm(forms.ModelForm):
         def get_app_select_attrs(app_type: str):
             domain_select_id = f"#id_{app_type}_app_domain"
             return get_htmx_swap_attrs(
-                "opportunity:get_applications_by_domain",
+                "users:get_applications_by_domain",
                 f"#id_hq_server, {domain_select_id}, #id_api_key",
                 f"change from:{domain_select_id}",
             )
@@ -297,7 +297,7 @@ class OpportunityInitForm(forms.ModelForm):
             widget=forms.Select(
                 choices=[(None, "Select a HQ Server to load API Keys.")],
                 attrs=get_htmx_swap_attrs(
-                    "opportunity:get_api_keys",
+                    "users:get_api_keys",
                     "#id_hq_server",
                     "change from:#id_hq_server, reload_api_keys from:body",
                 ),

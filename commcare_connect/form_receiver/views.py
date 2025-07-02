@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 
 from commcare_connect.form_receiver.processor import process_xform
 from commcare_connect.form_receiver.serializers import XFormSerializer
-from commcare_connect.opportunity.models import HQServer
+from commcare_connect.users.models import HQServer
 
 logger = logging.getLogger(__name__)
 

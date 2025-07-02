@@ -55,6 +55,8 @@ def get_domains_for_user(api_key):
         f"{api_key.hq_server.url}/api/v0.5/user_domains/?limit=100",
         headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
     )
+    if response.status_code != 200:
+        raise CommCareHQAPIException(f"Failed to fetch domains: {response.text}")
     data = response.json()
     domains = [domain["domain_name"] for domain in data["objects"]]
     return domains
@@ -83,6 +85,8 @@ async def _get_applications_for_domain(user_email, api_key, domain, hq_server_ur
 async def _get_commcare_app_json(client, domain):
     applications = []
     response = await client.get(f"/a/{domain}/api/v0.5/application/")
+    if response.status_code != 200:
+        raise CommCareHQAPIException(f"Failed to fetch applications: {response.text}")
     data = response.json()
 
     for application in data.get("objects", []):

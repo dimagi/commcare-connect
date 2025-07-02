@@ -11,7 +11,6 @@ from commcare_connect.opportunity.tests.factories import (
     ApplicationFactory,
     DeliveryTypeFactory,
     HQApiKeyFactory,
-    HQServerFactory,
     PaymentUnitFactory,
 )
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
@@ -21,7 +20,7 @@ from commcare_connect.program.tests.factories import (
     ProgramApplicationFactory,
     ProgramFactory,
 )
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.users.tests.factories import HQServerFactory, OrganizationFactory
 
 
 @pytest.fixture

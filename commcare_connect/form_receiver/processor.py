@@ -20,7 +20,6 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
-    HQServer,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -33,7 +32,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tasks import download_user_visit_attachments
 from commcare_connect.opportunity.visit_import import update_payment_accrued
-from commcare_connect.users.models import User
+from commcare_connect.users.models import HQServer, User
 
 LEARN_MODULE_JSONPATH = parse("$..module")
 ASSESSMENT_JSONPATH = parse("$..assessment")

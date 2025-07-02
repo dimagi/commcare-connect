@@ -1,5 +1,4 @@
 import datetime
-import json
 import sys
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -22,7 +21,6 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import now
@@ -77,7 +75,6 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     FormJsonValidationRules,
-    HQApiKey,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -144,7 +141,6 @@ from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager, is_program_manager_of_opportunity
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
-from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels
 from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
@@ -951,83 +947,6 @@ def send_message_mobile_users(request, org_slug=None, pk=None):
             path=path,
         ),
     )
-
-
-# used for loading api key dropdown
-@org_member_required
-def get_api_keys(request, org_slug=None):
-    hq_server = request.GET.get("hq_server")
-    if not hq_server:
-        return HttpResponse(
-            format_html("<option value='{}'>{}</option>", None, "Select a HQ Server to load API Keys.")
-        )
-
-    api_keys = HQApiKey.objects.filter(hq_server=hq_server, user=request.user).order_by("-date_created")
-    if not api_keys:
-        return HttpResponse(headers={"HX-Trigger": "no-api-keys-found"})
-
-    options = []
-    options.append(format_html("<option value='{}'>{}</option>", None, "Select an API key"))
-    for api_key in api_keys:
-        api_key_hidden = f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}"
-        options.append(
-            format_html(
-                "<option value='{}'>{}</option>",
-                api_key.id,
-                api_key_hidden,
-            )
-        )
-    return HttpResponse("\n".join(options))
-
-
-# used for loading domain dropdown
-@org_member_required
-def get_domains(request, org_slug=None):
-    hq_server = request.GET.get("hq_server")
-    api_key_id = request.GET.get("api_key")
-    if not hq_server or not api_key_id:
-        return HttpResponse(format_html("<option value='{}'>{}</option>", None, "Select an API Key to load domains."))
-
-    options = []
-    api_key = HQApiKey.objects.get(id=api_key_id, hq_server=hq_server, user=request.user)
-    domains = get_domains_for_user(api_key)
-    options.append(format_html("<option value='{}'>{}</option>", None, "Select a Domain."))
-    for domain in domains:
-        options.append(format_html("<option value='{}'>{}</option>", domain, domain))
-    return HttpResponse("\n".join(options))
-
-
-# used for loading learn_app and deliver_app dropdowns
-@org_member_required
-def get_application(request, org_slug=None):
-    hq_server = request.GET.get("hq_server")
-    api_key_id = request.GET.get("api_key")
-    domain = request.GET.get("learn_app_domain") or request.GET.get("deliver_app_domain")
-    if not hq_server or not api_key_id or not domain:
-        return HttpResponse(
-            format_html("<option value='{}'>{}</option>", None, "Select a Domain to load applications.")
-        )
-    api_key = HQApiKey.objects.get(id=api_key_id, hq_server=hq_server, user=request.user)
-    applications = get_applications_for_user_by_domain(api_key, domain)
-    active_opps = Opportunity.objects.filter(
-        Q(learn_app__cc_domain=domain) | Q(deliver_app__cc_domain=domain),
-        active=True,
-        end_date__lt=datetime.date.today(),
-    ).select_related("learn_app", "deliver_app")
-    existing_apps = set()
-    for opp in active_opps:
-        if opp.learn_app.cc_domain == domain:
-            existing_apps.add(opp.learn_app.cc_app_id)
-        if opp.deliver_app.cc_domain == domain:
-            existing_apps.add(opp.deliver_app.cc_app_id)
-    options = []
-    options.append(format_html("<option value='{}'>{}</option>", None, "Select an Application"))
-    for app in applications:
-        if app["id"] not in existing_apps:
-            value = json.dumps(app)
-            name = app["name"]
-            options.append(format_html("<option value='{}'>{}</option>", value, name))
-    return HttpResponse("\n".join(options))
 
 
 @org_member_required
