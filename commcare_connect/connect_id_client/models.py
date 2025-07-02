@@ -1,6 +1,8 @@
 import dataclasses
 from enum import StrEnum
 
+FCM_ANALYTICS_LABEL = "commcare-connect-notification"
+
 
 @dataclasses.dataclass
 class ConnectIdUser:
@@ -74,6 +76,7 @@ class Message:
     title: str = None
     body: str = None
     data: dict = None
+    fcm_options: dict = dataclasses.field(default_factory=lambda: {"analytics_label": FCM_ANALYTICS_LABEL})
 
     def asdict(self):
         return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}

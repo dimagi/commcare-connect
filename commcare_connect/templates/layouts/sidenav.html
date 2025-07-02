@@ -44,14 +44,14 @@
           {% if request.org_membership or request.user.is_superuser %}
           <div class="mt-5">
               {% url 'opportunity:list' request.org.slug as opportunity_url %}
-              {% include "tailwind/components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url namespace='opportunity' %}
+              {% include "components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url namespace='opportunity' %}
 
               {% if not request.org_membership.is_viewer %}
                   {% url 'program:home' request.org.slug as program_home_url %}
-                  {% include "tailwind/components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
+                  {% include "components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
 
                   {% url 'organization:home' request.org.slug as organization_home_url %}
-                  {% include "tailwind/components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url namespace='organization' %}
+                  {% include "components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url namespace='organization' %}
               {% endif %}
           </div>
           {% endif %}

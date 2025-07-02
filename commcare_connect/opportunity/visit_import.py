@@ -222,12 +222,24 @@ def get_missing_justification_message(visits_ids):
     return f"Justification is required for flagged visits: {id_list}"
 
 
-def update_payment_accrued(opportunity: Opportunity, users):
-    """Updates payment accrued for completed and approved CompletedWork instances."""
+def update_payment_accrued(opportunity: Opportunity, users: list, incremental=False):
+    """Updates payment accrued for completed and approved CompletedWork instances.
+    Skips already processed completed works when incremental is true."""
+
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
+    filter_kwargs = {}
+    exclude_status = []
+    if incremental:
+        exclude_status.append(CompletedWorkStatus.approved)
+        filter_kwargs["saved_approved_count"] = 0
+
     for access in access_objects:
         with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
-            completed_works = access.completedwork_set.select_related("payment_unit")
+            completed_works = (
+                access.completedwork_set.filter(**filter_kwargs)
+                .exclude(status__in=exclude_status)
+                .select_related("payment_unit")
+            )
             update_status(completed_works, access, compute_payment=True)
 
 

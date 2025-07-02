@@ -1,10 +1,10 @@
-{% extends "tailwind/base.html" %}
+{% extends "base.html" %}
 {% load django_tables2 %}
 
 
 {% block content %}
 
-{% include 'tailwind/components/breadcrumbs.html' with path=path %}
+{% include 'components/breadcrumbs.html' with path=path %}
 
 
 <p class="my-5 text-sm font-medium text-brand-deep-purple">{{ opportunity.name }}</p>

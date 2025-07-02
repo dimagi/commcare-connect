@@ -70,7 +70,13 @@
     setModalImage(index) {
         this.modalCurrentIndex = index;
     }
-}">
+}"
+  hx-get="{% url "opportunity:user_visit_details" request.org.slug user_visit.opportunity_id user_visit.id %}"
+  hx-swap="outerHTML"
+  hx-trigger="reload_table from:body"
+  hx-indicator="#visit-loading-indicator"
+  hx-on:before-swap="removeMap()"
+  hx-on::after-settle="loadMap()">
   <!-- Message Section -->
 
   {% if user_visit.reason %}

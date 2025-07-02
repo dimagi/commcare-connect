@@ -1,4 +1,4 @@
-{% extends 'tailwind/base.html' %}
+{% extends 'base.html' %}
 {% load i18n %}
 
 {% block title %}{{ request.org }} - {{ object.name }}{% endblock %}
@@ -6,7 +6,7 @@
 {% block content %}
     <div x-data="{isTest: {{ object.is_test|yesno:'true,false,none' }}, showCatchmentImportModal: false, showCatchmentExportModal: false }"
         class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
-      {% include 'tailwind/components/breadcrumbs.html' with path=path %}
+      {% include 'components/breadcrumbs.html' with path=path %}
         {% if export_task_id %}
           <div class="flex items-center justify-end">
             <div
@@ -43,7 +43,7 @@
                  @click="isOpen = !isOpen"></i>
               {% endif %}
               <!-- Dropdown Menu -->
-              {% include "tailwind/pages/opportunity_dashboard/opportunity_menu.html" with request=request opportunity=object is_program_manager=is_program_manager %}
+              {% include "opportunity/opportunity_menu.html" with request=request opportunity=object is_program_manager=is_program_manager %}
           </div>
           <div class="flex justify-between items-end">
               <div class="flex flex-col gap-2">
@@ -79,7 +79,7 @@
                       {% endfor %}
 
                       <!-- Modal -->
-                      {% include "tailwind/pages/opportunity_dashboard/opportunity_resource_modal.html" with opportunity=object %}
+                      {% include "opportunity/opportunity_resource_modal.html" with opportunity=object %}
                   </div>
               </div>
           </div>
@@ -118,14 +118,14 @@
       </div>
          <div>
             <!--Skeletons -->
-           {% include "tailwind/pages/opportunity_dashboard/opportunity_delivery_stat.html" with skeleton=True %}
-           {% include "tailwind/pages/opportunity_dashboard/opportunity_worker_progress.html" with skeleton=True %}
-           {% include "tailwind/pages/opportunity_dashboard/opportunity_funnel_progress.html" with skeleton=True %}
+           {% include "opportunity/opportunity_delivery_stat.html" with skeleton=True %}
+           {% include "opportunity/opportunity_worker_progress.html" with skeleton=True %}
+           {% include "opportunity/opportunity_funnel_progress.html" with skeleton=True %}
         </div>
       {% url 'opportunity:catchment_area_export' org_slug=request.org.slug pk=opportunity.pk as catchment_export_url %}
-      {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showCatchmentExportModal" modal_title=_("Export Catchment Area") export_url=catchment_export_url export_form=export_form %}
+      {% include "components/worker_page/export_modal.html" with modal_name="showCatchmentExportModal" modal_title=_("Export Catchment Area") export_url=catchment_export_url export_form=export_form %}
 
       {% url 'opportunity:catchment_area_import' request.org.slug opportunity.pk as catchment_import_url %}
-      {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showCatchmentImportModal" modal_title=_("Import Catchment Area") import_url=catchment_import_url input_name="catchments" input_help_text=_('The file must contain at least the "Area Name", "Active", "Latitude", "Longitude", "Site code" and "Radius" column.') %}
+      {% include "components/worker_page/import_modal.html" with modal_name="showCatchmentImportModal" modal_title=_("Import Catchment Area") import_url=catchment_import_url input_name="catchments" input_help_text=_('The file must contain at least the "Area Name", "Active", "Latitude", "Longitude", "Site code" and "Radius" column.') %}
     </div>
 {% endblock %}

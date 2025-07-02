@@ -1,7 +1,7 @@
 from httpx import URL
 
 from .main import fetch_users, send_message, send_message_bulk
-from .models import Message, MessageStatus
+from .models import FCM_ANALYTICS_LABEL, Message, MessageStatus
 
 
 def test_fetch_users(httpx_mock):
@@ -35,7 +35,11 @@ def test_fetch_users(httpx_mock):
 def test_send_message(httpx_mock):
     httpx_mock.add_response(
         method="POST",
-        match_json={"usernames": ["user_name1"], "body": "test message"},
+        match_json={
+            "usernames": ["user_name1"],
+            "body": "test message",
+            "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
+        },
         json={"all_success": True, "responses": [{"username": "user_name1", "status": "success"}]},
     )
     result = send_message(Message(usernames=["user_name1"], body="test message"))
@@ -52,10 +56,12 @@ def test_send_message_bulk(httpx_mock):
                 {
                     "usernames": ["user_name1", "user_name2"],
                     "body": "test message1",
+                    "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
                 },
                 {
                     "usernames": ["user_name3", "user_name4"],
                     "body": "test message2",
+                    "fcm_options": {"analytics_label": FCM_ANALYTICS_LABEL},
                 },
             ]
         },

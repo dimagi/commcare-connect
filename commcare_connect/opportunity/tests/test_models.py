@@ -118,5 +118,5 @@ def test_access_visit_count(opportunity: Opportunity):
     UserVisitFactory(
         completed_work=completed_work, deliver_unit=deliver_unit, user=access.user, opportunity=access.opportunity
     )
-    update_payment_accrued(opportunity, [access.user.id])
+    update_payment_accrued(opportunity, [access.user])
     assert access.visit_count == 1

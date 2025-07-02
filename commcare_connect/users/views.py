@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -20,7 +20,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens
+from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
+from commcare_connect.opportunity.tasks import update_user_and_send_invite
 
 from .helpers import create_hq_user
 from .models import ConnectIDUserLink
@@ -160,3 +162,28 @@ class SMSStatusCallbackView(APIView):
                 user_invite.status = UserInviteStatus.sms_not_delivered
             user_invite.save()
         return Response(status=200)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class CheckInvitedUserView(ClientProtectedResourceMixin, View):
+    def get(self, request, *args, **kwargs):
+        phone_number = request.GET.get("phone_number")
+        invited = False
+        if phone_number:
+            invited = UserInvite.objects.filter(phone_number=phone_number).exists()
+        return JsonResponse({"invited": invited})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ResendInvitesView(ClientProtectedResourceMixin, View):
+    def post(self, request, *args, **kwargs):
+        username = request.POST.get("username")
+        name = request.POST.get("name")
+        phone_number = request.POST.get("phone_number")
+        user = ConnectIdUser(username=username, name=name, phone_number=phone_number)
+        opps = UserInvite.objects.filter(
+            phone_number=user.phone_number, status=UserInviteStatus.not_found
+        ).values_list("opportunity_id", flat=True)
+        for opp_id in opps:
+            update_user_and_send_invite(user, opp_id)
+        return HttpResponse(status=200)

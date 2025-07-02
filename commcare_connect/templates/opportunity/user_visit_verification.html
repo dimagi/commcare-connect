@@ -1,4 +1,4 @@
-{% extends 'tailwind/base.html' %}
+{% extends 'base.html' %}
 
 {% load static %}
 {% load django_tables2 %}
@@ -16,10 +16,10 @@
 {% endblock javascript %}
 
 {% block content %}
-  {% include 'tailwind/components/breadcrumbs.html' with path=path %}
+  {% include 'components/breadcrumbs.html' with path=path %}
   <div class="w-full space-y-4">
     <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
-      {% include "tailwind/components/worker_page/profile.html" with opportunity_access=opportunity_access %}
+      {% include "components/worker_page/profile.html" with opportunity_access=opportunity_access %}
       <div class="grid grid-cols-5 gap-4 w-full">
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
           <div class="flex justify-between items-center">

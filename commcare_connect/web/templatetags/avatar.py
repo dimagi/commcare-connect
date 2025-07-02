@@ -26,7 +26,7 @@ def _calculate_initials_internal(name):
     return initials if initials else "GU"
 
 
-@register.inclusion_tag("tailwind/components/avatar.html")
+@register.inclusion_tag("components/avatar.html")
 def user_avatar(user, size="small", color_classes="bg-brand-mango text-white"):
     display_name = ""
     if user:

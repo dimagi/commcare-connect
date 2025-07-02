@@ -9,9 +9,8 @@ from django.urls import reverse
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.program.tests.factories import ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 class BaseProgramTest:
@@ -121,99 +120,3 @@ class TestInviteOrganizationView(BaseProgramTest):
         }
         response = self.client.post(self.valid_url, data)
         assert response.status_code == HTTPStatus.NOT_FOUND
-
-
-@pytest.mark.django_db
-class TestManagedOpportunityApplicationListView(BaseProgramTest):
-    @pytest.fixture(autouse=True)
-    def test_setup(self, organization: Organization):
-        self.program = ProgramFactory.create(organization=self.organization)
-        self.applications = ProgramApplicationFactory.create_batch(20, program=self.program)
-        self.list_url = reverse(
-            "program:applications",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "pk": self.program.pk,
-            },
-        )
-
-    def test_view_url_exists_at_desired_location(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        assert "program/application_list.html" in response.templates[0].name
-        context = response.context_data
-        assert "object_list" in context
-        assert "pk" in context
-        assert "program" in context
-        assert "organizations" in context
-        assert context["pk"] == self.program.pk
-
-    def test_list_applications(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        applications = response.context_data["object_list"]
-        assert len(applications) == 10
-
-    def test_pagination(self):
-        response = self.client.get(f"{self.list_url}?page=2")
-        assert response.status_code == HTTPStatus.OK
-        assert len(response.context_data["object_list"]) == 10
-
-
-@pytest.mark.django_db
-class TestManageApplicationView(BaseProgramTest):
-    @pytest.fixture(autouse=True)
-    def test_setup(self):
-        self.invited_org = OrganizationFactory()
-        self.program = ProgramFactory.create(organization=self.organization)
-        self.application = ProgramApplicationFactory.create(
-            organization=self.invited_org, program=self.program, status=ProgramApplicationStatus.APPLIED
-        )
-        self.application_list_url = reverse(
-            "program:applications",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "pk": self.program.id,
-            },
-        )
-
-    def test_accept_application(self):
-        url = reverse(
-            "program:manage_application",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "application_id": self.application.id,
-                "action": "accept",
-            },
-        )
-        response = self.client.post(url)
-        assert response.status_code == HTTPStatus.FOUND
-        self.application.refresh_from_db()
-        assert self.application.status == ProgramApplicationStatus.ACCEPTED
-
-    def test_reject_application(self):
-        url = reverse(
-            "program:manage_application",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "application_id": self.application.id,
-                "action": "reject",
-            },
-        )
-        response = self.client.post(url)
-        assert response.status_code == HTTPStatus.FOUND
-        self.application.refresh_from_db()
-        assert self.application.status == ProgramApplicationStatus.REJECTED
-
-    def test_invalid_action(self):
-        url = reverse(
-            "program:manage_application",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "application_id": self.application.id,
-                "action": "invite",
-            },
-        )
-        response = self.client.post(url)
-        assert response.status_code == HTTPStatus.FOUND
-        assert self.application.status == ProgramApplicationStatus.APPLIED

@@ -322,6 +322,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
+            completed_work.status = CompletedWorkStatus.rejected
         if flags:
             user_visit.flagged = True
             user_visit.flag_reason = {"flags": flags}
@@ -347,7 +348,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued(opportunity, [user.id])
+    update_payment_accrued(opportunity, [user.id], incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 

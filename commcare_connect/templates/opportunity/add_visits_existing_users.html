@@ -1,4 +1,4 @@
-{% extends "tailwind/base.html" %}
+{% extends "base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
 {% load i18n %}
@@ -76,7 +76,7 @@
     x-data="opportunityBudgetComponent('{{ request.GET.active_tab|default:"existing_workers" }}', {{ tabs|safe }})"
     x-clock
     x-effect="setTab(selectedTab)">
-  {% include "tailwind/components/breadcrumbs.html" with path=path %}
+  {% include "components/breadcrumbs.html" with path=path %}
       <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
         <ul class="tabs">
           {% for tab in tabs %}
