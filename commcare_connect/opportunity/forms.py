@@ -249,7 +249,7 @@ class OpportunityInitForm(forms.ModelForm):
 
         def get_htmx_swap_attrs(url_query: str, include: str, trigger: str):
             return {
-                "hx-get": reverse(url_query, args=(self.org_slug,)),
+                "hx-get": reverse(url_query),
                 "hx-include": include,
                 "hx-trigger": trigger,
                 "hx-target": "this",

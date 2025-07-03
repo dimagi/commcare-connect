@@ -28,7 +28,6 @@ from commcare_connect.connect_id_client.main import fetch_demo_user_tokens
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
-from commcare_connect.organization.decorators import org_member_required
 from commcare_connect.utils.commcarehq_api import get_applications_for_user_by_domain, get_domains_for_user
 
 from .helpers import create_hq_user_and_link
@@ -165,34 +164,9 @@ class SMSStatusCallbackView(APIView):
         return Response(status=200)
 
 
-@method_decorator(csrf_exempt, name="dispatch")
-class CheckInvitedUserView(ClientProtectedResourceMixin, View):
-    def get(self, request, *args, **kwargs):
-        phone_number = request.GET.get("phone_number")
-        invited = False
-        if phone_number:
-            invited = UserInvite.objects.filter(phone_number=phone_number).exists()
-        return JsonResponse({"invited": invited})
-
-
-@method_decorator(csrf_exempt, name="dispatch")
-class ResendInvitesView(ClientProtectedResourceMixin, View):
-    def post(self, request, *args, **kwargs):
-        username = request.POST.get("username")
-        name = request.POST.get("name")
-        phone_number = request.POST.get("phone_number")
-        user = ConnectIdUser(username=username, name=name, phone_number=phone_number)
-        opps = UserInvite.objects.filter(
-            phone_number=user.phone_number, status=UserInviteStatus.not_found
-        ).values_list("opportunity_id", flat=True)
-        for opp_id in opps:
-            update_user_and_send_invite(user, opp_id)
-        return HttpResponse(status=200)
-
-
 # used for loading api key dropdown
-@org_member_required
-def get_api_keys(request, org_slug=None):
+@login_required
+def get_api_keys(request):
     hq_server = request.GET.get("hq_server")
     if not hq_server:
         return HttpResponse(
@@ -218,8 +192,8 @@ def get_api_keys(request, org_slug=None):
 
 
 # used for loading domain dropdown
-@org_member_required
-def get_domains(request, org_slug=None):
+@login_required
+def get_domains(request):
     hq_server = request.GET.get("hq_server")
     api_key_id = request.GET.get("api_key")
     if not hq_server or not api_key_id:
@@ -235,8 +209,8 @@ def get_domains(request, org_slug=None):
 
 
 # used for loading learn_app and deliver_app dropdowns
-@org_member_required
-def get_application(request, org_slug=None):
+@login_required
+def get_application(request):
     hq_server = request.GET.get("hq_server")
     api_key_id = request.GET.get("api_key")
     domain = request.GET.get("learn_app_domain") or request.GET.get("deliver_app_domain")
@@ -265,3 +239,28 @@ def get_application(request, org_slug=None):
             name = app["name"]
             options.append(format_html("<option value='{}'>{}</option>", value, name))
     return HttpResponse("\n".join(options))
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class CheckInvitedUserView(ClientProtectedResourceMixin, View):
+    def get(self, request, *args, **kwargs):
+        phone_number = request.GET.get("phone_number")
+        invited = False
+        if phone_number:
+            invited = UserInvite.objects.filter(phone_number=phone_number).exists()
+        return JsonResponse({"invited": invited})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ResendInvitesView(ClientProtectedResourceMixin, View):
+    def post(self, request, *args, **kwargs):
+        username = request.POST.get("username")
+        name = request.POST.get("name")
+        phone_number = request.POST.get("phone_number")
+        user = ConnectIdUser(username=username, name=name, phone_number=phone_number)
+        opps = UserInvite.objects.filter(
+            phone_number=user.phone_number, status=UserInviteStatus.not_found
+        ).values_list("opportunity_id", flat=True)
+        for opp_id in opps:
+            update_user_and_send_invite(user, opp_id)
+        return HttpResponse(status=200)
