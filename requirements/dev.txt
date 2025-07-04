@@ -9,8 +9,6 @@ anyio==3.7.1
     #   -c requirements/base.txt
     #   httpcore
     #   watchfiles
-appnope==0.1.4
-    # via ipython
 asgiref==3.7.2
     # via
     #   -c requirements/base.txt
@@ -42,7 +40,7 @@ click==8.1.6
     #   pip-tools
 contextlib2==21.6.0
     # via git-build-branch
-coverage==7.2.7
+coverage==7.9.2
     # via -r requirements/dev.in
 decorator==5.1.1
     # via
