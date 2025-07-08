@@ -5,7 +5,7 @@
 
 {% block top_buttons %}
     {{ block.super }}
-    {% if not program_manager %}
+    {% if not request.is_opportunity_pm %}
     <div
       x-data="{
         open: false,
@@ -41,7 +41,7 @@
             </div>
 
             <form
-              hx-post="{% url 'opportunity:invoice_create' org_slug=request.org.slug pk=opportunity.pk %}"
+              hx-post="{% url 'opportunity:invoice_create' org_slug=request.org.slug opp_id=opportunity.pk %}"
               hx-target="#invoiceForm"
               hx-swap="innerHTML"
             >

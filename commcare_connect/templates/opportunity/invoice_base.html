@@ -14,13 +14,13 @@
         {% with list_view_name='opportunity:invoice_list' report_view_name='opportunity:payment_report' current_view_name=request.resolver_match.view_name %}
             <ul class="tabs">
                 <li class="{% if current_view_name == list_view_name %}active{% endif %}">
-                    <a href="{% url list_view_name org_slug=request.org.slug pk=opportunity.pk %}" class="absolute inset-0"></a> {# Invisible link overlay for click #}
+                    <a href="{% url list_view_name org_slug=request.org.slug opp_id=opportunity.pk %}" class="absolute inset-0"></a> {# Invisible link overlay for click #}
                     <span>All Invoices</span>
                     {% if current_view_name == list_view_name %}<div></div>{% endif %}
                 </li>
 
                 <li class="{% if current_view_name == report_view_name %}active{% endif %}">
-                    <a href="{% url report_view_name org_slug=request.org.slug pk=opportunity.pk %}" class="absolute inset-0"></a> {# Invisible link overlay for click #}
+                    <a href="{% url report_view_name org_slug=request.org.slug opp_id=opportunity.pk %}" class="absolute inset-0"></a> {# Invisible link overlay for click #}
                     <span>Payment Report</span>
                     {% if current_view_name == report_view_name %}<div></div>{% endif %}
                 </li>
