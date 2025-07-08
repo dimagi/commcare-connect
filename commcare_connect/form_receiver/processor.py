@@ -1,8 +1,9 @@
 import datetime
 from functools import partial
 
-from django.db import transaction
-from django.db.models import Count, Min, Q
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Min, Q, Window
+from django.db.models.functions import Rank
 from django.utils.timezone import now
 from geopy.distance import distance
 from jsonpath_ng import JSONPathError
@@ -258,6 +259,8 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    entity_id = deliver_unit_block.get("entity_id")
+    entity_name = deliver_unit_block.get("entity_name")
     payment_unit = deliver_unit.payment_unit
     if not payment_unit:
         raise ProcessingError(
@@ -271,59 +274,77 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         .aggregate(
             daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
             total=Count("*"),
-            entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
+            entity=Count("pk", filter=Q(entity_id=entity_id, deliver_unit=deliver_unit)),
         )
     )
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
-    entity_id = deliver_unit_block.get("entity_id")
-    entity_name = deliver_unit_block.get("entity_name")
+
+    user_visit = UserVisit(
+        opportunity=opportunity,
+        user=user,
+        opportunity_access=access,
+        deliver_unit=deliver_unit,
+        entity_id=entity_id,
+        entity_name=entity_name,
+        visit_date=xform.metadata.timeStart,
+        xform_id=xform.id,
+        app_build_id=xform.build_id,
+        app_build_version=xform.metadata.app_build_version,
+        form_json=xform.raw_form,
+        location=xform.metadata.location,
+    )
+    today = datetime.date.today()
+    paymentunit_startdate = payment_unit.start_date if payment_unit else None
+    if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
+        completed_work = None
+        user_visit.status = VisitValidationStatus.trial
+    else:
+        completed_work = (
+            CompletedWork.objects.filter(opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit)
+            .annotate(rank=Window(Rank(), order_by="date_created"))
+            .filter(rank=counts["entity"] + 1)
+            .order_by("rank")
+            .last()
+        )
+        if completed_work is None:
+            completed_work = CompletedWork(
+                opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit, entity_name=entity_name
+            )
+            completed_work.save()
+
+    try:
+        with transaction.atomic():
+            user_visit.completed_work = completed_work
+            user_visit.save()
+    except IntegrityError as e:
+        if "unique_completed_work_deliver_unit_access" not in str(e):
+            raise e
+        completed_work = CompletedWork(
+            opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit, entity_name=entity_name
+        )
+        completed_work.save()
+        user_visit.completed_work = completed_work
+        user_visit.save()
 
     with transaction.atomic():
-        user_visit = UserVisit(
-            opportunity=opportunity,
-            user=user,
-            opportunity_access=access,
-            deliver_unit=deliver_unit,
-            entity_id=entity_id,
-            entity_name=entity_name,
-            visit_date=xform.metadata.timeStart,
-            xform_id=xform.id,
-            app_build_id=xform.build_id,
-            app_build_version=xform.metadata.app_build_version,
-            form_json=xform.raw_form,
-            location=xform.metadata.location,
-        )
         completed_work_needs_save = False
-        today = datetime.date.today()
-        paymentunit_startdate = payment_unit.start_date if payment_unit else None
-        if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
-            completed_work = None
-            user_visit.status = VisitValidationStatus.trial
-        else:
-            completed_work, _ = CompletedWork.objects.get_or_create(
-                opportunity_access=access,
-                entity_id=entity_id,
-                payment_unit=payment_unit,
-                defaults={"entity_name": entity_name},
-            )
-            user_visit.completed_work = completed_work
-            if (
-                counts["daily"] >= payment_unit.max_daily
-                or counts["total"] >= claim_limit.max_visits
-                or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
-            ):
-                user_visit.status = VisitValidationStatus.over_limit
-                if not completed_work.status == CompletedWorkStatus.over_limit:
-                    completed_work.status = CompletedWorkStatus.over_limit
-                    completed_work_needs_save = True
-            elif counts["entity"] > 0:
-                user_visit.status = VisitValidationStatus.duplicate
+        if (
+            counts["daily"] >= payment_unit.max_daily
+            or counts["total"] >= claim_limit.max_visits
+            or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
+        ):
+            user_visit.status = VisitValidationStatus.over_limit
+            if not user_visit.completed_work.status == CompletedWorkStatus.over_limit:
+                user_visit.completed_work.status = CompletedWorkStatus.over_limit
+                completed_work_needs_save = True
+        elif counts["entity"] > 0:
+            user_visit.status = VisitValidationStatus.duplicate
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
-            completed_work.status = CompletedWorkStatus.rejected
+            user_visit.completed_work.status = CompletedWorkStatus.rejected
         if flags:
             user_visit.flagged = True
             user_visit.flag_reason = {"flags": flags}
@@ -342,12 +363,15 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             access.last_active = user_visit.visit_date
             access.save()
 
-        if completed_work is not None:
-            if completed_work.completed_count > 0 and completed_work.status == CompletedWorkStatus.incomplete:
-                completed_work.status = CompletedWorkStatus.pending
+        if user_visit.completed_work is not None:
+            if (
+                completed_work.completed_count > 0
+                and user_visit.completed_work.status == CompletedWorkStatus.incomplete
+            ):
+                user_visit.completed_work.status = CompletedWorkStatus.pending
                 completed_work_needs_save = True
             if completed_work_needs_save:
-                completed_work.save()
+                user_visit.completed_work.save()
 
     update_payment_accrued(opportunity, [user.id], incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
