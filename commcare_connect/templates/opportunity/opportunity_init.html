@@ -9,9 +9,9 @@
 {% block content %}
 <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-8"
   x-data="{ showAddApiKeyModal: false }">
-  {% include "steps.html" with step='step1' %}
+  {% include "opportunity/steps.html" with step='step1' %}
   <h6 class="title">Create Details</h6>
-  {% include "partial_form.html" %}
+  {% include "components/partial_form.html" %}
 
   <div x-cloak x-show="showAddApiKeyModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showAddApiKeyModal = false" x-transition class="modal">

@@ -728,7 +728,7 @@ def add_payment_unit(request, org_slug=None, pk=None):
     ]
     return render(
         request,
-        "partial_form.html" if request.GET.get("partial") == "True" else "form.html",
+        "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Create", form=form, path=path),
     )
 
@@ -792,7 +792,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     ]
     return render(
         request,
-        "form.html",
+        "components/form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form, path=path),
     )
 
@@ -1194,7 +1194,7 @@ def opportunity_user_invite(request, org_slug=None, pk=None):
         return redirect("opportunity:detail", request.org.slug, pk)
     return render(
         request,
-        "form.html",
+        "components/form.html",
         dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Invite Workers", form=form),
     )
 
