@@ -27,6 +27,7 @@
       - python3-setuptools
       - gnupg
       - acl
+      - wget
     state: latest
     update_cache: true
   tags:
@@ -105,3 +106,51 @@
     mode: 0644
   tags:
     - django_settings
+
+- name: Download CloudWatch agent
+  get_url:
+    url: https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+    dest: /tmp/amazon-cloudwatch-agent.deb
+    mode: '0644'
+  tags:
+    - cloudwatch
+
+- name: Install CloudWatch agent
+  apt:
+    deb: /tmp/amazon-cloudwatch-agent.deb
+    state: present
+  tags:
+    - cloudwatch
+
+- name: Remove CloudWatch agent file
+  file:
+    path: /tmp/amazon-cloudwatch-agent.deb
+    state: absent
+  tags:
+    - cloudwatch
+
+- name: Create CloudWatch agent config directory
+  file:
+    path: /opt/aws/amazon-cloudwatch-agent/etc
+    state: directory
+    mode: 0755
+  tags:
+    - cloudwatch
+
+- name: Configure CloudWatch agent
+  template:
+    src: cloudwatch-config.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/config.json
+    mode: 0644
+  notify: restart cloudwatch agent
+  tags:
+    - cloudwatch
+
+- name: Start CloudWatch agent
+  systemd:
+    name: amazon-cloudwatch-agent
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  tags:
+    - cloudwatch
