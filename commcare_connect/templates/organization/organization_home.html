@@ -45,13 +45,6 @@
           {% crispy form %}
         </form>
       </div>
-       <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">Add Credential</h2>
-      <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-        <form method="post" action="{% url 'organization:add_members' org_slug=organization.slug %}">
-          {% csrf_token %}
-          {% crispy add_credential_form %}
-        </form>
-      </div>
     </div>
 
     <div

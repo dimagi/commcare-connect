@@ -6,12 +6,7 @@
 {% block top_buttons %}
     {{ block.super }}
     {% if not request.is_opportunity_pm %}
-    <div
-      x-data="{
-        open: false,
-        openModal() { this.open = true },
-        closeModal() { this.open = false }
-      }"
+<div x-data="invoiceModal()"
       @keydown.escape.window="closeModal()"
       id="invoiceModal"
     >
@@ -31,7 +26,7 @@
           x-transition
           class="modal"
           role="dialog"
-          aria-labelledby="invoiceModalLabel"
+          aria-labelledby="invoiceModalLabel">
           <div class="modal-content">
             <div class="flex items-center justify-between p-4 border-b">
               <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create Invoice" %}</h5>
@@ -70,6 +65,49 @@
         </div>
       </div>
     </div>
+{% endif %}
 
-    {% endif %}
+{% block inline_js %}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('invoiceModal', () => ({
+      open: false,
+      currency: false,
+      openModal() {
+        this.open = true;
+        // Initialize currency after modal opens and form is rendered
+        this.$nextTick(() => {
+          this.currency = this.$refs.currencyToggle?.checked || false;
+        });
+      },
+      closeModal() {
+        this.open = false;
+      },
+      convert(replace = false) {
+        // date and amount should be present before making http call
+        if (!this.$refs.amount?.value || !this.$refs.date?.value) return;
+
+        htmx.ajax('POST', '{% url "opportunity:exchange_rate" org_slug=request.org.slug opp_id=opportunity.id %}', {
+          target: '#converted-amount-wrapper',
+          swap: 'innerHTML',
+          values: {
+            amount: this.$refs.amount.value,
+            date: this.$refs.date.value,
+            usd_currency: this.currency,
+            should_replace_amount: replace
+          }
+        }).then(() => {
+          if (replace) {
+            const newAmount = document.querySelector('#exchange-rate-display')?.dataset?.convertedAmount;
+            if (newAmount) {
+              this.$refs.amount.value = newAmount;
+            }
+          }
+        });
+      }
+    }));
+  });
+</script>
+{% endblock inline_js %}
+
 {% endblock top_buttons %}

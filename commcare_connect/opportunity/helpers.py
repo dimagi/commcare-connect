@@ -313,11 +313,13 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
     return access_objects
 
 
-def get_payment_report_data(opportunity: Opportunity):
+def get_payment_report_data(opportunity: Opportunity, usd=False):
     PaymentReportData = namedtuple(
         "PaymentReportData", ["payment_unit", "approved", "user_payment_accrued", "nm_payment_accrued"]
     )
 
+    accrued_attr = "saved_payment_accrued_usd" if usd else "saved_payment_accrued"
+    org_accrued_attr = "saved_org_payment_accrued_usd" if usd else "saved_org_payment_accrued"
     report_data_qs = (
         CompletedWork.objects.filter(
             opportunity_access__opportunity=opportunity,
@@ -326,8 +328,8 @@ def get_payment_report_data(opportunity: Opportunity):
         .values("payment_unit__name")
         .annotate(
             approved=Count("id"),
-            user_payment_accrued=Sum("saved_payment_accrued"),
-            nm_payment_accrued=Sum("saved_org_payment_accrued"),
+            user_payment_accrued=Sum(accrued_attr),
+            nm_payment_accrued=Sum(org_accrued_attr),
         )
         .order_by("payment_unit__name")
     )

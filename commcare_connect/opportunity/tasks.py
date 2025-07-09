@@ -3,6 +3,7 @@ import logging
 
 import httpx
 from allauth.utils import build_absolute_uri
+from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -29,6 +30,7 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
+    ExchangeRate,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -391,3 +393,25 @@ def bulk_update_payment_accrued(opportunity_id, user_ids: list):
                 "payment_unit"
             )
             update_status(completed_works, access, compute_payment=True)
+
+
+@celery_app.task()
+def fetch_exchange_rates(date=None, currency=None):
+    base_url = "https://openexchangerates.org/api"
+
+    if date is None:
+        # fetch for the first of the month
+        date = datetime.date.today().replace(day=1)
+    url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
+    url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
+    response = httpx.get(url)
+    rates = response.json()["rates"]
+
+    if currency is None:
+        currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
+        for currencies in currency:
+            rate = rates[currency]
+            ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+    else:
+        rate = rates[currency]
+        return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
