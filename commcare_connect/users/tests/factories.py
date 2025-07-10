@@ -2,27 +2,9 @@ from django.contrib.auth import get_user_model
 from factory import Faker, RelatedFactory, SubFactory
 from factory.django import DjangoModelFactory, Password
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.users.models import ConnectIDUserLink
-
-
-class OauthApplicationFactory(DjangoModelFactory):
-    name = Faker("name")
-    client_id = Faker("uuid4")
-    client_secret = Faker("uuid4")
-
-    class Meta:
-        model = "oauth2_provider.Application"
-
-
-class HQServerFactory(DjangoModelFactory):
-    name = Faker("name")
-    url = Faker("url")
-    oauth_application = SubFactory(OauthApplicationFactory)
-
-    class Meta:
-        model = "users.HQServer"
-        django_get_or_create = ["url"]
 
 
 class UserFactory(DjangoModelFactory):

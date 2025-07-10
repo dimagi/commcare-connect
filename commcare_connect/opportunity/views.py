@@ -2343,7 +2343,6 @@ def exchange_rate_preview(request, org_slug, opp_id):
         converted_amount_display=converted_amount_display,
         converted_amount=converted_amount,
     )
-
     return HttpResponse(html)
 
 

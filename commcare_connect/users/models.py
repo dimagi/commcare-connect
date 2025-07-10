@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.db import models
@@ -6,18 +5,8 @@ from django.db.models import Q, UniqueConstraint
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.users.managers import UserManager
-
-
-class HQServer(models.Model):
-    name = models.CharField(max_length=255)
-    url = models.URLField(unique=True)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_modified = models.DateTimeField(auto_now=True)
-    oauth_application = models.ForeignKey(settings.OAUTH2_PROVIDER_APPLICATION_MODEL, on_delete=models.DO_NOTHING)
-
-    def __str__(self):
-        return f"{self.name} ({self.url})"
 
 
 class User(AbstractUser):

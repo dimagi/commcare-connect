@@ -6,9 +6,9 @@ from rest_framework import parsers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.processor import process_xform
 from commcare_connect.form_receiver.serializers import XFormSerializer
-from commcare_connect.users.models import HQServer
 
 logger = logging.getLogger(__name__)
 

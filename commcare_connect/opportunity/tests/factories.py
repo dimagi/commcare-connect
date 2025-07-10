@@ -3,8 +3,9 @@ from datetime import timezone
 from factory import DictFactory, Faker, LazyAttribute, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.models import VisitValidationStatus
-from commcare_connect.users.tests.factories import HQServerFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 class ApplicationFactory(DictFactory):

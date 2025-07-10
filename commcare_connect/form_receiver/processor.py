@@ -8,6 +8,7 @@ from geopy.distance import distance
 from jsonpath_ng import JSONPathError
 from jsonpath_ng.ext import parse
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
@@ -32,7 +33,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tasks import download_user_visit_attachments
 from commcare_connect.opportunity.visit_import import update_payment_accrued
-from commcare_connect.users.models import HQServer, User
+from commcare_connect.users.models import User
 
 LEARN_MODULE_JSONPATH = parse("$..module")
 ASSESSMENT_JSONPATH = parse("$..assessment")

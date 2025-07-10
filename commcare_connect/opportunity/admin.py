@@ -13,7 +13,6 @@ from commcare_connect.opportunity.models import (
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
-    HQServer,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -181,12 +180,6 @@ class ExchangeRateAdmin(admin.ModelAdmin):
     list_filter = ("currency_code", "rate_date")
     search_fields = ("currency_code",)
     ordering = ("-rate_date",)
-
-
-@admin.register(HQServer)
-class HQServerAdmin(admin.ModelAdmin):
-    list_display = ["name", "url"]
-    search_fields = ["name", "url"]
 
 
 @admin.register(CommCareApp)

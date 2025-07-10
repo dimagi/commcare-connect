@@ -259,7 +259,7 @@ class OpportunityInitForm(forms.ModelForm):
 
         def get_domain_select_attrs():
             return get_htmx_swap_attrs(
-                "users:get_domains",
+                "commcarehq:get_domains",
                 "#id_hq_server, #id_api_key",
                 "change from:#id_api_key",
             )
@@ -267,7 +267,7 @@ class OpportunityInitForm(forms.ModelForm):
         def get_app_select_attrs(app_type: str):
             domain_select_id = f"#id_{app_type}_app_domain"
             return get_htmx_swap_attrs(
-                "users:get_applications_by_domain",
+                "commcarehq:get_applications_by_domain",
                 f"#id_hq_server, {domain_select_id}, #id_api_key",
                 f"change from:{domain_select_id}",
             )

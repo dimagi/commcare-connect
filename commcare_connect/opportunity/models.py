@@ -11,8 +11,9 @@ from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.organization.models import Organization
-from commcare_connect.users.models import HQServer, User
+from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 

@@ -91,6 +91,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "commcare_connect.commcarehq_provider",
+    "commcare_connect.commcarehq",
     "commcare_connect.form_receiver",
     "commcare_connect.multidb",
     "commcare_connect.opportunity",

@@ -5,6 +5,7 @@ import pytest
 from django.utils import timezone
 from factory.fuzzy import FuzzyText
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.forms import OpportunityFinalizeForm
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.opportunity.tests.factories import (
@@ -20,7 +21,7 @@ from commcare_connect.program.tests.factories import (
     ProgramApplicationFactory,
     ProgramFactory,
 )
-from commcare_connect.users.tests.factories import HQServerFactory, OrganizationFactory
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 @pytest.fixture

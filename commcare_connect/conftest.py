@@ -1,6 +1,7 @@
 import pytest
 from rest_framework.test import APIClient, APIRequestFactory
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.models import OpportunityClaimLimit
 from commcare_connect.opportunity.tests.factories import (
     CommCareAppFactory,
@@ -16,7 +17,6 @@ from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
-    HQServerFactory,
     MobileUserFactory,
     OrgWithUsersFactory,
     ProgramManagerOrgWithUsersFactory,

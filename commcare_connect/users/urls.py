@@ -25,6 +25,6 @@ urlpatterns = [
     path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
     path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
     path("api_keys/", views.get_api_keys, name="get_api_keys"),
-    path("domains/", views.get_domains, name="get_domains"),
-    path("applications/", views.get_application, name="get_applications_by_domain"),
+    path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
+    path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
 ]
