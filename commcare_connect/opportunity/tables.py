@@ -165,7 +165,6 @@ class UserVisitTable(OrgContextTable):
         empty_text = "No forms."
         orderable = False
         row_attrs = {"class": show_warning}
-        template_name = "django_tables2/bootstrap5.html"
 
 
 class OpportunityPaymentTable(OrgContextTable):
@@ -238,37 +237,6 @@ class UserStatusTable(OrgContextTable):
         if not getattr(record.opportunity_access, "accepted", False):
             return "---"
         return record.opportunity_access.display_name
-
-    def render_view_profile(self, record):
-        if not getattr(record.opportunity_access, "accepted", False):
-            resend_invite_url = reverse(
-                "opportunity:resend_user_invite", args=(self.org_slug, record.opportunity.id, record.id)
-            )
-            urls = [resend_invite_url]
-            buttons = [
-                """<button title="Resend invitation"
-                hx-post="{}" hx-target="#modalBodyContent" hx-trigger="click"
-                hx-on::after-request="handleResendInviteResponse(event)"
-                class="btn btn-sm btn-success">Resend</button>"""
-            ]
-            if record.status == UserInviteStatus.not_found:
-                invite_delete_url = reverse(
-                    "opportunity:user_invite_delete", args=(self.org_slug, record.opportunity.id, record.id)
-                )
-                urls.append(invite_delete_url)
-                buttons.append(
-                    """<button title="Delete invitation"
-                            hx-post="{}" hx-swap="none"
-                            hx-confirm="Please confirm to delete the User Invite."
-                            class="btn btn-sm btn-danger" type="button"><i class="bi bi-trash"></i></button>"""
-                )
-            button_html = f"""<div class="d-flex gap-1">{"".join(buttons)}</div>"""
-            return format_html(button_html, *urls)
-        url = reverse(
-            "opportunity:user_profile",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
-        )
-        return format_html('<a class="btn btn-primary btn-sm" href="{}">View Profile</a>', url)
 
     def render_started_learning(self, record, value):
         return date_with_time_popup(self, value)
@@ -468,7 +436,6 @@ class UserVisitReviewTable(OrgContextTable):
             "flag_reason",
         )
         empty_text = "No visits submitted for review."
-        template_name = "django_tables2/bootstrap5.html"
 
     def render_user_visit(self, record):
         url = reverse(
