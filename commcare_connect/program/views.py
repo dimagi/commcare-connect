@@ -284,7 +284,7 @@ def program_manager_home(request, org):
     )
 
     pending_payments = _make_recent_activity_data(
-        pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="pk"
+        pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="opp_id"
     )
 
     organizations = Organization.objects.exclude(pk=org.pk)

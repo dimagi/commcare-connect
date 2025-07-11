@@ -12,7 +12,7 @@
           </a>
         </li>
         <li class="breadcrumb-item">
-          <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=opportunity.id %}">
+          <a href="{% url 'opportunity:detail' org_slug=request.org.slug opp_id=opportunity.id %}">
             {{ opportunity.name }}
           </a>
         </li>

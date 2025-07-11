@@ -7,12 +7,12 @@
     <span>Create Opportunity</span>
   </a>
   <hr class="border-t-2 border-dashed border-gray-300 w-full">
-  <a class="{% if step == 'step2' %}active{% endif %}" id="step2-tab" data-toggle="tab" href="{% if pk %} {% url 'opportunity:add_payment_units' org_slug=org_slug pk=pk %}{% endif %}">
+  <a class="{% if step == 'step2' %}active{% endif %}" id="step2-tab" data-toggle="tab" href="{% if pk %} {% url 'opportunity:add_payment_units' org_slug=org_slug opp_id=pk %}{% endif %}">
     <h6>2</h6>
     <span>Payment Unit</span>
   </a>
   <hr class="border-t-2 border-dashed border-gray-300 w-full">
-  <a class="{% if step == 'step3' %}active{% endif %}" id="step3-tab" data-toggle="tab" href="{% if pk %} {% url 'opportunity:finalize' org_slug=org_slug pk=pk %}{% endif %}">
+  <a class="{% if step == 'step3' %}active{% endif %}" id="step3-tab" data-toggle="tab" href="{% if pk %} {% url 'opportunity:finalize' org_slug=org_slug opp_id=pk %}{% endif %}">
     <h6>3</h6>
     <span>Budget</span>
   </a>

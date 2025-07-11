@@ -266,7 +266,7 @@ class FunnelPerformanceTable(tables.Table):
             "opportunity:detail",
             kwargs={
                 "org_slug": record.organization.slug,
-                "pk": record.id,
+                "opp_id": record.id,
             },
         )
         return format_html('<a href="{}">{}</a>', url, value)
@@ -307,7 +307,7 @@ class DeliveryPerformanceTable(tables.Table):
             "opportunity:detail",
             kwargs={
                 "org_slug": record.organization.slug,
-                "pk": record.id,
+                "opp_id": record.id,
             },
         )
         return format_html('<a href="{}">{}</a>', url, value)
