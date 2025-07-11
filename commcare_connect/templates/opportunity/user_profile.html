@@ -14,7 +14,7 @@
           </a>
         </li>
         <li class="breadcrumb-item">
-          <a href="{% url 'opportunity:detail' org_slug=request.org.slug pk=access.opportunity_id %}">
+          <a href="{% url 'opportunity:detail' org_slug=request.org.slug opp_id=access.opportunity_id %}">
             {{ access.opportunity.name }}
           </a>
         </li>

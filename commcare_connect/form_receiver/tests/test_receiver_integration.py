@@ -268,7 +268,7 @@ def test_receiver_deliver_form_max_visits_reached(
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 5
     # First four are not over-limit
-    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
+    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
 

@@ -99,10 +99,10 @@
   ></div>
 
 
-  {% url 'opportunity:user_status_export' org_slug=request.org.slug pk=opportunity.pk as user_status_export_url %}
+  {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.pk as user_status_export_url %}
   {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
 
-  {% url 'opportunity:payment_export' org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
+  {% url 'opportunity:payment_export' org_slug=request.org.slug opp_id=opportunity.pk as payment_export_url %}
   {% include "components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
