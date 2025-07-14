@@ -1,4 +1,4 @@
-{% extends "tailwind/base.html" %}
+{% extends "base.html" %}
 {% load render_table from django_tables2 %}
 
 
@@ -28,7 +28,7 @@
 
 <div class="flex flex-col w-full gap-2">
   <div class="flex items-center w-full gap-4 p-4 overflow-x-auto min-h-32 profile-bg bg-brand-indigo rounded-2xl">
-    {% include "tailwind/components/worker_page/profile.html" with opportunity_access=access %}
+    {% include "components/worker_page/profile.html" with opportunity_access=access %}
     <div class="flex items-center gap-4 w-full">
       <div class="w-1/5 h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
         <div class="flex justify-between items-center">

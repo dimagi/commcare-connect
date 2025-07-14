@@ -1,10 +1,10 @@
-{% extends "tailwind/base.html" %}
+{% extends "base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
 
 {% if title %}{% block title %}{{ title }}{% endblock %} {% endif %}
 {% block content %}
 <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6">
-  {% include "partial_form.html" %}
+  {% include "components/partial_form.html" %}
 </div>
 {% endblock content %}

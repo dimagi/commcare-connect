@@ -9,6 +9,7 @@ from geopy.distance import distance
 from jsonpath_ng import JSONPathError
 from jsonpath_ng.ext import parse
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
@@ -40,9 +41,9 @@ ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
 
 
-def process_xform(xform: XForm):
+def process_xform(xform: XForm, hq_server: HQServer):
     """Process a form received from CommCare HQ."""
-    app = get_app(xform.domain, xform.app_id)
+    app = get_app(xform.domain, xform.app_id, hq_server)
     user = get_user(xform)
 
     opportunity = get_opportunity(deliver_app=app)
@@ -407,8 +408,8 @@ def get_opportunity(*, learn_app=None, deliver_app=None):
         raise ProcessingError(f"Multiple active opportunities found for CommCare app {app.cc_app_id}.")
 
 
-def get_app(domain, app_id):
-    app = CommCareApp.objects.filter(cc_domain=domain, cc_app_id=app_id).first()
+def get_app(domain, app_id, hq_server):
+    app = CommCareApp.objects.filter(cc_domain=domain, cc_app_id=app_id, hq_server=hq_server).first()
     if not app:
         raise ProcessingError(f"CommCare app {app_id} not found.")
     return app

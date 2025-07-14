@@ -14,6 +14,7 @@ from commcare_connect.opportunity.models import (
     CommCareApp,
     DeliverUnit,
     DeliverUnitFlagRules,
+    ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
     Opportunity,
@@ -33,6 +34,23 @@ from commcare_connect.users.models import User
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
 CHECKBOX_CLASS = "simple-toggle"
+
+
+class HQApiKeyCreateForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Field("hq_server"),
+            Field("api_key"),
+            Submit("submit", "Save", css_class="button button-md primary-dark float-end"),
+        )
+        self.helper.form_tag = False
+
+    class Meta:
+        model = HQApiKey
+        fields = ("hq_server", "api_key")
 
 
 class OpportunityUserInviteForm(forms.Form):
@@ -165,10 +183,10 @@ class OpportunityInitForm(forms.ModelForm):
             "description",
             "short_description",
             "currency",
+            "hq_server",
         ]
 
     def __init__(self, *args, **kwargs):
-        self.domains = kwargs.pop("domains", [])
         self.user = kwargs.pop("user", {})
         self.org_slug = kwargs.pop("org_slug", "")
         super().__init__(*args, **kwargs)
@@ -189,7 +207,17 @@ class OpportunityInitForm(forms.ModelForm):
                 ),
                 Column(
                     Field("currency"),
-                    Field("api_key"),
+                    Field("hq_server"),
+                    Column(
+                        Field("api_key", wrapper_class="flex-1"),
+                        HTML(
+                            "<button class='button-icon primary-dark'"
+                            "type='button' @click='showAddApiKeyModal = true'>"
+                            "<i class='fa-regular fa-plus'></i>"
+                            "</button>"
+                        ),
+                        css_class="flex items-center gap-1",
+                    ),
                 ),
                 css_class="grid grid-cols-2 gap-4 card_bg",
             ),
@@ -217,41 +245,64 @@ class OpportunityInitForm(forms.ModelForm):
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
-        domain_choices = [(domain, domain) for domain in self.domains]
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
-        self.fields["learn_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
+
+        def get_htmx_swap_attrs(url_query: str, include: str, trigger: str):
+            return {
+                "hx-get": reverse(url_query),
+                "hx-include": include,
+                "hx-trigger": trigger,
+                "hx-target": "this",
+                "data-loading-disable": True,
+            }
+
+        def get_domain_select_attrs():
+            return get_htmx_swap_attrs(
+                "commcarehq:get_domains",
+                "#id_hq_server, #id_api_key",
+                "change from:#id_api_key",
+            )
+
+        def get_app_select_attrs(app_type: str):
+            domain_select_id = f"#id_{app_type}_app_domain"
+            return get_htmx_swap_attrs(
+                "commcarehq:get_applications_by_domain",
+                f"#id_hq_server, {domain_select_id}, #id_api_key",
+                f"change from:{domain_select_id}",
+            )
+
+        self.fields["learn_app_domain"] = forms.Field(
             widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_learn_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_learn_app",
-                    "data-loading-disable": True,
-                }
+                choices=[(None, "Select an API key to load domains.")],
+                attrs=get_domain_select_attrs(),
             ),
         )
         self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+            widget=forms.Select(choices=[(None, "Loading...")], attrs=get_app_select_attrs("learn"))
         )
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
-        self.fields["deliver_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
+
+        self.fields["deliver_app_domain"] = forms.Field(
             widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_deliver_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_deliver_app",
-                    "data-loading-disable": True,
-                }
+                choices=[(None, "Select an API key to load domains.")],
+                attrs=get_domain_select_attrs(),
             ),
         )
         self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+            widget=forms.Select(choices=[(None, "Loading...")], attrs=get_app_select_attrs("deliver"))
         )
-        self.fields["api_key"] = forms.CharField(max_length=50)
+
+        self.fields["api_key"] = forms.Field(
+            widget=forms.Select(
+                choices=[(None, "Select a HQ Server to load API Keys.")],
+                attrs=get_htmx_swap_attrs(
+                    "users:get_api_keys",
+                    "#id_hq_server",
+                    "change from:#id_hq_server, reload_api_keys from:body",
+                ),
+            ),
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -278,6 +329,7 @@ class OpportunityInitForm(forms.ModelForm):
             cc_app_id=learn_app["id"],
             cc_domain=learn_app_domain,
             organization=organization,
+            hq_server=self.instance.hq_server,
             defaults={
                 "name": learn_app["name"],
                 "created_by": self.user.email,
@@ -290,6 +342,7 @@ class OpportunityInitForm(forms.ModelForm):
             cc_app_id=deliver_app["id"],
             cc_domain=deliver_app_domain,
             organization=organization,
+            hq_server=self.instance.hq_server,
             defaults={
                 "name": deliver_app["name"],
                 "created_by": self.user.email,
@@ -305,7 +358,13 @@ class OpportunityInitForm(forms.ModelForm):
         else:
             self.instance.organization = organization
 
-        api_key, _ = HQApiKey.objects.get_or_create(user=self.user, api_key=self.cleaned_data["api_key"])
+        api_key, _ = HQApiKey.objects.get_or_create(
+            id=self.cleaned_data["api_key"],
+            defaults={
+                "hq_server": self.cleaned_data["hq_server"],
+                "user": self.user,
+            },
+        )
         self.instance.api_key = api_key
         super().save(commit=commit)
 
@@ -406,170 +465,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
                     self.add_error("total_budget", "Budget exceeds the program budget.")
 
             return cleaned_data
-
-
-class OpportunityCreationForm(forms.ModelForm):
-    class Meta:
-        model = Opportunity
-        fields = [
-            "name",
-            "description",
-            "short_description",
-            "end_date",
-            "max_visits_per_user",
-            "daily_max_visits_per_user",
-            "budget_per_visit",
-            "total_budget",
-            "currency",
-        ]
-        widgets = {
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        self.domains = kwargs.pop("domains", [])
-        self.user = kwargs.pop("user", {})
-        self.org_slug = kwargs.pop("org_slug", "")
-        super().__init__(*args, **kwargs)
-
-        self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("short_description")),
-            Row(Field("end_date")),
-            Row(
-                Field("max_visits_per_user", wrapper_class="form-group col-md-4 mb-0", x_model="maxVisits"),
-                Field("daily_max_visits_per_user", wrapper_class="form-group col-md-4 mb-0"),
-                Field("budget_per_visit", wrapper_class="form-group col-md-4 mb-0", x_model="visitBudget"),
-            ),
-            Row(
-                Field("max_users", wrapper_class="form-group col-md-4 mb-0", x_model="maxUsers"),
-                Field(
-                    "total_budget",
-                    wrapper_class="form-group col-md-4 mb-0",
-                    readonly=True,
-                    x_model="totalBudget()",
-                ),
-                Field("currency", wrapper_class="form-group col-md-4 mb-0"),
-            ),
-            Fieldset(
-                "Learn App",
-                Row(Field("learn_app_domain")),
-                Row(Field("learn_app")),
-                Row(Field("learn_app_description")),
-                Row(Field("learn_app_passing_score")),
-                data_loading_states=True,
-            ),
-            Fieldset(
-                "Deliver App",
-                Row(Field("deliver_app_domain")),
-                Row(Field("deliver_app")),
-                data_loading_states=True,
-            ),
-            Row(Field("api_key")),
-            Submit("submit", "Submit"),
-        )
-
-        domain_choices = [(domain, domain) for domain in self.domains]
-        self.fields["learn_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_learn_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_learn_app",
-                    "data-loading-disable": True,
-                }
-            ),
-        )
-        self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
-        self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea)
-        self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
-        self.fields["deliver_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_deliver_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_deliver_app",
-                    "data-loading-disable": True,
-                }
-            ),
-        )
-        self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
-        self.fields["api_key"] = forms.CharField(max_length=50)
-        self.fields["total_budget"].widget.attrs.update({"class": "form-control-plaintext"})
-        self.fields["max_users"] = forms.IntegerField()
-
-    def clean(self):
-        cleaned_data = super().clean()
-        if cleaned_data:
-            cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
-            cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
-
-            if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
-                self.add_error("learn_app", "Learn app and Deliver app cannot be same")
-                self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
-
-            if cleaned_data["daily_max_visits_per_user"] > cleaned_data["max_visits_per_user"]:
-                self.add_error(
-                    "daily_max_visits_per_user",
-                    "Daily max visits per user cannot be greater than Max visits per user",
-                )
-
-            if cleaned_data["budget_per_visit"] > cleaned_data["total_budget"]:
-                self.add_error("budget_per_visit", "Budget per visit cannot be greater than Total budget")
-
-            if cleaned_data["end_date"] < now().date():
-                self.add_error("end_date", "Please enter the correct end date for this opportunity")
-            return cleaned_data
-
-    def save(self, commit=True):
-        organization = Organization.objects.get(slug=self.org_slug)
-        learn_app = self.cleaned_data["learn_app"]
-        deliver_app = self.cleaned_data["deliver_app"]
-        learn_app_domain = self.cleaned_data["learn_app_domain"]
-        deliver_app_domain = self.cleaned_data["deliver_app_domain"]
-
-        self.instance.currency = self.instance.currency.upper()
-
-        self.instance.learn_app, _ = CommCareApp.objects.get_or_create(
-            cc_app_id=learn_app["id"],
-            cc_domain=learn_app_domain,
-            organization=organization,
-            defaults={
-                "name": learn_app["name"],
-                "created_by": self.user.email,
-                "modified_by": self.user.email,
-                "description": self.cleaned_data["learn_app_description"],
-                "passing_score": self.cleaned_data["learn_app_passing_score"],
-            },
-        )
-        self.instance.deliver_app, _ = CommCareApp.objects.get_or_create(
-            cc_app_id=deliver_app["id"],
-            cc_domain=deliver_app_domain,
-            organization=organization,
-            defaults={
-                "name": deliver_app["name"],
-                "created_by": self.user.email,
-                "modified_by": self.user.email,
-            },
-        )
-        self.instance.created_by = self.user.email
-        self.instance.modified_by = self.user.email
-        self.instance.organization = organization
-        api_key, _ = HQApiKey.objects.get_or_create(user=self.user, api_key=self.cleaned_data["api_key"])
-        self.instance.api_key = api_key
-        super().save(commit=commit)
-
-        return self.instance
 
 
 class DateRanges(TextChoices):
@@ -1067,21 +962,57 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 
 class PaymentInvoiceForm(forms.ModelForm):
+    usd_currency = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="USD Currency",
+        widget=forms.CheckboxInput(),
+    )
+
     class Meta:
         model = PaymentInvoice
         fields = ("amount", "date", "invoice_number", "service_delivery")
-        widgets = {"date": forms.DateInput(attrs={"type": "date"})}
+        widgets = {
+            "date": forms.DateInput(attrs={"type": "date"}),
+            "amount": forms.NumberInput(attrs={"min": "0"}),
+        }
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
+        self.fields["usd_currency"].widget.attrs.update(
+            {
+                "x-ref": "currencyToggle",
+                "x-on:change": "currency = $event.target.checked; convert(true)",
+            }
+        )
+
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
-                Field("amount", min=0),
-                Field("date"),
+                Field(
+                    "date",
+                    **{
+                        "x-ref": "date",
+                        "x-on:change": "convert()",
+                    },
+                ),
+                Field(
+                    "amount",
+                    label=f"Amount ({self.opportunity.currency})",
+                    **{
+                        "x-ref": "amount",
+                        "x-on:input.debounce.300ms": "convert()",
+                    },
+                ),
+                Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
                 Field("invoice_number"),
+                Field(
+                    "usd_currency",
+                    css_class=CHECKBOX_CLASS,
+                    wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
                 Field(
                     "service_delivery",
                     css_class=CHECKBOX_CLASS,
@@ -1101,9 +1032,36 @@ class PaymentInvoiceForm(forms.ModelForm):
             )
         return invoice_number
 
+    def clean(self):
+        cleaned_data = super().clean()
+        amount = cleaned_data.get("amount")
+        usd_currency = cleaned_data.get("usd_currency")
+        date = cleaned_data.get("date")
+
+        if amount is None or date is None:
+            return cleaned_data  # Let individual field errors handle missing values
+
+        exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+        if not exchange_rate:
+            raise ValidationError("Exchange rate not available for selected date.")
+
+        cleaned_data["exchange_rate"] = exchange_rate
+
+        if usd_currency:
+            cleaned_data["amount_usd"] = amount
+            cleaned_data["amount"] = round(amount * exchange_rate.rate, 2)
+        else:
+            cleaned_data["amount"] = amount
+            cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
+
+        return cleaned_data
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
+        instance.amount_usd = self.cleaned_data["amount_usd"]
+        instance.exchange_rate = self.cleaned_data["exchange_rate"]
+
         if commit:
             instance.save()
         return instance

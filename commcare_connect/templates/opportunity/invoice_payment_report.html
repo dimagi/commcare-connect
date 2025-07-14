@@ -1,4 +1,4 @@
-{% extends "tailwind/pages/invoice_base.html" %}
+{% extends "opportunity/invoice_base.html" %}
 {% load django_tables2 %}
 
 
@@ -28,3 +28,23 @@
     <p class="text-sm font-medium text-brand-deep-purple">All Invoices</p>
 </div>
 {% endblock table_section_header %}
+
+{% block top_buttons %}
+{{ block.super }}
+<div class="flex items-center bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+  <a
+    href="{% url report_view_name org_slug=request.org.slug pk=opportunity.pk %}"
+    class="px-4 py-2 font-medium {% if not request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
+    <i class="fas fa-coins"></i>
+    {{opportunity.currency}}
+  </a>
+  <div class="w-px h-6 bg-gray-200"></div>
+  <a
+    href="{% url report_view_name org_slug=request.org.slug pk=opportunity.pk %}?usd=True"
+    class="px-4 py-2 font-medium {% if request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
+    <i class="fas fa-dollar-sign"></i>
+    USD
+  </a>
+</div>
+
+{% endblock top_buttons %}

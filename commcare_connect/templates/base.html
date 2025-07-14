@@ -1,161 +1,67 @@
 {% load static i18n %}
-{% load active_link %}<!DOCTYPE html>
-{% get_current_language as LANGUAGE_CODE %}
-<html lang="{{ LANGUAGE_CODE }}">
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="x-ua-compatible" content="ie=edge">
-  <title>{% block title %}CommCare Connect{% endblock title %}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="CommCare Connect">
-  <meta name="author" content="Dimagi">
 
-  {% include 'favicon.html' %}
-
-  {% block css %}
-    <!-- Your stuff: Third-party CSS libraries go here -->
-
-    <!-- This file stores project-specific CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pace-js@latest/pace-theme-default.min.css">
-    <link rel="stylesheet" href="{% static 'bundles/css/project.css' %}">
-    <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
-
-  {% endblock %}
-  <!-- Le javascript
-  ================================================== -->
-  {# Placed at the top of the document so pages load faster with defer #}
-  {% block javascript %}
-    <!-- Vendor dependencies bundled as one file -->
-    <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
-    <!-- place project specific Javascript in this file -->
-    <script src="{% static 'bundles/js/project-bundle.js' %}" defer></script>
-    <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/pace-js@latest/pace.min.js"></script>
-
-  {% endblock javascript %}
-</head>
-<body class="bg-light" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-<div class="mb-1">
-  <nav class="navbar navbar-expand-lg bg-primary" data-bs-theme="dark">
-    <div class="container">
-      <button class="navbar-toggler navbar-toggler-right" type="button" data-bs-toggle="collapse"
-              data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
-              aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <a class="navbar-brand" href="{% url 'home' %}">CommCare Connect</a>
-      {% if request.org %}
-        {% if request.org_membership.is_admin %}
-          <a class="navbar-brand abs" href="{% url 'organization:home' request.org.slug %}">{{ request.org.name }}</a>
-        {% else %}
-          <a class="navbar-brand abs" href="">{{ request.org.name }}</a>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {% include 'favicon.html' %}
+    <title>CommCare Connect</title>
+    {% load static %}
+    {% block css %}
+       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+       <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+       <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/aquawolf04/font-awesome-pro@5cd1511/css/all.css" />
+       <link rel="stylesheet" href="https://unpkg.com/tippy.js@6/dist/tippy.css" />
+    {% endblock %}
+    {% block javascript %}
+       <!-- alpine-tooltip needs to come before alpine which is in vendors-bundle -->
+       <script src="https://cdn.jsdelivr.net/npm/@ryangjchandler/alpine-tooltip@1.x.x/dist/cdn.min.js" defer ></script>
+       <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
+       <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
+       <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
+       <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    {% endblock javascript %}
+  </head>
+  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
+    {% include 'layouts/sidenav.html'%}
+    <div class="flex-1  px-4">
+      {% include 'layouts/header.html'%}
+      <div class="h-5 w-full mt-16"></div>
+      <main id="content" class="md:max-w-screen-2xl mx-auto">
+        {% if messages %}
+          {% for message in messages %}
+          <div class="flex items-center justify-between p-4 mb-4 rounded-lg
+                    {% if message.tags == 'success' %}bg-green-600 text-white
+                    {% elif message.tags == 'error' or message.tags == 'danger' %}bg-red-500 text-white
+                    {% elif message.tags == 'warning' %}bg-yellow-500 text-white
+                    {% elif message.tags == 'info' %}bg-blue-500 text-white
+                    {% else %}bg-gray-500 text-white{% endif %}">
+            <span>{{ message }}</span>
+            <button type="button"
+                    class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+                    aria-label="Close"
+                    onclick="this.parentElement.remove()">
+              &times;
+            </button>
+          </div>
+          {% endfor %}
         {% endif %}
-      {% endif %}
 
-      <div class="collapse navbar-collapse" id="navbarSupportedContent">
-        <ul class="navbar-nav">
-          {% if request.user.is_authenticated %}
-            {% if request.org %}
-              {% if request.org.program_manager %}
-                {% if request.org_membership.is_admin or request.user.is_superuser %}
-                  <li class="nav-item">
-                    <a class="nav-link {% active_link "list || init || edit || opportunity_list || opportunity_init" namespace='program' %}"
-                       href="{% url 'program:home' request.org.slug %}">{% translate "Programs" %}</a>
-                  </li>
-                {% endif %}
-              {% endif %}
-              <li class="nav-item">
-                <a class="nav-link {% active_link "list || create || edit || detail" namespace='opportunity' %}"
-                   href="{% url 'opportunity:list' request.org.slug %}">{% translate "Opportunities" %}</a>
-              </li>
-            {% endif %}
-          {% endif %}
-        </ul>
-        <ul class="navbar-nav ms-auto">
-          {% if request.user.is_authenticated %}
-            <li class="nav-item">
-              <a class="nav-link {% active_link "account_email" %}"
-                 href="{% url 'account_email' %}">{% translate "My Profile" %}</a>
-            </li>
-            <li class="nav-item">
-              {# URL provided by django-allauth/account/urls.py #}
-              <a class="nav-link {% active_link "account_logout" %}"
-                 href="{% url 'account_logout' %}">{% translate "Sign Out" %}</a>
-            </li>
-            <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                 aria-expanded="false">
-              {% if request.org %}
-                {{ request.org.name }}
-              {% else %}
-                Select Organization
-              {% endif %}
-              </a>
-              <ul class="dropdown-menu dropdown-menu-end bg-light">
-                {% for membership in request.user.memberships.all %}
-                  <li>
-                    <a
-                      class="dropdown-item {% if request.org.slug == membership.organization.slug %} active {% endif %}"
-                      href="{% url 'opportunity:list' membership.organization.slug %}">{{ membership.organization.name }}</a>
-                  </li>
-                {% endfor %}
-                  {% if request.org %}<li><hr class="dropdown-divider"></li>{% endif %}
-                  <li><a class="dropdown-item" href="{% url 'organization_create' %}">Add Organization</a></li>
-              </ul>
-            </li>
-          {% else %}
-            {% if ACCOUNT_ALLOW_REGISTRATION %}
-              <li class="nav-item">
-                {# URL provided by django-allauth/account/urls.py #}
-                <a id="sign-up-link" class="nav-link {% active_link "account_signup" %}"
-                   href="{% url 'account_signup' %}">{% translate "Sign Up" %}</a>
-              </li>
-            {% endif %}
-            <li class="nav-item">
-              {# URL provided by django-allauth/account/urls.py #}
-              <a id="log-in-link" class="nav-link {% active_link "account_login" %}"
-                 href="{% url 'account_login' %}">{% translate "Sign In" %}</a>
-            </li>
-          {% endif %}
-        </ul>
-      </div>
+        {% block content %}
+        {% endblock %}
+      </main>
     </div>
-  </nav>
-</div>
-
-<div class="container">
-
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-dismissible {% if message.tags %}alert-{{ message.tags }}{% endif %}">
-        {{ message }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-      </div>
-    {% endfor %}
-  {% endif %}
-
-  {% block breadcrumbs %}{% endblock %}
-
-  {% block content %}
-  <div class="mt-4">
-    <h1>CommCare Connect</h1>
-    <p class="lead">Unlocking more impact from Frontline Workers</p>
-  </div>
-  {% endblock content %}
-
-</div> <!-- /container -->
-
-{% block modal %}{% endblock modal %}
-
-{% block inline_javascript %}
-  {% comment %}
-    Script tags with only code, no src (defer by default). To run
-    with a "defer" so that you run inline code:
-    <script>
-      window.addEventListener('DOMContentLoaded', () => {/* Run whatever you want */
-      });
-    </script>
-  {% endcomment %}
-{% endblock inline_javascript %}
-</body>
+  {% block inline_javascript %}
+    {% comment %}
+      Script tags with only code, no src (defer by default). To run
+      with a "defer" so that you run inline code:
+      <script>
+        window.addEventListener('DOMContentLoaded', () => {/* Run whatever you want */
+        });
+      </script>
+    {% endcomment %}
+  {% endblock inline_javascript %}
+  </body>
 </html>

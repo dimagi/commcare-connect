@@ -10,6 +10,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     DeliveryType,
+    ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
     LearnModule,
@@ -171,6 +172,14 @@ class PaymentUnitAdmin(admin.ModelAdmin):
     @admin.display(description="Opportunity Name")
     def get_opp_name(self, obj):
         return obj.opportunity.name
+
+
+@admin.register(ExchangeRate)
+class ExchangeRateAdmin(admin.ModelAdmin):
+    list_display = ("currency_code", "rate", "rate_date", "fetched_at")
+    list_filter = ("currency_code", "rate_date")
+    search_fields = ("currency_code",)
+    ordering = ("-rate_date",)
 
 
 @admin.register(CommCareApp)

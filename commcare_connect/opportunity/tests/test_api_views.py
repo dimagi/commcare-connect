@@ -42,7 +42,10 @@ def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, bud
     PaymentUnitFactory(opportunity=opportunity, amount=budget_per_visit, max_total=100)
     opportunity_access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     ConnectIdUserLinkFactory(
-        user=mobile_user, commcare_username="test@ccc-test.commcarehq.org", domain=opportunity.deliver_app.cc_domain
+        user=mobile_user,
+        commcare_username="test@ccc-test.commcarehq.org",
+        domain=opportunity.deliver_app.cc_domain,
+        hq_server=opportunity.hq_server,
     )
     return opportunity, opportunity_access
 
@@ -74,6 +77,7 @@ def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: A
         user=mobile_user_1,
         commcare_username="test_1@ccc-test.commcarehq.org",
         domain=opportunity.deliver_app.cc_domain,
+        hq_server=opportunity.hq_server,
     )
     api_client.force_authenticate(mobile_user_1)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
@@ -87,6 +91,7 @@ def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: A
         user=mobile_user_2,
         commcare_username="test_2@ccc-test.commcarehq.org",
         domain=opportunity.deliver_app.cc_domain,
+        hq_server=opportunity.hq_server,
     )
     api_client.force_authenticate(mobile_user_2)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")

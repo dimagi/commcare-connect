@@ -118,4 +118,4 @@ def org_member_table(request, org_slug=None):
     members = UserOrganizationMembership.objects.filter(organization=request.org)
     table = OrgMemberTable(members)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-    return render(request, "tailwind/components/tables/table.html", {"table": table})
+    return render(request, "components/tables/table.html", {"table": table})

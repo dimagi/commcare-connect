@@ -1,4 +1,4 @@
-{% extends "tailwind/base.html" %}
+{% extends "base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
 {% load tailwind_filters %}
@@ -8,7 +8,7 @@
 
 {% block content %}
 <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-8">
-  {% include "steps.html"  with step='step2' org_slug=request.org.slug pk=opportunity.pk %}
+  {% include "opportunity/steps.html"  with step='step2' org_slug=request.org.slug pk=opportunity.pk %}
   <div class="card_bg space-y-4 !p-2">
       <div hx-get="{% url 'opportunity:payment_unit_table' org_slug=request.org.slug pk=opportunity.pk %}{% querystring %}"
           hx-trigger="load" hx-swap="outerHTML">

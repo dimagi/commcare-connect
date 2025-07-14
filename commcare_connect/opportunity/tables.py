@@ -493,9 +493,12 @@ class PaymentReportTable(tables.Table):
 
 
 class PaymentInvoiceTable(OpportunityContextTable):
+    amount = tables.Column(verbose_name="Amount")
     payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Pay")
+    exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
+    amount_usd = tables.Column(verbose_name="Amount (USD)")
 
     class Meta:
         model = PaymentInvoice
@@ -503,6 +506,8 @@ class PaymentInvoiceTable(OpportunityContextTable):
         fields = ("amount", "date", "invoice_number", "service_delivery")
         sequence = (
             "amount",
+            "amount_usd",
+            "exchange_rate",
             "date",
             "invoice_number",
             "payment_status",
@@ -514,7 +519,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
 
     def __init__(self, *args, **kwargs):
         self.csrf_token = kwargs.pop("csrf_token")
+        self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
+        self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency})"
 
     def render_payment_status(self, value):
         if value is not None:
@@ -527,7 +534,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return
 
     def render_actions(self, record):
-        invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opp_id])
+        invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opportunity.id])
         disabled = "disabled" if getattr(record, "payment", None) else ""
         template_string = f"""
             <form method="POST" action="{ invoice_approve_url  }">
@@ -631,7 +638,7 @@ class BaseOpportunityList(OrgContextTable):
             "start_date",
             "end_date",
         )
-        order_by = ("status", "start_date", "end_date")
+        order_by = ("status", "-start_date", "end_date")
 
     def render_status(self, value):
         if value == 0:
@@ -753,7 +760,7 @@ class OpportunityTable(BaseOpportunityList):
             )
 
         html = render_to_string(
-            "tailwind/components/dropdowns/text_button_dropdown.html",
+            "components/dropdowns/text_button_dropdown.html",
             context={
                 "text": "...",
                 "list": actions,
@@ -849,7 +856,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             )
 
         html = render_to_string(
-            "tailwind/components/dropdowns/text_button_dropdown.html",
+            "components/dropdowns/text_button_dropdown.html",
             context={
                 "text": "...",
                 "list": actions,
@@ -885,7 +892,7 @@ class UserVisitVerificationTable(tables.Table):
                         </span>
                     {% endfor %}
                     {% if value|length > 2 %}
-                    {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
+                    {% include "components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
                     {% endif %}
                 {% endif %}
             </div>
@@ -1107,7 +1114,7 @@ class WorkerPaymentsTable(tables.Table):
 
     def render_last_paid(self, record, value):
         return render_to_string(
-            "tailwind/components/worker_page/last_paid.html",
+            "components/worker_page/last_paid.html",
             {
                 "record": record,
                 "value": value.strftime("%d-%b-%Y") if value else "--",
@@ -1126,7 +1133,7 @@ class WorkerLearnTable(OrgContextTable):
     modules_completed = tables.TemplateColumn(
         accessor="modules_completed_percentage",
         template_code="""
-            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
+            {% include "components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
         """,  # noqa: E501
     )
     completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
@@ -1214,7 +1221,7 @@ class TotalFlagCountsColumn(tables.Column):
         full_url = f"{url}?{urlencode(params)}"
 
         return render_to_string(
-            "tailwind/components/worker_page/fetch_flag_counts.html",
+            "components/worker_page/fetch_flag_counts.html",
             {
                 "counts_url": full_url,
                 "value": total,
@@ -1235,7 +1242,7 @@ class TotalDeliveredColumn(tables.Column):
             {"label": "Over limit", "value": over_limit},
         ]
         return render_to_string(
-            "tailwind/components/worker_page/deliver_column.html",
+            "components/worker_page/deliver_column.html",
             {
                 "value": completed,
                 "rows": rows,
@@ -1324,7 +1331,7 @@ class WorkerDeliveryTable(OrgContextTable):
             "number_style": True,
         }
 
-        return render_to_string("tailwind/components/progressbar/simple-progressbar.html", context)
+        return render_to_string("components/progressbar/simple-progressbar.html", context)
 
     def render_action(self, record):
         url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
@@ -1391,7 +1398,7 @@ class WorkerDeliveryTable(OrgContextTable):
             {"label": "Over limit", "value": record.over_limit},
         ]
         return render_to_string(
-            "tailwind/components/worker_page/deliver_column.html",
+            "components/worker_page/deliver_column.html",
             {
                 "value": value,
                 "rows": rows,
@@ -1409,7 +1416,7 @@ class WorkerDeliveryTable(OrgContextTable):
         full_url = f"{url}?{urlencode(params)}"
 
         return render_to_string(
-            "tailwind/components/worker_page/fetch_flag_counts.html",
+            "components/worker_page/fetch_flag_counts.html",
             {
                 "counts_url": full_url,
                 "value": value,
@@ -1518,4 +1525,4 @@ class PaymentUnitTable(OrgContextTable):
             "deliver_units": deliver_units,
             "edit_url": edit_url,
         }
-        return render_to_string("tailwind/pages/opportunity_dashboard/extendable_payment_unit_row.html", context)
+        return render_to_string("opportunity/extendable_payment_unit_row.html", context)

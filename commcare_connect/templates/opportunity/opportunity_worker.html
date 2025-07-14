@@ -1,8 +1,8 @@
-{% extends "tailwind/base.html" %}
+{% extends "base.html" %}
 {% block content %}
 {% load crispy_forms_tags %}
 
-{% include 'tailwind/components/breadcrumbs.html' with path=path %}
+{% include 'components/breadcrumbs.html' with path=path %}
 
 <div class="flex flex-col w-full gap-2" x-data="opportunityTabs()" x-init="init()">
   <div
@@ -100,16 +100,16 @@
 
 
   {% url 'opportunity:user_status_export' org_slug=request.org.slug pk=opportunity.pk as user_status_export_url %}
-  {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
+  {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
 
   {% url 'opportunity:payment_export' org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
-  {% include "tailwind/components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
+  {% include "components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
-  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}
+  {% include "components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}
 
   {% url 'opportunity:payment_import' request.org.slug opportunity.pk as payment_import_url %}
-  {% include "tailwind/components/worker_page/import_modal.html" with modal_name="showPaymentImportModal" modal_title=_("Import Payment Records") import_url=payment_import_url input_name="payments" input_help_text=_('The file must contain at least the "Username", "Amount" and "Payment Date" columns.') %}
+  {% include "components/worker_page/import_modal.html" with modal_name="showPaymentImportModal" modal_title=_("Import Payment Records") import_url=payment_import_url input_name="payments" input_help_text=_('The file must contain at least the "Username", "Amount" and "Payment Date" columns.') %}
 
 <!--User visit export modal-->
 <div x-show="showVisitExportModal" class="modal-backdrop">

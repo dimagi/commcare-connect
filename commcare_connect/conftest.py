@@ -1,8 +1,11 @@
 import pytest
 from rest_framework.test import APIClient, APIRequestFactory
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.models import OpportunityClaimLimit
 from commcare_connect.opportunity.tests.factories import (
+    CommCareAppFactory,
+    HQApiKeyFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
@@ -50,8 +53,18 @@ def user(db) -> User:
 
 @pytest.fixture()
 def opportunity(request):
+    hq_server = HQServerFactory()
+    api_key = HQApiKeyFactory(hq_server=hq_server)
+    learn_app = CommCareAppFactory(hq_server=hq_server)
+    deliver_app = CommCareAppFactory(hq_server=hq_server)
     verification_flags = getattr(request, "param", {}).get("verification_flags", {})
-    opp_options = {"is_test": False}
+    opp_options = {
+        "is_test": False,
+        "hq_server": hq_server,
+        "api_key": api_key,
+        "learn_app": learn_app,
+        "deliver_app": deliver_app,
+    }
     opp_options.update(getattr(request, "param", {}).get("opp_options", {}))
     if opp_options.get("managed", False):
         factory = ManagedOpportunityFactory(**opp_options)
@@ -72,7 +85,11 @@ def mobile_user(db, opportunity) -> User:
 @pytest.fixture
 def user_with_connectid_link(db, opportunity):
     user = MobileUserFactory()
-    ConnectIdUserLinkFactory(user=user, commcare_username=f"test@{opportunity.learn_app.cc_domain}.commcarehq.org")
+    ConnectIdUserLinkFactory(
+        user=user,
+        commcare_username=f"test@{opportunity.learn_app.cc_domain}.commcarehq.org",
+        hq_server=opportunity.hq_server,
+    )
     if opportunity.learn_app.cc_domain != opportunity.deliver_app.cc_domain:
         ConnectIdUserLinkFactory(
             user=user, commcare_username=f"test@{opportunity.deliver_app.cc_domain}.commcarehq.org"

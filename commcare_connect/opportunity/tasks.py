@@ -30,6 +30,7 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
+    ExchangeRate,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -56,8 +57,8 @@ def create_learn_modules_and_deliver_units(opportunity_id):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     learn_app = opportunity.learn_app
     deliver_app = opportunity.deliver_app
-    learn_app_connect_blocks = get_connect_blocks_for_app(learn_app.cc_domain, learn_app.cc_app_id)
-    deliver_app_connect_blocks = get_deliver_units_for_app(deliver_app.cc_domain, deliver_app.cc_app_id)
+    learn_app_connect_blocks = get_connect_blocks_for_app(learn_app)
+    deliver_app_connect_blocks = get_deliver_units_for_app(deliver_app)
 
     for block in learn_app_connect_blocks:
         LearnModule.objects.update_or_create(
@@ -309,7 +310,7 @@ def download_user_visit_attachments(user_visit_id: id):
     for name, blob in blobs.items():
         if name == "form.xml":
             continue
-        url = f"{settings.COMMCARE_HQ_URL}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
+        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
 
         with transaction.atomic():
             blob_meta, created = BlobMeta.objects.get_or_create(
@@ -392,3 +393,25 @@ def bulk_update_payment_accrued(opportunity_id, user_ids: list):
                 "payment_unit"
             )
             update_status(completed_works, access, compute_payment=True)
+
+
+@celery_app.task()
+def fetch_exchange_rates(date=None, currency=None):
+    base_url = "https://openexchangerates.org/api"
+
+    if date is None:
+        # fetch for the first of the month
+        date = datetime.date.today().replace(day=1)
+    url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
+    url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
+    response = httpx.get(url)
+    rates = response.json()["rates"]
+
+    if currency is None:
+        currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
+        for currencies in currency:
+            rate = rates[currency]
+            ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+    else:
+        rate = rates[currency]
+        return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
