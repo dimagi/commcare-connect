@@ -342,7 +342,7 @@ def test_receiver_multiple_deliver_unit_payment_units_duplicates(
             domain=deliver_unit.app.cc_domain,
             app_id=deliver_unit.app.cc_app_id,
         )
-        make_request(api_client, form, user_with_connectid_link)
+        make_request(api_client, form, user_with_connectid_link, oauth_application=oauth_application)
 
         duplicate_json = deepcopy(form)
         duplicate_json["id"] = str(uuid4())
