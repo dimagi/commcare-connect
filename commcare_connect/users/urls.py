@@ -22,6 +22,8 @@ urlpatterns = [
     path("accept_invite/<slug:invite_id>/", view=accept_invite, name="accept_invite"),
     path("demo_users/", view=demo_user_tokens, name="demo_users"),
     path("sms_status_callback/", SMSStatusCallbackView.as_view(), name="sms_status_callback"),
+    path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
+    path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
     path("api_keys/", views.get_api_keys, name="get_api_keys"),
     path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
     path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
