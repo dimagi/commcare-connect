@@ -8,6 +8,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
+    OpportunityClaimLimit,
     Payment,
     PaymentUnit,
     UserVisit,
@@ -19,6 +20,8 @@ from commcare_connect.users.models import ConnectIDUserLink, User
 PUBLICATION_NAME = "tables_for_superset_pub"
 SUBSCRIPTION_NAME = "tables_for_superset_sub"
 
+# To add/remove more models, add/remove the model here and run setup_logical_replication command
+# Additional step to remove, manually drop all rows from the replica after running the command
 REPLICATION_ALLOWED_MODELS = [
     Assessment,
     CompletedModule,
@@ -30,6 +33,7 @@ REPLICATION_ALLOWED_MODELS = [
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
+    OpportunityClaimLimit,
     Organization,
     Payment,
     PaymentUnit,
