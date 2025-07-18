@@ -7,7 +7,6 @@ module.exports = {
   target: 'web',
   context: path.join(__dirname, '../'),
   entry: {
-    project: path.resolve(__dirname, '../commcare_connect/static/js/project'),
     dashboard: path.resolve(
       __dirname,
       '../commcare_connect/static/js/dashboard',
