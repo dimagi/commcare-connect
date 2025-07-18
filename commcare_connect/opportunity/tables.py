@@ -603,7 +603,7 @@ class BaseOpportunityList(OrgContextTable):
                      }">
                     {% if record.is_test %}
                         <div class="relative">
-                            <i class="fa-light fa-file-dashed-line"
+                            <i class="fa-solid fa-file-circle-exclamation"
                                @mouseenter="showTooltip = true; positionTooltip($el)"
                                @mouseleave="showTooltip = false
                                "></i>
@@ -615,7 +615,7 @@ class BaseOpportunityList(OrgContextTable):
                         </div>
                     {% else %}
                         <span class="relative">
-                            <i class="invisible fa-light fa-file-dashed-line"></i>
+                            <i class="invisible fa-solid fa-file-circle-exclamation"></i>
                         </span>
                     {% endif %}
                 </div>
@@ -942,18 +942,18 @@ class UserVisitVerificationTable(tables.Table):
                 "tooltip": "Manually approved by NM",
             },
             VisitValidationStatus.approved: {"icon": "fa-solid fa-circle-check", "tooltip": "Auto-approved"},
-            VisitValidationStatus.rejected: {"icon": "fa-light fa-ban", "tooltip": "Rejected by NM"},
+            VisitValidationStatus.rejected: {"icon": "fa-solid fa-ban", "tooltip": "Rejected by NM"},
             VisitValidationStatus.pending: {
-                "icon": "fa-light fa-flag-swallowtail",
+                "icon": "fa-solid fa-flag",
                 "tooltip": "Waiting for NM Review",
             },
-            VisitValidationStatus.duplicate: {"icon": "fa-light fa-clone", "tooltip": "Duplicate Visit"},
-            VisitValidationStatus.trial: {"icon": "fa-light fa-marker", "tooltip": "Trail Visit"},
-            VisitValidationStatus.over_limit: {"icon": "fa-light fa-marker", "tooltip": "Daily limit exceeded"},
-            VisitReviewStatus.disagree: {"icon": "fa-light fa-thumbs-down", "tooltip": "Disagreed by PM"},
-            VisitReviewStatus.agree: {"icon": "fa-light fa-thumbs-up", "tooltip": "Agreed by PM"},
+            VisitValidationStatus.duplicate: {"icon": "fa-solid fa-clone", "tooltip": "Duplicate Visit"},
+            VisitValidationStatus.trial: {"icon": "fa-solid fa-marker", "tooltip": "Trail Visit"},
+            VisitValidationStatus.over_limit: {"icon": "fa-solid fa-marker", "tooltip": "Daily limit exceeded"},
+            VisitReviewStatus.disagree: {"icon": "fa-solid fa-thumbs-down", "tooltip": "Disagreed by PM"},
+            VisitReviewStatus.agree: {"icon": "fa-solid fa-thumbs-up", "tooltip": "Agreed by PM"},
             # Review Status Pending (custom name, original choice clashes with Visit Pending)
-            "pending_review": {"icon": "fa-light fa-timer", "tooltip": "Pending Review by PM"},
+            "pending_review": {"icon": "fa-solid fa-stopwatch", "tooltip": "Pending Review by PM"},
         }
 
         icons_html = []

@@ -32,7 +32,7 @@
       <div class="flex justify-between mb-2">
         <h3 class="title-sm">Form Validation Rules</h3>
         <button type="button" class="button-icon primary-dark" @click="addForm()">
-          <i class="fa-regular fa-plus"></i>
+          <i class="fa-solid fa-plus"></i>
         </button>
       </div>
 
@@ -42,7 +42,7 @@
         <div class="card_bg" id="form_json_form">
           <div class="flex justify-end">
             <button type="button" class="button-icon negative-light" aria-label="Delete" @click="deleteForm()">
-              <i class="fa-regular fa-trash"></i>
+              <i class="fa-solid fa-trash"></i>
             </button>
           </div>
           <div class="p-4">
@@ -64,7 +64,7 @@
                   hx-swap="outerHTML"
                   @click="decrementFormCount()"
                 {% endif %}>
-                <i class="fa-regular fa-trash"></i>
+                <i class="fa-solid fa-trash"></i>
               </button>
             </div>
             {% crispy form form.helper %}
