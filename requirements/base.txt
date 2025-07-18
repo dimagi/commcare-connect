@@ -132,6 +132,8 @@ et-xmlfile==1.1.0
     # via openpyxl
 flatten-dict==0.4.2
     # via -r requirements/base.in
+fontawesomefree==6.6.0
+    # via -r requirements/base.in
 frozenlist==1.4.0
     # via
     #   aiohttp
