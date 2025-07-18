@@ -29,7 +29,7 @@
                id="{{ form.email.auto_id }}"
                {% if form.email.value != None %}value="{{ form.email.value|stringformat:'s' }}"{% endif %}
                name="{{ form.email.html_name }}" x-model="email">
-        <i class="fa-light fa-envelope"></i>
+        <i class="fa-solid fa-envelope"></i>
         <span class="error-icon fa-solid fa-circle-exclamation"></span>
       </div>
       {% for error in form.email.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
@@ -42,7 +42,7 @@
                id="{{ form.password1.auto_id }}"
                {% if form.password1.value != None %}value="{{ form.password1.value|stringformat:'s' }}"{% endif %}
                name="{{ form.password1.html_name }}" x-model="password">
-        <i class="fa-light fa-lock"></i>
+        <i class="fa-solid fa-lock"></i>
         <span class="error-icon fa-solid fa-circle-exclamation"></span>
       </div>
       {% for error in form.password1.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
@@ -55,7 +55,7 @@
                id="{{ form.password2.auto_id }}"
                {% if form.password2.value != None %}value="{{ form.password2.value|stringformat:'s' }}"{% endif %}
                name="{{ form.password2.html_name }}" x-model="confirmPassword">
-        <i class="fa-light fa-lock"></i>
+        <i class="fa-solid fa-lock"></i>
         <span class="error-icon fa-solid fa-circle-exclamation"></span>
       </div>
       {% for error in form.password2.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
