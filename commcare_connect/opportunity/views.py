@@ -12,7 +12,6 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
-from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Cast, Coalesce
@@ -116,6 +115,7 @@ from commcare_connect.opportunity.tables import (
 from commcare_connect.opportunity.tasks import (
     add_connect_users,
     bulk_update_payments_task,
+    bulk_update_visit_status_task,
     create_learn_modules_and_deliver_units,
     generate_catchment_area_export,
     generate_deliver_status_export,
@@ -134,7 +134,6 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_catchments,
     bulk_update_completed_work_status,
     bulk_update_visit_review_status,
-    bulk_update_visit_status,
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
@@ -491,17 +490,17 @@ def download_export(request, org_slug, task_id):
 def update_visit_status_import(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("visits")
-    try:
-        status = bulk_update_visit_status(opportunity, file)
-    except ImportException as e:
-        messages.error(request, e.message)
+    redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
+
+    file_format = get_file_extension(file)
+    if file_format not in ("csv", "xlsx"):
+        messages.error(request, f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
+        return redirect(redirect_url + "?active_tab=delivery")
     else:
-        message = f"Visit status updated successfully for {len(status)} visits."
-        if status.missing_visits:
-            message += status.get_missing_message()
-        messages.success(request, mark_safe(message))
-    url = reverse("opportunity:worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery"
-    return redirect(url)
+        file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_visit_import"
+        saved_path = default_storage.save(file_path, file)
+        result = bulk_update_visit_status_task.delay(opportunity.pk, saved_path, file_format)
+        return redirect(f"{redirect_url}?active_tab=delivery&export_task_id={result.id}")
 
 
 def review_visit_import(request, org_slug=None, opp_id=None):
@@ -667,7 +666,7 @@ def payment_import(request, org_slug=None, opp_id=None):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
 
     file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
-    saved_path = default_storage.save(file_path, ContentFile(file.read()))
+    saved_path = default_storage.save(file_path, file)
     result = bulk_update_payments_task.delay(opportunity.pk, saved_path, file_format)
 
     return redirect(

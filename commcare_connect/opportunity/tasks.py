@@ -383,6 +383,31 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
     set_task_progress(self, "<br>".join(messages), is_complete=True)
 
 
+@celery_app.task(bind=True)
+def bulk_update_visit_status_task(self, opportunity_id: int, file_path: str, file_format: str):
+    from commcare_connect.opportunity.visit_import import (
+        ImportException,
+        bulk_update_visit_status,
+        get_imported_dataset,
+    )
+
+    set_task_progress(self, "Visit Verification Import is in porgress.")
+    try:
+        with default_storage.open(file_path, "rb") as f:
+            dataset = get_imported_dataset(f, file_format)
+            headers = dataset.headers or []
+            rows = list(dataset)
+
+        status = bulk_update_visit_status(opportunity_id, headers, rows)
+        messages = [f"Visit status updated successfully for {len(status)} visits."]
+        if status.missing_visits:
+            messages.append(status.get_missing_message())
+    except ImportException as e:
+        messages = [f"Visit status import failed: {e}"] + getattr(e, "invalid_rows", [])
+
+    set_task_progress(self, "<br>".join(messages), is_complete=True)
+
+
 @celery_app.task()
 def bulk_update_payment_accrued(opportunity_id, user_ids: list):
     """Updates payment accrued for completed and approved CompletedWork instances."""
