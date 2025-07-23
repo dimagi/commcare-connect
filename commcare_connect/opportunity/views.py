@@ -2,7 +2,6 @@ import datetime
 import sys
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
-from functools import reduce
 from http import HTTPStatus
 
 from celery.result import AsyncResult
@@ -57,7 +56,6 @@ from commcare_connect.opportunity.forms import (
     VisitExportForm,
 )
 from commcare_connect.opportunity.helpers import (
-    get_annotated_opportunity_access,
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
@@ -69,7 +67,6 @@ from commcare_connect.opportunity.helpers import (
 )
 from commcare_connect.opportunity.models import (
     BlobMeta,
-    CatchmentArea,
     CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
@@ -95,16 +92,12 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     BaseOpportunityList,
     CompletedWorkTable,
-    DeliverStatusTable,
     DeliverUnitTable,
     LearnModuleTable,
-    LearnStatusTable,
-    OpportunityPaymentTable,
     PaymentInvoiceTable,
     PaymentReportTable,
     PaymentUnitTable,
     SuspendedUsersTable,
-    UserStatusTable,
     UserVisitVerificationTable,
     WorkerDeliveryTable,
     WorkerLearnStatusTable,
@@ -387,33 +380,6 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
         return context
 
 
-class OpportunityLearnStatusTableView(OrganizationUserMixin, OrgContextSingleTableView):
-    model = OpportunityAccess
-    paginate_by = 25
-    table_class = LearnStatusTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["opp_id"]
-        opportunity = get_opportunity_or_404(org_slug=self.request.org.slug, pk=opportunity_id)
-        return OpportunityAccess.objects.filter(opportunity=opportunity).order_by("user__name")
-
-
-class OpportunityPaymentTableView(OrganizationUserMixin, OrgContextSingleTableView):
-    model = OpportunityAccess
-    paginate_by = 25
-    table_class = OpportunityPaymentTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["opp_id"]
-        org_slug = self.kwargs["org_slug"]
-        opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-        return OpportunityAccess.objects.filter(opportunity=opportunity, payment_accrued__gte=0).order_by(
-            "-payment_accrued"
-        )
-
-
 @org_member_required
 def export_user_visits(request, org_slug, opp_id):
     get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
@@ -629,20 +595,6 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
     return HttpResponse(mark_safe(form_html))
 
 
-class OpportunityUserStatusTableView(OrganizationUserMixin, OrgContextSingleTableView):
-    model = OpportunityAccess
-    paginate_by = 25
-    table_class = UserStatusTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["opp_id"]
-        org_slug = self.kwargs["org_slug"]
-        opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-        access_objects = get_annotated_opportunity_access(opportunity)
-        return access_objects
-
-
 @org_member_required
 def export_users_for_payment(request, org_slug, opp_id):
     get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
@@ -817,20 +769,6 @@ def export_user_status(request, org_slug, opp_id):
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
-class OpportunityDeliverStatusTable(OrganizationUserMixin, OrgContextSingleTableView):
-    model = OpportunityAccess
-    paginate_by = 25
-    table_class = DeliverStatusTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        opportunity_id = self.kwargs["opp_id"]
-        org_slug = self.kwargs["org_slug"]
-        opportunity = get_opportunity_or_404(pk=opportunity_id, org_slug=org_slug)
-        access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
-        return access_objects
-
-
 @org_member_required
 def export_deliver_status(request, org_slug, opp_id):
     get_opportunity_or_404(pk=opp_id, org_slug=request.org.slug)
@@ -854,66 +792,6 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     payment.delete()
     redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
     return redirect(f"{redirect_url}?active_tab=payments")
-
-
-@org_viewer_required
-def user_profile(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, pk=pk, accepted=True)
-    user_visits = UserVisit.objects.filter(opportunity_access=access)
-    user_catchments = CatchmentArea.objects.filter(opportunity_access=access)
-    user_visit_data = []
-    for user_visit in user_visits:
-        if not user_visit.location:
-            continue
-        lat, lng, elevation, precision = list(map(float, user_visit.location.split(" ")))
-        user_visit_data.append(
-            dict(
-                entity_name=user_visit.entity_name,
-                visit_date=user_visit.visit_date.date(),
-                lat=lat,
-                lng=lng,
-                precision=precision,
-            )
-        )
-    # user for centering the User visits map
-    lat_avg = 0.0
-    lng_avg = 0.0
-    if user_visit_data:
-        lat_avg = reduce(lambda x, y: x + float(y["lat"]), user_visit_data, 0.0) / len(user_visit_data)
-        lng_avg = reduce(lambda x, y: x + float(y["lng"]), user_visit_data, 0.0) / len(user_visit_data)
-
-    pending_completed_work_count = len(
-        [
-            cw
-            for cw in CompletedWork.objects.filter(opportunity_access=access, status=CompletedWorkStatus.pending)
-            if cw.saved_approved_count
-        ]
-    )
-    user_catchment_data = [
-        {
-            "name": catchment.name,
-            "lat": float(catchment.latitude),
-            "lng": float(catchment.longitude),
-            "radius": catchment.radius,
-            "active": catchment.active,
-        }
-        for catchment in user_catchments
-    ]
-    pending_payment = max(access.payment_accrued - access.total_paid, 0)
-    return render(
-        request,
-        "opportunity/user_profile.html",
-        context=dict(
-            access=access,
-            user_visits=user_visit_data,
-            lat_avg=lat_avg,
-            lng_avg=lng_avg,
-            MAPBOX_TOKEN=settings.MAPBOX_TOKEN,
-            pending_completed_work_count=pending_completed_work_count,
-            pending_payment=pending_payment,
-            user_catchments=user_catchment_data,
-        ),
-    )
 
 
 @org_admin_required
