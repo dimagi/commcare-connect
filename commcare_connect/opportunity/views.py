@@ -57,11 +57,11 @@ from commcare_connect.opportunity.forms import (
     VisitExportForm,
 )
 from commcare_connect.opportunity.helpers import (
+    OpportunityData,
     get_annotated_opportunity_access,
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_list_data_lite,
     get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_learn_table_data,
@@ -93,16 +93,17 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    BaseOpportunityList,
     CompletedWorkTable,
     DeliverStatusTable,
     DeliverUnitTable,
     LearnModuleTable,
     LearnStatusTable,
     OpportunityPaymentTable,
+    OpportunityTable,
     PaymentInvoiceTable,
     PaymentReportTable,
     PaymentUnitTable,
+    ProgramManagerOpportunityTable,
     SuspendedUsersTable,
     UserStatusTable,
     UserVisitVerificationTable,
@@ -192,9 +193,14 @@ class OrgContextSingleTableView(SingleTableView):
 
 class OpportunityList(OrganizationUserMixin, SingleTableView):
     model = Opportunity
-    table_class = BaseOpportunityList
+    table_class = ProgramManagerOpportunityTable
     template_name = "opportunity/opportunities_list.html"
-    paginate_by = 15
+    paginate_by = 2
+
+    def get_table_class(self):
+        if self.request.org.program_manager:
+            return ProgramManagerOpportunityTable
+        return OpportunityTable
 
     def get_paginate_by(self, table):
         return get_validated_page_size(self.request)
@@ -206,8 +212,8 @@ class OpportunityList(OrganizationUserMixin, SingleTableView):
 
     def get_table_data(self):
         org = self.request.org
-        is_program_manager = self.request.org.program_manager
-        return get_opportunity_list_data_lite(org, is_program_manager)
+        is_program_manager = org.program_manager
+        return OpportunityData(org, is_program_manager).get_data()
 
 
 class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):

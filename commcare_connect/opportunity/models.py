@@ -262,7 +262,10 @@ class OpportunityAccess(models.Model):
     last_active = models.DateTimeField(null=True)
 
     class Meta:
-        indexes = [models.Index(fields=["invite_id"])]
+        indexes = [
+            models.Index(fields=["invite_id"]),
+            models.Index(fields=["opportunity", "date_learn_started"]),
+        ]
         unique_together = ("user", "opportunity")
 
     @cached_property
@@ -702,6 +705,9 @@ class UserVisit(XFormBaseModel):
             models.UniqueConstraint(
                 fields=["xform_id", "entity_id", "deliver_unit"], name="unique_xform_entity_deliver_unit"
             )
+        ]
+        indexes = [
+            models.Index(fields=["opportunity", "status"]),
         ]
 
 

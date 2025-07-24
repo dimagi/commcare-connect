@@ -693,20 +693,24 @@ class OpportunityTable(BaseOpportunityList):
             "Pending Invites", "Workers not yet clicked on invite link or started learning in app"
         ),
         attrs=col_attrs,
+        orderable=False,
     )
     inactive_workers = tables.Column(
         verbose_name=header_with_tooltip("Inactive Workers", "Did not submit a Learn or Deliver form in 3 day"),
         attrs=col_attrs,
+        orderable=False,
     )
     pending_approvals = tables.Column(
         verbose_name=header_with_tooltip(
             "Pending Approvals", "Deliveries that are flagged and require NM or PM approval"
         ),
         attrs=col_attrs,
+        orderable=False,
     )
     payments_due = tables.Column(
         verbose_name=header_with_tooltip("Payments Due", "Worker payments accrued minus the amount paid"),
         attrs=col_attrs,
+        orderable=False,
     )
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="", attrs=STOP_CLICK_PROPAGATION_ATTR)
 
@@ -776,18 +780,23 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             "Active Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
         ),
         attrs=TEXT_CENTER_ATTR,
+        orderable=False,
     )
     total_deliveries = tables.Column(
-        verbose_name=header_with_tooltip("Total Deliveries", "Payment units completed"), attrs=TEXT_CENTER_ATTR
+        verbose_name=header_with_tooltip("Total Deliveries", "Payment units completed"),
+        attrs=TEXT_CENTER_ATTR,
+        orderable=False,
     )
     verified_deliveries = tables.Column(
         verbose_name=header_with_tooltip("Verified Deliveries", "Payment units fully approved by PM and NM"),
         attrs=TEXT_CENTER_ATTR,
+        orderable=False,
     )
     worker_earnings = tables.Column(
         verbose_name=header_with_tooltip("Worker Earnings", "Total payment accrued to worker"),
         accessor="total_accrued",
         attrs=TEXT_CENTER_ATTR,
+        orderable=False,
     )
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="")
 

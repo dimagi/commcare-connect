@@ -6,7 +6,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
-from commcare_connect.opportunity.helpers import get_opportunity_list_data
+from commcare_connect.opportunity.helpers import OpportunityData
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
@@ -194,9 +194,7 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
         visit_date=three_days_ago - timedelta(days=2),
     )
 
-    queryset = get_opportunity_list_data(
-        opportunity.organization,
-    )
+    queryset = OpportunityData(opportunity.organization, False).get_data()
     opp = queryset[0]
     assert opp.pending_invites == 3
     assert opp.pending_approvals == 1
