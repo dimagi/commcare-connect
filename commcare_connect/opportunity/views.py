@@ -499,6 +499,8 @@ def update_visit_status_import(request, org_slug=None, opp_id=None):
         message = f"Visit status updated successfully for {len(status)} visits."
         if status.missing_visits:
             message += status.get_missing_message()
+        if status.over_limit_count:
+            messages.warning(request, mark_safe(status.get_over_limit_count_message()))
         messages.success(request, mark_safe(message))
     url = reverse("opportunity:worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery"
     return redirect(url)
@@ -1157,7 +1159,20 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=True)
     table = SuspendedUsersTable(access_objects)
-    return render(request, "opportunity/suspended_users.html", dict(table=table, opportunity=opportunity))
+    path = []
+    if opportunity.managed:
+        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
+        path.append(
+            {"title": opportunity.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))}
+        )
+    path.extend(
+        [
+            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+            {"title": "Suspended Users", "url": request.path},
+        ]
+    )
+    return render(request, "opportunity/suspended_users.html", dict(table=table, opportunity=opportunity, path=path))
 
 
 @org_member_required
