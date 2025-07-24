@@ -28,7 +28,7 @@
              x-tooltip.raw="Includes all Deliver app forms submitted by this worker across all payment units including duplicates"
              >{{ counts.total }}</div>
             <div class="hidden lg:block">
-              <i class="fa-light fa-memo text-xl"></i>
+              <i class="fa-solid fa-file-invoice text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
@@ -41,7 +41,7 @@
           <div class="flex justify-between items-center">
             <div class="text-2xl">{{ counts.flagged }}</div>
             <div class="hidden lg:block">
-              <i class="fa-light fa-flag-swallowtail text-xl"></i>
+              <i class="fa-solid fa-flag text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
@@ -59,8 +59,8 @@
             <div class="py-2">
               <div class="flex justify-between items-center py-3">
                 <span class="text-xs w-27">Name</span>
-                <i class="fa-light fa-circle-check text-green-600"></i>
-                <i class="fa-light fa-clock text-gray-300"></i>
+                <i class="fa-solid fa-circle-check text-green-600"></i>
+                <i class="fa-solid fa-clock text-gray-300"></i>
               </div>
               {% for flag in flagged_info %}
                 <div class="flex justify-between items-center py-3 pr-1">
@@ -78,7 +78,7 @@
           <div class="flex justify-between items-center">
             <div class="text-2xl">{{ counts.rejected }}</div>
             <div class="hidden lg:block">
-              <i class="fa-light fa-thumbs-down text-xl"></i>
+              <i class="fa-solid fa-thumbs-down text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
@@ -111,7 +111,7 @@
           <div class="flex justify-between items-center">
             <div class="text-2xl">{{ opportunity_access.payment_accrued|intcomma }}</div>
             <div class="hidden lg:block">
-              <i class="fa-light fa-light fa-money-bill-simple-wave text-xl"></i>
+              <i class="fa-solid fa-money-bill-wave text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
@@ -124,7 +124,7 @@
           <div class="flex justify-between items-center">
             <div class="text-2xl">{{ opportunity_access.total_paid|intcomma  }}</div>
             <div class="hidden lg:block">
-              <i class="fa-light fa-hand-holding-dollar text-xl"></i>
+              <i class="fa-solid fa-hand-holding-dollar text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">

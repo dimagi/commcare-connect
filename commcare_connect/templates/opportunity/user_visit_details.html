@@ -82,7 +82,7 @@
   {% if user_visit.reason %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
-      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
       <div class="flex items-center gap-1">
         <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
         <span class="flex items-center text-xs text-brand-blue-light">
@@ -93,7 +93,7 @@
     </div>
     <div>
       <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
            @click="message.expanded = !message.expanded"></i>
         <p class="text-xs text-brand-deep-purple">
           {{ user_visit.reason }}
@@ -106,7 +106,7 @@
   {% if user_visit.justification %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
-      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
       <div class="flex items-center gap-1">
         <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
         <span class="flex items-center text-xs text-brand-blue-light">
@@ -117,7 +117,7 @@
     </div>
     <div>
       <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
            @click="message.expanded = !message.expanded"></i>
         <p class="text-xs text-brand-deep-purple">
           {{ user_visit.justification }}
@@ -152,11 +152,11 @@
     <p class="text-sm font-medium text-brand-deep-purple">Media</p>
     <div class="flex gap-2">
       <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
-        <i class="cursor-pointer fa-light fa-arrow-left"
+        <i class="cursor-pointer fa-solid fa-arrow-left"
            :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
       </button>
       <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
-        <i class="cursor-pointer fa-light fa-arrow-right"
+        <i class="cursor-pointer fa-solid fa-arrow-right"
            :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
       </button>
     </div>
@@ -240,7 +240,7 @@
       <div class="flex justify-between mb-2">
         <p class="text-sm font-medium text-brand-deep-purple">Media</p>
         <button class="button-icon cursor-pointer" @click="closePopup()">
-          <i class="fa-light fa-xmark-large"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
 
@@ -254,7 +254,7 @@
           <a :href="slides[modalCurrentIndex].src"
              download="downloaded-image.jpg"
              aria-label="Download Image">
-            <i class="fa-light fa-download text-brand-deep-purple"></i>
+            <i class="fa-solid fa-download text-brand-deep-purple"></i>
           </a>
         </button>
       </div>
@@ -265,7 +265,7 @@
                 @click="prevModal()"
                 :disabled="modalCurrentIndex === 0"
                 :class="{'opacity-50': modalCurrentIndex === 0}">
-          <i class="fa-light fa-arrow-left"></i>
+          <i class="fa-solid fa-arrow-left"></i>
         </button>
 
         <div class="flex justify-center gap-2 px-16 overflow-hidden">
@@ -289,7 +289,7 @@
                 @click="nextModal()"
                 :disabled="modalCurrentIndex >= slides.length - 1"
                 :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">
-          <i class="fa-light fa-arrow-right"></i>
+          <i class="fa-solid fa-arrow-right"></i>
         </button>
       </div>
     </div>
@@ -353,7 +353,7 @@
       <div class="header flex justify-between items-center">
         <h2 class="title">Reason for Rejection</h2>
         <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <form hx-post="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=user_visit.id  %}"
@@ -382,7 +382,7 @@
       <div class="header flex justify-between items-center">
         <h2 class="title">Justification for Approval</h2>
         <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <form hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"

@@ -83,11 +83,11 @@
               @click="goToPage('{{ table.prefixed_page_field }}', {{ table.page.previous_page_number }})"
               class="button-icon"
               aria-label="{% trans 'Previous page' %}">
-                <i class="fa-light fa-chevron-left"></i>
+                <i class="fa-solid fa-chevron-left"></i>
             </button>
         {% else %}
             <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
-                <i class="fa-light fa-chevron-left"></i>
+                <i class="fa-solid fa-chevron-left"></i>
             </span>
         {% endif %}
 
@@ -109,11 +109,11 @@
               @click="goToPage('{{ table.prefixed_page_field }}', {{ table.page.next_page_number }})"
               class="button-icon"
               aria-label="{% trans 'Next page' %}">
-                <i class="fa-light fa-chevron-right"></i>
+                <i class="fa-solid fa-chevron-right"></i>
             </button>
         {% else %}
             <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
-                <i class="fa-light fa-chevron-right"></i>
+                <i class="fa-solid fa-chevron-right"></i>
             </span>
         {% endif %}
        <!-- Right: Page Size Selector -->

@@ -17,7 +17,7 @@
       <div class="flex justify-end gap-4" x-data="{ buttonDisabled: false }">
         <button class="button button-md outline-style" type="button" hx-get="{% url 'opportunity:add_payment_unit' org_slug=request.org.slug opp_id=opportunity.id %}?partial=True" hx-target="#paymentunitform" hx-swap="beforeend  scroll:bottom"
           x-on:click="buttonDisabled = true" x-bind:disabled="buttonDisabled">
-          <i class="fa-light fa-plus mr-2"></i>
+          <i class="fa-solid fa-plus mr-2"></i>
           Add Payment Unit
         </button>
         <a href="{% if paymentunit_count %}{% url 'opportunity:finalize' org_slug=request.org.slug opp_id=opportunity.id %}{% else %}#{% endif %}"
