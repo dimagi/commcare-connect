@@ -44,6 +44,7 @@
     "dev-watch": "webpack --mode development --config webpack/base.config.js --watch"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.0.0",
     "@tailwindcss/postcss": "^4.0.14",
     "@turf/circle": "^6.5.0",
     "alpinejs": "^3.13.0",
