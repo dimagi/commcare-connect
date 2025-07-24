@@ -1157,7 +1157,20 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=True)
     table = SuspendedUsersTable(access_objects)
-    return render(request, "opportunity/suspended_users.html", dict(table=table, opportunity=opportunity))
+    path = []
+    if opportunity.managed:
+        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
+        path.append(
+            {"title": opportunity.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))}
+        )
+    path.extend(
+        [
+            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+            {"title": "Suspended Users", "url": request.path},
+        ]
+    )
+    return render(request, "opportunity/suspended_users.html", dict(table=table, opportunity=opportunity, path=path))
 
 
 @org_member_required
