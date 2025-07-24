@@ -42,7 +42,7 @@
       {% endfor %}
     </div>
 
-    <div x-data="datePicker('tableDatePicker', {% if request.GET.filter_date %} new Date('{{ request.GET.filter_date }}') {% else %} '' {% endif %})"
+    <div x-data="datePicker('tableDatePicker', {% if request.GET.filter_date %} new Date('{{ request.GET.filter_date }}' + 'T00:00:00') {% else %} '' {% endif %})"
       class="flex gap-x-4 items-center">
       <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
         <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
