@@ -826,6 +826,25 @@ def test_receiver_same_visit_twice(
     assert user_visits.count() == 1
 
 
+@pytest.mark.django_db
+def test_receiver_opportunity_access_does_not_exist(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    payment_units = opportunity.paymentunit_set.all()
+    OpportunityAccess.objects.filter(user=mobile_user_with_connect_link, opportunity=opportunity).delete()
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    make_request(
+        api_client,
+        form_json1,
+        mobile_user_with_connect_link,
+        oauth_application=oauth_application,
+        expected_status_code=403,
+    )
+    user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
+    assert user_visits.count() == 0
+
+
 def create_learn_module_data(opportunity, mobile_user, access):
     today = now()
     two_days_ago = today - timedelta(days=2)

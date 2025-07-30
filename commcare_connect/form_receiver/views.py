@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.processor import process_xform
 from commcare_connect.form_receiver.serializers import XFormSerializer
+from commcare_connect.opportunity.models import OpportunityAccess
 
 logger = logging.getLogger(__name__)
 
@@ -38,4 +39,7 @@ class FormReceiver(APIView):
                 logger.info(f"Learn Module is already completed with form ID: {xform.id}.")
             else:
                 raise
+        except OpportunityAccess.DoesNotExist:
+            logger.info("User does not have access to this opportunity: {xform.username}.")
+            return Response(status=status.HTTP_403_FORBIDDEN, data="User does not have access to the opportunity.")
         return Response(status=status.HTTP_200_OK)
