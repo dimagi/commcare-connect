@@ -14,6 +14,7 @@ from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
 from commcare_connect.opportunity.models import (
+    UNIQUE_USER_VISIT_CONSTRAINT,
     Assessment,
     CommCareApp,
     CompletedModule,
@@ -319,7 +320,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.completed_work = completed_work
             user_visit.save()
     except IntegrityError as e:
-        if "unique_completed_work_deliver_unit_access" not in str(e):
+        if UNIQUE_USER_VISIT_CONSTRAINT not in str(e):
             raise e
         completed_work = CompletedWork(
             opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit, entity_name=entity_name

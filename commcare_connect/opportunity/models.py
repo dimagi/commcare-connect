@@ -16,6 +16,9 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
+UNIQUE_USER_VISIT_CONSTRAINT = "unique_completed_work_deliver_unit_access"
+UNIQUE_COMPLETED_WORK_CONSTRAINT = "completed_work_unique_constraint"
+
 
 class CommCareApp(BaseModel):
     organization = models.ForeignKey(
@@ -543,7 +546,7 @@ class CompletedWork(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["opportunity_access", "entity_id", "payment_unit", "date_created"],
-                name="completed_work_unique_constraint",
+                name=UNIQUE_COMPLETED_WORK_CONSTRAINT,
             )
         ]
 
@@ -714,7 +717,7 @@ class UserVisit(XFormBaseModel):
             ),
             models.UniqueConstraint(
                 fields=["entity_id", "deliver_unit", "opportunity_access", "completed_work"],
-                name="unique_completed_work_deliver_unit_access",
+                name=UNIQUE_USER_VISIT_CONSTRAINT,
             ),
         ]
 
