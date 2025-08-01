@@ -176,7 +176,7 @@
 
   <!-- Verification Flags -->
   <div class="grid grid-cols-3 gap-4">
-    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
+    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification Parameters</p>
     {% if user_visit.location %}
     <div>
       <div class="text-sm text-brand-blue-light">Location</div>
@@ -187,7 +187,7 @@
       {% for flag in flags %}
         <div>
           <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
-          <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+          <div class="text-sm font-normal text-red-500">{{ flag.1 }}</div>
         </div>
       {% endfor %}
     {% endif %}
