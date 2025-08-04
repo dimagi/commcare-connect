@@ -269,7 +269,7 @@ def test_receiver_deliver_form_max_visits_reached(
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 5
     # First four are not over-limit
-    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
+    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
 
@@ -860,7 +860,7 @@ def test_update_completed_learn_date_migration(opportunity, mobile_user):
     )
 
     migration_module = importlib.import_module(
-        "commcare_connect.opportunity.migrations.0075_opportunityaccess_completed_learn_date_and_more"
+        "commcare_connect.opportunity.migrations.0074_opportunityaccess_completed_learn_date_and_more"
     )
     back_fill_completed_learn_date = migration_module._back_fill_completed_learn_date
 
