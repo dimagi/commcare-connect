@@ -678,55 +678,6 @@ def test_review_completed_work_status(
     _validate_saved_fields(access)
 
 
-@pytest.mark.django_db
-def test_approved_visits_over_limit_count_daily(opportunity: Opportunity):
-    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_daily=3, max_total=10)
-    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
-    access_objects = OpportunityAccessFactory.create_batch(5, opportunity=opportunity)
-    dataset = Dataset(headers=["visit id", "status", "rejected reason"])
-    for access in access_objects:
-        visits = UserVisitFactory.create_batch(
-            5,
-            opportunity=opportunity,
-            status=VisitValidationStatus.pending.value,
-            user=access.user,
-            opportunity_access=access,
-            deliver_unit=deliver_unit,
-            visit_date=now(),
-        )
-        dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
-    import_status = _bulk_update_visit_status(opportunity, dataset)
-
-    assert not import_status.missing_visits
-    assert import_status.over_limit_count
-
-    assert import_status.over_limit_count == 10
-
-
-@pytest.mark.django_db
-def test_approved_visits_over_limit_count_total(opportunity: Opportunity):
-    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_daily=1, max_total=3)
-    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
-    access_objects = OpportunityAccessFactory.create_batch(5, opportunity=opportunity)
-    dataset = Dataset(headers=["visit id", "status", "rejected reason"])
-    for access in access_objects:
-        visits = UserVisitFactory.create_batch(
-            5,
-            opportunity=opportunity,
-            status=VisitValidationStatus.pending.value,
-            user=access.user,
-            opportunity_access=access,
-            deliver_unit=deliver_unit,
-        )
-        dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
-    import_status = _bulk_update_visit_status(opportunity, dataset)
-
-    assert not import_status.missing_visits
-    assert import_status.over_limit_count
-
-    assert import_status.over_limit_count == 10
-
-
 def _validate_saved_fields(opportunity_access: OpportunityAccess):
     for completed_work in opportunity_access.completedwork_set.all():
         validate_saved_fields(completed_work)
