@@ -1,0 +1,91 @@
+{% load static i18n %}
+{% load avatar %}
+
+<header class="fixed top-0 left-16 right-0 bg-gray-100 z-30">
+    <div class="flex items-center justify-between w-full px-4 py-2">
+        <!-- Left Section: Module Name -->
+        <h1 class="text-lg text-brand-deep-purple font-medium">{{ header_title|default:"CommCare Connect" }}</h1>
+
+        {% if request.user.is_authenticated %}
+        <!-- Right Section: Org, Profile Dropdown -->
+        <div class="flex items-center gap-x-2">
+            <!-- Organization selector -->
+            <div x-data="{ open: false }" @click.away="open = false" class="relative mx-8">
+                <button @click="open = !open" class="flex items-center gap-2 focus:outline-none">
+                    <div class="text-left">
+                        <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
+                          {{ request.org.name|default:"Select Organization" }}
+                        </p>
+                        {% if request.user.memberships.exists %}
+                        <p class="text-xs text-gray-400">{{ request.org.program_manager|yesno:"Program,Network"}} Manager</p>
+                        {% endif %}
+                    </div>
+
+                    <!-- Dropdown Toggle Icon -->
+                    <i :class="open ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all text-xs"></i>
+                </button>
+
+                <!-- Organization Selector -->
+                <div x-show="open" x-transition.opacity x-cloak
+                     class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
+                    <ul class="p-2 w-full max-h-80 overflow-y-auto">
+                        {% if request.user.memberships.exists %}
+                        {% for membership in request.memberships %}
+                        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+                          <a href="{% url 'opportunity:list' membership.organization.slug %}">
+                            <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
+                            <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
+                          </a>
+                        </li>
+                        {% endfor %}
+                        {% endif %}
+                    </ul>
+                    <div class="p-2">
+                        <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
+                        Add Organization
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Profile -->
+            <div x-data="{ open: false }" @click.away="open = false" class="relative">
+                <button @click="open = !open" class="focus:outline-none">
+                    <div class="cursor-pointer overflow-hidden">
+                        {% user_avatar user=request.user size="small" color_classes="bg-brand-cornflower-blue text-white" %}
+                    </div>
+                </button>
+
+                <!-- User Profile Selector -->
+                <div x-show="open" x-transition.opacity x-cloak class="absolute top-12 right-0 min-w-56 w-56 bg-white shadow rounded-lg z-50">
+                    <ul class="p-2 w-full">
+                        <li class="p-2 text-left">
+                            <p class="text-brand-deep-purple font-medium">{{ request.user.username }}</p>
+                            {% if request.org %}
+                                <span class="text-gray-400 text-sm">{{ request.org_membership.role }}</span>
+                            {% endif %}
+                        </li>
+                        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+                            <p class="text-brand-deep-purple"><a href="{% url 'account_email' %}">{% translate "Profile" %}</a></p>
+                        </li>
+                        <li class="p-2 cursor-pointer">
+                            <div class="bg-brand-indigo text-white px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">
+                                <a href="{% url 'account_logout' %}">{% translate "Logout" %}</a>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="flex items-center gap-x-4">
+          {% if ACCOUNT_ALLOW_REGISTRATION %}
+            <a id="sign-up-link" class="text-brand-deep-purple font-medium"
+               href="{% url 'account_signup' %}">{% translate "Sign Up" %}</a>
+          {% endif %}
+            <a id="log-in-link" class="text-brand-deep-purple font-medium"
+             href="{% url 'account_login' %}">{% translate "Sign In" %}</a>
+        </div>
+        {% endif %}
+    </div>
+</header>

@@ -3,10 +3,11 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
@@ -20,9 +21,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens
-from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
+from commcare_connect.connect_id_client.models import ConnectIdUser
+from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
+from commcare_connect.opportunity.tasks import update_user_and_send_invite
 
-from .helpers import create_hq_user
+from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
 
 User = get_user_model()
@@ -89,17 +92,11 @@ def start_learn_app(request):
     if opportunity_id is None:
         return HttpResponse("opportunity required", status=400)
     opportunity = Opportunity.objects.get(pk=opportunity_id)
-    api_key = opportunity.api_key
-    if api_key is None:
-        return HttpResponse("Opportunity requires API Key", status=400)
     app = opportunity.learn_app
     domain = app.cc_domain
-    if not ConnectIDUserLink.objects.filter(user=request.user, domain=domain).exists():
-        user_created = create_hq_user(request.user, domain, api_key)
-        if not user_created:
-            return HttpResponse("Failed to create user", status=400)
-        cc_username = f"{request.user.username.lower()}@{domain}.commcarehq.org"
-        ConnectIDUserLink.objects.create(commcare_username=cc_username, user=request.user, domain=domain)
+    user_created = create_hq_user_and_link(request.user, domain, opportunity)
+    if not user_created:
+        return HttpResponse("Failed to create user", status=400)
     try:
         access_object = OpportunityAccess.objects.get(user=request.user, opportunity=opportunity)
     except OpportunityAccess.DoesNotExist:
@@ -160,3 +157,55 @@ class SMSStatusCallbackView(APIView):
                 user_invite.status = UserInviteStatus.sms_not_delivered
             user_invite.save()
         return Response(status=200)
+
+
+# used for loading api key dropdown
+@login_required
+def get_api_keys(request):
+    hq_server = request.GET.get("hq_server")
+    if not hq_server:
+        return HttpResponse(
+            format_html("<option value='{}'>{}</option>", None, "Select a HQ Server to load API Keys.")
+        )
+
+    api_keys = HQApiKey.objects.filter(hq_server=hq_server, user=request.user).order_by("-date_created")
+    if not api_keys:
+        return HttpResponse(headers={"HX-Trigger": "no-api-keys-found"})
+
+    options = []
+    options.append(format_html("<option value='{}'>{}</option>", None, "Select an API key"))
+    for api_key in api_keys:
+        api_key_hidden = f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}"
+        options.append(
+            format_html(
+                "<option value='{}'>{}</option>",
+                api_key.id,
+                api_key_hidden,
+            )
+        )
+    return HttpResponse("\n".join(options))
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class CheckInvitedUserView(ClientProtectedResourceMixin, View):
+    def get(self, request, *args, **kwargs):
+        phone_number = request.GET.get("phone_number")
+        invited = False
+        if phone_number:
+            invited = UserInvite.objects.filter(phone_number=phone_number).exists()
+        return JsonResponse({"invited": invited})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ResendInvitesView(ClientProtectedResourceMixin, View):
+    def post(self, request, *args, **kwargs):
+        username = request.POST.get("username")
+        name = request.POST.get("name")
+        phone_number = request.POST.get("phone_number")
+        user = ConnectIdUser(username=username, name=name, phone_number=phone_number)
+        opps = UserInvite.objects.filter(
+            phone_number=user.phone_number, status=UserInviteStatus.not_found
+        ).values_list("opportunity_id", flat=True)
+        for opp_id in opps:
+            update_user_and_send_invite(user, opp_id)
+        return HttpResponse(status=200)

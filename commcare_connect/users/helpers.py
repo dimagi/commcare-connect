@@ -1,7 +1,7 @@
 import httpx
-from django.conf import settings
 
 from commcare_connect.organization.models import Organization
+from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -20,8 +20,20 @@ def get_organization_for_request(request, view_kwargs):
     return membership.organization if membership else None
 
 
-def create_hq_user(user, domain, api_key):
-    mobile_worker_api_url = f"{settings.COMMCARE_HQ_URL}/a/{domain}/api/v0.5/user/"
+def create_hq_user_and_link(user, domain, opportunity):
+    hq_server = opportunity.hq_server
+    api_key = opportunity.api_key
+    if not ConnectIDUserLink.objects.filter(user=user, domain=domain, hq_server=hq_server).exists():
+        user_created = _create_hq_user(user, domain, api_key)
+        if not user_created:
+            return False
+        cc_username = f"{user.username.lower()}@{domain}.commcarehq.org"
+        ConnectIDUserLink.objects.create(commcare_username=cc_username, user=user, domain=domain, hq_server=hq_server)
+    return True
+
+
+def _create_hq_user(user, domain, api_key):
+    mobile_worker_api_url = f"{api_key.hq_server.url}/a/{domain}/api/v0.5/user/"
     hq_request = httpx.post(
         mobile_worker_api_url,
         json={

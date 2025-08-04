@@ -1,0 +1,50 @@
+{% extends "opportunity/invoice_base.html" %}
+{% load django_tables2 %}
+
+
+{% block report_cards %}
+<div id="invoice_report_card_container">
+    <div class="flex gap-4 w-full justify-between items-center min-h-32 p-4 profile-bg bg-brand-indigo rounded-2xl overflow-x-auto">
+        {% for card in cards %}
+        <div class="flex-1 w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+            <div class="flex justify-between items-start">
+                <div class="text-2xl">{{ card.amount }}</div>
+                <i class="fa-solid {{ card.icon }} text-xl"></i>
+            </div>
+            <div class="pt-4 text-sm flex items-center justify-between ">
+                <div class="w-full overflow-hidden text-clip">
+                    <span class="text-nowrap">{{ card.label }} | <span class="font-medium">{{ card.subtext }}</span></span>
+                </div>
+                <i class="fa-solid ml-2 cursor-pointer" ></i>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock report_cards %}
+
+{% block table_section_header %}
+<div class="relative flex items-center justify-between w-full px-4 mx-auto rounded-lg shadow-sm bg-slate-50 h-14">
+    <p class="text-sm font-medium text-brand-deep-purple">All Invoices</p>
+</div>
+{% endblock table_section_header %}
+
+{% block top_buttons %}
+{{ block.super }}
+<div class="flex items-center bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+  <a
+    href="{% url report_view_name org_slug=request.org.slug opp_id=opportunity.pk %}"
+    class="px-4 py-2 font-medium {% if not request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
+    <i class="fas fa-coins"></i>
+    {{opportunity.currency}}
+  </a>
+  <div class="w-px h-6 bg-gray-200"></div>
+  <a
+    href="{% url report_view_name org_slug=request.org.slug opp_id=opportunity.pk %}?usd=True"
+    class="px-4 py-2 font-medium {% if request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
+    <i class="fas fa-dollar-sign"></i>
+    USD
+  </a>
+</div>
+
+{% endblock top_buttons %}

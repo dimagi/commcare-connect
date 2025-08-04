@@ -1,20 +1,16 @@
 import codecs
 import datetime
-import json
 import textwrap
-import urllib
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.utils.timezone import now
 from tablib import Dataset
 
-from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
@@ -128,16 +124,10 @@ class VisitData:
         return iter(astuple(self))
 
 
-def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-    imported_data = get_imported_dataset(file, file_format)
-    return _bulk_update_visit_status(opportunity, imported_data)
-
-
-def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
-    data_by_visit_id = get_data_by_visit_id(dataset)
+def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list[list]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    headers = [header.lower() for header in headers]
+    data_by_visit_id = get_data_by_visit_id(headers, rows)
     visit_ids = list(data_by_visit_id.keys())
     missing_visits = set()
     seen_visits = set()
@@ -188,19 +178,28 @@ def get_missing_justification_message(visits_ids):
     return f"Justification is required for flagged visits: {id_list}"
 
 
-def update_payment_accrued(opportunity: Opportunity, users):
-    """Updates payment accrued for completed and approved CompletedWork instances."""
+def update_payment_accrued(opportunity: Opportunity, users: list, incremental=False):
+    """Updates payment accrued for completed and approved CompletedWork instances.
+    Skips already processed completed works when incremental is true."""
+
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
+    filter_kwargs = {}
+    exclude_status = []
+    if incremental:
+        exclude_status.append(CompletedWorkStatus.approved)
+        filter_kwargs["saved_approved_count"] = 0
+
     for access in access_objects:
         with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
-            completed_works = access.completedwork_set.exclude(status=CompletedWorkStatus.rejected).select_related(
-                "payment_unit"
+            completed_works = (
+                access.completedwork_set.filter(**filter_kwargs)
+                .exclude(status__in=exclude_status)
+                .select_related("payment_unit")
             )
             update_status(completed_works, access, compute_payment=True)
 
 
-def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
-    headers = [header.lower() for header in dataset.headers or []]
+def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:
     if not headers:
         raise ImportException("The uploaded file did not contain any headers")
 
@@ -210,7 +209,7 @@ def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
     justification_col_index = _get_header_index(headers, JUSTIFICATION_COL, required=False)
     data_by_visit_id = {}
     invalid_rows = []
-    for row in dataset:
+    for row in rows:
         row = list(row)
         visit_id = str(row[visit_col_index])
         status_raw = row[status_col_index].lower().strip().replace(" ", "_")
@@ -351,25 +350,6 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
     return PaymentImportStatus(seen_users, missing_users)
 
 
-def _cache_key(date=None):
-    date_key = date or now().date()
-    return [date_key.toordinal()]
-
-
-@quickcache(vary_on=_cache_key, timeout=12 * 60 * 60)
-def fetch_exchange_rates(date=None):
-    base_url = "https://openexchangerates.org/api"
-
-    if date:
-        url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
-    else:
-        url = f"{base_url}/latest.json"
-
-    url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
-    rates = json.load(urllib.request.urlopen(url))
-    return rates["rates"]
-
-
 def get_exchange_rate(currency_code, date=None):
     # date should be a date object or None for latest rate
 
@@ -384,14 +364,9 @@ def get_exchange_rate(currency_code, date=None):
     rate_date = date or now().date()
     rate = None
 
-    try:
-        rate = ExchangeRate.objects.get(currency_code=currency_code, rate_date=rate_date).rate
-    except ExchangeRate.DoesNotExist:
-        rates = fetch_exchange_rates(rate_date)
-        rate = rates.get(currency_code)
-        if not rate:
-            raise ImportException("Rate not found for opportunity currency")
-        ExchangeRate.objects.create(currency_code=currency_code, rate=rate, rate_date=rate_date)
+    rate = ExchangeRate.latest_exchange_rate(currency_code=currency_code, date=rate_date).rate
+    if not rate:
+        raise ImportException("Rate not found for opportunity currency")
 
     return rate
 

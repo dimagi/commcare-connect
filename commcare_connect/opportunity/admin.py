@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db.models import Q
 
 from commcare_connect.opportunity.forms import OpportunityAccessCreationForm
 from commcare_connect.opportunity.models import (
@@ -9,6 +10,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     DeliverUnitFlagRules,
     DeliveryType,
+    ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
     LearnModule,
@@ -27,8 +29,6 @@ from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_
 # Register your models here.
 
 
-admin.site.register(CommCareApp)
-admin.site.register(UserInvite)
 admin.site.register(DeliveryType)
 admin.site.register(DeliverUnitFlagRules)
 admin.site.register(FormJsonValidationRules)
@@ -171,3 +171,28 @@ class PaymentUnitAdmin(admin.ModelAdmin):
     @admin.display(description="Opportunity Name")
     def get_opp_name(self, obj):
         return obj.opportunity.name
+
+
+@admin.register(ExchangeRate)
+class ExchangeRateAdmin(admin.ModelAdmin):
+    list_display = ("currency_code", "rate", "rate_date", "fetched_at")
+    list_filter = ("currency_code", "rate_date")
+    search_fields = ("currency_code",)
+    ordering = ("-rate_date",)
+
+
+@admin.register(CommCareApp)
+class CommCareAppAdmin(admin.ModelAdmin):
+    list_display = ["name", "cc_app_id", "cc_domain", "get_opportunity_ids"]
+    search_fields = ["cc_domain", "name", "cc_app_id"]
+
+    @admin.display(description="Linked Opportunity IDs")
+    def get_opportunity_ids(self, obj):
+        opp_ids = Opportunity.objects.filter(Q(learn_app=obj) | Q(deliver_app=obj)).values_list("id", flat=True)
+        return ", ".join(str(i) for i in opp_ids)
+
+
+@admin.register(UserInvite)
+class UserInviteAdmin(admin.ModelAdmin):
+    list_display = ["phone_number", "opportunity"]
+    search_fields = ["phone_number", "opportunity__name"]

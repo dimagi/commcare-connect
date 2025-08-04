@@ -5,6 +5,7 @@ from django.db.models import Q, UniqueConstraint
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.users.managers import UserManager
 
 
@@ -62,6 +63,7 @@ class ConnectIDUserLink(models.Model):
     )
     commcare_username = models.TextField()
     domain = models.CharField(max_length=255, null=True, blank=True)
+    hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "commcare_username"], name="connect_user")]

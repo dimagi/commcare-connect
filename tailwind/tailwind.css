@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @tailwind utilities;
+@import '@fortawesome/fontawesome-free/css/all.min.css';
 
 @source "./safelist.txt";
 
@@ -673,4 +674,8 @@
 
 .relative > .pointer-events-none > svg {
   display: none; /* https://github.com/django-crispy-forms/crispy-tailwind/issues/124 */
+}
+
+select:disabled {
+  @apply pointer-events-none opacity-50;
 }

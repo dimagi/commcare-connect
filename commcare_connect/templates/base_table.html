@@ -1,0 +1,147 @@
+{% load django_tables2 %}
+{% load i18n %}
+{% block table-wrapper %}
+{% load sort_link %}
+<div class="overflow-hidden table-container flex flex-col gap-2 mb-1">
+  {% block table %}
+  <div class="w-full overflow-x-auto block">
+    <table class="base-table" {% render_attrs table.attrs %}>
+      {% block table.thead %}
+      {% if table.show_header %}
+      <thead {{ table.attrs.thead.as_html }}>
+        <tr>
+          {% for column in table.columns %}
+          <th>
+            {% if column.orderable %}
+            {% sortable_header column.name column.header table.use_view_url %}
+            {% else %}
+            <span>{{ column.header }}</span>
+            {% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      {% endif %}
+      {% endblock table.thead %}
+
+          {% block table.tbody %}
+            <tbody>
+            <div style="overflow:hidden; border-radius:8px;">
+              {% for row in table.paginated_rows %}
+                {% block table.tbody.row %}
+                  <tr class="group" {{ row.attrs.as_html }}>
+                    {% for column, cell in row.items %}
+                      <td {{ column.attrs.td.as_html }}>
+                        {% if column.localize == None %}
+                          {{ cell }}
+                        {% else %}
+                          {% if column.localize %}
+                            {{ cell|localize }}
+                          {% else %}
+                            {{ cell|unlocalize }}
+                          {% endif %}
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endblock table.tbody.row %}
+                {% empty %}
+                {% if table.empty_text %}
+                  {% block table.tbody.empty_text %}
+                    <tr>
+                      <td colspan="{{ table.columns|length }}" class="text-center py-4">
+                        {{ table.empty_text }}
+                      </td>
+                    </tr>
+                  {% endblock table.tbody.empty_text %}
+                {% endif %}
+              {% endfor %}
+              {% block table.tfoot %}
+              {% if table.has_footer %}
+                     <tr class="border-2 border-gray-100 font-bold">
+                     {% for column in table.columns %}
+                          <td {{ column.attrs.tf.as_html }}>{{column.footer }}</td>
+                     {% endfor %}
+                     </tr>
+              {% endif %}
+              {% endblock table.tfoot %}
+            </div>
+            </tbody>
+          {% endblock table.tbody %}
+
+
+    </table>
+  </div>
+  {% endblock table %}
+  {% block pagination %}
+  {% if table.page and table.paginator.count > DEFAULT_PAGE_SIZE %}
+  <div x-data class="table-footer w-full flex items-center justify-between h-14  bg-slate-50  text-brand-deep-purple py-2 px-4 rounded-lg">
+    <div class="flex items-center gap-2 max-w-fit text-brand-deep-purple text-sm">
+        {% if table.page.has_previous %}
+            <button
+              type="button"
+              @click="goToPage('{{ table.prefixed_page_field }}', {{ table.page.previous_page_number }})"
+              class="button-icon"
+              aria-label="{% trans 'Previous page' %}">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+        {% else %}
+            <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
+                <i class="fa-solid fa-chevron-left"></i>
+            </span>
+        {% endif %}
+
+        <span class="whitespace-nowrap">{% trans "Page" %}</span>
+        <input
+            type="number"
+            value="{{ table.page.number }}"
+            min="1"
+            max="{{ table.paginator.num_pages }}"
+            class="base-input w-16 text-center"
+            aria-label="{% blocktrans %}Current page number, input to navigate{% endblocktrans %}"
+            hx-trigger="change"
+            hx-on:change="goToPage('{{ table.prefixed_page_field }}', this.value)"
+        >        <span class="whitespace-nowrap ml-1">of {{ table.paginator.num_pages }}</span>
+
+        {% if table.page.has_next %}
+            <button
+              type="button"
+              @click="goToPage('{{ table.prefixed_page_field }}', {{ table.page.next_page_number }})"
+              class="button-icon"
+              aria-label="{% trans 'Next page' %}">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        {% else %}
+            <span class="button-icon opacity-50 cursor-not-allowed" aria-hidden="true">
+                <i class="fa-solid fa-chevron-right"></i>
+            </span>
+        {% endif %}
+       <!-- Right: Page Size Selector -->
+      <div class="flex items-center gap-2 text-sm">
+        <label for="page-size" class="whitespace-nowrap">{% trans "Rows per page" %}</label>
+        <select
+          id="page-size"
+          name="page_size"
+          class="base-input w-16"
+          @change="goToPage('page_size', $event.target.value)">
+          {% for size in PAGE_SIZE_OPTIONS %}
+             <option value="{{ size }}" {% if request.GET.page_size == size|stringformat:"s" %}selected{% endif %}>{{ size }}</option>
+          {% endfor %}
+        </select>
+      </div>
+</div>
+  {% endif %}
+
+  {% endblock pagination %}
+</div>
+{% endblock table-wrapper %}
+
+{% block inline_js %}
+<script>
+    function goToPage(param, value) {
+        const url = new URL(window.location.href);
+        url.searchParams.set(param, value);
+        window.location.href = url.toString();
+    }
+</script>
+{% endblock inline_js %}

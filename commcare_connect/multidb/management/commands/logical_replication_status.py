@@ -1,3 +1,6 @@
+import getpass
+
+import psycopg2
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
@@ -26,7 +29,25 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Checking logical replication status...\n"))
 
         default_conn = connections[DEFAULT_DB_ALIAS]
-        secondary_conn = connections[secondary_db_alias]
+
+        secondary_db_settings = connections[secondary_db_alias].settings_dict
+        self.stdout.write(
+            self.style.SUCCESS("Enter the superuser credentials for the secondary (subscriber) database:")
+        )
+        secondary_user = input("Enter username: ")
+        secondary_password = getpass.getpass("Enter password: ")
+
+        try:
+            secondary_conn = psycopg2.connect(
+                host=secondary_db_settings["HOST"],
+                port=secondary_db_settings["PORT"],
+                dbname=secondary_db_settings["NAME"],
+                user=secondary_user,
+                password=secondary_password,
+            )
+            secondary_conn.autocommit = True
+        except Exception as e:
+            raise CommandError(f"Could not connect to the secondary database: {e}")
 
         # Check publication details
         self.stdout.write(self.style.SUCCESS("Publication Status (Primary Database):"))
@@ -115,3 +136,5 @@ class Command(BaseCommand):
             self.stdout.write(f"{table_name:<30}{primary_count:<20}{secondary_count}")
 
         self.stdout.write(self.style.SUCCESS("Table counts fetched successfully."))
+        # Close the manually created connection
+        secondary_conn.close()

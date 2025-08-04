@@ -1,0 +1,66 @@
+{% load i18n %}
+
+<div class="bg-white shadow-sm p-4 rounded-2xl flex flex-col gap-4 w-110" x-data="{showSuspendModal: false}">
+  <div class="flex justify-between items-center text-gray-400 text-sm">
+    <h3 class="text-base font-medium text-brand-deep-purple">User Status Details</h3>
+    <div>
+      {% if opportunity_access.suspended and not request.org_membership.is_viewer %}
+        <a class="button button-sm primary-light"
+        href="{% url "opportunity:revoke_user_suspension" org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}?next={{ request.path|urlencode }}">
+          {% translate "Revoke Suspension" %}
+        </a>
+      {% else %}
+      <button  {% if request.org_membership.is_viewer %} disabled {% endif %}
+               class="button button-sm primary-light" @click="showSuspendModal = true">
+        Suspend
+      </button>
+      {% endif %}
+      <button class="button-icon"
+        @click="isStatusModalOpen = false">
+        <i class="fa-solid fa-xmark cursor-pointer"></i>
+      </button>
+    </div>
+  </div>
+
+  <div x-cloak x-show="showSuspendModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showSuspendModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title mb-4">Suspend User</h2>
+        <button @click="showSuspendModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <form method="post"
+          action="{% url "opportunity:suspend_user" org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}"
+          @submit="showSuspendModal = false">
+          {% csrf_token %}
+          <div class="mb-2">
+            <textarea class="base-textarea" id="reason" name="reason" rows="3" placeholder="{% translate "Please provide a reason for suspending user." %}"></textarea>
+          </div>
+          <table class="base-table mb-2">
+            <tbody>
+              <tr class="border border-gray-100">
+                <th scope="row">{% translate "Deliveries waiting for Approval" %}</th>
+                <td class="border-0">{{ pending_completed_work_count }}</td>
+              </tr>
+              <tr class="border border-gray-100">
+                <th scope="row">{% translate "Payment Accrued" %}</th>
+                <td class="border-0">{{ opportunity_access.payment_accrued }}</td>
+              </tr>
+              <tr class="border border-gray-100">
+                <th scope="row">{% translate "Payment Pending Disbursement" %}</th>
+                <td class="border-0">{{ pending_payment }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="text-sm text-red-500 mb-2">{% translate "You will not be able to approve payments for the user or pay the user after suspension." %}</p>
+        <div class="footer flex justify-end">
+          <button @click="showSuspendModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md negative-dark">{% translate "Suspend" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

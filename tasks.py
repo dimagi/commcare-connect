@@ -93,6 +93,7 @@ def restart_django(c: Context, env="staging", verbose=False, diff=False):
     run_ansible(c, play="utils.yml", env=env, tags="restart", verbose=verbose, diff=diff)
 
 
+@task
 def run_ansible(c: Context, play="play.yml", env="staging", tags=None, verbose=False, diff=False):
     ansible_cmd = f"ansible-playbook {play} -i {env}.inventory.yml"
     if tags:

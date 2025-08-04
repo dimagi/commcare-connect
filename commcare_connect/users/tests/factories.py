@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from factory import Faker, RelatedFactory, SubFactory
 from factory.django import DjangoModelFactory, Password
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.users.models import ConnectIDUserLink
 
@@ -28,6 +29,7 @@ class UserFactory(DjangoModelFactory):
 class ConnectIdUserLinkFactory(DjangoModelFactory):
     user = SubFactory(UserFactory)
     commcare_username = Faker("word")
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = ConnectIDUserLink

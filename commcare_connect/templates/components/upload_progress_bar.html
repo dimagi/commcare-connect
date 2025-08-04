@@ -1,0 +1,92 @@
+<div
+  class="flex items-center justify-center"
+  {% if not progress.complete %}
+    hx-get="{% url 'opportunity:export_status' request.org.slug task_id %}"
+    hx-trigger="load delay:2s"
+    hx-target="this"
+    hx-swap="outerHTML"
+  {% endif %}
+>
+  {% if progress.error %}
+    <div class="rounded-lg bg-red-100 text-red-700 px-4 py-3">
+      <p class="font-medium">Export Failed</p>
+      <p class="text-sm mt-1">{{ progress.error }}</p>
+    </div>
+
+  {% elif not progress.complete %}
+    <div class="w-full">
+      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-4">
+        <div
+          class="h-full bg-purple-600 rounded-full animate-[progress_2s_linear_infinite]"
+          style="width: 80%; background-image: linear-gradient(to right, #8b5cf6, #a78bfa, #8b5cf6); background-size: 200% 100%;">
+        </div>
+      </div>
+      <p class="w-full text-sm text-gray-700">
+        {% if progress.message %}
+          {{ progress.message|safe }}
+        {% else %}
+          Preparing export, hang tight...
+        {% endif %}
+      </p>
+    </div>
+
+  {% else %}
+    {% if not progress.message %}
+      <div>
+        <a class="button button-sm text-brand-deep-purple"
+           href="{% url 'opportunity:download_export' request.org.slug task_id %}">
+          <i class="fa-solid fa-circle-down"></i> Download Export
+        </a>
+      </div>
+    {% else %}
+      <div>
+        <div
+          x-data="{
+            open: false,
+            openModal() { this.open = true },
+            closeModal() { this.open = false }
+          }"
+          @keydown.escape.window="closeModal()"
+          id="exportStatus"
+        >
+          <a class="w-full text-sm text-gray-700 underline cursor-pointer " @click="openModal()">
+            All done! View status.
+          </a>
+
+          <div
+            x-cloak
+            x-show="open"
+            x-transition.opacity
+            class="modal-backdrop fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center"
+          >
+            <div
+              @click.away="closeModal()"
+              x-show="open"
+              x-transition
+              class="modal bg-white rounded-lg shadow-lg w-full max-w-lg z-50"
+              role="dialog"
+              aria-labelledby="exportStatusLabel"
+            >
+              <div class="modal-content p-4 flex items-center justify-between">
+                <h5 class="text-lg font-medium" id="exportStatusLabel">Status</h5>
+                <button @click="closeModal()" class="button-icon" aria-label="Close" id="exportStatusClose">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <div class="flex items-center justify-between p-4 mb-4 rounded-lg">
+                {{ progress.message|safe }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <style>
+    @keyframes progress {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+  </style>
+</div>

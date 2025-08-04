@@ -2,14 +2,11 @@ import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
-from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Column, Layout, Row
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from django_filters import ChoiceFilter, DateRangeFilter, FilterSet, ModelChoiceFilter
 from django_tables2 import columns, utils
 
 from commcare_connect.opportunity.models import (
@@ -27,7 +24,6 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.users.models import User
 from commcare_connect.utils.tables import (
     STOP_CLICK_PROPAGATION_ATTR,
     TEXT_CENTER_ATTR,
@@ -45,79 +41,11 @@ class OpportunityContextTable(OrgContextTable):
         super().__init__(*args, **kwargs)
 
 
-class LearnStatusTable(OrgContextTable):
-    display_name = columns.Column(verbose_name="Name")
-    learn_progress = columns.Column(verbose_name="Modules Completed")
-    assessment_count = columns.Column(verbose_name="Number of Attempts")
-    assessment_status = columns.Column(verbose_name="Assessment Status")
-    details = columns.Column(verbose_name="", empty_values=())
-
-    class Meta:
-        model = OpportunityAccess
-        fields = ("display_name", "learn_progress", "assessment_status", "assessment_count")
-        sequence = ("display_name", "learn_progress")
-        orderable = False
-        empty_text = "No learn progress for users."
-
-    def render_details(self, record):
-        url = reverse(
-            "opportunity:user_learn_progress",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.pk},
-        )
-        return mark_safe(f'<a href="{url}">View Details</a>')
-
-
 def show_warning(record):
     if record.status not in (VisitValidationStatus.approved, VisitValidationStatus.rejected):
         if record.flagged:
             return "table-warning"
     return ""
-
-
-class UserVisitReviewFilter(FilterSet):
-    review_status = ChoiceFilter(choices=VisitReviewStatus.choices, empty_label="All Reviews")
-    user = ModelChoiceFilter(queryset=User.objects.none(), empty_label="All Users", to_field_name="username")
-    visit_date = DateRangeFilter()
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.filters["user"].queryset = User.objects.filter(id__in=self.queryset.values_list("user_id", flat=True))
-        self.filters["user"].field.label_from_instance = lambda obj: obj.name
-
-        self.form.helper = FormHelper()
-        self.form.helper.disable_csrf = True
-        self.form.helper.form_class = "form-inline"
-        self.form.helper.layout = Layout(
-            Row(
-                Column("review_status", css_class="col-md-3"),
-                Column("user", css_class="col-md-3"),
-                Column("visit_date", css_class="col-md-3"),
-            )
-        )
-        for field_name in self.form.fields.keys():
-            self.form.fields[field_name].widget.attrs.update({"@change": "$refs.reviewFilterForm.submit()"})
-
-    class Meta:
-        model = UserVisit
-        fields = ["review_status", "user", "visit_date"]
-
-
-class UserVisitFilter(UserVisitReviewFilter):
-    status = ChoiceFilter(choices=VisitValidationStatus.choices, empty_label="All Visits")
-
-    def __init__(self, *args, **kwargs):
-        managed_opportunity = kwargs.pop("managed_opportunity", False)
-        super().__init__(*args, **kwargs)
-        fields = ["status"]
-        if managed_opportunity:
-            fields.append("review_status")
-        self.form.helper.layout = Layout(Row(*[Column(field, css_class="col-md-3") for field in fields]))
-        for field in fields:
-            self.form.fields[field].widget.attrs.update({"@change": "$refs.visitFilterForm.submit()"})
-
-    class Meta:
-        model = UserVisit
-        fields = ["status", "review_status"]
 
 
 class UserVisitTable(OrgContextTable):
@@ -165,26 +93,6 @@ class UserVisitTable(OrgContextTable):
         empty_text = "No forms."
         orderable = False
         row_attrs = {"class": show_warning}
-        template_name = "django_tables2/bootstrap5.html"
-
-
-class OpportunityPaymentTable(OrgContextTable):
-    display_name = columns.Column(verbose_name="Name")
-    username = columns.Column(accessor="user__username", visible=False)
-    view_payments = columns.Column(verbose_name="", empty_values=())
-
-    def render_view_payments(self, record):
-        url = reverse(
-            "opportunity:worker_list",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id},
-        )
-        return mark_safe(f'<a href="{url}?active_tab=payments">View Details</a>')
-
-    class Meta:
-        model = OpportunityAccess
-        fields = ("display_name", "username", "payment_accrued", "total_paid", "total_confirmed_paid")
-        orderable = False
-        empty_text = "No user have payments accrued yet."
 
 
 class AggregateColumn(columns.Column):
@@ -238,37 +146,6 @@ class UserStatusTable(OrgContextTable):
         if not getattr(record.opportunity_access, "accepted", False):
             return "---"
         return record.opportunity_access.display_name
-
-    def render_view_profile(self, record):
-        if not getattr(record.opportunity_access, "accepted", False):
-            resend_invite_url = reverse(
-                "opportunity:resend_user_invite", args=(self.org_slug, record.opportunity.id, record.id)
-            )
-            urls = [resend_invite_url]
-            buttons = [
-                """<button title="Resend invitation"
-                hx-post="{}" hx-target="#modalBodyContent" hx-trigger="click"
-                hx-on::after-request="handleResendInviteResponse(event)"
-                class="btn btn-sm btn-success">Resend</button>"""
-            ]
-            if record.status == UserInviteStatus.not_found:
-                invite_delete_url = reverse(
-                    "opportunity:user_invite_delete", args=(self.org_slug, record.opportunity.id, record.id)
-                )
-                urls.append(invite_delete_url)
-                buttons.append(
-                    """<button title="Delete invitation"
-                            hx-post="{}" hx-swap="none"
-                            hx-confirm="Please confirm to delete the User Invite."
-                            class="btn btn-sm btn-danger" type="button"><i class="bi bi-trash"></i></button>"""
-                )
-            button_html = f"""<div class="d-flex gap-1">{"".join(buttons)}</div>"""
-            return format_html(button_html, *urls)
-        url = reverse(
-            "opportunity:user_profile",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id, "pk": record.opportunity_access_id},
-        )
-        return format_html('<a class="btn btn-primary btn-sm" href="{}">View Profile</a>', url)
 
     def render_started_learning(self, record, value):
         return date_with_time_popup(self, value)
@@ -468,7 +345,6 @@ class UserVisitReviewTable(OrgContextTable):
             "flag_reason",
         )
         empty_text = "No visits submitted for review."
-        template_name = "django_tables2/bootstrap5.html"
 
     def render_user_visit(self, record):
         url = reverse(
@@ -493,9 +369,12 @@ class PaymentReportTable(tables.Table):
 
 
 class PaymentInvoiceTable(OpportunityContextTable):
+    amount = tables.Column(verbose_name="Amount")
     payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Pay")
+    exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
+    amount_usd = tables.Column(verbose_name="Amount (USD)")
 
     class Meta:
         model = PaymentInvoice
@@ -503,6 +382,8 @@ class PaymentInvoiceTable(OpportunityContextTable):
         fields = ("amount", "date", "invoice_number", "service_delivery")
         sequence = (
             "amount",
+            "amount_usd",
+            "exchange_rate",
             "date",
             "invoice_number",
             "payment_status",
@@ -514,7 +395,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
 
     def __init__(self, *args, **kwargs):
         self.csrf_token = kwargs.pop("csrf_token")
+        self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
+        self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency})"
 
     def render_payment_status(self, value):
         if value is not None:
@@ -527,7 +410,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return
 
     def render_actions(self, record):
-        invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opp_id])
+        invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opportunity.id])
         disabled = "disabled" if getattr(record, "payment", None) else ""
         template_string = f"""
             <form method="POST" action="{ invoice_approve_url  }">
@@ -596,7 +479,7 @@ class BaseOpportunityList(OrgContextTable):
                      }">
                     {% if record.is_test %}
                         <div class="relative">
-                            <i class="fa-light fa-file-dashed-line"
+                            <i class="fa-solid fa-file-circle-exclamation"
                                @mouseenter="showTooltip = true; positionTooltip($el)"
                                @mouseleave="showTooltip = false
                                "></i>
@@ -608,7 +491,7 @@ class BaseOpportunityList(OrgContextTable):
                         </div>
                     {% else %}
                         <span class="relative">
-                            <i class="invisible fa-light fa-file-dashed-line"></i>
+                            <i class="invisible fa-solid fa-file-circle-exclamation"></i>
                         </span>
                     {% endif %}
                 </div>
@@ -631,7 +514,7 @@ class BaseOpportunityList(OrgContextTable):
             "start_date",
             "end_date",
         )
-        order_by = ("status", "start_date", "end_date")
+        order_by = ("status", "-start_date", "end_date")
 
     def render_status(self, value):
         if value == 0:
@@ -753,7 +636,7 @@ class OpportunityTable(BaseOpportunityList):
             )
 
         html = render_to_string(
-            "tailwind/components/dropdowns/text_button_dropdown.html",
+            "components/dropdowns/text_button_dropdown.html",
             context={
                 "text": "...",
                 "list": actions,
@@ -849,7 +732,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             )
 
         html = render_to_string(
-            "tailwind/components/dropdowns/text_button_dropdown.html",
+            "components/dropdowns/text_button_dropdown.html",
             context={
                 "text": "...",
                 "list": actions,
@@ -885,7 +768,7 @@ class UserVisitVerificationTable(tables.Table):
                         </span>
                     {% endfor %}
                     {% if value|length > 2 %}
-                    {% include "tailwind/components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
+                    {% include "components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
                     {% endif %}
                 {% endif %}
             </div>
@@ -935,18 +818,18 @@ class UserVisitVerificationTable(tables.Table):
                 "tooltip": "Manually approved by NM",
             },
             VisitValidationStatus.approved: {"icon": "fa-solid fa-circle-check", "tooltip": "Auto-approved"},
-            VisitValidationStatus.rejected: {"icon": "fa-light fa-ban", "tooltip": "Rejected by NM"},
+            VisitValidationStatus.rejected: {"icon": "fa-solid fa-ban", "tooltip": "Rejected by NM"},
             VisitValidationStatus.pending: {
-                "icon": "fa-light fa-flag-swallowtail",
+                "icon": "fa-solid fa-flag",
                 "tooltip": "Waiting for NM Review",
             },
-            VisitValidationStatus.duplicate: {"icon": "fa-light fa-clone", "tooltip": "Duplicate Visit"},
-            VisitValidationStatus.trial: {"icon": "fa-light fa-marker", "tooltip": "Trail Visit"},
-            VisitValidationStatus.over_limit: {"icon": "fa-light fa-marker", "tooltip": "Daily limit exceeded"},
-            VisitReviewStatus.disagree: {"icon": "fa-light fa-thumbs-down", "tooltip": "Disagreed by PM"},
-            VisitReviewStatus.agree: {"icon": "fa-light fa-thumbs-up", "tooltip": "Agreed by PM"},
+            VisitValidationStatus.duplicate: {"icon": "fa-solid fa-clone", "tooltip": "Duplicate Visit"},
+            VisitValidationStatus.trial: {"icon": "fa-solid fa-marker", "tooltip": "Trail Visit"},
+            VisitValidationStatus.over_limit: {"icon": "fa-solid fa-marker", "tooltip": "Daily limit exceeded"},
+            VisitReviewStatus.disagree: {"icon": "fa-solid fa-thumbs-down", "tooltip": "Disagreed by PM"},
+            VisitReviewStatus.agree: {"icon": "fa-solid fa-thumbs-up", "tooltip": "Agreed by PM"},
             # Review Status Pending (custom name, original choice clashes with Visit Pending)
-            "pending_review": {"icon": "fa-light fa-timer", "tooltip": "Pending Review by PM"},
+            "pending_review": {"icon": "fa-solid fa-stopwatch", "tooltip": "Pending Review by PM"},
         }
 
         icons_html = []
@@ -977,12 +860,9 @@ class UserVisitVerificationTable(tables.Table):
                 status.append("pending_review")
             else:
                 status.append(record.review_status)
+
         if record.status in VisitValidationStatus:
-            if (
-                record.review_status != VisitReviewStatus.agree.value
-                and record.review_created_on
-                and record.status == VisitValidationStatus.approved
-            ):
+            if record.review_created_on and record.status == VisitValidationStatus.approved:
                 status.append("approved_pending_review")
             else:
                 status.append(record.status)
@@ -1110,7 +990,7 @@ class WorkerPaymentsTable(tables.Table):
 
     def render_last_paid(self, record, value):
         return render_to_string(
-            "tailwind/components/worker_page/last_paid.html",
+            "components/worker_page/last_paid.html",
             {
                 "record": record,
                 "value": value.strftime("%d-%b-%Y") if value else "--",
@@ -1129,7 +1009,7 @@ class WorkerLearnTable(OrgContextTable):
     modules_completed = tables.TemplateColumn(
         accessor="modules_completed_percentage",
         template_code="""
-            {% include "tailwind/components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
+            {% include "components/progressbar/simple-progressbar.html" with text=flag percentage=value|default:0 %}
         """,  # noqa: E501
     )
     completed_learning = DMYTColumn(accessor="completed_learn_date", verbose_name="Completed Learning")
@@ -1217,7 +1097,7 @@ class TotalFlagCountsColumn(tables.Column):
         full_url = f"{url}?{urlencode(params)}"
 
         return render_to_string(
-            "tailwind/components/worker_page/fetch_flag_counts.html",
+            "components/worker_page/fetch_flag_counts.html",
             {
                 "counts_url": full_url,
                 "value": total,
@@ -1238,7 +1118,7 @@ class TotalDeliveredColumn(tables.Column):
             {"label": "Over limit", "value": over_limit},
         ]
         return render_to_string(
-            "tailwind/components/worker_page/deliver_column.html",
+            "components/worker_page/deliver_column.html",
             {
                 "value": completed,
                 "rows": rows,
@@ -1327,7 +1207,7 @@ class WorkerDeliveryTable(OrgContextTable):
             "number_style": True,
         }
 
-        return render_to_string("tailwind/components/progressbar/simple-progressbar.html", context)
+        return render_to_string("components/progressbar/simple-progressbar.html", context)
 
     def render_action(self, record):
         url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id, record.id))
@@ -1394,7 +1274,7 @@ class WorkerDeliveryTable(OrgContextTable):
             {"label": "Over limit", "value": record.over_limit},
         ]
         return render_to_string(
-            "tailwind/components/worker_page/deliver_column.html",
+            "components/worker_page/deliver_column.html",
             {
                 "value": value,
                 "rows": rows,
@@ -1412,7 +1292,7 @@ class WorkerDeliveryTable(OrgContextTable):
         full_url = f"{url}?{urlencode(params)}"
 
         return render_to_string(
-            "tailwind/components/worker_page/fetch_flag_counts.html",
+            "components/worker_page/fetch_flag_counts.html",
             {
                 "counts_url": full_url,
                 "value": value,
@@ -1521,4 +1401,4 @@ class PaymentUnitTable(OrgContextTable):
             "deliver_units": deliver_units,
             "edit_url": edit_url,
         }
-        return render_to_string("tailwind/pages/opportunity_dashboard/extendable_payment_unit_row.html", context)
+        return render_to_string("opportunity/extendable_payment_unit_row.html", context)

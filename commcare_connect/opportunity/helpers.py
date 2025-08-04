@@ -35,7 +35,6 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
-    PaymentUnit,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -314,26 +313,47 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
     return access_objects
 
 
-def get_payment_report_data(opportunity: Opportunity):
-    payment_units = PaymentUnit.objects.filter(opportunity=opportunity)
+def get_payment_report_data(opportunity: Opportunity, usd=False):
     PaymentReportData = namedtuple(
         "PaymentReportData", ["payment_unit", "approved", "user_payment_accrued", "nm_payment_accrued"]
     )
+
+    accrued_attr = "saved_payment_accrued_usd" if usd else "saved_payment_accrued"
+    org_accrued_attr = "saved_org_payment_accrued_usd" if usd else "saved_org_payment_accrued"
+    report_data_qs = (
+        CompletedWork.objects.filter(
+            opportunity_access__opportunity=opportunity,
+            status=CompletedWorkStatus.approved,
+        )
+        .values("payment_unit__name")
+        .annotate(
+            approved=Count("id"),
+            user_payment_accrued=Sum(accrued_attr),
+            nm_payment_accrued=Sum(org_accrued_attr),
+        )
+        .order_by("payment_unit__name")
+    )
+
     data = []
     total_user_payment_accrued = 0
     total_nm_payment_accrued = 0
-    for payment_unit in payment_units:
-        completed_works = CompletedWork.objects.filter(
-            opportunity_access__opportunity=opportunity, status=CompletedWorkStatus.approved, payment_unit=payment_unit
-        )
-        completed_work_count = len(completed_works)
-        user_payment_accrued = sum([cw.payment_accrued for cw in completed_works])
-        nm_payment_accrued = completed_work_count * opportunity.managedopportunity.org_pay_per_visit
-        total_user_payment_accrued += user_payment_accrued
-        total_nm_payment_accrued += nm_payment_accrued
+
+    for group in report_data_qs:
+        user_payment = group["user_payment_accrued"] or 0
+        nm_payment = group["nm_payment_accrued"] or 0
+
+        total_user_payment_accrued += user_payment
+        total_nm_payment_accrued += nm_payment
+
         data.append(
-            PaymentReportData(payment_unit.name, completed_work_count, user_payment_accrued, nm_payment_accrued)
+            PaymentReportData(
+                group["payment_unit__name"],
+                group["approved"],
+                user_payment,
+                nm_payment,
+            )
         )
+
     return data, total_user_payment_accrued, total_nm_payment_accrued
 
 

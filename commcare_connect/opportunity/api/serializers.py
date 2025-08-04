@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.db.models import Sum
 from rest_framework import serializers
 
@@ -50,7 +49,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
         ]
 
     def get_install_url(self, obj):
-        return f"{settings.COMMCARE_HQ_URL}/a/{obj.cc_domain}/apps/download/{obj.cc_app_id}/media_profile.ccpr"
+        return f"{obj.hq_server.url}/a/{obj.cc_domain}/apps/download/{obj.cc_app_id}/media_profile.ccpr"
 
     def get_passing_score(self, obj):
         if obj.passing_score is None:
@@ -166,13 +165,13 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_max_visits_per_user(self, obj):
         # return 1 for older opportunities
-        return obj.max_visits_per_user_new or -1
+        return obj.max_visits_per_user or -1
 
     def get_daily_max_visits_per_user(self, obj):
-        return obj.daily_max_visits_per_user_new or -1
+        return obj.daily_max_visits_per_user or -1
 
     def get_budget_per_visit(self, obj):
-        return obj.budget_per_visit_new or -1
+        return obj.budget_per_visit or -1
 
     def get_budget_per_user(self, obj):
         return obj.budget_per_user

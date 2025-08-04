@@ -3,6 +3,7 @@ from datetime import timezone
 from factory import DictFactory, Faker, LazyAttribute, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.users.tests.factories import OrganizationFactory
 
@@ -20,6 +21,7 @@ class CommCareAppFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     passing_score = Faker("pyint", min_value=50, max_value=100, step=5)
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.CommCareApp"
@@ -28,6 +30,7 @@ class CommCareAppFactory(DjangoModelFactory):
 class HQApiKeyFactory(DjangoModelFactory):
     api_key = Faker("uuid4")
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.HQApiKey"
@@ -51,12 +54,11 @@ class OpportunityFactory(DjangoModelFactory):
     deliver_app = SubFactory(CommCareAppFactory, organization=SelfAttribute("..organization"))
     start_date = Faker("past_date")
     end_date = Faker("future_date")
-    # to be removed
-    budget_per_visit = Faker("pyint", min_value=1, max_value=10)
     total_budget = Faker("pyint", min_value=1000, max_value=10000)
     api_key = SubFactory(HQApiKeyFactory)
     delivery_type = SubFactory(DeliveryTypeFactory)
     currency = "USD"
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.Opportunity"

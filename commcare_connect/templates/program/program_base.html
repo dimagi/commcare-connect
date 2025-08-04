@@ -1,4 +1,4 @@
-{% extends 'tailwind/base.html' %}
+{% extends 'base.html' %}
 
 {% block content %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4" x-data="{showProgramAddModal: false}">
@@ -15,7 +15,7 @@
              <p class="text-sm">
                Add Programs
              </p>
-             <i class="fa-light fa-plus-large"></i>
+             <i class="fa-solid fa-plus"></i>
            </div>
        </button>
       </div>
@@ -36,7 +36,7 @@
         {% for data in recent_activities %}
           <div class="activity-comp flex flex-col p-6 rounded-lg bg-white gap-5" x-data="{ expanded: false }">
             <div class="flex gap-4 items-center">
-              <i class="fa-light fa-clock-rotate-left"></i>
+              <i class="fa-solid fa-clock-rotate-left"></i>
               <p class="text-base">{{ data.title }}</p>
             </div>
             {% for row in data.rows %}
@@ -48,7 +48,7 @@
               <a class="button button-sm button-outline-rounded" href="{{ row.url }}">
                 <div class="flex items-center justify-between gap-4">
                   <p class="{% if row.small_text %}text-sm{%else%}text-2xl{%endif%}">{{ row.count }}</p>
-                  <i class="fa-light fa-arrow-right"></i>
+                  <i class="fa-solid fa-arrow-right"></i>
                 </div>
               </a>
             </div>
@@ -56,7 +56,7 @@
             <div class="flex justify-end" x-show="{{ data.rows|length }} > 2">
               <button class="button-text" @click="expanded = !expanded">
                 <span x-text="expanded ? 'less' : 'more'"></span>
-                <i :class="expanded ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"></i>
+                <i :class="expanded ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
               </button>
             </div>
           </div>
@@ -70,7 +70,7 @@
       <div class="header flex justify-between items-center mb-2">
         <h2 class="title">Create Program</h2>
         <button @click="showProgramAddModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <div id="program-add-form"></div>

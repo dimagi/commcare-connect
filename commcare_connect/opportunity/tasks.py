@@ -17,11 +17,11 @@ from commcare_connect.connect_id_client import fetch_users, send_message, send_m
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.export import (
+    UserVisitExporter,
     export_catchment_area_table,
     export_deliver_status_table,
     export_empty_payment_table,
     export_user_status_table,
-    export_user_visit_data,
     export_user_visit_review_data,
     export_work_status_table,
 )
@@ -30,6 +30,7 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
+    ExchangeRate,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -56,8 +57,8 @@ def create_learn_modules_and_deliver_units(opportunity_id):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     learn_app = opportunity.learn_app
     deliver_app = opportunity.deliver_app
-    learn_app_connect_blocks = get_connect_blocks_for_app(learn_app.cc_domain, learn_app.cc_app_id)
-    deliver_app_connect_blocks = get_deliver_units_for_app(deliver_app.cc_domain, deliver_app.cc_app_id)
+    learn_app_connect_blocks = get_connect_blocks_for_app(learn_app)
+    deliver_app_connect_blocks = get_deliver_units_for_app(deliver_app)
 
     for block in learn_app_connect_blocks:
         LearnModule.objects.update_or_create(
@@ -142,9 +143,8 @@ def invite_user(user_id, opportunity_access_id):
 def generate_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str, flatten: bool):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     logger.info(f"Export for {opportunity.name} with date range {date_range} and status {','.join(status)}")
-    dataset = export_user_visit_data(
-        opportunity, DateRanges(date_range), [VisitValidationStatus(s) for s in status], flatten
-    )
+    exporter = UserVisitExporter(opportunity, flatten)
+    dataset = exporter.get_dataset(DateRanges(date_range), [VisitValidationStatus(s) for s in status])
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
@@ -310,7 +310,7 @@ def download_user_visit_attachments(user_visit_id: id):
     for name, blob in blobs.items():
         if name == "form.xml":
             continue
-        url = f"{settings.COMMCARE_HQ_URL}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
+        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
 
         with transaction.atomic():
             blob_meta, created = BlobMeta.objects.get_or_create(
@@ -383,6 +383,31 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
     set_task_progress(self, "<br>".join(messages), is_complete=True)
 
 
+@celery_app.task(bind=True)
+def bulk_update_visit_status_task(self, opportunity_id: int, file_path: str, file_format: str):
+    from commcare_connect.opportunity.visit_import import (
+        ImportException,
+        bulk_update_visit_status,
+        get_imported_dataset,
+    )
+
+    set_task_progress(self, "Visit Verification Import is in porgress.")
+    try:
+        with default_storage.open(file_path, "rb") as f:
+            dataset = get_imported_dataset(f, file_format)
+            headers = dataset.headers or []
+            rows = list(dataset)
+
+        status = bulk_update_visit_status(opportunity_id, headers, rows)
+        messages = [f"Visit status updated successfully for {len(status)} visits."]
+        if status.missing_visits:
+            messages.append(status.get_missing_message())
+    except ImportException as e:
+        messages = [f"Visit status import failed: {e}"] + getattr(e, "invalid_rows", [])
+
+    set_task_progress(self, "<br>".join(messages), is_complete=True)
+
+
 @celery_app.task()
 def bulk_update_payment_accrued(opportunity_id, user_ids: list):
     """Updates payment accrued for completed and approved CompletedWork instances."""
@@ -393,3 +418,25 @@ def bulk_update_payment_accrued(opportunity_id, user_ids: list):
                 "payment_unit"
             )
             update_status(completed_works, access, compute_payment=True)
+
+
+@celery_app.task()
+def fetch_exchange_rates(date=None, currency=None):
+    base_url = "https://openexchangerates.org/api"
+
+    if date is None:
+        # fetch for the first of the month
+        date = datetime.date.today().replace(day=1)
+    url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
+    url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
+    response = httpx.get(url)
+    rates = response.json()["rates"]
+
+    if currency is None:
+        currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
+        for currencies in currency:
+            rate = rates[currency]
+            ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+    else:
+        rate = rates[currency]
+        return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)

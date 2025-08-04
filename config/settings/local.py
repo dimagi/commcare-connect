@@ -28,3 +28,6 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # CommCareConnect
 # ------------------------------------------------------------------------------
+
+# allow running the deid-scripts in development
+INSTALLED_APPS += ["commcare_connect.deid"]

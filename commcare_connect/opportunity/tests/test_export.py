@@ -6,11 +6,10 @@ from django.utils.timezone import now
 from tablib import Dataset
 
 from commcare_connect.opportunity.export import (
+    UserVisitExporter,
     export_catchment_area_table,
     export_user_status_table,
-    export_user_visit_data,
     export_user_visit_review_data,
-    get_flattened_dataset,
 )
 from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit, VisitReviewStatus
@@ -31,8 +30,8 @@ from commcare_connect.users.tests.factories import MobileUserFactory
 
 
 def test_export_user_visit_data(mobile_user_with_connect_link):
-    deliver_unit = DeliverUnitFactory()
     opportunity = OpportunityFactory()
+    deliver_units = DeliverUnitFactory.create_batch(2, app=opportunity.deliver_app)
     date1 = now()
     date2 = date1 + timedelta(minutes=10)
     UserVisit.objects.bulk_create(
@@ -41,55 +40,73 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
                 opportunity=opportunity,
                 user=mobile_user_with_connect_link,
                 visit_date=date1,
-                deliver_unit=deliver_unit,
+                deliver_unit=deliver_units[0],
                 form_json={"form": {"name": "test_form1"}},
             ),
             UserVisit(
                 opportunity=opportunity,
                 user=mobile_user_with_connect_link,
                 visit_date=date2,
-                deliver_unit=deliver_unit,
+                deliver_unit=deliver_units[1],
                 entity_id="abc",
                 entity_name="A B C",
                 form_json={"form": {"name": "test_form2", "group": {"q": "b"}}},
             ),
         ]
     )
-    exporter = export_user_visit_data(opportunity, DateRanges.LAST_30_DAYS, [], True)
+    exporter = UserVisitExporter(opportunity, True)
+    dataset = exporter.get_dataset(DateRanges.LAST_30_DAYS, [])
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
 
-    assert exporter.export("csv") == (
+    assert dataset.export("csv") == (
         "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
         "Duration,Entity ID,Entity Name,Flags,form.name,form.group.q\r\n"
-        f",{date1.isoformat()},Pending,{username},{name},{deliver_unit.name},,,,,,test_form1,\r\n"
-        f",{date2.isoformat()},Pending,{username},{name},{deliver_unit.name},,,abc,A B C,,test_form2,b\r\n"
+        f",{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,test_form1,\r\n"
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,abc,A B C,,test_form2,b\r\n"
     )
 
 
-@pytest.mark.parametrize(
-    "data, expected",
-    [
-        (
-            {"form": {"name": "form1"}},
-            [
-                (
-                    "form.name",
-                    "form1",
-                )
-            ],
-        ),
-        ({"form": [{"name": "form1"}, {"name": "form2"}]}, [("form.0.name", "form1"), ("form.1.name", "form2")]),
-    ],
-)
-def test_get_flattened_dataset(data, expected):
-    headers = ["header1", "header2"]
-    data = [
-        ["value1", "value2", data],
-    ]
-    dataset = get_flattened_dataset(headers, data)
-    assert dataset.headers == ["header1", "header2"] + [x[0] for x in expected]
-    assert dataset[0] == ("value1", "value2") + tuple(x[1] for x in expected)
+def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
+    opportunity = OpportunityFactory()
+    deliver_units = DeliverUnitFactory.create_batch(2, app=opportunity.deliver_app)
+    date1 = now()
+    date2 = date1 + timedelta(minutes=10)
+    form_json_1 = {"form": {"name": "test_form1"}}
+    form_json_1_string = '{""form"": {""name"": ""test_form1""}}'
+    form_json_2 = {"form": {"name": "test_form2", "group": {"q": "b"}}}
+    form_json_2_string = '{""form"": {""name"": ""test_form2"", ""group"": {""q"": ""b""}}}'
+    UserVisit.objects.bulk_create(
+        [
+            UserVisit(
+                opportunity=opportunity,
+                user=mobile_user_with_connect_link,
+                visit_date=date1,
+                deliver_unit=deliver_units[0],
+                form_json=form_json_1,
+            ),
+            UserVisit(
+                opportunity=opportunity,
+                user=mobile_user_with_connect_link,
+                visit_date=date2,
+                deliver_unit=deliver_units[1],
+                entity_id="abc",
+                entity_name="A B C",
+                form_json=form_json_2,
+            ),
+        ]
+    )
+    exporter = UserVisitExporter(opportunity, False)
+    dataset = exporter.get_dataset(DateRanges.LAST_30_DAYS, [])
+    username = mobile_user_with_connect_link.username
+    name = mobile_user_with_connect_link.name
+    assert dataset.export("csv") == (
+        "Visit ID,Visit date,Status,Username,Name of User,Unit Name,Rejected Reason,"
+        "Duration,Entity ID,Entity Name,Flags,form_json\r\n"
+        f',{date1.isoformat()},Pending,{username},{name},{deliver_units[0].name},,,,,,"{form_json_1_string}"\r\n'
+        f",{date2.isoformat()},Pending,{username},{name},{deliver_units[1].name},,,abc,A B C,,"
+        f'"{form_json_2_string}"\r\n'
+    )
 
 
 def _get_prepared_dataset_for_user_status_test(data):

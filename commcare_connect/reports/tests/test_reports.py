@@ -8,12 +8,15 @@ from django.utils.timezone import now
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
+from commcare_connect.opportunity.helpers import get_payment_report_data
 from commcare_connect.opportunity.models import CompletedWorkStatus, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
+    OpportunityFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
+    PaymentUnitFactory,
     UserVisitFactory,
 )
 from commcare_connect.reports.helpers import get_table_data_for_year_month
@@ -102,6 +105,64 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
         assert row["nm_amount_paid"] == 1000
         assert row["nm_other_amount_paid"] == 1000
         assert row["avg_top_paid_flws"] == 900
+
+
+@pytest.mark.django_db
+def test_get_payment_report_data_with_multiple_payment_units():
+    unit_a = PaymentUnitFactory(name="Unit A", amount=100)
+    unit_b = PaymentUnitFactory(name="Unit B", amount=200)
+
+    amount_a_user = 150
+    amount_a_nm = 300
+
+    amount_b_user = 250
+    amount_b_nm = 500
+
+    opportunity = OpportunityFactory()
+    access_a = OpportunityAccessFactory(opportunity=opportunity)
+    access_b = OpportunityAccessFactory(opportunity=opportunity)
+
+    # Create 2 CompletedWork for Unit A
+    CompletedWorkFactory.create_batch(
+        2,
+        opportunity_access=access_a,
+        payment_unit=unit_a,
+        status=CompletedWorkStatus.approved,
+        saved_payment_accrued=amount_a_user,
+        saved_org_payment_accrued=amount_a_nm,
+    )
+
+    # Create 3 CompletedWork for Unit B
+    CompletedWorkFactory.create_batch(
+        3,
+        opportunity_access=access_b,
+        payment_unit=unit_b,
+        status=CompletedWorkStatus.approved,
+        saved_payment_accrued=amount_b_user,
+        saved_org_payment_accrued=amount_b_nm,
+    )
+
+    report_data, total_user_payment, total_nm_payment = get_payment_report_data(opportunity)
+
+    assert len(report_data) == 2
+
+    report_dict = {r.payment_unit: r for r in report_data}
+
+    unit_a_data = report_dict["Unit A"]
+    assert unit_a_data.approved == 2
+    assert unit_a_data.user_payment_accrued == 2 * amount_a_user
+    assert unit_a_data.nm_payment_accrued == 2 * amount_a_nm
+
+    unit_b_data = report_dict["Unit B"]
+    assert unit_b_data.approved == 3
+    assert unit_b_data.user_payment_accrued == 3 * amount_b_user
+    assert unit_b_data.nm_payment_accrued == 3 * amount_b_nm
+
+    expected_user_total = 2 * amount_a_user + 3 * amount_b_user
+    expected_nm_total = 2 * amount_a_nm + 3 * amount_b_nm
+
+    assert total_user_payment == expected_user_total
+    assert total_nm_payment == expected_nm_total
 
 
 @pytest.mark.django_db
