@@ -13,7 +13,7 @@ from commcare_connect.opportunity.views import (
     add_budget_new_users,
     add_payment_unit,
     add_payment_units,
-    approve_visit,
+    approve_visits,
     delete_form_json_rule,
     download_export,
     edit_payment_unit,
@@ -30,7 +30,7 @@ from commcare_connect.opportunity.views import (
     payment_delete,
     payment_import,
     payment_report,
-    reject_visit,
+    reject_visits,
     resend_user_invite,
     review_visit_export,
     review_visit_import,
@@ -83,8 +83,8 @@ urlpatterns = [
     path("<int:opp_id>/user_visit_details/<int:pk>/", view=views.user_visit_details, name="user_visit_details"),
     path("<int:opp_id>/payment/<int:access_id>/delete/<int:pk>/", view=payment_delete, name="payment_delete"),
     path("<int:opp_id>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
-    path("approve/<int:pk>/", view=approve_visit, name="approve_visit"),
-    path("reject/<int:pk>/", view=reject_visit, name="reject_visit"),
+    path("<int:opp_id>approve_visits", view=approve_visits, name="approve_visits"),
+    path("<int:opp_id>/reject_visits", view=reject_visits, name="reject_visits"),
     path("fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
     path(
         "<int:opp_id>/completed_work_table/", view=OpportunityCompletedWorkTable.as_view(), name="completed_work_table"

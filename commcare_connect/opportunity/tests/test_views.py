@@ -133,9 +133,9 @@ def test_approve_visit(
         opportunity=opportunity, opportunity_access=access, flagged=True, status=VisitValidationStatus.pending
     )
     user = MembershipFactory.create(organization=opportunity.organization).user
-    approve_url = reverse("opportunity:approve_visit", args=(opportunity.organization.slug, visit.id))
+    approve_url = reverse("opportunity:approve_visits", args=(opportunity.organization.slug, opportunity.id))
     client.force_login(user)
-    response = client.post(approve_url, {"justification": justification}, follow=True)
+    response = client.post(approve_url, {"justification": justification, "visit_ids[]": [visit.id]}, follow=True)
     visit.refresh_from_db()
     assert visit.status == VisitValidationStatus.approved
     if opportunity.managed:

@@ -1,32 +1,17 @@
 {% load django_tables2 %}
 
-<form class="flex flex-col w-full gap-2"
-      x-cloak
-      x-data="{
-        activeTab: '{{ request.GET.filter_status|default:"all" }}',
-        page: {{ request.GET.page|default:"1" }},
-        updateUrlAndRequest() {
-          // Update URL params before HTMX call so table headers can pick them up
-          // this is done specifically because sortable_header using referer to get the base url.
-          const url = new URL(window.location);
-          const formData = new FormData(this.$el);
-          const params = new URLSearchParams();
-          for (let [key, value] of formData.entries()) {
-            if (value && String(value).trim() !== '') {
-              params.set(key, value);
-            }
-          }
-          url.search = params.toString();
-          window.history.pushState({}, '', url.toString());
-          $dispatch('reload_table')
-        }
-      }"
-      @change="updateUrlAndRequest()"
+<div x-cloak
+     x-data="visitVerification('{{ request.GET.filter_status|default:"all" }}', {{ request.GET.page|default:"1" }})"
+     @change="!$event.target.matches('input[name=row_select], input[name=select_all]') ? updateUrlAndRequest() : null"
+>
+ <form
+      x-ref="visitForm"
+      class="flex flex-col w-full gap-2"
       hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
       hx-trigger="reload_table from:body"
       hx-swap="outerHTML"
->
-  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs">
+  >
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs overflow-x-auto">
     <div class="tabs">
       {% for tab in tabs %}
         <label class="tab" :class="{ 'tab-active': activeTab == '{{ tab.name }}'}">
@@ -54,6 +39,12 @@
         <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
       </div>
     </div>
+    {% if not request.is_opportunity_pm and request.org_membership and not request.org_membership.is_viewer %}
+      <div x-show="selected?.length" class="flex gap-2">
+        <button type="button" @click="showBulkRejectModal = true;" class="button button-md outline-style">Reject All</button>
+        <button type="button" @click="showBulkApproveModal = true;" class="button button-md primary-dark">Approve All</button>
+      </div>
+    {% endif %}
 
   </div>
 
@@ -71,3 +62,115 @@
   <input type="hidden" name="page" value="{{ request.GET.page|default:1 }}" x-model="page" />
   <input type="hidden" name="sort" value="{{ request.GET.sort|default:'' }}" />
 </form>
+
+
+
+
+<!--Bulk Approve Modal -->
+<div x-cloak x-show="showBulkApproveModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showBulkApproveModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">
+          {% if opportunity_access.opportunity.managed %}
+            Justification for Approval
+            {% else %}
+             Confirm Approval
+            {% endif %}
+          </h2>
+        <button type="button" @click="showBulkApproveModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=opportunity_access.opportunity.id %}"
+        hx-swap="none"
+        @submit="showBulkApproveModal = false">
+        {% csrf_token %}
+        <template x-for="id in selected" :key="id">
+            <input type="hidden" name="visit_ids[]" :value="id">
+        </template>
+
+        <div class="py-4">
+            {% if opportunity_access.opportunity.managed %}
+              <textarea required class="base-textarea" id="justification" rows="3" name="justification"
+                placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
+            {% else %}
+              <input type="hidden" name="justification" value="">
+            {% endif %}
+             <div x-show="selected?.length > 0"
+              class="mt-3 p-4 rounded-lg border bg-blue-50 border-blue-200" >
+                <div x-html="document.getElementById('status-badge-component').innerHTML"></div>
+                <p class="text-xs text-gray-600 mt-4">
+                  <em>Note: Visits that are already approved will not be affected by this action.</em>
+                </p>
+            </div>
+        </div>
+        <div class="footer flex justify-end">
+          <button @click="showBulkApproveModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md positive-dark">Approve</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!--Bulk Rejection Modal -->
+   <div x-cloak x-show="showBulkRejectModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showBulkRejectModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center">
+        <h2 class="title">Reason for Rejection</h2>
+        <button type="button" @click="showBulkRejectModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+       <form hx-post="{% url "opportunity:reject_visits" org_slug=request.org.slug opp_id=opportunity_access.opportunity.id %}"
+        hx-swap="none"
+        @submit="showBulkRejectModal = false">
+        {% csrf_token %}
+        <div class="py-4">
+          <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
+            placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
+            <div x-show="selected?.length > 0"
+              class="mt-3 p-4 rounded-lg border  bg-blue-50 border-blue-200" >
+                <div x-html="document.getElementById('status-badge-component').innerHTML"></div>
+                <p class="text-xs text-gray-600 mt-1">
+                  <em>Note: Visits that are already rejected will not be affected by this action.</em>
+                </p>
+            </div>
+        </div>
+         <template x-for="id in selected" :key="id">
+            <input type="hidden" name="visit_ids[]" :value="id">
+        </template>
+        <div class="footer flex justify-end">
+          <button @click="showBulkRejectModal = false" type="button" class="button button-md outline-style">
+            Close
+          </button>
+          <button type="submit" class="button button-md negative-dark">
+            Reject
+          </button>
+        </div>
+      </form>
+    </div>
+</div>
+
+<!--Common status badges for reject and approval modal -->
+<template id="status-badge-component">
+  <p class="text-sm text-gray-800 leading-relaxed flex flex-wrap items-center gap-2">
+    <strong><span x-text="`${selected.length} visit${selected.length !== 1 ? 's' : ''} selected —`"></span></strong>
+    <span x-show="selectedStatusCounts.approved" class="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
+      <span x-text="selectedStatusCounts.approved"></span> approved
+    </span>
+    <span x-show="selectedStatusCounts.rejected" class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">
+      <span x-text="selectedStatusCounts.rejected"></span> rejected
+    </span>
+    <span x-show="selectedStatusCounts.pending" class="px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+      <span x-text="selectedStatusCounts.pending"></span> pending
+    </span>
+    <span x-show="selectedStatusCounts.duplicate" class="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+      <span x-text="selectedStatusCounts.duplicate"></span> duplicate
+    </span>
+    <span x-show="selectedStatusCounts.overLimit" class="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
+      <span x-text="selectedStatusCounts.overLimit"></span> overlimit
+    </span>
+  </p>
+</template>
