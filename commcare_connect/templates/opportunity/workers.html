@@ -1,0 +1,25 @@
+{% extends "opportunity/worker_list_base.html" %}
+{% load i18n %}
+
+{% block tab_options %}
+  <div x-data="{showWorkerExportModal: false}">
+    <button type="button" class="button-icon" @click="showWorkerExportModal = true"
+            {% if request.org_membership.is_viewer %} disabled {% endif %}
+    >
+      <i class="fa-solid fa-download text-brand-deep-purple"></i>
+    </button>
+    {% block modals %}
+        {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.pk as user_status_export_url %}
+        {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
+    {% endblock %}
+    {% if request.org_membership.is_viewer %}
+      <button disabled class="button button-md outline-style">
+        Add Worker
+      </button>
+    {% else %}
+      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="button button-md outline-style">
+        Add Worker
+      </a>
+    {% endif %}
+  </div>
+{% endblock %}

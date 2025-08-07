@@ -551,9 +551,8 @@ class BaseOpportunityList(OrgContextTable):
     def render_program(self, value):
         return self._render_div(value if value else "--", extra_classes="justify-start")
 
-    def render_worker_list_url_column(self, value, opp_id, active_tab="workers", sort=None):
-        url = reverse("opportunity:worker_list", args=(self.org_slug, opp_id))
-        url = f"{url}?active_tab={active_tab}"
+    def render_worker_list_url_column(self, value, opp_id, url_slug="worker_list", sort=None):
+        url = reverse(f"opportunity:{url_slug}", args=(self.org_slug, opp_id))
 
         if sort:
             url += "&" + sort
@@ -603,7 +602,7 @@ class OpportunityTable(BaseOpportunityList):
 
     def render_pending_approvals(self, value, record):
         return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, active_tab="delivery", sort="sort=-pending"
+            value=value, opp_id=record.id, url_slug="worker_deliver", sort="sort=-pending"
         )
 
     def render_payments_due(self, value, record):
@@ -612,7 +611,7 @@ class OpportunityTable(BaseOpportunityList):
 
         value = f"{record.currency} {intcomma(value)}"
         return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, active_tab="payments", sort="sort=-total_paid"
+            value=value, opp_id=record.id, url_slug="worker_payments", sort="sort=-total_paid"
         )
 
     def render_actions(self, record):
@@ -680,18 +679,14 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         return self.render_worker_list_url_column(value=value, opp_id=record.id)
 
     def render_total_deliveries(self, value, record):
-        return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, active_tab="delivery", sort="sort=-delivered"
-        )
+        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort="sort=-delivered")
 
     def render_verified_deliveries(self, value, record):
-        return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, active_tab="delivery", sort="sort=-approved"
-        )
+        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort="sort=-approved")
 
     def render_worker_earnings(self, value, record):
-        url = reverse("opportunity:worker_list", args=(self.org_slug, record.id))
-        url += "?active_tab=payments&sort=-payment_accrued"
+        url = reverse("opportunity:worker_payments", args=(self.org_slug, record.id))
+        url += "?sort=-payment_accrued"
         value = f"{record.currency} {intcomma(value)}"
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
@@ -934,7 +929,7 @@ class WorkerStatusTable(tables.Table):
     )
 
     def __init__(self, *args, **kwargs):
-        self.use_view_url = True
+        self.use_view_url = False
         super().__init__(*args, **kwargs)
 
     class Meta:
@@ -958,7 +953,7 @@ class WorkerPaymentsTable(tables.Table):
     confirmed_paid = tables.Column(verbose_name="Confirm", accessor="confirmed_paid_d")
 
     def __init__(self, *args, **kwargs):
-        self.use_view_url = True
+        self.use_view_url = False
         self.org_slug = kwargs.pop("org_slug", "")
         self.opp_id = kwargs.pop("opp_id", "")
         super().__init__(*args, **kwargs)
@@ -1025,7 +1020,7 @@ class WorkerLearnTable(OrgContextTable):
     )
 
     def __init__(self, *args, **kwargs):
-        self.use_view_url = True
+        self.use_view_url = False
         self.opp_id = kwargs.pop("opp_id")
         super().__init__(*args, **kwargs)
 
@@ -1127,8 +1122,6 @@ class TotalDeliveredColumn(tables.Column):
 
 
 class WorkerDeliveryTable(OrgContextTable):
-    use_view_url = True
-
     id = tables.Column(visible=False)
     index = IndexColumn()
     user = tables.Column(orderable=False, verbose_name="Name", footer="Total")
@@ -1187,7 +1180,7 @@ class WorkerDeliveryTable(OrgContextTable):
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
-        self.use_view_url = True
+        self.use_view_url = False
         super().__init__(*args, **kwargs)
         self._seen_users = set()
 

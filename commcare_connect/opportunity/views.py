@@ -25,6 +25,7 @@ from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic import CreateView, DetailView, UpdateView
@@ -393,16 +394,15 @@ def export_user_visits(request, org_slug, opp_id):
     status = form.cleaned_data["status"]
     flatten = form.cleaned_data["flatten_form_data"]
     result = generate_visit_export.delay(opp_id, date_range, status, export_format, flatten)
-    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?active_tab=delivery&export_task_id={result.id}")
+    redirect_url = reverse("opportunity:worker_deliver", args=(request.org.slug, opp_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
 def review_visit_export(request, org_slug, opp_id):
     get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = ReviewVisitExportForm(data=request.POST)
-    redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
-    redirect_url = f"{redirect_url}?active_tab=delivery"
+    redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     if not form.is_valid():
         messages.error(request, form.errors)
         return redirect(redirect_url)
@@ -458,24 +458,22 @@ def update_visit_status_import(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("visits")
     file_format = get_file_extension(file)
-    redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
+    redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
 
     if file_format not in ("csv", "xlsx"):
         messages.error(request, f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-        query_params = {"active_tab", "delivery"}
     else:
         file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_visit_import"
         saved_path = default_storage.save(file_path, file)
         result = bulk_update_visit_status_task.delay(opportunity.pk, saved_path, file_format)
-        query_params = {"active_tab": "delivery", "export_task_id": result.id}
-    return redirect(f"{redirect_url}?{urlencode(query_params)}")
+        redirect_url = f"{redirect_url}?export_task_id={result.id}"
+    return redirect(redirect_url)
 
 
 def review_visit_import(request, org_slug=None, opp_id=None):
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("visits")
-    redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
-    redirect_url = f"{redirect_url}?active_tab=delivery"
+    redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     try:
         status = bulk_update_visit_review_status(opportunity, file)
     except ImportException as e:
@@ -602,12 +600,12 @@ def export_users_for_payment(request, org_slug, opp_id):
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
-        return redirect(f"{reverse('opportunity:worker_list', args=[org_slug, opp_id])}?active_tab=payments")
+        return redirect("opportunity:worker_payments", org_slug, opp_id)
 
     export_format = form.cleaned_data["format"]
     result = generate_payment_export.delay(opp_id, export_format)
-    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, opp_id))
-    return redirect(f"{redirect_url}?export_task_id={result.id}&active_tab=payments")
+    redirect_url = reverse("opportunity:worker_payments", args=(request.org.slug, opp_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
@@ -622,10 +620,8 @@ def payment_import(request, org_slug=None, opp_id=None):
     file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
     saved_path = default_storage.save(file_path, file)
     result = bulk_update_payments_task.delay(opportunity.pk, saved_path, file_format)
-
-    return redirect(
-        f"{reverse('opportunity:worker_list', args=[org_slug, opp_id])}?active_tab=payments&export_task_id={result.id}"
-    )
+    redirect_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
+    return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
@@ -791,8 +787,7 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     opportunity_access = get_object_or_404(OpportunityAccess, pk=access_id, opportunity=opportunity)
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, pk=pk)
     payment.delete()
-    redirect_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
-    return redirect(f"{redirect_url}?active_tab=payments")
+    return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
 @org_admin_required
@@ -1340,7 +1335,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
             {
                 "title": "Workers",
-                "url": reverse("opportunity:worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery",
+                "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id)),
             },
             {"title": "Worker", "url": request.path},
         ]
@@ -1665,148 +1660,173 @@ def user_visit_details(request, org_slug, opp_id, pk):
     )
 
 
-@org_viewer_required
-def opportunity_worker(request, org_slug=None, opp_id=None):
-    opp = get_opportunity_or_404(opp_id, org_slug)
-    base_kwargs = {"org_slug": org_slug, "opp_id": opp_id}
-    export_form = PaymentExportForm()
-    visit_export_form = VisitExportForm()
-    review_visit_export_form = ReviewVisitExportForm()
-
-    path = []
-    if opp.managed:
-        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
-        path.append({"title": opp.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))})
-    path.extend(
-        [
-            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-            {"title": opp.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-            {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
-        ]
-    )
-
-    raw_qs = request.GET.urlencode()
-    query = f"?{raw_qs}" if raw_qs else ""
-
-    workers_count = UserInvite.objects.filter(opportunity_id=opp_id).exclude(status=UserInviteStatus.not_found).count()
+class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
+    template_name = "opportunity/opportunity_worker.html"
+    hx_template_name = "opportunity/workers.html"
+    active_tab = "workers"
     tabs = [
-        {
-            "key": "workers",
-            "label": f"Workers ({workers_count})",
-            "url": reverse("opportunity:worker_table", kwargs=base_kwargs) + query,
-            "trigger": "loadWorkers",
-        },
-        {
-            "key": "learn",
-            "label": "Learn",
-            "url": reverse("opportunity:learn_table", kwargs=base_kwargs) + query,
-            "trigger": "loadLearn",
-        },
-        {
-            "key": "delivery",
-            "label": "Delivery",
-            "url": reverse("opportunity:delivery_table", kwargs=base_kwargs) + query,
-            "trigger": "loadDelivery",
-        },
-        {
-            "key": "payments",
-            "label": "Payments",
-            "url": reverse("opportunity:payments_table", kwargs=base_kwargs) + query,
-            "trigger": "loadPayments",
-        },
+        {"key": "workers", "label": "Workers", "url_name": "opportunity:worker_list"},
+        {"key": "learn", "label": "Learn", "url_name": "opportunity:worker_learn"},
+        {"key": "deliver", "label": "Deliver", "url_name": "opportunity:worker_deliver"},
+        {"key": "payments", "label": "Payments", "url_name": "opportunity:worker_payments"},
     ]
 
-    is_program_manager = opp.managed and request.is_opportunity_pm
+    def get_tabs(self, org_slug, opportunity):
+        tabs_with_urls = []
+        # Pass along query-params for active tab url
+        for tab in self.tabs:
+            url = reverse(tab["url_name"], args=(org_slug, opportunity.id))
+            if tab["key"] == self.active_tab:
+                query_params = self.request.GET.dict()
+                query_string = urlencode(query_params) if query_params else ""
+                if query_string:
+                    url = f"{url}?{query_string}"
+            tabs_with_urls.append({**tab, "url": url})
+        # Label with count for workers tab
+        workers_count = (
+            UserInvite.objects.filter(opportunity=opportunity).exclude(status=UserInviteStatus.not_found).count()
+        )
+        tabs_with_urls[0]["label"] = f"Workers ({workers_count})"
+        return tabs_with_urls
 
-    import_export_delivery_urls = {
-        "export_url_for_pm": reverse(
-            "opportunity:review_visit_export",
-            args=(request.org.slug, opp_id),
-        ),
-        "export_url_for_nm": reverse(
-            "opportunity:visit_export",
-            args=(request.org.slug, opp_id),
-        ),
-        "import_url": reverse(
-            "opportunity:review_visit_import" if is_program_manager else "opportunity:visit_import",
-            args=(request.org.slug, opp_id),
-        ),
-    }
+    def get(self, request, org_slug, opp_id):
+        opportunity = self.get_opportunity()
+        context = self.get_context_data(opportunity, org_slug)
+        context.update(self.get_extra_context(opportunity, org_slug))
+        return render(
+            request,
+            self.hx_template_name if request.htmx else self.template_name,
+            context,
+        )
 
-    import_visit_helper_text = _(
-        'The file must contain at least the "Visit ID"{extra} and "Status" column. The import is case-insensitive.'
-    ).format(extra=_(', "Justification"') if opp.managed else "")
+    def get_context_data(self, opportunity, org_slug):
+        path = []
+        if opportunity.managed:
+            path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
+            path.append(
+                {
+                    "title": opportunity.managedopportunity.program.name,
+                    "url": reverse("program:home", args=(org_slug,)),
+                }
+            )
+        path.extend(
+            [
+                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+                {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opportunity.id))},
+            ]
+        )
 
-    export_user_visit_title = _("Import PM Review Sheet" if is_program_manager else "Import Verified Visits")
-
-    return render(
-        request,
-        "opportunity/opportunity_worker.html",
-        {
-            "opportunity": opp,
-            "tabs": tabs,
-            "visit_export_form": visit_export_form,
-            # This same form is used for multiple types of export
-            "export_form": export_form,
-            "export_task_id": request.GET.get("export_task_id"),
+        context = {
             "path": path,
-            "import_export_delivery_urls": import_export_delivery_urls,
-            "import_visit_helper_text": import_visit_helper_text,
-            "export_user_visit_title": export_user_visit_title,
-            "review_visit_export_form": review_visit_export_form,
-        },
-    )
+            "opportunity": opportunity,
+            "active_tab": self.active_tab,
+            "tabs": self.get_tabs(org_slug, opportunity),
+            "export_task_id": self.request.GET.get("export_task_id"),
+        }
+        if self.request.htmx:
+            context["table"] = self.get_table(opportunity, org_slug)
+        return context
+
+    def get_extra_context(self, opportunity, org_slug):
+        return {}
+
+    def get_table(self, opportunity, org_slug):
+        raise NotImplementedError
 
 
-@org_viewer_required
-def worker_main(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    data = get_worker_table_data(opportunity)
-    table = WorkerStatusTable(data)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-    return render(request, "components/tables/table.html", {"table": table})
+class WorkerView(BaseWorkerListView):
+    hx_template_name = "opportunity/workers.html"
+    active_tab = "workers"
+
+    def get_extra_context(self, opportunity, org_slug):
+        return {"export_form": PaymentExportForm()}
+
+    def get_table(self, opportunity, org_slug):
+        data = get_worker_table_data(opportunity)
+        table = WorkerStatusTable(data)
+        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        return table
 
 
-@org_viewer_required
-def worker_learn(request, org_slug=None, opp_id=None):
-    opp = get_opportunity_or_404(opp_id, org_slug)
-    data = get_worker_learn_table_data(opp)
-    table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opp_id)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-    return render(request, "components/tables/table.html", {"table": table})
+class WorkerLearnView(BaseWorkerListView):
+    hx_template_name = "opportunity/learn.html"
+    active_tab = "learn"
+
+    def get_table(self, opportunity, org_slug):
+        data = get_worker_learn_table_data(opportunity)
+        table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opportunity.id)
+        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        return table
 
 
-@org_viewer_required
-def worker_delivery(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    data = get_annotated_opportunity_access_deliver_status(opportunity)
-    table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opp_id)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-    return render(request, "components/tables/table.html", {"table": table})
+class WorkerDeliverView(BaseWorkerListView):
+    hx_template_name = "opportunity/deliver.html"
+    active_tab = "deliver"
+
+    def get_extra_context(self, opportunity, org_slug):
+        return {
+            "visit_export_form": VisitExportForm(),
+            "review_visit_export_form": ReviewVisitExportForm(),
+            "import_export_delivery_urls": {
+                "export_url_for_pm": reverse(
+                    "opportunity:review_visit_export",
+                    args=(org_slug, opportunity.id),
+                ),
+                "export_url_for_nm": reverse(
+                    "opportunity:visit_export",
+                    args=(org_slug, opportunity.id),
+                ),
+                "import_url": reverse(
+                    "opportunity:review_visit_import"
+                    if (opportunity.managed and self.request.is_opportunity_pm)
+                    else "opportunity:visit_import",
+                    args=(org_slug, opportunity.id),
+                ),
+            },
+            "import_visit_helper_text": _(
+                'The file must contain at least the "Visit ID"{extra} and "Status" column. The import is case-insensitive.'  # noqa: E501
+            ).format(extra=_(', "Justification"') if opportunity.managed else ""),
+            "export_user_visit_title": _(
+                "Import PM Review Sheet"
+                if (opportunity.managed and self.request.is_opportunity_pm)
+                else "Import Verified Visits"
+            ),
+        }
+
+    def get_table(self, opportunity, org_slug):
+        data = get_annotated_opportunity_access_deliver_status(opportunity)
+        table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opportunity.id)
+        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        return table
 
 
-@org_viewer_required
-def worker_payments(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
+class WorkerPaymentsView(BaseWorkerListView):
+    hx_template_name = "opportunity/payments.html"
+    active_tab = "payments"
 
-    def get_payment_subquery(confirmed: bool = False) -> Subquery:
-        qs = Payment.objects.filter(opportunity_access=OuterRef("pk"))
-        if confirmed:
-            qs = qs.filter(confirmed=True)
-        subquery = qs.values("opportunity_access").annotate(total=Sum("amount")).values("total")[:1]
-        return Coalesce(Subquery(subquery), Value(0), output_field=DecimalField())
+    def get_extra_context(self, opportunity, org_slug):
+        return {"export_form": PaymentExportForm()}
 
-    query_set = OpportunityAccess.objects.filter(
-        opportunity=opportunity, payment_accrued__gte=0, accepted=True
-    ).order_by("-payment_accrued")
-    query_set = query_set.annotate(
-        last_paid=Max("payment__date_paid"),
-        total_paid_d=get_payment_subquery(),
-        confirmed_paid_d=get_payment_subquery(True),
-    )
-    table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opp_id)
-    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-    return render(request, "components/tables/table.html", {"table": table})
+    def get_table(self, opportunity, org_slug):
+        def get_payment_subquery(confirmed: bool = False) -> Subquery:
+            qs = Payment.objects.filter(opportunity_access=OuterRef("pk"))
+            if confirmed:
+                qs = qs.filter(confirmed=True)
+            subquery = qs.values("opportunity_access").annotate(total=Sum("amount")).values("total")[:1]
+            return Coalesce(Subquery(subquery), Value(0), output_field=DecimalField())
+
+        query_set = OpportunityAccess.objects.filter(
+            opportunity=opportunity, payment_accrued__gte=0, accepted=True
+        ).order_by("-payment_accrued")
+        query_set = query_set.annotate(
+            last_paid=Max("payment__date_paid"),
+            total_paid_d=get_payment_subquery(),
+            confirmed_paid_d=get_payment_subquery(True),
+        )
+        table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opportunity.id)
+        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        return table
 
 
 @org_viewer_required
@@ -2074,9 +2094,9 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
     stats = get_opportunity_delivery_progress(opportunity.id)
 
     worker_list_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
-    status_url = worker_list_url + "?active_tab=workers&sort=-last_active"
-    delivery_url = worker_list_url + "?active_tab=delivery&sort=-last_active"
-    payment_url = worker_list_url + "?active_tab=payments"
+    status_url = worker_list_url + "?sort=-last_active"
+    delivery_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id)) + "?sort=-last_active"
+    payment_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
 
     deliveries_panels = [
         {
