@@ -836,37 +836,53 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
 
 @org_member_required
 @require_POST
-def approve_visit(request, org_slug=None, pk=None):
-    user_visit = UserVisit.objects.get(pk=pk)
-    if user_visit.status != VisitValidationStatus.approved or user_visit.review_status == VisitReviewStatus.disagree:
-        user_visit.status = VisitValidationStatus.approved
-        if user_visit.opportunity.managed:
-            user_visit.review_created_on = now()
-            if user_visit.review_status == VisitReviewStatus.disagree:
-                user_visit.review_status = VisitReviewStatus.pending
+def approve_visits(request, org_slug, opp_id):
+    visit_ids = request.POST.getlist("visit_ids[]")
 
-            if user_visit.flagged:
+    visits = (
+        UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id)
+        .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
+        .prefetch_related("opportunity")
+        .only("status", "review_status", "flagged", "justification", "review_created_on")
+    )
+
+    today = now()
+    for visit in visits:
+        visit.status = VisitValidationStatus.approved
+        if visit.opportunity.managed:
+            visit.review_created_on = today
+            if visit.review_status == VisitReviewStatus.disagree:
+                visit.review_status = VisitReviewStatus.pending
+            if visit.flagged:
                 justification = request.POST.get("justification")
                 if not justification:
-                    messages.error(request, "Justification is mandatory for flagged visits.")
-                user_visit.justification = justification
+                    return HttpResponse(
+                        "Justification is mandatory for flagged visits.",
+                        status=400,
+                        headers={"HX-Trigger": "form_error"},
+                    )
+                visit.justification = justification
 
-        user_visit.save()
-        update_payment_accrued(opportunity=user_visit.opportunity, users=[user_visit.user], incremental=True)
+    UserVisit.objects.bulk_update(visits, ["status", "review_created_on", "review_status", "justification"])
+    if visits:
+        update_payment_accrued(opportunity=visits[0].opportunity, users=[visits[0].user], incremental=True)
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
 @org_member_required
 @require_POST
-def reject_visit(request, org_slug=None, pk=None):
-    user_visit = UserVisit.objects.get(pk=pk)
-    reason = request.POST.get("reason")
-    user_visit.status = VisitValidationStatus.rejected
-    user_visit.reason = reason
-    user_visit.save()
-    access = OpportunityAccess.objects.get(user_id=user_visit.user_id, opportunity_id=user_visit.opportunity_id)
-    update_payment_accrued(opportunity=access.opportunity, users=[access.user])
+def reject_visits(request, org_slug=None, opp_id=None):
+    opp = get_opportunity_or_404(opp_id, org_slug)
+    visit_ids = request.POST.getlist("visit_ids[]")
+    reason = request.POST.get("reason", "").strip()
+
+    UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id).exclude(
+        status=VisitValidationStatus.rejected
+    ).update(status=VisitValidationStatus.rejected, reason=reason)
+    if visit_ids:
+        visit = UserVisit.objects.get(id=visit_ids[0])
+        update_payment_accrued(opportunity=opp, users=[visit.user])
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
@@ -1374,6 +1390,7 @@ def get_user_visit_counts(opportunity_access_id: int, date=None):
                 "id",
                 filter=Q(
                     review_status=VisitReviewStatus.pending,
+                    status=VisitValidationStatus.approved,
                     review_created_on__isnull=False,
                 ),
             ),
@@ -1436,6 +1453,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["organization"] = self.request.org
+        kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
 
     def get_context_data(self, **kwargs):
@@ -1538,6 +1556,7 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
             filter_kwargs.update(
                 {
                     "review_status": VisitReviewStatus.pending,
+                    "status": VisitValidationStatus.approved,
                     "review_created_on__isnull": False,
                 }
             )
@@ -1556,7 +1575,6 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
                     "review_created_on__isnull": False,
                 }
             )
-
         return UserVisit.objects.filter(**filter_kwargs).order_by("visit_date")
 
 
