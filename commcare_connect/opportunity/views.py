@@ -352,7 +352,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
                 "icon": "fa-arrow-right !text-brand-mango",  # color is also changed",
             },
             {
-                "name": "Max Workers",
+                "name": "Max Connect Workers",
                 "count": header_with_tooltip(
                     safe_display(object.number_of_users), "Maximum allowed workers in the Opportunity"
                 ),
@@ -523,7 +523,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
     tabs = [
         {
             "key": "existing_workers",
-            "label": "Existing Workers",
+            "label": "Existing Connect Workers",
         },
     ]
     # Nm are not allowed to increase the managed opportunity budget so do not provide that tab.
@@ -531,7 +531,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
         tabs.append(
             {
                 "key": "new_workers",
-                "label": "New Workers",
+                "label": "New Connect Workers",
             }
         )
 
@@ -1093,7 +1093,7 @@ def opportunity_user_invite(request, org_slug=None, opp_id=None):
     return render(
         request,
         "components/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Invite Workers", form=form),
+        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Invite Connect Workers", form=form),
     )
 
 
@@ -1142,13 +1142,13 @@ def payment_report(request, org_slug, opp_id):
         {
             "amount": render_amount(total_user_payment_accrued),
             "icon": "fa-user-friends",
-            "label": "Worker",
+            "label": "Connect Worker",
             "subtext": "Total Accrued",
         },
         {
             "amount": render_amount(total_paid_users),
             "icon": "fa-user-friends",
-            "label": "Worker",
+            "label": "Connect Worker",
             "subtext": "Total Paid",
         },
         {
@@ -1201,7 +1201,6 @@ def invoice_list(request, org_slug, opp_id):
         request,
         "opportunity/invoice_list.html",
         {
-            "header_title": "Invoices",
             "opportunity": opportunity,
             "table": table,
             "form": form,
@@ -1339,10 +1338,10 @@ def user_visit_verification(request, org_slug, opp_id, pk):
             {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
             {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
             {
-                "title": "Workers",
+                "title": "Connect Workers",
                 "url": reverse("opportunity:worker_list", args=(org_slug, opp_id)) + "?active_tab=delivery",
             },
-            {"title": "Worker", "url": request.path},
+            {"title": opportunity_access.user.name, "url": request.path},
         ]
     )
 
@@ -1350,7 +1349,6 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         request,
         "opportunity/user_visit_verification.html",
         context={
-            "header_title": "Worker",
             "opportunity_access": opportunity_access,
             "counts": user_visit_counts,
             "flagged_info": flagged_info,
@@ -1681,7 +1679,7 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
         [
             {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
             {"title": opp.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-            {"title": "Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
+            {"title": "Connect Workers", "url": reverse("opportunity:worker_list", args=(org_slug, opp_id))},
         ]
     )
 
@@ -1692,7 +1690,7 @@ def opportunity_worker(request, org_slug=None, opp_id=None):
     tabs = [
         {
             "key": "workers",
-            "label": f"Workers ({workers_count})",
+            "label": f"Connect Workers ({workers_count})",
             "url": reverse("opportunity:worker_table", kwargs=base_kwargs) + query,
             "trigger": "loadWorkers",
         },
@@ -1823,7 +1821,7 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
     return render(
         request,
         "opportunity/opportunity_worker_learn.html",
-        {"header_title": "Worker", "total_learn_duration": total_duration, "table": table, "access": access},
+        {"total_learn_duration": total_duration, "table": table, "access": access},
     )
 
 
@@ -1938,7 +1936,7 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
         {
             "stage": "Accepted",
             "count": header_with_tooltip(
-                accepted, "Workers that have clicked on the SMS or push notification or gone into Learn app"
+                accepted, "Connect Workers that have clicked on the SMS or push notification or gone into Learn app"
             ),
             "icon": "circle-check",
         },
@@ -1950,27 +1948,27 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
         {
             "stage": "Completed Learning",
             "count": header_with_tooltip(
-                result.completed_learning, "Workers that have completed all Learn modules but not assessment"
+                result.completed_learning, "Connect Workers that have completed all Learn modules but not assessment"
             ),
             "icon": "book",
         },
         {
             "stage": "Completed Assessment",
-            "count": header_with_tooltip(result.completed_assessments, "Workers that passed the assessment"),
+            "count": header_with_tooltip(result.completed_assessments, "Connect Workers that passed the assessment"),
             "icon": "award",
         },
         {
             "stage": "Claimed Job",
             "count": header_with_tooltip(
                 result.claimed_job,
-                "Workers that have read the Opportunity terms and started download of the Deliver app",
+                "Connect Workers that have read the Opportunity terms and started download of the Deliver app",
             ),
             "icon": "user-check",
         },
         {
             "stage": "Started Delivery",
             "count": header_with_tooltip(
-                result.started_deliveries, "Workers that have submitted at least 1 Learn form"
+                result.started_deliveries, "Connect Workers that have submitted at least 1 Learn form"
             ),
             "icon": "house-chimney-user",
         },
@@ -2027,7 +2025,7 @@ def opportunity_worker_progress(request, org_slug, opp_id):
             ],
         },
         {
-            "title": "Payments to Workers",
+            "title": "Payments to Connect Workers",
             "progress": [
                 {
                     "title": "Earned",
@@ -2042,7 +2040,7 @@ def opportunity_worker_progress(request, org_slug, opp_id):
                 {
                     "title": "Paid",
                     "total": header_with_tooltip(
-                        amount_with_currency(result.total_paid), "Paid Amount to All Workers"
+                        amount_with_currency(result.total_paid), "Paid Amount to All Connect Workers"
                     ),
                     "value": header_with_tooltip(
                         f"{paid_percentage:.2f}%", "Percentage Paid to all  workers out of Earned amount"
@@ -2111,26 +2109,26 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
 
     opp_stats = [
         {
-            "title": "Workers",
+            "title": "Connect Workers",
             "sub_heading": "",
             "value": "",
             "panels": [
                 {
                     "icon": "fa-user-group",
-                    "name": "Workers",
+                    "name": "Connect Workers",
                     "status": "Invited",
                     "value": stats.workers_invited,
                     "url": status_url,
                 },
                 {
                     "icon": "fa-user-check",
-                    "name": "Workers",
+                    "name": "Connect Workers",
                     "status": "Yet to Accept Invitation",
                     "value": stats.pending_invites,
                 },
                 {
                     "icon": "fa-clipboard-list",
-                    "name": "Workers",
+                    "name": "Connect Workers",
                     "status": "Inactive last 3 days",
                     "value": header_with_tooltip(
                         stats.inactive_workers, "Did not submit a Learn or Deliver form in the last 3 days"

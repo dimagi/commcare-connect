@@ -42,11 +42,11 @@
       </button>
       {% if request.org_membership.is_viewer %}
         <button disabled class="button button-md outline-style">
-          Add Worker
+          Add Connect Worker
         </button>
       {% else %}
         <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="button button-md outline-style">
-          Add Worker
+          Add Connect Worker
         </a>
       {% endif %}
     </div>
@@ -100,10 +100,10 @@
 
 
   {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.pk as user_status_export_url %}
-  {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
+  {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Connect Workers") export_url=user_status_export_url export_form=export_form %}
 
   {% url 'opportunity:payment_export' org_slug=request.org.slug opp_id=opportunity.pk as payment_export_url %}
-  {% include "components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
+  {% include "components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Payment Records") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
   {% include "components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}

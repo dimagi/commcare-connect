@@ -112,7 +112,7 @@
             {% endif %}
 
             {% if opportunity_claims %}
-            <h3 class="mb-2">Add Visits for Existing Workers</h3>
+            <h3 class="mb-2">Add Visits for Existing Connect Workers</h3>
             <table class="base-table">
               <thead>
               <tr>
@@ -202,7 +202,7 @@
         <div
           x-show="selectedTab === 'new_workers'"
         >
-          <h3 class="mb-2">Add Budget for New Workers</h3>
+          <h3 class="mb-2">Add Budget for New Connect Workers</h3>
           <div
             id="new_user_container"
             hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.pk %}"

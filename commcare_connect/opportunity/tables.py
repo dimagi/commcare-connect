@@ -566,12 +566,14 @@ class OpportunityTable(BaseOpportunityList):
 
     pending_invites = tables.Column(
         verbose_name=header_with_tooltip(
-            "Pending Invites", "Workers not yet clicked on invite link or started learning in app"
+            "Pending Invites", "Connect Workers not yet clicked on invite link or started learning in app"
         ),
         attrs=col_attrs,
     )
     inactive_workers = tables.Column(
-        verbose_name=header_with_tooltip("Inactive Workers", "Did not submit a Learn or Deliver form in 3 day"),
+        verbose_name=header_with_tooltip(
+            "Inactive Connect Workers", "Did not submit a Learn or Deliver form in 3 day"
+        ),
         attrs=col_attrs,
     )
     pending_approvals = tables.Column(
@@ -622,7 +624,7 @@ class OpportunityTable(BaseOpportunityList):
                 "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
             },
             {
-                "title": "View Workers",
+                "title": "View Connect Workers",
                 "url": reverse("opportunity:worker_list", args=[self.org_slug, record.id]),
             },
         ]
@@ -649,7 +651,7 @@ class OpportunityTable(BaseOpportunityList):
 class ProgramManagerOpportunityTable(BaseOpportunityList):
     active_workers = tables.Column(
         verbose_name=header_with_tooltip(
-            "Active Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
+            "Active Connect Workers", "Worker delivered a Learn or Deliver form in the last 3 days"
         ),
         attrs=TEXT_CENTER_ATTR,
     )
@@ -718,7 +720,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
                 "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
             },
             {
-                "title": "View Workers",
+                "title": "View Connect Workers",
                 "url": reverse("opportunity:worker_list", args=[self.org_slug, record.id]),
             },
         ]

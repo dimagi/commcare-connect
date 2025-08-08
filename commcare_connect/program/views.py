@@ -331,7 +331,7 @@ def network_manager_home(request, org):
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
         {"title": "Pending Payments", "rows": pending_payments},
-        {"title": "Inactive Workers", "rows": inactive_workers},
+        {"title": "Inactive Connect Workers", "rows": inactive_workers},
     ]
     context = {
         "programs": results,
