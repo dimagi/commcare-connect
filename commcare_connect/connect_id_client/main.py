@@ -5,12 +5,14 @@ from httpx import BasicAuth, Response
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client.models import (
     ConnectIdUser,
+    Credential,
     DemoUser,
     Message,
     MessagingBulkResponse,
     MessagingResponse,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.users.models import User
 
 GET = "GET"
 POST = "POST"
@@ -43,28 +45,34 @@ def send_message_bulk(messages: list[Message]) -> MessagingBulkResponse:
     return MessagingBulkResponse.build(**data)
 
 
-def add_credential(organization: Organization, credential: str, users: list[str]):
+def add_credential(organization: Organization, credential: str, phone_numbers: list[str]):
+    usernames = User.objects.filter(phone_number__in=phone_numbers).values_list("username", flat=True)
+
     json = {
-        "users": users,
+        "usernames": usernames,
         "organization": organization.slug,
         "organization_name": organization.name,
-        "credential": credential,
+        "credentials": [
+            {
+                "title": credential,
+                "opportunity_id": None,  # Should we specify this?
+                "type": "DELIVER",
+                "level": "DELIVERED",
+                "slug": f"{organization.slug}-{credential}",
+            }
+        ],
     }
     _make_request(POST, "/users/add_credential", json=json, timeout=30)
     return
 
 
 def fetch_credentials(org_slug=None):
-    # this view no longer exists in it's current form
-    # in connectid. we can add it back once the new design
-    # is finalized. this prevents accidental calls
-    return []
-    # params = {}
-    # if org_slug:
-    #     params["org_slug"] = org_slug
-    # response = _make_request(GET, "/users/fetch_credentials", params=params)
-    # data = response.json()
-    # return [Credential(**c) for c in data["credentials"]]
+    params = {}
+    if org_slug:
+        params["org_slug"] = org_slug
+    response = _make_request(GET, "/users/fetch_credentials", params=params)
+    data = response.json()
+    return [Credential(**c) for c in data["credentials"]]
 
 
 def filter_users(country_code: str, credential: list[str]):

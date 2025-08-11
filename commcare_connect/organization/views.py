@@ -51,6 +51,11 @@ def organization_home(request, org_slug):
     if not form:
         form = OrganizationChangeForm(instance=org)
 
+    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
+    credential_name = f"Worked for {org.name}"
+    if not any(c.name == credential_name for c in credentials):
+        credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))
+
     return render(
         request,
         "organization/organization_home.html",
@@ -58,6 +63,7 @@ def organization_home(request, org_slug):
             "organization": org,
             "form": form,
             "membership_form": membership_form,
+            "add_credential_form": AddCredentialForm(credentials=credentials),
         },
     )
 
@@ -101,9 +107,9 @@ def add_credential_view(request, org_slug):
     form = AddCredentialForm(data=request.POST, credentials=credentials)
 
     if form.is_valid():
-        users = form.cleaned_data["users"]
+        phone_numbers = form.cleaned_data["users"]
         credential = form.cleaned_data["credential"]
-        add_credential_task.delay(org.pk, credential, users)
+        add_credential_task.delay(org.pk, credential, phone_numbers)
     return redirect("organization:home", org_slug)
 
 
