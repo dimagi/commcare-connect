@@ -49,7 +49,13 @@ def add_credential(organization: Organization, credential: str, users: list[str]
         "users": users,
         "organization": organization.slug,
         "organization_name": organization.name,
-        "credential": credential,
+        "credentials": [
+            {
+                "title": credential,
+                "opportunity_id": None,
+                "type": "DELIVER",
+            }
+        ],
     }
     _make_request(POST, "/users/add_credential", json=json, timeout=30)
     return
