@@ -12,6 +12,7 @@ from commcare_connect.connect_id_client.models import (
     MessagingResponse,
 )
 from commcare_connect.organization.models import Organization
+from commcare_connect.users.models import User
 
 GET = "GET"
 POST = "POST"
@@ -44,9 +45,11 @@ def send_message_bulk(messages: list[Message]) -> MessagingBulkResponse:
     return MessagingBulkResponse.build(**data)
 
 
-def add_credential(organization: Organization, credential: str, users: list[str]):
+def add_credential(organization: Organization, credential: str, phone_numbers: list[str]):
+    usernames = User.objects.filter(phone_number__in=phone_numbers).values_list("username", flat=True)
+
     json = {
-        "users": users,
+        "usernames": usernames,
         "organization": organization.slug,
         "organization_name": organization.name,
         "credentials": [

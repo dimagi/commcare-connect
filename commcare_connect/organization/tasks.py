@@ -35,6 +35,6 @@ Commcare Connect"""
 
 
 @celery_app.task()
-def add_credential_task(org_pk: int, credential: str, users: list[str]):
+def add_credential_task(org_pk: int, credential: str, phone_numbers: list[str]):
     org = Organization.objects.get(pk=org_pk)
-    connect_id_client.add_credential(org, credential, users)
+    connect_id_client.add_credential(org, credential, phone_numbers)
