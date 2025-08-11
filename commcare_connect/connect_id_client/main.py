@@ -58,6 +58,7 @@ def add_credential(organization: Organization, credential: str, phone_numbers: l
                 "opportunity_id": None,  # Should we specify this?
                 "type": "DELIVER",
                 "level": "DELIVERED",
+                "slug": f"{organization.slug}-{credential}",
             }
         ],
     }
