@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from commcare_connect.opportunity.api.serializers import (
     CompletedWorkSerializer,
     DeliveryProgressSerializer,
+    HeartbeatSerializer,
     OpportunitySerializer,
     UserLearnProgressSerializer,
 )
@@ -21,6 +22,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    UserInvite,
 )
 from commcare_connect.users.helpers import create_hq_user_and_link
 
@@ -116,3 +118,14 @@ class ConfirmPaymentView(APIView):
         payment.confirmation_date = now()
         payment.save()
         return Response(status=200)
+
+
+class HeartbeatView(APIView):
+    serializer_class = HeartbeatSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        has_opportunity_invites = UserInvite.objects.filter(phone_number=user.phone_number).exists()
+        serializer = self.serializer_class({"invited_user": has_opportunity_invites})
+        return Response(serializer.data)

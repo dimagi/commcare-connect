@@ -284,3 +284,10 @@ def test_confirm_payment(mobile_user_with_connect_link: User, api_client: APICli
     assert response.status_code == 200
     payment_data = response.data["payments"][0]
     assert payment_data["confirmed"] is False
+
+
+def test_heartbeat(mobile_user_with_connect_link: User, api_client: APIClient):
+    api_client.force_authenticate(mobile_user_with_connect_link)
+    response = api_client.get("/api/heartbeat")
+    assert response.status_code == 200
+    assert "invited_user" in response.data

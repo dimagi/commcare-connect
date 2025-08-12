@@ -302,3 +302,7 @@ class DeliveryProgressSerializer(serializers.Serializer):
             .exclude(status=CompletedWorkStatus.incomplete)
         )
         return CompletedWorkSerializer(completed_works, many=True).data
+
+
+class HeartbeatSerializer(serializers.Serializer):
+    invited_user = serializers.BooleanField()
