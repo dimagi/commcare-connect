@@ -124,16 +124,10 @@ class VisitData:
         return iter(astuple(self))
 
 
-def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-    imported_data = get_imported_dataset(file, file_format)
-    return _bulk_update_visit_status(opportunity, imported_data)
-
-
-def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
-    data_by_visit_id = get_data_by_visit_id(dataset)
+def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list[list]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    headers = [header.lower() for header in headers]
+    data_by_visit_id = get_data_by_visit_id(headers, rows)
     visit_ids = list(data_by_visit_id.keys())
     missing_visits = set()
     seen_visits = set()
@@ -204,8 +198,7 @@ def update_payment_accrued(opportunity: Opportunity, users: list, incremental=Fa
             update_status(completed_works, access, compute_payment=True)
 
 
-def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
-    headers = [header.lower() for header in dataset.headers or []]
+def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:
     if not headers:
         raise ImportException("The uploaded file did not contain any headers")
 
@@ -215,7 +208,7 @@ def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
     justification_col_index = _get_header_index(headers, JUSTIFICATION_COL, required=False)
     data_by_visit_id = {}
     invalid_rows = []
-    for row in dataset:
+    for row in rows:
         row = list(row)
         visit_id = str(row[visit_col_index])
         status_raw = row[status_col_index].lower().strip().replace(" ", "_")

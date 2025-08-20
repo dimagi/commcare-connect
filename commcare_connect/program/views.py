@@ -9,7 +9,6 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
-from django_tables2 import SingleTableView
 
 from commcare_connect.opportunity.models import (
     Opportunity,
@@ -27,9 +26,7 @@ from commcare_connect.organization.decorators import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
-from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tables import DeliveryPerformanceTable, FunnelPerformanceTable
 
 from .utils import is_program_manager
 
@@ -202,32 +199,6 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     return redirect(redirect_url)
 
 
-class FunnelPerformanceTableView(ProgramManagerMixin, SingleTableView):
-    model = ManagedOpportunity
-    paginate_by = 10
-    table_class = FunnelPerformanceTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        program_id = self.kwargs["pk"]
-        program = get_object_or_404(Program, id=program_id)
-        return get_annotated_managed_opportunity(program)
-
-
-class DeliveryPerformanceTableView(ProgramManagerMixin, SingleTableView):
-    model = ManagedOpportunity
-    paginate_by = 10
-    table_class = DeliveryPerformanceTable
-    template_name = "tables/single_table.html"
-
-    def get_queryset(self):
-        program_id = self.kwargs["pk"]
-        program = get_object_or_404(Program, id=program_id)
-        start_date = self.request.GET.get("start_date") or None
-        end_date = self.request.GET.get("end_date") or None
-        return get_delivery_performance_report(program, start_date, end_date)
-
-
 @org_viewer_required
 def program_home(request, org_slug):
     org = Organization.objects.get(slug=org_slug)
@@ -284,7 +255,7 @@ def program_manager_home(request, org):
     )
 
     pending_payments = _make_recent_activity_data(
-        pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="pk"
+        pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="opp_id"
     )
 
     organizations = Organization.objects.exclude(pk=org.pk)

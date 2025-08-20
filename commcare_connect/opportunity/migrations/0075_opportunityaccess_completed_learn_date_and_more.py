@@ -16,7 +16,10 @@ def back_fill_completed_learn_date(apps, schema_editor):
     OpportunityAccess = apps.get_model("opportunity", "OpportunityAccess")
     CompletedModule = apps.get_model("opportunity", "CompletedModule")
     UserVisit = apps.get_model("opportunity", "UserVisit")
+    return _back_fill_completed_learn_date(Opportunity, OpportunityAccess, CompletedModule, UserVisit)
 
+
+def _back_fill_completed_learn_date(Opportunity, OpportunityAccess, CompletedModule, UserVisit):
     BATCH_SIZE = 50
     opps = Opportunity.objects.all()
 
@@ -44,10 +47,10 @@ def back_fill_completed_learn_date(apps, schema_editor):
             ).annotate(
                 completed_modules_count=Count("completedmodule__module", distinct=True),
                 last_completed_module_date=Subquery(completed_module_sq, output_field=DateTimeField()),
-                last_visit_date=Subquery(user_visit_sq, output_field=DateTimeField()),
+                _last_visit_date=Subquery(user_visit_sq, output_field=DateTimeField()),
                 last_active_date=Greatest(
                     "last_completed_module_date",
-                    "last_visit_date",
+                    "_last_visit_date",
                     "date_learn_started"
                 )
             )

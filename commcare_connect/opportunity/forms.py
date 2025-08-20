@@ -213,7 +213,7 @@ class OpportunityInitForm(forms.ModelForm):
                         HTML(
                             "<button class='button-icon primary-dark'"
                             "type='button' @click='showAddApiKeyModal = true'>"
-                            "<i class='fa-regular fa-plus'></i>"
+                            "<i class='fa-solid fa-plus'></i>"
                             "</button>"
                         ),
                         css_class="flex items-center gap-1",

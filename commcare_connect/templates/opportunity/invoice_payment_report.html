@@ -9,7 +9,7 @@
         <div class="flex-1 w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
             <div class="flex justify-between items-start">
                 <div class="text-2xl">{{ card.amount }}</div>
-                <i class="fa-light {{ card.icon }} text-xl"></i>
+                <i class="fa-solid {{ card.icon }} text-xl"></i>
             </div>
             <div class="pt-4 text-sm flex items-center justify-between ">
                 <div class="w-full overflow-hidden text-clip">
@@ -33,14 +33,14 @@
 {{ block.super }}
 <div class="flex items-center bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
   <a
-    href="{% url report_view_name org_slug=request.org.slug pk=opportunity.pk %}"
+    href="{% url report_view_name org_slug=request.org.slug opp_id=opportunity.pk %}"
     class="px-4 py-2 font-medium {% if not request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
     <i class="fas fa-coins"></i>
     {{opportunity.currency}}
   </a>
   <div class="w-px h-6 bg-gray-200"></div>
   <a
-    href="{% url report_view_name org_slug=request.org.slug pk=opportunity.pk %}?usd=True"
+    href="{% url report_view_name org_slug=request.org.slug opp_id=opportunity.pk %}?usd=True"
     class="px-4 py-2 font-medium {% if request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
     <i class="fas fa-dollar-sign"></i>
     USD

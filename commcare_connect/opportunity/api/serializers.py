@@ -164,13 +164,13 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_max_visits_per_user(self, obj):
         # return 1 for older opportunities
-        return obj.max_visits_per_user_new or -1
+        return obj.max_visits_per_user or -1
 
     def get_daily_max_visits_per_user(self, obj):
-        return obj.daily_max_visits_per_user_new or -1
+        return obj.daily_max_visits_per_user or -1
 
     def get_budget_per_visit(self, obj):
-        return obj.budget_per_visit_new or -1
+        return obj.budget_per_visit or -1
 
     def get_budget_per_user(self, obj):
         return obj.budget_per_user

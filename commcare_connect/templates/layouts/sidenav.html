@@ -27,8 +27,8 @@
 
         <div class="flex rounded-lg items-center p-2 transition-all duration-300 cursor-pointer">
             <div class="flex items-center justify-center w-8 h-8">
-                <i class="fa-light text-lg text-brand-sky"
-                    :class="sidebarOpen ? 'fa-xmark-large': 'fa-bars'"
+                <i class="fa-solid text-lg text-brand-sky"
+                    :class="sidebarOpen ? 'fa-xmark': 'fa-bars'"
                     @click="sidebarOpen = !sidebarOpen"></i>
 
             </div>
@@ -51,7 +51,7 @@
                   {% include "components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
 
                   {% url 'organization:home' request.org.slug as organization_home_url %}
-                  {% include "components/sidenav-items.html" with name='My Organization' icon='buildings'  target=organization_home_url namespace='organization' %}
+                  {% include "components/sidenav-items.html" with name='My Organization' icon='building'  target=organization_home_url namespace='organization' %}
               {% endif %}
           </div>
           {% endif %}

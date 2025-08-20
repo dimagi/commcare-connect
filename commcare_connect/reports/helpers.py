@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 
+from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models
 from django.db.models.functions import Coalesce, ExtractDay, TruncMonth
 from django.utils.timezone import now
@@ -39,13 +40,23 @@ def get_connectid_user_counts_cumulative():
 
 def get_eligible_user_counts_cumulative():
     visit_data = (
-        CompletedWork.objects.filter(status=CompletedWorkStatus.approved, saved_approved_count__gt=0)
+        CompletedWork.objects.filter(
+            status=CompletedWorkStatus.approved,
+            saved_approved_count__gt=0,
+            opportunity_access__opportunity__is_test=False,
+        )
         .annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
         .values("month_group")
-        .annotate(users=models.Count("opportunity_access__user_id", distinct=True))
+        .annotate(users=ArrayAgg("opportunity_access__user_id", distinct=True))
         .order_by("month_group")
     )
-    visit_data_dict = {item["month_group"].strftime("%Y-%m"): item["users"] for item in visit_data}
+    seen_users = set()
+    visit_data_dict = {}
+    for item in visit_data:
+        month_group = item["month_group"].strftime("%Y-%m")
+        users = set(item["users"]) - seen_users
+        visit_data_dict[month_group] = len(users)
+        seen_users.update(users)
     return _get_cumulative_count(visit_data_dict)
 
 

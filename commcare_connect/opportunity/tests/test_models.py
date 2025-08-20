@@ -60,9 +60,9 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     assert opportunity.budget_per_user == sum([p.amount * p.max_total for p in payment_units])
     assert opportunity.number_of_users == 3
     assert opportunity.allotted_visits == sum([pu.max_total for pu in payment_units]) * opportunity.number_of_users
-    assert opportunity.max_visits_per_user_new == sum([pu.max_total for pu in payment_units])
-    assert opportunity.daily_max_visits_per_user_new == sum([pu.max_daily for pu in payment_units])
-    assert opportunity.budget_per_visit_new == max([pu.amount for pu in payment_units])
+    assert opportunity.max_visits_per_user == sum([pu.max_total for pu in payment_units])
+    assert opportunity.daily_max_visits_per_user == sum([pu.max_daily for pu in payment_units])
+    assert opportunity.budget_per_visit == max([pu.amount for pu in payment_units])
 
     access = OpportunityAccessFactory(user=user, opportunity=opportunity)
     claim = OpportunityClaimFactory(opportunity_access=access)

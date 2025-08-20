@@ -17,7 +17,7 @@
                 hx-get="{% url "program:edit" request.org.slug program.id %}"
                 hx-target="#program-edit-form"
                 @htmx:after-request="showProgramEditModal = true">
-                <i class="fa-light fa-pen-line"></i>
+                <i class="fa-solid fa-pen"></i>
               </button>
               <button class="button button-sm outline-style" @click="showInviteModal = true">Invite</button>
               <div x-cloak x-show="showInviteModal" x-transition.opacity class="modal-backdrop" >
@@ -25,7 +25,7 @@
                   <div class="header">
                     <h2 class="title">{% translate "Invite Organizations" %}</h2>
                     <button @click="showInviteModal = false" class="button-icon" aria-label="Close">
-                      <i class="fa-light fa-xmark text-xl"></i>
+                      <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
                   </div>
                   <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.id %}" method="post">
@@ -52,7 +52,7 @@
             <!-- program info -->
             <div class="flex flex-col md:flex-row md:items-center items-start lg:gap-6 gap-3">
               <div class="infocard-dark">
-                  <i class="fa-light fa-file-check"></i>
+                  <i class="fa-solid fa-file-circle-check"></i>
                   <div>
                       <h6>Delivery Type</h6>
                       <p>{{program.delivery_type.name}}</p>
@@ -60,13 +60,13 @@
               </div>
               <div class="line my-2 h-8 w-1 bg-gray-200 lg:block hidden"></div>
               <div class="infocard-dark">
-                  <i class="fa-light fa-calendar-arrow-up"></i>
+                  <i class="fa-solid fa-calendar-check"></i>
                   <div>
                       <h6>Start Date</h6>
                       <p>{{program.start_date}}</p>
                   </div>
               </div>
-              <i class="fa-light fa-arrow-right text-brand-mango"></i>
+              <i class="fa-solid fa-arrow-right text-brand-mango"></i>
               <div class="infocard-dark">
                   <div>
                       <h6>End Date</h6>
@@ -75,7 +75,7 @@
               </div>
               <div class="line my-2 h-8 w-1 bg-gray-200 lg:block hidden"></div>
               <div class="infocard-dark">
-                  <i class="fa-light fa-money-bill-wave"></i>
+                  <i class="fa-solid fa-money-bill-wave"></i>
                   <div>
                       <h6>Budget</h6>
                       <p>{{program.budget}} {{program.currency|default:''}}</p>
@@ -86,30 +86,30 @@
             <!-- button -->
             <button class="button button-md outline-style" @click="showOpp = !showOpp">
               <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
-              <i class="fa-light text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
             </button>
 
           </div>
           <!-- progress -->
           <div class="bg-neutral-100 rounded-lg w-full h-20 flex items-center px-5 justify-evenly gap-6">
             <div class="infocard-dark !w-fit">
-                <i class="fa-light fa-envelope"></i>
+                <i class="fa-solid fa-envelope"></i>
                 <div>
                     <h6>Invited</h6>
                     <p>{{program.invited}}</p>
                 </div>
             </div>
-            <i class="fa-light fa-arrow-right text-brand-mango"></i>
+            <i class="fa-solid fa-arrow-right text-brand-mango"></i>
             <div class="infocard-dark !w-fit">
-                <i class="fa-light fa-file-lines"></i>
+                <i class="fa-solid fa-file-lines"></i>
                 <div>
                     <h6>Applied</h6>
                     <p>{{program.applied}}</p>
                 </div>
             </div>
-            <i class="fa-light fa-arrow-right text-brand-mango"></i>
+            <i class="fa-solid fa-arrow-right text-brand-mango"></i>
             <div class="infocard-dark !w-fit">
-                <i class="fa-light fa-circle-check"></i>
+                <i class="fa-solid fa-circle-check"></i>
                 <div>
                     <h6>Accepted</h6>
                     <p>{{program.accepted}}</p>
@@ -165,14 +165,14 @@
                   href="{% url "program:opportunity_init" request.org.slug program.id %}">
                   <div class="flex items-center justify-between gap-4">
                     <p class="text-sm">Create Opportunity</p>
-                    <i class="fa-light fa-arrow-right"></i>
+                    <i class="fa-solid fa-arrow-right"></i>
                   </div>
                 </a>
                 <a class="button button-md button-outline-rounded"
                   href="{% url "opportunity:list" request.org.slug %}">
                   <div class="flex items-center justify-between gap-4">
                     <p class="text-sm">View Opportunities</p>
-                    <i class="fa-light fa-arrow-right"></i>
+                    <i class="fa-solid fa-arrow-right"></i>
                   </div>
                 </a>
                 {% endif %}
@@ -189,7 +189,7 @@
       <div class="header flex justify-between items-center mb-2">
         <h2 class="title">Edit Program</h2>
         <button @click="showProgramEditModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <div id="program-edit-form"></div>

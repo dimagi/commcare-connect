@@ -18,7 +18,7 @@
       <div class="header flex justify-between items-center mb-2">
         <h2 class="title">Create API Key</h2>
         <button @click="showAddApiKeyModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <form hx-post="{% url "opportunity:add_api_key" request.org.slug %}"

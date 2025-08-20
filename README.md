@@ -154,15 +154,6 @@ which is connected to the staging environment of CommCare HQ at
 - After this, you can deploy to the staging environment by manually running the `deploy`
   [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
-### Custom Bootstrap Compilation
-
-The generated CSS is set up with automatic Bootstrap recompilation with variables of your choice.
-Bootstrap v5 is installed using npm and customised by tweaking your variables in `static/sass/custom_bootstrap_vars`.
-
-You can find a list of available variables [in the bootstrap source](https://github.com/twbs/bootstrap/blob/v5.1.3/scss/_variables.scss), or get explanations on them in the [Bootstrap docs](https://getbootstrap.com/docs/5.1/customize/sass/).
-
-Bootstrap's javascript as well as its dependencies are concatenated into a single file: `static/js/vendors.js`.
-
 ### Setting up logical replication
 
 - Create another postgres database (in a seperate cluster)

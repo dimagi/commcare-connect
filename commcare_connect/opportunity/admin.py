@@ -29,7 +29,6 @@ from commcare_connect.opportunity.tasks import create_learn_modules_and_deliver_
 # Register your models here.
 
 
-admin.site.register(UserInvite)
 admin.site.register(DeliveryType)
 admin.site.register(DeliverUnitFlagRules)
 admin.site.register(FormJsonValidationRules)
@@ -191,3 +190,9 @@ class CommCareAppAdmin(admin.ModelAdmin):
     def get_opportunity_ids(self, obj):
         opp_ids = Opportunity.objects.filter(Q(learn_app=obj) | Q(deliver_app=obj)).values_list("id", flat=True)
         return ", ".join(str(i) for i in opp_ids)
+
+
+@admin.register(UserInvite)
+class UserInviteAdmin(admin.ModelAdmin):
+    list_display = ["phone_number", "opportunity"]
+    search_fields = ["phone_number", "opportunity__name"]

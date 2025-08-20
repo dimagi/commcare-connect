@@ -82,7 +82,7 @@
   {% if user_visit.reason %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
-      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
       <div class="flex items-center gap-1">
         <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
         <span class="flex items-center text-xs text-brand-blue-light">
@@ -93,7 +93,7 @@
     </div>
     <div>
       <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
            @click="message.expanded = !message.expanded"></i>
         <p class="text-xs text-brand-deep-purple">
           {{ user_visit.reason }}
@@ -106,7 +106,7 @@
   {% if user_visit.justification %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
-      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
       <div class="flex items-center gap-1">
         <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
         <span class="flex items-center text-xs text-brand-blue-light">
@@ -117,7 +117,7 @@
     </div>
     <div>
       <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
            @click="message.expanded = !message.expanded"></i>
         <p class="text-xs text-brand-deep-purple">
           {{ user_visit.justification }}
@@ -152,11 +152,11 @@
     <p class="text-sm font-medium text-brand-deep-purple">Media</p>
     <div class="flex gap-2">
       <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
-        <i class="cursor-pointer fa-light fa-arrow-left"
+        <i class="cursor-pointer fa-solid fa-arrow-left"
            :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
       </button>
       <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
-        <i class="cursor-pointer fa-light fa-arrow-right"
+        <i class="cursor-pointer fa-solid fa-arrow-right"
            :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
       </button>
     </div>
@@ -230,6 +230,15 @@
   </div>
   {% endif %}
 
+  {% if request.user.is_superuser %}
+  <hr class="h-px bg-gray-200 border-0">
+
+  <p class="text-sm font-medium text-brand-deep-purple">Further Information</p>
+  <div class="flex">
+    <a class="button button-md button-outline-rounded" href="{{ user_visit.hq_link }}">View Form in CommCareHQ <i class="fa-solid fa-arrow-right"></i></a>
+  </div>
+  {% endif %}
+
   <!-- Popup Modal -->
   <div x-cloak
        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -240,7 +249,7 @@
       <div class="flex justify-between mb-2">
         <p class="text-sm font-medium text-brand-deep-purple">Media</p>
         <button class="button-icon cursor-pointer" @click="closePopup()">
-          <i class="fa-light fa-xmark-large"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
 
@@ -254,7 +263,7 @@
           <a :href="slides[modalCurrentIndex].src"
              download="downloaded-image.jpg"
              aria-label="Download Image">
-            <i class="fa-light fa-download text-brand-deep-purple"></i>
+            <i class="fa-solid fa-download text-brand-deep-purple"></i>
           </a>
         </button>
       </div>
@@ -265,7 +274,7 @@
                 @click="prevModal()"
                 :disabled="modalCurrentIndex === 0"
                 :class="{'opacity-50': modalCurrentIndex === 0}">
-          <i class="fa-light fa-arrow-left"></i>
+          <i class="fa-solid fa-arrow-left"></i>
         </button>
 
         <div class="flex justify-center gap-2 px-16 overflow-hidden">
@@ -289,7 +298,7 @@
                 @click="nextModal()"
                 :disabled="modalCurrentIndex >= slides.length - 1"
                 :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">
-          <i class="fa-light fa-arrow-right"></i>
+          <i class="fa-solid fa-arrow-right"></i>
         </button>
       </div>
     </div>
@@ -300,7 +309,7 @@
   x-data="{showRejectModal: false, showApproveModal: false}"
   id="visit-actions"
   hx-swap-oob="true">
-{% if is_program_manager %}
+{% if request.is_opportunity_pm %}
   {% if user_visit.review_created_on %}
   <div class="flex gap-4">
     <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity_id %}"
@@ -327,7 +336,8 @@
       {% if user_visit.opportunity.managed %}
       @click="showRejectModal = false; showApproveModal = true;"
       {% else %}
-      hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity_id %}"
+      hx-vals='{"visit_ids[]": "{{ user_visit.id }}"}'
       hx-swap="none"
       {% endif %}
     {% else %}
@@ -353,10 +363,10 @@
       <div class="header flex justify-between items-center">
         <h2 class="title">Reason for Rejection</h2>
         <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=user_visit.id  %}"
+      <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity_id  %}"
         hx-swap="none"
         @submit="showRejectModal = false">
         {% csrf_token %}
@@ -364,6 +374,7 @@
           <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
             placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
         </div>
+        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
         <div class="footer flex justify-end">
           <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
             Close
@@ -382,10 +393,10 @@
       <div class="header flex justify-between items-center">
         <h2 class="title">Justification for Approval</h2>
         <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity_id %}"
         hx-swap="none"
         @submit="showApproveModal = false">
         {% csrf_token %}
@@ -393,6 +404,7 @@
           <textarea required class="base-textarea" id="justification" rows="3" name="justification"
             placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
         </div>
+        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
         <div class="footer flex justify-end">
           <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
             Close

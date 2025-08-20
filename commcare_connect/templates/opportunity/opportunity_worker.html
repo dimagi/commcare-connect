@@ -38,7 +38,7 @@
       <button type="button" class="button-icon" @click="showWorkerExportModal = true"
               {% if request.org_membership.is_viewer %} disabled {% endif %}
       >
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
+        <i class="fa-solid fa-download text-brand-deep-purple"></i>
       </button>
       {% if request.org_membership.is_viewer %}
         <button disabled class="button button-md outline-style">
@@ -54,11 +54,11 @@
     <div x-show="selectedTab === 'delivery'" class="flex gap-x-4">
         <button type="button" @click="showVisitImportModal = true" class="button-icon"
                 {% if request.org_membership.is_viewer %} disabled {% endif %}>
-          <i class="fa-light fa-upload text-brand-deep-purple"></i>
+          <i class="fa-solid fa-upload text-brand-deep-purple"></i>
         </button>
         <button type="button" class="button-icon" @click="showVisitExportModal = true"
                 {% if request.org_membership.is_viewer %} disabled {% endif %}>
-          <i class="fa-light fa-download text-brand-deep-purple"></i>
+          <i class="fa-solid fa-download text-brand-deep-purple"></i>
         </button>
     </div>
 
@@ -66,12 +66,12 @@
       <button type="button" class="button-icon" @click="showPaymentImportModal= true"
               {% if request.org_membership.is_viewer %} disabled {% endif %}
       >
-        <i class="fa-light fa-upload text-brand-deep-purple"></i>
+        <i class="fa-solid fa-upload text-brand-deep-purple"></i>
       </button>
       <button type="button" class="button-icon" @click="showPaymentExportModal = true"
               {% if request.org_membership.is_viewer %} disabled {% endif %}
       >
-        <i class="fa-light fa-download text-brand-deep-purple"></i>
+        <i class="fa-solid fa-download text-brand-deep-purple"></i>
       </button>
     </div>
 
@@ -99,10 +99,10 @@
   ></div>
 
 
-  {% url 'opportunity:user_status_export' org_slug=request.org.slug pk=opportunity.pk as user_status_export_url %}
+  {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.pk as user_status_export_url %}
   {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Workers") export_url=user_status_export_url export_form=export_form %}
 
-  {% url 'opportunity:payment_export' org_slug=request.org.slug pk=opportunity.pk as payment_export_url %}
+  {% url 'opportunity:payment_export' org_slug=request.org.slug opp_id=opportunity.pk as payment_export_url %}
   {% include "components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers") export_url=payment_export_url export_form=export_form %}
 
   {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}

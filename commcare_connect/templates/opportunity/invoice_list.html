@@ -5,7 +5,7 @@
 
 {% block top_buttons %}
     {{ block.super }}
-    {% if not program_manager %}
+    {% if not request.is_opportunity_pm %}
 <div x-data="invoiceModal()"
       @keydown.escape.window="closeModal()"
       id="invoiceModal"
@@ -31,12 +31,12 @@
             <div class="flex items-center justify-between p-4 border-b">
               <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create Invoice" %}</h5>
               <button @click="closeModal()" class="button-icon" aria-label="Close" id="invoiceModalClose">
-                <i class="fa-light fa-xmark"></i>
+                <i class="fa-solid fa-xmark"></i>
               </button>
             </div>
 
             <form
-              hx-post="{% url 'opportunity:invoice_create' org_slug=request.org.slug pk=opportunity.pk %}"
+              hx-post="{% url 'opportunity:invoice_create' org_slug=request.org.slug opp_id=opportunity.pk %}"
               hx-target="#invoiceForm"
               hx-swap="innerHTML"
             >
