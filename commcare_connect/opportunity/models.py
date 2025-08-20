@@ -506,6 +506,7 @@ class CompletedWorkStatus(models.TextChoices):
     rejected = "rejected", gettext("Rejected")
     over_limit = "over_limit", gettext("Over Limit")
     incomplete = "incomplete", gettext("Incomplete")
+    duplicate = "duplicate", gettext("Duplicate")
 
 
 class CompletedWork(models.Model):
