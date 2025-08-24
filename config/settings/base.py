@@ -187,6 +187,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "commcare_connect.users.context_processors.allauth_settings",
                 "commcare_connect.web.context_processors.page_settings",
+                "commcare_connect.web.context_processors.gtm_context",
             ],
         },
     }

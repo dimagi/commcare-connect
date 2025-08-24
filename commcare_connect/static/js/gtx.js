@@ -6,11 +6,6 @@
   // === INIT DATA LAYER ===
   window.dataLayer = window.dataLayer || [];
 
-  window.dataLayer.push({
-    'gtm.start': new Date().getTime(),
-    event: 'gtm.js',
-  });
-
   const setAllowedTagTypes = () => {
     window.dataLayer.push({
       'gtm.allowlist': ALLOWED_TAG_TYPES,
@@ -18,36 +13,28 @@
     });
   };
 
-  // Gather GTM variables into a dictionary
-  const gatherVariables = (selector, existing = {}) => {
-    document.querySelectorAll(selector).forEach((container) => {
-      container.querySelectorAll(':scope > [data-name]').forEach((div) => {
-        const name = div.getAttribute('data-name');
-        const value = div.getAttribute('data-value');
-        if (existing[name] !== undefined) {
-          throw new Error(`Duplicate key in initial page data: ${name}`);
-        }
-        existing[name] = value;
-      });
-    });
-    return existing;
-  };
-
-  const GTM_VARS = gatherVariables('.gtm-vars');
-  const GTM_ID = GTM_VARS['gtm.apiID'];
-
-  const addInitialVariable = () => {
-    const email = GTM_VARS['gtm.userEmail'] ?? '';
-    window.dataLayer.push({
-      userEmail: email,
-      isDimagi: email.endsWith('@dimagi.com'),
-    });
-  };
-
   const gtmSendEvent = (eventName, eventData = {}, callbackFn) => {
     const data = { event: eventName, ...eventData };
     window.dataLayer.push(data);
     if (typeof callbackFn === 'function') callbackFn();
+  };
+
+  const initializeGTM = () => {
+    const gtmDataScript = document.getElementById('gtm-data');
+    if (gtmDataScript) {
+      const gtmData = JSON.parse(gtmDataScript.textContent);
+      if (gtmData.gtmID) {
+        window.dataLayer.push({
+          userEmail: gtmData.userEmail,
+          isDimagi: gtmData.userEmail.endsWith('@dimagi.com'),
+        });
+        window.dataLayer.push({
+          'gtm.start': new Date().getTime(),
+          event: 'gtm.js',
+        });
+        loadGTM(gtmData.gtmID);
+      }
+    }
   };
 
   const loadGTM = (id) => {
@@ -59,8 +46,7 @@
 
   // === INIT ===
   setAllowedTagTypes();
-  addInitialVariable();
-  loadGTM(GTM_ID);
+  initializeGTM();
 
   // === GLOBAL EXPOSURE ===
   window.gtmSendEvent = gtmSendEvent;

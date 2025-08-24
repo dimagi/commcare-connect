@@ -1,4 +1,4 @@
-{% load static i18n %}{% load gtm_vars %}
+{% load static i18n %}
 
 <!DOCTYPE html>
 <html lang="en">
@@ -13,6 +13,7 @@
        <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     {% endblock %}
     {% block javascript %}
+      {{ GTM_VARS_JSON|json_script:"gtm-data" }}
        <script src="{% static 'js/gtx.js' %}" defer></script>
        <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
        <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
@@ -46,9 +47,6 @@
         {% block content %}
         {% endblock %}
       </main>
-    </div>
-    <div class="gtm-vars" style="display:none;">
-      {% include 'analytics/gtm.html' %}
     </div>
   {% block inline_javascript %}
     {% comment %}

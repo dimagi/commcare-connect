@@ -1,4 +1,4 @@
-{% load static i18n %}{% load gtm_vars %}
+{% load static i18n %}
 
 <!DOCTYPE html>
 <html lang="en">
@@ -13,6 +13,7 @@
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/aquawolf04/font-awesome-pro@5cd1511/css/all.css" />
     {% endblock %}
     {% block javascript %}
+      {{ GTM_VARS_JSON|json_script:"gtm-data" }}
       <script src="{% static 'js/gtx.js' %}" defer></script>
       <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
       <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
@@ -50,9 +51,6 @@
           <img src="{% static 'images/bg-graphics-top-right.svg' %}" alt="Compact Logo" class="w-full h-full" />
         </div>
       </div>
-    </div>
-    <div class="gtm-vars" style="display:none;">
-      {% include 'analytics/gtm.html' %}
     </div>
   </body>
 </html>

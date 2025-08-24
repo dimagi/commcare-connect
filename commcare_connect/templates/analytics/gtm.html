@@ -1,5 +1,0 @@
-{% load gtm_vars %}
-{% gtm_var 'gtm.apiID' GTM_ID %}
-{% if user.emailaddress_set.first %}
-    {% gtm_var 'gtm.userEmail' user.emailaddress_set.first.email %}
-{% endif %}
