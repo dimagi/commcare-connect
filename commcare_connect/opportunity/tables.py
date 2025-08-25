@@ -891,9 +891,12 @@ class UserVisitVerificationTable(tables.Table):
 
         status = []
         if record.opportunity.managed and record.review_status and record.review_created_on:
-            if record.review_status == VisitReviewStatus.pending.value:
+            if (
+                record.review_status == VisitReviewStatus.pending.value
+                and record.status == VisitValidationStatus.approved
+            ):  # Show "pending_review" only if NM approved first
                 status.append("pending_review")
-            else:
+            elif record.review_status in [VisitReviewStatus.agree, VisitReviewStatus.disagree]:
                 status.append(record.review_status)
 
         if record.status in VisitValidationStatus:
