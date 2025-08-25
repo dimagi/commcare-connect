@@ -207,7 +207,7 @@ def test_opportunity_list_endpoint(
     payment_units = opportunity.paymentunit_set.all()
     assert response.data[0]["max_visits_per_user"] == sum([pu.max_total for pu in payment_units])
     assert response.data[0]["daily_max_visits_per_user"] == sum([pu.max_daily for pu in payment_units])
-    assert response.data[0]["budget_per_visit"] == max([pu.amount for pu in payment_units])
+    assert response.data[0]["budget_per_visit"] == sum([pu.amount for pu in payment_units])
     claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__opportunity_access__opportunity=opportunity)
     assert response.data[0]["claim"]["max_payments"] == sum([cl.max_visits for cl in claim_limits])
     verification_flags = opportunity.opportunityverificationflags
