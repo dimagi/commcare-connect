@@ -23,6 +23,7 @@ from commcare_connect.opportunity.tests.factories import (
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
@@ -238,3 +239,42 @@ def test_tiered_queryset_basic():
 
     # Empty slice works
     assert tq[100:105] == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "referring_url, should_persist",
+    [
+        ("deliver_tab", True),
+        ("/somewhere-else", False),
+    ],
+)
+def test_tab_param_persistence(rf, opportunity, organization, referring_url, should_persist):
+    tab_a_url = reverse("opportunity:worker_deliver", args=(organization.slug, opportunity.id))
+    tab_b_url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    # Step 1: Visit tab A with GET params from any non-tab page
+    request_a = rf.get(tab_a_url, {"status": "active"}, HTTP_REFERER="/anywhere-else")
+    request_a.session = {}
+    view = WorkerPaymentsView()
+    view.request = request_a
+    _ = view.get_tabs(organization.slug, opportunity)
+    assert "worker_tab_params:payments" in request_a.session
+
+    # Step 2: Go to tab B, with referrer varying
+    if referring_url == "deliver_tab":
+        referrer = tab_a_url
+    else:
+        referrer = referring_url
+
+    request_b = rf.get(tab_b_url, HTTP_REFERER=referrer)
+    request_b.session = request_a.session
+    view.request = request_b
+    tabs_b = view.get_tabs(organization.slug, opportunity)
+
+    tab_a_link = [t["url"] for t in tabs_b if t["key"] == "payments"][0]
+
+    if should_persist:
+        assert "status=active" in tab_a_link
+    else:
+        assert "status=active" not in tab_a_link
