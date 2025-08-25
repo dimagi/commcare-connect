@@ -38,7 +38,7 @@ def test_deliver_status_query_no_visits(opportunity: Opportunity):
     mobile_users = MobileUserFactory.create_batch(5)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
 
     usernames = {user.username for user in mobile_users}
     for access in access_objects:
@@ -64,7 +64,7 @@ def test_deliver_status_query(opportunity: Opportunity):
             count_by_status["completed"] = len(completed_works) - count_by_status["incomplete"]
             completed_work_counts[(mobile_user.username, pu.name)] = count_by_status
 
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
     for access in access_objects:
         username = access.user.username
         assert (username, access.payment_unit) in completed_work_counts
@@ -84,7 +84,7 @@ def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunit
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
         CompletedWorkFactory.create_batch(5)
-    access_objects = get_annotated_opportunity_access_deliver_status(opportunity)
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
     usernames = {user.username for user in mobile_users}
     for access in access_objects:
         assert access.user.username in usernames
@@ -431,3 +431,102 @@ def test_get_opportunity_funnel_progress(opportunity):
     assert result.claimed_job == 2
     assert result.started_deliveries == 1
     assert result.completed_assessments == 2
+
+
+@pytest.mark.django_db
+def test_deliver_status_query_with_filters(opportunity: Opportunity):
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    mobile_user1 = MobileUserFactory()
+    access1 = OpportunityAccessFactory(
+        opportunity=opportunity, user=mobile_user1, accepted=True, last_active=now() - timedelta(days=10)
+    )
+    CompletedWorkFactory(
+        opportunity_access=access1, payment_unit=payment_unit, status=CompletedWorkStatus.pending, entity_id="a"
+    )
+    CompletedWorkFactory(
+        opportunity_access=access1,
+        payment_unit=payment_unit,
+        status=CompletedWorkStatus.pending,
+        entity_id="b",
+        saved_completed_count=2,
+    )
+
+    mobile_user2 = MobileUserFactory()
+    access2 = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user2, accepted=True, last_active=now())
+    CompletedWorkFactory(opportunity_access=access2, payment_unit=payment_unit, status=CompletedWorkStatus.over_limit)
+
+    mobile_user3 = MobileUserFactory()
+    access3 = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user3, accepted=True, last_active=now())
+    UserVisitFactory(opportunity_access=access3, deliver_unit__payment_unit=payment_unit, flagged=True)
+
+    mobile_user4 = MobileUserFactory()
+    OpportunityAccessFactory(opportunity=opportunity, user=mobile_user4, accepted=True, last_active=now())
+
+    # last_active
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"last_active": 5})
+    assert len(access_objects) == 1
+    assert access_objects[0].user.username == mobile_user1.username
+
+    # has_duplicates
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"has_duplicates": True})
+    assert len(access_objects) == 1
+    assert access_objects[0].user.username == mobile_user1.username
+
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"has_duplicates": False})
+    assert len(access_objects) == 3
+    assert {a.user.username for a in access_objects} == {
+        mobile_user2.username,
+        mobile_user3.username,
+        mobile_user4.username,
+    }
+
+    # has_overlimit
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"has_overlimit": True})
+    assert len(access_objects) == 1
+    assert access_objects[0].user.username == mobile_user2.username
+
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"has_overlimit": False})
+    assert len(access_objects) == 3
+    assert {a.user.username for a in access_objects} == {
+        mobile_user1.username,
+        mobile_user3.username,
+        mobile_user4.username,
+    }
+
+    # review_pending
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"review_pending": True})
+    assert len(access_objects) == 1
+    assert access_objects[0].user.username == mobile_user1.username
+
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"review_pending": False})
+    assert len(access_objects) == 3
+    assert {a.user.username for a in access_objects} == {
+        mobile_user2.username,
+        mobile_user3.username,
+        mobile_user4.username,
+    }
+
+    # has_flags
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"has_flags": True})
+    assert len(access_objects) == 1
+    assert access_objects[0].user.username == mobile_user3.username
+
+    access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {"has_flags": False})
+    assert len(access_objects) == 3
+    assert {a.user.username for a in access_objects} == {
+        mobile_user1.username,
+        mobile_user2.username,
+        mobile_user4.username,
+    }
+
+    # filters combination
+    access_objects = get_annotated_opportunity_access_deliver_status(
+        opportunity, {"has_duplicates": True, "review_pending": True}
+    )
+    assert len(access_objects) == 1
+    assert access_objects[0].user.username == mobile_user1.username
+
+    access_objects = get_annotated_opportunity_access_deliver_status(
+        opportunity, {"has_duplicates": True, "review_pending": False}
+    )
+    assert len(access_objects) == 0
