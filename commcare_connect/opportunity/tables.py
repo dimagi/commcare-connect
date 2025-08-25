@@ -555,7 +555,7 @@ class BaseOpportunityList(OrgContextTable):
         url = reverse(f"opportunity:{url_slug}", args=(self.org_slug, opp_id))
 
         if sort:
-            url += "&" + sort
+            url += "?" + sort
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
 
