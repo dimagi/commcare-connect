@@ -172,7 +172,7 @@
               <div @click.away="closeModal()" x-transition class="modal">
                 <div class="header flex justify-between items-center">
                   <h2 class="title">Confirm</h2>
-                  <button @click="closeModal()" class="button-icon" aria-label="Close">
+                  <button type="button" @click="closeModal()" class="button-icon" aria-label="Close">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
                 </div>
@@ -186,7 +186,7 @@
                   </div>
                 </div>
                 <div class="footer flex justify-end gap-4">
-                  <button @click="closeModal()" type="button" class="button button-md outline-style">
+                  <button type="button" @click="closeModal()" type="button" class="button button-md outline-style">
                     Close
                   </button>
                   <button type="submit" class="button button-md primary-dark">
