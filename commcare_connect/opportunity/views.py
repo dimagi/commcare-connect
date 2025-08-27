@@ -1600,7 +1600,7 @@ def user_visit_details(request, org_slug, opp_id, pk):
     verification_flags_config = opportunity.opportunityverificationflags
     deliver_unit_flags_config = DeliverUnitFlagRules.objects.filter(
         opportunity=opportunity, deliver_unit=user_visit.deliver_unit
-    )
+    ).first()
 
     serializer = XFormSerializer(data=user_visit.form_json)
     serializer.is_valid()
@@ -1681,6 +1681,10 @@ def user_visit_details(request, org_slug, opp_id, pk):
             (FlagLabels.get_label(flag), description) for flag, description in user_visit.flag_reason.get("flags", [])
         ]
 
+    flag_count = len(flags)
+    if deliver_unit_flags_config and deliver_unit_flags_config.require_attachments and user_visit.images is None:
+        flag_count += 1
+
     return render(
         request,
         "opportunity/user_visit_details.html",
@@ -1694,6 +1698,7 @@ def user_visit_details(request, org_slug, opp_id, pk):
             verification_flags_config=verification_flags_config,
             deliver_unit_flags_config=deliver_unit_flags_config,
             flags=flags,
+            flag_count=flag_count,
         ),
     )
 

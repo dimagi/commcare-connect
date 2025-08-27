@@ -175,32 +175,43 @@
   {% endif %}
 
   <!-- Verification Flags -->
-  <div class="grid grid-cols-3 gap-4">
-    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
-    {% if user_visit.location %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Location</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Less than {{ closest_distance }} metres</div>
+  <div class="flex flex-col gap-4">
+    <p class="text-sm font-medium text-brand-deep-purple">Verification Parameters</p>
+    <div class="grid grid-cols-3 gap-4">
+      {% if user_visit.location %}
+      <div>
+        <div class="text-sm text-brand-blue-light">Location</div>
+        <div class="text-sm font-normal text-brand-deep-purple">Less than {{ closest_distance }} metres</div>
+      </div>
+      {% endif %}
+      <div>
+        <div class="text-sm text-brand-blue-light">Form Duration</div>
+        <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+      </div>
     </div>
-    {% endif %}
-    {% if user_visit.flagged %}
-      {% for flag in flags %}
+    <div x-data="{visible: false}">
+      <div class="flex flex-row gap-4 rounded border border-brand-marigold bg-brand-marigold/15 items-center text-brand-marigold" @click="visible = !visible">
+        <i class="fa-solid fa-triangle-exclamation ml-2"></i>
+        <span class="flex-1" class="">{{ flag_count }} issues detected</span>
+        <i :class="visible ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all mr-2"></i>
+      </div>
+      <div class="border border-brand-border-light rounded-b grid grid-cols-3 gap-4 px-3 py-2" x-show="visible">
+        {% if user_visit.flagged %}
+          {% for flag in flags %}
+            <div>
+              <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
+              <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+        {% if deliver_unit_flags_config.require_attachments %}
         <div>
-          <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
-          <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+          <div class="text-sm text-brand-blue-light">Photos</div>
+          <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
         </div>
-      {% endfor %}
-    {% endif %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Form Duration</div>
-      <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+        {% endif %}
+      </div>
     </div>
-    {% if deliver_unit_flags_config.require_attachments %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Photos</div>
-      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
-    </div>
-    {% endif %}
   </div>
 
   <hr class="h-px bg-gray-200 border-0">
