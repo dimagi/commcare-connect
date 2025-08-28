@@ -16,6 +16,9 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
+UNIQUE_USER_VISIT_CONSTRAINT = "unique_completed_work_deliver_unit_access"
+UNIQUE_COMPLETED_WORK_CONSTRAINT = "completed_work_unique_constraint"
+
 
 class CommCareApp(BaseModel):
     organization = models.ForeignKey(
@@ -506,6 +509,7 @@ class CompletedWorkStatus(models.TextChoices):
     rejected = "rejected", gettext("Rejected")
     over_limit = "over_limit", gettext("Over Limit")
     incomplete = "incomplete", gettext("Incomplete")
+    duplicate = "duplicate", gettext("Duplicate")
 
 
 class CompletedWork(models.Model):
@@ -538,7 +542,12 @@ class CompletedWork(models.Model):
     )
 
     class Meta:
-        unique_together = ("opportunity_access", "entity_id", "payment_unit")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["opportunity_access", "entity_id", "payment_unit", "date_created"],
+                name=UNIQUE_COMPLETED_WORK_CONSTRAINT,
+            )
+        ]
 
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
@@ -710,7 +719,11 @@ class UserVisit(XFormBaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["xform_id", "entity_id", "deliver_unit"], name="unique_xform_entity_deliver_unit"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["entity_id", "deliver_unit", "opportunity_access", "completed_work"],
+                name=UNIQUE_USER_VISIT_CONSTRAINT,
+            ),
         ]
         indexes = [
             models.Index(fields=["opportunity", "status"]),
