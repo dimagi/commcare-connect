@@ -46,15 +46,19 @@ def test_add_budget_existing_users(
     ocl = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
     assert opportunity.total_budget == 200
     assert opportunity.claimed_budget == 10
+    end_date = now().date()
 
     url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
     client.force_login(org_user_member)
-    response = client.post(url, data=dict(selected_users=[claim.id], additional_visits=5))
+    response = client.post(url, data=dict(selected_users=[claim.id], additional_visits=5, end_date=end_date))
     assert response.status_code == 302
     opportunity = Opportunity.objects.get(pk=opportunity.pk)
     assert opportunity.total_budget == 205
     assert opportunity.claimed_budget == 15
-    assert OpportunityClaimLimit.objects.get(pk=ocl.pk).max_visits == 15
+    limit = OpportunityClaimLimit.objects.get(pk=ocl.pk)
+    assert limit.max_visits == 15
+    assert limit.opportunity_claim.end_date == end_date
+    assert limit.end_date == end_date
 
 
 def test_add_budget_existing_users_for_managed_opportunity(

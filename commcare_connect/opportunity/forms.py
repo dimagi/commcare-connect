@@ -628,6 +628,7 @@ class AddBudgetExistingUsersForm(forms.Form):
 
         if end_date:
             OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=end_date)
+            OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).update(end_date=end_date)
 
 
 class AddBudgetNewUsersForm(forms.Form):
