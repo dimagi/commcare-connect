@@ -1,5 +1,6 @@
 import datetime
 import logging
+from decimal import Decimal
 
 import httpx
 import sentry_sdk
@@ -450,5 +451,6 @@ def fetch_exchange_rates(date=None, currency=None):
                 continue
             ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
     else:
-        rate = rates[currency]
+        # Parsing it to decimal otherwise the returned object rate will still be in float.
+        rate = Decimal(rates[currency])
         return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
