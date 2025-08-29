@@ -1,6 +1,8 @@
 import django_filters
+from django import forms
 
 from commcare_connect.opportunity.models import OpportunityAccess
+from commcare_connect.program.models import Program
 
 
 class FilterMixin:
@@ -17,31 +19,41 @@ class FilterMixin:
     def _get_filter_class(self):
         return self.filter_class
 
-    def _get_filter(self, data=None):
+    def get_filter_kwargs(self):
+        """
+        Override this in subclasses to pass extra kwargs to the filterset.
+        Always include `queryset`.
+        """
+        return {
+            "queryset": OpportunityAccess.objects.none(),
+            "request": self.request,
+        }
+
+    def _get_filter(self):
         filter_class = self._get_filter_class()
         if filter_class:
-            return filter_class(data, queryset=OpportunityAccess.objects.none())
+            return filter_class(self.request.GET, **self.get_filter_kwargs())
         return None
 
-    def get_filter_form(self, data=None):
-        f = self._get_filter(data)
+    def get_filter_form(self):
+        f = self._get_filter()
         if f:
             return f.form
         return None
 
-    def get_filter_values(self, data=None):
-        f = self._get_filter(data)
+    def get_filter_values(self):
+        f = self._get_filter()
         if f and f.form.is_valid():
             return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
         return {}
 
-    def filters_applied_count(self, data=None):
-        return len([v for v in self.get_filter_values(data).values() if v not in (None, "")])
+    def filters_applied_count(self):
+        return len([v for v in self.get_filter_values().values() if v not in (None, "")])
 
-    def get_filter_context(self, data):
+    def get_filter_context(self):
         return {
-            "filter_form": self.get_filter_form(data),
-            "filters_applied_count": self.filters_applied_count(data),
+            "filter_form": self.get_filter_form(),
+            "filters_applied_count": self.filters_applied_count(),
         }
 
 
@@ -79,3 +91,23 @@ class DeliverFilterSet(django_filters.FilterSet):
     review_pending = YesNoFilter(
         label="Deliveries with Pending Review",
     )
+
+
+class OpportunityListFilterSet(django_filters.FilterSet):
+    is_test = YesNoFilter(label="Is Test")
+    status = django_filters.MultipleChoiceFilter(
+        label="Status",
+        choices=[(0, "Active"), (1, "Ended"), (2, "Inactive")],
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+    )
+    program = django_filters.MultipleChoiceFilter(
+        label="Program", choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
+    )
+
+    def __init__(self, *args, **kwargs):
+        request = kwargs.pop("request", None)
+        super().__init__(*args, **kwargs)
+
+        if request:
+            user_programs = Program.objects.filter(organization=request.org)
+            self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in user_programs]

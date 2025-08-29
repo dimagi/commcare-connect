@@ -441,12 +441,13 @@ def get_opportunity_list_data_lite(org, program_manager=False):
 
 
 class OpportunityData:
-    def __init__(self, org, is_program_manager):
+    def __init__(self, org, is_program_manager, filters):
         self.org = org
         self.is_program_manager = is_program_manager
+        self.filters = filters
 
     def get_data(self):
-        base_qs = self.get_base_qs(self.org, self.is_program_manager)
+        base_qs = self.get_base_qs(self.org, self.filters, self.is_program_manager)
 
         def data_qs(ids):
             return self.get_data_qs(ids, self.is_program_manager)
@@ -454,12 +455,18 @@ class OpportunityData:
         return TieredQueryset(base_qs, data_qs)
 
     @staticmethod
-    def get_base_qs(organization, program_manager=False):
+    def get_base_qs(organization, filters, program_manager=False):
         today = now().date()
         base_filter = Q(organization=organization)
         if program_manager:
             base_filter |= Q(managedopportunity__program__organization=organization)
-        return Opportunity.objects.filter(base_filter).annotate(
+        is_test = filters.get("is_test", None)
+        if is_test not in ["", None]:
+            base_filter &= Q(is_test=is_test)
+        programs = filters.get("program", [])
+        if programs:
+            base_filter &= Q(managedopportunity__program__slug__in=programs)
+        queryset = Opportunity.objects.filter(base_filter).annotate(
             program=F("managedopportunity__program__name"),
             status=Case(
                 When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
@@ -468,6 +475,10 @@ class OpportunityData:
                 output_field=IntegerField(),
             ),
         )
+        status = filters.get("status", [])
+        if status:
+            queryset = queryset.filter(status__in=status)
+        return queryset
 
     @staticmethod
     def get_data_qs(opp_ids, program_manager=False):

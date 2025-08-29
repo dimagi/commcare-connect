@@ -37,7 +37,7 @@ from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
-from commcare_connect.opportunity.filters import DeliverFilterSet, FilterMixin
+from commcare_connect.opportunity.filters import DeliverFilterSet, FilterMixin, OpportunityListFilterSet
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
@@ -188,11 +188,17 @@ class OrgContextSingleTableView(SingleTableView):
         return kwargs
 
 
-class OpportunityList(OrganizationUserMixin, SingleTableView):
+class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
     model = Opportunity
     table_class = ProgramManagerOpportunityTable
     template_name = "opportunity/opportunities_list.html"
     paginate_by = 15
+    filter_class = OpportunityListFilterSet
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        context.update(self.get_filter_context())
+        return context
 
     def enable_allcolumns(self):
         return bool(self.request.GET.get("allcolumns"))
@@ -216,7 +222,7 @@ class OpportunityList(OrganizationUserMixin, SingleTableView):
         org = self.request.org
         is_program_manager = org.program_manager
         if self.enable_allcolumns():
-            return OpportunityData(org, is_program_manager).get_data()
+            return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
         else:
             return get_opportunity_list_data_lite(org, is_program_manager)
 
@@ -1866,11 +1872,11 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
                 else "Import Verified Visits"
             ),
         }
-        context.update(self.get_filter_context(self.request.GET))
+        context.update(self.get_filter_context())
         return context
 
     def get_table(self, opportunity, org_slug):
-        data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values(self.request.GET))
+        data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values())
         table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opportunity.id)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
