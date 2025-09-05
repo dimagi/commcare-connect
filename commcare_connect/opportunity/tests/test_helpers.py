@@ -141,16 +141,20 @@ def test_get_worker_table_data_all_fields(opportunity):
         visit_date=two_days_ago,
     )
 
+    user_invite = UserInviteFactory(
+        opportunity=opportunity, opportunity_access=access, status=UserInviteStatus.accepted
+    )
+
     access.date_learn_started = five_days_ago
     access.save()
     result = get_worker_table_data(opportunity)
-    row = result.get(id=access.id)
+    row = result.get(id=user_invite.id)
 
     assert row.completed_learn.date() == three_days_ago
     assert row.days_to_complete_learn.days == 2
     assert row.first_delivery.date() == two_days_ago
     assert row.days_to_start_delivery.days == (row.first_delivery.date() - access.date_learn_started).days
-    assert row.last_active.date() == today
+    assert row.opportunity_access.last_active.date() == today
 
 
 @pytest.mark.django_db

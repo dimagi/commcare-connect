@@ -1,19 +1,24 @@
 from datetime import timedelta
 from http import HTTPStatus
+from unittest import mock
 
 import pytest
+from django.contrib.messages import get_messages
 from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    UserInvite,
     UserInviteStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -26,7 +31,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MembershipFactory
+from commcare_connect.users.tests.factories import MembershipFactory, UserFactory
 
 
 @pytest.mark.django_db
@@ -242,3 +247,171 @@ def test_tiered_queryset_basic():
 
     # Empty slice works
     assert tq[100:105] == []
+
+
+@pytest.mark.django_db
+class TestDeleteUserInvites:
+    @pytest.fixture(autouse=True)
+    def setup_invites(self, organization, opportunity, org_user_member, client):
+        self.client = client
+
+        self.not_found_invites = UserInviteFactory.create_batch(
+            2, opportunity=opportunity, status=UserInviteStatus.not_found
+        )
+        self.invited_invite = UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.invited)
+        self.accepted_invite = UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted)
+
+        self.url = reverse("opportunity:delete_user_invites", args=(organization.slug, opportunity.id))
+        self.client.force_login(org_user_member)
+
+        self.expected_redirect = reverse("opportunity:worker_list", args=(organization.slug, opportunity.id))
+
+    @pytest.mark.parametrize(
+        "test_case,data,expected_status,expected_count,check_redirect",
+        [
+            ("single_valid_id", lambda self: {"user_invite_ids": [self.not_found_invites[0].id]}, 200, 3, True),
+            (
+                "multiple_mixed_status",
+                lambda self: {
+                    "user_invite_ids": [
+                        self.not_found_invites[0].id,
+                        self.not_found_invites[1].id,
+                        self.invited_invite.id,  # Should remain (wrong status)
+                        self.accepted_invite.id,  # Should remain (wrong status)
+                    ]
+                },
+                200,
+                2,
+                True,
+            ),
+            ("nonexistent_ids", lambda self: {"user_invite_ids": [99999, 88888]}, 200, 4, True),
+            ("no_ids_provided", lambda self: {}, 400, 4, False),
+            ("empty_ids_list", lambda self: {"user_invite_ids": []}, 400, 4, False),
+        ],
+    )
+    def test_delete_invites(self, test_case, data, expected_status, expected_count, check_redirect):
+        response = self.client.post(self.url, data=data(self))
+        assert response.status_code == expected_status
+
+        if check_redirect:
+            assert response.headers["HX-Redirect"] == self.expected_redirect
+
+        assert UserInvite.objects.count() == expected_count
+
+    def test_messages(self):
+        response = self.client.post(
+            self.url, data={"user_invite_ids": [self.not_found_invites[0].id, self.invited_invite.id]}
+        )
+        assert response.status_code == 200
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 2
+        assert str(messages[0]) == "Successfully deleted 1 invite(s)."
+        assert str(messages[1]) == "Cannot delete 1 invite(s). Only invites with 'not found' status can be deleted."
+
+
+@pytest.mark.django_db
+class TestResendUserInvites:
+    @pytest.fixture(autouse=True)
+    def setup_invites(self, organization, opportunity, org_user_admin, client):
+        self.organization = organization
+        self.opportunity = opportunity
+        self.client = client
+
+        self.user1 = UserFactory(phone_number="1234567890")
+        self.user2 = UserFactory(phone_number="0987654321")
+
+        self.access1 = OpportunityAccessFactory(user=self.user1, opportunity=opportunity)
+        self.access2 = OpportunityAccessFactory(user=self.user2, opportunity=opportunity)
+
+        self.recent_invite = UserInviteFactory(
+            opportunity=opportunity,
+            phone_number=self.user1.phone_number,
+            opportunity_access=self.access1,
+            status=UserInviteStatus.invited,
+            notification_date=now() - timedelta(hours=12),
+        )
+
+        self.old_invite = UserInviteFactory(
+            opportunity=opportunity,
+            phone_number=self.user2.phone_number,
+            opportunity_access=self.access2,
+            status=UserInviteStatus.sms_delivered,
+            notification_date=now() - timedelta(days=2),
+        )
+
+        self.not_found_invite = UserInviteFactory(
+            opportunity=opportunity,
+            phone_number="1111111111",
+            status=UserInviteStatus.not_found,
+            opportunity_access=None,
+        )
+
+        self.url = reverse("opportunity:resend_user_invites", args=(organization.slug, opportunity.id))
+        self.client.force_login(org_user_admin)
+        self.expected_redirect = reverse("opportunity:worker_list", args=(organization.slug, opportunity.id))
+
+    @mock.patch("commcare_connect.opportunity.tasks.invite_user.delay")
+    @mock.patch("commcare_connect.opportunity.tasks.send_message")
+    @mock.patch("commcare_connect.opportunity.tasks.send_sms")
+    def test_success(self, mock_send_sms, mock_send_message, mock_invite_user):
+        mock_sms_response = mock.Mock()
+        mock_sms_response.sid = 1
+        mock_send_sms.return_value = mock_sms_response
+
+        def call_task_directly(user_id, access_pk):
+            invite_user(user_id, access_pk)
+
+        mock_invite_user.side_effect = call_task_directly
+        response = self.client.post(self.url, data={"user_invite_ids": [self.old_invite.id]})
+
+        self.old_invite.refresh_from_db()
+        assert response.status_code == 200
+        assert response.headers["HX-Redirect"] == self.expected_redirect
+
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert str(messages[0]) == "Successfully resent 1 invite(s)."
+        assert self.old_invite.status == UserInviteStatus.invited
+        assert self.old_invite.notification_date is not None
+
+    def test_no_user_ids(self):
+        response = self.client.post(self.url, data={})
+        assert response.status_code == 400
+
+    @mock.patch("commcare_connect.opportunity.tasks.invite_user.delay")
+    def test_recent_invite_not_resent(self, mock_invite_user):
+        response = self.client.post(self.url, data={"user_invite_ids": [self.recent_invite.id]})
+
+        assert response.status_code == 200
+        mock_invite_user.assert_not_called()
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert str(messages[0]) == (
+            "The following invites were skipped, as they were sent in the last 24 hours: "
+            f"['{self.recent_invite.phone_number}']"
+        )
+
+    @mock.patch("commcare_connect.opportunity.views.fetch_users")
+    def test_not_found_invite_still_not_found(self, mock_fetch_users):
+        mock_fetch_users.return_value = []
+        response = self.client.post(self.url, data={"user_invite_ids": [self.not_found_invite.id]})
+
+        assert response.status_code == 200
+        mock_fetch_users.assert_called_once_with([self.not_found_invite.phone_number])
+        messages = list(get_messages(response.wsgi_request))
+        assert len(messages) == 1
+        assert str(messages[0]) == (
+            "The following invites were skipped, as they are not registered on "
+            f"PersonalID: ['{self.not_found_invite.phone_number}']"
+        )
+
+    @mock.patch("commcare_connect.opportunity.views.update_user_and_send_invite")
+    @mock.patch("commcare_connect.opportunity.views.fetch_users")
+    def test_not_found_invite_with_found_user(self, mock_fetch_users, mock_update_and_send):
+        mock_user = ConnectIdUser(username="newuser", name="New User", phone_number=self.not_found_invite.phone_number)
+        mock_fetch_users.return_value = [mock_user]
+        response = self.client.post(self.url, data={"user_invite_ids": [self.not_found_invite.id]})
+
+        assert response.status_code == 200
+        assert response.headers["HX-Redirect"] == self.expected_redirect
+        mock_update_and_send.assert_called_once_with(mock_user, opp_id=self.opportunity.id)

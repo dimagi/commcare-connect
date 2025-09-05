@@ -2,7 +2,12 @@
 {% load i18n %}
 
 {% block tab_options %}
-  <div x-data="{showWorkerExportModal: false}">
+<!-- The 'selected' property gets updated from the x-data field in WorkerStatusTable -->
+  <div id="worker-tab-options" x-data="{
+    showWorkerExportModal: false,
+    showConfirmDeleteInvitesModal: false,
+    selected: [],
+  }">
     <button type="button" class="button-icon" @click="showWorkerExportModal = true"
             {% if request.org_membership.is_viewer %} disabled {% endif %}
     >
@@ -11,15 +16,42 @@
     {% block modals %}
         {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.pk as user_status_export_url %}
         {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Connect Workers") export_url=user_status_export_url export_form=export_form %}
+        {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
     {% endblock %}
     {% if request.org_membership.is_viewer %}
       <button disabled class="button button-md outline-style">
-        Add Connect Worker
+        <i class="fa-solid fa-plus"></i>
+        <span>{% trans "Add Worker" %}</span>
       </button>
     {% else %}
       <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="button button-md outline-style">
-        Add Connect Worker
+        <i class="fa-solid fa-plus"></i>
+        <span>{% trans "Add Worker" %}</span>
       </a>
     {% endif %}
+    <form hx-post="{% url 'opportunity:resend_user_invites' org_slug=request.org.slug opp_id=opportunity.pk %}"
+          hx-trigger="submit"
+          hx-on::after-request="if(event.detail.xhr.status >= 400) { alert ('{% trans "Oops! Something went wrong. Please try again or contact support." %}') }"
+          class="inline">
+      {% csrf_token %}
+      <template x-for="id in selected">
+        <input type="hidden" name="user_invite_ids" :value="id">
+      </template>
+      <button {% if request.org_membership.is_viewer %}disabled{% endif %}
+              type="submit"
+              class="button button-md outline-style"
+              :disabled="selected.length === 0">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span x-text="selected.length > 0 ? `{% trans 'Resend Invites' %} (${selected.length})` : `{% trans 'Resend Invites' %}`"></span>
+      </button>
+    </form>
+    <button {% if request.org_membership.is_viewer %}disabled{% endif %}
+            type="button"
+            class="button button-md bg-red-600 text-white"
+            @click="showConfirmDeleteInvitesModal = true"
+            :disabled="selected.length === 0">
+      <i class="fa-solid fa-trash"></i>
+      <span x-text="selected.length > 0 ? `{% trans 'Delete Invites' %} (${selected.length})` : `{% trans 'Delete Invites' %}`"></span>
+    </button>
   </div>
 {% endblock %}

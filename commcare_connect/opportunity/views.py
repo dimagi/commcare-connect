@@ -1,6 +1,7 @@
 import datetime
 import sys
 from collections import Counter, defaultdict
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from urllib.parse import urlencode
@@ -1287,36 +1288,81 @@ def invoice_approve(request, org_slug, opp_id):
 @org_member_required
 @require_POST
 @csrf_exempt
-def user_invite_delete(request, org_slug, opp_id, pk):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    invite = get_object_or_404(UserInvite, pk=pk, opportunity=opportunity)
-    if invite.status != UserInviteStatus.not_found:
-        return HttpResponse(status=403, data="User Invite cannot be deleted.")
-    invite.delete()
-    return HttpResponse(status=200, headers={"HX-Trigger": "userStatusReload"})
+def delete_user_invites(request, org_slug, opp_id):
+    invite_ids = request.POST.getlist("user_invite_ids")
+    if not invite_ids:
+        return HttpResponseBadRequest()
+
+    user_invites = UserInvite.objects.filter(
+        id__in=invite_ids, opportunity_id=opp_id, status=UserInviteStatus.not_found
+    )
+    deleted_count = user_invites.count()
+    cannot_delete_count = len(invite_ids) - deleted_count
+    user_invites.delete()
+    if deleted_count > 0:
+        messages.success(request, mark_safe(f"Successfully deleted {deleted_count} invite(s)."))
+    if cannot_delete_count > 0:
+        messages.warning(
+            request,
+            mark_safe(
+                f"Cannot delete {cannot_delete_count} invite(s). Only invites with 'not found' status can be deleted."
+            ),
+        )
+
+    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, opp_id))
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 @org_admin_required
 @require_POST
-def resend_user_invite(request, org_slug, opp_id, pk):
-    user_invite = get_object_or_404(UserInvite, id=pk)
+def resend_user_invites(request, org_slug, opp_id):
+    invite_ids = request.POST.getlist("user_invite_ids")
+    if not invite_ids:
+        return HttpResponseBadRequest()
 
-    if user_invite.notification_date and (now() - user_invite.notification_date) < datetime.timedelta(days=1):
-        return HttpResponse("You can only send one invitation per user every 24 hours. Please try again later.")
+    user_invites = UserInvite.objects.filter(id__in=invite_ids, opportunity_id=opp_id).select_related(
+        "opportunity_access__user"
+    )
 
-    if user_invite.status == UserInviteStatus.not_found:
-        found_user_list = fetch_users([user_invite.phone_number])
-        if not found_user_list:
-            return HttpResponse("The user is not registered on Connect ID yet. Please ask them to sign up first.")
+    resent_count = 0
+    recent_invites = []
+    not_found_invites = []
+    for user_invite in user_invites:
+        if user_invite.notification_date and (now() - user_invite.notification_date) < timedelta(days=1):
+            recent_invites.append(user_invite.phone_number)
+            continue
 
-        connect_user = found_user_list[0]
-        update_user_and_send_invite(connect_user, opp_id=pk)
-    else:
-        user = User.objects.get(phone_number=user_invite.phone_number)
-        access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity_id=opp_id)
-        invite_user.delay(user.id, access.pk)
+        if user_invite.status == UserInviteStatus.not_found:
+            found_user_list = fetch_users([user_invite.phone_number])
+            if not found_user_list:
+                not_found_invites.append(user_invite.phone_number)
+                continue
+            connect_user = found_user_list[0]
+            update_user_and_send_invite(connect_user, opp_id=opp_id)
+            resent_count += 1
+        else:
+            user = User.objects.get(phone_number=user_invite.phone_number)
+            access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity_id=opp_id)
+            invite_user.delay(user.id, access.pk)
+            resent_count += 1
 
-    return HttpResponse("The invitation has been successfully resent to the user.")
+    if resent_count > 0:
+        messages.success(request, mark_safe(f"Successfully resent {resent_count} invite(s)."))
+    if recent_invites:
+        messages.warning(
+            request,
+            mark_safe(f"The following invites were skipped, as they were sent in the last 24 hours: {recent_invites}"),
+        )
+    if not_found_invites:
+        messages.warning(
+            request,
+            mark_safe(
+                f"The following invites were skipped, as they are not registered on PersonalID: {not_found_invites}"
+            ),
+        )
+
+    redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, opp_id))
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 def sync_deliver_units(request, org_slug, opp_id):
