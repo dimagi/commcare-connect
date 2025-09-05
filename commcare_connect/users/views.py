@@ -1,8 +1,8 @@
 from allauth.account.models import transaction
 from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -137,7 +137,7 @@ def accept_invite(request, invite_id):
 
 
 @login_required
-@user_passes_test(lambda user: user.is_superuser)
+@permission_required("users.demo_users_access")
 @require_GET
 def demo_user_tokens(request):
     users = fetch_demo_user_tokens()
@@ -213,16 +213,14 @@ class ResendInvitesView(ClientProtectedResourceMixin, View):
         return HttpResponse(status=200)
 
 
-class RetrieveUserOTPView(LoginRequiredMixin, UserPassesTestMixin, FormView):
+class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     template_name = "pages/connect_user_otp.html"
     form_class = ManualUserOTPForm
+    permission_required = "users.otp_access"
 
     @property
     def success_url(self):
         return reverse("users:connect_user_otp")
-
-    def test_func(self):
-        return self.request.user.is_superuser
 
     def form_valid(self, form):
         otp = get_user_otp(form.cleaned_data["phone_number"])

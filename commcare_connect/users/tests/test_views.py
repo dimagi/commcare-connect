@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib import messages
+from django.contrib.auth.models import Permission
 from django.contrib.messages.middleware import MessageMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.http import HttpRequest
@@ -117,9 +118,9 @@ class TestRetrieveUserOTPView:
         assert response.status_code == 403
 
     @patch("commcare_connect.users.views.get_user_otp")
-    def test_superuser_can_get_user_otp(self, get_user_otp_mock, user, client):
+    def test_can_get_user_otp(self, get_user_otp_mock, user, client):
         get_user_otp_mock.return_value = "1234"
-        response = self._get_superuser_response(client, user)
+        response = self._get_response(client, user)
 
         messages = list(response.context["messages"])
         assert str(messages[0]) == "The user's OTP is: 1234"
@@ -127,7 +128,7 @@ class TestRetrieveUserOTPView:
     @patch("commcare_connect.users.views.get_user_otp")
     def test_no_otp_returned(self, get_user_otp_mock, user, client):
         get_user_otp_mock.return_value = None
-        response = self._get_superuser_response(client, user)
+        response = self._get_response(client, user)
 
         expected_failure_message = (
             "Failed to fetch OTP. Please make sure the number is correct "
@@ -137,8 +138,9 @@ class TestRetrieveUserOTPView:
         messages = list(response.context["messages"])
         assert str(messages[0]) == expected_failure_message
 
-    def _get_superuser_response(self, client, user):
-        user.is_superuser = True
-        user.save()
+    def _get_response(self, client, user):
+        perm = Permission.objects.get(codename="otp_access")
+        user.user_permissions.add(perm)
+
         client.force_login(user)
         return client.post(self.url, data={"phone_number": "+1234567890"}, follow=True)
