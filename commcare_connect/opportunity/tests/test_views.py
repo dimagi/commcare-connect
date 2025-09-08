@@ -1,6 +1,6 @@
 from datetime import timedelta
 from http import HTTPStatus
-from unittest import mock
+from unittest.mock import MagicMock, patch, Mock
 
 import pytest
 from django.contrib.messages import get_messages
@@ -31,7 +31,12 @@ from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MembershipFactory, UserFactory
+from commcare_connect.users.tests.factories import (
+    MembershipFactory,
+    MobileUserFactory,
+    OrganizationFactory,
+    UserFactory,
+)
 
 
 @pytest.mark.django_db
@@ -389,11 +394,11 @@ class TestResendUserInvites:
         self.client.force_login(org_user_admin)
         self.expected_redirect = reverse("opportunity:worker_list", args=(organization.slug, opportunity.id))
 
-    @mock.patch("commcare_connect.opportunity.tasks.invite_user.delay")
-    @mock.patch("commcare_connect.opportunity.tasks.send_message")
-    @mock.patch("commcare_connect.opportunity.tasks.send_sms")
+    @patch("commcare_connect.opportunity.tasks.invite_user.delay")
+    @patch("commcare_connect.opportunity.tasks.send_message")
+    @patch("commcare_connect.opportunity.tasks.send_sms")
     def test_success(self, mock_send_sms, mock_send_message, mock_invite_user):
-        mock_sms_response = mock.Mock()
+        mock_sms_response = Mock()
         mock_sms_response.sid = 1
         mock_send_sms.return_value = mock_sms_response
 
@@ -417,7 +422,7 @@ class TestResendUserInvites:
         response = self.client.post(self.url, data={})
         assert response.status_code == 400
 
-    @mock.patch("commcare_connect.opportunity.tasks.invite_user.delay")
+    @patch("commcare_connect.opportunity.tasks.invite_user.delay")
     def test_recent_invite_not_resent(self, mock_invite_user):
         response = self.client.post(self.url, data={"user_invite_ids": [self.recent_invite.id]})
 
@@ -430,7 +435,7 @@ class TestResendUserInvites:
             f"['{self.recent_invite.phone_number}']"
         )
 
-    @mock.patch("commcare_connect.opportunity.views.fetch_users")
+    @patch("commcare_connect.opportunity.views.fetch_users")
     def test_not_found_invite_still_not_found(self, mock_fetch_users):
         mock_fetch_users.return_value = []
         response = self.client.post(self.url, data={"user_invite_ids": [self.not_found_invite.id]})
@@ -444,8 +449,8 @@ class TestResendUserInvites:
             f"PersonalID: {{'{self.not_found_invite.phone_number}'}}"
         )
 
-    @mock.patch("commcare_connect.opportunity.views.update_user_and_send_invite")
-    @mock.patch("commcare_connect.opportunity.views.fetch_users")
+    @patch("commcare_connect.opportunity.views.update_user_and_send_invite")
+    @patch("commcare_connect.opportunity.views.fetch_users")
     def test_not_found_invite_with_found_user(self, mock_fetch_users, mock_update_and_send):
         mock_user = {
             "username": "newuser",
