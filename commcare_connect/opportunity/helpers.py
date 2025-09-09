@@ -553,10 +553,6 @@ def get_worker_table_data(opportunity):
     return (
         UserInvite.objects.filter(opportunity=opportunity)
         .annotate(
-            completed_modules_count=Count(
-                "opportunity_access__completedmodule__module",
-                distinct=True,
-            ),
             days_to_complete_learn=ExpressionWrapper(
                 F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
                 output_field=DurationField(),

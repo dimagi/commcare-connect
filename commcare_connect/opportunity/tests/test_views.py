@@ -325,7 +325,7 @@ class TestDeleteUserInvites:
                     ]
                 },
                 200,
-                2,
+                1,
                 True,
             ),
             ("nonexistent_ids", lambda self: {"user_invite_ids": [99999, 88888]}, 200, 4, True),
@@ -344,13 +344,14 @@ class TestDeleteUserInvites:
 
     def test_messages(self):
         response = self.client.post(
-            self.url, data={"user_invite_ids": [self.not_found_invites[0].id, self.invited_invite.id]}
+            self.url,
+            data={"user_invite_ids": [self.not_found_invites[0].id, self.invited_invite.id, self.accepted_invite.id]},
         )
         assert response.status_code == 200
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 2
-        assert str(messages[0]) == "Successfully deleted 1 invite(s)."
-        assert str(messages[1]) == "Cannot delete 1 invite(s). Only invites with 'not found' status can be deleted."
+        assert str(messages[0]) == "Successfully deleted 2 invite(s)."
+        assert str(messages[1]) == "Cannot delete 1 invite(s). Accepted invites cannot be deleted."
 
 
 @pytest.mark.django_db
@@ -432,7 +433,7 @@ class TestResendUserInvites:
         assert len(messages) == 1
         assert str(messages[0]) == (
             "The following invites were skipped, as they were sent in the last 24 hours: "
-            f"['{self.recent_invite.phone_number}']"
+            f"{self.recent_invite.phone_number}"
         )
 
     @patch("commcare_connect.opportunity.views.fetch_users")
@@ -446,7 +447,7 @@ class TestResendUserInvites:
         assert len(messages) == 1
         assert str(messages[0]) == (
             "The following invites were skipped, as they are not registered on "
-            f"PersonalID: {{'{self.not_found_invite.phone_number}'}}"
+            f"PersonalID: {self.not_found_invite.phone_number}"
         )
 
     @patch("commcare_connect.opportunity.views.update_user_and_send_invite")
