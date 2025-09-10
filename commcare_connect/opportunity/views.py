@@ -1355,7 +1355,7 @@ def resend_user_invites(request, org_slug, opp_id):
     if not_found_phone_numbers:
         found_user_list = fetch_users(not_found_phone_numbers)
         for found_user in found_user_list:
-            not_found_phone_numbers.remove(found_user["phone_number"])
+            not_found_phone_numbers.remove(found_user.phone_number)
             update_user_and_send_invite(found_user, opp_id)
             resent_count += 1
 

@@ -8,6 +8,7 @@ from django.test import Client
 from django.urls import reverse
 from django.utils.timezone import now
 
+from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     Opportunity,
@@ -453,11 +454,11 @@ class TestResendUserInvites:
     @patch("commcare_connect.opportunity.views.update_user_and_send_invite")
     @patch("commcare_connect.opportunity.views.fetch_users")
     def test_not_found_invite_with_found_user(self, mock_fetch_users, mock_update_and_send):
-        mock_user = {
-            "username": "newuser",
-            "name": "New User",
-            "phone_number": self.not_found_invite.phone_number,
-        }
+        mock_user = ConnectIdUser(
+            name="New User",
+            username="newuser",
+            phone_number=self.not_found_invite.phone_number,
+        )
         mock_fetch_users.return_value = [mock_user]
         response = self.client.post(self.url, data={"user_invite_ids": [self.not_found_invite.id]})
 
