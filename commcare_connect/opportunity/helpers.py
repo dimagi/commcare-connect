@@ -211,9 +211,15 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
     return access_objects
 
 
-def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
+def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, filters: dict):
+    filters = filters or {}
     access_objects = []
     for payment_unit in opportunity.paymentunit_set.all():
+        queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
+        if last_active_days := filters.get("last_active"):
+            last_active_date = now() - timedelta(days=int(last_active_days))
+            queryset = queryset.filter(last_active__lt=last_active_date)
+
         total_visits_sq = Subquery(
             OpportunityClaimLimit.objects.filter(
                 opportunity_claim__opportunity_access_id=OuterRef("pk"), payment_unit=payment_unit
@@ -280,26 +286,26 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
         total_rejected_for_user = completed_work_status_total_subquery(CompletedWorkStatus.rejected)
         total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
+        queryset = queryset.annotate(
+            payment_unit_id=Value(payment_unit.pk),
+            payment_unit=Value(payment_unit.name, output_field=CharField()),
+            total_visits=Coalesce(total_visits_sq, Value(None, output_field=IntegerField())),  # Optional
+            _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
+            _last_module_val=Coalesce(last_module_sq, Value(None, output_field=DateTimeField())),
+            pending=Coalesce(pending_count_sq, Value(0)),
+            approved=Coalesce(approved_count_sq, Value(0)),
+            rejected=Coalesce(rejected_count_sq, Value(0)),
+            duplicate=Coalesce(duplicate_sq, Value(0)),
+            over_limit=Coalesce(over_limit_count_sq, Value(0)),
+            incomplete=Coalesce(incomplete_count_sq, Value(0)),
+            total_pending=Coalesce(total_pending_for_user, Value(0)),
+            total_approved=Coalesce(total_approved_for_user, Value(0)),
+            total_rejected=Coalesce(total_rejected_for_user, Value(0)),
+            total_over_limit=Coalesce(total_over_limit_for_user, Value(0)),
+        )
+
         queryset = (
-            OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
-            .annotate(
-                payment_unit_id=Value(payment_unit.pk),
-                payment_unit=Value(payment_unit.name, output_field=CharField()),
-                total_visits=Coalesce(total_visits_sq, Value(None, output_field=IntegerField())),  # Optional
-                _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
-                _last_module_val=Coalesce(last_module_sq, Value(None, output_field=DateTimeField())),
-                pending=Coalesce(pending_count_sq, Value(0)),
-                approved=Coalesce(approved_count_sq, Value(0)),
-                rejected=Coalesce(rejected_count_sq, Value(0)),
-                duplicate=Coalesce(duplicate_sq, Value(0)),
-                over_limit=Coalesce(over_limit_count_sq, Value(0)),
-                incomplete=Coalesce(incomplete_count_sq, Value(0)),
-                total_pending=Coalesce(total_pending_for_user, Value(0)),
-                total_approved=Coalesce(total_approved_for_user, Value(0)),
-                total_rejected=Coalesce(total_rejected_for_user, Value(0)),
-                total_over_limit=Coalesce(total_over_limit_for_user, Value(0)),
-            )
-            .annotate(
+            queryset.annotate(
                 completed=(F("pending") + F("approved") + F("rejected") + F("over_limit")),
                 total_completed=(
                     F("total_pending") + F("total_approved") + F("total_rejected") + F("total_over_limit")
@@ -308,6 +314,32 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity):
             .select_related("user")
             .order_by("user__name")
         )
+
+        if filters.get("has_duplicates", None) is not None:
+            has_duplicates = filters["has_duplicates"]
+            if has_duplicates:
+                queryset = queryset.filter(duplicate__gt=0)
+            else:
+                queryset = queryset.filter(duplicate=0)
+        if filters.get("has_overlimit", None) is not None:
+            has_overlimit = filters["has_overlimit"]
+            if has_overlimit:
+                queryset = queryset.filter(over_limit__gt=0)
+            else:
+                queryset = queryset.filter(over_limit=0)
+        if filters.get("review_pending", None) is not None:
+            review_pending = filters["review_pending"]
+            if review_pending:
+                queryset = queryset.filter(pending__gt=0)
+            else:
+                queryset = queryset.filter(pending=0)
+
+        if filters.get("has_flags", None) not in (None, ""):
+            flagged_visits_sq = UserVisit.objects.filter(
+                deliver_unit__payment_unit=payment_unit, opportunity_access_id=OuterRef("pk"), flagged=True
+            )
+            queryset = queryset.annotate(has_flags=Exists(flagged_visits_sq)).filter(has_flags=filters["has_flags"])
+
         access_objects += queryset
     access_objects.sort(key=lambda a: a.user.name)
     return access_objects
@@ -518,46 +550,30 @@ class OpportunityData:
 
 
 def get_worker_table_data(opportunity):
-    learn_modules_count = opportunity.learn_app.learn_modules.count()
-
-    min_dates_per_module = (
-        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
-        .values("module")
-        .annotate(min_date=Min("date"))
-        .values("min_date")
-    )
-
-    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
-        completed_modules_count=Count(
-            "completedmodule__module",
-            distinct=True,
-        ),
-        completed_learn=Case(
-            When(
-                Q(completed_modules_count=learn_modules_count),
-                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+    return (
+        UserInvite.objects.filter(opportunity=opportunity)
+        .annotate(
+            days_to_complete_learn=ExpressionWrapper(
+                F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
+                output_field=DurationField(),
             ),
-            default=None,
-        ),
-        days_to_complete_learn=ExpressionWrapper(
-            F("completed_learn") - F("date_learn_started"),
-            output_field=DurationField(),
-        ),
-        first_delivery=Min(
-            "uservisit__visit_date",
-        ),
-        days_to_start_delivery=Case(
-            When(
-                date_learn_started__isnull=False,
-                first_delivery__isnull=False,
-                then=ExpressionWrapper(F("first_delivery") - F("date_learn_started"), output_field=DurationField()),
+            first_delivery=Min(
+                "opportunity_access__uservisit__visit_date",
             ),
-            default=None,
-            output_field=DurationField(),
-        ),
+            days_to_start_delivery=Case(
+                When(
+                    opportunity_access__date_learn_started__isnull=False,
+                    first_delivery__isnull=False,
+                    then=ExpressionWrapper(
+                        F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
+                    ),
+                ),
+                default=None,
+                output_field=DurationField(),
+            ),
+        )
+        .select_related("opportunity_access", "opportunity_access__user")
     )
-
-    return queryset
 
 
 def get_worker_learn_table_data(opportunity):
