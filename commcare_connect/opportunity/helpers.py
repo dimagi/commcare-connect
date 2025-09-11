@@ -518,46 +518,30 @@ class OpportunityData:
 
 
 def get_worker_table_data(opportunity):
-    learn_modules_count = opportunity.learn_app.learn_modules.count()
-
-    min_dates_per_module = (
-        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
-        .values("module")
-        .annotate(min_date=Min("date"))
-        .values("min_date")
-    )
-
-    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
-        completed_modules_count=Count(
-            "completedmodule__module",
-            distinct=True,
-        ),
-        completed_learn=Case(
-            When(
-                Q(completed_modules_count=learn_modules_count),
-                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+    return (
+        UserInvite.objects.filter(opportunity=opportunity)
+        .annotate(
+            days_to_complete_learn=ExpressionWrapper(
+                F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
+                output_field=DurationField(),
             ),
-            default=None,
-        ),
-        days_to_complete_learn=ExpressionWrapper(
-            F("completed_learn") - F("date_learn_started"),
-            output_field=DurationField(),
-        ),
-        first_delivery=Min(
-            "uservisit__visit_date",
-        ),
-        days_to_start_delivery=Case(
-            When(
-                date_learn_started__isnull=False,
-                first_delivery__isnull=False,
-                then=ExpressionWrapper(F("first_delivery") - F("date_learn_started"), output_field=DurationField()),
+            first_delivery=Min(
+                "opportunity_access__uservisit__visit_date",
             ),
-            default=None,
-            output_field=DurationField(),
-        ),
+            days_to_start_delivery=Case(
+                When(
+                    opportunity_access__date_learn_started__isnull=False,
+                    first_delivery__isnull=False,
+                    then=ExpressionWrapper(
+                        F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
+                    ),
+                ),
+                default=None,
+                output_field=DurationField(),
+            ),
+        )
+        .select_related("opportunity_access", "opportunity_access__user")
     )
-
-    return queryset
 
 
 def get_worker_learn_table_data(opportunity):

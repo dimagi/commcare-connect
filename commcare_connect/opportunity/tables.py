@@ -7,6 +7,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.utils.translation import gettext as _
 from django_tables2 import columns, utils
 
 from commcare_connect.opportunity.models import (
@@ -931,6 +932,24 @@ class UserInfoColumn(tables.Column):
         )
 
 
+class UserInviteInfoColumn(UserInfoColumn):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("order_by", "opportunity_access__user__name")
+        kwargs.setdefault(
+            "verbose_name",
+            header_with_tooltip(
+                label=_("Name"),
+                tooltip_text=_("Phone numbers will be displayed if a worker does not have a PersonalID account"),
+            ),
+        )
+        super().__init__(*args, **kwargs)
+
+    def render(self, value, record):
+        if value:
+            return super().render(value, record.opportunity_access)
+        return record.phone_number
+
+
 class SuspendedIndicatorColumn(tables.Column):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("orderable", False)
@@ -944,18 +963,76 @@ class SuspendedIndicatorColumn(tables.Column):
         return format_html('<div class="w-10"><div class="w-4 h-2 rounded {}"></div></div>', color_class)
 
 
+class StatusIndicatorColumn(tables.Column):
+    def _init__(self, *args, **kwargs):
+        kwargs.setdefault("verbose_name", "Status")
+        super().__init__(*args, **kwargs)
+
+    def render(self, record):
+        if record.opportunity_access and record.opportunity_access.suspended:
+            return format_html(
+                '<span x-data x-tooltip.raw="{}">' '<i class="fa-solid fa-minus-square text-black-600"></i>' "</span>",
+                _("User suspended"),
+            )
+
+        if record.status == UserInviteStatus.accepted:
+            return format_html(
+                '<span x-data x-tooltip.raw="{}">' '<i class="fa-solid fa-circle-check text-green-600"></i>' "</span>",
+                _("Invite accepted"),
+            )
+        elif record.status in [UserInviteStatus.invited, UserInviteStatus.sms_delivered]:
+            return format_html(
+                '<span x-data x-tooltip.raw="{}">' '<i class="fa-regular fa-clock text-orange-600"></i>' "</span>",
+                _("Invite pending"),
+            )
+
+        if record.status in [UserInviteStatus.not_found, UserInviteStatus.sms_not_delivered]:
+            return format_html(
+                '<span x-data x-tooltip.raw="{}">' '<i class="fa-solid fa-circle-xmark text-red-600"></i>' "</span>",
+                _("User not found") if record.status == UserInviteStatus.not_found else _("Invite failed"),
+            )
+
+
 class WorkerStatusTable(tables.Table):
+    select = tables.CheckBoxColumn(
+        accessor="pk",
+        attrs={
+            "th__input": {
+                "@click": "toggleSelectAll()",
+                "x-model": "selectAll",
+                "name": "select_all",
+                "type": "checkbox",
+                "class": "checkbox",
+            },
+            "td__input": {
+                "x-model": "selected",
+                "@click.stop": "",  # used to stop click propagation
+                "name": "row_select",
+                "type": "checkbox",
+                "class": "checkbox",
+                "value": lambda record: record.pk,
+                "id": lambda record: f"row_checkbox_{record.pk}",
+            },
+        },
+    )
     index = IndexColumn()
-    user = UserInfoColumn()
-    suspended = SuspendedIndicatorColumn()
-    invited_date = DMYTColumn()
-    last_active = DMYTColumn(verbose_name=header_with_tooltip("Last Active", "Submitted a Learn or Deliver form"))
+    user = UserInviteInfoColumn(
+        accessor="opportunity_access__user",
+        empty_values=(),
+    )
+    status = StatusIndicatorColumn(orderable=False)
+    invited_date = DMYTColumn(accessor="notification_date", verbose_name=_("Invited Date"))
+    last_active = DMYTColumn(
+        verbose_name=header_with_tooltip("Last Active", "Submitted a Learn or Deliver form"),
+        accessor="opportunity_access__last_active",
+    )
     started_learn = DMYTColumn(
         verbose_name=header_with_tooltip("Started Learn", "Started download of the Learn app"),
-        accessor="date_learn_started",
+        accessor="opportunity_access__date_learn_started",
     )
     completed_learn = DMYTColumn(
-        verbose_name=header_with_tooltip("Completed Learn", "Completed all Learn modules except assessment")
+        verbose_name=header_with_tooltip("Completed Learn", "Completed all Learn modules except assessment"),
+        accessor="opportunity_access__completed_learn_date",
     )
     days_to_complete_learn = DurationColumn(
         verbose_name=header_with_tooltip(
@@ -976,7 +1053,24 @@ class WorkerStatusTable(tables.Table):
         super().__init__(*args, **kwargs)
 
     class Meta:
+        sequence = (
+            "select",
+            "index",
+            "status",
+            "user",
+            "invited_date",
+            "last_active",
+            "started_learn",
+            "completed_learn",
+            "days_to_complete_learn",
+            "first_delivery",
+            "days_to_start_delivery",
+        )
         order_by = ("-last_active",)
+        attrs = {
+            "x-data": "connectWorkers()",
+            "@change": "updateSelectAll()",
+        }
 
 
 class WorkerPaymentsTable(tables.Table):
