@@ -2,12 +2,7 @@
 {% load i18n %}
 
 {% block tab_options %}
-<!-- The 'selected' property gets updated from the x-data field in WorkerStatusTable -->
-  <div id="worker-tab-options" x-data="{
-    showWorkerExportModal: false,
-    showConfirmDeleteInvitesModal: false,
-    selected: [],
-  }">
+  <div id="worker-tab-options" x-data="connectWorkers()">
     <button type="button" class="button-icon" @click="showWorkerExportModal = true"
             {% if request.org_membership.is_viewer %} disabled {% endif %}
     >

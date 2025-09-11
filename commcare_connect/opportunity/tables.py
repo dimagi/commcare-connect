@@ -1068,27 +1068,7 @@ class WorkerStatusTable(tables.Table):
         )
         order_by = ("-last_active",)
         attrs = {
-            "x-data": """{
-                selectAll: false,
-                selected: [],
-                toggleSelectAll() {
-                    this.selectAll = !this.selectAll;
-                    if (this.selectAll) {
-                        this.selected = Array.from(document.querySelectorAll('input[name=\"row_select\"]'))
-                            .map(c => c.value);
-                    } else {
-                        this.selected = [];
-                    }
-                },
-                updateSelectAll() {
-                    const boxes = Array.from(document.querySelectorAll('input[name=\"row_select\"]'));
-                    const checked = boxes.filter(b => b.checked).length;
-                    this.selectAll = boxes.length > 0 && checked === boxes.length;
-                    this.selected = boxes.filter(b => b.checked).map(b => b.value);
-                    const $workerTabOptions = document.getElementById('worker-tab-options');
-                    window.Alpine.$data($workerTabOptions).selected = this.selected;
-                }
-            }""",
+            "x-data": "connectWorkers()",
             "@change": "updateSelectAll()",
         }
 
