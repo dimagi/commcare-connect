@@ -1,4 +1,4 @@
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from rest_framework import serializers
 
 from commcare_connect.cache import quickcache
@@ -244,7 +244,7 @@ class UserVisitSerializer(serializers.ModelSerializer):
 class CompletedWorkSerializer(serializers.ModelSerializer):
     deliver_unit_name = serializers.CharField(source="payment_unit.name")
     deliver_unit_slug = serializers.CharField(source="payment_unit.pk")
-    visit_date = serializers.DateTimeField(source="completion_date")
+    visit_date = serializers.SerializerMethodField()
     flags = serializers.SerializerMethodField()
 
     class Meta:
@@ -267,10 +267,15 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
         for visit in visits:
             if not visit:
                 continue
-
             for slug, reason in visit.get("flags", []):
                 flags[slug] = reason
         return flags
+
+    def get_visit_date(self, obj):
+        try:
+            return obj.last_visit_date
+        except AttributeError:
+            return obj.completion_date
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -300,5 +305,6 @@ class DeliveryProgressSerializer(serializers.Serializer):
             CompletedWork.objects.filter(opportunity_access=obj)
             .exclude(status=CompletedWorkStatus.over_limit)
             .exclude(status=CompletedWorkStatus.incomplete)
+            .annotate(last_visit_date=Max("uservisit__visit_date"))
         )
         return CompletedWorkSerializer(completed_works, many=True).data
