@@ -370,3 +370,6 @@ MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)
 
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
+
+GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
+GA_API_SECRET = env("GA_API_SECRET", default="")
