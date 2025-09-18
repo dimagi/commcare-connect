@@ -357,6 +357,39 @@ def get_payment_report_data(opportunity: Opportunity, usd=False):
     return data, total_user_payment_accrued, total_nm_payment_accrued
 
 
+class TieredQueryset:
+    # This queryset enables targetted count, order_by, pagination
+    #   for large querysets on which it may not be efficient to run
+    #   them.
+    #
+    # This works by passing a base_queryset that just returns ids
+    #   and data_qs_fn which returns the data for those ids
+    def __init__(self, base_qs, data_qs_fn):
+        self.base_qs = base_qs
+        self.data_qs_fn = data_qs_fn
+        self._ordered_qs = base_qs  # default unless order_by is called
+
+    def count(self):
+        return self.base_qs.count()
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            page_qs = self._ordered_qs[key]
+            ids = list(page_qs.values_list("id", flat=True))
+            return list(self.data_qs_fn(ids))
+        else:
+            obj = self._ordered_qs[key]
+            result = list(self.data_qs_fn([obj.id]))
+            return result[0]
+
+    def __iter__(self):
+        return iter(self[:])
+
+    def order_by(self, *fields):
+        self._ordered_qs = self.base_qs.order_by(*fields)
+        return self
+
+
 def get_opportunity_list_data_lite(org, program_manager=False):
     today = now().date()
     base_filter = Q(organization=org)
@@ -375,110 +408,140 @@ def get_opportunity_list_data_lite(org, program_manager=False):
     return queryset
 
 
-def get_opportunity_list_data(organization, program_manager=False):
-    today = now().date()
-    three_days_ago = now() - timedelta(days=3)
+class OpportunityData:
+    def __init__(self, org, is_program_manager):
+        self.org = org
+        self.is_program_manager = is_program_manager
 
-    pending_approvals_sq = Subquery(
-        UserVisit.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"), status="pending")
-        .values("opportunity_access__opportunity_id")
-        .annotate(count=Count("id", distinct=True))
-        .values("count")[:1],
-        output_field=IntegerField(),
-    )
+    def get_data(self):
+        base_qs = self.get_base_qs(self.org, self.is_program_manager)
 
-    base_filter = Q(organization=organization)
-    if program_manager:
-        base_filter |= Q(managedopportunity__program__organization=organization)
+        def data_qs(ids):
+            return self.get_data_qs(ids, self.is_program_manager)
 
-    queryset = Opportunity.objects.filter(base_filter).annotate(
-        program=F("managedopportunity__program__name"),
-        pending_invites=pending_invites_subquery(),
-        pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
-        total_accrued=total_accrued_sq(),
-        total_paid=total_paid_sq(),
-        payments_due=ExpressionWrapper(
-            F("total_accrued") - F("total_paid"),
-            output_field=DecimalField(),
-        ),
-        inactive_workers=inactive_workers_subquery(three_days_ago),
-        status=Case(
-            When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-            When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-            default=Value(2),  # Inactive
-            output_field=IntegerField(),
-        ),
-    )
+        return TieredQueryset(base_qs, data_qs)
 
-    if program_manager:
-        total_deliveries_sq = Subquery(
-            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
-            .values("opportunity_access__opportunity_id")
-            .annotate(total=Sum("saved_completed_count"))
-            .values("total")[:1],
-            output_field=IntegerField(),
+    @staticmethod
+    def get_base_qs(organization, program_manager=False):
+        today = now().date()
+        base_filter = Q(organization=organization)
+        if program_manager:
+            base_filter |= Q(managedopportunity__program__organization=organization)
+        return Opportunity.objects.filter(base_filter).annotate(
+            program=F("managedopportunity__program__name"),
+            status=Case(
+                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+                default=Value(2),  # Inactive
+                output_field=IntegerField(),
+            ),
         )
 
-        verified_deliveries_sq = Subquery(
-            CompletedWork.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
-            .values("opportunity_access__opportunity_id")
-            .annotate(total=Sum("saved_approved_count"))
-            .values("total")[:1],
+    @staticmethod
+    def get_data_qs(opp_ids, program_manager=False):
+        # Meant to be used with a small page of opp_ids (10/20)
+        today = now().date()
+        three_days_ago = now() - timedelta(days=3)
+
+        pending_approvals_sq = Subquery(
+            UserVisit.objects.filter(opportunity_id=OuterRef("pk"), status="pending")
+            .values("opportunity_id")
+            .annotate(count=Count("id", distinct=True))
+            .values("count")[:1],
             output_field=IntegerField(),
         )
 
-        queryset = queryset.annotate(
-            total_workers=Count("opportunityaccess", distinct=True),
-            started_learning=started_learning_subquery(),
-            total_deliveries=Coalesce(total_deliveries_sq, Value(0)),
-            verified_deliveries=Coalesce(verified_deliveries_sq, Value(0)),
-            active_workers=F("started_learning") - F("inactive_workers"),
+        queryset = Opportunity.objects.filter(id__in=opp_ids).annotate(
+            program=F("managedopportunity__program__name"),
+            pending_invites=pending_invites_subquery(),
+            pending_approvals=Coalesce(pending_approvals_sq, Value(0)),
+            total_accrued=total_accrued_sq(),
+            total_paid=total_paid_sq(),
+            payments_due=ExpressionWrapper(
+                F("total_accrued") - F("total_paid"),
+                output_field=DecimalField(),
+            ),
+            inactive_workers=inactive_workers_subquery(three_days_ago),
+            status=Case(
+                When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
+                When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
+                default=Value(2),  # Inactive
+                output_field=IntegerField(),
+            ),
         )
 
-    return queryset
+        if program_manager:
+            deliveries_agg = (
+                CompletedWork.objects.filter(opportunity_access__opportunity_id__in=opp_ids)
+                .values("opportunity_access__opportunity_id")
+                .annotate(
+                    total_deliveries=Sum("saved_completed_count"),
+                    verified_deliveries=Sum("saved_approved_count"),
+                )
+            )
+            deliveries_by_opp = {
+                item["opportunity_access__opportunity_id"]: {
+                    "total_deliveries": item["total_deliveries"],
+                    "verified_deliveries": item["verified_deliveries"],
+                }
+                for item in deliveries_agg
+            }
+
+            workers_agg = (
+                OpportunityAccess.objects.filter(opportunity_id__in=opp_ids)
+                .values("opportunity_id")
+                .annotate(
+                    total_workers=Count("id", distinct=True),
+                    started_learning=Count("id", filter=Q(date_learn_started__isnull=False), distinct=True),
+                )
+            )
+            workers_by_opp = {
+                item["opportunity_id"]: {
+                    "total_workers": item["total_workers"],
+                    "started_learning": item["started_learning"],
+                }
+                for item in workers_agg
+            }
+
+            for opp in queryset:
+                delivery_stats = deliveries_by_opp.get(opp.id, {})
+                worker_stats = workers_by_opp.get(opp.id, {})
+                opp.total_deliveries = delivery_stats.get("total_deliveries", 0)
+                opp.verified_deliveries = delivery_stats.get("verified_deliveries", 0)
+                opp.total_workers = worker_stats.get("total_workers", 0)
+                opp.started_learning = worker_stats.get("started_learning", 0)
+                opp.active_workers = opp.started_learning - opp.inactive_workers
+
+        # preserve the order of opp_ids argument
+        qs_by_id = {opp.id: opp for opp in queryset}
+        return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
 
 
 def get_worker_table_data(opportunity):
-    learn_modules_count = opportunity.learn_app.learn_modules.count()
-
-    min_dates_per_module = (
-        CompletedModule.objects.filter(opportunity_access=OuterRef("pk"))
-        .values("module")
-        .annotate(min_date=Min("date"))
-        .values("min_date")
-    )
-
-    queryset = OpportunityAccess.objects.filter(opportunity=opportunity).annotate(
-        completed_modules_count=Count(
-            "completedmodule__module",
-            distinct=True,
-        ),
-        completed_learn=Case(
-            When(
-                Q(completed_modules_count=learn_modules_count),
-                then=Subquery(min_dates_per_module.order_by("-min_date")[:1]),
+    return (
+        UserInvite.objects.filter(opportunity=opportunity)
+        .annotate(
+            days_to_complete_learn=ExpressionWrapper(
+                F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
+                output_field=DurationField(),
             ),
-            default=None,
-        ),
-        days_to_complete_learn=ExpressionWrapper(
-            F("completed_learn") - F("date_learn_started"),
-            output_field=DurationField(),
-        ),
-        first_delivery=Min(
-            "uservisit__visit_date",
-        ),
-        days_to_start_delivery=Case(
-            When(
-                date_learn_started__isnull=False,
-                first_delivery__isnull=False,
-                then=ExpressionWrapper(F("first_delivery") - F("date_learn_started"), output_field=DurationField()),
+            first_delivery=Min(
+                "opportunity_access__uservisit__visit_date",
             ),
-            default=None,
-            output_field=DurationField(),
-        ),
+            days_to_start_delivery=Case(
+                When(
+                    opportunity_access__date_learn_started__isnull=False,
+                    first_delivery__isnull=False,
+                    then=ExpressionWrapper(
+                        F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
+                    ),
+                ),
+                default=None,
+                output_field=DurationField(),
+            ),
+        )
+        .select_related("opportunity_access", "opportunity_access__user")
     )
-
-    return queryset
 
 
 def get_worker_learn_table_data(opportunity):

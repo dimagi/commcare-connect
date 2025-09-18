@@ -183,20 +183,25 @@ def update_payment_accrued(opportunity: Opportunity, users: list, incremental=Fa
     Skips already processed completed works when incremental is true."""
 
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
+
+    for access in access_objects:
+        update_payment_accrued_for_user(access, incremental)
+
+
+def update_payment_accrued_for_user(opportunity_access, incremental):
     filter_kwargs = {}
     exclude_status = []
     if incremental:
         exclude_status.append(CompletedWorkStatus.approved)
         filter_kwargs["saved_approved_count"] = 0
 
-    for access in access_objects:
-        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
-            completed_works = (
-                access.completedwork_set.filter(**filter_kwargs)
-                .exclude(status__in=exclude_status)
-                .select_related("payment_unit")
-            )
-            update_status(completed_works, access, compute_payment=True)
+    with cache.lock(f"update_payment_accrued_lock_{opportunity_access.id}", timeout=900):
+        completed_works = (
+            opportunity_access.completedwork_set.filter(**filter_kwargs)
+            .exclude(status__in=exclude_status)
+            .select_related("payment_unit")
+        )
+        update_status(completed_works, opportunity_access, compute_payment=True)
 
 
 def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:

@@ -233,7 +233,92 @@
           this.flatpickrInstance.clear();
         }
       }));
+
+      Alpine.data('visitVerification', (initialTab, defaultPage) => ({
+      activeTab: initialTab,
+      page: defaultPage,
+      showBulkApproveModal: false,
+      showBulkRejectModal: false,
+      selectAll: false,
+      selected: [],
+
+
+      updateUrlAndRequest() {
+        const url = new URL(window.location);
+        const formData = new FormData(this.$refs.visitForm);
+        const params = new URLSearchParams();
+
+        for (let [key, value] of formData.entries()) {
+          if (value && String(value).trim() !== '') {
+            params.set(key, value);
+          }
+        }
+
+        url.search = params.toString();
+        window.history.pushState({}, '', url.toString());
+        this.$dispatch('reload_table');
+      },
+
+      updateVisitStatusMap() {
+        const tableRows = document.querySelectorAll(
+          'tbody tr[data-visit-status]',
+        );
+        this.visitStatusMap = {};
+        tableRows.forEach((row) => {
+          const visitId = row.getAttribute('data-visit-id');
+          const status = row.getAttribute('data-visit-status');
+          if (visitId && status) {
+            this.visitStatusMap[visitId] = status;
+          }
+        });
+      },
+
+      init() {
+        this.updateVisitStatusMap();
+      },
+
+       get selectedStatusCounts() {
+        const counts = {
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+          duplicate: 0,
+          overLimit: 0,
+          total: this.selected.length,
+        };
+
+        this.selected.forEach((visitId) => {
+          const status = this.visitStatusMap[visitId];
+          if (status === 'pending') counts.pending++;
+          else if (status === 'approved') counts.approved++;
+          else if (status === 'rejected') counts.rejected++;
+          else if (status === 'duplicate') counts.duplicate++;
+          else if (status === 'over_limit') counts.overLimit++;
+        });
+
+        return counts;
+      },
+
+      toggleSelectAll() {
+        this.selectAll = !this.selectAll;
+        if (this.selectAll) {
+          this.selected = Array.from(
+            document.querySelectorAll('[id^="row_checkbox_"]'),
+          ).map((cb) => cb.value);
+        } else {
+          this.selected = [];
+        }
+      },
+
+      updateSelectAll() {
+        const checkboxes = document.querySelectorAll('[id^="row_checkbox_"]');
+        this.selectAll =
+          checkboxes.length > 0 && this.selected.length === checkboxes.length;
+      },
+    }))
     });
+
+
 
     let map;
     function removeMap() { if(map) map?.remove(); }

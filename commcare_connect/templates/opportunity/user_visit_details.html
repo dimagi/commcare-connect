@@ -336,7 +336,8 @@
       {% if user_visit.opportunity.managed %}
       @click="showRejectModal = false; showApproveModal = true;"
       {% else %}
-      hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity_id %}"
+      hx-vals='{"visit_ids[]": "{{ user_visit.id }}"}'
       hx-swap="none"
       {% endif %}
     {% else %}
@@ -365,7 +366,7 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=user_visit.id  %}"
+      <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity_id  %}"
         hx-swap="none"
         @submit="showRejectModal = false">
         {% csrf_token %}
@@ -373,6 +374,7 @@
           <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
             placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
         </div>
+        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
         <div class="footer flex justify-end">
           <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
             Close
@@ -394,7 +396,7 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity_id %}"
         hx-swap="none"
         @submit="showApproveModal = false">
         {% csrf_token %}
@@ -402,6 +404,7 @@
           <textarea required class="base-textarea" id="justification" rows="3" name="justification"
             placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
         </div>
+        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
         <div class="footer flex justify-end">
           <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
             Close

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.db.models import Count, F, Max, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -191,7 +191,7 @@ class Opportunity(BaseModel):
 
     @property
     def budget_per_visit(self):
-        return self.paymentunit_set.aggregate(amount=Max("amount")).get("amount", 0) or 0
+        return self.paymentunit_set.aggregate(amount=Sum("amount")).get("amount", 0) or 0
 
     @property
     def budget_per_user(self):
@@ -264,7 +264,10 @@ class OpportunityAccess(models.Model):
     last_active = models.DateTimeField(null=True)
 
     class Meta:
-        indexes = [models.Index(fields=["invite_id"])]
+        indexes = [
+            models.Index(fields=["invite_id"]),
+            models.Index(fields=["opportunity", "date_learn_started"]),
+        ]
         unique_together = ("user", "opportunity")
 
     @cached_property
@@ -710,6 +713,9 @@ class UserVisit(XFormBaseModel):
             models.UniqueConstraint(
                 fields=["xform_id", "entity_id", "deliver_unit"], name="unique_xform_entity_deliver_unit"
             )
+        ]
+        indexes = [
+            models.Index(fields=["opportunity", "status"]),
         ]
 
 

@@ -4,6 +4,7 @@ from commcare_connect.users import views
 from commcare_connect.users.views import (
     CheckInvitedUserView,
     ResendInvitesView,
+    RetrieveUserOTPView,
     SMSStatusCallbackView,
     accept_invite,
     create_user_link_view,
@@ -25,4 +26,5 @@ urlpatterns = [
     path("api_keys/", views.get_api_keys, name="get_api_keys"),
     path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
     path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
+    path("connect_user_otp/", RetrieveUserOTPView.as_view(), name="connect_user_otp"),
 ]

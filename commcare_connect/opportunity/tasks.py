@@ -1,7 +1,9 @@
 import datetime
 import logging
+from decimal import Decimal
 
 import httpx
+import sentry_sdk
 from allauth.utils import build_absolute_uri
 from django.conf import settings
 from django.core.cache import cache
@@ -13,6 +15,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext
 from tablib import Dataset
 
+from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
@@ -420,6 +423,13 @@ def bulk_update_payment_accrued(opportunity_id, user_ids: list):
             update_status(completed_works, access, compute_payment=True)
 
 
+@quickcache(vary_on=["url"], timeout=60 * 60 * 24)
+def request_rates(url):
+    response = httpx.get(url)
+    rates = response.json()["rates"]
+    return rates
+
+
 @celery_app.task()
 def fetch_exchange_rates(date=None, currency=None):
     base_url = "https://openexchangerates.org/api"
@@ -429,14 +439,18 @@ def fetch_exchange_rates(date=None, currency=None):
         date = datetime.date.today().replace(day=1)
     url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
     url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
-    response = httpx.get(url)
-    rates = response.json()["rates"]
+    rates = request_rates(url)
 
     if currency is None:
         currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
-        for currencies in currency:
-            rate = rates[currency]
+        for currency in currencies:
+            rate = rates.get(currency)
+            if rate is None:
+                message = f"Invalid currency for opportunity: {currency}"
+                sentry_sdk.capture_message(message=message, level="error")
+                continue
             ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
     else:
-        rate = rates[currency]
+        # Parsing it to decimal otherwise the returned object rate will still be in float.
+        rate = Decimal(rates[currency])
         return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)

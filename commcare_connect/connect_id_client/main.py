@@ -5,7 +5,6 @@ from httpx import BasicAuth, Response
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client.models import (
     ConnectIdUser,
-    Credential,
     DemoUser,
     Message,
     MessagingBulkResponse,
@@ -56,12 +55,16 @@ def add_credential(organization: Organization, credential: str, users: list[str]
 
 
 def fetch_credentials(org_slug=None):
-    params = {}
-    if org_slug:
-        params["org_slug"] = org_slug
-    response = _make_request(GET, "/users/fetch_credentials", params=params)
-    data = response.json()
-    return [Credential(**c) for c in data["credentials"]]
+    # this view no longer exists in it's current form
+    # in connectid. we can add it back once the new design
+    # is finalized. this prevents accidental calls
+    return []
+    # params = {}
+    # if org_slug:
+    #     params["org_slug"] = org_slug
+    # response = _make_request(GET, "/users/fetch_credentials", params=params)
+    # data = response.json()
+    # return [Credential(**c) for c in data["credentials"]]
 
 
 def filter_users(country_code: str, credential: list[str]):
@@ -88,6 +91,17 @@ def fetch_user_counts() -> dict[str, int]:
     response = _make_request(GET, "/users/fetch_user_counts")
     data = response.json()
     return data
+
+
+def get_user_otp(phone_number):
+    try:
+        response = _make_request(GET, "/users/generate_manual_otp", params={"phone_number": phone_number})
+        data = response.json()
+        return data.get("otp")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return None
+        raise
 
 
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
