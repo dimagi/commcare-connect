@@ -1,5 +1,6 @@
 {% load duration_minutes %}
 {% load static %}
+{% load i18n %}
 
 <div class="flex flex-col gap-6" x-data="{
     slides: [
@@ -129,17 +130,17 @@
 
   <!-- Information -->
   <div class="grid grid-cols-3 gap-4">
-    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Information</p>
+    <p class="text-sm font-medium text-brand-deep-purple col-span-3">{% translate "Information" %}</p>
     <div>
-      <div class="text-sm text-brand-blue-light">Payment Unit</div>
+      <div class="text-sm text-brand-blue-light">{% translate "Payment Unit" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.completed_work.payment_unit.name }}</div>
     </div>
     <div>
-      <div class="text-sm text-brand-blue-light">Entity Name</div>
+      <div class="text-sm text-brand-blue-light">{% translate "Entity Name" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_name }}</div>
     </div>
     <div>
-      <div class="text-sm text-brand-blue-light">Entity ID</div>
+      <div class="text-sm text-brand-blue-light">{% translate "Entity ID" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_id }}</div>
     </div>
   </div>
@@ -149,7 +150,7 @@
   <!-- Media Section -->
   {% if user_visit.images %}
   <div class="flex justify-between">
-    <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
     <div class="flex gap-2">
       <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
         <i class="cursor-pointer fa-solid fa-arrow-left"
@@ -175,32 +176,43 @@
   {% endif %}
 
   <!-- Verification Flags -->
-  <div class="grid grid-cols-3 gap-4">
-    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
-    {% if user_visit.location %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Location</div>
-      <div class="text-sm font-normal text-brand-deep-purple">Less than {{ closest_distance }} metres</div>
+  <div class="flex flex-col gap-4">
+    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Verification Parameters" %}</p>
+    <div class="grid grid-cols-3 gap-4">
+      {% if user_visit.location %}
+      <div>
+        <div class="text-sm text-brand-blue-light">{% translate "Location" %}</div>
+        <div class="text-sm font-normal text-brand-deep-purple">{% translate "Less than" %} {{ closest_distance }} {% translate "metres" %}</div>
+      </div>
+      {% endif %}
+      <div>
+        <div class="text-sm text-brand-blue-light">{% translate "Form Duration" %}</div>
+        <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+      </div>
     </div>
-    {% endif %}
-    {% if user_visit.flagged %}
-      {% for flag in flags %}
+    <div x-data="{visible: false}">
+      <div class="flex flex-row gap-4 rounded border border-brand-marigold bg-brand-marigold/15 items-center text-brand-marigold" @click="visible = !visible">
+        <i class="fa-solid fa-triangle-exclamation ml-2"></i>
+        <span class="flex-1" class="">{{ flag_count }} {% translate "issues detected" %}</span>
+        <i :class="visible ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all mr-2"></i>
+      </div>
+      <div class="border border-brand-border-light rounded-b grid grid-cols-3 gap-4 px-3 py-2" x-show="visible">
+        {% if user_visit.flagged %}
+          {% for flag in flags %}
+            <div>
+              <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
+              <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+        {% if attachment_flagged %}
         <div>
-          <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
-          <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+          <div class="text-sm text-brand-blue-light">{% translate "Photos" %}</div>
+          <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
         </div>
-      {% endfor %}
-    {% endif %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Form Duration</div>
-      <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+        {% endif %}
+      </div>
     </div>
-    {% if deliver_unit_flags_config.require_attachments %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Photos</div>
-      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
-    </div>
-    {% endif %}
   </div>
 
   <hr class="h-px bg-gray-200 border-0">
@@ -208,23 +220,23 @@
   <!-- Map -->
   {% if user_visit.location %}
   <div>
-    <p class="mb-3 text-sm font-medium text-brand-deep-purple">Map</p>
+    <p class="mb-3 text-sm font-medium text-brand-deep-purple">{% translate "Map" %}</p>
     <div class="relative">
       <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
       <div id="mapbox-menu" class="absolute top-0 left-0 m-1 inline-flex primary-light rounded-lg">
         <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
-          <input class="hidden" type="radio" name="options" id="streets-v12" checked> Streets
+          <input class="hidden" type="radio" name="options" id="streets-v12" checked> {% translate "Streets" %}
         </label>
         <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
-          <input class="hidden" type="radio" name="options" id="satellite-streets-v12"> Satellite
+          <input class="hidden" type="radio" name="options" id="satellite-streets-v12"> {% translate "Satellite" %}
         </label>
       </div>
 
       <div id="legend" class="absolute right-0 top-0 bg-white/75 p-2 rounded-lg m-1">
         <h4 class="text-sm font-bold">Service Records</h4>
-        <div class="text-sm"><i class="fa-solid fa-location-dot text-green-600"></i> Under review</div>
-        <div class="text-sm"><i class="fa-solid fa-location-dot text-sky-600"></i> Closest from this user</div>
-        <div class="text-sm"><i class="fa-solid fa-location-dot text-red-600"></i> Closest from others</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-green-600"></i> {% translate "Under review" %}</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-sky-600"></i> {% translate "Closest from this user" %}</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-red-600"></i> {% translate "Closest from others" %}</div>
       </div>
     </div>
   </div>
@@ -233,9 +245,9 @@
   {% if request.user.is_superuser %}
   <hr class="h-px bg-gray-200 border-0">
 
-  <p class="text-sm font-medium text-brand-deep-purple">Further Information</p>
+  <p class="text-sm font-medium text-brand-deep-purple">{% translate "Further Information" %}</p>
   <div class="flex">
-    <a class="button button-md button-outline-rounded" href="{{ user_visit.hq_link }}">View Form in CommCareHQ <i class="fa-solid fa-arrow-right"></i></a>
+    <a class="button button-md button-outline-rounded" href="{{ user_visit.hq_link }}">{% translate "View Form in CommCareHQ" %} <i class="fa-solid fa-arrow-right"></i></a>
   </div>
   {% endif %}
 
@@ -247,7 +259,7 @@
        x-transition.opacity>
     <div class="relative max-w-lg p-4 bg-white rounded-lg popup-content">
       <div class="flex justify-between mb-2">
-        <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+        <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
         <button class="button-icon cursor-pointer" @click="closePopup()">
           <i class="fa-solid fa-xmark"></i>
         </button>
@@ -318,12 +330,12 @@
       <button class="button button-md outline-style"
         {% if user_visit.review_status != "disagree" %}value="disagree"{% else %}disabled{% endif %}
         name="review_status">
-        Disagree
+        {% translate "Disagree" %}
       </button>
       <button class="button button-md primary-dark"
         {% if user_visit.review_status != "agree" %}value="agree"{% else %}disabled{% endif %}
         name="review_status">
-        Agree
+        {% translate "Agree" %}
       </button>
     </form>
   </div>
@@ -344,7 +356,7 @@
       disabled
     {% endif %}
     {% endif %}>
-      Approve
+      {% translate "Approve" %}
     </button>
     <button class="button button-md negative-light"
     {% if request.org_membership.is_viewer %} disabled {% else %}
@@ -354,14 +366,14 @@
       disabled
     {% endif %}
     {% endif %}>
-      Reject
+      {% translate "Reject" %}
     </button>
   </div>
 
   <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showRejectModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
-        <h2 class="title">Reason for Rejection</h2>
+        <h2 class="title">{% translate "Reason for Rejection" %}</h2>
         <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
           <i class="fa-solid fa-xmark"></i>
         </button>
@@ -377,10 +389,10 @@
         <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
         <div class="footer flex justify-end">
           <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
-            Close
+            {% translate "Close" %}
           </button>
           <button type="submit" class="button button-md negative-dark">
-            Reject
+            {% translate "Reject" %}
           </button>
         </div>
       </form>
@@ -391,7 +403,7 @@
   <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showApproveModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
-        <h2 class="title">Justification for Approval</h2>
+        <h2 class="title">{% translate "Justification for Approval" %}</h2>
         <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
           <i class="fa-solid fa-xmark"></i>
         </button>
@@ -407,9 +419,9 @@
         <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
         <div class="footer flex justify-end">
           <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
-            Close
+            {% translate "Close" %}
           </button>
-          <button type="submit" class="button button-md positive-dark">Approve</button>
+          <button type="submit" class="button button-md positive-dark">{% translate "Approve" %}</button>
         </div>
       </form>
     </div>
