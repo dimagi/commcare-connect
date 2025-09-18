@@ -9,8 +9,6 @@ anyio==3.7.1
     #   -c requirements/base.txt
     #   httpcore
     #   watchfiles
-appnope==0.1.4
-    # via ipython
 asgiref==3.7.2
     # via
     #   -c requirements/base.txt
@@ -73,13 +71,13 @@ flake8==6.1.0
     #   flake8-isort
 flake8-isort==6.0.0
     # via -r requirements/dev.in
-gevent==24.11.1
+gevent==25.9.1
     # via
     #   -c requirements/base.txt
     #   git-build-branch
 git-build-branch @ git+https://github.com/dimagi/git-build-branch
     # via -r requirements/dev.in
-greenlet==3.1.1
+greenlet==3.2.4
     # via
     #   -c requirements/base.txt
     #   gevent
