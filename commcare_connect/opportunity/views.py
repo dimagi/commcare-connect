@@ -141,7 +141,7 @@ from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.file import get_file_extension
-from commcare_connect.utils.flags import FlagLabels
+from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
 
 
@@ -1669,9 +1669,6 @@ def user_visit_details(request, org_slug, opp_id, pk):
     opportunity = get_opportunity_or_404(opp_id, org_slug)
     user_visit = get_object_or_404(UserVisit, pk=pk, opportunity=opportunity)
     verification_flags_config = opportunity.opportunityverificationflags
-    deliver_unit_flags_config = DeliverUnitFlagRules.objects.filter(
-        opportunity=opportunity, deliver_unit=user_visit.deliver_unit
-    )
 
     serializer = XFormSerializer(data=user_visit.form_json)
     serializer.is_valid()
@@ -1747,10 +1744,14 @@ def user_visit_details(request, org_slug, opp_id, pk):
         visit_data.update({"lat": lat, "lon": lon, "precision": precision})
 
     flags = []
+    attachment_flagged = False
     if user_visit.flagged and user_visit.flag_reason:
-        flags = [
-            (FlagLabels.get_label(flag), description) for flag, description in user_visit.flag_reason.get("flags", [])
-        ]
+        for flag, description in user_visit.flag_reason.get("flags", []):
+            if flag == Flags.ATTACHMENT_MISSING.value:
+                attachment_flagged = True
+                continue
+            flags.append((FlagLabels.get_label(flag), description))
+    flag_count = len(flags) + attachment_flagged
 
     return render(
         request,
@@ -1763,8 +1764,9 @@ def user_visit_details(request, org_slug, opp_id, pk):
             visit_data=visit_data,
             closest_distance=closest_distance,
             verification_flags_config=verification_flags_config,
-            deliver_unit_flags_config=deliver_unit_flags_config,
             flags=flags,
+            flag_count=flag_count,
+            attachment_flagged=attachment_flagged,
         ),
     )
 
