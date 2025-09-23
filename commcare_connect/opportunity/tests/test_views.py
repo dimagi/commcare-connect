@@ -23,6 +23,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
+    OpportunityFactory,
     PaymentFactory,
     PaymentUnitFactory,
     UserInviteFactory,
@@ -154,13 +155,63 @@ def test_approve_visit(
 
 
 @pytest.mark.django_db
-def test_get_opportunity_list_data_all_annotations(opportunity):
+@pytest.mark.parametrize(
+    "filters, expected_count",
+    [
+        ({}, 4),
+        ({"is_test": True}, 1),
+        ({"is_test": False}, 3),
+        ({"status": [0]}, 2),
+        ({"status": [1]}, 1),
+        ({"status": [2]}, 1),
+        ({"program": ["test-program-1"]}, 1),
+        ({"program": ["test-program-2"]}, 1),
+        ({"program": ["test-program-1", "test-program-2"]}, 2),
+    ],
+)
+def test_get_opportunity_list_data_all_annotations(organization, filters, expected_count):
     today = now().date()
     three_days_ago = now() - timedelta(days=3)
 
-    opportunity.end_date = today + timedelta(days=1)
-    opportunity.active = True
-    opportunity.save()
+    program1 = ProgramFactory(organization=organization, name="Test Program 1", slug="test-program-1")
+    program2 = ProgramFactory(organization=organization, name="Test Program 2", slug="test-program-2")
+
+    # Active opportunity (status=0)
+    opportunity = ManagedOpportunityFactory(
+        program=program1,
+        organization=organization,
+        end_date=today + timedelta(days=1),
+        active=True,
+        is_test=True,
+    )
+
+    # Active opportunity (status=0)
+    ManagedOpportunityFactory(
+        program=program2,
+        organization=organization,
+        name="test opportunity 2",
+        end_date=today + timedelta(days=1),
+        active=True,
+        is_test=False,
+    )
+
+    # Ended opportunity (status=1)
+    OpportunityFactory(
+        organization=organization,
+        name="test opportunity 3",
+        end_date=today - timedelta(days=1),
+        active=True,
+        is_test=False,
+    )
+
+    # Inactive opportunity (status=2)
+    OpportunityFactory(
+        organization=organization,
+        name="test opportunity 4",
+        end_date=today + timedelta(days=1),
+        active=False,
+        is_test=False,
+    )
 
     # Create OpportunityAccesses
     oa1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=1000, last_active=now())
@@ -204,15 +255,17 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
         visit_date=three_days_ago - timedelta(days=2),
     )
 
-    queryset = OpportunityData(opportunity.organization, False).get_data()
-    opp = queryset[0]
-    assert opp.pending_invites == 3
-    assert opp.pending_approvals == 1
-    assert opp.total_accrued == total_accrued
-    assert opp.total_paid == total_paid
-    assert opp.payments_due == total_accrued - total_paid
-    assert opp.inactive_workers == 2
-    assert opp.status == 0
+    queryset = OpportunityData(organization, False, filters).get_data()
+    assert queryset.count() == expected_count
+    if not filters:
+        opp = queryset[0]
+        assert opp.pending_invites == 3
+        assert opp.pending_approvals == 1
+        assert opp.total_accrued == total_accrued
+        assert opp.total_paid == total_paid
+        assert opp.payments_due == total_accrued - total_paid
+        assert opp.inactive_workers == 2
+        assert opp.status == 0
 
 
 @pytest.mark.django_db
