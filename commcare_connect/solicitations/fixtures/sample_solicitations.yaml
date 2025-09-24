@@ -1,0 +1,1218 @@
+# Realistic UAT data for development, testing, and demos
+# This file contains diverse, professional solicitation examples
+
+# Delivery Types
+delivery_types:
+  - name: 'Community Health Services'
+  - name: 'Digital Health Solutions'
+  - name: 'Nutrition Programs'
+  - name: 'Education & Training'
+  - name: 'Emergency Response'
+  - name: 'Water & Sanitation'
+  - name: 'Agricultural Support'
+  - name: 'Economic Empowerment'
+
+# Program-managing organizations
+program_organizations:
+  - slug: 'uat-ghif'
+    name: 'Global Health Initiative Foundation'
+    program_manager: true
+    manager_name: 'Dr. Sarah Chen'
+    manager_email: 's.chen@ghif.org'
+    manager_first_name: 'Sarah'
+    manager_last_name: 'Chen'
+
+  - slug: 'uat-cdp'
+    name: 'Community Development Partners'
+    program_manager: true
+    manager_name: 'Michael Rodriguez'
+    manager_email: 'm.rodriguez@cdpartners.org'
+    manager_first_name: 'Michael'
+    manager_last_name: 'Rodriguez'
+
+  - slug: 'uat-rhn'
+    name: 'Rural Health Network'
+    program_manager: true
+    manager_name: 'Dr. Amara Okafor'
+    manager_email: 'a.okafor@ruralhealthnet.org'
+    manager_first_name: 'Amara'
+    manager_last_name: 'Okafor'
+
+  - slug: 'uat-impact-ventures'
+    name: 'Impact Ventures International'
+    program_manager: true
+    manager_name: 'Dr. Jennifer Walsh'
+    manager_email: 'j.walsh@impactventures.org'
+    manager_first_name: 'Jennifer'
+    manager_last_name: 'Walsh'
+
+  - slug: 'uat-sustainable-dev'
+    name: 'Sustainable Development Alliance'
+    program_manager: true
+    manager_name: 'Ahmed Hassan'
+    manager_email: 'a.hassan@sustainabledev.org'
+    manager_first_name: 'Ahmed'
+    manager_last_name: 'Hassan'
+
+# Implementing organizations
+implementing_organizations:
+  - slug: 'uat-sahel-health'
+    name: 'Sahel Community Health Services'
+    program_manager: false
+    region: 'West Africa'
+    contact_name: 'Fatima Al-Rashid'
+    contact_email: 'f.alrashid@sahelhealth.org'
+    contact_first_name: 'Fatima'
+    contact_last_name: 'Al-Rashid'
+
+  - slug: 'uat-andes-dev'
+    name: 'Andes Development Collective'
+    program_manager: false
+    region: 'South America'
+    contact_name: 'Carlos Mendoza'
+    contact_email: 'c.mendoza@andesdev.org'
+    contact_first_name: 'Carlos'
+    contact_last_name: 'Mendoza'
+
+  - slug: 'uat-mekong-partners'
+    name: 'Mekong Delta Partners'
+    program_manager: false
+    region: 'Southeast Asia'
+    contact_name: 'Linh Nguyen'
+    contact_email: 'l.nguyen@mekongpartners.org'
+    contact_first_name: 'Linh'
+    contact_last_name: 'Nguyen'
+
+  - slug: 'uat-ea-womens-coop'
+    name: "East African Women's Cooperative"
+    program_manager: false
+    region: 'East Africa'
+    contact_name: 'Grace Wanjiku'
+    contact_email: 'g.wanjiku@eawomenscoop.org'
+    contact_first_name: 'Grace'
+    contact_last_name: 'Wanjiku'
+
+  - slug: 'uat-pacific-health'
+    name: 'Pacific Islands Health Alliance'
+    program_manager: false
+    region: 'Pacific Islands'
+    contact_name: 'Tavita Malolo'
+    contact_email: 't.malolo@pacifichealthalliance.org'
+    contact_first_name: 'Tavita'
+    contact_last_name: 'Malolo'
+
+  - slug: 'uat-himalayan-trust'
+    name: 'Himalayan Rural Development Trust'
+    program_manager: false
+    region: 'South Asia'
+    contact_name: 'Tenzin Norbu'
+    contact_email: 't.norbu@himalayantrust.org'
+    contact_first_name: 'Tenzin'
+    contact_last_name: 'Norbu'
+
+  - slug: 'uat-amazon-health'
+    name: 'Amazon Basin Health Initiative'
+    program_manager: false
+    region: 'South America'
+    contact_name: 'Isabella Santos'
+    contact_email: 'i.santos@amazonhealth.org'
+    contact_first_name: 'Isabella'
+    contact_last_name: 'Santos'
+
+  - slug: 'uat-sahara-dev'
+    name: 'Sahara Development Network'
+    program_manager: false
+    region: 'North Africa'
+    contact_name: 'Omar Benali'
+    contact_email: 'o.benali@saharadev.org'
+    contact_first_name: 'Omar'
+    contact_last_name: 'Benali'
+
+  - slug: 'uat-caribbean-health'
+    name: 'Caribbean Health Coalition'
+    program_manager: false
+    region: 'Caribbean'
+    contact_name: 'Mariana Joseph'
+    contact_email: 'm.joseph@caribbeanhealth.org'
+    contact_first_name: 'Mariana'
+    contact_last_name: 'Joseph'
+
+  - slug: 'uat-central-asia'
+    name: 'Central Asia Community Partners'
+    program_manager: false
+    region: 'Central Asia'
+    contact_name: 'Aidar Nazarbayev'
+    contact_email: 'a.nazarbayev@centralasiapartners.org'
+    contact_first_name: 'Aidar'
+    contact_last_name: 'Nazarbayev'
+
+  - slug: 'uat-arctic-health'
+    name: 'Arctic Communities Health Network'
+    program_manager: false
+    region: 'Arctic'
+    contact_name: 'Siku Kappianaq'
+    contact_email: 's.kappianaq@arcticehealth.org'
+    contact_first_name: 'Siku'
+    contact_last_name: 'Kappianaq'
+
+  - slug: 'uat-mediterranean'
+    name: 'Mediterranean Rural Development'
+    program_manager: false
+    region: 'Mediterranean'
+    contact_name: 'Elena Papadopoulos'
+    contact_email: 'e.papadopoulos@medruraldev.org'
+    contact_first_name: 'Elena'
+    contact_last_name: 'Papadopoulos'
+
+  - slug: 'uat-kalahari-trust'
+    name: 'Kalahari Community Trust'
+    program_manager: false
+    region: 'Southern Africa'
+    contact_name: 'Thabo Mthembu'
+    contact_email: 't.mthembu@kalahartrust.org'
+    contact_first_name: 'Thabo'
+    contact_last_name: 'Mthembu'
+
+  - slug: 'uat-ganges-health'
+    name: 'Ganges Valley Health Services'
+    program_manager: false
+    region: 'South Asia'
+    contact_name: 'Priya Sharma'
+    contact_email: 'p.sharma@gangeshealth.org'
+    contact_first_name: 'Priya'
+    contact_last_name: 'Sharma'
+
+  - slug: 'uat-mekong-health'
+    name: 'Mekong Health Collective'
+    program_manager: false
+    region: 'Southeast Asia'
+    contact_name: 'Somchai Rattanakorn'
+    contact_email: 's.rattanakorn@mekonghealth.org'
+    contact_first_name: 'Somchai'
+    contact_last_name: 'Rattanakorn'
+
+  - slug: 'uat-congo-basin'
+    name: 'Congo Basin Health Alliance'
+    program_manager: false
+    region: 'Central Africa'
+    contact_name: 'Marie Nkomo'
+    contact_email: 'm.nkomo@congohealth.org'
+    contact_first_name: 'Marie'
+    contact_last_name: 'Nkomo'
+
+  - slug: 'uat-ural-mountains'
+    name: 'Ural Mountains Community Health'
+    program_manager: false
+    region: 'Eastern Europe'
+    contact_name: 'Dmitri Volkov'
+    contact_email: 'd.volkov@uralmountainshealth.org'
+    contact_first_name: 'Dmitri'
+    contact_last_name: 'Volkov'
+
+  - slug: 'uat-patagonia-dev'
+    name: 'Patagonia Development Initiative'
+    program_manager: false
+    region: 'South America'
+    contact_name: 'Sofia Hernandez'
+    contact_email: 's.hernandez@patagoniadev.org'
+    contact_first_name: 'Sofia'
+    contact_last_name: 'Hernandez'
+
+  - slug: 'uat-gobi-health'
+    name: 'Gobi Desert Health Network'
+    program_manager: false
+    region: 'East Asia'
+    contact_name: 'Batbayar Oyungerel'
+    contact_email: 'b.oyungerel@gobihealth.org'
+    contact_first_name: 'Batbayar'
+    contact_last_name: 'Oyungerel'
+
+  - slug: 'uat-appalachian'
+    name: 'Appalachian Rural Health Cooperative'
+    program_manager: false
+    region: 'North America'
+    contact_name: 'Mary Beth Johnson'
+    contact_email: 'm.johnson@appalachianhealth.org'
+    contact_first_name: 'Mary Beth'
+    contact_last_name: 'Johnson'
+
+  - slug: 'uat-atacama-health'
+    name: 'Atacama Desert Health Services'
+    program_manager: false
+    region: 'South America'
+    contact_name: 'Luis Ramirez'
+    contact_email: 'l.ramirez@atacamahealth.org'
+    contact_first_name: 'Luis'
+    contact_last_name: 'Ramirez'
+
+  - slug: 'uat-siberian-health'
+    name: 'Siberian Communities Health Trust'
+    program_manager: false
+    region: 'Northern Asia'
+    contact_name: 'Yelena Petrov'
+    contact_email: 'y.petrov@siberianhealth.org'
+    contact_first_name: 'Yelena'
+    contact_last_name: 'Petrov'
+
+  - slug: 'uat-niger-delta'
+    name: 'Niger Delta Health Partnership'
+    program_manager: false
+    region: 'West Africa'
+    contact_name: 'Chidi Okafor'
+    contact_email: 'c.okafor@nigerdeltahealth.org'
+    contact_first_name: 'Chidi'
+    contact_last_name: 'Okafor'
+
+  - slug: 'uat-tibetan-plateau'
+    name: 'Tibetan Plateau Health Initiative'
+    program_manager: false
+    region: 'Central Asia'
+    contact_name: 'Pemba Sherpa'
+    contact_email: 'p.sherpa@tibetanhealth.org'
+    contact_first_name: 'Pemba'
+    contact_last_name: 'Sherpa'
+
+  - slug: 'uat-great-plains'
+    name: 'Great Plains Community Health'
+    program_manager: false
+    region: 'North America'
+    contact_name: 'Joseph Crow Feather'
+    contact_email: 'j.crowfeather@greatplainshealth.org'
+    contact_first_name: 'Joseph'
+    contact_last_name: 'Crow Feather'
+
+  - slug: 'uat-outback-health'
+    name: 'Australian Outback Health Services'
+    program_manager: false
+    region: 'Australia'
+    contact_name: 'Sarah Mitchell'
+    contact_email: 's.mitchell@outbackhealth.org'
+    contact_first_name: 'Sarah'
+    contact_last_name: 'Mitchell'
+
+  - slug: 'uat-nordic-health'
+    name: 'Nordic Rural Health Alliance'
+    program_manager: false
+    region: 'Northern Europe'
+    contact_name: 'Erik Johansson'
+    contact_email: 'e.johansson@nordicheralth.org'
+    contact_first_name: 'Erik'
+    contact_last_name: 'Johansson'
+
+  - slug: 'uat-andean-health'
+    name: 'Andean Health Collective'
+    program_manager: false
+    region: 'South America'
+    contact_name: 'Carmen Quispe'
+    contact_email: 'c.quispe@andeanhealth.org'
+    contact_first_name: 'Carmen'
+    contact_last_name: 'Quispe'
+
+  - slug: 'uat-volcanic-islands'
+    name: 'Volcanic Islands Health Network'
+    program_manager: false
+    region: 'Pacific Islands'
+    contact_name: 'Keoni Nakamura'
+    contact_email: 'k.nakamura@volcanichealth.org'
+    contact_first_name: 'Keoni'
+    contact_last_name: 'Nakamura'
+
+  - slug: 'uat-steppe-health'
+    name: 'Eurasian Steppe Health Initiative'
+    program_manager: false
+    region: 'Central Asia'
+    contact_name: 'Asel Turdakun'
+    contact_email: 'a.turdakun@steppehealth.org'
+    contact_first_name: 'Asel'
+    contact_last_name: 'Turdakun'
+
+  - slug: 'uat-tundra-health'
+    name: 'Tundra Communities Health Trust'
+    program_manager: false
+    region: 'Arctic'
+    contact_name: 'Nayeli Siqiniq'
+    contact_email: 'n.siqiniq@tundrahealth.org'
+    contact_first_name: 'Nayeli'
+    contact_last_name: 'Siqiniq'
+
+  - slug: 'uat-rainforest-health'
+    name: 'Tropical Rainforest Health Alliance'
+    program_manager: false
+    region: 'Central Africa'
+    contact_name: 'Kwame Asante'
+    contact_email: 'k.asante@rainforesthealth.org'
+    contact_first_name: 'Kwame'
+    contact_last_name: 'Asante'
+
+  - slug: 'uat-coral-reef'
+    name: 'Coral Reef Islands Health Partnership'
+    program_manager: false
+    region: 'Pacific Islands'
+    contact_name: 'Leilani Taumalolo'
+    contact_email: 'l.taumalolo@coralreefhealth.org'
+    contact_first_name: 'Leilani'
+    contact_last_name: 'Taumalolo'
+
+  - slug: 'uat-highland-health'
+    name: 'Highland Communities Health Network'
+    program_manager: false
+    region: 'East Africa'
+    contact_name: 'Desta Haile'
+    contact_email: 'd.haile@highlandhealth.org'
+    contact_first_name: 'Desta'
+    contact_last_name: 'Haile'
+
+  - slug: 'uat-coastal-health'
+    name: 'Coastal Communities Health Cooperative'
+    program_manager: false
+    region: 'West Africa'
+    contact_name: 'Adaora Nwankwo'
+    contact_email: 'a.nwankwo@coastalhealth.org'
+    contact_first_name: 'Adaora'
+    contact_last_name: 'Nwankwo'
+
+# Programs
+programs:
+  - slug: 'uat-mch-initiative'
+    name: 'UAT Maternal & Child Health Initiative'
+    description: 'Comprehensive maternal and child health services targeting rural communities with limited healthcare access'
+    organization_slug: 'uat-ghif'
+    delivery_type: 'Community Health Services'
+    budget: 850000
+    currency: 'USD'
+
+  - slug: 'uat-digital-health'
+    name: 'UAT Digital Health Innovation Program'
+    description: 'Leveraging mobile technology and telemedicine to improve healthcare delivery in remote areas'
+    organization_slug: 'uat-cdp'
+    delivery_type: 'Digital Health Solutions'
+    budget: 650000
+    currency: 'USD'
+
+  - slug: 'uat-nutrition-program'
+    name: 'UAT Community Nutrition Enhancement'
+    description: 'Addressing malnutrition through community-based screening, treatment, and prevention programs'
+    organization_slug: 'uat-ghif'
+    delivery_type: 'Nutrition Programs'
+    budget: 450000
+    currency: 'USD'
+
+  - slug: 'uat-emergency-prep'
+    name: 'UAT Emergency Preparedness Network'
+    description: 'Building community resilience and emergency response capacity for natural disasters and health crises'
+    organization_slug: 'uat-rhn'
+    delivery_type: 'Emergency Response'
+    budget: 750000
+    currency: 'USD'
+
+  - slug: 'uat-rural-education'
+    name: 'UAT Rural Education Access Program'
+    description: 'Improving educational outcomes through community-based learning centers and teacher training'
+    organization_slug: 'uat-cdp'
+    delivery_type: 'Education & Training'
+    budget: 550000
+    currency: 'USD'
+
+  - slug: 'uat-water-sanitation'
+    name: 'UAT Water & Sanitation Infrastructure Program'
+    description: 'Providing clean water access and sanitation facilities to rural communities'
+    organization_slug: 'uat-impact-ventures'
+    delivery_type: 'Water & Sanitation'
+    budget: 950000
+    currency: 'USD'
+
+  - slug: 'uat-agricultural-support'
+    name: 'UAT Agricultural Development Initiative'
+    description: 'Supporting smallholder farmers with training, tools, and market access'
+    organization_slug: 'uat-sustainable-dev'
+    delivery_type: 'Agricultural Support'
+    budget: 720000
+    currency: 'USD'
+
+  - slug: 'uat-economic-empowerment'
+    name: 'UAT Women Economic Empowerment Program'
+    description: 'Providing microfinance, skills training, and business development for women'
+    organization_slug: 'uat-impact-ventures'
+    delivery_type: 'Economic Empowerment'
+    budget: 480000
+    currency: 'USD'
+
+  - slug: 'uat-advanced-digital-health'
+    name: 'UAT Advanced Digital Health Solutions'
+    description: 'AI-powered diagnostics and telemedicine for remote healthcare delivery'
+    organization_slug: 'uat-sustainable-dev'
+    delivery_type: 'Digital Health Solutions'
+    budget: 800000
+    currency: 'USD'
+
+  - slug: 'uat-community-resilience'
+    name: 'UAT Community Resilience Building Program'
+    description: 'Building community capacity for disaster preparedness and climate adaptation'
+    organization_slug: 'uat-rhn'
+    delivery_type: 'Emergency Response'
+    budget: 650000
+    currency: 'USD'
+
+solicitations:
+  # ACTIVE SOLICITATIONS (4 total: 2 EOI, 2 RFP)
+  - title: 'UAT Maternal Health Services - Expression of Interest'
+    program_slug: 'uat-mch-initiative'
+    solicitation_type: 'eoi'
+    status: 'active'
+    is_publicly_listed: true
+    description: |
+      We seek qualified local organizations to deliver comprehensive maternal health services in underserved rural communities.
+      This EOI will identify potential implementing partners for our maternal and child health initiative.
+
+    target_population: 'Pregnant women and new mothers in rural communities'
+    scope_of_work: |
+      Provide antenatal care, safe delivery support, postnatal care, health education, and data collection through trained community health workers
+
+    estimated_scale: '12,000 pregnant women and new mothers across 4 districts'
+    expected_start_date: '2025-03-15'
+    expected_end_date: '2025-12-31'
+    application_deadline: '2025-02-15'
+
+    questions:
+      - text: "Describe your organization's experience delivering maternal health services"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'How many trained community health workers can you deploy?'
+        type: 'number'
+        required: true
+        order: 2
+
+      - text: 'Upload your organization registration certificate'
+        type: 'file'
+        required: true
+        order: 3
+
+      - text: 'What geographic areas does your organization currently serve?'
+        type: 'textarea'
+        required: true
+        order: 4
+
+  - title: 'UAT Community Nutrition Screening Program - Expression of Interest'
+    program_slug: 'uat-nutrition-program'
+    solicitation_type: 'eoi'
+    status: 'active'
+    is_publicly_listed: true
+    description: |
+      We are seeking experienced local organizations to implement community-based nutrition screening and treatment programs targeting
+      children under 5 and pregnant women in high-malnutrition areas.
+
+    target_population: 'Children under 5 and pregnant women in high-malnutrition communities'
+    scope_of_work: |
+      Conduct systematic malnutrition screening, provide therapeutic feeding, deliver nutrition education, establish referral systems, and maintain comprehensive program data
+
+    estimated_scale: '18,000 children under 5 and 3,000 pregnant women across 6 districts'
+    expected_start_date: '2025-05-01'
+    expected_end_date: '2025-10-31'
+    application_deadline: '2025-04-01'
+
+    questions:
+      - text: "Describe your organization's experience with nutrition programs"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your approach to community mobilization for nutrition services?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many nutrition specialists can your organization deploy?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload documentation of your organization's nutrition program certifications"
+        type: 'file'
+        required: true
+        order: 4
+
+  - title: 'UAT Digital Health Platform Implementation - Request for Proposals'
+    program_slug: 'uat-digital-health'
+    solicitation_type: 'rfp'
+    status: 'active'
+    is_publicly_listed: true
+    description: |
+      Following our EOI process, we invite selected organizations to submit detailed proposals for implementing a comprehensive digital health platform
+      including telemedicine, mobile health records, and remote monitoring capabilities.
+
+    target_population: 'Rural communities with limited healthcare facility access'
+    scope_of_work: |
+      Deploy mobile health technology, train healthcare workers on digital tools, establish telemedicine networks, and maintain comprehensive digital health records
+
+    estimated_scale: '25,000 patients across 8 health facilities in 3 regions'
+    expected_start_date: '2025-04-01'
+    expected_end_date: '2025-11-30'
+    application_deadline: '2025-03-01'
+
+    questions:
+      - text: 'Provide detailed technical specifications for your proposed digital health platform'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'Submit your comprehensive budget breakdown and implementation timeline'
+        type: 'file'
+        required: true
+        order: 2
+
+      - text: 'Describe your approach to training healthcare workers on digital health tools'
+        type: 'textarea'
+        required: true
+        order: 3
+
+      - text: 'Upload evidence of successful digital health implementations'
+        type: 'file'
+        required: true
+        order: 4
+
+      - text: 'How will you ensure data security and patient privacy?'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Water & Sanitation Infrastructure - Request for Proposals'
+    program_slug: 'uat-water-sanitation'
+    solicitation_type: 'rfp'
+    status: 'active'
+    is_publicly_listed: true
+    description: |
+      We are seeking qualified contractors to design and implement comprehensive water and sanitation infrastructure
+      in rural communities to improve health outcomes and quality of life.
+
+    target_population: 'Rural communities lacking access to clean water and sanitation facilities'
+    scope_of_work: |
+      Design and construct water systems, sanitation facilities, waste management systems, and hygiene education programs
+      for 25 communities and surrounding areas
+
+    estimated_scale: '25 communities and 50,000 community members across 6 districts'
+    expected_start_date: '2025-09-01'
+    expected_end_date: '2026-08-31'
+    application_deadline: '2025-05-15'
+
+    questions:
+      - text: 'Provide detailed technical specifications for your proposed water system design'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your total project cost including materials, labor, and maintenance for 2 years?'
+        type: 'number'
+        required: true
+        order: 2
+
+      - text: 'Upload technical drawings and engineering specifications'
+        type: 'file'
+        required: true
+        order: 3
+
+      - text: 'Describe your quality assurance and project management approach'
+        type: 'textarea'
+        required: true
+        order: 4
+
+      - text: 'How will you ensure sustainability and community ownership of the infrastructure?'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  # DRAFT SOLICITATIONS (2 total: 1 EOI, 1 RFP)
+  - title: 'UAT Agricultural Development - Expression of Interest'
+    program_slug: 'uat-agricultural-support'
+    solicitation_type: 'eoi'
+    status: 'draft'
+    is_publicly_listed: false
+    description: |
+      We are seeking experienced agricultural development organizations to support smallholder farmers with training,
+      tools, and market access to improve food security and livelihoods.
+
+    target_population: 'Smallholder farmers and agricultural cooperatives in rural areas'
+    scope_of_work: |
+      Provide agricultural training, distribute farming tools and seeds, establish market linkages,
+      and implement climate-smart agriculture practices
+
+    estimated_scale: '5,000 smallholder farmers across 15 farming communities'
+    expected_start_date: '2025-06-01'
+    expected_end_date: '2025-12-31'
+    application_deadline: '2025-04-15'
+
+    questions:
+      - text: "Describe your organization's experience with agricultural development programs"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your approach to farmer training and capacity building?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many agricultural extension workers can you deploy?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload your organization's agricultural program certifications"
+        type: 'file'
+        required: true
+        order: 4
+
+  - title: 'UAT Women Economic Empowerment Implementation - Request for Proposals'
+    program_slug: 'uat-economic-empowerment'
+    solicitation_type: 'rfp'
+    status: 'draft'
+    is_publicly_listed: false
+    description: |
+      We invite qualified organizations to submit detailed proposals for implementing comprehensive women's economic empowerment programs
+      including microfinance, skills training, and business development support.
+
+    target_population: 'Women entrepreneurs and women-led small businesses in underserved communities'
+    scope_of_work: |
+      Establish microfinance programs, provide business skills training, offer mentorship support,
+      create market access opportunities, and develop women's business networks
+
+    estimated_scale: '2,000 women entrepreneurs across 20 communities in 4 regions'
+    expected_start_date: '2025-08-01'
+    expected_end_date: '2026-07-31'
+    application_deadline: '2025-06-01'
+
+    questions:
+      - text: 'Provide detailed implementation plan for women economic empowerment activities'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'Submit your budget breakdown and financial sustainability strategy'
+        type: 'file'
+        required: true
+        order: 2
+
+      - text: 'Describe your approach to microfinance and business skills training'
+        type: 'textarea'
+        required: true
+        order: 3
+
+      - text: 'Upload evidence of previous women empowerment program implementations'
+        type: 'file'
+        required: true
+        order: 4
+
+      - text: 'How will you measure and evaluate program impact on women participants?'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  # CLOSED SOLICITATIONS (12 total: 6 EOI, 6 RFP) - Historical Data
+  - title: 'UAT Emergency Response Capacity Building - Request for Proposals [CLOSED]'
+    program_slug: 'uat-emergency-prep'
+    solicitation_type: 'rfp'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We invited qualified organizations to submit proposals for building community emergency preparedness and response capacity,
+      including disaster risk reduction, emergency health services, and community resilience programs.
+
+    target_population: 'Vulnerable communities in disaster-prone areas'
+    scope_of_work: |
+      Develop emergency response plans, train community volunteers, establish early warning systems, create emergency supply chains, and conduct regular preparedness drills
+
+    estimated_scale: '50 communities across 5 disaster-prone regions'
+    expected_start_date: '2024-06-01'
+    expected_end_date: '2024-12-31'
+    application_deadline: '2024-05-01'
+
+    questions:
+      - text: 'Provide a detailed emergency preparedness implementation plan'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'Submit your budget breakdown and resource allocation strategy'
+        type: 'file'
+        required: true
+        order: 2
+
+      - text: 'Describe your approach to community volunteer training and coordination'
+        type: 'textarea'
+        required: true
+        order: 3
+
+      - text: 'Upload evidence of previous emergency response program implementations'
+        type: 'file'
+        required: true
+        order: 4
+
+      - text: 'How will you measure and evaluate emergency preparedness improvements?'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Rural Education Access Initiative - Expression of Interest [CLOSED]'
+    program_slug: 'uat-rural-education'
+    solicitation_type: 'eoi'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought local organizations to establish and operate community-based learning centers that provide quality education access
+      to children in remote rural areas with limited school infrastructure.
+
+    target_population: 'School-age children (6-14 years) in remote rural communities'
+    scope_of_work: |
+      Establish community learning centers, recruit and train local teachers, develop culturally appropriate curricula, provide educational materials, and maintain student progress tracking
+
+    estimated_scale: '2,500 children across 15 remote communities in 3 regions'
+    expected_start_date: '2024-07-01'
+    expected_end_date: '2024-12-31'
+    application_deadline: '2024-06-01'
+
+    questions:
+      - text: "Describe your organization's experience in education program delivery"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your approach to recruiting and training community-based teachers?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many learning centers can your organization establish and manage?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload your organization's education program credentials and certifications"
+        type: 'file'
+        required: true
+        order: 4
+
+  - title: 'UAT Digital Health Data Platform - Request for Proposals [CLOSED]'
+    program_slug: 'uat-advanced-digital-health'
+    solicitation_type: 'rfp'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We required a comprehensive digital health data platform to integrate patient records, health worker performance tracking,
+      and real-time health system monitoring across multiple facilities and regions.
+
+    target_population: 'Health workers, facility managers, and 150,000 patients across the health system'
+    scope_of_work: |
+      Design, develop, deploy, and maintain a cloud-based digital health platform with mobile applications,
+      data analytics dashboard, and integration capabilities with existing health information systems
+
+    estimated_scale: '200 health facilities, 2,000 health workers, and 150,000 patient records'
+    expected_start_date: '2024-06-01'
+    expected_end_date: '2024-12-31'
+    application_deadline: '2024-04-30'
+
+    questions:
+      - text: 'Provide detailed technical architecture and system requirements for your proposed platform'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your total development and 2-year maintenance cost?'
+        type: 'number'
+        required: true
+        order: 2
+
+      - text: 'Upload technical documentation and system architecture diagrams'
+        type: 'file'
+        required: true
+        order: 3
+
+      - text: 'How will you ensure data security, privacy, and HIPAA compliance?'
+        type: 'textarea'
+        required: true
+        order: 4
+
+      - text: 'Describe your user training and change management approach'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Community Resilience Building - Expression of Interest [CLOSED]'
+    program_slug: 'uat-community-resilience'
+    solicitation_type: 'eoi'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought organizations experienced in building community capacity for disaster preparedness and climate adaptation
+      to help vulnerable communities become more resilient to environmental challenges.
+
+    target_population: 'Vulnerable communities in climate-sensitive areas'
+    scope_of_work: |
+      Assess community vulnerabilities, develop resilience plans, train local leaders, establish early warning systems,
+      and implement climate adaptation measures
+
+    estimated_scale: '40 communities across 6 climate-vulnerable regions'
+    expected_start_date: '2024-03-01'
+    expected_end_date: '2024-11-30'
+    application_deadline: '2024-02-01'
+
+    questions:
+      - text: "Describe your organization's experience with community resilience programs"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your approach to climate vulnerability assessment?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many community resilience facilitators can you deploy?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload your organization's climate adaptation program credentials"
+        type: 'file'
+        required: true
+        order: 4
+
+  - title: 'UAT Emergency Medical Supply Chain - Request for Proposals [CLOSED]'
+    program_slug: 'uat-emergency-prep'
+    solicitation_type: 'rfp'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We required a reliable partner to establish and manage an emergency medical supply chain system capable of rapid deployment
+      during health crises and natural disasters across multiple countries.
+
+    target_population: 'Emergency response teams and affected populations during health crises'
+    scope_of_work: |
+      Establish regional supply chain hubs, develop inventory management systems, create rapid deployment protocols,
+      and maintain 24/7 emergency response capacity for medical supplies and equipment
+
+    estimated_scale: 'Multi-country emergency response capacity serving up to 500,000 people per emergency'
+    expected_start_date: '2024-07-01'
+    expected_end_date: '2024-12-30'
+    application_deadline: '2024-05-01'
+
+    questions:
+      - text: 'Provide detailed supply chain management and logistics plan'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your total 2-year contract cost including all logistics and storage?'
+        type: 'number'
+        required: true
+        order: 2
+
+      - text: 'Upload organizational capacity documents and emergency response certifications'
+        type: 'file'
+        required: true
+        order: 3
+
+      - text: 'How will you ensure 48-hour emergency deployment capability?'
+        type: 'textarea'
+        required: true
+        order: 4
+
+      - text: 'Describe your quality control and cold chain management systems'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Advanced Maternal Health Services - Expression of Interest [CLOSED]'
+    program_slug: 'uat-mch-initiative'
+    solicitation_type: 'eoi'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought qualified local organizations to deliver advanced maternal health services including specialized care
+      for high-risk pregnancies and comprehensive postnatal support in underserved communities.
+
+    target_population: 'Pregnant women with high-risk pregnancies and new mothers requiring specialized care'
+    scope_of_work: |
+      Provide specialized antenatal care, high-risk pregnancy management, emergency obstetric care,
+      comprehensive postnatal support, and referral systems
+
+    estimated_scale: '8,000 high-risk pregnant women and new mothers across 3 specialized districts'
+    expected_start_date: '2024-01-15'
+    expected_end_date: '2024-09-30'
+    application_deadline: '2023-12-15'
+
+    questions:
+      - text: "Describe your organization's experience with high-risk maternal health services"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'How many specialized maternal health professionals can you deploy?'
+        type: 'number'
+        required: true
+        order: 2
+
+      - text: 'Upload your organization registration and specialized health certifications'
+        type: 'file'
+        required: true
+        order: 3
+
+      - text: 'What specialized equipment and facilities does your organization have access to?'
+        type: 'textarea'
+        required: true
+        order: 4
+
+  - title: 'UAT Community Nutrition Program Evaluation - Request for Proposals [CLOSED]'
+    program_slug: 'uat-nutrition-program'
+    solicitation_type: 'rfp'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought an independent evaluation partner to conduct a comprehensive impact evaluation of our community nutrition programs,
+      including randomized controlled trial design and implementation.
+
+    target_population: 'Research and evaluation organizations with expertise in nutrition program assessment'
+    scope_of_work: |
+      Design and implement rigorous impact evaluation methodology, conduct baseline and endline surveys,
+      perform statistical analysis, and produce comprehensive evaluation report with policy recommendations
+
+    estimated_scale: '15,000 program participants across 50 communities in 4 regions'
+    expected_start_date: '2024-08-01'
+    expected_end_date: '2024-12-31'
+    application_deadline: '2024-06-15'
+
+    questions:
+      - text: 'Provide detailed evaluation methodology and research design'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your total evaluation cost including all research activities?'
+        type: 'number'
+        required: true
+        order: 2
+
+      - text: 'Upload CVs of key research staff and previous evaluation reports'
+        type: 'file'
+        required: true
+        order: 3
+
+      - text: 'How will you ensure ethical research standards and community engagement?'
+        type: 'textarea'
+        required: true
+        order: 4
+
+      - text: 'Describe your approach to knowledge dissemination and policy engagement'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Digital Health Innovation - Expression of Interest [CLOSED]'
+    program_slug: 'uat-digital-health'
+    solicitation_type: 'eoi'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought innovative organizations to explore cutting-edge digital health solutions including AI diagnostics,
+      blockchain health records, and IoT-enabled remote monitoring for rural healthcare.
+
+    target_population: 'Rural communities seeking access to innovative digital health technologies'
+    scope_of_work: |
+      Pilot innovative digital health technologies, develop AI-powered diagnostic tools,
+      implement blockchain health records, and deploy IoT remote monitoring systems
+
+    estimated_scale: '10,000 patients across 5 pilot health facilities in 2 regions'
+    expected_start_date: '2024-02-01'
+    expected_end_date: '2024-08-31'
+    application_deadline: '2024-01-01'
+
+    questions:
+      - text: "Describe your organization's experience with innovative digital health technologies"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What cutting-edge technologies does your organization specialize in?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many technology specialists can you deploy for pilot implementation?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload your organization's technology innovation portfolio and certifications"
+        type: 'file'
+        required: true
+        order: 4
+
+  - title: 'UAT Integrated Health Systems Strengthening - Request for Proposals [CLOSED]'
+    program_slug: 'uat-mch-initiative'
+    solicitation_type: 'rfp'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We required comprehensive health systems strengthening partners to integrate maternal health services
+      with broader health system improvements including infrastructure, human resources, and governance.
+
+    target_population: 'Health system stakeholders and communities served by integrated health facilities'
+    scope_of_work: |
+      Strengthen health facility infrastructure, train and deploy health workers, improve supply chain management,
+      establish quality assurance systems, and develop health information systems
+
+    estimated_scale: '50 health facilities serving 200,000 community members across 8 districts'
+    expected_start_date: '2024-04-01'
+    expected_end_date: '2024-12-31'
+    application_deadline: '2024-02-28'
+
+    questions:
+      - text: 'Provide comprehensive health systems strengthening implementation plan'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'Submit detailed budget breakdown for all health system components'
+        type: 'file'
+        required: true
+        order: 2
+
+      - text: 'Describe your approach to health worker training and retention'
+        type: 'textarea'
+        required: true
+        order: 3
+
+      - text: 'Upload evidence of previous health systems strengthening implementations'
+        type: 'file'
+        required: true
+        order: 4
+
+      - text: 'How will you ensure sustainable health system improvements?'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Climate-Smart Agriculture Training - Expression of Interest [CLOSED]'
+    program_slug: 'uat-agricultural-support'
+    solicitation_type: 'eoi'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought agricultural organizations to provide climate-smart agriculture training and support
+      to help farmers adapt to climate change while improving productivity and sustainability.
+
+    target_population: 'Smallholder farmers in climate-vulnerable agricultural regions'
+    scope_of_work: |
+      Deliver climate-smart agriculture training, provide drought-resistant seeds, implement water conservation techniques,
+      establish weather monitoring systems, and develop climate adaptation strategies
+
+    estimated_scale: '3,000 smallholder farmers across 12 climate-vulnerable farming communities'
+    expected_start_date: '2024-05-01'
+    expected_end_date: '2024-10-31'
+    application_deadline: '2024-04-01'
+
+    questions:
+      - text: "Describe your organization's experience with climate-smart agriculture programs"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your approach to farmer training on climate adaptation techniques?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many agricultural climate specialists can you deploy?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload your organization's climate-smart agriculture program certifications"
+        type: 'file'
+        required: true
+        order: 4
+
+  - title: 'UAT Integrated Water Management Systems - Request for Proposals [CLOSED]'
+    program_slug: 'uat-water-sanitation'
+    solicitation_type: 'rfp'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We required comprehensive water management partners to implement integrated water resource management systems
+      including water treatment, distribution, conservation, and community management capacity building.
+
+    target_population: 'Rural and peri-urban communities lacking reliable water access and management systems'
+    scope_of_work: |
+      Design integrated water management systems, install water treatment facilities, establish distribution networks,
+      implement conservation measures, and train community water management committees
+
+    estimated_scale: '30 communities with 75,000 residents across 5 water-scarce regions'
+    expected_start_date: '2024-03-01'
+    expected_end_date: '2024-11-30'
+    application_deadline: '2024-01-15'
+
+    questions:
+      - text: 'Provide comprehensive integrated water management system design and implementation plan'
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'Submit detailed engineering specifications and budget breakdown'
+        type: 'file'
+        required: true
+        order: 2
+
+      - text: 'Describe your approach to community water management capacity building'
+        type: 'textarea'
+        required: true
+        order: 3
+
+      - text: 'Upload evidence of previous integrated water management implementations'
+        type: 'file'
+        required: true
+        order: 4
+
+      - text: 'How will you ensure long-term sustainability and community ownership?'
+        type: 'textarea'
+        required: true
+        order: 5
+
+  - title: 'UAT Women Leadership Development - Expression of Interest [CLOSED]'
+    program_slug: 'uat-economic-empowerment'
+    solicitation_type: 'eoi'
+    status: 'closed'
+    is_publicly_listed: true
+    description: |
+      We sought organizations to develop women's leadership capacity through comprehensive training programs
+      focusing on political participation, community leadership, and advocacy skills development.
+
+    target_population: 'Women community leaders and aspiring women leaders in underserved communities'
+    scope_of_work: |
+      Provide leadership skills training, facilitate mentorship programs, support civic engagement initiatives,
+      establish women's leadership networks, and promote political participation
+
+    estimated_scale: '1,500 women leaders across 25 communities in 5 regions'
+    expected_start_date: '2024-06-01'
+    expected_end_date: '2024-11-30'
+    application_deadline: '2024-05-01'
+
+    questions:
+      - text: "Describe your organization's experience with women's leadership development programs"
+        type: 'textarea'
+        required: true
+        order: 1
+
+      - text: 'What is your approach to building women leadership and advocacy skills?'
+        type: 'textarea'
+        required: true
+        order: 2
+
+      - text: 'How many women leadership development specialists can you deploy?'
+        type: 'number'
+        required: true
+        order: 3
+
+      - text: "Upload your organization's women empowerment and leadership program credentials"
+        type: 'file'
+        required: true
+        order: 4

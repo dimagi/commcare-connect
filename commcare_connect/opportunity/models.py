@@ -652,7 +652,7 @@ class UserVisit(XFormBaseModel):
     )
     form_json = models.JSONField()
     reason = models.CharField(max_length=300, null=True, blank=True)
-    location = models.CharField(null=True)
+    location = models.CharField(max_length=255, null=True)
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)

@@ -21,7 +21,7 @@ certifi==2023.7.22
     #   -c requirements/base.txt
     #   requests
     #   sentry-sdk
-cffi==1.15.1
+cffi==1.17.1
     # via
     #   -c requirements/base.txt
     #   cryptography
@@ -69,7 +69,7 @@ packaging==23.1
     #   gunicorn
 psycopg2==2.9.6
     # via -r requirements/production.in
-pycparser==2.21
+pycparser==2.22
     # via
     #   -c requirements/base.txt
     #   cffi

@@ -34,6 +34,12 @@ from commcare_connect.reports.queries import get_visit_map_queryset
 
 from .tables import AdminReportTable
 
+
+class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_superuser
+
+
 COUNTRY_CURRENCY_CHOICES = [
     ("ETB", "Ethiopia"),
     ("KES", "Kenya"),
@@ -178,11 +184,6 @@ def _results_to_geojson(results):
             geojson["features"].append(feature)
 
     return geojson
-
-
-class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        return self.request.user.is_superuser
 
 
 class DeliveryReportFilters(django_filters.FilterSet):

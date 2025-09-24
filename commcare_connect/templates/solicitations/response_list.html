@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% load render_table from django_tables2 %}
+{% load static %}
+
+{% block page_title %}Responses - {{ solicitation.title }}{% endblock %}
+
+{% block content %}
+    <!-- Breadcrumb Navigation -->
+    {% include 'components/breadcrumbs.html' with path=path %}
+
+    <!-- Header Section -->
+    <div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+        <div class="flex items-start justify-between">
+            <div class="flex-1">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-dark{% else %}warning-dark{% endif %}">
+                        {{ solicitation.get_solicitation_type_display }}
+                    </span>
+                    <span class="badge badge-md {% if solicitation.status == 'active' %}positive-dark{% elif solicitation.status == 'draft' %}neutral-light{% else %}neutral-dark{% endif %}">
+                        {{ solicitation.get_status_display }}
+                    </span>
+                </div>
+                <h1 class="text-3xl font-bold text-brand-deep-purple mb-2">{{ solicitation.title }}</h1>
+                <p class="text-gray-600 mb-4">{{ solicitation.description|truncatewords:30 }}</p>
+
+                <!-- Key Information -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="flex items-center text-sm text-gray-600">
+                        <i class="fa-solid fa-calendar-check mr-2 text-gray-400"></i>
+                        <span>Deadline: {{ solicitation.application_deadline|date:"M j, Y" }}</span>
+                    </div>
+                    <div class="flex items-center text-sm text-gray-600">
+                        <i class="fa-solid fa-users mr-2 text-gray-400"></i>
+                        <span>{{ table.data|length }} response{{ table.data|length|pluralize }}</span>
+                    </div>
+                    <div class="flex items-center text-sm text-gray-600">
+                        <i class="fa-solid fa-clock mr-2 text-gray-400"></i>
+                        <span>Created {{ solicitation.date_created|date:"M j, Y" }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-x-4">
+                <a href="{% if request.org %}{% url 'org_solicitations:detail' org_slug=request.org.slug pk=solicitation.pk %}{% else %}{% url 'solicitations:detail' pk=solicitation.pk %}{% endif %}"
+                   class="button button-md outline-style"
+                   target="_blank">
+                    <i class="fa-solid fa-external-link-alt mr-2"></i>
+                    View Public Page
+                </a>
+                <a href="{% url 'org_solicitations:program_dashboard' org_slug=request.org.slug pk=program_pk %}"
+                   class="button button-md outline-style">
+                    <i class="fa-solid fa-arrow-left mr-2"></i>
+                    Back to Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- Response Statistics - Full Width -->
+        <div class="bg-neutral-100 rounded-lg w-full px-5 py-4 mt-6">
+            <div class="flex gap-2 w-full items-center justify-between flex-wrap">
+                <!-- Total Responses -->
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-inbox"></i>
+                        <div>
+                            <h6>Total Responses</h6>
+                            <p>{{ table.data|length }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <!-- Under Review -->
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-clock"></i>
+                        <div>
+                            <h6>Under Review</h6>
+                            <p>{{ status_counts.under_review|default:0 }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <!-- Accepted -->
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-check-circle"></i>
+                        <div>
+                            <h6>Accepted</h6>
+                            <p>{{ status_counts.accepted|default:0 }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <!-- Rejected -->
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-times-circle"></i>
+                        <div>
+                            <h6>Rejected</h6>
+                            <p>{{ status_counts.rejected|default:0 }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Responses & Reviews Table (Django Tables2) -->
+    <div class="flex flex-col w-full gap-2">
+        <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+            <p class="text-sm text-brand-deep-purple">Responses & Reviews</p>
+            <div class="flex items-center gap-x-4">
+                <!-- Future: Add bulk actions here -->
+            </div>
+        </div>
+
+        <div class="w-full overflow-y-auto rounded-lg shadow-xs">
+            {% render_table table %}
+        </div>
+    </div>
+{% endblock %}

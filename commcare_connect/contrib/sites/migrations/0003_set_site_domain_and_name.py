@@ -16,7 +16,7 @@ def _update_or_create_site_with_sequence(site_model, connection, domain, name):
             "name": name,
         },
     )
-    if created:
+    if created and connection.vendor != "sqlite":
         # We provided the ID explicitly when creating the Site entry, therefore the DB
         # sequence to auto-generate them wasn't used and is now out of sync. If we
         # don't do anything, we'll get a unique constraint violation the next time a
@@ -25,6 +25,9 @@ def _update_or_create_site_with_sequence(site_model, connection, domain, name):
         # greater than the maximum value.
         max_id = site_model.objects.order_by('-id').first().id
         with connection.cursor() as cursor:
+            # Skip sequence adjustment on SQLite where sequences are not used
+            if connection.vendor == "sqlite":
+                return
             cursor.execute("SELECT last_value from django_site_id_seq")
             (current_id,) = cursor.fetchone()
             if current_id <= max_id:
