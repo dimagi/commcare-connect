@@ -2238,7 +2238,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
 
     worker_list_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
     status_url = worker_list_url + "?sort=-last_active"
-    delivery_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id)) + "?sort=-last_active"
+    delivery_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     payment_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
 
     deliveries_panels = [
@@ -2247,7 +2247,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "name": "Services Delivered",
             "status": "Total",
             "value": header_with_tooltip(stats.total_deliveries, "Total delivered so far excluding duplicates"),
-            "url": delivery_url,
+            "url": delivery_url + "?sort=-last_active",
             "incr": stats.deliveries_from_yesterday,
         },
         {
@@ -2257,6 +2257,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "value": header_with_tooltip(
                 stats.flagged_deliveries_waiting_for_review, "Flagged and pending review with NM"
             ),
+            "url": delivery_url + "?review_pending=True",
             "incr": stats.flagged_deliveries_waiting_for_review_since_yesterday,
         },
     ]
@@ -2267,6 +2268,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                 "icon": "fa-clipboard-list",
                 "name": "Services Delivered",
                 "status": "Pending PM Review",
+                "url": delivery_url + "?review_pending=True",
                 "value": header_with_tooltip(stats.visits_pending_for_pm_review, "Flagged and pending review with PM"),
                 "incr": stats.visits_pending_for_pm_review_since_yesterday,
             }
@@ -2295,6 +2297,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                     "icon": "fa-clipboard-list",
                     "name": "Connect Workers",
                     "status": "Inactive last 3 days",
+                    "url": delivery_url + "?last_active=3",
                     "value": header_with_tooltip(
                         stats.inactive_workers, "Did not submit a Learn or Deliver form in the last 3 days"
                     ),
