@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
@@ -38,6 +38,7 @@ from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
+from commcare_connect.opportunity.filters import DeliverFilterSet, FilterMixin, OpportunityListFilterSet
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
@@ -62,7 +63,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_list_data_lite,
     get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_learn_table_data,
@@ -93,7 +93,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    BaseOpportunityList,
     CompletedWorkTable,
     DeliverUnitTable,
     LearnModuleTable,
@@ -188,18 +187,19 @@ class OrgContextSingleTableView(SingleTableView):
         return kwargs
 
 
-class OpportunityList(OrganizationUserMixin, SingleTableView):
+class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
     model = Opportunity
     table_class = ProgramManagerOpportunityTable
     template_name = "opportunity/opportunities_list.html"
     paginate_by = 15
+    filter_class = OpportunityListFilterSet
 
-    def enable_allcolumns(self):
-        return bool(self.request.GET.get("allcolumns"))
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(*args, **kwargs)
+        context.update(self.get_filter_context())
+        return context
 
     def get_table_class(self):
-        if not self.enable_allcolumns():
-            return BaseOpportunityList
         if self.request.org.program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
@@ -215,10 +215,7 @@ class OpportunityList(OrganizationUserMixin, SingleTableView):
     def get_table_data(self):
         org = self.request.org
         is_program_manager = org.program_manager
-        if self.enable_allcolumns():
-            return OpportunityData(org, is_program_manager).get_data()
-        else:
-            return get_opportunity_list_data_lite(org, is_program_manager)
+        return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
 class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
@@ -1781,17 +1778,47 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
         {"key": "payments", "label": "Payments", "url_name": "opportunity:worker_payments"},
     ]
 
+    def _is_navigating_between_tabs(self, org_slug, opportunity):
+        referer = self.request.headers.get("referer")
+        is_tab_navigation = False
+        if referer:
+            path = urlparse(referer).path
+            for tab in self.tabs:
+                if path.endswith(reverse(tab["url_name"], args=(org_slug, opportunity.id))):
+                    is_tab_navigation = True
+                    break
+        return is_tab_navigation
+
     def get_tabs(self, org_slug, opportunity):
         tabs_with_urls = []
-        # Pass along query-params for active tab url
+        # Persist url-params when navigating in between tabs, but not other pages
+        is_tab_navigation = self._is_navigating_between_tabs(org_slug, opportunity)
+        session_key_prefix = "worker_tab_params"
+
+        params = {}
+        if not is_tab_navigation:
+            # Clear url params
+            for key in [t["key"] for t in self.tabs]:
+                self.request.session.pop(f"{session_key_prefix}:{key}", None)
+        if self.request.GET:
+            # Save url params
+            params = self.request.GET.dict()
+            self.request.session[f"{session_key_prefix}:{self.active_tab}"] = params
+        elif is_tab_navigation:
+            # Persist
+            params = self.request.session.get(f"{session_key_prefix}:{self.active_tab}", {})
+
+        # build urls with params
         for tab in self.tabs:
             url = reverse(tab["url_name"], args=(org_slug, opportunity.id))
             if tab["key"] == self.active_tab:
-                query_params = self.request.GET.dict()
-                query_string = urlencode(query_params) if query_params else ""
-                if query_string:
-                    url = f"{url}?{query_string}"
+                tab_params = params
+            else:
+                tab_params = self.request.session.get(f"worker_tab_params:{tab['key']}", {})
+            if tab_params:
+                url = f"{url}?{urlencode(tab_params)}"
             tabs_with_urls.append({**tab, "url": url})
+
         # Label with count for workers tab
         workers_count = (
             UserInvite.objects.filter(opportunity=opportunity).exclude(status=UserInviteStatus.not_found).count()
@@ -1873,12 +1900,13 @@ class WorkerLearnView(BaseWorkerListView):
         return table
 
 
-class WorkerDeliverView(BaseWorkerListView):
+class WorkerDeliverView(BaseWorkerListView, FilterMixin):
     hx_template_name = "opportunity/deliver.html"
     active_tab = "deliver"
+    filter_class = DeliverFilterSet
 
     def get_extra_context(self, opportunity, org_slug):
-        return {
+        context = {
             "visit_export_form": VisitExportForm(),
             "review_visit_export_form": ReviewVisitExportForm(),
             "import_export_delivery_urls": {
@@ -1906,9 +1934,11 @@ class WorkerDeliverView(BaseWorkerListView):
                 else "Import Verified Visits"
             ),
         }
+        context.update(self.get_filter_context())
+        return context
 
     def get_table(self, opportunity, org_slug):
-        data = get_annotated_opportunity_access_deliver_status(opportunity)
+        data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values())
         table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opportunity.id)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
