@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.commcarehq.models import HQServer
+from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
 from commcare_connect.users.managers import UserManager
 
 
@@ -71,3 +72,39 @@ class ConnectIDUserLink(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "commcare_username"], name="connect_user")]
+
+
+# TODO: Confirm what values should be here
+DELIVERY_LEVEL_TO_NUMBER = {}
+
+
+class UserCredential(models.Model):
+    class CredentialType(models.TextChoices):
+        LEARN = "LEARN", _("Learn")
+        DELIVERY = "DELIVERY", _("Deliver")
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    opportunity = models.ForeignKey("opportunity.Opportunity", on_delete=models.CASCADE)
+    delivery_type = models.ForeignKey("opportunity.DeliveryType", on_delete=models.CASCADE)
+    created_on = models.DateTimeField(auto_now_add=True)
+    issued_on = models.DateTimeField(null=True, blank=True)
+    credential_type = models.CharField(
+        max_length=32,
+        choices=CredentialType.choices,
+    )
+    level = models.CharField(
+        max_length=32,
+        choices=DeliveryLevel.choices + LearnLevel.choices,
+    )
+
+    class Meta:
+        unique_together = ("user", "opportunity", "credential_type")
+
+    @property
+    def title(self):
+        if self.credential_type == self.CredentialType.LEARN:
+            return _("Passed learning assessment for {delivery_type}").format(delivery_type=self.delivery_type.name)
+        delivery_level_num = DELIVERY_LEVEL_TO_NUMBER.get(self.level)
+        return _("Completed {delivery_level_num} deliveries for {delivery_type}").format(
+            delivery_level_num=delivery_level_num, delivery_type=self.delivery_type.name
+        )
