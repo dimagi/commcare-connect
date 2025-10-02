@@ -1,4 +1,5 @@
 import pytest
+from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient, APIRequestFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
@@ -145,3 +146,39 @@ def program_manager_org_user_member(program_manager_org) -> User:
 @pytest.fixture
 def program_manager_org_user_admin(program_manager_org) -> User:
     return program_manager_org.memberships.filter(role="admin").first().user
+
+
+@pytest.fixture
+def check_basic_permissions(client):
+    def _check(user, url, permission_codename):
+        # Anonymous → redirect
+        response = client.get(url)
+        assert response.status_code == 302
+        assert "/accounts/login/" in response.url
+
+        # Logged-in without permission → forbidden
+        client.force_login(user)
+        response = client.get(url)
+        assert response.status_code == 403
+        client.logout()
+
+        # With permission → allowed
+        perm = Permission.objects.get(codename=permission_codename)
+        user.user_permissions.add(perm)
+
+        client.force_login(user)
+        response = client.get(url)
+        assert response.status_code == 200
+        client.logout()
+
+        # Superuser → allowed
+        user.user_permissions.remove(perm)
+        user.is_superuser = True
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        response = client.get(url)
+        assert response.status_code == 200
+        client.logout()
+
+    return _check

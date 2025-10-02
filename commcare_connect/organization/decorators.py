@@ -1,31 +1,34 @@
 from functools import wraps
 
-from django.http import Http404, HttpResponseRedirect
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseRedirect
 from django.urls import reverse
 
 from .models import UserOrganizationMembership
 
+ALL_ORG_ACCESS = "users.all_org_access"
+
 
 def _request_user_is_member(request):
-    return (
-        request.org and request.org_membership and not request.org_membership.is_viewer
-    ) or request.user.is_superuser
+    return (request.org and request.org_membership and not request.org_membership.is_viewer) or request.user.has_perm(
+        ALL_ORG_ACCESS
+    )
 
 
 def _request_user_is_admin(request):
     return (
         request.org and request.org_membership and request.org_membership.role == UserOrganizationMembership.Role.ADMIN
-    ) or request.user.is_superuser
+    ) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
 def _request_user_is_program_manager(request):
     return (
         request.org and request.org_membership and request.org_membership.is_admin and request.org.program_manager
-    ) or request.user.is_superuser
+    ) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
 def _request_user_is_viewer(request):
-    return (request.org and request.org_membership) or request.user.is_superuser
+    return (request.org and request.org_membership) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
 def org_member_required(view_func):
@@ -52,7 +55,7 @@ def _get_decorated_function(view_func, permission_test_function):
             return HttpResponseRedirect("{}?next={}".format(reverse("account_login"), request.path))
 
         if not permission_test_function(request):
-            raise Http404
+            raise PermissionDenied()
 
         return view_func(request, *args, **kwargs)
 
