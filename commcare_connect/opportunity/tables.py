@@ -691,10 +691,14 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         return self.render_worker_list_url_column(value=value, opp_id=record.id)
 
     def render_total_deliveries(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort="sort=-delivered")
+        return self.render_worker_list_url_column(
+            value=value, opp_id=record.id, url_slug="worker_deliver", sort="sort=-delivered"
+        )
 
     def render_verified_deliveries(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort="sort=-approved")
+        return self.render_worker_list_url_column(
+            value=value, opp_id=record.id, url_slug="worker_deliver", sort="sort=-approved"
+        )
 
     def render_worker_earnings(self, value, record):
         url = reverse("opportunity:worker_payments", args=(self.org_slug, record.id))

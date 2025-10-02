@@ -1,4 +1,5 @@
 import django_filters
+from crispy_forms.helper import FormHelper
 from django import forms
 
 from commcare_connect.opportunity.models import OpportunityAccess
@@ -48,7 +49,7 @@ class FilterMixin:
         return {}
 
     def filters_applied_count(self):
-        return len([v for v in self.get_filter_values().values() if v not in (None, "")])
+        return len([v for v in self.get_filter_values().values() if v not in (None, "", [])])
 
     def get_filter_context(self):
         return {
@@ -57,15 +58,25 @@ class FilterMixin:
         }
 
 
-YES_OR_NO_CHOICES = (
-    (True, "Yes"),
-    (False, "No"),
-)
-
-
-class YesNoFilter(django_filters.ChoiceFilter):
+class CSRFExemptForm(forms.Form):
     def __init__(self, *args, **kwargs):
-        kwargs.setdefault("choices", YES_OR_NO_CHOICES)
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.disable_csrf = True
+
+
+class YesNoFilter(django_filters.BooleanFilter):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault(
+            "widget",
+            forms.Select(
+                choices=[
+                    ("", "---------"),
+                    (True, "Yes"),
+                    (False, "No"),
+                ]
+            ),
+        )
         super().__init__(*args, **kwargs)
 
 
@@ -92,6 +103,9 @@ class DeliverFilterSet(django_filters.FilterSet):
         label="Deliveries with Pending Review",
     )
 
+    class Meta:
+        form = CSRFExemptForm
+
 
 class OpportunityListFilterSet(django_filters.FilterSet):
     is_test = YesNoFilter(label="Is Test")
@@ -104,10 +118,16 @@ class OpportunityListFilterSet(django_filters.FilterSet):
         label="Program", choices=[], widget=forms.SelectMultiple(attrs={"data-tomselect": "1"})
     )
 
+    class Meta:
+        form = CSRFExemptForm
+
     def __init__(self, *args, **kwargs):
         request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
 
         if request:
             user_programs = Program.objects.filter(organization=request.org)
-            self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in user_programs]
+            if user_programs.exists():
+                self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in user_programs]
+            else:
+                del self.filters["program"]
