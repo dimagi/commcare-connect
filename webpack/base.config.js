@@ -14,6 +14,10 @@ module.exports = {
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
     tailwind: path.resolve(__dirname, '../tailwind/tailwind.css'),
     mapbox: path.resolve(__dirname, '../commcare_connect/static/js/mapbox'),
+    tomselect: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/tomselect.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),

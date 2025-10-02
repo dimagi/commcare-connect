@@ -23,11 +23,13 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
+    OpportunityFactory,
     PaymentFactory,
     PaymentUnitFactory,
     UserInviteFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
@@ -153,13 +155,63 @@ def test_approve_visit(
 
 
 @pytest.mark.django_db
-def test_get_opportunity_list_data_all_annotations(opportunity):
+@pytest.mark.parametrize(
+    "filters, expected_count",
+    [
+        ({}, 4),
+        ({"is_test": True}, 1),
+        ({"is_test": False}, 3),
+        ({"status": [0]}, 2),
+        ({"status": [1]}, 1),
+        ({"status": [2]}, 1),
+        ({"program": ["test-program-1"]}, 1),
+        ({"program": ["test-program-2"]}, 1),
+        ({"program": ["test-program-1", "test-program-2"]}, 2),
+    ],
+)
+def test_get_opportunity_list_data_all_annotations(organization, filters, expected_count):
     today = now().date()
     three_days_ago = now() - timedelta(days=3)
 
-    opportunity.end_date = today + timedelta(days=1)
-    opportunity.active = True
-    opportunity.save()
+    program1 = ProgramFactory(organization=organization, name="Test Program 1", slug="test-program-1")
+    program2 = ProgramFactory(organization=organization, name="Test Program 2", slug="test-program-2")
+
+    # Active opportunity (status=0)
+    opportunity = ManagedOpportunityFactory(
+        program=program1,
+        organization=organization,
+        end_date=today + timedelta(days=1),
+        active=True,
+        is_test=True,
+    )
+
+    # Active opportunity (status=0)
+    ManagedOpportunityFactory(
+        program=program2,
+        organization=organization,
+        name="test opportunity 2",
+        end_date=today + timedelta(days=1),
+        active=True,
+        is_test=False,
+    )
+
+    # Ended opportunity (status=1)
+    OpportunityFactory(
+        organization=organization,
+        name="test opportunity 3",
+        end_date=today - timedelta(days=1),
+        active=True,
+        is_test=False,
+    )
+
+    # Inactive opportunity (status=2)
+    OpportunityFactory(
+        organization=organization,
+        name="test opportunity 4",
+        end_date=today + timedelta(days=1),
+        active=False,
+        is_test=False,
+    )
 
     # Create OpportunityAccesses
     oa1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, payment_accrued=1000, last_active=now())
@@ -203,15 +255,17 @@ def test_get_opportunity_list_data_all_annotations(opportunity):
         visit_date=three_days_ago - timedelta(days=2),
     )
 
-    queryset = OpportunityData(opportunity.organization, False).get_data()
-    opp = queryset[0]
-    assert opp.pending_invites == 3
-    assert opp.pending_approvals == 1
-    assert opp.total_accrued == total_accrued
-    assert opp.total_paid == total_paid
-    assert opp.payments_due == total_accrued - total_paid
-    assert opp.inactive_workers == 2
-    assert opp.status == 0
+    queryset = OpportunityData(organization, False, filters).get_data()
+    assert queryset.count() == expected_count
+    if not filters:
+        opp = queryset[0]
+        assert opp.pending_invites == 3
+        assert opp.pending_approvals == 1
+        assert opp.total_accrued == total_accrued
+        assert opp.total_paid == total_paid
+        assert opp.payments_due == total_accrued - total_paid
+        assert opp.inactive_workers == 2
+        assert opp.status == 0
 
 
 @pytest.mark.django_db
@@ -250,6 +304,44 @@ def test_tiered_queryset_basic():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "referring_url, should_persist",
+    [
+        ("deliver_tab", True),
+        ("/somewhere-else", False),
+    ],
+)
+def test_tab_param_persistence(rf, opportunity, organization, referring_url, should_persist):
+    tab_a_url = reverse("opportunity:worker_deliver", args=(organization.slug, opportunity.id))
+    tab_b_url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    # Step 1: Visit tab A with GET params from any non-tab page
+    request_a = rf.get(tab_a_url, {"status": "active"}, HTTP_REFERER="/anywhere-else")
+    request_a.session = {}
+    view = WorkerPaymentsView()
+    view.request = request_a
+    _ = view.get_tabs(organization.slug, opportunity)
+    assert "worker_tab_params:payments" in request_a.session
+
+    # Step 2: Go to tab B, with referrer varying
+    if referring_url == "deliver_tab":
+        referrer = tab_a_url
+    else:
+        referrer = referring_url
+
+    request_b = rf.get(tab_b_url, HTTP_REFERER=referrer)
+    request_b.session = request_a.session
+    view.request = request_b
+    tabs_b = view.get_tabs(organization.slug, opportunity)
+
+    tab_a_link = [t["url"] for t in tabs_b if t["key"] == "payments"][0]
+
+    if should_persist:
+        assert "status=active" in tab_a_link
+    else:
+        assert "status=active" not in tab_a_link
+
+
 class TestDeleteUserInvites:
     @pytest.fixture(autouse=True)
     def setup_invites(self, organization, opportunity, org_user_member, client):
