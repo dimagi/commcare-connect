@@ -135,7 +135,12 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
-from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
+from commcare_connect.organization.decorators import (
+    ALL_ORG_ACCESS,
+    org_admin_required,
+    org_member_required,
+    org_viewer_required,
+)
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
@@ -148,14 +153,14 @@ from commcare_connect.utils.tables import get_duration_min, get_validated_page_s
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         # request.org_membership is a SimpleLazyObject object so `is not None` is always `True`
-        return self.request.org_membership != None or self.request.user.is_superuser  # noqa: E711
+        return self.request.org_membership != None or self.request.user.has_perm(ALL_ORG_ACCESS)  # noqa: E711
 
 
 class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return (
             self.request.org_membership != None and not self.request.org_membership.is_viewer  # noqa: E711
-        ) or self.request.user.is_superuser
+        ) or self.request.user.has_perm(ALL_ORG_ACCESS)
 
 
 def get_opportunity_or_404(pk, org_slug):

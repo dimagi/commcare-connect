@@ -128,7 +128,6 @@ class TestManagedOpportunityInitForm:
 
     def test_form_validation_valid_data(self):
         form = ManagedOpportunityInitForm(data=self.form_data, program=self.program, org_slug=self.organization.slug)
-        print(form.errors)
         assert form.is_valid()
 
     def test_form_validation_invalid_data(self):
