@@ -28,6 +28,7 @@ urlpatterns = [
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
     path("admin_reports/", include("commcare_connect.reports.urls")),
     path("hq/", include("commcare_connect.commcarehq.urls", namespace="commcarehq")),
+    path("export/", include("commcare_connect.data_export.urls", namespace="data_export")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # API URLS
