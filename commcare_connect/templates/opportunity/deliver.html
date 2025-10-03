@@ -3,7 +3,7 @@
 {% load crispy_forms_tags %}
 
 {% block tab_options %}
-  <div x-data="{showVisitImportModal: false, showVisitExportModal: false, showFilterModal: false}">
+  <div x-cloak x-data="{showVisitImportModal: false, showVisitExportModal: false, showFilterModal: false}">
     <button type="button" @click="showFilterModal = true" class="relative button-icon">
       <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
       {% if filters_applied_count %}
