@@ -390,24 +390,6 @@ class TieredQueryset:
         return self
 
 
-def get_opportunity_list_data_lite(org, program_manager=False):
-    today = now().date()
-    base_filter = Q(organization=org)
-    if program_manager:
-        base_filter |= Q(managedopportunity__program__organization=org)
-
-    queryset = Opportunity.objects.filter(base_filter).annotate(
-        program=F("managedopportunity__program__name"),
-        status=Case(
-            When(Q(active=True) & Q(end_date__gte=today), then=Value(0)),  # Active
-            When(Q(active=True) & Q(end_date__lt=today), then=Value(1)),  # Ended
-            default=Value(2),  # Inactive
-            output_field=IntegerField(),
-        ),
-    )
-    return queryset
-
-
 class OpportunityData:
     def __init__(self, org, is_program_manager):
         self.org = org
@@ -475,8 +457,8 @@ class OpportunityData:
                 CompletedWork.objects.filter(opportunity_access__opportunity_id__in=opp_ids)
                 .values("opportunity_access__opportunity_id")
                 .annotate(
-                    total_deliveries=Sum("saved_completed_count"),
-                    verified_deliveries=Sum("saved_approved_count"),
+                    total_deliveries=Count("id", distinct=True),
+                    verified_deliveries=Count("id", filter=Q(status=CompletedWorkStatus.approved), distinct=True),
                 )
             )
             deliveries_by_opp = {

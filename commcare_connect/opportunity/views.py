@@ -62,7 +62,6 @@ from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
     get_opportunity_delivery_progress,
     get_opportunity_funnel_progress,
-    get_opportunity_list_data_lite,
     get_opportunity_worker_progress,
     get_payment_report_data,
     get_worker_learn_table_data,
@@ -93,7 +92,6 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tables import (
-    BaseOpportunityList,
     CompletedWorkTable,
     DeliverUnitTable,
     LearnModuleTable,
@@ -194,12 +192,7 @@ class OpportunityList(OrganizationUserMixin, SingleTableView):
     template_name = "opportunity/opportunities_list.html"
     paginate_by = 15
 
-    def enable_allcolumns(self):
-        return bool(self.request.GET.get("allcolumns"))
-
     def get_table_class(self):
-        if not self.enable_allcolumns():
-            return BaseOpportunityList
         if self.request.org.program_manager:
             return ProgramManagerOpportunityTable
         return OpportunityTable
@@ -215,10 +208,7 @@ class OpportunityList(OrganizationUserMixin, SingleTableView):
     def get_table_data(self):
         org = self.request.org
         is_program_manager = org.program_manager
-        if self.enable_allcolumns():
-            return OpportunityData(org, is_program_manager).get_data()
-        else:
-            return get_opportunity_list_data_lite(org, is_program_manager)
+        return OpportunityData(org, is_program_manager).get_data()
 
 
 class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
