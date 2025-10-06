@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% load static crispy_forms_tags %}
+
+{% block page_title %}Review Response - {{ response.organization.name }}{% endblock %}
+
+{% block content %}
+    <!-- Breadcrumb Navigation -->
+    {% include 'components/breadcrumbs.html' with path=path %}
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Header Card -->
+        <div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-dark{% else %}warning-dark{% endif %}">
+                            {{ solicitation.get_solicitation_type_display }}
+                        </span>
+                        <span class="badge badge-md
+                            {% if response.status == 'submitted' %}neutral-light
+                            {% elif response.status == 'under_review' %}warning-dark
+                            {% elif response.status == 'accepted' %}positive-dark
+                            {% elif response.status == 'rejected' %}negative-dark
+                            {% else %}neutral-dark{% endif %}">
+                            {{ response.get_status_display }}
+                        </span>
+                    </div>
+                    <h1 class="text-3xl font-bold text-brand-deep-purple mb-2">Review Response</h1>
+                    <p class="text-gray-600 mb-6">{{ solicitation.title }}</p>
+
+                    <!-- Response Information -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fa-solid fa-building mr-2 text-gray-400"></i>
+                            <span>{{ response.organization.name }}</span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fa-solid fa-user mr-2 text-gray-400"></i>
+                            <span>{{ response.submitted_by.get_full_name|default:response.submitted_by.email }}</span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fa-solid fa-calendar mr-2 text-gray-400"></i>
+                            <span>Submitted <span class="local-datetime" datetime="{{ response.submission_date|date:'c' }}">{{ response.submission_date|date:"M j, Y g:i A" }}</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-x-4">
+                    <a href="{% url 'org_solicitations:program_response_list' org_slug=request.org.slug pk=program.pk solicitation_pk=solicitation.pk %}"
+                       class="button button-md outline-style">
+                        <i class="fa-solid fa-arrow-left mr-2"></i>
+                        Back to Responses
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <!-- Organization Overview -->
+            {% include "solicitations/components/organization_overview.html" with organization=response.organization %}
+
+            <!-- Response Answers -->
+            {% include "solicitations/components/response_answers.html" %}
+
+            <!-- File Attachments -->
+            {% include "solicitations/components/file_attachments.html" with section_title="Supporting Documents" %}
+
+            <!-- Review Panel (Full Width) -->
+            <form method="post">
+                {% csrf_token %}
+                {% crispy form %}
+
+                <!-- Submit Button -->
+                <div class="pt-4 border-t border-gray-200 bg-white rounded-xl shadow-sm p-8 mt-8">
+                    <button type="submit" class="w-full button button-md primary-dark">
+                        <i class="fa-solid fa-save mr-2"></i>
+                        {% if existing_review %}Update Review{% else %}Save Review{% endif %}
+                    </button>
+                </div>
+            </form>
+
+
+            </div>
+        </div>
+    </div>
+{% endblock %}

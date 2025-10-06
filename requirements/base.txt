@@ -42,7 +42,7 @@ certifi==2023.7.22
     #   httpcore
     #   httpx
     #   requests
-cffi==1.15.1
+cffi==1.17.1
     # via
     #   argon2-cffi-bindings
     #   cryptography
@@ -192,7 +192,7 @@ ply==3.11
     # via jsonpath-ng
 prompt-toolkit==3.0.39
     # via click-repl
-pycparser==2.21
+pycparser==2.22
     # via cffi
 pyjwt[crypto]==2.8.0
     # via
