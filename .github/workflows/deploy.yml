@@ -46,7 +46,7 @@ jobs:
               UserKnownHostsFile=/dev/null
 
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v3.0.1
+        uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
           role-to-assume: arn:aws:iam::037129986032:role/github_deploy
           role-session-name: GithubDeploy
