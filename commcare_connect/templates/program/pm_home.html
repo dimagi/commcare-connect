@@ -169,7 +169,7 @@
                   </div>
                 </a>
                 <a class="button button-md button-outline-rounded"
-                  href="{% url "opportunity:list" request.org.slug %}">
+                  href="{% url "opportunity:list" request.org.slug %}?program={{program.slug}}">
                   <div class="flex items-center justify-between gap-4">
                     <p class="text-sm">View Opportunities</p>
                     <i class="fa-solid fa-arrow-right"></i>

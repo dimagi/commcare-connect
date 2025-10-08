@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import CharField, Count, F, Max, Q, Sum, Value
+from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
 from django.db.models.functions import Concat
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -272,11 +272,22 @@ def program_manager_home(request, org):
 
 
 def network_manager_home(request, org):
-    programs = Program.objects.filter(programapplication__organization=org).annotate(
-        status=F("programapplication__status"),
-        invite_date=F("programapplication__date_created"),
-        application_id=F("programapplication__id"),
+    programs = (
+        Program.objects.filter(programapplication__organization=org)
+        .annotate(
+            status=F("programapplication__status"),
+            invite_date=F("programapplication__date_created"),
+            application_id=F("programapplication__id"),
+        )
+        .prefetch_related(
+            Prefetch(
+                "managedopportunity_set",
+                queryset=ManagedOpportunity.objects.filter(organization=org),
+                to_attr="managed_opportunities_for_org",
+            )
+        )
     )
+
     results = sorted(programs, key=lambda x: (x.invite_date, x.start_date), reverse=True)
 
     pending_review_data = (

@@ -11,7 +11,7 @@
     </div>
 </div>
 
-<div class="flex flex-col w-full gap-2">
+<div class="flex flex-col w-full gap-2" x-data="connectWorkers()">
     <!-- Tabs -->
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <ul id="tabs" class="tabs">
@@ -61,3 +61,32 @@
     ></div>
 </div>
 {% endblock content %}
+
+{% block inline_javascript %}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('connectWorkers', () => ({
+      showWorkerExportModal: false,
+      showConfirmDeleteInvitesModal: false,
+      selected: [],
+      selectAll: false,
+
+      toggleSelectAll() {
+        this.selectAll = !this.selectAll;
+        if (this.selectAll) {
+          this.selected = Array.from(document.querySelectorAll('input[name="row_select"]'))
+            .map(c => c.value);
+        } else {
+          this.selected = [];
+        }
+      },
+      updateSelectAll() {
+        const boxes = Array.from(document.querySelectorAll('input[name="row_select"]'));
+        const checked = boxes.filter(b => b.checked).length;
+        this.selectAll = boxes.length > 0 && checked === boxes.length;
+        this.selected = boxes.filter(b => b.checked).map(b => b.value);
+      }
+    }));
+  });
+</script>
+{% endblock inline_javascript %}

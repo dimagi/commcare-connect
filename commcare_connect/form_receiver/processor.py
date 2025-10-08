@@ -32,7 +32,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import download_user_visit_attachments
-from commcare_connect.opportunity.visit_import import update_payment_accrued
+from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
 
 LEARN_MODULE_JSONPATH = parse("$..module")
@@ -341,7 +341,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
         if not access.last_active or access.last_active < user_visit.visit_date:
             access.last_active = user_visit.visit_date
-            access.save()
 
         if completed_work is not None:
             if completed_work.completed_count > 0 and completed_work.status == CompletedWorkStatus.incomplete:
@@ -350,7 +349,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued(opportunity, [user.id], incremental=True)
+    update_payment_accrued_for_user(access, incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 

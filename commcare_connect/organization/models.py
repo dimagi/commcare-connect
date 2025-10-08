@@ -43,7 +43,6 @@ class UserOrganizationMembership(models.Model):
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
     invite_id = models.CharField(max_length=50, default=uuid4)
-    accepted = models.BooleanField(default=False)
 
     @property
     def is_admin(self):

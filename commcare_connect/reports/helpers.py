@@ -198,9 +198,12 @@ def get_table_data_for_year_month(
             sum_total_users[user] += amount
 
         # take atleast 1 top user in cases where this variable is 0
-        top_five_percent_len = len(sum_total_users) // 20 or 1
+        top_five_percent_flw_count = len(sum_total_users) // 20 or 1
         flw_amount_paid = sum(sum_total_users.values())
-        avg_top_paid_flws = sum(sorted(sum_total_users.values(), reverse=True)[:top_five_percent_len])
+        avg_top_paid_flws = (
+            sum(sorted(sum_total_users.values(), reverse=True)[:top_five_percent_flw_count])
+            // top_five_percent_flw_count
+        )
         visit_data_dict[group_key].update(
             {
                 "month_group": datetime.strptime(month_group, "%Y-%m"),

@@ -63,7 +63,7 @@ def organization_home(request, org_slug):
 
 
 @api_view(["POST"])
-@login_required
+@org_admin_required
 def add_members_form(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
     form = MembershipForm(request.POST or None, organization=org)
