@@ -316,8 +316,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             completed_work.save()
 
     try:
-        user_visit.completed_work = completed_work
-        user_visit.save()
+        with transaction.atomic():
+            user_visit.completed_work = completed_work
+            user_visit.save()
     except IntegrityError as e:
         if UNIQUE_USER_VISIT_CONSTRAINT not in str(e):
             raise e
@@ -328,47 +329,51 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         user_visit.completed_work = completed_work
         user_visit.save()
 
-    completed_work_needs_save = False
-    if (
-        counts["daily"] >= payment_unit.max_daily
-        or counts["total"] >= claim_limit.max_visits
-        or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
-    ):
-        user_visit.status = VisitValidationStatus.over_limit
-        if not user_visit.completed_work.status == CompletedWorkStatus.over_limit:
-            user_visit.completed_work.status = CompletedWorkStatus.over_limit
-            completed_work_needs_save = True
-    elif counts["entity"] > 0:
-        user_visit.status = VisitValidationStatus.duplicate
-    flags = clean_form_submission(access, user_visit, xform)
-    if access.suspended:
-        flags.append(["user_suspended", "This user is suspended from the opportunity."])
-        user_visit.status = VisitValidationStatus.rejected
-        user_visit.completed_work.status = CompletedWorkStatus.rejected
-    if flags:
-        user_visit.flagged = True
-        user_visit.flag_reason = {"flags": flags}
+    with transaction.atomic():
+        completed_work_needs_save = False
+        if (
+            counts["daily"] >= payment_unit.max_daily
+            or counts["total"] >= claim_limit.max_visits
+            or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
+        ):
+            user_visit.status = VisitValidationStatus.over_limit
+            if not user_visit.completed_work.status == CompletedWorkStatus.over_limit:
+                user_visit.completed_work.status = CompletedWorkStatus.over_limit
+                completed_work_needs_save = True
+        elif counts["entity"] > 0:
+            user_visit.status = VisitValidationStatus.duplicate
+        flags = clean_form_submission(access, user_visit, xform)
+        if access.suspended:
+            flags.append(["user_suspended", "This user is suspended from the opportunity."])
+            user_visit.status = VisitValidationStatus.rejected
+            user_visit.completed_work.status = CompletedWorkStatus.rejected
+        if flags:
+            user_visit.flagged = True
+            user_visit.flag_reason = {"flags": flags}
 
-    if (
-        opportunity.auto_approve_visits
-        and user_visit.status == VisitValidationStatus.pending
-        and not user_visit.flagged
-    ):
-        user_visit.status = VisitValidationStatus.approved
-        user_visit.review_status = VisitReviewStatus.agree
+        if (
+            opportunity.auto_approve_visits
+            and user_visit.status == VisitValidationStatus.pending
+            and not user_visit.flagged
+        ):
+            user_visit.status = VisitValidationStatus.approved
+            user_visit.review_status = VisitReviewStatus.agree
 
-    user_visit.save()
+        user_visit.save()
 
-    if not access.last_active or access.last_active < user_visit.visit_date:
-        access.last_active = user_visit.visit_date
-        access.save()
+        if not access.last_active or access.last_active < user_visit.visit_date:
+            access.last_active = user_visit.visit_date
+            access.save()
 
-    if user_visit.completed_work is not None:
-        if completed_work.completed_count > 0 and user_visit.completed_work.status == CompletedWorkStatus.incomplete:
-            user_visit.completed_work.status = CompletedWorkStatus.pending
-            completed_work_needs_save = True
-        if completed_work_needs_save:
-            user_visit.completed_work.save()
+        if user_visit.completed_work is not None:
+            if (
+                completed_work.completed_count > 0
+                and user_visit.completed_work.status == CompletedWorkStatus.incomplete
+            ):
+                user_visit.completed_work.status = CompletedWorkStatus.pending
+                completed_work_needs_save = True
+            if completed_work_needs_save:
+                user_visit.completed_work.save()
 
     update_payment_accrued(opportunity, [user.id], incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
