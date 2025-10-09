@@ -294,13 +294,6 @@ def send_push_notification_task(user_ids: list[int], title: str, body: str):
 
 
 @celery_app.task()
-def send_sms_task(user_ids: list[int], body: str):
-    user_phone_numbers = User.objects.filter(id__in=user_ids).values_list("phone_number", flat=True)
-    for phone_number in user_phone_numbers:
-        send_sms(phone_number, body)
-
-
-@celery_app.task()
 def download_user_visit_attachments(user_visit_id: id):
     user_visit = UserVisit.objects.get(id=user_visit_id)
     api_key = user_visit.opportunity.api_key
