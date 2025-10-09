@@ -13,6 +13,7 @@
     "concurrently": "^8.0.1",
     "css-loader": "^6.5.1",
     "dotenv-webpack": "^8.0.1",
+    "tom-select": "^2.4.3",
     "flatpickr": "^4.6.13",
     "gulp-concat": "^2.6.1",
     "htmx.org": "^1.9.4",
