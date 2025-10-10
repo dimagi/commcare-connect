@@ -42,7 +42,7 @@ def get_application(request):
     active_opps = Opportunity.objects.filter(
         Q(learn_app__cc_domain=domain) | Q(deliver_app__cc_domain=domain),
         active=True,
-        end_date__lt=datetime.date.today(),
+        end_date__gte=datetime.date.today(),
     ).select_related("learn_app", "deliver_app")
     existing_apps = set()
     for opp in active_opps:
