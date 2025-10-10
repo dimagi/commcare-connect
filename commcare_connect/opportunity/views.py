@@ -141,20 +141,21 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
 
 
 class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         # request.org_membership is a SimpleLazyObject object so `is not None` is always `True`
-        return self.request.org_membership != None or self.request.user.is_superuser  # noqa: E711
+        return self.request.org_membership != None or self.request.user.has_perm(ALL_ORG_ACCESS)  # noqa: E711
 
 
 class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return (
             self.request.org_membership != None and not self.request.org_membership.is_viewer  # noqa: E711
-        ) or self.request.user.is_superuser
+        ) or self.request.user.has_perm(ALL_ORG_ACCESS)
 
 
 def get_opportunity_or_404(pk, org_slug):
