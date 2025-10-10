@@ -4,7 +4,8 @@ from django.http import JsonResponse
 from django.views.generic import TemplateView
 
 from commcare_connect.opportunity.models import Opportunity, UserVisit
-from commcare_connect.reports.views import DashboardFilters, SuperUserRequiredMixin
+from commcare_connect.reports.decorators import KPIReportMixin
+from commcare_connect.reports.views import DashboardFilters
 
 from .data import UserVisitData
 
@@ -35,7 +36,7 @@ class UserDashboardFilters(DashboardFilters):
         fields = ["program", "organization", "opportunity", "from_date", "to_date"]
 
 
-class UserVisitDashboardView(SuperUserRequiredMixin, TemplateView):
+class UserVisitDashboardView(KPIReportMixin, TemplateView):
     template_name = "reports/uservisit_dashboard.html"
 
     def get_context_data(self, **kwargs):
