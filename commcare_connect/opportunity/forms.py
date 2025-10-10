@@ -491,7 +491,7 @@ class DateRanges(TextChoices):
 
 
 class VisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
     date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
     status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
     flatten_form_data = forms.BooleanField(initial=True, required=False)
@@ -523,7 +523,7 @@ class VisitExportForm(forms.Form):
 
 
 class ReviewVisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
     date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
     status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitReviewStatus.choices, initial=["all"])
 
@@ -549,7 +549,7 @@ class ReviewVisitExportForm(forms.Form):
 
 
 class PaymentExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
