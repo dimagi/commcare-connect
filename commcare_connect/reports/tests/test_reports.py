@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.utils.timezone import now
 from django.views import View
 
-from commcare_connect.conftest import MobileUserFactory
+from commcare_connect.conftest import MobileUserFactory, check_basic_permissions
 from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.helpers import get_payment_report_data
 from commcare_connect.opportunity.models import CompletedWorkStatus, VisitValidationStatus
@@ -370,7 +370,7 @@ class TestKPIReportPermission:
         )
 
     @pytest.mark.parametrize("url_name", ["dummy_fbv", "dummy_cbv"])
-    def test_permissions(self, url_name, check_basic_permissions):
+    def test_permissions(self, url_name):
         url = reverse(f"reports:{url_name}")
         check_basic_permissions(
             UserFactory(),
