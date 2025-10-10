@@ -165,7 +165,7 @@ def get_table_data_for_year_month(
         group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
         visit_data_dict[group_key].update(item)
 
-    payment_query = Payment.objects.filter(date_paid__range=(start_date, end_date))
+    payment_query = Payment.objects.filter(created_at__range=(start_date, end_date))
     nm_amount_paid_data = (
         payment_query.filter(**filter_kwargs_nm)
         .annotate(month_group=TruncMonth("created_at"))
