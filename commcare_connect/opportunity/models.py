@@ -722,6 +722,7 @@ class UserVisit(XFormBaseModel):
             ),
             models.UniqueConstraint(
                 fields=["entity_id", "deliver_unit", "opportunity_access", "completed_work"],
+                condition=Q(status=VisitValidationStatus.approved, completed_work__isnull=False),
                 name=UNIQUE_USER_VISIT_CONSTRAINT,
             ),
         ]
