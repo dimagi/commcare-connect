@@ -1,9 +1,8 @@
 import datetime
 from functools import partial
 
-from django.db import IntegrityError, transaction
-from django.db.models import Count, Min, Q, Window
-from django.db.models.functions import Rank
+from django.db import transaction
+from django.db.models import Count, Min, Q
 from django.utils.timezone import now
 from geopy.distance import distance
 from jsonpath_ng import JSONPathError
@@ -14,7 +13,6 @@ from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
 from commcare_connect.opportunity.models import (
-    UNIQUE_USER_VISIT_CONSTRAINT,
     Assessment,
     CommCareApp,
     CompletedModule,
@@ -298,34 +296,14 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     )
     today = datetime.date.today()
     paymentunit_startdate = payment_unit.start_date if payment_unit else None
+
     if opportunity.start_date > today or (paymentunit_startdate and paymentunit_startdate > today):
         completed_work = None
         user_visit.status = VisitValidationStatus.trial
     else:
-        completed_work = (
-            CompletedWork.objects.filter(opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit)
-            .annotate(rank=Window(Rank(), order_by="date_created"))
-            .filter(rank=counts["entity"] + 1)
-            .order_by("rank")
-            .last()
+        completed_work, _ = CompletedWork.objects.get_or_create(
+            opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit
         )
-        if completed_work is None:
-            completed_work = CompletedWork(
-                opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit, entity_name=entity_name
-            )
-            completed_work.save()
-
-    try:
-        with transaction.atomic():
-            user_visit.completed_work = completed_work
-            user_visit.save()
-    except IntegrityError as e:
-        if UNIQUE_USER_VISIT_CONSTRAINT not in str(e):
-            raise e
-        completed_work = CompletedWork(
-            opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit, entity_name=entity_name
-        )
-        completed_work.save()
         user_visit.completed_work = completed_work
         user_visit.save()
 
@@ -366,7 +344,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
         if user_visit.completed_work is not None:
             if (
-                completed_work.completed_count > 0
+                user_visit.completed_work.completed_count > 0
                 and user_visit.completed_work.status == CompletedWorkStatus.incomplete
             ):
                 user_visit.completed_work.status = CompletedWorkStatus.pending
