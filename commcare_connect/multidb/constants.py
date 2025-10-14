@@ -1,5 +1,6 @@
 from commcare_connect.opportunity.models import (
     Assessment,
+    CommCareApp,
     CompletedModule,
     CompletedWork,
     DeliverUnit,
@@ -35,6 +36,7 @@ REPLICATION_ALLOWED_MODELS = [
     OpportunityClaim,
     OpportunityClaimLimit,
     Organization,
+    CommCareApp,
     Payment,
     PaymentUnit,
     Program,

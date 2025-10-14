@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
 from tablib import Dataset
 
@@ -74,7 +75,15 @@ class VisitImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_visits)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_visits)} visits were not found:<br>{'<br>'.join(missing)}"
+        return format_html(
+            "<br>{} visits were not found:<br>{}",
+            len(self.missing_visits),
+            format_html_join(
+                "<br>",
+                "{}",
+                ((m,) for m in missing),
+            ),
+        )
 
 
 @dataclass
@@ -88,7 +97,15 @@ class PaymentImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_users)} usernames were not found:<br>{'<br>'.join(missing)}"
+        return format_html(
+            "<br>{} usernames were not found:<br>{}",
+            len(self.missing_users),
+            format_html_join(
+                "<br>",
+                "{}",
+                ((u,) for u in missing),
+            ),
+        )
 
 
 @dataclass
@@ -102,7 +119,15 @@ class CompletedWorkImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_completed_works)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_completed_works)} completed works were not found:<br>{'<br>'.join(missing)}"
+        return format_html(
+            "<br>{} completed works were not found:<br>{}",
+            len(self.missing_completed_works),
+            format_html_join(
+                "<br>",
+                "{}",
+                ((u,) for u in missing),
+            ),
+        )
 
 
 @dataclass
@@ -182,20 +207,25 @@ def update_payment_accrued(opportunity: Opportunity, users: list, incremental=Fa
     Skips already processed completed works when incremental is true."""
 
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
+
+    for access in access_objects:
+        update_payment_accrued_for_user(access, incremental)
+
+
+def update_payment_accrued_for_user(opportunity_access, incremental):
     filter_kwargs = {}
     exclude_status = []
     if incremental:
         exclude_status.append(CompletedWorkStatus.approved)
         filter_kwargs["saved_approved_count"] = 0
 
-    for access in access_objects:
-        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
-            completed_works = (
-                access.completedwork_set.filter(**filter_kwargs)
-                .exclude(status__in=exclude_status)
-                .select_related("payment_unit")
-            )
-            update_status(completed_works, access, compute_payment=True)
+    with cache.lock(f"update_payment_accrued_lock_{opportunity_access.id}", timeout=900):
+        completed_works = (
+            opportunity_access.completedwork_set.filter(**filter_kwargs)
+            .exclude(status__in=exclude_status)
+            .select_related("payment_unit")
+        )
+        update_status(completed_works, opportunity_access, compute_payment=True)
 
 
 def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:
@@ -216,7 +246,7 @@ def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:
         try:
             visit_data.status = VisitValidationStatus[status_raw]
         except KeyError:
-            invalid_rows.append((row, f"status must be one of {VisitValidationStatus.values}"))
+            invalid_rows.append(([escape(r) for r in row], f"status must be one of {VisitValidationStatus.values}"))
         if status_raw == VisitValidationStatus.rejected.value:
             visit_data.reason = str(row[reason_col_index]) if row[reason_col_index] is not None else None
         if justification_col_index > 0:
@@ -276,13 +306,13 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             continue
 
         if not username:
-            invalid_rows.append((row, "username required"))
+            invalid_rows.append(([escape(r) for r in row], "username required"))
             continue
 
         try:
             amount = Decimal(amount_raw)
         except InvalidOperation:
-            invalid_rows.append((row, "amount must be a number"))
+            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
             continue
 
         try:
@@ -294,7 +324,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             else:
                 payment_date = None
         except ValueError:
-            invalid_rows.append((row, "Payment Date must be in YYYY-MM-DD format"))
+            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
             continue
 
         payment_row = {
@@ -431,7 +461,7 @@ def get_status_by_completed_work_id(dataset):
         try:
             status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
         except KeyError:
-            invalid_rows.append((row, f"status must be one of {CompletedWorkStatus.values}"))
+            invalid_rows.append(([escape(r) for r in row], f"status must be one of {CompletedWorkStatus.values}"))
         if status_raw == CompletedWorkStatus.rejected.value:
             reason_by_work_id[work_id] = str(row[reason_col_index]) if row[reason_col_index] is not None else None
 
@@ -591,7 +621,7 @@ def _bulk_update_catchments(opportunity: Opportunity, dataset: Dataset):
                     seen_catchments.add(str(catchment.id))
 
             except InvalidValueError as e:
-                invalid_rows.append((row, f"Error in row {row}: {e}"))
+                invalid_rows.append(([escape(r) for r in row], f"Error in row: {e}"))
 
         if to_create:
             CatchmentArea.objects.bulk_create(to_create)

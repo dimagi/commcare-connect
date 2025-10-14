@@ -1,7 +1,8 @@
 from allauth.account.models import transaction
+from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -12,7 +13,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
-from django.views.generic import RedirectView, UpdateView, View
+from django.views.generic import FormView, RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -20,10 +21,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from commcare_connect.connect_id_client.main import fetch_demo_user_tokens
+from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_otp
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
+from commcare_connect.users.forms import ManualUserOTPForm
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
@@ -135,7 +137,7 @@ def accept_invite(request, invite_id):
 
 
 @login_required
-@user_passes_test(lambda user: user.is_superuser)
+@permission_required("users.demo_users_access")
 @require_GET
 def demo_user_tokens(request):
     users = fetch_demo_user_tokens()
@@ -209,3 +211,31 @@ class ResendInvitesView(ClientProtectedResourceMixin, View):
         for opp_id in opps:
             update_user_and_send_invite(user, opp_id)
         return HttpResponse(status=200)
+
+
+class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
+    template_name = "pages/connect_user_otp.html"
+    form_class = ManualUserOTPForm
+    permission_required = "users.otp_access"
+
+    @property
+    def success_url(self):
+        return reverse("users:connect_user_otp")
+
+    def form_valid(self, form):
+        otp = get_user_otp(form.cleaned_data["phone_number"])
+        if otp is None:
+            messages.error(
+                self.request,
+                "Failed to fetch OTP. Please make sure the number is correct and "
+                "that the user has started their device seating process.",
+            )
+        else:
+            messages.success(self.request, f"The user's OTP is: {otp}")
+
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        errors = ", ".join(form.errors["phone_number"])
+        messages.error(self.request, f"{errors}")
+        return super().form_invalid(form)

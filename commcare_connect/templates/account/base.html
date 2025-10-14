@@ -13,6 +13,8 @@
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/aquawolf04/font-awesome-pro@5cd1511/css/all.css" />
     {% endblock %}
     {% block javascript %}
+      {{ GTM_VARS_JSON|json_script:"gtm-data" }}
+      <script src="{% static 'js/gtx.js' %}" defer></script>
       <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
       <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
     {% endblock javascript %}
@@ -50,5 +52,8 @@
         </div>
       </div>
     </div>
+    {% block footer %}
+      {% include "layouts/footer.html" %}
+    {% endblock %}
   </body>
 </html>

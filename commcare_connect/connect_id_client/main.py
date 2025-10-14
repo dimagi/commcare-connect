@@ -81,6 +81,17 @@ def fetch_user_counts() -> dict[str, int]:
     return data
 
 
+def get_user_otp(phone_number):
+    try:
+        response = _make_request(GET, "/users/generate_manual_otp", params={"phone_number": phone_number})
+        data = response.json()
+        return data.get("otp")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return None
+        raise
+
+
 def _make_request(method, path, params=None, json=None, timeout=5) -> Response:
     if json and not method == "POST":
         raise ValueError("json can only be used with POST requests")

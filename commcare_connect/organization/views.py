@@ -63,7 +63,7 @@ def organization_home(request, org_slug):
 
 
 @api_view(["POST"])
-@login_required
+@org_admin_required
 def add_members_form(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
     form = MembershipForm(request.POST or None, organization=org)
@@ -78,15 +78,8 @@ def add_members_form(request, org_slug):
 
 @login_required
 def accept_invite(request, org_slug, invite_id):
-    membership = get_object_or_404(UserOrganizationMembership, invite_id=invite_id)
-    organization = membership.organization
-
-    if membership.accepted:
-        return redirect("organization:home", org_slug)
-
-    membership.accepted = True
-    membership.save()
-    messages.success(request, message=f"Accepted invite for joining {organization.slug} organization.")
+    get_object_or_404(UserOrganizationMembership, invite_id=invite_id)
+    messages.success(request, message=f"Accepted invite for joining {org_slug} organization.")
     return redirect("organization:home", org_slug)
 
 

@@ -140,7 +140,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
             Row(
-                HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Workers</h6></div>"),
+                HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Connect Workers</h6></div>"),
                 Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
@@ -429,7 +429,9 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 required=True, widget=forms.NumberInput(), initial=self.instance.org_pay_per_visit
             )
 
-        self.fields["max_users"] = forms.IntegerField(label="Max Workers", initial=int(self.instance.number_of_users))
+        self.fields["max_users"] = forms.IntegerField(
+            label="Max Connect Workers", initial=int(self.instance.number_of_users)
+        )
         self.fields["start_date"].disabled = self.is_start_date_readonly
 
     def clean(self):
@@ -489,7 +491,7 @@ class DateRanges(TextChoices):
 
 
 class VisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
     date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
     status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
     flatten_form_data = forms.BooleanField(initial=True, required=False)
@@ -521,7 +523,7 @@ class VisitExportForm(forms.Form):
 
 
 class ReviewVisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
     date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
     status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitReviewStatus.choices, initial=["all"])
 
@@ -547,7 +549,7 @@ class ReviewVisitExportForm(forms.Form):
 
 
 class PaymentExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -626,12 +628,13 @@ class AddBudgetExistingUsersForm(forms.Form):
 
         if end_date:
             OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=end_date)
+            OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).update(end_date=end_date)
 
 
 class AddBudgetNewUsersForm(forms.Form):
     add_users = forms.IntegerField(
         required=False,
-        label="Number Of Workers",
+        label="Number Of Connect Workers",
         help_text="New Budget Added = Workers Added x Sum of Budget for Each Payment Unit.",
     )
     total_budget = forms.IntegerField(

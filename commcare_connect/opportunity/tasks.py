@@ -1,5 +1,6 @@
 import datetime
 import logging
+from decimal import Decimal
 
 import httpx
 import sentry_sdk
@@ -111,10 +112,7 @@ def invite_user(user_id, opportunity_access_id):
     invite_id = opportunity_access.invite_id
     location = reverse("users:accept_invite", args=(invite_id,))
     url = build_absolute_uri(None, location)
-    body = (
-        "You have been invited to a new job in Commcare Connect. Click the following "
-        f"link to share your information with the project and find out more {url}"
-    )
+    body = f"You have been invited to a job in Connect. Click the link to accept {url}"
     if not user.phone_number:
         return
     sms_status = send_sms(user.phone_number, body)
@@ -450,5 +448,6 @@ def fetch_exchange_rates(date=None, currency=None):
                 continue
             ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
     else:
-        rate = rates[currency]
+        # Parsing it to decimal otherwise the returned object rate will still be in float.
+        rate = Decimal(rates[currency])
         return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)

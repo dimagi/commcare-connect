@@ -1,0 +1,31 @@
+{% load static i18n %}
+{% load crispy_forms_tags %}
+
+<ul id="tabs" class="tabs" hx-swap-oob="true">
+  {% for tab in tabs %}
+  <li
+    id="{{ tab.key }}-tab"
+    hx-get="{{ tab.url }}"
+    hx-indicator="#loadingIndicator"
+    hx-push-url="true"
+    class="tab-item {% if tab.key == active_tab %}active{% endif %}"
+  >
+    <span>{{ tab.label }}</span>
+    {% if tab.key == active_tab %}
+    <div></div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+
+<div id="tab-options" hx-swap-oob="true" class="flex gap-x-4 items-center">
+    {% block tab_options %}{% endblock %}
+</div>
+
+<div
+    id="table"
+    class="w-full"
+    hx-swap-oob="true"
+>
+    {% include "components/tables/table.html" with table=table %}
+</div>

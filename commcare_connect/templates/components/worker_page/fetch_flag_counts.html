@@ -20,7 +20,7 @@
      }"
      x-on:click="isOpen = true; $nextTick(() => { if(isOpen) positionMenu() })"
      hx-get="{{counts_url}}"
-     hx-trigger="load once"
+     hx-trigger="click"
      hx-target="find .flags_counter">
 
     <span class="rounded-lg cursor-pointer hover:bg-slate-200">
@@ -29,9 +29,7 @@
 
     <div x-ref="menu" x-show="isOpen" x-on:click.outside="isOpen = false" x-transition x-cloak
          class="fixed z-40 p-5 text-sm bg-white rounded-lg shadow-md text-brand-deep-purple text-wrap font-normal">
-        <div class="flags_counter"
-             @htmx:after-swap="$refs.menu.style.display = 'initial';
-                               $refs.menu.style.display = 'none';">
+        <div class="flags_counter">
             <p class="text-slate-500">Loading..</p>
         </div>
     </div>

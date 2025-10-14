@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import CharField, Count, F, Max, Q, Sum, Value
+from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
 from django.db.models.functions import Concat
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -240,9 +240,7 @@ def program_manager_home(request, org):
         .annotate(count=Count("id"))
     )
 
-    pending_review = _make_recent_activity_data(
-        pending_review_data, org.slug, "opportunity:worker_list", {"active_tab": "delivery"}
-    )
+    pending_review = _make_recent_activity_data(pending_review_data, org.slug, "opportunity:worker_deliver")
 
     pending_payments_data = (
         PaymentInvoice.objects.filter(
@@ -274,11 +272,22 @@ def program_manager_home(request, org):
 
 
 def network_manager_home(request, org):
-    programs = Program.objects.filter(programapplication__organization=org).annotate(
-        status=F("programapplication__status"),
-        invite_date=F("programapplication__date_created"),
-        application_id=F("programapplication__id"),
+    programs = (
+        Program.objects.filter(programapplication__organization=org)
+        .annotate(
+            status=F("programapplication__status"),
+            invite_date=F("programapplication__date_created"),
+            application_id=F("programapplication__id"),
+        )
+        .prefetch_related(
+            Prefetch(
+                "managedopportunity_set",
+                queryset=ManagedOpportunity.objects.filter(organization=org),
+                to_attr="managed_opportunities_for_org",
+            )
+        )
     )
+
     results = sorted(programs, key=lambda x: (x.invite_date, x.start_date), reverse=True)
 
     pending_review_data = (
@@ -290,9 +299,7 @@ def network_manager_home(request, org):
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id", distinct=True))
     )
-    pending_review = _make_recent_activity_data(
-        pending_review_data, org.slug, "opportunity:worker_list", {"active_tab": "delivery"}
-    )
+    pending_review = _make_recent_activity_data(pending_review_data, org.slug, "opportunity:worker_deliver")
     access_qs = OpportunityAccess.objects.filter(opportunity__managed=True, opportunity__organization=org)
 
     pending_payments_data_opps = (
@@ -312,7 +319,7 @@ def network_manager_home(request, org):
         for data in pending_payments_data_opps
     ]
     pending_payments = _make_recent_activity_data(
-        pending_payments_data, org.slug, "opportunity:worker_list", {"active_tab": "payments"}, small_text=True
+        pending_payments_data, org.slug, "opportunity:worker_payments", small_text=True
     )
 
     three_days_before = now() - timedelta(days=3)
@@ -325,13 +332,11 @@ def network_manager_home(request, org):
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
         .annotate(count=Count("id", distinct=True))
     )
-    inactive_workers = _make_recent_activity_data(
-        inactive_workers_data, org.slug, "opportunity:worker_list", {"active_tab": "workers"}
-    )
+    inactive_workers = _make_recent_activity_data(inactive_workers_data, org.slug, "opportunity:worker_list")
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
         {"title": "Pending Payments", "rows": pending_payments},
-        {"title": "Inactive Workers", "rows": inactive_workers},
+        {"title": "Inactive Connect Workers", "rows": inactive_workers},
     ]
     context = {
         "programs": results,
@@ -345,18 +350,15 @@ def _make_recent_activity_data(
     data: list[dict],
     org_slug: str,
     url_slug: str,
-    url_get_kwargs: dict = {},
     small_text=False,
     opportunity_slug="opp_id",
 ):
-    get_string = "&".join([f"{key}={value}" for key, value in url_get_kwargs.items()])
     return [
         {
             "opportunity__name": row["opportunity__name"],
             "opportunity__organization__name": row["opportunity__organization__name"],
             "count": row.get("count", 0),
-            "url": reverse(url_slug, kwargs={"org_slug": org_slug, opportunity_slug: row["opportunity__id"]})
-            + f"?{get_string}",
+            "url": reverse(url_slug, kwargs={"org_slug": org_slug, opportunity_slug: row["opportunity__id"]}),
             "small_text": small_text,
         }
         for row in data

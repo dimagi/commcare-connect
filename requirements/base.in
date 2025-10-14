@@ -14,6 +14,7 @@ flatten-dict
 twilio
 geopy
 gevent
+sentry-sdk
 
 # Django
 # ------------------------------------------------------------------------------

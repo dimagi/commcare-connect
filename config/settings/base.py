@@ -187,6 +187,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "commcare_connect.users.context_processors.allauth_settings",
                 "commcare_connect.web.context_processors.page_settings",
+                "commcare_connect.web.context_processors.gtm_context",
             ],
         },
     }
@@ -204,6 +205,7 @@ FIXTURE_DIRS = (str(APPS_DIR / "fixtures"),)
 # ------------------------------------------------------------------------------
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
+CSRF_USE_SESSIONS = True
 X_FRAME_OPTIONS = "DENY"
 
 # EMAIL
@@ -353,6 +355,9 @@ CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 CONNECTID_CLIENT_ID = env("cid_client_id", default="")
 CONNECTID_CLIENT_SECRET = env("cid_client_secret", default="")
 
+CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
+CONNECTID_CREDENTIALS_CLIENT_SECRET = env("CONNECTID_CREDENTIALS_CLIENT_SECRET", default="")
+
 OAUTH2_PROVIDER = {
     "ACCESS_TOKEN_EXPIRE_SECONDS": 1209600,  # seconds in two weeks
     "RESOURCE_SERVER_INTROSPECTION_URL": f"{CONNECTID_URL}/o/introspect/",
@@ -360,6 +365,11 @@ OAUTH2_PROVIDER = {
         CONNECTID_CLIENT_ID,
         CONNECTID_CLIENT_SECRET,
     ),
+    "SCOPES": {
+        "read": "Read scope",
+        "write": "Write scope",
+        "export": "Allow exporting data to other platforms using export API's.",
+    },
 }
 
 TWILIO_ACCOUNT_SID = env("TWILIO_SID", default=None)
@@ -370,3 +380,5 @@ MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)
 
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
+
+GTM_ID = env("GTM_ID", default="")

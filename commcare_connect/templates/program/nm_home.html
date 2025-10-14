@@ -78,7 +78,7 @@
           {% elif program.status == 'applied' %}
             <button class="button button-md neutral" disabled>Apply</button>
           {% elif program.status == 'accepted' %}
-            {% if program.managedopportunity_set.all %}
+            {% if program.managed_opportunities_for_org %}
               <button class="button button-md outline-style" @click="showOpp = !showOpp">
                 <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
                 <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
@@ -87,9 +87,9 @@
           {% endif %}
         </div>
         {% if program.status == 'accepted' %}
-          {% if program.managedopportunity_set.all %}
+          {% if program.managed_opportunities_for_org %}
             <div id="opportunity-container" class="flex flex-col gap-y-4 py-4" style="display:none;" x-cloak x-show="showOpp">
-              {% for opportunity in program.managedopportunity_set.all %}
+              {% for opportunity in program.managed_opportunities_for_org %}
                 <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
                   <div class="flex justify-between w-full">
                     <div class="flex flex-col gap-5 w-1/2">
