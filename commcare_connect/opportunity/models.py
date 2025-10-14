@@ -4,8 +4,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 from django.core.validators import MinValueValidator
-from django.db import models
-from django.db.models import Count, F, Q, Sum
+from django.db import IntegrityError, models, transaction
+from django.db.models import Count, F, Q, Sum, Window
+from django.db.models.functions import Rank
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -683,6 +684,40 @@ class UserVisit(XFormBaseModel):
             if getattr(self, "status", None) != value:
                 self.status_modified_date = now()
         super().__setattr__(name, value)
+
+    def save(self, **kwargs):
+        # The code below automatically switches/create CompletedWork when the UNIQUE_USER_VISIT_CONSTRAINT
+        # is triggered.
+        rank = kwargs.pop("rank", 0)
+        try:
+            with transaction.atomic():
+                super().save(**kwargs)
+        except IntegrityError as e:
+            if UNIQUE_USER_VISIT_CONSTRAINT not in str(e):
+                raise e
+            rank += 1
+            completed_work = (
+                CompletedWork.objects.filter(
+                    opportunity_access=self.opportunity_access,
+                    entity_id=self.entity_id,
+                    payment_unit=self.deliver_unit.payment_unit,
+                )
+                .annotate(rank=Window(Rank(), order_by="date_created"))
+                .filter(rank=rank)
+                .order_by("rank")
+                .last()
+            )
+            if completed_work is None:
+                completed_work = CompletedWork(
+                    opportunity_access=self.opportunity_access,
+                    entity_id=self.entity_id,
+                    payment_unit=self.deliver_unit.payment_unit,
+                    entity_name=self.entity_name,
+                    status=CompletedWorkStatus.duplicate,
+                )
+                completed_work.save()
+            self.completed_work = completed_work
+            self.save(**kwargs, rank=rank)
 
     @property
     def images(self):
