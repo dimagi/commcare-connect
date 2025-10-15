@@ -921,7 +921,7 @@ class UserInfoColumn(tables.Column):
         super().__init__(*args, **kwargs)
 
     def render(self, value, record):
-        if not record.accepted:
+        if getattr(record, "accepted", False):
             return "-"
 
         return format_html(
