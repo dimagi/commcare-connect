@@ -7,6 +7,7 @@ from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, 
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
 from commcare_connect.organization.urls import urlpatterns as org_url_patterns
 from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.utils.tests import check_basic_permissions
 
 
 class TestAllOrgAccessPermission:
@@ -47,6 +48,6 @@ class TestAllOrgAccessPermission:
         )
 
     @pytest.mark.parametrize("url_name", ["admin_fbv", "viewer_fbv", "member_fbv", "member_cbv", "viewer_cbv"])
-    def test_permissions(self, url_name, check_basic_permissions, organization):
+    def test_permissions(self, url_name, organization):
         url = reverse(f"organization:{url_name}", args=(organization.slug,))
         check_basic_permissions(UserFactory(), url, "all_org_access")

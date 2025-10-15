@@ -28,6 +28,7 @@ from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.views import _results_to_geojson
 from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.datetime import get_month_series
+from commcare_connect.utils.tests import check_basic_permissions
 
 
 def get_month_range_start_end(months=1):
@@ -370,7 +371,7 @@ class TestKPIReportPermission:
         )
 
     @pytest.mark.parametrize("url_name", ["dummy_fbv", "dummy_cbv"])
-    def test_permissions(self, url_name, check_basic_permissions):
+    def test_permissions(self, url_name):
         url = reverse(f"reports:{url_name}")
         check_basic_permissions(
             UserFactory(),

@@ -4,9 +4,9 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 
-from .models import UserOrganizationMembership
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
-ALL_ORG_ACCESS = "users.all_org_access"
+from .models import UserOrganizationMembership
 
 
 def _request_user_is_member(request):
