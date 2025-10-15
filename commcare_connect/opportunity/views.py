@@ -433,6 +433,9 @@ def review_visit_export(request, org_slug, opp_id):
 def export_status(request, org_slug, task_id):
     task = AsyncResult(task_id)
     task_meta = task._get_task_meta()
+    opportunity_id = task_meta.get("args")[0]
+    # Make sure opportunity exists for the given org_slug
+    get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
     status = task_meta.get("status")
     progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
     if status == "FAILURE":
@@ -850,7 +853,7 @@ def approve_visits(request, org_slug, opp_id):
     visit_ids = request.POST.getlist("visit_ids[]")
 
     visits = (
-        UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id)
+        UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id, opportunity__organization=request.org)
         .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
         .prefetch_related("opportunity")
         .only("status", "review_status", "flagged", "justification", "review_created_on")
@@ -904,6 +907,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
 
 @org_member_required
 def fetch_attachment(self, org_slug, blob_id):
+    # TODO Find out what is this attachment and if we need to have any permission checks here
     blob_meta = BlobMeta.objects.get(blob_id=blob_id)
     attachment = storages["default"].open(blob_id)
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
@@ -986,7 +990,9 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @csrf_exempt
 @require_http_methods(["DELETE"])
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
-    form_json_rule = FormJsonValidationRules.objects.get(opportunity=opp_id, pk=pk)
+    form_json_rule = FormJsonValidationRules.objects.get(
+        opportunity=opp_id, pk=pk, opportunity__organization=request.org
+    )
     form_json_rule.delete()
     return HttpResponse(status=200)
 
@@ -1041,7 +1047,7 @@ def update_completed_work_status_import(request, org_slug=None, opp_id=None):
 @org_member_required
 @require_POST
 def suspend_user(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk)
+    access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk, opportunity__organization=request.org)
     access.suspended = True
     access.suspension_date = now()
     access.suspension_reason = request.POST.get("reason", "")
@@ -1055,7 +1061,7 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
 
 @org_member_required
 def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk)
+    access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk, opportunity__organization=request.org)
     access.suspended = False
     access.save()
     remove_opportunity_access_cache(access.user, access.opportunity)
@@ -1290,7 +1296,7 @@ def delete_user_invites(request, org_slug, opp_id):
         return HttpResponseBadRequest()
 
     user_invites = (
-        UserInvite.objects.filter(id__in=invite_ids, opportunity_id=opp_id)
+        UserInvite.objects.filter(id__in=invite_ids, opportunity_id=opp_id, opportunity__organization=request.org)
         .exclude(status=UserInviteStatus.accepted)
         .select_related("opportunity_access")
     )
@@ -1319,9 +1325,9 @@ def resend_user_invites(request, org_slug, opp_id):
     if not invite_ids:
         return HttpResponseBadRequest()
 
-    user_invites = UserInvite.objects.filter(id__in=invite_ids, opportunity_id=opp_id).select_related(
-        "opportunity_access__user"
-    )
+    user_invites = UserInvite.objects.filter(
+        id__in=invite_ids, opportunity_id=opp_id, opportunity__organization=request.org
+    ).select_related("opportunity_access__user")
 
     recent_invites = []
     accepted_invites = []
@@ -1385,6 +1391,8 @@ def resend_user_invites(request, org_slug, opp_id):
 
 
 def sync_deliver_units(request, org_slug, opp_id):
+    # TODO Permission check
+    # TODO Opportunity is part of organization
     status = HTTPStatus.OK
     message = "Delivery unit sync completed."
     try:
@@ -1974,7 +1982,9 @@ class WorkerPaymentsView(BaseWorkerListView):
 
 @org_viewer_required
 def worker_learn_status_view(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    access = get_object_or_404(
+        OpportunityAccess, opportunity__id=opp_id, pk=access_id, opportunity__organization=request.org
+    )
     completed_modules = CompletedModule.objects.filter(opportunity_access=access)
     total_duration = datetime.timedelta(0)
     for cm in completed_modules:
@@ -1992,7 +2002,9 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
 
 @org_viewer_required
 def worker_payment_history(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    access = get_object_or_404(
+        OpportunityAccess, opportunity__id=opp_id, pk=access_id, opportunity__organization=request.org
+    )
     queryset = Payment.objects.filter(opportunity_access=access).order_by("-date_paid")
     payments = queryset.values("date_paid", "amount")
 
@@ -2008,10 +2020,12 @@ def worker_flag_counts(request, org_slug, opp_id):
     access_id = request.GET.get("access_id", None)
     filters = {}
     if access_id:
-        access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+        access = get_object_or_404(
+            OpportunityAccess, opportunity__id=opp_id, pk=access_id, opportunity__organization=request.org
+        )
         filters["completed_work__opportunity_access"] = access
     else:
-        opportunity = get_object_or_404(Opportunity, id=opp_id)
+        opportunity = get_opportunity_or_404(opp_id, org_slug)
         filters["completed_work__opportunity_access__opportunity"] = opportunity
 
     status = request.GET.get("status", CompletedWorkStatus.pending)
