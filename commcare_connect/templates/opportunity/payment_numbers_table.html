@@ -1,0 +1,16 @@
+{% extends "reports/htmx_table.html" %}
+
+{% load django_tables2 %}
+{% load i18n %}
+
+
+{% block table%}
+<form hx-post
+      hx-target="#result"
+      hx-disabled-elt="this">
+      {% csrf_token %}
+      {{ block.super }}
+      <input type="submit" value="Bulk Update" class="btn btn-primary">
+      <span id="result"></span>
+</form>
+{% endblock table %}
