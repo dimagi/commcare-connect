@@ -9,9 +9,11 @@ from django.core.exceptions import ValidationError
 from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
+from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import (
     CommCareApp,
+    CredentialConfiguration,
     DeliverUnit,
     DeliverUnitFlagRules,
     ExchangeRate,
@@ -29,6 +31,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
+from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
 from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
@@ -100,10 +103,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         self.helper.layout = Layout(
             Row(
                 HTML(
-                    "<div class='col-span-2'>"
-                    "<h6 class='title-sm'>Opportunity Details</h6>"
-                    "<span class='hint'>Edit the details of the opportunity. All fields are mandatory.</span>"
-                    "</div>"
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Opportunity Details")}</h6>
+                        <span class='hint'>{_("Edit the details of the opportunity. All fields are mandatory.")}</span>
+                    </div>
+                """
                 ),
                 Column(
                     Field("name", wrapper_class="w-full"),
@@ -127,11 +132,17 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             ),
             Row(
                 HTML(
-                    "<div class='col-span-2'>"
-                    "<h6 class='title-sm'>Date</h6>"
-                    "<span class='hint'>Optional: If not specified, the opportunity start & end dates will"
-                    " apply to the form submissions.</span>"
-                    "</div>"
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Date")}</h6>
+                        <span class='hint'>
+                            {_(
+                                "Optional: If not specified, the opportunity start & "
+                                "end dates will apply to the form submissions."
+                            )}
+                        </span>
+                    </div>
+                """
                 ),
                 Column(
                     Field("end_date"),
@@ -140,25 +151,63 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
             Row(
-                HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Connect Workers</h6></div>"),
+                HTML(f"<div class='col-span-2'><h6 class='title-sm'>{_('Invite Connect Workers')}</h6></div>"),
                 Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+            ),
+            Row(
+                HTML(
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Manage Credentials")}</h6>
+                        <span class='hint'>{_("Configure credential requirements for learning and delivery.")}</span>
+                    </div>
+                """
+                ),
+                Column(
+                    Field("learn_level"),
+                ),
+                Column(
+                    Field("delivery_level"),
+                ),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
         self.fields["additional_users"] = forms.IntegerField(
-            required=False, help_text="Adds budget for additional users."
+            required=False, help_text=_("Adds budget for additional users.")
         )
         self.fields["end_date"] = forms.DateField(
             widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
             required=False,
-            help_text="Extends opportunity end date for all users.",
+            help_text=_("Extends opportunity end date for all users."),
         )
+        self.add_credential_fields()
         if self.instance:
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
+
+    def add_credential_fields(self):
+        credential_issuer = None
+        if self.instance:
+            credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
+
+        self.fields["learn_level"] = forms.ChoiceField(
+            choices=[("", _("None"))] + LearnLevel.choices,
+            required=False,
+            label=_("Learn Level"),
+            help_text=_("Credential level required for completing the learning phase."),
+            initial=credential_issuer.learn_level if credential_issuer else "",
+        )
+        self.fields["delivery_level"] = forms.ChoiceField(
+            choices=[("", _("None"))] + DeliveryLevel.choices,
+            required=False,
+            label=_("Delivery Level"),
+            help_text=_("Credential level required for completing deliveries."),
+            initial=credential_issuer.delivery_level if credential_issuer else "",
+        )
 
     def clean_active(self):
         active = self.cleaned_data["active"]
@@ -171,6 +220,23 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             ):
                 raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
         return active
+
+    def save(self, commit=True):
+        instance = super().save(commit=commit)
+        learn_level = self.cleaned_data.get("learn_level") or None
+        delivery_level = self.cleaned_data.get("delivery_level") or None
+        if learn_level or delivery_level:
+            CredentialConfiguration.objects.update_or_create(
+                opportunity=instance,
+                defaults={
+                    "learn_level": learn_level,
+                    "delivery_level": delivery_level,
+                },
+            )
+        else:
+            CredentialConfiguration.objects.filter(opportunity=instance).delete()
+
+        return instance
 
 
 class OpportunityInitForm(forms.ModelForm):
