@@ -4,8 +4,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 from django.core.validators import MinValueValidator
-from django.db import models
-from django.db.models import Count, F, Q, Sum
+from django.db import IntegrityError, models, transaction
+from django.db.models import Count, F, Q, Sum, Window
+from django.db.models.functions import Rank
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -16,6 +17,9 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
+
+UNIQUE_USER_VISIT_CONSTRAINT = "unique_completed_work_deliver_unit_access"
+UNIQUE_COMPLETED_WORK_CONSTRAINT = "completed_work_unique_constraint"
 
 
 class CommCareApp(BaseModel):
@@ -507,6 +511,7 @@ class CompletedWorkStatus(models.TextChoices):
     rejected = "rejected", gettext("Rejected")
     over_limit = "over_limit", gettext("Over Limit")
     incomplete = "incomplete", gettext("Incomplete")
+    duplicate = "duplicate", gettext("Duplicate")
 
 
 class CompletedWork(models.Model):
@@ -539,7 +544,12 @@ class CompletedWork(models.Model):
     )
 
     class Meta:
-        unique_together = ("opportunity_access", "entity_id", "payment_unit")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["opportunity_access", "entity_id", "payment_unit", "date_created"],
+                name=UNIQUE_COMPLETED_WORK_CONSTRAINT,
+            )
+        ]
 
     def __init__(self, *args, **kwargs):
         self.status = CompletedWorkStatus.incomplete
@@ -676,6 +686,39 @@ class UserVisit(XFormBaseModel):
                 self.status_modified_date = now()
         super().__setattr__(name, value)
 
+    def save(self, rank=0, **kwargs):
+        # The code below automatically switches/create CompletedWork when the UNIQUE_USER_VISIT_CONSTRAINT
+        # is triggered.
+        try:
+            with transaction.atomic():
+                super().save(**kwargs)
+        except IntegrityError as e:
+            if UNIQUE_USER_VISIT_CONSTRAINT not in str(e):
+                raise e
+            rank += 1
+            completed_work = (
+                CompletedWork.objects.filter(
+                    opportunity_access=self.opportunity_access,
+                    entity_id=self.entity_id,
+                    payment_unit=self.deliver_unit.payment_unit,
+                )
+                .annotate(rank=Window(Rank(), order_by="date_created"))
+                .filter(rank=rank)
+                .order_by("rank")
+                .last()
+            )
+            if completed_work is None:
+                completed_work = CompletedWork(
+                    opportunity_access=self.opportunity_access,
+                    entity_id=self.entity_id,
+                    payment_unit=self.deliver_unit.payment_unit,
+                    entity_name=self.entity_name,
+                    status=CompletedWorkStatus.duplicate,
+                )
+                completed_work.save()
+            self.completed_work = completed_work
+            self.save(rank=rank, **kwargs)
+
     @property
     def images(self):
         return BlobMeta.objects.filter(parent_id=self.xform_id, content_type__startswith="image/")
@@ -711,7 +754,12 @@ class UserVisit(XFormBaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["xform_id", "entity_id", "deliver_unit"], name="unique_xform_entity_deliver_unit"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["entity_id", "deliver_unit", "opportunity_access", "completed_work"],
+                condition=Q(status=VisitValidationStatus.approved, completed_work__isnull=False),
+                name=UNIQUE_USER_VISIT_CONSTRAINT,
+            ),
         ]
         indexes = [
             models.Index(fields=["opportunity", "status"]),
