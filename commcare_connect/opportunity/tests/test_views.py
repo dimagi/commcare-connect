@@ -33,7 +33,7 @@ from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MembershipFactory, UserFactory
+from commcare_connect.users.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 
 
 @pytest.mark.django_db
@@ -512,3 +512,302 @@ class TestResendUserInvites:
         assert response.status_code == 200
         assert response.headers["HX-Redirect"] == self.expected_redirect
         mock_update_and_send.assert_called_once_with(mock_user, self.opportunity.id)
+
+
+@pytest.mark.django_db
+class TestOpportunityAccessRequired:
+    @pytest.mark.parametrize(
+        "url_name, args_builder, method, data, user_fixture",
+        [
+            # Worker-related endpoints
+            (
+                "opportunity:worker_learn_progress",
+                lambda slug, opportunity, access: (slug, opportunity.id, access.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:worker_payment_history",
+                lambda slug, opportunity, access: (slug, opportunity.id, access.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:worker_flag_counts",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            # Learn and Deliver module tables
+            (
+                "opportunity:learn_module_table",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:deliver_unit_table",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            # Visit export/import endpoints
+            (
+                "opportunity:visit_export",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"format": "csv", "date_range": "all", "status": "all", "flatten_form_data": False},
+                "org_user_member",
+            ),
+            (
+                "opportunity:review_visit_export",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"format": "csv", "date_range": "all", "status": "all"},
+                "org_user_member",
+            ),
+            (
+                "opportunity:visit_import",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Budget management
+            (
+                "opportunity:add_budget_existing_users",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:add_budget_new_users",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Payment endpoints
+            (
+                "opportunity:payment_export",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"format": "csv"},
+                "org_user_member",
+            ),
+            (
+                "opportunity:payment_import",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Payment units
+            (
+                "opportunity:add_payment_units",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:add_payment_unit",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Invoice management
+            (
+                "opportunity:invoice_list",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:invoice_create",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            (
+                "opportunity:invoice_approve",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"pk": []},
+                "org_user_member",
+            ),
+            # User invite management
+            (
+                "opportunity:delete_user_invites",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"user_invite_ids": [1]},
+                "org_user_member",
+            ),
+            (
+                "opportunity:resend_user_invites",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"user_invite_ids": [1]},
+                "org_user_admin",
+            ),
+            (
+                "opportunity:user_invite",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            # Verification and flags
+            (
+                "opportunity:verification_flags_config",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:user_visits_list",
+                lambda slug, opportunity, access: (slug, opportunity.id, access.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:user_visit_details",
+                lambda slug, opportunity, access: (slug, opportunity.id, 1),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            # Completed work
+            (
+                "opportunity:completed_work_export",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"format": "csv"},
+                "org_user_member",
+            ),
+            (
+                "opportunity:completed_work_import",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Suspended users
+            (
+                "opportunity:suspended_users_list",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:suspend_user",
+                lambda slug, opportunity, access: (slug, opportunity.id, access.id),
+                "post",
+                {"reason": "test"},
+                "org_user_member",
+            ),
+            (
+                "opportunity:revoke_user_suspension",
+                lambda slug, opportunity, access: (slug, opportunity.id, access.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            # Catchment area
+            (
+                "opportunity:catchment_area_export",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {"format": "csv"},
+                "org_user_member",
+            ),
+            (
+                "opportunity:catchment_area_import",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Reporting
+            (
+                "opportunity:payment_report",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:user_visit_review",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "post",
+                {},
+                "org_user_member",
+            ),
+            # Progress stats
+            (
+                "opportunity:delivery_stats",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:worker_progress_stats",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            (
+                "opportunity:funnel_progress_stats",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+            # Sync
+            (
+                "opportunity:sync_deliver_units",
+                lambda slug, opportunity, access: (slug, opportunity.id),
+                "get",
+                None,
+                "org_user_member",
+            ),
+        ],
+    )
+    def test_returns_404_for_mismatched_organization_slug(
+        self,
+        request,
+        client,
+        organization,
+        url_name,
+        args_builder,
+        method,
+        data,
+        user_fixture,
+    ):
+        other_org = OrganizationFactory()
+        opportunity = OpportunityFactory(organization=other_org)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+
+        user = request.getfixturevalue(user_fixture)
+        client.force_login(user)
+
+        url = reverse(url_name, args=args_builder(organization.slug, opportunity, access))
+        http_method = getattr(client, method)
+        response = http_method(url, data=data or {})
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
