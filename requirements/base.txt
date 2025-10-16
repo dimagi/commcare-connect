@@ -93,6 +93,7 @@ django==4.2.5
     #   django-redis
     #   django-tables2
     #   django-timezone-field
+    #   django-waffle
     #   djangorestframework
     #   drf-spectacular
 django-allauth==0.54.0
@@ -123,6 +124,8 @@ django-tables2==2.6.0
     # via -r requirements/base.in
 django-timezone-field==5.1
     # via django-celery-beat
+django-waffle==5.0.0
+    # via -r requirements/base.in
 djangorestframework==3.14.0
     # via
     #   -r requirements/base.in
