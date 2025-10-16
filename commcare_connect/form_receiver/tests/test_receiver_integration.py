@@ -343,6 +343,10 @@ def test_receiver_duplicate_approved(user_with_connectid_link: User, api_client:
     assert visit_1.completed_work != visit_2.completed_work
     assert visit_2.completed_work.status == CompletedWorkStatus.duplicate
 
+    update_payment_accrued(opportunity, [user_with_connectid_link], incremental=True)
+    visit_2.refresh_from_db()
+    assert visit_2.completed_work.status == CompletedWorkStatus.approved
+
 
 def test_receiver_multiple_deliver_unit_payment_units_duplicates(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
@@ -425,10 +429,12 @@ def test_receiver_multiple_deliver_unit_payment_units_duplicates_approved(
             user_visit.save()
             manually_approved_visits.append(user_visit)
 
+    update_payment_accrued(opportunity, [user_with_connectid_link])
     completed_works = CompletedWork.objects.filter(opportunity_access=access)
     completed_work_status = {cw.status for cw in completed_works}
     assert completed_works.count() == 2
-    assert CompletedWorkStatus.duplicate.value in completed_work_status
+    for cw in completed_works:
+        assert cw.status == CompletedWorkStatus.approved
 
 
 def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
