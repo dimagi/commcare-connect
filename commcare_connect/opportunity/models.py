@@ -685,10 +685,9 @@ class UserVisit(XFormBaseModel):
                 self.status_modified_date = now()
         super().__setattr__(name, value)
 
-    def save(self, **kwargs):
+    def save(self, rank=0, **kwargs):
         # The code below automatically switches/create CompletedWork when the UNIQUE_USER_VISIT_CONSTRAINT
         # is triggered.
-        rank = kwargs.pop("rank", 0)
         try:
             with transaction.atomic():
                 super().save(**kwargs)
@@ -717,7 +716,7 @@ class UserVisit(XFormBaseModel):
                 )
                 completed_work.save()
             self.completed_work = completed_work
-            self.save(**kwargs, rank=rank)
+            self.save(rank=rank, **kwargs)
 
     @property
     def images(self):
