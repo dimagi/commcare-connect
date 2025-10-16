@@ -8,7 +8,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
     dependencies = [
         ("opportunity", "0083_credentialconfiguration"),
-        ("users", "0013_alter_user_options"),
+        ("users", "0014_alter_user_options"),
     ]
 
     operations = [
