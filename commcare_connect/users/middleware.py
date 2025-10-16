@@ -28,11 +28,8 @@ def _get_org_membership(request):
 
 def _get_all_memberships(request):
     if not hasattr(request, "_cached_memberships"):
-        org = request.org
-        membership = []
-        if org:
-            membership = Membership.objects.filter(user=request.user).exclude(organization=org)
-        request._cached_memberships = membership
+        memberships = Membership.objects.filter(user=request.user)
+        request._cached_memberships = memberships
     return request._cached_memberships
 
 
