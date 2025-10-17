@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -12,7 +13,7 @@ from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import FormView, RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
@@ -118,14 +119,32 @@ def start_learn_app(request):
     return HttpResponse(status=200)
 
 
-@require_GET
+def accept_invite_confirm(request, invite_id):
+    """Render a confirmation page allowing the user to POST to accept the invite.
+
+    This prevents accidental acceptance via link prefetchers and gives CSRF protection.
+    """
+    try:
+        OpportunityAccess.objects.get(invite_id=invite_id)
+    except OpportunityAccess.DoesNotExist:
+        return HttpResponse("This link is invalid. Please try again", status=404)
+
+        # If this is a POST, delegate to the POST handler which performs the action.
+        if request.method == "POST":
+            return accept_invite(request, invite_id)
+
+        # Render a proper template which extends base.html and includes CSRF token
+        # get_token ensures a CSRF token exists in the session for the template tag
+        get_token(request)
+        return render(request, "users/accept_invite_confirm.html")
+
+
+@require_POST
 def accept_invite(request, invite_id):
     try:
         o = OpportunityAccess.objects.get(invite_id=invite_id)
     except OpportunityAccess.DoesNotExist:
         return HttpResponse("This link is invalid. Please try again", status=404)
-
-    # TODO Do it in a different PR
 
     # Check if already accepted to make this idempotent
     if o.accepted:
