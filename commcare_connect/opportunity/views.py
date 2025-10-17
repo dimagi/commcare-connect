@@ -1091,6 +1091,7 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
 
 @org_member_required
 @opportunity_access_required
+@require_POST
 def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
     access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, id=pk)
     access.suspended = False
@@ -1430,6 +1431,7 @@ def resend_user_invites(request, org_slug, opp_id):
 
 
 @opportunity_access_required
+@require_POST
 def sync_deliver_units(request, org_slug, opp_id):
     # TODO Permission check
     status = HTTPStatus.OK

@@ -722,8 +722,8 @@ class TestOpportunityAccessRequired:
             (
                 "opportunity:revoke_user_suspension",
                 lambda slug, opportunity, access: (slug, opportunity.id, access.id),
-                "get",
-                None,
+                "post",
+                {},
                 "org_user_member",
             ),
             # Catchment area
@@ -782,8 +782,8 @@ class TestOpportunityAccessRequired:
             (
                 "opportunity:sync_deliver_units",
                 lambda slug, opportunity, access: (slug, opportunity.id),
-                "get",
-                None,
+                "post",
+                {},
                 "org_user_member",
             ),
         ],
