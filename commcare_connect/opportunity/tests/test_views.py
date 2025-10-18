@@ -1,3 +1,4 @@
+import inspect
 from datetime import timedelta
 from http import HTTPStatus
 from unittest import mock
@@ -5,7 +6,7 @@ from unittest import mock
 import pytest
 from django.contrib.messages import get_messages
 from django.test import Client
-from django.urls import reverse
+from django.urls import get_resolver, reverse
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
@@ -512,3 +513,75 @@ class TestResendUserInvites:
         assert response.status_code == 200
         assert response.headers["HX-Redirect"] == self.expected_redirect
         mock_update_and_send.assert_called_once_with(mock_user, self.opportunity.id)
+
+
+def test_function_based_views_use_opportunity_decorator():
+    """
+    Ensure all function-based views in the opportunity module use the
+    @opportunity_for_org_required decorator, except explicitly excluded ones.
+    The purpose of this test is to prevent new function-based views from being
+    added without the necessary authorization checks.
+    """
+
+    def unwrap_view(func):
+        """Recursively unwrap all decorators."""
+        while hasattr(func, "__wrapped__"):
+            func = func.__wrapped__
+        return func
+
+    def get_function_views():
+        """Return all function-based views from the opportunity URLs."""
+        resolver = get_resolver("commcare_connect.opportunity.urls")
+
+        def collect(patterns):
+            for pattern in patterns:
+                if hasattr(pattern, "url_patterns"):  # included URLConf
+                    yield from collect(pattern.url_patterns)
+                else:
+                    view = pattern.callback
+                    original = unwrap_view(view)
+                    if (
+                        not hasattr(original, "view_class")
+                        and not inspect.isclass(original)
+                        and getattr(pattern, "name", None)
+                    ):
+                        yield {
+                            "url": str(pattern.pattern),
+                            "name": pattern.name,
+                            "function": view,
+                            "function_name": original.__name__,
+                        }
+
+        yield from collect(resolver.url_patterns)
+
+    def has_opportunity_decorator(func):
+        return getattr(func, "_has_opportunity_for_org_required_decorator", False)
+
+    excluded = {
+        "list",            # OpportunityList - lists all opportunities, no specific opp context
+        "init",            # OpportunityInit - creates new opportunity, no existing opp context
+        "export_status",   # Uses task_id parameter, and similar check is applied directly in code.
+        "download_export",  # Uses task_id parameter, and similar check is applied directly in code.
+        "fetch_attachment",  # Uses blob_id parameter, not opp_id
+        "add_api_key",     # API key management, no opportunity context needed
+    }
+
+    missing = [
+        v for v in get_function_views()
+        if v["name"] not in excluded and not has_opportunity_decorator(v["function"])
+    ]
+
+    if missing:
+        lines = [
+            "The following function-based views are missing the `opportunity_for_org_required` decorator:"
+        ]
+        lines += [
+            f"  - {v['name']} ({v['function_name']}) at URL: {v['url']}"
+            for v in missing
+        ]
+        lines.append(
+            "\nAll function-based views that operate on opportunities must use `opportunity_for_org_required` "
+            "decorator. If this views is intentionally excluded, "
+            "please add it to the exclusion list(in variable `excluded`) in this test."
+        )
+        pytest.fail("\n".join(lines))

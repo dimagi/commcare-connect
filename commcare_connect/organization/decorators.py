@@ -91,4 +91,5 @@ def opportunity_for_org_required(view_func):
 
         raise Http404("Opportunity not found.")
 
+    _inner._has_opportunity_for_org_required_decorator = True
     return _inner
