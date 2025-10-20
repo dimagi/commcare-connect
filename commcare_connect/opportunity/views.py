@@ -438,6 +438,9 @@ def review_visit_export(request, org_slug, opp_id):
 def export_status(request, org_slug, task_id):
     task = AsyncResult(task_id)
     task_meta = task._get_task_meta()
+    opportunity_id = task_meta.get("args")[0]
+    # Make sure opportunity exists for the given org_slug
+    get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
     status = task_meta.get("status")
     progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
     if status == "FAILURE":
@@ -471,9 +474,9 @@ def download_export(request, org_slug, task_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def update_visit_status_import(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("visits")
     file_format = get_file_extension(file)
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
@@ -481,19 +484,19 @@ def update_visit_status_import(request, org_slug=None, opp_id=None):
     if file_format not in ("csv", "xlsx"):
         messages.error(request, f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
     else:
-        file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_visit_import"
+        file_path = f"{request.opportunity.pk}_{datetime.datetime.now().isoformat}_visit_import"
         saved_path = default_storage.save(file_path, file)
-        result = bulk_update_visit_status_task.delay(opportunity.pk, saved_path, file_format)
+        result = bulk_update_visit_status_task.delay(request.opportunity.pk, saved_path, file_format)
         redirect_url = f"{redirect_url}?export_task_id={result.id}"
     return redirect(redirect_url)
 
 
+@opportunity_for_org_required
 def review_visit_import(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("visits")
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     try:
-        status = bulk_update_visit_review_status(opportunity, file)
+        status = bulk_update_visit_review_status(request.opportunity, file)
     except ImportException as e:
         messages.error(request, e.message)
     else:
@@ -505,16 +508,16 @@ def review_visit_import(request, org_slug=None, opp_id=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def add_budget_existing_users(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
-    opportunity_access = OpportunityAccess.objects.filter(opportunity=opportunity)
+    opportunity_access = OpportunityAccess.objects.filter(opportunity=request.opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access).annotate(
         total_max_visits=Coalesce(Sum("opportunityclaimlimit__max_visits"), Value(0))
     )
 
     form = AddBudgetExistingUsersForm(
         opportunity_claims=opportunity_claims,
-        opportunity=opportunity,
+        opportunity=request.opportunity,
         data=request.POST or None,
     )
     if form.is_valid():
@@ -529,7 +532,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
             visit_text = f"{additional_visits} visit{'s' if additional_visits != 1 else ''}"
             user_text = f"{len(selected_users)} worker{'s' if len(selected_users) != 1 else ''}"
             message_parts.append(f"Added {visit_text} to {user_text}.")
-            if not opportunity.managed:
+            if not request.opportunity.managed:
                 message_parts.append(f"Budget increased by {form.budget_increase:.2f}.")
 
         if end_date:
@@ -545,7 +548,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
         },
     ]
     # Nm are not allowed to increase the managed opportunity budget so do not provide that tab.
-    if not opportunity.managed or request.is_opportunity_pm:
+    if not request.opportunity.managed or request.is_opportunity_pm:
         tabs.append(
             {
                 "key": "new_workers",
@@ -555,7 +558,10 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
-        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.pk))},
+        {
+            "title": request.opportunity.name,
+            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.pk)),
+        },
         {
             "title": "Add budget",
         },
@@ -569,19 +575,19 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
             "tabs": tabs,
             "path": path,
             "opportunity_claims": opportunity_claims,
-            "budget_per_visit": opportunity.budget_per_visit,
-            "opportunity": opportunity,
+            "budget_per_visit": request.opportunity.budget_per_visit,
+            "opportunity": request.opportunity,
         },
     )
 
 
 @org_member_required
+@opportunity_for_org_required
 def add_budget_new_users(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     program_manager = is_program_manager(request)
 
     form = AddBudgetNewUsersForm(
-        opportunity=opportunity,
+        opportunity=request.opportunity,
         program_manager=program_manager,
         data=request.POST or None,
     )
@@ -591,7 +597,8 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
         budget_increase = form.budget_increase
         direction = "added to" if budget_increase >= 0 else "removed from"
         messages.success(
-            request, f"{opportunity.currency} {abs(form.budget_increase)} was {direction} the opportunity budget."
+            request,
+            f"{request.opportunity.currency} {abs(form.budget_increase)} was {direction} the opportunity budget.",
         )
 
         redirect_url = reverse("opportunity:add_budget_existing_users", args=[org_slug, opp_id])
@@ -615,8 +622,8 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def export_users_for_payment(request, org_slug, opp_id):
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -629,49 +636,49 @@ def export_users_for_payment(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def payment_import(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("payments")
     file_format = get_file_extension(file)
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
 
-    file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
+    file_path = f"{request.opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
     saved_path = default_storage.save(file_path, file)
-    result = bulk_update_payments_task.delay(opportunity.pk, saved_path, file_format)
+    result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
     redirect_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
+@opportunity_for_org_required
 def add_payment_units(request, org_slug=None, opp_id=None):
     if request.POST:
         return add_payment_unit(request, org_slug=org_slug, opp_id=opp_id)
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
-    paymentunit_count = PaymentUnit.objects.filter(opportunity=opportunity).count()
+    paymentunit_count = PaymentUnit.objects.filter(opportunity=request.opportunity).count()
     return render(
         request,
         "opportunity/add_payment_units.html",
-        dict(opportunity=opportunity, paymentunit_count=paymentunit_count),
+        dict(opportunity=request.opportunity, paymentunit_count=paymentunit_count),
     )
 
 
 @org_member_required
+@opportunity_for_org_required
 def add_payment_unit(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     deliver_units = DeliverUnit.objects.filter(
-        Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=opportunity.deliver_app
+        Q(payment_unit__isnull=True) | Q(payment_unit__opportunity__active=False), app=request.opportunity.deliver_app
     )
     form = PaymentUnitForm(
         deliver_units=deliver_units,
         data=request.POST or None,
-        payment_units=opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
+        payment_units=request.opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
         org_slug=org_slug,
-        opportunity_id=opportunity.pk,
+        opportunity_id=request.opportunity.pk,
     )
     if form.is_valid():
-        form.instance.opportunity = opportunity
+        form.instance.opportunity = request.opportunity
         form.save()
         required_deliver_units = form.cleaned_data["required_deliver_units"]
         DeliverUnit.objects.filter(id__in=required_deliver_units, payment_unit__isnull=True).update(
@@ -686,17 +693,20 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
             parent_payment_unit=form.instance.id
         )
         messages.success(request, f"Payment unit {form.instance.name} created.")
-        claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=opportunity)
+        claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=request.opportunity)
         for claim in claims:
-            OpportunityClaimLimit.create_claim_limits(opportunity, claim)
-        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=opportunity.id)
+            OpportunityClaimLimit.create_claim_limits(request.opportunity, claim)
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.id)
     elif request.POST:
         messages.error(request, "Invalid Data")
-        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=opportunity.id)
+        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.id)
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
-        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.pk))},
+        {
+            "title": request.opportunity.name,
+            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.pk)),
+        },
         {
             "title": "Payment unit",
         },
@@ -704,24 +714,29 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
     return render(
         request,
         "components/partial_form.html" if request.GET.get("partial") == "True" else "components/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Create", form=form, path=path),
+        dict(
+            title=f"{request.org.slug} - {request.opportunity.name}",
+            form_title="Payment Unit Create",
+            form=form,
+            path=path,
+        ),
     )
 
 
 @org_member_required
+@opportunity_for_org_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
-    payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=opportunity)
+    payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=request.opportunity)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
-        app=opportunity.deliver_app,
+        app=request.opportunity.deliver_app,
     )
     exclude_payment_units = [payment_unit.pk]
     if payment_unit.parent_payment_unit_id:
         exclude_payment_units.append(payment_unit.parent_payment_unit_id)
     payment_unit_deliver_units = {deliver_unit.pk for deliver_unit in payment_unit.deliver_units.all()}
     opportunity_payment_units = (
-        opportunity.paymentunit_set.filter(
+        request.opportunity.paymentunit_set.filter(
             Q(parent_payment_unit=payment_unit.pk) | Q(parent_payment_unit__isnull=True)
         )
         .exclude(pk__in=exclude_payment_units)
@@ -733,7 +748,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         data=request.POST or None,
         payment_units=opportunity_payment_units,
         org_slug=org_slug,
-        opportunity_id=opportunity.pk,
+        opportunity_id=request.opportunity.pk,
     )
     if form.is_valid():
         form.save()
@@ -756,11 +771,14 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
             parent_payment_unit=None
         )
         messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
-        return redirect("opportunity:finalize", org_slug=request.org.slug, opp_id=opportunity.id)
+        return redirect("opportunity:finalize", org_slug=request.org.slug, opp_id=request.opportunity.id)
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
-        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.pk))},
+        {
+            "title": request.opportunity.name,
+            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.pk)),
+        },
         {
             "title": "Payment unit",
         },
@@ -768,7 +786,12 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
     return render(
         request,
         "components/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Payment Unit Edit", form=form, path=path),
+        dict(
+            title=f"{request.org.slug} - {request.opportunity.name}",
+            form_title="Payment Unit Edit",
+            form=form,
+            path=path,
+        ),
     )
 
 
@@ -789,7 +812,6 @@ def export_user_status(request, org_slug, opp_id):
 @org_member_required
 @opportunity_for_org_required
 def export_deliver_status(request, org_slug, opp_id):
-    get_opportunity_or_404(pk=opp_id, org_slug=request.org.slug)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -802,10 +824,10 @@ def export_deliver_status(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None):
-    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
-    opportunity_access = get_object_or_404(OpportunityAccess, pk=access_id, opportunity=opportunity)
+    opportunity_access = get_object_or_404(OpportunityAccess, pk=access_id, opportunity=request.opportunity)
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, pk=pk)
     payment.delete()
     return redirect("opportunity:worker_payments", org_slug, opp_id)
@@ -813,8 +835,7 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
 
 @org_admin_required
 def send_message_mobile_users(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
-    user_ids = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).values_list(
+    user_ids = OpportunityAccess.objects.filter(opportunity=request.opportunity, accepted=True).values_list(
         "user_id", flat=True
     )
     users = User.objects.filter(pk__in=user_ids)
@@ -833,14 +854,17 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+        {
+            "title": request.opportunity.name,
+            "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.id)),
+        },
         {"title": "Send Message", "url": request.path},
     ]
     return render(
         request,
         "opportunity/send_message.html",
         context=dict(
-            title=f"{request.org.slug} - {opportunity.name}",
+            title=f"{request.org.slug} - {request.opportunity.name}",
             form_title="Send Message",
             form=form,
             users=users,
@@ -897,7 +921,6 @@ def approve_visits(request, org_slug, opp_id):
 @opportunity_for_org_required
 @require_POST
 def reject_visits(request, org_slug=None, opp_id=None):
-    opp = get_opportunity_or_404(opp_id, org_slug)
     visit_ids = request.POST.getlist("visit_ids[]")
     reason = request.POST.get("reason", "").strip()
 
@@ -906,7 +929,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
     ).update(status=VisitValidationStatus.rejected, reason=reason)
     if visit_ids:
         visit = UserVisit.objects.get(id=visit_ids[0])
-        update_payment_accrued(opportunity=opp, users=[visit.user])
+        update_payment_accrued(opportunity=request.opportunity, users=[visit.user])
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
@@ -918,25 +941,25 @@ def fetch_attachment(self, org_slug, blob_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 def verification_flags_config(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(pk=opp_id, org_slug=org_slug)
-    if opportunity.managed and not request.is_opportunity_pm:
+    if request.opportunity.managed and not request.is_opportunity_pm:
         return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
-    verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=opportunity).first()
+    verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=request.opportunity).first()
     form = OpportunityVerificationFlagsConfigForm(instance=verification_flags, data=request.POST or None)
-    deliver_unit_count = DeliverUnit.objects.filter(app=opportunity.deliver_app).count()
+    deliver_unit_count = DeliverUnit.objects.filter(app=request.opportunity.deliver_app).count()
     DeliverUnitFlagsFormset = modelformset_factory(
         DeliverUnitFlagRules, DeliverUnitFlagsForm, extra=deliver_unit_count, max_num=deliver_unit_count
     )
-    deliver_unit_flags = DeliverUnitFlagRules.objects.filter(opportunity=opportunity)
+    deliver_unit_flags = DeliverUnitFlagRules.objects.filter(opportunity=request.opportunity)
     deliver_unit_formset = DeliverUnitFlagsFormset(
-        form_kwargs={"opportunity": opportunity},
+        form_kwargs={"opportunity": request.opportunity},
         prefix="deliver_unit",
         queryset=deliver_unit_flags,
         data=request.POST or None,
         initial=[
             {"deliver_unit": du}
-            for du in opportunity.deliver_app.deliver_units.exclude(
+            for du in request.opportunity.deliver_app.deliver_units.exclude(
                 id__in=deliver_unit_flags.values_list("deliver_unit")
             )
         ],
@@ -947,9 +970,9 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         extra=1,
     )
     form_json_formset = FormJsonValidationRulesFormset(
-        form_kwargs={"opportunity": opportunity},
+        form_kwargs={"opportunity": request.opportunity},
         prefix="form_json",
-        queryset=FormJsonValidationRules.objects.filter(opportunity=opportunity),
+        queryset=FormJsonValidationRules.objects.filter(opportunity=request.opportunity),
         data=request.POST or None,
     )
     if (
@@ -959,29 +982,32 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         and form_json_formset.is_valid()
     ):
         verification_flags = form.save(commit=False)
-        verification_flags.opportunity = opportunity
+        verification_flags.opportunity = request.opportunity
         verification_flags.save()
         for du_form in deliver_unit_formset.forms:
             if du_form.is_valid() and du_form.cleaned_data != {}:
-                du_form.instance.opportunity = opportunity
+                du_form.instance.opportunity = request.opportunity
                 du_form.save()
         for fj_form in form_json_formset.forms:
             if fj_form.is_valid() and fj_form.cleaned_data != {}:
-                fj_form.instance.opportunity = opportunity
+                fj_form.instance.opportunity = request.opportunity
                 fj_form.save()
         messages.success(request, "Verification flags saved successfully.")
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-        {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+        {
+            "title": request.opportunity.name,
+            "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.id)),
+        },
         {"title": "Verification Flags Config", "url": request.path},
     ]
     return render(
         request,
         "opportunity/verification_flags_config.html",
         context=dict(
-            opportunity=opportunity,
-            title=f"{request.org.slug} - {opportunity.name}",
+            opportunity=request.opportunity,
+            title=f"{request.org.slug} - {request.opportunity.name}",
             form=form,
             deliver_unit_formset=deliver_unit_formset,
             form_json_formset=form_json_formset,
@@ -994,7 +1020,9 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @csrf_exempt
 @require_http_methods(["DELETE"])
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
-    form_json_rule = FormJsonValidationRules.objects.get(opportunity=opp_id, pk=pk)
+    form_json_rule = FormJsonValidationRules.objects.get(
+        opportunity=opp_id, pk=pk, opportunity__organization=request.org
+    )
     form_json_rule.delete()
     return HttpResponse(status=200)
 
@@ -1030,12 +1058,12 @@ def export_completed_work(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def update_completed_work_status_import(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("visits")
     try:
-        status = bulk_update_completed_work_status(opportunity, file)
+        status = bulk_update_completed_work_status(request.opportunity, file)
     except ImportException as e:
         messages.error(request, e.message)
     else:
@@ -1074,24 +1102,29 @@ def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def suspended_users_list(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
-    access_objects = OpportunityAccess.objects.filter(opportunity=opportunity, suspended=True)
+    access_objects = OpportunityAccess.objects.filter(opportunity=request.opportunity, suspended=True)
     table = SuspendedUsersTable(access_objects)
     path = []
-    if opportunity.managed:
+    if request.opportunity.managed:
         path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
         path.append(
-            {"title": opportunity.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))}
+            {
+                "title": request.opportunity.managedopportunity.program.name,
+                "url": reverse("program:home", args=(org_slug,)),
+            }
         )
     path.extend(
         [
             {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-            {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+            {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
             {"title": "Suspended Users", "url": request.path},
         ]
     )
-    return render(request, "opportunity/suspended_users.html", dict(table=table, opportunity=opportunity, path=path))
+    return render(
+        request, "opportunity/suspended_users.html", dict(table=table, opportunity=request.opportunity, path=path)
+    )
 
 
 @org_member_required
@@ -1109,12 +1142,12 @@ def export_catchment_area(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def import_catchment_area(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opp_id)
     file = request.FILES.get("catchments")
     try:
-        status = bulk_update_catchments(opportunity, file)
+        status = bulk_update_catchments(request.opportunity, file)
     except ImportException as e:
         messages.error(request, e.message)
     else:
@@ -1124,56 +1157,56 @@ def import_catchment_area(request, org_slug=None, opp_id=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def opportunity_user_invite(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
-    form = OpportunityUserInviteForm(data=request.POST or None, opportunity=opportunity)
+    form = OpportunityUserInviteForm(data=request.POST or None, opportunity=request.opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
         if users:
-            add_connect_users.delay(users, opportunity.id)
+            add_connect_users.delay(users, request.opportunity.id)
         return redirect("opportunity:detail", request.org.slug, opp_id)
     return render(
         request,
         "components/form.html",
-        dict(title=f"{request.org.slug} - {opportunity.name}", form_title="Invite Connect Workers", form=form),
+        dict(title=f"{request.org.slug} - {request.opportunity.name}", form_title="Invite Connect Workers", form=form),
     )
 
 
 @org_member_required
+@opportunity_for_org_required
 def user_visit_review(request, org_slug, opp_id):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
     if request.POST and request.is_opportunity_pm:
         review_status = request.POST.get("review_status").lower()
         updated_reviews = request.POST.getlist("pk")
         user_visits = UserVisit.objects.filter(pk__in=updated_reviews)
         if review_status in [VisitReviewStatus.agree.value, VisitReviewStatus.disagree.value]:
             user_visits.update(review_status=review_status)
-            update_payment_accrued(opportunity=opportunity, users=[visit.user for visit in user_visits])
+            update_payment_accrued(opportunity=request.opportunity, users=[visit.user for visit in user_visits])
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
 @org_member_required
+@opportunity_for_org_required
 def payment_report(request, org_slug, opp_id):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
     usd = request.GET.get("usd", False)
 
-    if not opportunity.managed:
+    if not request.opportunity.managed:
         return redirect("opportunity:detail", org_slug, opp_id)
 
     amount_field = "amount"
-    currency = opportunity.currency
+    currency = request.opportunity.currency
     if usd:
         amount_field = "amount_usd"
         currency = "USD"
 
     total_paid_users = Payment.objects.filter(
-        opportunity_access__opportunity=opportunity, organization__isnull=True
+        opportunity_access__opportunity=request.opportunity, organization__isnull=True
     ).aggregate(total=Sum(amount_field))["total"] or Decimal("0.00")
     total_paid_nm = Payment.objects.filter(
-        organization=opportunity.organization, invoice__opportunity=opportunity
+        organization=request.opportunity.organization, invoice__opportunity=request.opportunity
     ).aggregate(total=Sum(amount_field))["total"] or Decimal("0.00")
-    data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(opportunity, usd)
+    data, total_user_payment_accrued, total_nm_payment_accrued = get_payment_report_data(request.opportunity, usd)
     table = PaymentReportTable(data)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
 
@@ -1212,19 +1245,19 @@ def payment_report(request, org_slug, opp_id):
         "opportunity/invoice_payment_report.html",
         context=dict(
             table=table,
-            opportunity=opportunity,
+            opportunity=request.opportunity,
             cards=cards,
         ),
     )
 
 
 @org_member_required
+@opportunity_for_org_required
 def invoice_list(request, org_slug, opp_id):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    if not opportunity.managed:
+    if not request.opportunity.managed:
         return redirect("opportunity:detail", org_slug, opp_id)
 
-    filter_kwargs = dict(opportunity=opportunity)
+    filter_kwargs = dict(opportunity=request.opportunity)
 
     queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
     csrf_token = get_token(request)
@@ -1232,23 +1265,23 @@ def invoice_list(request, org_slug, opp_id):
     table = PaymentInvoiceTable(
         queryset,
         org_slug=org_slug,
-        opportunity=opportunity,
+        opportunity=request.opportunity,
         exclude=("actions",) if not request.is_opportunity_pm else tuple(),
         csrf_token=csrf_token,
     )
 
-    form = PaymentInvoiceForm(opportunity=opportunity)
+    form = PaymentInvoiceForm(opportunity=request.opportunity)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(
         request,
         "opportunity/invoice_list.html",
         {
-            "opportunity": opportunity,
+            "opportunity": request.opportunity,
             "table": table,
             "form": form,
             "path": [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+                {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
                 {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opp_id))},
             ],
         },
@@ -1256,14 +1289,14 @@ def invoice_list(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 def invoice_create(request, org_slug=None, opp_id=None):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    if not opportunity.managed or request.is_opportunity_pm:
+    if not request.opportunity.managed or request.is_opportunity_pm:
         return redirect("opportunity:detail", org_slug, opp_id)
-    form = PaymentInvoiceForm(data=request.POST or None, opportunity=opportunity)
+    form = PaymentInvoiceForm(data=request.POST or None, opportunity=request.opportunity)
     if request.POST and form.is_valid():
         form.save()
-        form = PaymentInvoiceForm(opportunity=opportunity)
+        form = PaymentInvoiceForm(opportunity=request.opportunity)
         redirect_url = reverse("opportunity:invoice_list", args=[org_slug, opp_id])
         response = HttpResponse(status=200)
         response["HX-Redirect"] = redirect_url
@@ -1272,18 +1305,18 @@ def invoice_create(request, org_slug=None, opp_id=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def invoice_approve(request, org_slug, opp_id):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    if not opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
+    if not request.opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
         return redirect("opportunity:detail", org_slug, opp_id)
     invoice_ids = request.POST.getlist("pk")
-    invoices = PaymentInvoice.objects.filter(opportunity=opportunity, pk__in=invoice_ids, payment__isnull=True)
+    invoices = PaymentInvoice.objects.filter(opportunity=request.opportunity, pk__in=invoice_ids, payment__isnull=True)
 
     for invoice in invoices:
         payment = Payment(
             amount=invoice.amount,
-            organization=opportunity.organization,
+            organization=request.opportunity.organization,
             amount_usd=invoice.amount_usd,
             invoice=invoice,
         )
@@ -1410,9 +1443,9 @@ def sync_deliver_units(request, org_slug, opp_id):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def user_visit_verification(request, org_slug, opp_id, pk):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    opportunity_access = get_object_or_404(OpportunityAccess, opportunity=opportunity, pk=pk)
+    opportunity_access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=pk)
 
     user_visit_counts = get_user_visit_counts(opportunity_access_id=pk)
     visits = UserVisit.objects.filter(opportunity_access=opportunity_access, flagged=True, flag_reason__isnull=False)
@@ -1421,7 +1454,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         for flag, _description in visit.flag_reason.get("flags", []):
             flag_label = FlagLabels.get_label(flag)
             if visit.status == VisitValidationStatus.approved:
-                if opportunity.managed and visit.review_created_on is not None:
+                if request.opportunity.managed and visit.review_created_on is not None:
                     if visit.review_status == VisitReviewStatus.agree:
                         flagged_info[flag_label]["approved"] += 1
                     else:
@@ -1441,15 +1474,18 @@ def user_visit_verification(request, org_slug, opp_id, pk):
     ).count()
 
     path = []
-    if opportunity.managed:
+    if request.opportunity.managed:
         path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
         path.append(
-            {"title": opportunity.managedopportunity.program.name, "url": reverse("program:home", args=(org_slug,))}
+            {
+                "title": request.opportunity.managedopportunity.program.name,
+                "url": reverse("program:home", args=(org_slug,)),
+            }
         )
     path.extend(
         [
             {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-            {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+            {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
             {
                 "title": "Connect Workers",
                 "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id)),
@@ -1674,10 +1710,10 @@ class VisitVerificationTableView(OrganizationUserMixin, SingleTableView):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def user_visit_details(request, org_slug, opp_id, pk):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    user_visit = get_object_or_404(UserVisit, pk=pk, opportunity=opportunity)
-    verification_flags_config = opportunity.opportunityverificationflags
+    user_visit = get_object_or_404(UserVisit, pk=pk, opportunity=request.opportunity)
+    verification_flags_config = request.opportunity.opportunityverificationflags
 
     serializer = XFormSerializer(data=user_visit.form_json)
     serializer.is_valid()
@@ -1709,7 +1745,7 @@ def user_visit_details(request, org_slug, opp_id, pk):
 
         # Fetch only points within 250m
         qs = (
-            UserVisit.objects.filter(opportunity=opportunity)
+            UserVisit.objects.filter(opportunity=request.opportunity)
             .exclude(pk=user_visit.pk)
             .annotate(
                 lat_val=Cast(SplitPart("location", Value(" "), Value(1)), FloatField()),
@@ -1986,8 +2022,9 @@ class WorkerPaymentsView(BaseWorkerListView):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def worker_learn_status_view(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=access_id)
     completed_modules = CompletedModule.objects.filter(opportunity_access=access)
     total_duration = datetime.timedelta(0)
     for cm in completed_modules:
@@ -2004,8 +2041,9 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def worker_payment_history(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=access_id)
     queryset = Payment.objects.filter(opportunity_access=access).order_by("-date_paid")
     payments = queryset.values("date_paid", "amount")
 
@@ -2017,15 +2055,15 @@ def worker_payment_history(request, org_slug, opp_id, access_id):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def worker_flag_counts(request, org_slug, opp_id):
     access_id = request.GET.get("access_id", None)
     filters = {}
     if access_id:
-        access = get_object_or_404(OpportunityAccess, opportunity__id=opp_id, pk=access_id)
+        access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=access_id)
         filters["completed_work__opportunity_access"] = access
     else:
-        opportunity = get_object_or_404(Opportunity, id=opp_id)
-        filters["completed_work__opportunity_access__opportunity"] = opportunity
+        filters["completed_work__opportunity_access__opportunity"] = request.opportunity
 
     status = request.GET.get("status", CompletedWorkStatus.pending)
     payment_unit_id = request.GET.get("payment_unit_id")
@@ -2052,17 +2090,17 @@ def worker_flag_counts(request, org_slug, opp_id):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def learn_module_table(request, org_slug=None, opp_id=None):
-    opp = get_opportunity_or_404(opp_id, org_slug)
-    data = LearnModule.objects.filter(app=opp.learn_app)
+    data = LearnModule.objects.filter(app=request.opportunity.learn_app)
     table = LearnModuleTable(data)
     return render(request, "tables/single_table.html", {"table": table})
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def deliver_unit_table(request, org_slug=None, opp_id=None):
-    opp = get_opportunity_or_404(opp_id, org_slug)
-    unit = DeliverUnit.objects.filter(app=opp.deliver_app)
+    unit = DeliverUnit.objects.filter(app=request.opportunity.deliver_app)
     table = DeliverUnitTable(unit)
     return render(
         request,
@@ -2240,6 +2278,7 @@ def opportunity_worker_progress(request, org_slug, opp_id):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def opportunity_delivery_stats(request, org_slug, opp_id):
     panel_type_2 = {
         "body": "bg-brand-marigold/10 border border-brand-marigold",
@@ -2357,9 +2396,8 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
 
 
 @require_POST
+@opportunity_for_org_required
 def exchange_rate_preview(request, org_slug, opp_id):
-    opp = get_opportunity_or_404(opp_id, org_slug)
-
     rate_date = request.POST.get("date")
     usd_currency = request.POST.get("usd_currency", False) == "true"
     replace_amount = request.POST.get("should_replace_amount", False) == "true"  # condition when user toggles
@@ -2377,7 +2415,7 @@ def exchange_rate_preview(request, org_slug, opp_id):
         exchange_info = "Please select a date for exchange rate."
         converted_amount_display = ""
     else:
-        exchange_rate = ExchangeRate.latest_exchange_rate(opp.currency, rate_date)
+        exchange_rate = ExchangeRate.latest_exchange_rate(request.opportunity.currency, rate_date)
         if exchange_rate:
             exchange_info = format_html(
                 "Exchange Rate on {}: <b>{}</b>",
@@ -2385,7 +2423,7 @@ def exchange_rate_preview(request, org_slug, opp_id):
                 exchange_rate.rate,
             )
             other_currency_amount = None
-            currency = opp.currency
+            currency = request.opportunity.currency
 
             if usd_currency:
                 if replace_amount:
