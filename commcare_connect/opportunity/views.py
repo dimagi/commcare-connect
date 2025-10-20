@@ -134,7 +134,12 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
-from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
+from commcare_connect.organization.decorators import (
+    opportunity_for_org_required,
+    org_admin_required,
+    org_member_required,
+    org_viewer_required,
+)
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
@@ -395,8 +400,8 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
 
 
 @org_member_required
+@opportunity_for_org_required
 def export_user_visits(request, org_slug, opp_id):
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = VisitExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -412,8 +417,8 @@ def export_user_visits(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 def review_visit_export(request, org_slug, opp_id):
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = ReviewVisitExportForm(data=request.POST)
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
     if not form.is_valid():
@@ -768,8 +773,8 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def export_user_status(request, org_slug, opp_id):
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -782,6 +787,7 @@ def export_user_status(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 def export_deliver_status(request, org_slug, opp_id):
     get_opportunity_or_404(pk=opp_id, org_slug=request.org.slug)
     form = PaymentExportForm(data=request.POST)
@@ -846,11 +852,12 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
 
 @org_member_required
 @require_POST
+@opportunity_for_org_required
 def approve_visits(request, org_slug, opp_id):
     visit_ids = request.POST.getlist("visit_ids[]")
 
     visits = (
-        UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id)
+        UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
         .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
         .prefetch_related("opportunity")
         .only("status", "review_status", "flagged", "justification", "review_created_on")
@@ -887,13 +894,14 @@ def approve_visits(request, org_slug, opp_id):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def reject_visits(request, org_slug=None, opp_id=None):
     opp = get_opportunity_or_404(opp_id, org_slug)
     visit_ids = request.POST.getlist("visit_ids[]")
     reason = request.POST.get("reason", "").strip()
 
-    UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id).exclude(
+    UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity).exclude(
         status=VisitValidationStatus.rejected
     ).update(status=VisitValidationStatus.rejected, reason=reason)
     if visit_ids:
@@ -1008,8 +1016,8 @@ class OpportunityCompletedWorkTable(OrganizationUserMixin, SingleTableView):
 
 
 @org_member_required
+@opportunity_for_org_required
 def export_completed_work(request, org_slug, opp_id):
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -1039,9 +1047,10 @@ def update_completed_work_status_import(request, org_slug=None, opp_id=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 @require_POST
 def suspend_user(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, id=pk)
     access.suspended = True
     access.suspension_date = now()
     access.suspension_reason = request.POST.get("reason", "")
@@ -1054,8 +1063,9 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.oppurtunity, id=pk)
     access.suspended = False
     access.save()
     remove_opportunity_access_cache(access.user, access.opportunity)
@@ -1085,8 +1095,8 @@ def suspended_users_list(request, org_slug=None, opp_id=None):
 
 
 @org_member_required
+@opportunity_for_org_required
 def export_catchment_area(request, org_slug, opp_id):
-    get_opportunity_or_404(org_slug=request.org.slug, pk=opp_id)
     form = PaymentExportForm(data=request.POST)
     if not form.is_valid():
         messages.error(request, form.errors)
@@ -1284,13 +1294,14 @@ def invoice_approve(request, org_slug, opp_id):
 @org_member_required
 @require_POST
 @csrf_exempt
+@opportunity_for_org_required
 def delete_user_invites(request, org_slug, opp_id):
     invite_ids = request.POST.getlist("user_invite_ids")
     if not invite_ids:
         return HttpResponseBadRequest()
 
     user_invites = (
-        UserInvite.objects.filter(id__in=invite_ids, opportunity_id=opp_id)
+        UserInvite.objects.filter(id__in=invite_ids, opportunity=request.opportunity)
         .exclude(status=UserInviteStatus.accepted)
         .select_related("opportunity_access")
     )
@@ -1314,12 +1325,13 @@ def delete_user_invites(request, org_slug, opp_id):
 
 @org_admin_required
 @require_POST
+@opportunity_for_org_required
 def resend_user_invites(request, org_slug, opp_id):
     invite_ids = request.POST.getlist("user_invite_ids")
     if not invite_ids:
         return HttpResponseBadRequest()
 
-    user_invites = UserInvite.objects.filter(id__in=invite_ids, opportunity_id=opp_id).select_related(
+    user_invites = UserInvite.objects.filter(id__in=invite_ids, opportunity=request.opportunity).select_related(
         "opportunity_access__user"
     )
 
@@ -1343,7 +1355,7 @@ def resend_user_invites(request, org_slug, opp_id):
     if valid_phone_numbers:
         users = User.objects.filter(phone_number__in=valid_phone_numbers)
         for user in users:
-            access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity_id=opp_id)
+            access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity=request.opportunity)
             invite_user.delay(user.id, access.pk)
             resent_count += 1
 
@@ -1384,6 +1396,7 @@ def resend_user_invites(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
+@opportunity_for_org_required
 def sync_deliver_units(request, org_slug, opp_id):
     status = HTTPStatus.OK
     message = "Delivery unit sync completed."
@@ -2084,6 +2097,7 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OrgContextSingleTab
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def opportunity_funnel_progress(request, org_slug, opp_id):
     result = get_opportunity_funnel_progress(opp_id, request.org)
 
@@ -2147,6 +2161,7 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 
 
 @org_viewer_required
+@opportunity_for_org_required
 def opportunity_worker_progress(request, org_slug, opp_id):
     result = get_opportunity_worker_progress(opp_id, request.org)
 
