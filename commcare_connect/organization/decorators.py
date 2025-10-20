@@ -4,8 +4,9 @@ from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 
-from .models import UserOrganizationMembership
 from commcare_connect.opportunity.models import Opportunity
+
+from .models import UserOrganizationMembership
 
 
 def _request_user_is_member(request):
