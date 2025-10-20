@@ -72,7 +72,7 @@ class UserVisitTable(OrgContextTable):
             "opportunity:visit_verification",
             kwargs={"org_slug": self.org_slug, "pk": record.pk},
         )
-        return mark_safe(f'<a class="btn btn-sm btn-primary" href="{url}">Review</a>')
+        return mark_safe(f'<a class="app-btn app-btn-sm app-btn-primary" href="{url}">Review</a>')
 
     def render_flag_reason(self, value):
         short = [flag[1] for flag in value.get("flags")]
@@ -268,7 +268,7 @@ class SuspendedUsersTable(tables.Table):
         page_url = reverse(
             "opportunity:suspended_users_list", args=(record.opportunity.organization.slug, record.opportunity_id)
         )
-        return format_html('<a class="btn btn-success" href="{}?next={}">Revoke</a>', revoke_url, page_url)
+        return format_html('<a class="app-btn app-btn-success" href="{}?next={}">Revoke</a>', revoke_url, page_url)
 
 
 class CatchmentAreaTable(tables.Table):
