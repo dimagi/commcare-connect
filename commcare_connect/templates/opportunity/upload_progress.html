@@ -6,7 +6,7 @@
 {% endif %}
 >
   {% if progress.error %}
-    <div class="alert alert-danger" role="alert">
+  <div class="app-alert app-alert-danger" role="alert">
       {{ progress.error }}
     </div>
   {% else %}
@@ -26,7 +26,7 @@
       {% endif %}
     {% endif %}
     {% if progress.message %}
-    <div class="alert alert-info" role="alert">
+  <div class="app-alert app-alert-info" role="alert">
     {{ progress.message | safe }}
     </div>
     {% endif %}
