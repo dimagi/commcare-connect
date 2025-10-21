@@ -8,7 +8,8 @@
 <div class="container">
   <h2 class="mb-4">Demo Users</h2>
   <div class="card shadow-sm p-3">
-  <table class="app-table app-table-striped mb-0">
+  <div class="overflow-x-auto">
+  <table class="min-w-full divide-y divide-gray-200 mb-0">
       <thead>
         <tr>
           <th>Phone Number</th>
@@ -24,6 +25,7 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
   </div>
 </div>
 {% endblock content %}

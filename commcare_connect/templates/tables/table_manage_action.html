@@ -4,20 +4,20 @@
     <!-- Render the form with POST button -->
     <form action="{{ button.url }}" method="post" class="d-inline">
       {% csrf_token %}
-  <button type="submit" class="app-btn app-btn-{{ button.color|default:'primary' }} app-btn-sm"
+  <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded text-sm font-medium {% if button.color|default:'primary' == 'primary' %}bg-blue-600 text-white hover:bg-blue-700{% elif button.color|default:'primary' == 'success' %}bg-green-600 text-white hover:bg-green-700{% else %}bg-gray-200 text-gray-800 hover:bg-gray-300{% endif %} {% if button.disable %}opacity-50 cursor-not-allowed{% endif %}"
               {% if button.disable %}disabled{% endif %}>
         {% if button.icon %}<span class="{{ button.icon }}"></span>{% endif %}
-        <span class="d-none d-md-inline">{% if button.icon %}&nbsp;{% endif %}{% translate button.text %}</span>
+        <span class="hidden md:inline">{% if button.icon %}&nbsp;{% endif %}{% translate button.text %}</span>
       </button>
     </form>
   {% else %}
     <!-- Render the normal link button -->
-  <a class="app-btn app-btn-{{ button.color|default:'primary' }} app-btn-sm{% if button.disable %} disabled{% endif %}"
+  <a class="inline-flex items-center px-3 py-1.5 rounded text-sm font-medium {% if button.color|default:'primary' == 'primary' %}bg-blue-600 text-white hover:bg-blue-700{% elif button.color|default:'primary' == 'success' %}bg-green-600 text-white hover:bg-green-700{% else %}bg-gray-200 text-gray-800 hover:bg-gray-300{% endif %}{% if button.disable %} opacity-50 cursor-not-allowed{% endif %}"
        href="{% if button.disable %}#{% else %}{{ button.url }}{% endif %}"
        tabindex="-1"
        aria-disabled="{% if button.disable %}true{% else %}false{% endif %}">
       {% if button.icon %}<span class="{{ button.icon }}"></span>{% endif %}
-      <span class="d-none d-md-inline">{% if button.icon %}&nbsp;{% endif %}{% translate button.text %}</span>
+      <span class="hidden md:inline">{% if button.icon %}&nbsp;{% endif %}{% translate button.text %}</span>
     </a>
   {% endif %}
 {% endfor %}
