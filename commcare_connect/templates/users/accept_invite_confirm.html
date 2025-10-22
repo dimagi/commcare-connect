@@ -7,7 +7,8 @@
     <form method="post" action="{{ request.path }}">
       {% csrf_token %}
       <button type="submit" class="bg-brand-mango text-white px-4 py-2 rounded">Accept Invitation</button>
-      <a href="{{ request.META.HTTP_REFERER|default:reverse('home') }}" class="ml-4 text-sm text-gray-600">Cancel</a>
+      {% url 'home' as home_url %}
+      <a href="{{ request.META.HTTP_REFERER|default:home_url }}" class="ml-4 text-sm text-gray-600">Cancel</a>
     </form>
   </div>
 {% endblock %}
