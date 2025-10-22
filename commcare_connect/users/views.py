@@ -124,6 +124,15 @@ def accept_invite(request, invite_id):
         o = OpportunityAccess.objects.get(invite_id=invite_id)
     except OpportunityAccess.DoesNotExist:
         return HttpResponse("This link is invalid. Please try again", status=404)
+
+    if o.accepted:
+        return HttpResponse(
+            _(
+                "This invitation has already been accepted. Open your CommCare Connect App to "
+                "see more information about the opportunity and begin learning"
+            )
+        )
+
     with transaction.atomic():
         o.accepted = True
         o.save()
