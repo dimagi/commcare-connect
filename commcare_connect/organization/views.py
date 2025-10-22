@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.text import slugify
 from django.utils.translation import gettext
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
@@ -100,6 +100,7 @@ def add_credential_view(request, org_slug):
     return redirect("organization:home", org_slug)
 
 
+@require_GET
 @org_admin_required
 def org_member_table(request, org_slug=None):
     members = UserOrganizationMembership.objects.filter(organization=request.org)
