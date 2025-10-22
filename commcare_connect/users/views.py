@@ -140,8 +140,10 @@ def accept_invite(request, invite_id):
         user_invite.status = UserInviteStatus.accepted
         user_invite.save()
     return HttpResponse(
-        "Thank you for accepting the invitation. Open your CommCare Connect App to "
-        "see more information about the opportunity and begin learning"
+        _(
+            "Thank you for accepting the invitation. Open your CommCare Connect App to "
+            "see more information about the opportunity and begin learning"
+        )
     )
 
 
