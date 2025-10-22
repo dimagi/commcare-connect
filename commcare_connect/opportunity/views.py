@@ -834,6 +834,7 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
 
 
 @org_admin_required
+@opportunity_for_org_required
 def send_message_mobile_users(request, org_slug=None, opp_id=None):
     user_ids = OpportunityAccess.objects.filter(opportunity=request.opportunity, accepted=True).values_list(
         "user_id", flat=True
@@ -1019,6 +1020,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @org_member_required
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@opportunity_for_org_required
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
     form_json_rule = FormJsonValidationRules.objects.get(
         opportunity=opp_id, pk=pk, opportunity__organization=request.org
