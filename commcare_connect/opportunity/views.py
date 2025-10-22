@@ -1381,6 +1381,7 @@ def resend_user_invites(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
+@require_POST
 def sync_deliver_units(request, org_slug, opp_id):
     status = HTTPStatus.OK
     message = "Delivery unit sync completed."
