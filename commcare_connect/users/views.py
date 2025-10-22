@@ -118,7 +118,6 @@ def start_learn_app(request):
         user_invite.save()
     return HttpResponse(status=200)
 
-
 class AcceptInviteView(View):
     def get(self, request, invite_id):
         try:
@@ -182,6 +181,7 @@ class SMSStatusCallbackView(APIView):
 
 
 # used for loading api key dropdown
+@require_GET
 @login_required
 def get_api_keys(request):
     hq_server = request.GET.get("hq_server")

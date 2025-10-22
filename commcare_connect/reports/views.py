@@ -108,6 +108,7 @@ class DashboardFilters(django_filters.FilterSet):
         fields = ["program", "organization", "from_date", "to_date"]
 
 
+@require_GET
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
 def program_dashboard_report(request):
@@ -372,6 +373,7 @@ def dashboard_stats_api(request):
     )
 
 
+@require_GET
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
 def dashboard_charts_api(request):
