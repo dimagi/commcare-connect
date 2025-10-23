@@ -1,5 +1,6 @@
 from .main import (  # noqa: F401
     add_credential,
+    add_credentials,
     fetch_credentials,
     fetch_user_counts,
     fetch_users,

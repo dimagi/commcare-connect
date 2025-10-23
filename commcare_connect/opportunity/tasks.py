@@ -1,11 +1,13 @@
 import datetime
 import logging
 from decimal import Decimal
+from itertools import chain
 
 import httpx
 import sentry_sdk
 from allauth.utils import build_absolute_uri
 from django.conf import settings
+from django.contrib.postgres.aggregates import ArrayAgg
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -17,7 +19,7 @@ from django.utils.translation import gettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
-from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
+from commcare_connect.connect_id_client import add_credentials, fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.export import (
@@ -57,6 +59,8 @@ from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
 logger = logging.getLogger(__name__)
+
+MAX_CREDENTIALS_PER_REQUEST = 200
 
 
 @celery_app.task()
@@ -464,8 +468,8 @@ def issue_user_credentials():
             user_credentials_data.extend(get_learning_user_credentials(credential_config))
 
         UserCredential.objects.bulk_create(user_credentials_data)
-        # Todo: send to PersonalID for credential issuance
-        # Ticket: CCCT-1725
+
+    issue_credentials_to_users.delay()
 
 
 def get_delivery_user_credentials(credential_config):
@@ -518,6 +522,73 @@ def get_learning_user_credentials(credential_config):
         credential_type=UserCredential.CredentialType.LEARN,
         level=credential_config.learn_level,
     )
+
+
+@celery_app.task()
+def issue_credentials_to_users():
+    """
+    Issue user credentials to PersonalID for all users who have not been issued credentials.
+    """
+
+    def parse_credential_payload_item(users_credential):
+        return {
+            "usernames": users_credential["usernames"],
+            "title": UserCredential.get_title(
+                credential_type=users_credential["credential_type"],
+                level=users_credential["level"],
+                delivery_type_name=users_credential["delivery_type__name"],
+            ),
+            "type": users_credential["credential_type"],
+            "level": users_credential["level"],
+            "slug": users_credential["opportunity__id"],
+            "opportunity_id": users_credential["opportunity__id"],
+        }
+
+    unissued_credentials_qs = get_unissued_user_credentials_queryset()
+    payload_size_counter = 0
+    credentials_payload_items = []
+    index_to_credential_ids_set_mapper = {}
+
+    for index, users_credential in enumerate(unissued_credentials_qs.iterator(chunk_size=MAX_CREDENTIALS_PER_REQUEST)):
+        payload_size_counter += 1
+        index_to_credential_ids_set_mapper[index] = users_credential["credential_ids"]
+        credentials_payload_items.append(parse_credential_payload_item(users_credential))
+
+        if payload_size_counter >= MAX_CREDENTIALS_PER_REQUEST:
+            submit_credentials(index_to_credential_ids_set_mapper, credentials_payload_items)
+            payload_size_counter = 0
+            credentials_payload_items = []
+            index_to_credential_ids_set_mapper = {}
+
+    if credentials_payload_items:
+        submit_credentials(index_to_credential_ids_set_mapper, credentials_payload_items)
+
+
+def get_unissued_user_credentials_queryset():
+    """
+    This function returns a queryset that groups unissued UserCredential records in a way that the usernames
+    of the users sharing the same credential_type, level, opportunity_id, and delivery_type_name are
+    aggregated together.
+
+    The relating user credential IDs is also aggregated to more easily find and update the issued_on field
+    later after successfully submitting the credentials to PersonalID.
+    """
+    return (
+        UserCredential.objects.filter(issued_on__isnull=True)
+        .values("credential_type", "level", "opportunity__id", "delivery_type__name")
+        .annotate(usernames=ArrayAgg("user__username", distinct=True))
+        .annotate(credential_ids=ArrayAgg("id", distinct=True))
+        .order_by("credential_type", "level", "opportunity__id", "delivery_type__name")
+    )
+
+
+def submit_credentials(index_to_credential_ids_set_mapper, credentials_items: list[dict]):
+    success_indices = add_credentials(credentials_items)
+
+    successful_credential_ids = list(
+        chain.from_iterable(index_to_credential_ids_set_mapper[i] for i in success_indices)
+    )
+    UserCredential.objects.filter(id__in=successful_credential_ids).update(issued_on=now())
 
 
 def _get_users_ids_to_exclude(opportunity, credential_type, level):

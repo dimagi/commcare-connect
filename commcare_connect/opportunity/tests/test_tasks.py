@@ -3,6 +3,7 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
+from django.db.models import F
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
@@ -13,6 +14,7 @@ from commcare_connect.opportunity.tasks import (
     download_user_visit_attachments,
     get_delivery_user_credentials,
     get_learning_user_credentials,
+    issue_credentials_to_users,
     issue_user_credentials,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -342,3 +344,91 @@ class TestGetDeliveryUserCredentials:
         users_earning_creds = get_delivery_user_credentials(cred_config)
         assert len(users_earning_creds) == 1
         assert users_earning_creds[0].user_id == access2.user.id
+
+
+@pytest.mark.django_db
+class TestSubmitCredentials:
+    @mock.patch("commcare_connect.opportunity.tasks.submit_credentials")
+    def test_no_credentials_to_submit(self, mock_submit_credentials):
+        UserCredentialFactory(issued_on=now())
+        issue_credentials_to_users()
+        mock_submit_credentials.assert_not_called()
+
+    @mock.patch("commcare_connect.opportunity.tasks.submit_credentials")
+    def test_credentials_creates_valid_payloads(self, mock_submit_credentials, opportunity):
+        # Three users earning the same delivery credentials for the same opportunity
+        opportunity_delivery_user_creds = UserCredentialFactory.create_batch(
+            3,
+            issued_on=None,
+            credential_type=UserCredential.CredentialType.DELIVERY,
+            level=DeliveryLevel.FIFTY,
+            opportunity=opportunity,
+            delivery_type=opportunity.delivery_type,
+        )
+
+        # Three users earning learning credentials for different opportunities
+        UserCredentialFactory.create_batch(
+            3,
+            issued_on=None,
+            level=LearnLevel.LEARN_PASSED,
+            credential_type=UserCredential.CredentialType.LEARN,
+        )
+
+        # Make sure usernames are populated
+        User.objects.all().update(username=F("email"))
+
+        issue_credentials_to_users()
+
+        assert mock_submit_credentials.called
+        assert mock_submit_credentials.call_count == 1
+
+        args_, _ = mock_submit_credentials.call_args
+        credential_id_sets_index_arg = args_[0]
+        credentials_payload_items_arg = args_[1]
+
+        # Find the delivery credentials payload item and it's index in the list
+        (list_index, opp_delivery_payload_item) = next(
+            (
+                (index, item)
+                for index, item in enumerate(credentials_payload_items_arg)
+                if item["type"] == UserCredential.CredentialType.DELIVERY
+            )
+        )
+
+        # Check that the credential IDs are correctly mapped
+        expected_credential_ids = {cred.id for cred in opportunity_delivery_user_creds}
+        actual_credential_ids = set(credential_id_sets_index_arg[list_index])
+        assert expected_credential_ids == actual_credential_ids
+
+        # Check that all usernames earning the same credential are included in the same credential payload item
+        expected_usernames_in_payload_item = UserCredential.objects.filter(id__in=expected_credential_ids).values_list(
+            "user__username", flat=True
+        )
+
+        assert set(opp_delivery_payload_item["usernames"]) == set(expected_usernames_in_payload_item)
+        assert opp_delivery_payload_item["level"] == DeliveryLevel.FIFTY
+        assert opp_delivery_payload_item["opportunity_id"] == opportunity.id
+
+    @mock.patch("commcare_connect.opportunity.tasks.add_credentials")
+    def test_credentials_submitted_and_issued(self, mock_add_credentials, opportunity):
+        UserCredentialFactory.create_batch(
+            3,
+            issued_on=None,
+            credential_type=UserCredential.CredentialType.DELIVERY,
+            level=DeliveryLevel.FIFTY,
+            opportunity=opportunity,
+            delivery_type=opportunity.delivery_type,
+        )
+        UserCredentialFactory.create_batch(
+            3,
+            issued_on=None,
+            level=LearnLevel.LEARN_PASSED,
+            credential_type=UserCredential.CredentialType.LEARN,
+        )
+        assert UserCredential.objects.filter(issued_on__isnull=True).count() == 6
+
+        # All credentials will be "successfully" submitted, hence return all payload indices
+        mock_add_credentials.return_value = [0, 1, 2, 3]
+        issue_credentials_to_users()
+
+        assert UserCredential.objects.filter(issued_on__isnull=False).count() == 6

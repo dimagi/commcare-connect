@@ -96,16 +96,18 @@ class UserCredential(models.Model):
     class Meta:
         unique_together = ("user", "opportunity", "credential_type")
 
-    @property
-    def delivery_level_num(self):
-        if self.credential_type == self.CredentialType.LEARN:
+    @classmethod
+    def delivery_level_num(cls, level: str, credential_type: str) -> int | None:
+        if credential_type == cls.CredentialType.LEARN:
             return None
-        return int(self.level.split("_")[0])
+        return int(level.split("_")[0])
 
-    @property
-    def title(self):
-        if self.credential_type == self.CredentialType.LEARN:
-            return _("Passed learning assessment for {delivery_type}").format(delivery_type=self.delivery_type.name)
+    @classmethod
+    def get_title(cls, credential_type: str, level: str, delivery_type_name: str) -> str:
+        if credential_type == cls.CredentialType.LEARN:
+            return _("Passed learning assessment for {delivery_type}").format(delivery_type=delivery_type_name)
+
+        delivery_level_num = cls.delivery_level_num(level, credential_type)
         return _("Completed {delivery_level_num} deliveries for {delivery_type}").format(
-            delivery_level_num=self.delivery_level_num, delivery_type=self.delivery_type.name
+            delivery_level_num=delivery_level_num, delivery_type=delivery_type_name
         )
