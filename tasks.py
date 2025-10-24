@@ -80,7 +80,7 @@ def setup_ec2(c: Context, env="staging", verbose=False, diff=False):
 @task
 def django_settings(c: Context, env="staging", verbose=False, diff=False):
     """Update the Django settings file on prod servers"""
-    run_ansible(c, env=env, tags="django_settings", verbose=verbose, diff=diff)
+    run_ansible(c, env=env, tags="django_settings", verbose=verbose, diff=diff, user="connect", become=False)
     print("\nSettings updated. A re-deploy is required to have the services use the new settings.")
     val = input("Do you want to re-deploy the Django services? [y/N] ")
     if val.lower() == "y":
@@ -94,7 +94,9 @@ def restart_django(c: Context, env="staging", verbose=False, diff=False):
 
 
 @task
-def run_ansible(c: Context, play="play.yml", env="staging", tags=None, verbose=False, diff=False):
+def run_ansible(
+    c: Context, play="play.yml", env="staging", tags=None, verbose=False, diff=False, user="ubuntu", become=True
+):
     ansible_cmd = f"ansible-playbook {play} -i {env}.inventory.yml"
     if tags:
         ansible_cmd += f" --tags {tags}"
@@ -102,6 +104,10 @@ def run_ansible(c: Context, play="play.yml", env="staging", tags=None, verbose=F
         ansible_cmd += " -v"
     if diff:
         ansible_cmd += " -D"
+    if user:
+        ansible_cmd += f" -u {user}"
+    if become:
+        ansible_cmd += " -b"
 
     with c.cd(PROJECT_DIR / "deploy"):
         c.run(ansible_cmd)
