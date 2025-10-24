@@ -48,6 +48,7 @@
               </div>
             </div>
           </div>
+          {% with applications=program.programapplication_set.all %}
           <div class="flex justify-between xl:items-center items-start xl:flex-row flex-col gap-2">
             <!-- program info -->
             <div class="flex flex-col md:flex-row md:items-center items-start lg:gap-6 gap-3">
@@ -84,10 +85,13 @@
             </div>
 
             <!-- button -->
-            <button class="button button-md outline-style" @click="showOpp = !showOpp">
-              <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
-              <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-            </button>
+
+            {% if applications %}
+              <button class="button button-md outline-style" @click="showOpp = !showOpp">
+                <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
+                <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              </button>
+            {% endif %}
 
           </div>
           <!-- progress -->
@@ -118,7 +122,7 @@
           </div>
 
           <div class="flex flex-col gap-y-4" x-cloak x-show="showOpp">
-          {% for application in program.programapplication_set.all %}
+          {% for application in applications %}
             <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
               <div class="flex justify-between w-full">
                 <div class="flex flex-col gap-2 w-full">
@@ -180,6 +184,7 @@
             </div>
           {% endfor %}
           </div>
+          {% endwith %}
       </div>
     {% endfor %}
   </div>
