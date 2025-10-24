@@ -898,6 +898,15 @@ class PaymentUnitForm(forms.ModelForm):
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
 
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        return cleaned_data
+
 
 class SendMessageMobileUsersForm(forms.Form):
     title = forms.CharField(
