@@ -655,7 +655,14 @@ class AddBudgetExistingUsersForm(forms.Form):
         widget=forms.NumberInput(attrs={"x-model": "additionalVisits"}), required=False
     )
     end_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date", "class": "form-input", "x-model": "end_date"}),
+        widget=forms.DateInput(
+            attrs={
+                "type": "date",
+                "class": "form-input",
+                "x-model": "end_date",
+                "min": datetime.date.today().strftime("%Y-%m-%d"),
+            }
+        ),
         label="Extended Opportunity End date",
         required=False,
     )
@@ -680,6 +687,12 @@ class AddBudgetExistingUsersForm(forms.Form):
             self.budget_increase = self._validate_budget(selected_users, additional_visits)
 
         return cleaned_data
+
+    def clean_end_date(self):
+        end_date = self.cleaned_data.get("end_date")
+        if end_date and end_date < datetime.date.today():
+            raise forms.ValidationError("End date cannot be in the past.")
+        return end_date
 
     def _validate_budget(self, selected_users, additional_visits):
         claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
