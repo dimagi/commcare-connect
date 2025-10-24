@@ -63,6 +63,16 @@
 {% endblock content %}
 
 {% block inline_javascript %}
+
+{% if filter_usage_data %}
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const data = {{ filter_usage_data|safe }};
+    window.gtmSendEvent('filters_applied', data);
+  });
+</script>
+{% endif %}
+
 <script>
   document.addEventListener('alpine:init', () => {
     Alpine.data('connectWorkers', () => ({
