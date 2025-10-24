@@ -1,0 +1,47 @@
+{% load i18n %}
+
+<div x-show="showConfirmRemoveMembershipModal" x-cloak x-transition.opacity
+    class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+    @keydown.escape.window="showConfirmRemoveMembershipModal = false">
+    <div @click.outside="showConfirmRemoveMembershipModal = false" class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+        <div class="flex justify-between items-center pb-2 mb-4">
+            <h2 class="text-lg font-medium text-brand-deep-purple">
+                {% trans "Remove Member(s)" %}
+            </h2>
+            <button @click="showConfirmRemoveMembershipModal = false" class="text-gray-500 hover:text-gray-700">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        <div class="mb-6">
+            <p class="text-gray-700 mb-2">
+                {% blocktrans %}
+                    Are you sure you want to remove the
+                    <span x-text="selected.length"></span>
+                    selected member(s)?
+                {% endblocktrans %}
+            </p>
+            <p class="text-red-600 text-sm font-medium">
+                {% trans "This action is irreversible and cannot be undone." %}
+            </p>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-4">
+            <button type="button" class="button button-md outline-style" @click="showConfirmRemoveMembershipModal = false">
+                {% trans 'Cancel' %}
+            </button>
+            <form action="{% url 'organization:remove_members' request.org.slug %}" method="post" class="inline">
+                {% csrf_token %}
+                <template x-for="id in selected">
+                    <input type="hidden" name="membership_ids" :value="id">
+                </template>
+                <button type="submit" class="button button-md bg-red-600 hover:bg-red-700 text-white"
+                        @click="showConfirmRemoveMembershipModal = false">
+                    <i class="fa-solid fa-trash"></i>
+                    {% trans 'Remove Member(s)' %}
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
