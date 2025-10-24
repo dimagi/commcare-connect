@@ -13,3 +13,7 @@ class DeliveryLevel(models.TextChoices):
     TWO_HUNDRED = "200_DELIVERIES", _("200 Deliveries")
     FIVE_HUNDRED = "500_DELIVERIES", _("500 Deliveries")
     ONE_THOUSAND = "1000_DELIVERIES", _("1000 Deliveries")
+
+
+def delivery_level_to_int(level: str) -> int:
+    return int(level.split("_")[0])
