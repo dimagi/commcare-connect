@@ -342,6 +342,7 @@ def test_tab_param_persistence(rf, opportunity, organization, referring_url, sho
         assert "status=active" not in tab_a_link
 
 
+@mock.patch("commcare_connect.opportunity.views.send_event_to_ga")
 class TestDeleteUserInvites:
     @pytest.fixture(autouse=True)
     def setup_invites(self, organization, opportunity, org_user_member, client):
@@ -381,7 +382,7 @@ class TestDeleteUserInvites:
             ("empty_ids_list", lambda self: {"user_invite_ids": []}, 400, 4, False),
         ],
     )
-    def test_delete_invites(self, test_case, data, expected_status, expected_count, check_redirect):
+    def test_delete_invites(self, mock_send_event, test_case, data, expected_status, expected_count, check_redirect):
         response = self.client.post(self.url, data=data(self))
         assert response.status_code == expected_status
 
@@ -390,7 +391,7 @@ class TestDeleteUserInvites:
 
         assert UserInvite.objects.count() == expected_count
 
-    def test_messages(self):
+    def test_messages(self, mock_send_event):
         response = self.client.post(
             self.url,
             data={"user_invite_ids": [self.not_found_invites[0].id, self.invited_invite.id, self.accepted_invite.id]},
@@ -402,6 +403,7 @@ class TestDeleteUserInvites:
         assert str(messages[1]) == "Cannot delete 1 invite(s). Accepted invites cannot be deleted."
 
 
+@mock.patch("commcare_connect.opportunity.views.send_event_to_ga")
 @pytest.mark.django_db
 class TestResendUserInvites:
     @pytest.fixture(autouse=True)
@@ -446,7 +448,7 @@ class TestResendUserInvites:
     @mock.patch("commcare_connect.opportunity.tasks.invite_user.delay")
     @mock.patch("commcare_connect.opportunity.tasks.send_message")
     @mock.patch("commcare_connect.opportunity.tasks.send_sms")
-    def test_success(self, mock_send_sms, mock_send_message, mock_invite_user):
+    def test_success(self, mock_send_sms, mock_send_message, mock_invite_user, mock_send_event):
         mock_sms_response = mock.Mock()
         mock_sms_response.sid = 1
         mock_send_sms.return_value = mock_sms_response
@@ -467,12 +469,12 @@ class TestResendUserInvites:
         assert self.old_invite.status == UserInviteStatus.invited
         assert self.old_invite.notification_date is not None
 
-    def test_no_user_ids(self):
+    def test_no_user_ids(self, mock_send_event):
         response = self.client.post(self.url, data={})
         assert response.status_code == 400
 
     @mock.patch("commcare_connect.opportunity.tasks.invite_user.delay")
-    def test_recent_invite_not_resent(self, mock_invite_user):
+    def test_recent_invite_not_resent(self, mock_invite_user, mock_send_event):
         response = self.client.post(self.url, data={"user_invite_ids": [self.recent_invite.id]})
 
         assert response.status_code == 200
@@ -485,7 +487,7 @@ class TestResendUserInvites:
         )
 
     @mock.patch("commcare_connect.opportunity.views.fetch_users")
-    def test_not_found_invite_still_not_found(self, mock_fetch_users):
+    def test_not_found_invite_still_not_found(self, mock_fetch_users, mock_send_event):
         mock_fetch_users.return_value = []
         response = self.client.post(self.url, data={"user_invite_ids": [self.not_found_invite.id]})
 
@@ -500,7 +502,7 @@ class TestResendUserInvites:
 
     @mock.patch("commcare_connect.opportunity.views.update_user_and_send_invite")
     @mock.patch("commcare_connect.opportunity.views.fetch_users")
-    def test_not_found_invite_with_found_user(self, mock_fetch_users, mock_update_and_send):
+    def test_not_found_invite_with_found_user(self, mock_fetch_users, mock_update_and_send, mock_send_event):
         mock_user = ConnectIdUser(
             name="New User",
             username="newuser",

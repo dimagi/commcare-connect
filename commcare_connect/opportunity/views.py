@@ -137,6 +137,7 @@ from commcare_connect.organization.decorators import org_admin_required, org_mem
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
+from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, send_event_to_ga
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
@@ -1296,6 +1297,16 @@ def delete_user_invites(request, org_slug, opp_id):
     cannot_delete_count = len(invite_ids) - deleted_count
     user_invites.delete()
     OpportunityAccess.objects.filter(id__in=opportunity_access_ids).delete()
+
+    event = Event(
+        name="user_invites_deleted",
+        params={
+            GA_CUSTOM_DIMENSIONS.TOTAL.value: len(invite_ids),
+            GA_CUSTOM_DIMENSIONS.SUCCESS.value: deleted_count,
+        },
+    )
+    send_event_to_ga(request, event)
+
     if deleted_count > 0:
         messages.success(request, mark_safe(f"Successfully deleted {deleted_count} invite(s)."))
     if cannot_delete_count > 0:
@@ -1349,6 +1360,15 @@ def resend_user_invites(request, org_slug, opp_id):
             not_found_phone_numbers.remove(found_user.phone_number)
             update_user_and_send_invite(found_user, opp_id)
             resent_count += 1
+
+    event = Event(
+        name="user_invites_resent",
+        params={
+            GA_CUSTOM_DIMENSIONS.TOTAL.value: len(invite_ids),
+            GA_CUSTOM_DIMENSIONS.SUCCESS.value: resent_count,
+        },
+    )
+    send_event_to_ga(request, event)
 
     if resent_count > 0:
         messages.success(request, mark_safe(f"Successfully resent {resent_count} invite(s)."))

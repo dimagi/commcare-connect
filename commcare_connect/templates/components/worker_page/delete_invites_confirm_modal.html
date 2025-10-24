@@ -9,7 +9,7 @@
             <h2 class="text-lg font-medium text-brand-deep-purple">
                 {{ modal_title }}
             </h2>
-            <button @click="{{ modal_name }} = false" class="text-gray-500 hover:text-gray-700">
+            <button @click="{{ modal_name }} = false" class="ga-delete-invites-cancel-btn text-gray-500 hover:text-gray-700">
                 <i class="fa-solid fa-xmark text-xl"></i>
             </button>
         </div>
@@ -28,7 +28,7 @@
         </div>
 
         <div class="flex justify-end gap-2 pt-4">
-            <button type="button" class="button button-md outline-style" @click="{{ modal_name }} = false">
+            <button type="button" class="ga-delete-invites-cancel-btn button button-md outline-style" @click="{{ modal_name }} = false">
                 {% trans 'Cancel' %}
             </button>
             <form hx-post="{% url 'opportunity:delete_user_invites' org_slug=request.org.slug opp_id=opportunity.pk %}"

@@ -1,5 +1,6 @@
 import logging
 from dataclasses import asdict, dataclass
+from enum import Enum
 from typing import Any
 from urllib.parse import urlencode
 
@@ -9,6 +10,12 @@ from django.conf import settings
 from config import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+class GA_CUSTOM_DIMENSIONS(Enum):
+    IS_DIMAGI = "isDimagi"
+    TOTAL = "total"
+    SUCCESS = "success"
 
 
 @dataclass
@@ -37,7 +44,7 @@ def send_bulk_events_to_ga(request, events: list[Event]):
         event.params.update(
             {
                 "session_id": session_id,
-                "isDimagi": is_dimagi,
+                GA_CUSTOM_DIMENSIONS.IS_DIMAGI.value: is_dimagi,
                 # This is needed for tracking to work properly.
                 "engagement_time_msec": 100,
             }
