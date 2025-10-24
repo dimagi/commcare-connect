@@ -728,6 +728,8 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
+        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total"))
+
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -737,6 +739,20 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
+
+        self.fields["add_users"].widget.attrs.update(
+            {
+                "oninput": f"""
+                id_total_budget.value =
+                {self.opportunity.total_budget} +
+                {json.dumps(self.payments_units)}.reduce(
+                    (sum, u) => sum + (u.amount + {self.opportunity.org_pay_per_visit})
+                    * u.max_total * parseInt(this.value || 0),
+                    0
+                );
+            """
+            }
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -748,11 +764,6 @@ class AddBudgetNewUsersForm(forms.Form):
 
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")
-
-        if add_users and total_budget and total_budget != self.opportunity.total_budget:
-            raise forms.ValidationError(
-                "Only one field can be updated at a time: either 'Number of Users' or 'Total Budget'."
-            )
 
         self.budget_increase = self._validate_budget(add_users, total_budget)
 
@@ -777,8 +788,15 @@ class AddBudgetNewUsersForm(forms.Form):
             )
 
         if add_users:
-            for payment_unit in self.opportunity.paymentunit_set.all():
-                increased_budget += (payment_unit.amount + org_pay) * payment_unit.max_total * add_users
+            for payment_unit in self.payments_units:
+                increased_budget += (payment_unit["amount"] + org_pay) * payment_unit["max_total"] * add_users
+
+            # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
+            if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
+                raise forms.ValidationError(
+                    "Only one field can be updated at a time: either 'Number Of Connect Workers' or 'Total Budget'."
+                )
+
             if (
                 self.opportunity.managed
                 and self.opportunity.total_budget + increased_budget + claimed_program_budget > total_program_budget
