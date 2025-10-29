@@ -63,6 +63,7 @@ def create_deduplicated_completed_works(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
     dependencies = [
         ("opportunity", "0083_credentialconfiguration"),
     ]
@@ -96,7 +97,10 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.RunPython(
-            create_deduplicated_completed_works, migrations.RunPython.noop, hints={"run_on_secondary": True}
+            create_deduplicated_completed_works,
+            migrations.RunPython.noop,
+            hints={"run_on_secondary": True},
+            atomic=True,
         ),
         migrations.AddConstraint(
             model_name="uservisit",
