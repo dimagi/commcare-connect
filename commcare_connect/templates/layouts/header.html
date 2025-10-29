@@ -13,12 +13,16 @@
             <div x-data="{ open: false }" @click.away="open = false" class="relative mx-8">
                 <button @click="open = !open" class="flex items-center gap-2 focus:outline-none">
                     <div class="text-left">
+                      {% if request.org and request.org_membership or request.org and request.user.is_superuser %}
                         <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
-                          {{ request.org.name|default:"Select Organization" }}
+                          {{ request.org.name }}
                         </p>
-                        {% if request.user.memberships.exists %}
                         <p class="text-xs text-gray-400">{{ request.org.program_manager|yesno:"Program,Network"}} Manager</p>
-                        {% endif %}
+                      {% else %}
+                        <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
+                          {% translate "Select Organization" %}
+                        </p>
+                      {% endif %}
                     </div>
 
                     <!-- Dropdown Toggle Icon -->
@@ -30,19 +34,21 @@
                      class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
                     <ul class="p-2 w-full max-h-80 overflow-y-auto">
                         {% if request.user.memberships.exists %}
-                        {% for membership in request.memberships %}
-                        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
-                          <a href="{% url 'opportunity:list' membership.organization.slug %}">
-                            <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
-                            <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
-                          </a>
-                        </li>
-                        {% endfor %}
+                          {% for membership in request.memberships %}
+                            {% if not membership.organization == request.org %}
+                              <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+                                <a href="{% url 'opportunity:list' membership.organization.slug %}">
+                                  <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
+                                  <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
+                                </a>
+                              </li>
+                            {% endif %}
+                          {% endfor %}
                         {% endif %}
                     </ul>
                     <div class="p-2">
                         <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
-                        Add Organization
+                        {% translate "Add Organization" %}
                         </a>
                     </div>
                 </div>
@@ -65,13 +71,17 @@
                                 <span class="text-gray-400 text-sm">{{ request.org_membership.role }}</span>
                             {% endif %}
                         </li>
-                        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
-                            <p class="text-brand-deep-purple"><a href="{% url 'account_email' %}">{% translate "Profile" %}</a></p>
+                        <li class="p-2 text-left">
+                            <a class="block p-2 hover:bg-gray-100 rounded cursor-pointer" href="{% url 'account_email' %}">
+                              <p class="text-brand-deep-purple">{% translate "Profile" %}</p>
+                            </a>
                         </li>
-                        <li class="p-2 cursor-pointer">
+                        <li class="p-2">
+                          <a class="cursor-pointer" href="{% url 'account_logout' %}">
                             <div class="bg-brand-indigo text-white px-8 py-2 rounded-lg shadow-md hover:bg-blue-800 transition">
-                                <a href="{% url 'account_logout' %}">{% translate "Logout" %}</a>
+                              {% translate "Logout" %}
                             </div>
+                          </a>
                         </li>
                     </ul>
                 </div>

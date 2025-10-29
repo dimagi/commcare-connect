@@ -1,5 +1,4 @@
 - hosts: all
-  become: true
   strategy: free
   vars:
     - secrets: "{{ (lookup('community.general.onepassword', secrets_file, subdomain='dimagi', vault='Connect Tech', field='secrets_yaml') | from_yaml).secrets }}"

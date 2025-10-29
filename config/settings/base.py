@@ -8,6 +8,7 @@ import environ
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # commcare_connect/
 APPS_DIR = BASE_DIR / "commcare_connect"
+
 env = environ.Env()
 
 env.read_env(str(BASE_DIR / ".env"))
@@ -87,11 +88,14 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "oauth2_provider",
     "django_tables2",
+    "waffle",
 ]
 
 LOCAL_APPS = [
     "commcare_connect.commcarehq_provider",
     "commcare_connect.commcarehq",
+    "commcare_connect.data_export",
+    "commcare_connect.flags",
     "commcare_connect.form_receiver",
     "commcare_connect.multidb",
     "commcare_connect.opportunity",
@@ -149,6 +153,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
+    "waffle.middleware.WaffleMiddleware",
 ]
 
 # STATIC
@@ -348,16 +353,18 @@ DJANGO_TABLES2_TABLE_ATTRS = {
 # ------------------------------------------------------------------------------
 # CommCare Connect Settings...
 # ------------------------------------------------------------------------------
+# HQ integration settings
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org")
 
+# ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 
 CONNECTID_CLIENT_ID = env("cid_client_id", default="")
 CONNECTID_CLIENT_SECRET = env("cid_client_secret", default="")
 
+# OAuth Settings
 CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
 CONNECTID_CREDENTIALS_CLIENT_SECRET = env("CONNECTID_CREDENTIALS_CLIENT_SECRET", default="")
-
 OAUTH2_PROVIDER = {
     "ACCESS_TOKEN_EXPIRE_SECONDS": 1209600,  # seconds in two weeks
     "RESOURCE_SERVER_INTROSPECTION_URL": f"{CONNECTID_URL}/o/introspect/",
@@ -371,7 +378,10 @@ OAUTH2_PROVIDER = {
         "export": "Allow exporting data to other platforms using export API's.",
     },
 }
+OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
+
+# Twilio settings
 TWILIO_ACCOUNT_SID = env("TWILIO_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
@@ -379,6 +389,12 @@ MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)
 
-OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
+# Waffle Settings
+WAFFLE_FLAG_MODEL = "flags.Flag"
+WAFFLE_CREATE_MISSING_FLAGS = True
+
+WAFFLE_CREATE_MISSING_SWITCHES = True
 
 GTM_ID = env("GTM_ID", default="")
+GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
+GA_API_SECRET = env("GA_API_SECRET", default="")

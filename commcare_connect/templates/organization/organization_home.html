@@ -3,6 +3,8 @@
 {% load crispy_forms_tags %}
 {% load django_tables2 %}
 {% block content %}
+{% load i18n %}
+
 
 <p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">{{request.org.name}}</p>
 
@@ -16,20 +18,28 @@
       <ul class="tabs">
         <!-- Details Tab -->
         <li @click="selectedTab = 'details';" :class="{'active': selectedTab !== 'details'}">
-          <span>Details</span>
+          <span>{% trans 'Details' %}</span>
           <div  x-show="selectedTab === 'details'"></div>
         </li>
 
         <li @click="selectedTab = 'members';" :class="{'active': selectedTab !== 'members'}">
-          <span>Members</span>
+          <span>{% trans 'Members' %}</span>
           <div  x-show="selectedTab === 'members'"></div>
         </li>
       </ul>
 
     <!-- Options -->
       <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
+        <button
+          class="button button-md bg-red-600 hover:bg-red-700 text-white"
+          :disabled="selected.length === 0"
+          @click="showConfirmRemoveMembershipModal = true"
+        >
+          <i class="fa-solid fa-trash"></i>
+          {% trans 'Remove Member(s)' %}
+        </button>
         <button class="button button-md outline-style" @click="showAddMemberModal = true">
-          Add Members
+          {% trans 'Add Members' %}
         </button>
       </div>
   </div>
@@ -38,7 +48,7 @@
   <div class="w-full">
     <!-- Details Content (Already rendered) -->
     <div x-show="selectedTab === 'details'" class="w-full mt-6">
-      <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">Organization</h2>
+      <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">{% trans 'Organization' %}</h2>
       <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-10">
         <form method="post" class="bg-white">
           {% csrf_token %}
@@ -57,35 +67,8 @@
   ></div>
   </div>
 
-
-<!-- Add Member Modal -->
-<div x-show="showAddMemberModal"
-     x-cloak
-     x-transition.opacity
-     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
-     @keydown.escape.window="showAddMemberModal = false">
-  <div @click.outside="showAddMemberModal = false"
-       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-
-    <div class="flex justify-between items-center pb-2 mb-4">
-      <h2 class="text-lg font-semibold text-brand-deep-purple">
-        Invite Member
-      </h2>
-      <button @click="showAddMemberModal = false" class="text-gray-500 hover:text-gray-700">
-        <i class="fa-solid fa-xmark text-xl"></i>
-      </button>
-    </div>
-
-    <form action="{% url 'organization:add_members' request.org.slug %}" method="post">
-      {% csrf_token %}
-      <div class="mb-4">
-        {% crispy membership_form %}
-      </div>
-    </form>
-  </div>
-</div>
-
-
+  {% include "components/organization_home_page/add_org_member_modal.html" %}
+  {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
 </div>
 {% endblock content %}
 
@@ -98,6 +81,21 @@
       selectedTab: '{{ request.GET.active_tab|default:"details" }}',
       showAddMemberModal: false,
       isHistoryAvailable: false,
+      selected: [],
+      selectAll: false,
+      showConfirmRemoveMembershipModal: false,
+      currentUserMembershipId: '{{ request.org_membership.id }}',
+
+      toggleSelectAll() {
+        this.selectAll = !this.selectAll;
+        if (this.selectAll) {
+          this.selected = Array.from(document.querySelectorAll('input[name="row_select"]'))
+            .map(c => c.value)
+            .filter(c => c !== this.currentUserMembershipId);
+        } else {
+          this.selected = [];
+        }
+      },
 
       init() {
         this.updateUrl(this.selectedTab);

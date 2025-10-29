@@ -124,7 +124,6 @@ from commcare_connect.opportunity.tasks import (
     generate_work_status_export,
     invite_user,
     send_push_notification_task,
-    send_sms_task,
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.visit_import import (
@@ -818,11 +817,8 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
         selected_user_ids = form.cleaned_data["selected_users"]
         title = form.cleaned_data["title"]
         body = form.cleaned_data["body"]
-        message_type = form.cleaned_data["message_type"]
-        if "notification" in message_type:
-            send_push_notification_task.delay(selected_user_ids, title, body)
-        if "sms" in message_type:
-            send_sms_task.delay(selected_user_ids, body)
+        send_push_notification_task.delay(selected_user_ids, title, body)
+
         return redirect("opportunity:detail", org_slug=request.org.slug, opp_id=opp_id)
 
     path = [

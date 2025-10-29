@@ -1,9 +1,11 @@
 import datetime
 
 import pytest
+from waffle.testutils import override_switch
 
+from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm
-from commcare_connect.opportunity.models import PaymentUnit
+from commcare_connect.opportunity.models import CredentialConfiguration, PaymentUnit
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentUnitFactory
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
@@ -39,6 +41,8 @@ class TestOpportunityChangeForm:
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": (datetime.date.today() + datetime.timedelta(days=60)).isoformat(),
             "users": "+1234567890\n+9876543210",
+            "learn_level": None,
+            "deliver_level": None,
         }
 
     def test_form_initialization(self, valid_opportunity):
@@ -186,6 +190,53 @@ class TestOpportunityChangeForm:
         assert not form.is_valid()
         assert "users" in form.errors
         assert "Please finish setting up the opportunity before inviting users." in form.errors["users"]
+
+    @override_switch(OPPORTUNITY_CREDENTIALS, active=True)
+    @pytest.mark.parametrize(
+        "learn_level,delivery_level",
+        [
+            ("LEARN_PASSED", "25_DELIVERIES"),
+            ("LEARN_PASSED", "1000_DELIVERIES"),
+            ("", "50_DELIVERIES"),
+            ("LEARN_PASSED", ""),
+            ("", ""),
+        ],
+    )
+    def test_save_credential_issuer(self, valid_opportunity, base_form_data, learn_level, delivery_level):
+        data = base_form_data.copy()
+        data["learn_level"] = learn_level
+        data["delivery_level"] = delivery_level
+
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+        assert form.is_valid(), form.errors
+        form.save()
+
+        if learn_level or delivery_level:
+            credential_issuer = CredentialConfiguration.objects.get(opportunity=valid_opportunity)
+            assert credential_issuer.learn_level == (learn_level or None)
+            assert credential_issuer.delivery_level == (delivery_level or None)
+        else:
+            assert not CredentialConfiguration.objects.filter(opportunity=valid_opportunity).exists()
+
+    @override_switch(OPPORTUNITY_CREDENTIALS, active=True)
+    def test_invalid_credential_levels(self, valid_opportunity, base_form_data):
+        data = base_form_data.copy()
+        data["learn_level"] = "INVALID_LEVEL"
+        data["delivery_level"] = "INVALID_DELIVERY"
+
+        form = OpportunityChangeForm(data=data, instance=valid_opportunity)
+        assert not form.is_valid()
+        assert "learn_level" in form.errors or "delivery_level" in form.errors
+
+    def test_credential_switch(self, valid_opportunity):
+        form = OpportunityChangeForm(instance=valid_opportunity)
+        assert "learn_level" not in form.fields
+        assert "delivery_level" not in form.fields
+
+        with override_switch(OPPORTUNITY_CREDENTIALS, active=True):
+            form = OpportunityChangeForm(instance=valid_opportunity)
+            assert "learn_level" in form.fields
+            assert "delivery_level" in form.fields
 
 
 class TestAddBudgetNewUsersForm:

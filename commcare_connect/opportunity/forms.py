@@ -9,9 +9,13 @@ from django.core.exceptions import ValidationError
 from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.timezone import now
+from django.utils.translation import gettext_lazy as _
+from waffle import switch_is_active
 
+from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.models import (
     CommCareApp,
+    CredentialConfiguration,
     DeliverUnit,
     DeliverUnitFlagRules,
     ExchangeRate,
@@ -29,6 +33,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
+from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
 from commcare_connect.users.models import User
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
@@ -96,14 +101,15 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.opportunity = self.instance
 
-        self.helper = FormHelper(self)
-        self.helper.layout = Layout(
+        layout_fields = [
             Row(
                 HTML(
-                    "<div class='col-span-2'>"
-                    "<h6 class='title-sm'>Opportunity Details</h6>"
-                    "<span class='hint'>Edit the details of the opportunity. All fields are mandatory.</span>"
-                    "</div>"
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Opportunity Details")}</h6>
+                        <span class='hint'>{_("Edit the details of the opportunity. All fields are mandatory.")}</span>
+                    </div>
+                """
                 ),
                 Column(
                     Field("name", wrapper_class="w-full"),
@@ -127,11 +133,17 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             ),
             Row(
                 HTML(
-                    "<div class='col-span-2'>"
-                    "<h6 class='title-sm'>Date</h6>"
-                    "<span class='hint'>Optional: If not specified, the opportunity start & end dates will"
-                    " apply to the form submissions.</span>"
-                    "</div>"
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Date")}</h6>
+                        <span class='hint'>
+                            {_(
+                                "Optional: If not specified, the opportunity start & "
+                                "end dates will apply to the form submissions."
+                            )}
+                        </span>
+                    </div>
+                """
                 ),
                 Column(
                     Field("end_date"),
@@ -140,25 +152,75 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
             Row(
-                HTML("<div class='col-span-2'><h6 class='title-sm'>Invite Connect Workers</h6></div>"),
+                HTML(f"<div class='col-span-2'><h6 class='title-sm'>{_('Invite Connect Workers')}</h6></div>"),
                 Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
-            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
+        ]
+
+        if switch_is_active(OPPORTUNITY_CREDENTIALS):
+            layout_fields.append(
+                Row(
+                    HTML(
+                        f"""
+                        <div class='col-span-2'>
+                            <h6 class='title-sm'>{_("Manage Credentials")}</h6>
+                            <span class='hint'>
+                                {_("Configure credential requirements for learning and delivery.")}
+                            </span>
+                        </div>
+                    """
+                    ),
+                    Column(
+                        Field("learn_level"),
+                    ),
+                    Column(
+                        Field("delivery_level"),
+                    ),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                )
+            )
+            self.add_credential_fields()
+
+        layout_fields.append(
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
         )
 
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(*layout_fields)
+
         self.fields["additional_users"] = forms.IntegerField(
-            required=False, help_text="Adds budget for additional users."
+            required=False, help_text=_("Adds budget for additional users.")
         )
         self.fields["end_date"] = forms.DateField(
             widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
             required=False,
-            help_text="Extends opportunity end date for all users.",
+            help_text=_("Extends opportunity end date for all users."),
         )
         if self.instance:
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
+
+    def add_credential_fields(self):
+        credential_issuer = None
+        if self.instance:
+            credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
+
+        self.fields["learn_level"] = forms.ChoiceField(
+            choices=[("", _("None"))] + LearnLevel.choices,
+            required=False,
+            label=_("Learn Level"),
+            help_text=_("Credential level required for completing the learning phase."),
+            initial=credential_issuer.learn_level if credential_issuer else "",
+        )
+        self.fields["delivery_level"] = forms.ChoiceField(
+            choices=[("", _("None"))] + DeliveryLevel.choices,
+            required=False,
+            label=_("Delivery Level"),
+            help_text=_("Credential level required for completing deliveries."),
+            initial=credential_issuer.delivery_level if credential_issuer else "",
+        )
 
     def clean_active(self):
         active = self.cleaned_data["active"]
@@ -171,6 +233,26 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             ):
                 raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
         return active
+
+    def save(self, commit=True):
+        instance = super().save(commit=commit)
+        if not switch_is_active(OPPORTUNITY_CREDENTIALS):
+            return instance
+
+        learn_level = self.cleaned_data.get("learn_level") or None
+        delivery_level = self.cleaned_data.get("delivery_level") or None
+        if learn_level or delivery_level:
+            CredentialConfiguration.objects.update_or_create(
+                opportunity=instance,
+                defaults={
+                    "learn_level": learn_level,
+                    "delivery_level": delivery_level,
+                },
+            )
+        else:
+            CredentialConfiguration.objects.filter(opportunity=instance).delete()
+
+        return instance
 
 
 class OpportunityInitForm(forms.ModelForm):
@@ -573,7 +655,14 @@ class AddBudgetExistingUsersForm(forms.Form):
         widget=forms.NumberInput(attrs={"x-model": "additionalVisits"}), required=False
     )
     end_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date", "class": "form-input", "x-model": "end_date"}),
+        widget=forms.DateInput(
+            attrs={
+                "type": "date",
+                "class": "form-input",
+                "x-model": "end_date",
+                "min": datetime.date.today().strftime("%Y-%m-%d"),
+            }
+        ),
         label="Extended Opportunity End date",
         required=False,
     )
@@ -598,6 +687,12 @@ class AddBudgetExistingUsersForm(forms.Form):
             self.budget_increase = self._validate_budget(selected_users, additional_visits)
 
         return cleaned_data
+
+    def clean_end_date(self):
+        end_date = self.cleaned_data.get("end_date")
+        if end_date and end_date < datetime.date.today():
+            raise forms.ValidationError("End date cannot be in the past.")
+        return end_date
 
     def _validate_budget(self, selected_users, additional_visits):
         claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
@@ -646,6 +741,8 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
+        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total"))
+
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
@@ -655,6 +752,20 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
+
+        self.fields["add_users"].widget.attrs.update(
+            {
+                "oninput": f"""
+                id_total_budget.value =
+                {self.opportunity.total_budget} +
+                {json.dumps(self.payments_units)}.reduce(
+                    (sum, u) => sum + (u.amount + {self.opportunity.org_pay_per_visit})
+                    * u.max_total * parseInt(this.value || 0),
+                    0
+                );
+            """
+            }
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -666,11 +777,6 @@ class AddBudgetNewUsersForm(forms.Form):
 
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")
-
-        if add_users and total_budget and total_budget != self.opportunity.total_budget:
-            raise forms.ValidationError(
-                "Only one field can be updated at a time: either 'Number of Users' or 'Total Budget'."
-            )
 
         self.budget_increase = self._validate_budget(add_users, total_budget)
 
@@ -695,8 +801,15 @@ class AddBudgetNewUsersForm(forms.Form):
             )
 
         if add_users:
-            for payment_unit in self.opportunity.paymentunit_set.all():
-                increased_budget += (payment_unit.amount + org_pay) * payment_unit.max_total * add_users
+            for payment_unit in self.payments_units:
+                increased_budget += (payment_unit["amount"] + org_pay) * payment_unit["max_total"] * add_users
+
+            # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
+            if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
+                raise forms.ValidationError(
+                    "Only one field can be updated at a time: either 'Number Of Connect Workers' or 'Total Budget'."
+                )
+
             if (
                 self.opportunity.managed
                 and self.opportunity.total_budget + increased_budget + claimed_program_budget > total_program_budget
@@ -816,6 +929,15 @@ class PaymentUnitForm(forms.ModelForm):
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
 
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        return cleaned_data
+
 
 class SendMessageMobileUsersForm(forms.Form):
     title = forms.CharField(
@@ -823,10 +945,6 @@ class SendMessageMobileUsersForm(forms.Form):
         required=False,
     )
     body = forms.CharField(widget=forms.Textarea)
-    message_type = forms.MultipleChoiceField(
-        choices=[("notification", "Push Notification"), ("sms", "SMS")],
-        widget=forms.CheckboxSelectMultiple,
-    )
 
     def __init__(self, *args, **kwargs):
         users = kwargs.pop("users", [])
@@ -837,7 +955,6 @@ class SendMessageMobileUsersForm(forms.Form):
             Field("selected_users"),
             Field("title"),
             Field("body"),
-            Field("message_type"),
             Submit(name="submit", value="Submit"),
         )
 

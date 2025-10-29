@@ -10,6 +10,7 @@ healthcheck:
 
 ssh:
   user: connect
+  proxy_command: "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
 
 logging:
   driver: awslogs

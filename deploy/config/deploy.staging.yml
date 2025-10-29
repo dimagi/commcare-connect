@@ -1,7 +1,7 @@
 servers:
   web:
     hosts:
-      - 54.172.148.144
+      - i-08bbcc89fcb90b8c7
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
@@ -11,7 +11,7 @@ servers:
         tag: 'web-{{.ID}}'
   celery:
     hosts:
-      - 54.172.148.144
+      - i-08bbcc89fcb90b8c7
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'

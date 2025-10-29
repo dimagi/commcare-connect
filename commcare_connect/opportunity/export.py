@@ -154,7 +154,7 @@ def export_empty_payment_table(opportunity: Opportunity) -> Dataset:
     dataset = Dataset(title="Export", headers=headers)
 
     access_objects = (
-        OpportunityAccess.objects.filter(opportunity=opportunity, suspended=False)
+        OpportunityAccess.objects.filter(opportunity=opportunity, suspended=False, accepted=True)
         .select_related("user")
         .annotate(total_payments=Sum("payment__amount"))
     )

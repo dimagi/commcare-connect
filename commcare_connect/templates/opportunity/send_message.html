@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load i18n %}
 {% load crispy_forms_tags %}
 {% load duration_minutes %}
 {% load tailwind_filters %}
@@ -63,7 +64,11 @@
           <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg">
             {{ form.title|as_crispy_field }}
             {{ form.body|as_crispy_field }}
-            {{ form.message_type|as_crispy_field }}
+            <p class="text-sm text-gray-600">
+              {% blocktranslate %}
+              Note: A push notification will be sent to the selected users.
+              {% endblocktranslate %}
+            </p>
             <div class="flex justify-end">
               <button class="button button-md primary-dark" type="submit">Confirm</button>
             </div>

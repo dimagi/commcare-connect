@@ -154,6 +154,17 @@ which is connected to the staging environment of CommCare HQ at
 - After this, you can deploy to the staging environment by manually running the `deploy`
   [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
+### Remote Access to machines
+
+Machines can be accessed via SSH using AWS SSM. In order for that to work, you will need to add the following lines to your ssh config (typically located at `~/.ssh/config`)
+
+```
+Host i-*
+     ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --region us-east-1 --profile commcare-connect"
+```
+
+This remote access is required for the ansible commands in the `tasks.py` file.
+
 ### Setting up logical replication
 
 - Create another postgres database (in a seperate cluster)

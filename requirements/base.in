@@ -35,6 +35,7 @@ django-tables2
 django-filter
 django-autocomplete-light
 django-htmx
+django-waffle
 
 # Temporary
 # -------------------------------------------------------------------------------

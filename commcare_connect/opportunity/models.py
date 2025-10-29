@@ -14,6 +14,7 @@ from django.utils.translation import gettext
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.organization.models import Organization
+from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
@@ -881,3 +882,23 @@ class CatchmentArea(models.Model):
 
     class Meta:
         unique_together = ("site_code", "opportunity")
+
+
+class CredentialConfiguration(models.Model):
+    opportunity = models.ForeignKey(
+        Opportunity,
+        unique=True,
+        on_delete=models.CASCADE,
+    )
+    learn_level = models.CharField(
+        null=True,
+        blank=True,
+        max_length=32,
+        choices=LearnLevel.choices,
+    )
+    delivery_level = models.CharField(
+        null=True,
+        blank=True,
+        max_length=32,
+        choices=DeliveryLevel.choices,
+    )
