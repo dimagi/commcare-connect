@@ -3,6 +3,7 @@ from functools import wraps
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 
 from commcare_connect.opportunity.models import Opportunity
 
@@ -94,3 +95,19 @@ def opportunity_for_org_required(view_func):
 
     _inner._has_opportunity_for_org_required_decorator = True
     return _inner
+
+
+class OrganizationUserMixin:
+    """Mixin version of org_viewer_required decorator"""
+
+    @method_decorator(org_viewer_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class OrganizationUserMemberRoleMixin:
+    """Mixin version of org_member_required decorator"""
+
+    @method_decorator(org_member_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
