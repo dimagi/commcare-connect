@@ -573,7 +573,7 @@ def test_views_use_opportunity_decorator_or_mixin():
         return function_views, class_views
 
     def has_opportunity_decorator(func):
-        return getattr(func, "_has_opportunity_for_org_required_decorator", False)
+        return getattr(func, "_has_opportunity_required_decorator", False)
 
     def has_opportunity_object_mixin(view_class):
         """Check if a class-based view uses OpportunityObjectMixin."""

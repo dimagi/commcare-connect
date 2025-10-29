@@ -323,7 +323,7 @@ def test_opportunity_delivery_stats(opportunity):
     PaymentFactory(opportunity_access=oa1, date_paid=yesterday, amount=100)
     PaymentFactory(opportunity_access=oa2, date_paid=today, amount=50)
 
-    result = get_opportunity_delivery_progress(opportunity.id, opportunity.organization)
+    result = get_opportunity_delivery_progress(opportunity.id)
 
     assert opportunity.id == result.id
     assert result.total_paid == total_paid
@@ -382,7 +382,7 @@ def test_opportunity_worker_progress_stats(opportunity):
         visit_date=yesterday,
     )
 
-    result = get_opportunity_worker_progress(opportunity.id, opportunity.organization)
+    result = get_opportunity_worker_progress(opportunity.id)
 
     assert result.id == opportunity.id
     assert result.total_deliveries == 5
@@ -425,7 +425,7 @@ def test_get_opportunity_funnel_progress(opportunity):
     AssessmentFactory(opportunity=opportunity, user=user2.user, passed=True)
     AssessmentFactory(opportunity=opportunity, user=user3.user, passed=False)  # shouldn't count
 
-    result = get_opportunity_funnel_progress(opportunity.id, opportunity.organization)
+    result = get_opportunity_funnel_progress(opportunity.id)
 
     assert result.id == opportunity.id
     assert result.workers_invited == 3
