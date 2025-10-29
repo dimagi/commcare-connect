@@ -1433,7 +1433,7 @@ def sync_deliver_units(request, org_slug, opp_id):
 
 @org_viewer_required
 @opportunity_for_org_required
-def user_visit_verification(request, org_slug, opp_id, pk):
+def user_visit_verification(request, org_slug, opp_id):
     base_queryset = UserVisit.objects.filter(opportunity=request.opportunity).order_by("visit_date")
     filter_set = UserVisitFilterSet(
         request.GET,
