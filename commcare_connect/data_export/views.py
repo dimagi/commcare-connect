@@ -137,6 +137,7 @@ class OpportunityUserDataView(OpportunityScopedDataView):
     def get_queryset(self, request, opp_id):
         return OpportunityAccess.objects.filter(opportunity=self.opportunity).annotate(
             username=F("user__username"),
+            name=F("user__name"),
             phone=F("user__phone_number"),
             user_invite_status=F("userinvite__status"),
             date_claimed=F("opportunityclaim__date_claimed"),
