@@ -9,8 +9,6 @@ anyio==3.7.1
     #   -c requirements/base.txt
     #   httpcore
     #   watchfiles
-appnope==0.1.4
-    # via ipython
 asgiref==3.7.2
     # via
     #   -c requirements/base.txt

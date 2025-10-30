@@ -56,7 +56,7 @@ _~/.config/1Password/ssh/agent.toml_
 
 ```toml
 [[ssh-keys]]
-vault = "Commcare Connect"
+vault = "Connect Tech"
 ```
 
 See https://developer.1password.com/docs/ssh/agent for more details.

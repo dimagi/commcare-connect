@@ -78,7 +78,7 @@
   authorized_key:
     user: '{{ app_user }}'
     state: present
-    key: "{{ lookup('community.general.onepassword', 'Deploy SSH Key', subdomain='dimagi', vault='CommCare Connect', field='public key') }}"
+    key: "{{ lookup('community.general.onepassword', 'Deploy SSH Key', subdomain='dimagi', vault='Connect Tech', field='public key') }}"
     exclusive: yes
   tags: auth
 

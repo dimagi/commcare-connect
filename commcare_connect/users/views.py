@@ -26,6 +26,7 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, OTP_ACCESS
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
@@ -137,7 +138,7 @@ def accept_invite(request, invite_id):
 
 
 @login_required
-@permission_required("users.demo_users_access")
+@permission_required(DEMO_USER_ACCESS)
 @require_GET
 def demo_user_tokens(request):
     users = fetch_demo_user_tokens()
@@ -216,7 +217,7 @@ class ResendInvitesView(ClientProtectedResourceMixin, View):
 class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     template_name = "pages/connect_user_otp.html"
     form_class = ManualUserOTPForm
-    permission_required = "users.otp_access"
+    permission_required = OTP_ACCESS
 
     @property
     def success_url(self):

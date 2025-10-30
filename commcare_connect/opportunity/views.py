@@ -11,7 +11,6 @@ from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
@@ -124,7 +123,6 @@ from commcare_connect.opportunity.tasks import (
     generate_work_status_export,
     invite_user,
     send_push_notification_task,
-    send_sms_task,
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.visit_import import (
@@ -134,7 +132,13 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
-from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
+from commcare_connect.organization.decorators import (
+    OrganizationUserMemberRoleMixin,
+    OrganizationUserMixin,
+    org_admin_required,
+    org_member_required,
+    org_viewer_required,
+)
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
@@ -142,19 +146,6 @@ from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
-
-
-class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        # request.org_membership is a SimpleLazyObject object so `is not None` is always `True`
-        return self.request.org_membership != None or self.request.user.is_superuser  # noqa: E711
-
-
-class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        return (
-            self.request.org_membership != None and not self.request.org_membership.is_viewer  # noqa: E711
-        ) or self.request.user.is_superuser
 
 
 def get_opportunity_or_404(pk, org_slug):
@@ -818,11 +809,8 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
         selected_user_ids = form.cleaned_data["selected_users"]
         title = form.cleaned_data["title"]
         body = form.cleaned_data["body"]
-        message_type = form.cleaned_data["message_type"]
-        if "notification" in message_type:
-            send_push_notification_task.delay(selected_user_ids, title, body)
-        if "sms" in message_type:
-            send_sms_task.delay(selected_user_ids, body)
+        send_push_notification_task.delay(selected_user_ids, title, body)
+
         return redirect("opportunity:detail", org_slug=request.org.slug, opp_id=opp_id)
 
     path = [
