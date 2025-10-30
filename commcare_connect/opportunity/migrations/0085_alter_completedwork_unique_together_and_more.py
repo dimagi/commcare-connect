@@ -118,7 +118,7 @@ def reverse_create_deduplicated_completed_works(apps, schema_editor):
 class Migration(migrations.Migration):
     atomic = False
     dependencies = [
-        ("opportunity", "0083_credentialconfiguration"),
+        ("opportunity", "0084_create_issue_credentials_periodic_task"),
     ]
 
     operations = [
