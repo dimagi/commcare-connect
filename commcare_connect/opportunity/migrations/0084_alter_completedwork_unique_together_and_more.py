@@ -85,6 +85,7 @@ def reverse_create_deduplicated_completed_works(apps, schema_editor):
     visits_to_revert = UserVisit.objects.filter(completed_work_id__in=duplicate_completed_works).select_related(
         "deliver_unit"
     )
+    logging.info(f"{visits_to_revert.count()} visits to revert found.")
     grouped_visits = defaultdict(list)
     for visit in visits_to_revert:
         key = (visit.entity_id, visit.opportunity_access_id, visit.deliver_unit_id)
