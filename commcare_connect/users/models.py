@@ -115,18 +115,12 @@ class UserCredential(models.Model):
             return None
         return int(level.split("_")[0])
 
-    @property
-    def title(self):
-        credential_earned_for = self.opportunity.name
-
-        # Some opportunities may not have a delivery type associated
-        if self.delivery_type:
-            credential_earned_for = self.delivery_type.name
-
-        if self.credential_type == self.CredentialType.LEARN:
-            return _("Passed learning assessment for {earned_for}").format(earned_for=credential_earned_for)
+    @classmethod
+    def get_title(cls, credential_type: str, level: str, delivery_type_name: str) -> str:
+        if credential_type == cls.CredentialType.LEARN:
+            return _("Passed learning assessment for {earned_for}").format(earned_for=delivery_type_name)
 
         return _("Completed {delivery_level_num} deliveries for {earned_for}").format(
-            delivery_level_num=self.__class__.delivery_level_num(self.level, self.credential_type),
-            earned_for=credential_earned_for,
+            delivery_level_num=cls.delivery_level_num(level, credential_type),
+            earned_for=delivery_type_name,
         )
