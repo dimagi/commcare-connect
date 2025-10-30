@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.users.forms import OrganizationCreationForm, UserAdminChangeForm, UserAdminCreationForm
-from commcare_connect.users.models import ConnectIDUserLink
+from commcare_connect.users.models import ConnectIDUserLink, UserCredential
 
 User = get_user_model()
 
@@ -83,3 +83,8 @@ class OrganizationAdmin(admin.ModelAdmin):
 class ConnectIDUserLinkAdmin(admin.ModelAdmin):
     list_display = ["user", "commcare_username", "domain"]
     ordering = ["user"]
+
+
+@admin.register(UserCredential)
+class UserCredentialAdmin(admin.ModelAdmin):
+    list_display = ["user", "credential_type", "created_on"]
