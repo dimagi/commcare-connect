@@ -62,6 +62,58 @@ def create_deduplicated_completed_works(apps, schema_editor):
     UserVisit.objects.bulk_update(to_update, fields=["completed_work"])
 
 
+def reverse_create_deduplicated_completed_works(apps, schema_editor):
+    UserVisit = apps.get_model("opportunity.UserVisit")
+    CompletedWork = apps.get_model("opportunity.CompletedWork")
+
+    duplicate_completed_works = (
+        CompletedWork.objects.annotate(
+            rank=Window(
+                expression=Rank(),
+                order_by=F("date_created").asc(),
+                partition_by=[F("entity_id"), F("opportunity_access_id"), F("payment_unit_id")],
+            )
+        )
+        .order_by("date_created")
+        .filter(rank__gt=1)
+        .values_list("id", flat=True)
+    )
+
+    if not duplicate_completed_works:
+        return
+
+    visits_to_revert = UserVisit.objects.filter(completed_work_id__in=duplicate_completed_works).select_related(
+        "deliver_unit"
+    )
+    grouped_visits = defaultdict(list)
+    for visit in visits_to_revert:
+        key = (visit.entity_id, visit.opportunity_access_id, visit.deliver_unit_id)
+        grouped_visits[key].append(visit)
+
+    to_update = []
+    for key, visits in grouped_visits.items():
+        entity_id, access_id, deliver_unit_id = key
+        original_visit = (
+            UserVisit.objects.filter(
+                entity_id=entity_id,
+                opportunity_access_id=access_id,
+                deliver_unit_id=deliver_unit_id,
+                status=VisitValidationStatus.approved,
+            )
+            .exclude(completed_work_id__in=duplicate_completed_works)
+            .latest("visit_date")
+        )
+        original_completed_work = original_visit.completed_work
+        if original_completed_work:
+            for visit in visits:
+                visit.completed_work = original_completed_work
+                to_update.append(visit)
+
+    if to_update:
+        UserVisit.objects.bulk_update(to_update, ["completed_work"])
+    CompletedWork.objects.filter(id__in=duplicate_completed_works).delete()
+
+
 class Migration(migrations.Migration):
     atomic = False
     dependencies = [
@@ -98,7 +150,7 @@ class Migration(migrations.Migration):
         ),
         migrations.RunPython(
             create_deduplicated_completed_works,
-            migrations.RunPython.noop,
+            reverse_create_deduplicated_completed_works,
             hints={"run_on_secondary": True},
             atomic=True,
         ),
