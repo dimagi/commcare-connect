@@ -14,8 +14,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.core.files.storage import default_storage, storages
-from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
-from django.db.models.functions import Cast, Coalesce
+from django.db.models import Count, DecimalField, F, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value, Window
+from django.db.models.functions import Cast, Coalesce, Rank
 from django.forms import modelformset_factory
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest
 from django.middleware.csrf import get_token
@@ -845,9 +845,27 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
 def approve_visits(request, org_slug, opp_id):
     visit_ids = request.POST.getlist("visit_ids[]")
 
+    to_bulk_update = []
+    # NOTE: These UserVisits are duplicates and saving them with
+    # bulk_update will trigger the UniqueConstraint. UserVisit save
+    # method has mitigation for this error and will assign conflicting
+    # UserVisits to new CompletedWorks.
+    to_update_with_save = []
     visits = (
         UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id)
         .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
+        .annotate(
+            rank=Window(
+                expression=Rank(),
+                order_by=F("visit_date").desc(),
+                partition_by=[
+                    F("entity_id"),
+                    F("opportunity_access_id"),
+                    F("deliver_unit_id"),
+                    F("completed_work_id"),
+                ],
+            )
+        )
         .prefetch_related("opportunity")
         .only("status", "review_status", "flagged", "justification", "review_created_on")
     )
@@ -874,8 +892,18 @@ def approve_visits(request, org_slug, opp_id):
                         headers={"HX-Trigger": "form_error"},
                     )
                 visit.justification = justification
+        if visit.rank == 1:
+            to_bulk_update.append(visit)
+        else:
+            to_update_with_save.append(visit)
 
-    UserVisit.objects.bulk_update(visits, ["status", "review_created_on", "review_status", "justification"])
+    UserVisit.objects.bulk_update(to_bulk_update, ["status", "review_created_on", "review_status", "justification"])
+    for visit in to_update_with_save:
+        visit.save()
+
+    print(to_bulk_update)
+    print(to_update_with_save)
+
     if visits:
         update_payment_accrued(opportunity=visits[0].opportunity, users=[visits[0].user], incremental=True)
 

@@ -686,7 +686,7 @@ class UserVisit(XFormBaseModel):
                 self.status_modified_date = now()
         super().__setattr__(name, value)
 
-    def save(self, rank=0, **kwargs):
+    def save(self, rank=1, **kwargs):
         # The code below automatically switches/create CompletedWork when the UNIQUE_USER_VISIT_CONSTRAINT
         # is triggered.
         try:
