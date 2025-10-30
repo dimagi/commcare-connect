@@ -33,8 +33,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
-from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
-from commcare_connect.users.models import User
+from commcare_connect.users.models import User, UserCredential
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
@@ -208,14 +207,14 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
 
         self.fields["learn_level"] = forms.ChoiceField(
-            choices=[("", _("None"))] + LearnLevel.choices,
+            choices=[("", _("None"))] + UserCredential.LearnLevel.choices,
             required=False,
             label=_("Learn Level"),
             help_text=_("Credential level required for completing the learning phase."),
             initial=credential_issuer.learn_level if credential_issuer else "",
         )
         self.fields["delivery_level"] = forms.ChoiceField(
-            choices=[("", _("None"))] + DeliveryLevel.choices,
+            choices=[("", _("None"))] + UserCredential.DeliveryLevel.choices,
             required=False,
             label=_("Delivery Level"),
             help_text=_("Credential level required for completing deliveries."),

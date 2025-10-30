@@ -251,3 +251,19 @@ class PaymentInvoiceFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class CredentialConfigurationFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+
+    class Meta:
+        model = "opportunity.CredentialConfiguration"
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity = SubFactory(OpportunityFactory)
+    delivery_type = SubFactory(DeliveryTypeFactory)
+
+    class Meta:
+        model = "users.UserCredential"

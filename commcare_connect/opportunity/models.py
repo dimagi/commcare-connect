@@ -14,8 +14,7 @@ from django.utils.translation import gettext
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.organization.models import Organization
-from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
-from commcare_connect.users.models import User
+from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 UNIQUE_USER_VISIT_CONSTRAINT = "unique_completed_work_deliver_unit_access"
@@ -894,11 +893,11 @@ class CredentialConfiguration(models.Model):
         null=True,
         blank=True,
         max_length=32,
-        choices=LearnLevel.choices,
+        choices=UserCredential.LearnLevel.choices,
     )
     delivery_level = models.CharField(
         null=True,
         blank=True,
         max_length=32,
-        choices=DeliveryLevel.choices,
+        choices=UserCredential.DeliveryLevel.choices,
     )

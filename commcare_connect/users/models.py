@@ -6,7 +6,6 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.commcarehq.models import HQServer
-from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
 from commcare_connect.users.managers import UserManager
 
 
@@ -79,6 +78,17 @@ class UserCredential(models.Model):
         LEARN = "LEARN", _("Learn")
         DELIVERY = "DELIVERY", _("Deliver")
 
+    class LearnLevel(models.TextChoices):
+        LEARN_PASSED = "LEARN_PASSED", _("Learning passed")
+
+    class DeliveryLevel(models.TextChoices):
+        TWENTY_FIVE = "25_DELIVERIES", _("25 Deliveries")
+        FIFTY = "50_DELIVERIES", _("50 Deliveries")
+        ONE_HUNDRED = "100_DELIVERIES", _("100 Deliveries")
+        TWO_HUNDRED = "200_DELIVERIES", _("200 Deliveries")
+        FIVE_HUNDRED = "500_DELIVERIES", _("500 Deliveries")
+        ONE_THOUSAND = "1000_DELIVERIES", _("1000 Deliveries")
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     opportunity = models.ForeignKey("opportunity.Opportunity", on_delete=models.CASCADE)
     delivery_type = models.ForeignKey("opportunity.DeliveryType", on_delete=models.CASCADE)
@@ -96,11 +106,11 @@ class UserCredential(models.Model):
     class Meta:
         unique_together = ("user", "opportunity", "credential_type")
 
-    @property
-    def delivery_level_num(self):
-        if self.credential_type == self.CredentialType.LEARN:
+    @classmethod
+    def delivery_level_num(cls, level: str, credential_type: str) -> int | None:
+        if credential_type == cls.CredentialType.LEARN:
             return None
-        return int(self.level.split("_")[0])
+        return int(level.split("_")[0])
 
     @property
     def title(self):
