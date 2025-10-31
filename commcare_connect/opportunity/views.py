@@ -142,6 +142,7 @@ from commcare_connect.organization.decorators import (
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
+from commcare_connect.utils.analytics import Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
@@ -469,7 +470,8 @@ def update_visit_status_import(request, org_slug=None, opp_id=None):
     else:
         file_path = f"{opportunity.pk}_{datetime.datetime.now().isoformat}_visit_import"
         saved_path = default_storage.save(file_path, file)
-        result = bulk_update_visit_status_task.delay(opportunity.pk, saved_path, file_format)
+        tracking_info = GATrackingInfo.from_request(request).dict()
+        result = bulk_update_visit_status_task.delay(opportunity.pk, saved_path, file_format, tracking_info)
         redirect_url = f"{redirect_url}?export_task_id={result.id}"
     return redirect(redirect_url)
 
@@ -867,9 +869,12 @@ def approve_visits(request, org_slug, opp_id):
                     )
                 visit.justification = justification
 
-    UserVisit.objects.bulk_update(visits, ["status", "review_created_on", "review_status", "justification"])
+    approved_count = UserVisit.objects.bulk_update(
+        visits, ["status", "review_created_on", "review_status", "justification"]
+    )
     if visits:
         update_payment_accrued(opportunity=visits[0].opportunity, users=[visits[0].user], incremental=True)
+    send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
@@ -881,12 +886,17 @@ def reject_visits(request, org_slug=None, opp_id=None):
     visit_ids = request.POST.getlist("visit_ids[]")
     reason = request.POST.get("reason", "").strip()
 
-    UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id).exclude(
-        status=VisitValidationStatus.rejected
-    ).update(status=VisitValidationStatus.rejected, reason=reason)
+    updated_count = (
+        UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id)
+        .exclude(status=VisitValidationStatus.rejected)
+        .update(status=VisitValidationStatus.rejected, reason=reason)
+    )
     if visit_ids:
         visit = UserVisit.objects.get(id=visit_ids[0])
         update_payment_accrued(opportunity=opp, users=[visit.user])
+
+    send_event_to_ga(request, Event("bulk_reject_confirm", {"updated": updated_count, "total": len(visit_ids)}))
+
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 

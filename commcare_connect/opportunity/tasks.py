@@ -47,6 +47,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.users.models import User
+from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
 from commcare_connect.utils.datetime import is_date_before
 from commcare_connect.utils.sms import send_sms
@@ -377,7 +378,9 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
 
 
 @celery_app.task(bind=True)
-def bulk_update_visit_status_task(self, opportunity_id: int, file_path: str, file_format: str):
+def bulk_update_visit_status_task(
+    self, opportunity_id: int, file_path: str, file_format: str, tracking_info: dict = None
+):
     from commcare_connect.opportunity.visit_import import (
         ImportException,
         bulk_update_visit_status,
@@ -395,6 +398,16 @@ def bulk_update_visit_status_task(self, opportunity_id: int, file_path: str, fil
         messages = [f"Visit status updated successfully for {len(status)} visits."]
         if status.missing_visits:
             messages.append(status.get_missing_message())
+
+        if tracking_info:
+            tracking_info = GATrackingInfo.from_dict(tracking_info)
+            events = [
+                Event("visit_import_approved", {"updated": status.approved_count, "total": len(status.seen_visits)}),
+                Event("visit_import_rejected", {"updated": status.rejected_count, "total": len(status.seen_visits)}),
+            ]
+            for event in events:
+                event.add_tracking_info(tracking_info)
+            send_event_task.delay(tracking_info.client_id, _serialize_events(events))
     except ImportException as e:
         messages = [f"Visit status import failed: {e}"] + getattr(e, "invalid_rows", [])
 
