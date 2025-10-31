@@ -238,7 +238,11 @@ def test_get_opportunity_list_data_all_annotations(organization, filters, expect
 
     # Visits
     UserVisitFactory(
-        opportunity=opportunity, opportunity_access=oa1, status=VisitValidationStatus.pending, visit_date=now()
+        opportunity=opportunity,
+        opportunity_access=oa1,
+        status=VisitValidationStatus.pending,
+        visit_date=now(),
+        completed_work__opportunity_access=oa1,
     )
 
     UserVisitFactory(
