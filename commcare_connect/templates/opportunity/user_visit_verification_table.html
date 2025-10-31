@@ -7,7 +7,7 @@
  <form
       x-ref="visitForm"
       class="flex flex-col w-full gap-2"
-      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}"
+      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.id %}"
       hx-trigger="reload_table from:body"
       hx-swap="outerHTML"
   >
@@ -27,18 +27,6 @@
       {% endfor %}
     </div>
 
-    <div x-data="datePicker('tableDatePicker', {% if request.GET.filter_date %} new Date('{{ request.GET.filter_date }}' + 'T00:00:00') {% else %} '' {% endif %})"
-      class="flex gap-x-4 items-center">
-      <div class="flex items-center gap-1 bg-slate-100 p-2 text-sm font-normal rounded-sm">
-        <i class="fa-solid fa-chevron-left text-brand-deep-purple cursor-pointer" @click="navigateDate(-1)"></i>
-        <input type="text" id="tableDatePicker" name="filter_date"
-               class="text-center w-32 focus:outline-none text-sm"
-               placeholder="Select Date"
-               value="{{ request.GET.filter_date|default:'' }}">
-        <i class="fa-solid fa-xmark text-brand-deep-purple cursor-pointer me-2" x-cloak x-show="selectedDate != ''" @click="clear()"></i>
-        <i class="fa-solid fa-chevron-right text-brand-deep-purple cursor-pointer" @click="navigateDate(1)"></i>
-      </div>
-    </div>
     {% if not request.is_opportunity_pm and request.org_membership and not request.org_membership.is_viewer %}
       <div x-show="selected?.length" class="flex gap-2">
         <button type="button" @click="showBulkRejectModal = true;" class="button button-md outline-style">Reject All</button>
@@ -61,12 +49,15 @@
   </div>
   <input type="hidden" name="page" value="{{ request.GET.page|default:1 }}" x-model="page" />
   <input type="hidden" name="sort" value="{{ request.GET.sort|default:'' }}" />
+  {% for name, value in persisted_filters %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+  {% endfor %}
 </form>
 
 <!--Bulk Approve Modal -->
-{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=opportunity_access.opportunity.id as reject_url %}
-{% url 'opportunity:approve_visits' org_slug=request.org.slug opp_id=opportunity_access.opportunity.id as approve_url %}
-{% include 'opportunity/bulk_approval_reject_modal.html' with modal_name="showBulkApproveModal" title=opportunity_access.opportunity.managed|yesno:"Justification for Approval,Confirm Approval" form_action=approve_url textarea_required=opportunity_access.opportunity.managed textarea_placeholder="Please provide a reason for approving flagged visits." textarea_name="justification" note_text="Note: Visits that are already approved will not be affected by this action." submit_btn_text="Approve" submit_btn_class="positive-dark" %}
+{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=opportunity.id as reject_url %}
+{% url 'opportunity:approve_visits' org_slug=request.org.slug opp_id=opportunity.id as approve_url %}
+{% include 'opportunity/bulk_approval_reject_modal.html' with modal_name="showBulkApproveModal" title=opportunity.managed|yesno:"Justification for Approval,Confirm Approval" form_action=approve_url textarea_required=opportunity.managed textarea_placeholder="Please provide a reason for approving flagged visits." textarea_name="justification" note_text="Note: Visits that are already approved will not be affected by this action." submit_btn_text="Approve" submit_btn_class="positive-dark" %}
 {% include "opportunity/bulk_approval_reject_modal.html" with modal_name="showBulkRejectModal" title="Reason for Rejection" form_action=reject_url textarea_required=True textarea_placeholder="Please provide a reason for rejecting visit." textarea_name="reason" note_text="Note: Visits that are already rejected will not be affected by this action." submit_btn_text="Reject" submit_btn_class="negative-dark" %}
 
 </div>
