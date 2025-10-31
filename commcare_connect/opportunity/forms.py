@@ -752,6 +752,7 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
+        self.fields["total_budget"].label += f" ({self.opportunity.currency})"
 
         self.fields["add_users"].widget.attrs.update(
             {
