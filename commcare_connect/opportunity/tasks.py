@@ -449,4 +449,10 @@ def fetch_exchange_rates(date=None, currency=None):
 
 @celery_app.task()
 def issue_user_credentials():
+    """Runs daily to issue credentials to users who have earned them."""
     UserCredentialIssuer.run()
+
+
+@celery_app.task()
+def submit_credentials_to_personalid_task():
+    UserCredentialIssuer.issue_credentials_to_users()

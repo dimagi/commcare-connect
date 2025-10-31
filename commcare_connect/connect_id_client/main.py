@@ -54,6 +54,12 @@ def add_credential(organization: Organization, credential: str, users: list[str]
     return
 
 
+def add_credentials(credentials_items: list[dict]):
+    json = {"credentials": credentials_items}
+    response = _make_request(POST, "/users/add_credential", json=json, timeout=30)
+    return response.json()["success"]
+
+
 def fetch_credentials(org_slug=None):
     # this view no longer exists in it's current form
     # in connectid. we can add it back once the new design

@@ -94,7 +94,7 @@ class UserCredential(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     opportunity = models.ForeignKey("opportunity.Opportunity", on_delete=models.CASCADE)
-    delivery_type = models.ForeignKey("opportunity.DeliveryType", on_delete=models.CASCADE)
+    delivery_type = models.ForeignKey("opportunity.DeliveryType", on_delete=models.CASCADE, null=True, blank=True)
     created_on = models.DateTimeField(auto_now_add=True)
     issued_on = models.DateTimeField(null=True, blank=True)
     credential_type = models.CharField(
@@ -115,10 +115,12 @@ class UserCredential(models.Model):
             return None
         return int(level.split("_")[0])
 
-    @property
-    def title(self):
-        if self.credential_type == self.CredentialType.LEARN:
-            return _("Passed learning assessment for {delivery_type}").format(delivery_type=self.delivery_type.name)
-        return _("Completed {delivery_level_num} deliveries for {delivery_type}").format(
-            delivery_level_num=self.delivery_level_num, delivery_type=self.delivery_type.name
+    @classmethod
+    def get_title(cls, credential_type: str, level: str, delivery_type_name: str) -> str:
+        if credential_type == cls.CredentialType.LEARN:
+            return _("Passed learning assessment for {earned_for}").format(earned_for=delivery_type_name)
+
+        return _("Completed {delivery_level_num} deliveries for {earned_for}").format(
+            delivery_level_num=cls.delivery_level_num(level, credential_type),
+            earned_for=delivery_type_name,
         )
