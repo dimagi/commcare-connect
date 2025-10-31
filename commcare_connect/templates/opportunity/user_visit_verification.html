@@ -4,14 +4,17 @@
 {% load django_tables2 %}
 {% load i18n %}
 {% load humanize %}
+{% load crispy_forms_tags %}
 
 {% block css %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'bundles/css/mapbox.css' %}">
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 {% endblock %}
 
 {% block javascript %}
   {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
   <script src="{% static 'bundles/js/mapbox-bundle.js' %}" defer></script>
 {% endblock javascript %}
 
@@ -19,7 +22,20 @@
   {% include 'components/breadcrumbs.html' with path=path %}
   <div class="w-full space-y-4">
     <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
-      {% include "components/worker_page/profile.html" with opportunity_access=opportunity_access %}
+      {% if selected_opportunity_access %}
+        {% include "components/worker_page/profile.html" with opportunity_access=selected_opportunity_access %}
+      {% else %}
+        <div class="profile-card w-1/5 h-full flex flex-col justify-center text-white gap-2">
+          <p class="text-sm font-bold text-white/70">{{ opportunity.name }}</p>
+          {% if not selected_opportunity_access %}
+              <p class="text-xs text-white/70">
+                Viewing visits for all workers.
+              </p>
+          {% else %}
+            <p class="text-xs text-white/70">No workers have been added yet.</p>
+          {% endif %}
+        </div>
+      {% endif %}
       <div class="grid grid-cols-5 gap-4 w-full">
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
           <div class="flex justify-between items-center">
@@ -109,26 +125,26 @@
 
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
           <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ opportunity_access.payment_accrued|intcomma }}</div>
+            <div class="text-2xl">{{ payment_accrued_total|intcomma }}</div>
             <div class="hidden lg:block">
               <i class="fa-solid fa-money-bill-wave text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Accrued Amount ({{opportunity_access.opportunity.currency}})</span>
+            <span>Accrued Amount ({{ opportunity.currency }})</span>
           </div>
         </div>
 
         <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
              x-data="{ isOpen: false }">
           <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ opportunity_access.total_paid|intcomma  }}</div>
+            <div class="text-2xl">{{ total_paid|intcomma }}</div>
             <div class="hidden lg:block">
               <i class="fa-solid fa-hand-holding-dollar text-xl"></i>
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Paid Amount ({{opportunity_access.opportunity.currency}})</span>
+            <span>Paid Amount ({{ opportunity.currency }})</span>
           {% if last_payment_details %}
             <i class="fa-solid ml-2 cursor-pointer"
                :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
@@ -144,6 +160,11 @@
               <span class="text-xs text-brand-blue-light">Last Paid</span>
               <span class="text-xs text-brand-deep-purple">{{ last_payment_details.date_paid|date }}</span>
               <span class="text-xl text-green-600">{{ last_payment_details.amount }}</span>
+              {% if last_payment_details.opportunity_access %}
+                <span class="text-xs text-brand-deep-purple">
+                  {{ last_payment_details.opportunity_access.user.name }}
+                </span>
+              {% endif %}
             </div>
             {% endif %}
           </div>
@@ -152,19 +173,52 @@
     </div>
 
     <div class="w-full grid grid-cols-10 gap-2">
-
       <div class="col-span-6" hx-indicator="#loading-spinner">
-        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity_access.opportunity.id opportunity_access.id %}{% querystring %}"
+        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.id %}{% querystring %}"
               hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
 
       <div class="col-span-4 relative" hx-indicator="#visit-loading-indicator">
         <div class="absolute inset-0">
           <div class="flex flex-col gap-2 h-full">
-            <div class="flex items-center px-4 bg-white rounded-lg shadow-sm h-14">
+            <div class="flex items-center justify-between px-4 bg-white rounded-lg shadow-sm h-14">
               <p class="text-sm font-normal text-brand-deep-purple">Details</p>
-            </div>
+              <div class="relative" x-data="{ showFilterModal: false }">
+                <button type="button" @click="showFilterModal = true" class="relative button-icon">
+                  <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+                  {% if filters_applied_count %}
+                    <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+                      {{ filters_applied_count }}
+                    </span>
+                  {% endif %}
+                </button>
+                <div x-show="showFilterModal" class="modal-backdrop" style="display: none;">
+                  <div class="modal">
+                    <div class="header text-lg font-semibold text-brand-deep-purple flex justify-between items-center">
+                      <h1>Filters</h1>
+                      <button @click="showFilterModal = false">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                      </button>
+                    </div>
 
+                    <form class="content space-y-4" method="get" id="filterForm">
+                      <div class="modal-body space-y-4">
+                        {% crispy filter_form %}
+                      </div>
+                    </form>
+
+                    <div class="footer flex justify-end gap-3">
+                      <button type="button" @click="showFilterModal = false" class="button button-md outline-style">
+                        Close
+                      </button>
+                      <button type="submit" form="filterForm" @click="showFilterModal = false" class="button button-md primary-dark">
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
               <div id="visit-details" hx-on:before-swap="removeMap()" hx-on::after-settle="loadMap()">
                 <div class="flex justify-items-center align-items-center">
@@ -189,51 +243,6 @@
   {{ block.super }}
   <script type="text/javascript">
     document.addEventListener('alpine:init', () => {
-      Alpine.data('datePicker', (id, defaultDate) => ({
-        selectedDate: defaultDate,
-        flatpickrInstance: flatpickr(document.getElementById(id), {
-          defaultDate: this.selectedDate,
-          altInput: true,
-          altFormat: 'd M, Y',
-          dateFormat: 'Y-m-d',
-          enableTime: false,
-        }),
-        init() {
-          this.flatpickrInstance.config.onChange.push((selectedDates) => {
-            if (selectedDates?.[0]) {
-              this.selectedDate = selectedDates[0];
-              this.$dispatch('date-changed', {
-                date: selectedDates[0],
-                id: id
-              });
-            }
-          })
-          this.$nextTick(() => {
-            this.flatpickrInstance.setDate(this.selectedDate);
-          });
-        },
-        navigateDate(direction) {
-          if (this.selectedDate == "") return;
-          const currentDate = this.selectedDate;
-          const newDate = new Date(currentDate);
-          newDate.setDate(newDate.getDate() + direction);
-
-          // Update the date
-          this.selectedDate = newDate;
-          this.flatpickrInstance.setDate(newDate, true);
-
-          // Dispatch the date change event
-          this.$dispatch('date-changed', {
-            date: newDate,
-            id: id
-          });
-        },
-        clear() {
-          this.selectedDate = "";
-          this.flatpickrInstance.clear();
-        }
-      }));
-
       Alpine.data('visitVerification', (initialTab, defaultPage) => ({
       activeTab: initialTab,
       page: defaultPage,
@@ -248,11 +257,11 @@
         const formData = new FormData(this.$refs.visitForm);
         const params = new URLSearchParams();
 
-        for (let [key, value] of formData.entries()) {
+        formData.forEach((value, key) => {
           if (value && String(value).trim() !== '') {
-            params.set(key, value);
+            params.append(key, value);
           }
-        }
+        });
 
         url.search = params.toString();
         window.history.pushState({}, '', url.toString());

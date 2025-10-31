@@ -313,14 +313,131 @@ def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClien
     oauth_application = opportunity.hq_server.oauth_application
     form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.status == VisitValidationStatus.approved
+    visit_1 = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit_1.status == VisitValidationStatus.approved
     duplicate_json = deepcopy(form_json)
     duplicate_json["id"] = str(uuid4())
     make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    assert visit.status == VisitValidationStatus.duplicate
-    assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit.flag_reason.get("flags", [])
+    visit_2 = UserVisit.objects.get(xform_id=duplicate_json["id"])
+    assert visit_2.status == VisitValidationStatus.duplicate
+    assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit_2.flag_reason.get(
+        "flags", []
+    )
+    assert visit_1.completed_work == visit_2.completed_work
+
+
+def test_receiver_duplicate_approved(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit_1 = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit_1.status == VisitValidationStatus.approved
+    duplicate_json = deepcopy(form_json)
+    duplicate_json["id"] = str(uuid4())
+    make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit_2 = UserVisit.objects.get(xform_id=duplicate_json["id"])
+    assert visit_2.status == VisitValidationStatus.duplicate
+    assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit_2.flag_reason.get(
+        "flags", []
+    )
+    assert visit_1.completed_work == visit_2.completed_work
+    visit_2.status = VisitValidationStatus.approved
+    visit_2.save()
+    assert visit_1.completed_work != visit_2.completed_work
+    assert visit_2.completed_work.status == CompletedWorkStatus.duplicate
+
+    update_payment_accrued(opportunity, [user_with_connectid_link], incremental=True)
+    visit_2.refresh_from_db()
+    assert visit_2.completed_work.status == CompletedWorkStatus.approved
+
+
+def test_receiver_multiple_deliver_unit_payment_units_duplicates(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    oauth_application = opportunity.hq_server.oauth_application
+    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_daily=10, max_total=100)
+    access = OpportunityAccessFactory(user=user_with_connectid_link, opportunity=opportunity, accepted=True)
+    claim = OpportunityClaimFactory(end_date=now() + timedelta(days=2), opportunity_access=access)
+    OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+    deliver_units = DeliverUnitFactory.create_batch(2, app=opportunity.deliver_app, payment_unit=payment_unit)
+
+    for deliver_unit in deliver_units:
+        stub = DeliverUnitStubFactory(id=deliver_unit.slug, entity_id="entity")
+        form = get_form_json(
+            form_block=stub.json,
+            domain=deliver_unit.app.cc_domain,
+            app_id=deliver_unit.app.cc_app_id,
+        )
+        make_request(api_client, form, user_with_connectid_link, oauth_application=oauth_application)
+
+        duplicate_json = deepcopy(form)
+        duplicate_json["id"] = str(uuid4())
+        make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
+
+        user_visits = UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
+        user_visit_status = {uv.status for uv in user_visits}
+        assert user_visits.count() == 2
+        assert user_visits[0].completed_work == user_visits[1].completed_work
+        assert VisitValidationStatus.approved.value in user_visit_status
+        assert VisitValidationStatus.duplicate.value in user_visit_status
+
+    completed_works = CompletedWork.objects.filter(opportunity_access=access)
+    completed_work_status = {cw.status for cw in completed_works}
+    assert completed_works.count() == 1
+    assert CompletedWorkStatus.pending.value in completed_work_status
+
+
+def test_receiver_multiple_deliver_unit_payment_units_duplicates_approved(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    oauth_application = opportunity.hq_server.oauth_application
+    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_daily=10, max_total=100)
+    access = OpportunityAccessFactory(user=user_with_connectid_link, opportunity=opportunity, accepted=True)
+    claim = OpportunityClaimFactory(end_date=now() + timedelta(days=2), opportunity_access=access)
+    OpportunityClaimLimit.create_claim_limits(opportunity, claim)
+    deliver_units = DeliverUnitFactory.create_batch(2, app=opportunity.deliver_app, payment_unit=payment_unit)
+
+    visits = []
+
+    for deliver_unit in deliver_units:
+        stub = DeliverUnitStubFactory(id=deliver_unit.slug, entity_id="entity")
+        form = get_form_json(
+            form_block=stub.json,
+            domain=deliver_unit.app.cc_domain,
+            app_id=deliver_unit.app.cc_app_id,
+        )
+        make_request(api_client, form, user_with_connectid_link, oauth_application=oauth_application)
+
+        duplicate_json = deepcopy(form)
+        duplicate_json["id"] = str(uuid4())
+        make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
+
+        user_visits = UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
+        visits.extend(list(user_visits))
+        user_visit_status = {uv.status for uv in user_visits}
+        assert user_visits.count() == 2
+        assert user_visits[0].completed_work == user_visits[1].completed_work
+        assert VisitValidationStatus.approved.value in user_visit_status
+        assert VisitValidationStatus.duplicate.value in user_visit_status
+
+    completed_works = CompletedWork.objects.filter(opportunity_access=access)
+    completed_work_status = {cw.status for cw in completed_works}
+    assert completed_works.count() == 1
+    assert CompletedWorkStatus.pending.value in completed_work_status
+
+    manually_approved_visits = []
+    for user_visit in visits:
+        if user_visit.status != VisitValidationStatus.approved:
+            user_visit.status = VisitValidationStatus.approved
+            user_visit.save()
+            manually_approved_visits.append(user_visit)
+
+    update_payment_accrued(opportunity, [user_with_connectid_link])
+    completed_works = CompletedWork.objects.filter(opportunity_access=access)
+    completed_work_status = {cw.status for cw in completed_works}
+    assert completed_works.count() == 2
+    for cw in completed_works:
+        assert cw.status == CompletedWorkStatus.approved
 
 
 def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
@@ -785,6 +902,25 @@ def test_receiver_same_visit_twice(
     )
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 1
+
+
+@pytest.mark.django_db
+def test_receiver_opportunity_access_does_not_exist(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    payment_units = opportunity.paymentunit_set.all()
+    OpportunityAccess.objects.filter(user=mobile_user_with_connect_link, opportunity=opportunity).delete()
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json1 = get_form_json_for_payment_unit(payment_units[0])
+    make_request(
+        api_client,
+        form_json1,
+        mobile_user_with_connect_link,
+        oauth_application=oauth_application,
+        expected_status_code=403,
+    )
+    user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
+    assert user_visits.count() == 0
 
 
 def create_learn_module_data(opportunity, mobile_user, access):
