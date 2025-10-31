@@ -2257,8 +2257,10 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
                 "name": "Services Delivered",
                 "status": "Pending PM Review",
                 "url": f"{delivery_url}?{urlencode({'review_pending': 'True'})}",
-                "value": header_with_tooltip(stats.visits_pending_for_pm_review, "Flagged and pending review with PM"),
-                "incr": stats.visits_pending_for_pm_review_since_yesterday,
+                "value": header_with_tooltip(
+                    stats.deliveries_pending_for_pm_review, "Flagged and pending review with PM"
+                ),
+                "incr": stats.deliveries_pending_for_pm_review_since_yesterday,
             }
         )
 
