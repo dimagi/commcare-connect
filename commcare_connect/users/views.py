@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -119,22 +120,46 @@ def start_learn_app(request):
     return HttpResponse(status=200)
 
 
-@require_GET
-def accept_invite(request, invite_id):
-    try:
-        o = OpportunityAccess.objects.get(invite_id=invite_id)
-    except OpportunityAccess.DoesNotExist:
-        return HttpResponse("This link is invalid. Please try again", status=404)
-    with transaction.atomic():
+class AcceptInviteView(View):
+    def get(self, request, invite_id):
+        try:
+            access = OpportunityAccess.objects.get(invite_id=invite_id)
+        except OpportunityAccess.DoesNotExist:
+            return HttpResponse("This link is invalid. Please try again", status=404)
+        get_token(request)
+        return render(
+            request,
+            "users/accept_invite_confirm.html",
+            context={
+                "opportunity_name": access.opportunity.name,
+            },
+        )
+
+    def post(self, request, invite_id):
+        try:
+            o = OpportunityAccess.objects.get(invite_id=invite_id)
+        except OpportunityAccess.DoesNotExist:
+            return HttpResponse("This link is invalid. Please try again", status=404)
+
+        if o.accepted:
+            return HttpResponse(
+                _(
+                    "This invitation has already been accepted. Open your CommCare Connect App to "
+                    "see more information about the opportunity and begin learning"
+                )
+            )
+
         o.accepted = True
         o.save()
         user_invite = UserInvite.objects.get(opportunity_access=o)
         user_invite.status = UserInviteStatus.accepted
         user_invite.save()
-    return HttpResponse(
-        "Thank you for accepting the invitation. Open your CommCare Connect App to "
-        "see more information about the opportunity and begin learning"
-    )
+        return HttpResponse(
+            _(
+                "Thank you for accepting the invitation. Open your CommCare Connect App to "
+                "see more information about the opportunity and begin learning"
+            )
+        )
 
 
 @login_required
@@ -163,6 +188,7 @@ class SMSStatusCallbackView(APIView):
 
 
 # used for loading api key dropdown
+@require_GET
 @login_required
 def get_api_keys(request):
     hq_server = request.GET.get("hq_server")

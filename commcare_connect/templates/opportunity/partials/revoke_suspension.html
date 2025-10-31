@@ -1,0 +1,5 @@
+<form method="post" action="{{ revoke_url }}">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ page_url }}">
+  <button type="submit" class="button button-sm primary-light">Revoke</button>
+</form>
