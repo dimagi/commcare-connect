@@ -106,6 +106,7 @@ class DashboardFilters(django_filters.FilterSet):
         fields = ["program", "organization", "from_date", "to_date"]
 
 
+@require_GET
 @kpi_report_access_required
 def program_dashboard_report(request):
     filterset = DashboardFilters(request.GET)
@@ -362,6 +363,7 @@ def dashboard_stats_api(request):
     )
 
 
+@require_GET
 @kpi_report_access_required
 def dashboard_charts_api(request):
     filterset = DashboardFilters(request.GET)

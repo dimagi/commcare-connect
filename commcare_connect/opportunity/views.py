@@ -1041,14 +1041,14 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
     return redirect("opportunity:user_visits_list", org_slug, opp_id, pk)
 
 
+@require_POST
 @org_member_required
 def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
     access = get_object_or_404(OpportunityAccess, opportunity_id=opp_id, id=pk)
     access.suspended = False
     access.save()
     remove_opportunity_access_cache(access.user, access.opportunity)
-    next = request.GET.get("next", "/")
-    return redirect(next)
+    return HttpResponse(headers={"HX-Redirect": request.POST.get("next", "/")})
 
 
 @org_member_required
@@ -1372,6 +1372,7 @@ def resend_user_invites(request, org_slug, opp_id):
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
+@require_POST
 def sync_deliver_units(request, org_slug, opp_id):
     status = HTTPStatus.OK
     message = "Delivery unit sync completed."
