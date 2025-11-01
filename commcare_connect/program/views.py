@@ -18,14 +18,14 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.views import OpportunityInit
+from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
     org_admin_required,
     org_program_manager_required,
     org_viewer_required,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
+from commcare_connect.program.forms import ManagedOpportunityInitForm, ManagedOpportunityInitUpdateForm, ProgramForm
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
 
 from .utils import is_program_manager
@@ -103,6 +103,24 @@ class ManagedOpportunityList(ProgramManagerMixin, ListView):
 
 class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
     form_class = ManagedOpportunityInitForm
+    program = None
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            self.program = Program.objects.get(pk=self.kwargs.get("pk"))
+        except Program.DoesNotExist:
+            messages.error(request, "Program not found.")
+            return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["program"] = self.program
+        return kwargs
+
+
+class ManagedOpportunityInitUpdate(ProgramManagerMixin, OpportunityInitUpdate):
+    form_class = ManagedOpportunityInitUpdateForm
     program = None
 
     def dispatch(self, request, *args, **kwargs):

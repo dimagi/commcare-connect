@@ -453,6 +453,150 @@ class OpportunityInitForm(forms.ModelForm):
         return self.instance
 
 
+class OpportunityInitUpdateForm(OpportunityInitForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        opportunity = self.instance
+
+        submit_row = self.helper.layout[-1]
+        if getattr(submit_row, "fields", None):
+            submit_row.fields[0] = Submit("submit", "Save", css_class="button button-md primary-dark")
+
+        if not getattr(opportunity, "pk", None):
+            return
+
+        # Populate basic opportunity fields
+        for field_name in ("name", "short_description", "description", "currency"):
+            if field_name in self.fields:
+                self.fields[field_name].initial = getattr(opportunity, field_name)
+
+        # API Key dropdown should display the currently linked key so the user can retain it.
+        api_key = getattr(opportunity, "api_key", None)
+        api_key_choices = [(None, "Select a HQ Server to load API Keys.")]
+        if api_key:
+            api_key_masked = (
+                f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}" if len(api_key.api_key) > 8 else api_key.api_key
+            )
+            api_key_choices.append((api_key.id, api_key_masked))
+            self.fields["api_key"].initial = api_key.id
+        self.fields["api_key"].widget.choices = api_key_choices
+
+        self._configure_learn_app_fields(opportunity)
+        self._configure_deliver_app_fields(opportunity)
+
+    def _configure_learn_app_fields(self, opportunity):
+        learn_app = getattr(opportunity, "learn_app", None)
+        if not learn_app:
+            return
+
+        learn_app_option_value = json.dumps({"id": learn_app.cc_app_id, "name": learn_app.name})
+        learn_app_choices = [(None, "Select an Application"), (learn_app_option_value, learn_app.name)]
+        learn_domain_choices = [
+            (None, "Select an API key to load domains."),
+            (learn_app.cc_domain, learn_app.cc_domain),
+        ]
+
+        self.fields["learn_app"].widget.choices = learn_app_choices
+        self.fields["learn_app"].initial = learn_app_option_value
+        self.fields["learn_app_domain"].widget.choices = learn_domain_choices
+        self.fields["learn_app_domain"].initial = learn_app.cc_domain
+
+        self.fields["learn_app_description"].initial = learn_app.description
+        self.fields["learn_app_passing_score"].initial = learn_app.passing_score
+
+    def _configure_deliver_app_fields(self, opportunity):
+        deliver_app = getattr(opportunity, "deliver_app", None)
+        if not deliver_app:
+            return
+
+        deliver_app_option_value = json.dumps({"id": deliver_app.cc_app_id, "name": deliver_app.name})
+        deliver_app_choices = [(None, "Select an Application"), (deliver_app_option_value, deliver_app.name)]
+        deliver_domain_choices = [
+            (None, "Select an API key to load domains."),
+            (deliver_app.cc_domain, deliver_app.cc_domain),
+        ]
+
+        self.fields["deliver_app"].widget.choices = deliver_app_choices
+        self.fields["deliver_app"].initial = deliver_app_option_value
+        self.fields["deliver_app_domain"].widget.choices = deliver_domain_choices
+        self.fields["deliver_app_domain"].initial = deliver_app.cc_domain
+
+    def save(self, commit=True):
+        opportunity = self.instance
+        organization = getattr(opportunity, "organization", None)
+        if self.managed_opp:
+            organization = self.cleaned_data.get("organization") or organization
+        if not organization and self.org_slug:
+            organization = Organization.objects.get(slug=self.org_slug)
+        elif not organization:
+            organization = Organization.objects.get(slug=opportunity.organization.slug)
+        learn_app_data = self.cleaned_data["learn_app"]
+        deliver_app_data = self.cleaned_data["deliver_app"]
+        learn_app_domain = self.cleaned_data["learn_app_domain"]
+        deliver_app_domain = self.cleaned_data["deliver_app_domain"]
+        hq_server = self.cleaned_data["hq_server"]
+
+        learn_app, created = CommCareApp.objects.get_or_create(
+            cc_app_id=learn_app_data["id"],
+            cc_domain=learn_app_domain,
+            organization=organization,
+            hq_server=hq_server,
+            defaults={
+                "name": learn_app_data["name"],
+                "created_by": opportunity.created_by or self.user.email,
+                "modified_by": self.user.email,
+                "description": self.cleaned_data["learn_app_description"],
+                "passing_score": self.cleaned_data["learn_app_passing_score"],
+            },
+        )
+        if not created:
+            learn_app.name = learn_app_data["name"]
+            learn_app.description = self.cleaned_data["learn_app_description"]
+            learn_app.passing_score = self.cleaned_data["learn_app_passing_score"]
+            learn_app.hq_server = hq_server
+            learn_app.modified_by = self.user.email
+            learn_app.save()
+
+        deliver_app, created = CommCareApp.objects.get_or_create(
+            cc_app_id=deliver_app_data["id"],
+            cc_domain=deliver_app_domain,
+            organization=organization,
+            hq_server=hq_server,
+            defaults={
+                "name": deliver_app_data["name"],
+                "created_by": opportunity.created_by or self.user.email,
+                "modified_by": self.user.email,
+            },
+        )
+        if not created:
+            deliver_app.name = deliver_app_data["name"]
+            deliver_app.hq_server = hq_server
+            deliver_app.modified_by = self.user.email
+            deliver_app.save(update_fields=["name", "hq_server", "modified_by"])
+
+        opportunity.learn_app = learn_app
+        opportunity.deliver_app = deliver_app
+        opportunity.modified_by = self.user.email
+        currency = self.cleaned_data["currency"].upper()
+        self.cleaned_data["currency"] = currency
+        opportunity.currency = currency
+
+        if self.managed_opp:
+            opportunity.organization = self.cleaned_data.get("organization")
+        elif organization:
+            opportunity.organization = organization
+
+        api_key, _ = HQApiKey.objects.get_or_create(
+            id=self.cleaned_data["api_key"],
+            defaults={
+                "hq_server": hq_server,
+                "user": self.user,
+            },
+        )
+        opportunity.api_key = api_key
+        return forms.ModelForm.save(self, commit=commit)
+
+
 class OpportunityFinalizeForm(forms.ModelForm):
     class Meta:
         model = Opportunity

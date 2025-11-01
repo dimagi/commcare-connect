@@ -2,7 +2,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Button, Column, Field, Layout, Row, Submit
 from django import forms
 
-from commcare_connect.opportunity.forms import OpportunityInitForm
+from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 
@@ -105,4 +105,44 @@ class ManagedOpportunityInitForm(OpportunityInitForm):
     def save(self, commit=True):
         self.instance.program = self.program
         self.instance.currency = self.program.currency
+        return super().save(commit=commit)
+
+
+class ManagedOpportunityInitUpdateForm(OpportunityInitUpdateForm):
+    class Meta(OpportunityInitUpdateForm.Meta):
+        model = ManagedOpportunity
+
+    def __init__(self, *args, **kwargs):
+        self.program = kwargs.pop("program")
+        super().__init__(*args, **kwargs)
+        self.managed_opp = True
+
+        self.fields["currency"].initial = self.program.currency
+        self.fields["currency"].widget = forms.TextInput(attrs={"readonly": "readonly", "disabled": True})
+        self.fields["currency"].required = False
+
+        program_members = Organization.objects.filter(
+            programapplication__program=self.program, programapplication__status=ProgramApplicationStatus.ACCEPTED
+        ).distinct()
+
+        self.fields["organization"] = forms.ModelChoiceField(
+            queryset=program_members,
+            required=True,
+            widget=forms.Select(attrs={"class": "form-control"}),
+            label="Network Manager Organization",
+        )
+        self.fields["organization"].initial = self.instance.organization
+
+        opportunity_details_row = self.helper.layout[0]
+        organization_field_layout = Column(
+            Field("organization"),
+            css_class="col-span-2",
+        )
+        opportunity_details_row.fields.insert(1, organization_field_layout)
+
+    def save(self, commit=True):
+        currency = (self.program.currency or "").upper()
+        self.cleaned_data["currency"] = currency
+        self.instance.program = self.program
+        self.instance.currency = currency
         return super().save(commit=commit)

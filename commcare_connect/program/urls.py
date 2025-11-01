@@ -2,6 +2,7 @@ from django.urls import path
 
 from commcare_connect.program.views import (
     ManagedOpportunityInit,
+    ManagedOpportunityInitUpdate,
     ManagedOpportunityList,
     ProgramCreateOrUpdate,
     apply_or_decline_application,
@@ -17,6 +18,11 @@ urlpatterns = [
     path("<int:pk>/edit", view=ProgramCreateOrUpdate.as_view(), name="edit"),
     path("<int:pk>/view", view=ManagedOpportunityList.as_view(), name="opportunity_list"),
     path("<int:pk>/opportunity-init", view=ManagedOpportunityInit.as_view(), name="opportunity_init"),
+    path(
+        "<int:pk>/opportunity/<int:opp_id>/init/edit/",
+        view=ManagedOpportunityInitUpdate.as_view(),
+        name="opportunity_init_edit",
+    ),
     path("<int:pk>/invite", view=invite_organization, name="invite_organization"),
     path("application/<int:application_id>/<str:action>", manage_application, name="manage_application"),
     path(
