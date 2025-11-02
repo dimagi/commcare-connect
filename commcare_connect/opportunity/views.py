@@ -11,7 +11,6 @@ from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
@@ -134,7 +133,13 @@ from commcare_connect.opportunity.visit_import import (
     bulk_update_visit_review_status,
     update_payment_accrued,
 )
-from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
+from commcare_connect.organization.decorators import (
+    OrganizationUserMemberRoleMixin,
+    OrganizationUserMixin,
+    org_admin_required,
+    org_member_required,
+    org_viewer_required,
+)
 from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
@@ -143,19 +148,6 @@ from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
-
-
-class OrganizationUserMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        # request.org_membership is a SimpleLazyObject object so `is not None` is always `True`
-        return self.request.org_membership != None or self.request.user.is_superuser  # noqa: E711
-
-
-class OrganizationUserMemberRoleMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        return (
-            self.request.org_membership != None and not self.request.org_membership.is_viewer  # noqa: E711
-        ) or self.request.user.is_superuser
 
 
 def get_opportunity_or_404(pk, org_slug):

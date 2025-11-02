@@ -1,0 +1,28 @@
+{% load crispy_forms_tags %}
+{% load i18n %}
+
+<div x-show="showAddMemberModal"
+     x-cloak
+     x-transition.opacity
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+     @keydown.escape.window="showAddMemberModal = false">
+  <div @click.outside="showAddMemberModal = false"
+       class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+
+    <div class="flex justify-between items-center pb-2 mb-4">
+      <h2 class="text-lg font-semibold text-brand-deep-purple">
+        {% trans "Invite Member" %}
+      </h2>
+      <button @click="showAddMemberModal = false" class="text-gray-500 hover:text-gray-700">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+
+    <form action="{% url 'organization:add_members' request.org.slug %}" method="post">
+      {% csrf_token %}
+      <div class="mb-4">
+        {% crispy membership_form %}
+      </div>
+    </form>
+  </div>
+</div>

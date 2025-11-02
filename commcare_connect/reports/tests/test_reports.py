@@ -3,8 +3,11 @@ from unittest import mock
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from django.http import HttpResponse
+from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
 from django.utils.timezone import now
+from django.views import View
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
@@ -19,9 +22,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.reports import urls as reports_urls
+from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.views import _results_to_geojson
+from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.datetime import get_month_series
+from commcare_connect.utils.tests import check_basic_permissions
 
 
 def get_month_range_start_end(months=1):
@@ -338,3 +345,36 @@ def test_results_to_geojson():
 
     # Check that the other cases are not included
     assert all(f["properties"]["other_field"] not in ["value3", "value4", "value5"] for f in geojson["features"])
+
+
+class TestKPIReportPermission:
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        clear_url_caches()
+
+        # Dummy function-based view
+        @kpi_report_access_required
+        def dummy_view(request):
+            return HttpResponse("OK")
+
+        # Dummy class-based view
+        class DummyKPIReportView(KPIReportMixin, View):
+            def get(self, request, *args, **kwargs):
+                return HttpResponse("OK")
+
+        # Add dummy views to URLs
+        reports_urls.urlpatterns.extend(
+            [
+                path("dummy_fbv/", dummy_view, name="dummy_fbv"),
+                path("dummy_cbv/", DummyKPIReportView.as_view(), name="dummy_cbv"),
+            ]
+        )
+
+    @pytest.mark.parametrize("url_name", ["dummy_fbv", "dummy_cbv"])
+    def test_permissions(self, url_name):
+        url = reverse(f"reports:{url_name}")
+        check_basic_permissions(
+            UserFactory(),
+            url,
+            "kpi_report_access",
+        )

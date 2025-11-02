@@ -18,6 +18,12 @@ class FormReceiver(APIView):
     authentication_classes = [OAuth2Authentication]
     permission_classes = [TokenHasReadWriteScope]
 
+    def get(self, request):
+        """
+        Simple GET endpoint to test connectivity and OAuth authentication.
+        """
+        return Response({"detail": "Connection successful"}, status=status.HTTP_200_OK)
+
     def post(self, request):
         serializer = XFormSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

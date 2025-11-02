@@ -30,6 +30,7 @@
       if (gtmData.gtmID) {
         window.dataLayer.push({
           isDimagi: gtmData.isDimagi,
+          userId: gtmData.user_id,
         });
         loadGTM(gtmData.gtmID);
       }
