@@ -1269,7 +1269,7 @@ def invoice_approve(request, org_slug, opp_id):
     return redirect("opportunity:invoice_list", org_slug, opp_id)
 
 
-@org_member_required
+@org_admin_required
 @require_POST
 @csrf_exempt
 def delete_user_invites(request, org_slug, opp_id):
