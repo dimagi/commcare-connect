@@ -2,8 +2,15 @@ import django_filters
 from crispy_forms.helper import FormHelper
 from django import forms
 
-from commcare_connect.opportunity.models import OpportunityAccess
+from commcare_connect.opportunity.models import (
+    OpportunityAccess,
+    OpportunityVerificationFlags,
+    UserVisit,
+    VisitValidationStatus,
+)
 from commcare_connect.program.models import Program
+from commcare_connect.users.models import User
+from commcare_connect.utils.flags import FlagLabels, Flags
 
 
 class FilterMixin:
@@ -144,3 +151,80 @@ class OpportunityListFilterSet(django_filters.FilterSet):
                 self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in user_programs]
             else:
                 del self.filters["program"]
+
+
+class UserVisitFilterSet(django_filters.FilterSet):
+    user = django_filters.ChoiceFilter(
+        label="Worker",
+        choices=[],
+        empty_label="All",
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+    )
+    visit_date = django_filters.DateFilter(
+        label="Visit Date",
+        field_name="visit_date",
+        lookup_expr="date",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    status = django_filters.MultipleChoiceFilter(
+        label="Visit Status",
+        choices=[
+            (c.value, c.label)
+            for c in [VisitValidationStatus.over_limit, VisitValidationStatus.duplicate, VisitValidationStatus.trial]
+        ],
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+    )
+    flagged = YesNoFilter(label="Flagged")
+    flags = django_filters.MultipleChoiceFilter(
+        label="Flags",
+        choices=[],
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        method="filter_flags",
+    )
+
+    class Meta:
+        model = UserVisit
+        fields = ["user", "visit_date", "status", "flagged", "flags"]
+        form = CSRFExemptForm
+
+    def __init__(self, *args, **kwargs):
+        opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+
+        if opportunity:
+            user_filter = self.filters["user"]
+            user_queryset = (
+                User.objects.filter(opportunityaccess__opportunity=opportunity).distinct().order_by("name", "username")
+            )
+            user_choices = [(str(user.id), f"{user.name} ({user.username})") for user in user_queryset]
+            user_filter.extra["choices"] = user_choices
+
+            flag_choices = self._get_flag_choices(opportunity)
+            if flag_choices:
+                self.filters["flags"].extra["choices"] = flag_choices
+            else:
+                del self.filters["flags"]
+
+    def filter_flags(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.with_any_flags(value)
+
+    def _get_flag_choices(self, opportunity):
+        verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=opportunity).first()
+        if not verification_flags:
+            return []
+
+        enabled_flags = []
+        if verification_flags.duplicate:
+            enabled_flags.append(Flags.DUPLICATE.value)
+        if verification_flags.gps:
+            enabled_flags.append(Flags.GPS.value)
+        if verification_flags.location and verification_flags.location > 0:
+            enabled_flags.append(Flags.LOCATION.value)
+        if verification_flags.catchment_areas:
+            enabled_flags.append(Flags.CATCHMENT.value)
+        if verification_flags.form_submission_start or verification_flags.form_submission_end:
+            enabled_flags.append(Flags.FORM_SUBMISSION_PERIOD.value)
+
+        return [(flag, FlagLabels.get_label(flag)) for flag in enabled_flags]

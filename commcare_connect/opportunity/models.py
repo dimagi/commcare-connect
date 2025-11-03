@@ -6,6 +6,7 @@ from uuid import uuid4
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Count, F, Q, Sum
+from django.db.models.expressions import RawSQL
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
@@ -634,7 +635,37 @@ class VisitReviewStatus(models.TextChoices):
     disagree = "disagree", gettext("Disagree")
 
 
+class UserVisitQuerySet(models.QuerySet):
+    def with_any_flags(self, flags):
+        from commcare_connect.utils.flags import Flags
+
+        # flags should be a subset of Flags
+        allowed_flags = {flag.value for flag in Flags}
+        flags = list(set(flags) & allowed_flags)
+
+        if not flags:
+            return self
+
+        conditions = " || ".join([f"@[0] == $f{i}" for i in range(len(flags))])
+
+        params = []
+        for i, f in enumerate(flags):
+            params.extend([f"f{i}", f])
+
+        sql = f"""
+            jsonb_path_exists(
+                flag_reason,
+                '$.flags[*] ? ({conditions})',
+                jsonb_build_object({', '.join(['%s'] * len(params))})
+            )
+        """
+
+        return self.annotate(has_flag=RawSQL(sql, params)).filter(has_flag=True)
+
+
 class UserVisit(XFormBaseModel):
+    objects = UserVisitQuerySet.as_manager()
+
     opportunity = models.ForeignKey(
         Opportunity,
         on_delete=models.CASCADE,
