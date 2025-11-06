@@ -901,9 +901,6 @@ def approve_visits(request, org_slug, opp_id):
     for visit in to_update_with_save:
         visit.save()
 
-    print(to_bulk_update)
-    print(to_update_with_save)
-
     if visits:
         update_payment_accrued(opportunity=visits[0].opportunity, users=[visits[0].user], incremental=True)
 
