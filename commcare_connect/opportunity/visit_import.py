@@ -200,10 +200,11 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
                     visit.justification = justification
                     changed = True
 
-                if changed and visit.rank == 1:
-                    to_bulk_update.append(visit)
-                else:
-                    to_update_with_save.append(visit)
+                if changed:
+                    if visit.rank == 1:
+                        to_bulk_update.append(visit)
+                    else:
+                        to_update_with_save.append(visit)
                 user_ids.add(visit.user_id)
 
             if missing_justifications:
