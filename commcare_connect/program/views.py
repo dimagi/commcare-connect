@@ -27,7 +27,11 @@ from commcare_connect.organization.decorators import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tasks import send_program_invite_applied_email
+from commcare_connect.program.tasks import (
+    send_opportunity_created_email,
+    send_program_invite_applied_email,
+    send_program_invite_email,
+)
 
 from .utils import is_program_manager
 
@@ -114,6 +118,11 @@ class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        send_opportunity_created_email.delay(self.object.id)
+        return response
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["program"] = self.program
@@ -144,6 +153,8 @@ def invite_organization(request, org_slug, pk):
         messages.success(request, "Organization invited successfully!")
     else:
         messages.info(request, "The invitation for this organization has been updated.")
+
+    send_program_invite_email.delay(obj.id)
 
     return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
