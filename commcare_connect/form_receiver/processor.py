@@ -301,9 +301,19 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         completed_work = None
         user_visit.status = VisitValidationStatus.trial
     else:
-        completed_work, _ = CompletedWork.objects.get_or_create(
-            opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit
+        completed_work = (
+            CompletedWork.objects.filter(opportunity_access=access, entity_id=entity_id, payment_unit=payment_unit)
+            .order_by("date_created")
+            .first()
         )
+        if completed_work is None:
+            completed_work = CompletedWork(
+                opportunity_access=access,
+                entity_id=entity_id,
+                entity_name=entity_name,
+                payment_unit=payment_unit,
+            )
+            completed_work.save()
         user_visit.completed_work = completed_work
         user_visit.save()
 
