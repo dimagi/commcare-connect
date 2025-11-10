@@ -40,14 +40,14 @@
               <p class="text-base">{{ data.title }}</p>
             </div>
             {% for row in data.rows %}
-            <div class="flex justify-between items-center" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
-              <div>
+            <div class="flex justify-between items-center gap-4" {% if forloop.counter > 2 %}x-cloak x-show="expanded"{% endif %}>
+              <div class="flex-1 min-w-0">
                 <p class="title">{{ row.opportunity__name }}</p>
                 <p class="hint">{{ row.opportunity__organization__name }}</p>
               </div>
-              <a class="button button-sm button-outline-rounded" href="{{ row.url }}">
-                <div class="flex items-center justify-between gap-4">
-                  <p class="{% if row.small_text %}text-sm{%else%}text-2xl{%endif%}">{{ row.count }}</p>
+              <a class="button button-sm button-outline-rounded flex-shrink-0" href="{{ row.url }}">
+                <div class="flex items-center gap-4">
+                  <p class="{% if row.small_text %}text-sm{% else %}text-2xl{% endif %}">{{ row.count }}</p>
                   <i class="fa-solid fa-arrow-right"></i>
                 </div>
               </a>

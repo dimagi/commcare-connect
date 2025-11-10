@@ -242,7 +242,7 @@
   </div>
   {% endif %}
 
-  {% if request.user.is_superuser %}
+  {% if perms.users.view_commcarehq_form_link %}
   <hr class="h-px bg-gray-200 border-0">
 
   <p class="text-sm font-medium text-brand-deep-purple">{% translate "Further Information" %}</p>

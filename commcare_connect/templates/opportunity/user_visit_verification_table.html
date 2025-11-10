@@ -41,8 +41,8 @@
     </div>
     {% if not request.is_opportunity_pm and request.org_membership and not request.org_membership.is_viewer %}
       <div x-show="selected?.length" class="flex gap-2">
-        <button type="button" @click="showBulkRejectModal = true;" class="button button-md outline-style">Reject All</button>
-        <button type="button" @click="showBulkApproveModal = true;" class="button button-md primary-dark">Approve All</button>
+        <button type="button" @click="showBulkRejectModal = true;" class="ga-bulk-reject button button-md outline-style">Reject All</button>
+        <button type="button" @click="showBulkApproveModal = true;" class="ga-bulk-approve button button-md primary-dark">Approve All</button>
       </div>
     {% endif %}
 

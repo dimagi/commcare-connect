@@ -116,7 +116,6 @@ def reverse_create_deduplicated_completed_works(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    atomic = False
     dependencies = [
         ("opportunity", "0084_create_issue_credentials_periodic_task"),
     ]
@@ -154,13 +153,5 @@ class Migration(migrations.Migration):
             reverse_create_deduplicated_completed_works,
             hints={"run_on_secondary": True},
             atomic=True,
-        ),
-        migrations.AddConstraint(
-            model_name="uservisit",
-            constraint=models.UniqueConstraint(
-                condition=models.Q(("completed_work__isnull", False), ("status", "approved")),
-                fields=("entity_id", "deliver_unit", "opportunity_access", "completed_work"),
-                name="unique_completed_work_deliver_unit_access",
-            ),
         ),
     ]

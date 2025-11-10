@@ -19,6 +19,12 @@ class FormReceiver(APIView):
     authentication_classes = [OAuth2Authentication]
     permission_classes = [TokenHasReadWriteScope]
 
+    def get(self, request):
+        """
+        Simple GET endpoint to test connectivity and OAuth authentication.
+        """
+        return Response({"detail": "Connection successful"}, status=status.HTTP_200_OK)
+
     def post(self, request):
         serializer = XFormSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -40,6 +46,6 @@ class FormReceiver(APIView):
             else:
                 raise
         except OpportunityAccess.DoesNotExist:
-            logger.info("User does not have access to this opportunity: {xform.username}.")
+            logger.info(f"User does not have access to this opportunity: {xform.metadata.username}.")
             return Response(status=status.HTTP_403_FORBIDDEN, data="User does not have access to the opportunity.")
         return Response(status=status.HTTP_200_OK)

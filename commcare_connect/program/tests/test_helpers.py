@@ -121,7 +121,6 @@ class TestGetAnnotatedManagedOpportunity(BaseManagedOpportunityTest):
         opps = get_annotated_managed_opportunity(self.program)
         assert len(opps) == 1
         annotated_opp = opps[0]
-        print(scenario, annotated_opp.average_time_to_convert, expected_avg_time_to_convert)
         assert annotated_opp.workers_invited == expected_invited
         assert annotated_opp.workers_passing_assessment == expected_passing
         assert annotated_opp.workers_starting_delivery == expected_delivery

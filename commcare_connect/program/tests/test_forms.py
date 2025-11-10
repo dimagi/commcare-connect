@@ -128,7 +128,6 @@ class TestManagedOpportunityInitForm:
 
     def test_form_validation_valid_data(self):
         form = ManagedOpportunityInitForm(data=self.form_data, program=self.program, org_slug=self.organization.slug)
-        print(form.errors)
         assert form.is_valid()
 
     def test_form_validation_invalid_data(self):
@@ -160,6 +159,7 @@ class TestManagedOpportunityInitForm:
         assert managed_opportunity.currency == self.program.currency
         assert managed_opportunity.program == self.program
         assert managed_opportunity.created_by == self.user.email
+        assert managed_opportunity.delivery_type == self.program.delivery_type
 
 
 @pytest.mark.django_db

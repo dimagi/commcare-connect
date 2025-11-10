@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models import F, Window
+from django.db.models.functions import Rank
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
 from tablib import Dataset
@@ -68,6 +70,8 @@ class InvalidValueError(RowDataError):
 class VisitImportStatus:
     seen_visits: set[str]
     missing_visits: set[str]
+    approved_count: int = 0
+    rejected_count: int = 0
 
     def __len__(self):
         return len(self.seen_visits)
@@ -157,11 +161,31 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
     missing_visits = set()
     seen_visits = set()
     user_ids = set()
+    visit_qs = UserVisit.objects.filter(opportunity=opportunity).annotate(
+        rank=Window(
+            expression=Rank(),
+            order_by=F("visit_date").desc(),
+            partition_by=[
+                F("entity_id"),
+                F("opportunity_access_id"),
+                F("deliver_unit_id"),
+                F("completed_work_id"),
+            ],
+        )
+    )
+
+    approved_count = 0
+    rejected_count = 0
     with transaction.atomic():
         missing_justifications = []
         for visit_batch in batched(visit_ids, 100):
-            to_update = []
-            visits = UserVisit.objects.filter(xform_id__in=visit_batch, opportunity=opportunity)
+            to_bulk_update = []
+            # NOTE: These UserVisits are duplicates and saving them with
+            # bulk_update will trigger the UniqueConstraint. UserVisit save
+            # method has mitigation for this error and will assign conflicting
+            # UserVisits to new CompletedWorks.
+            to_update_with_save = []
+            visits = visit_qs.filter(xform_id__in=visit_batch)
             for visit in visits:
                 seen_visits.add(visit.xform_id)
                 visit_data = data_by_visit_id[visit.xform_id]
@@ -174,27 +198,35 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
                         if visit.flagged and not justification:
                             missing_justifications.append(visit.xform_id)
                             continue
+                        approved_count += 1
                     changed = True
                 if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
                     visit.reason = reason
                     changed = True
+                    rejected_count += 1
                 if justification and justification != visit.justification:
                     visit.justification = justification
                     changed = True
 
                 if changed:
-                    to_update.append(visit)
+                    if visit.rank == 1:
+                        to_bulk_update.append(visit)
+                    else:
+                        to_update_with_save.append(visit)
                 user_ids.add(visit.user_id)
 
             if missing_justifications:
                 raise ImportException(get_missing_justification_message(missing_justifications))
 
             UserVisit.objects.bulk_update(
-                to_update, fields=["status", "reason", "review_created_on", "justification", "status_modified_date"]
+                to_bulk_update,
+                fields=["status", "reason", "review_created_on", "justification", "status_modified_date"],
             )
+            for user_visit in to_update_with_save:
+                user_visit.save()
             missing_visits |= set(visit_batch) - seen_visits
     bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
-    return VisitImportStatus(seen_visits, missing_visits)
+    return VisitImportStatus(seen_visits, missing_visits, approved_count, rejected_count)
 
 
 def get_missing_justification_message(visits_ids):

@@ -3,8 +3,11 @@ from unittest import mock
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from django.http import HttpResponse
+from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
 from django.utils.timezone import now
+from django.views import View
 
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
@@ -19,9 +22,13 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.reports import urls as reports_urls
+from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.views import _results_to_geojson
+from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.datetime import get_month_series
+from commcare_connect.utils.tests import check_basic_permissions
 
 
 def get_month_range_start_end(months=1):
@@ -84,7 +91,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
     fetch_user_counts.clear()
     httpx_mock.add_response(
         method="GET",
-        json=connectid_user_counts,
+        json={"total_users": connectid_user_counts, "non_invited_users": connectid_user_counts},
     )
     data = get_table_data_for_year_month(from_date=from_date, to_date=to_date)
 
@@ -95,6 +102,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
         total_connectid_user_count += connectid_user_counts.get(row["month_group"].strftime("%Y-%m"))
         assert row["connectid_users"] == total_connectid_user_count
         assert row["total_eligible_users"] == 10
+        assert row["non_preregistered_users"] == total_connectid_user_count
         assert row["users"] == 10
         assert row["services"] == 10
         assert row["avg_time_to_payment"] == 50
@@ -214,6 +222,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
             or row["month_group"].year != now.year
             or row["delivery_type_name"] == "All"
         ):
+            assert row["total_eligible_users"] == 10
             continue
         assert row["delivery_type_name"] in delivery_type_slugs
         assert row["users"] == 5
@@ -225,6 +234,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
         assert row["nm_amount_earned"] == 1500
         assert row["nm_amount_paid"] == 500
         assert row["avg_top_paid_flws"] == 400
+        assert row["total_eligible_users"] == 5
 
 
 @pytest.mark.django_db
@@ -338,3 +348,36 @@ def test_results_to_geojson():
 
     # Check that the other cases are not included
     assert all(f["properties"]["other_field"] not in ["value3", "value4", "value5"] for f in geojson["features"])
+
+
+class TestKPIReportPermission:
+    @pytest.fixture(autouse=True)
+    def setup(self, db):
+        clear_url_caches()
+
+        # Dummy function-based view
+        @kpi_report_access_required
+        def dummy_view(request):
+            return HttpResponse("OK")
+
+        # Dummy class-based view
+        class DummyKPIReportView(KPIReportMixin, View):
+            def get(self, request, *args, **kwargs):
+                return HttpResponse("OK")
+
+        # Add dummy views to URLs
+        reports_urls.urlpatterns.extend(
+            [
+                path("dummy_fbv/", dummy_view, name="dummy_fbv"),
+                path("dummy_cbv/", DummyKPIReportView.as_view(), name="dummy_cbv"),
+            ]
+        )
+
+    @pytest.mark.parametrize("url_name", ["dummy_fbv", "dummy_cbv"])
+    def test_permissions(self, url_name):
+        url = reverse(f"reports:{url_name}")
+        check_basic_permissions(
+            UserFactory(),
+            url,
+            "kpi_report_access",
+        )

@@ -1,6 +1,6 @@
 import csv
 
-from django.db.models import F, Q
+from django.db.models import Count, F, Q
 from django.http import JsonResponse, StreamingHttpResponse
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
@@ -106,7 +106,9 @@ class ProgramOpportunityOrganizationDataView(BaseDataExportView):
     )
     def get(self, request):
         organizations = Organization.objects.filter(memberships__user=request.user)
-        opportunities = Opportunity.objects.filter(organization__in=organizations)
+        opportunities = Opportunity.objects.filter(organization__in=organizations).annotate(
+            visit_count=Count("uservisit", distinct=True)
+        )
         programs = Program.objects.filter(organization__in=organizations)
 
         org_data = OrganizationDataExportSerializer(organizations, many=True).data
