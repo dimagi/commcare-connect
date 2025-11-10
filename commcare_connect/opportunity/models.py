@@ -704,7 +704,6 @@ class UserVisit(XFormBaseModel):
                 )
                 .annotate(rank=Window(Rank(), order_by="date_created"))
                 .filter(rank=rank)
-                .order_by("rank")
                 .last()
             )
             if completed_work is None:
