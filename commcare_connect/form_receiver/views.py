@@ -40,6 +40,6 @@ class FormReceiver(APIView):
             else:
                 raise
         except OpportunityAccess.DoesNotExist:
-            logger.info("User does not have access to this opportunity: {xform.username}.")
+            logger.info(f"User does not have access to this opportunity: {xform.username}.")
             return Response(status=status.HTTP_403_FORBIDDEN, data="User does not have access to the opportunity.")
         return Response(status=status.HTTP_200_OK)
