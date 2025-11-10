@@ -76,7 +76,7 @@ def filter_users(country_code: str, credential: list[str]):
 
 @quickcache(vary_on=[], timeout=60 * 60)
 def fetch_user_counts() -> dict[str, int]:
-    response = _make_request(GET, "/users/fetch_user_counts")
+    response = _make_request(GET, "/users/fetch_user_counts", timeout=30)
     data = response.json()
     return data
 

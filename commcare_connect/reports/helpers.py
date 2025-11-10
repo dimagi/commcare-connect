@@ -34,22 +34,29 @@ def _get_cumulative_count(count_data: dict[str, int]):
 
 
 def get_connectid_user_counts_cumulative():
-    connectid_user_count = fetch_user_counts()
-    return _get_cumulative_count(connectid_user_count)
+    user_counts = fetch_user_counts()
+    total_user_counts = user_counts.get("total_users", {})
+    non_invited_user_counts = user_counts.get("non_invited_users", {})
+    return _get_cumulative_count(total_user_counts), _get_cumulative_count(non_invited_user_counts)
 
 
-def get_eligible_user_counts_cumulative():
+def get_eligible_user_counts_cumulative(delivery_type=None):
+    qs = CompletedWork.objects.filter(
+        status=CompletedWorkStatus.approved,
+        saved_approved_count__gt=0,
+        opportunity_access__opportunity__is_test=False,
+    )
+
+    if delivery_type:
+        qs = qs.filter(opportunity_access__opportunity__delivery_type__slug=delivery_type)
+
     visit_data = (
-        CompletedWork.objects.filter(
-            status=CompletedWorkStatus.approved,
-            saved_approved_count__gt=0,
-            opportunity_access__opportunity__is_test=False,
-        )
-        .annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
+        qs.annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
         .values("month_group")
         .annotate(users=ArrayAgg("opportunity_access__user_id", distinct=True))
         .order_by("month_group")
     )
+
     seen_users = set()
     visit_data_dict = {}
     for item in visit_data:
@@ -213,14 +220,16 @@ def get_table_data_for_year_month(
             }
         )
 
-    connectid_user_count = get_connectid_user_counts_cumulative()
-    total_eligible_user_counts = get_eligible_user_counts_cumulative()
+    connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
+    total_eligible_user_counts = get_eligible_user_counts_cumulative(delivery_type)
+
     for group_key in visit_data_dict.keys():
         month_group = group_key[0]
         visit_data_dict[group_key].update(
             {
                 "connectid_users": connectid_user_count.get(month_group, 0),
                 "total_eligible_users": total_eligible_user_counts.get(month_group, 0),
+                "non_preregistered_users": non_invited_user_counts.get(month_group, 0),
             }
         )
     return list(visit_data_dict.values())

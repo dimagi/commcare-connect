@@ -70,6 +70,8 @@ class InvalidValueError(RowDataError):
 class VisitImportStatus:
     seen_visits: set[str]
     missing_visits: set[str]
+    approved_count: int = 0
+    rejected_count: int = 0
 
     def __len__(self):
         return len(self.seen_visits)
@@ -159,7 +161,6 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
     missing_visits = set()
     seen_visits = set()
     user_ids = set()
-
     visit_qs = UserVisit.objects.filter(opportunity=opportunity).annotate(
         rank=Window(
             expression=Rank(),
@@ -173,6 +174,8 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
         )
     )
 
+    approved_count = 0
+    rejected_count = 0
     with transaction.atomic():
         missing_justifications = []
         for visit_batch in batched(visit_ids, 100):
@@ -195,10 +198,12 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
                         if visit.flagged and not justification:
                             missing_justifications.append(visit.xform_id)
                             continue
+                        approved_count += 1
                     changed = True
                 if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
                     visit.reason = reason
                     changed = True
+                    rejected_count += 1
                 if justification and justification != visit.justification:
                     visit.justification = justification
                     changed = True
@@ -221,7 +226,7 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
                 user_visit.save()
             missing_visits |= set(visit_batch) - seen_visits
     bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
-    return VisitImportStatus(seen_visits, missing_visits)
+    return VisitImportStatus(seen_visits, missing_visits, approved_count, rejected_count)
 
 
 def get_missing_justification_message(visits_ids):

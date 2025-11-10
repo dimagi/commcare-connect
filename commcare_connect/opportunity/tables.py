@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
-from django_tables2 import columns, utils
+from django_tables2 import columns
 
 from commcare_connect.opportunity.models import (
     CatchmentArea,
@@ -244,16 +244,11 @@ class CompletedWorkTable(tables.Table):
 
 class SuspendedUsersTable(tables.Table):
     display_name = columns.Column("Name of the User")
-    revoke_suspension = columns.LinkColumn(
-        "opportunity:revoke_user_suspension",
-        verbose_name="",
-        text="Revoke",
-        args=[utils.A("opportunity__organization__slug"), utils.A("opportunity__id"), utils.A("pk")],
-    )
+    revoke_suspension = columns.TemplateColumn("Revoke")
 
     class Meta:
         model = OpportunityAccess
-        fields = ("display_name", "suspension_date", "suspension_reason")
+        fields = ("display_name", "suspension_date", "suspension_reason", "revoke_suspension")
         orderable = False
         empty_text = "No suspended users."
 
@@ -268,7 +263,11 @@ class SuspendedUsersTable(tables.Table):
         page_url = reverse(
             "opportunity:suspended_users_list", args=(record.opportunity.organization.slug, record.opportunity_id)
         )
-        return format_html('<a class="btn btn-success" href="{}?next={}">Revoke</a>', revoke_url, page_url)
+        return render_to_string(
+            "opportunity/partials/revoke_suspension.html",
+            {"revoke_url": revoke_url, "page_url": page_url},
+            request=self.context.request,
+        )
 
 
 class CatchmentAreaTable(tables.Table):

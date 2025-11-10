@@ -6,8 +6,6 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Layout, Row
 from django import forms
 from django.conf import settings
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Count, Sum
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
@@ -16,8 +14,7 @@ from django.urls import reverse
 from django.utils.functional import cached_property
 from django.views.decorators.http import require_GET
 from django_filters.views import FilterView
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -29,6 +26,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
+from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.queries import get_visit_map_queryset
 
@@ -108,8 +106,8 @@ class DashboardFilters(django_filters.FilterSet):
         fields = ["program", "organization", "from_date", "to_date"]
 
 
-@login_required
-@user_passes_test(lambda u: u.is_superuser)
+@require_GET
+@kpi_report_access_required
 def program_dashboard_report(request):
     filterset = DashboardFilters(request.GET)
     return render(
@@ -122,8 +120,7 @@ def program_dashboard_report(request):
     )
 
 
-@login_required
-@user_passes_test(lambda user: user.is_superuser)
+@kpi_report_access_required
 @require_GET
 def visit_map_data(request):
     filterset = DashboardFilters(request.GET)
@@ -178,11 +175,6 @@ def _results_to_geojson(results):
             geojson["features"].append(feature)
 
     return geojson
-
-
-class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        return self.request.user.is_superuser
 
 
 class DeliveryReportFilters(django_filters.FilterSet):
@@ -271,7 +263,7 @@ class NonModelFilterView(FilterView):
         return self.render_to_response(context)
 
 
-class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, NonModelFilterView):
+class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelFilterView):
     table_class = AdminReportTable
     filterset_class = DeliveryReportFilters
 
@@ -298,8 +290,7 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
-@user_passes_test(lambda u: u.is_superuser)
+@kpi_report_access_required
 def dashboard_stats_api(request):
     filterset = DashboardFilters(request.GET)
 
@@ -372,8 +363,8 @@ def dashboard_stats_api(request):
     )
 
 
-@login_required
-@user_passes_test(lambda u: u.is_superuser)
+@require_GET
+@kpi_report_access_required
 def dashboard_charts_api(request):
     filterset = DashboardFilters(request.GET)
     queryset = UserVisit.objects.filter(opportunity__is_test=False)

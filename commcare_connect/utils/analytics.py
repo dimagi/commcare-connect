@@ -12,9 +12,43 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class GATrackingInfo:
+    client_id: str
+    session_id: str
+    is_dimagi: bool = False
+
+    def dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, tracking_info_dict: dict):
+        client_id = tracking_info_dict.get("client_id")
+        session_id = tracking_info_dict.get("session_id")
+        is_dimagi = tracking_info_dict.get("is_dimagi")
+        return cls(client_id, session_id, is_dimagi)
+
+    @classmethod
+    def from_request(cls, request):
+        client_id = _get_ga_client_id(request)
+        session_id = _get_ga_session_id(request)
+        is_dimagi = _is_dimagi_user(request)
+        return cls(client_id, session_id, is_dimagi)
+
+
+@dataclass
 class Event:
     name: str
     params: dict[str, Any]
+
+    def add_tracking_info(self, tracking_info: GATrackingInfo):
+        self.params.update(
+            {
+                "session_id": tracking_info.session_id,
+                "isDimagi": tracking_info.is_dimagi,
+                # This is needed for tracking to work properly.
+                "engagement_time_msec": 100,
+            }
+        )
 
 
 def send_event_to_ga(request, event: Event):
@@ -30,19 +64,10 @@ def send_bulk_events_to_ga(request, events: list[Event]):
         logger.info("Please specify GA_API_SECRET environment variable.")
         return
 
-    client_id = _get_ga_client_id(request)
-    session_id = _get_ga_session_id(request)
-    is_dimagi = request.user.email.endswith("@dimagi.com")
+    tracking_info = GATrackingInfo.from_request(request)
     for event in events:
-        event.params.update(
-            {
-                "session_id": session_id,
-                "isDimagi": is_dimagi,
-                # This is needed for tracking to work properly.
-                "engagement_time_msec": 100,
-            }
-        )
-    send_event_task.delay(client_id, _serialize_events(events))
+        event.add_tracking_info(tracking_info)
+    send_event_task.delay(tracking_info.client_id, _serialize_events(events))
 
 
 @celery_app.task()
@@ -54,7 +79,6 @@ def send_event_task(client_id: str, events: list[Event]):
     url = f"{base_url}?{urlencode(params)}"
     response = httpx.post(url, json={"client_id": client_id, "events": events})
     response.raise_for_status()
-    return response
 
 
 def _serialize_events(events: list[Event]):
@@ -62,6 +86,8 @@ def _serialize_events(events: list[Event]):
 
 
 def _get_ga_client_id(request):
+    if not settings.GA_MEASUREMENT_ID or len(settings.GA_MEASUREMENT_ID) < 3:
+        return None
     measurement_id = settings.GA_MEASUREMENT_ID[2:]
     client_id = request.COOKIES.get(f"_ga_{measurement_id}")
     return client_id
@@ -70,5 +96,11 @@ def _get_ga_client_id(request):
 def _get_ga_session_id(request):
     session_id_cookie = request.COOKIES.get("_ga")
     if session_id_cookie:
-        return session_id_cookie.split(".")[2]
-    return
+        parts = session_id_cookie.split(".")
+        if len(parts) == 4:
+            return parts[2]
+    return None
+
+
+def _is_dimagi_user(request):
+    return getattr(request.user, "email", "").endswith("@dimagi.com")

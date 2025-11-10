@@ -47,6 +47,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.users.models import User
+from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
 from commcare_connect.utils.datetime import is_date_before
 from commcare_connect.utils.sms import send_sms
@@ -125,15 +126,15 @@ def invite_user(user_id, opportunity_access_id):
     )
     message = Message(
         usernames=[user.username],
-        title=gettext(
-            f"You have been invited to a CommCare Connect opportunity - {opportunity_access.opportunity.name}"
-        ),
-        body=gettext(
-            f"You have been invited to a new job in Commcare Connect - {opportunity_access.opportunity.name}"
-        ),
         data={
             "action": "ccc_opportunity_summary_page",
             "opportunity_id": str(opportunity_access.opportunity.id),
+            "title": gettext(
+                f"You have been invited to a CommCare Connect opportunity - {opportunity_access.opportunity.name}"
+            ),
+            "body": gettext(
+                f"You have been invited to a new job in Commcare Connect - {opportunity_access.opportunity.name}"
+            ),
         },
     )
     send_message(message)
@@ -230,14 +231,14 @@ def _get_learn_message(access: OpportunityAccess):
     if last_user_learn_module and is_date_before(last_user_learn_module.date, days=3):
         return Message(
             usernames=[access.user.username],
-            title=gettext(f"Resume your learning journey for {access.opportunity.name}"),
-            body=gettext(
-                f"You have not completed your learning for {access.opportunity.name}."
-                "Please complete the learning modules to start delivering visits."
-            ),
             data={
                 "action": "ccc_learn_progress",
                 "opportunity_id": str(access.opportunity.id),
+                "title": gettext(f"Resume your learning journey for {access.opportunity.name}"),
+                "body": gettext(
+                    f"You have not completed your learning for {access.opportunity.name}. "
+                    "Please complete the learning modules to start delivering visits."
+                ),
             },
         )
 
@@ -251,14 +252,14 @@ def _check_deliver_inactive(access: OpportunityAccess):
 def _get_deliver_message(access: OpportunityAccess):
     return Message(
         usernames=[access.user.username],
-        title=gettext(f"Resume your job for {access.opportunity.name}"),
-        body=gettext(
-            f"You have not completed your delivery visits for {access.opportunity.name}."
-            "To maximise your payout complete all the required service delivery."
-        ),
         data={
             "action": "ccc_delivery_progress",
             "opportunity_id": str(access.opportunity.id),
+            "title": gettext(f"Resume your job for {access.opportunity.name}"),
+            "body": gettext(
+                f"You have not completed your delivery visits for {access.opportunity.name}. "
+                "To maximise your payout complete all the required service delivery."
+            ),
         },
     )
 
@@ -271,14 +272,14 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
         messages.append(
             Message(
                 usernames=[payment.opportunity_access.user.username],
-                title=gettext("Payment received"),
-                body=gettext(
-                    "You have received a payment of"
-                    f"{opportunity.currency} {payment.amount} for {opportunity.name}.",
-                ),
                 data={
                     "action": "ccc_payment",
                     "opportunity_id": str(opportunity.id),
+                    "title": gettext("Payment received"),
+                    "body": gettext(
+                        "You have received a payment of "
+                        f"{opportunity.currency} {payment.amount} for {opportunity.name}.",
+                    ),
                     "payment_id": str(payment.id),
                 },
             )
@@ -289,7 +290,8 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
 @celery_app.task()
 def send_push_notification_task(user_ids: list[int], title: str, body: str):
     usernames = list(User.objects.filter(id__in=user_ids).values_list("username", flat=True))
-    message = Message(usernames, title=title, body=body)
+    data = {"title": title, "body": body}
+    message = Message(usernames, data=data)
     send_message(message)
 
 
@@ -377,7 +379,9 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
 
 
 @celery_app.task(bind=True)
-def bulk_update_visit_status_task(self, opportunity_id: int, file_path: str, file_format: str):
+def bulk_update_visit_status_task(
+    self, opportunity_id: int, file_path: str, file_format: str, tracking_info: dict = None
+):
     from commcare_connect.opportunity.visit_import import (
         ImportException,
         bulk_update_visit_status,
@@ -395,6 +399,16 @@ def bulk_update_visit_status_task(self, opportunity_id: int, file_path: str, fil
         messages = [f"Visit status updated successfully for {len(status)} visits."]
         if status.missing_visits:
             messages.append(status.get_missing_message())
+
+        if tracking_info:
+            tracking_info = GATrackingInfo.from_dict(tracking_info)
+            events = [
+                Event("visit_import_approved", {"updated": status.approved_count, "total": len(status.seen_visits)}),
+                Event("visit_import_rejected", {"updated": status.rejected_count, "total": len(status.seen_visits)}),
+            ]
+            for event in events:
+                event.add_tracking_info(tracking_info)
+            send_event_task.delay(tracking_info.client_id, _serialize_events(events))
     except ImportException as e:
         messages = [f"Visit status import failed: {e}"] + getattr(e, "invalid_rows", [])
 
