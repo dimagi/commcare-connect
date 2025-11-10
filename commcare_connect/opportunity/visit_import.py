@@ -159,6 +159,20 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
     missing_visits = set()
     seen_visits = set()
     user_ids = set()
+
+    visit_qs = UserVisit.objects.filter(opportunity=opportunity).annotate(
+        rank=Window(
+            expression=Rank(),
+            order_by=F("visit_date").desc(),
+            partition_by=[
+                F("entity_id"),
+                F("opportunity_access_id"),
+                F("deliver_unit_id"),
+                F("completed_work_id"),
+            ],
+        )
+    )
+
     with transaction.atomic():
         missing_justifications = []
         for visit_batch in batched(visit_ids, 100):
@@ -168,18 +182,7 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
             # method has mitigation for this error and will assign conflicting
             # UserVisits to new CompletedWorks.
             to_update_with_save = []
-            visits = UserVisit.objects.filter(xform_id__in=visit_batch, opportunity=opportunity).annotate(
-                rank=Window(
-                    expression=Rank(),
-                    order_by=F("visit_date").desc(),
-                    partition_by=[
-                        F("entity_id"),
-                        F("opportunity_access_id"),
-                        F("deliver_unit_id"),
-                        F("completed_work_id"),
-                    ],
-                )
-            )
+            visits = visit_qs.filter(xform_id__in=visit_batch)
             for visit in visits:
                 seen_visits.add(visit.xform_id)
                 visit_data = data_by_visit_id[visit.xform_id]

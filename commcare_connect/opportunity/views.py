@@ -852,8 +852,7 @@ def approve_visits(request, org_slug, opp_id):
     # UserVisits to new CompletedWorks.
     to_update_with_save = []
     visits = (
-        UserVisit.objects.filter(id__in=visit_ids, opportunity_id=opp_id)
-        .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
+        UserVisit.objects.filter(opportunity_id=opp_id)
         .annotate(
             rank=Window(
                 expression=Rank(),
@@ -866,6 +865,8 @@ def approve_visits(request, org_slug, opp_id):
                 ],
             )
         )
+        .filter(id__in=visit_ids)
+        .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
         .prefetch_related("opportunity")
         .only("status", "review_status", "flagged", "justification", "review_created_on")
     )
