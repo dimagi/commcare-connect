@@ -134,25 +134,46 @@ def test_add_budget_existing_users_for_managed_opportunity(
     indirect=True,
 )
 @pytest.mark.django_db
-def test_approve_visit(
+def test_approve_visits(
     client: Client,
     organization,
     opportunity,
 ):
     justification = "Justification test."
-    access = OpportunityAccessFactory(opportunity=opportunity)
-    visit = UserVisitFactory.create(
-        opportunity=opportunity, opportunity_access=access, flagged=True, status=VisitValidationStatus.pending
-    )
+
+    num_users = 3
+    visits = []
+    for _ in range(num_users):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        v = UserVisitFactory.create(
+            opportunity=opportunity,
+            opportunity_access=access,
+            flagged=True,
+            status=VisitValidationStatus.pending,
+        )
+        visits.append(v)
+
     user = MembershipFactory.create(organization=opportunity.organization).user
     approve_url = reverse("opportunity:approve_visits", args=(opportunity.organization.slug, opportunity.id))
     client.force_login(user)
-    response = client.post(approve_url, {"justification": justification, "visit_ids[]": [visit.id]}, follow=True)
-    visit.refresh_from_db()
-    assert visit.status == VisitValidationStatus.approved
-    if opportunity.managed:
-        assert justification == visit.justification
+
+    response = client.post(
+        approve_url,
+        {
+            "justification": justification,
+            "visit_ids[]": [v.id for v in visits],
+        },
+        follow=True,
+    )
+
     assert response.status_code == HTTPStatus.OK
+
+    # Refresh and validate all visits
+    for v in visits:
+        v.refresh_from_db()
+        assert v.status == VisitValidationStatus.approved
+        if opportunity.managed:
+            assert v.justification == justification
 
 
 @pytest.mark.django_db

@@ -152,7 +152,7 @@ from commcare_connect.utils.analytics import Event, GATrackingInfo, send_event_t
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
-from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
+from commcare_connect.utils.tables import PAGE_SIZE_OPTIONS, get_duration_min, get_validated_page_size
 
 
 def get_opportunity_or_404(pk, org_slug):
@@ -898,9 +898,9 @@ def approve_visits(request, org_slug, opp_id):
         .only("status", "review_status", "flagged", "justification", "review_created_on")
     )
 
-    if len({visit.user_id for visit in visits}) > 1:
+    if len(visits) > max(PAGE_SIZE_OPTIONS):
         return HttpResponseBadRequest(
-            "All visits must belong to the same user.",
+            "Maximum 100 visits allowed for bulk approval",
             headers={"HX-Trigger": "form_error"},
         )
 
@@ -931,10 +931,10 @@ def approve_visits(request, org_slug, opp_id):
         to_bulk_update, ["status", "review_created_on", "review_status", "justification"]
     )
     approved_count += len(to_update_with_save)
-    send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
-
     if visits:
-        update_payment_accrued(opportunity=visits[0].opportunity, users=[visits[0].user], incremental=True)
+        user_ids = visits.values_list("user_id", flat=True).distinct()
+        update_payment_accrued(opportunity=visits[0].opportunity, users=user_ids, incremental=True)
+    send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 
 
@@ -945,14 +945,19 @@ def reject_visits(request, org_slug=None, opp_id=None):
     visit_ids = request.POST.getlist("visit_ids[]")
     reason = request.POST.get("reason", "").strip()
 
-    updated_count = (
-        UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
-        .exclude(status=VisitValidationStatus.rejected)
-        .update(status=VisitValidationStatus.rejected, reason=reason)
+    visits = UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
+    if len(visits) > max(PAGE_SIZE_OPTIONS):
+        return HttpResponseBadRequest(
+            "Maximum 100 visits allowed for bulk rejection",
+            headers={"HX-Trigger": "form_error"},
+        )
+
+    updated_count = visits.exclude(status=VisitValidationStatus.rejected).update(
+        status=VisitValidationStatus.rejected, reason=reason
     )
-    if visit_ids:
-        visit = UserVisit.objects.get(id=visit_ids[0])
-        update_payment_accrued(opportunity=request.opportunity, users=[visit.user])
+    if visits.exists():
+        user_ids = visits.values_list("user_id", flat=True).distinct()
+        update_payment_accrued(opportunity=request.opportunity, users=user_ids)
 
     send_event_to_ga(request, Event("bulk_reject_confirm", {"updated": updated_count, "total": len(visit_ids)}))
 

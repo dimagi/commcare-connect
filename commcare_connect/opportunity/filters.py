@@ -3,6 +3,7 @@ from crispy_forms.helper import FormHelper
 from django import forms
 
 from commcare_connect.opportunity.models import (
+    DeliverUnitFlagRules,
     OpportunityAccess,
     OpportunityVerificationFlags,
     UserVisit,
@@ -227,4 +228,10 @@ class UserVisitFilterSet(django_filters.FilterSet):
         if verification_flags.form_submission_start or verification_flags.form_submission_end:
             enabled_flags.append(Flags.FORM_SUBMISSION_PERIOD.value)
 
-        return [(flag, FlagLabels.get_label(flag)) for flag in enabled_flags]
+        deliver_unit_flag_rules = DeliverUnitFlagRules.objects.filter(opportunity=opportunity).all()
+        for rule in deliver_unit_flag_rules:
+            if rule.duration > 0:
+                enabled_flags.append(Flags.DURATION.value)
+            if rule.check_attachments:
+                enabled_flags.append(Flags.ATTACHMENT_MISSING.value)
+        return [(flag, FlagLabels.get_label(flag)) for flag in set(enabled_flags)]
