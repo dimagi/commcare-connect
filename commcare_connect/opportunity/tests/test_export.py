@@ -11,7 +11,6 @@ from commcare_connect.opportunity.export import (
     export_user_status_table,
     export_user_visit_review_data,
 )
-from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import Opportunity, UserInviteStatus, UserVisit, VisitReviewStatus
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
@@ -55,7 +54,7 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
         ]
     )
     exporter = UserVisitExporter(opportunity, True)
-    dataset = exporter.get_dataset(DateRanges.LAST_30_DAYS, [])
+    dataset = exporter.get_dataset(date1, date2, [])
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
 
@@ -97,7 +96,7 @@ def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
         ]
     )
     exporter = UserVisitExporter(opportunity, False)
-    dataset = exporter.get_dataset(DateRanges.LAST_30_DAYS, [])
+    dataset = exporter.get_dataset(date1, date2, [])
     username = mobile_user_with_connect_link.username
     name = mobile_user_with_connect_link.name
     assert dataset.export("csv") == (
@@ -303,17 +302,18 @@ def test_export_catchment_area_table_data(opportunity: Opportunity):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("date_range", "expected_count", "review_status"),
+    ("from_date", "to_date", "expected_count", "review_status"),
     [
-        (DateRanges.LAST_7_DAYS, 20, [VisitReviewStatus.pending.value]),
+        (now() - timedelta(days=10), now(), 20, [VisitReviewStatus.pending.value]),
         (
-            DateRanges.ALL,
-            40,
+            now() - timedelta(days=3),
+            now(),
+            20,
             [VisitReviewStatus.pending.value, VisitReviewStatus.disagree.value, VisitReviewStatus.agree.value],
         ),
     ],
 )
-def test_export_user_visit_review_data(organization, date_range, expected_count, review_status):
+def test_export_user_visit_review_data(organization, from_date, to_date, expected_count, review_status):
     required_headers = [
         "Status",
         "Justification",
@@ -325,16 +325,16 @@ def test_export_user_visit_review_data(organization, date_range, expected_count,
     opp = ManagedOpportunityFactory(organization=organization)
     now_time = now()
     UserVisitFactory.create_batch(
-        20, opportunity=opp, review_created_on=now_time - timedelta(days=3), status=VisitReviewStatus.pending
+        20, opportunity=opp, review_created_on=now_time - timedelta(days=3), review_status=VisitReviewStatus.pending
     )
     UserVisitFactory.create_batch(
-        5, opportunity=opp, review_created_on=now_time - timedelta(days=10), status=VisitReviewStatus.agree
+        5, opportunity=opp, review_created_on=now_time - timedelta(days=10), review_status=VisitReviewStatus.agree
     )
     UserVisitFactory.create_batch(
-        15, opportunity=opp, review_created_on=now_time - timedelta(days=15), status=VisitReviewStatus.disagree
+        15, opportunity=opp, review_created_on=now_time - timedelta(days=15), review_status=VisitReviewStatus.disagree
     )
 
-    dataset = export_user_visit_review_data(opp, date_range, review_status)
+    dataset = export_user_visit_review_data(opp, from_date, to_date, review_status)
 
     assert isinstance(dataset, Dataset)
     assert len(dataset.dict) == expected_count
