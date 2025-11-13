@@ -109,7 +109,7 @@ class TestUninvoicedVisitItems:
             assert item["amount_per_unit"] == expected_payment_unit.amount
             assert item["total_amount_local"] == total_local_amount
             assert item["exchange_rate"] == expected_exchange_rate
-            assert item["total_amount_usd"] == total_local_amount / expected_exchange_rate
+            assert item["total_amount_usd"] == round(total_local_amount / expected_exchange_rate, 2)
 
     @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
     def test_different_pu_items_across_multiple_months(self, mock_get_exchange_rate):
@@ -193,7 +193,7 @@ class TestUninvoicedVisitItems:
             assert item["amount_per_unit"] == expected_payment_unit.amount
             assert item["total_amount_local"] == total_local_amount
             assert item["exchange_rate"] == expected_exchange_rate
-            assert item["total_amount_usd"] == total_local_amount / expected_exchange_rate
+            assert item["total_amount_usd"] == round(total_local_amount / expected_exchange_rate, 2)
 
     def _create_completed_work(self, opp_access, date_created, payment_unit, n=1):
         for _ in range(n):

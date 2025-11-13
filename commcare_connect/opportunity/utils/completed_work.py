@@ -316,7 +316,7 @@ def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
     for record in monthly_pu_records:
         exchange_rate = get_exchange_rate(opportunity.currency, record["month_created"])
         total_local_amount = record["payment_unit_amount"] * record["record_count"]
-        amount_accrued_usd = total_local_amount / exchange_rate
+        amount_accrued_usd = round(total_local_amount / exchange_rate, 2)
 
         invoice_items.append(
             {
