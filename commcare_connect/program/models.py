@@ -9,7 +9,7 @@ from commcare_connect.utils.db import BaseModel, slugify_uniquely
 class Program(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
-    description = models.CharField()
+    description = models.CharField(max_length=255)
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT)
     budget = models.IntegerField()
     currency = models.CharField(max_length=3)

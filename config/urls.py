@@ -23,10 +23,18 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     # Your stuff: custom urls includes go here
     path("register/organization/", organization_create, name="organization_create"),
+    path("solicitations/", include("commcare_connect.solicitations.urls", namespace="solicitations")),
+    path(
+        "a/<slug:org_slug>/solicitations/",
+        include("commcare_connect.solicitations.urls", namespace="org_solicitations"),
+    ),
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
     path("admin_reports/", include("commcare_connect.reports.urls")),
+    path("tasks/", include("commcare_connect.tasks.urls", namespace="tasks")),
+    path("audit/", include("commcare_connect.audit.urls", namespace="audit")),
+    path("labs/", include("commcare_connect.labs.urls", namespace="labs")),
     path("hq/", include("commcare_connect.commcarehq.urls", namespace="commcarehq")),
     path("export/", include("commcare_connect.data_export.urls", namespace="data_export")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
