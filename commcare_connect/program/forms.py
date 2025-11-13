@@ -2,7 +2,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Button, Column, Field, Layout, Row, Submit
 from django import forms
 
-from commcare_connect.opportunity.forms import OpportunityInitForm
+from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 
@@ -72,14 +72,12 @@ class ProgramForm(forms.ModelForm):
         return super().save(commit=commit)
 
 
-class ManagedOpportunityInitForm(OpportunityInitForm):
-    class Meta(OpportunityInitForm.Meta):
-        model = ManagedOpportunity
+class BaseManagedOpportunityInitForm:
+    managed_opp = True
 
     def __init__(self, *args, **kwargs):
         self.program = kwargs.pop("program")
         super().__init__(*args, **kwargs)
-        self.managed_opp = True
 
         # Managed opportunities should use the currency specified in the program.
         self.fields["currency"].initial = self.program.currency
@@ -96,14 +94,31 @@ class ManagedOpportunityInitForm(OpportunityInitForm):
             widget=forms.Select(attrs={"class": "form-control"}),
             label="Network Manager Organization",
         )
+        self.set_organization_initial()
         opportunity_details_row = self.helper.layout[0]
         organization_field_layout = Column(
             Field("organization"), css_class="col-span-2"  # This makes the field take the full width of the grid row
         )
         opportunity_details_row.fields.insert(1, organization_field_layout)
 
+    def set_organization_initial(self):
+        pass
+
     def save(self, commit=True):
         self.instance.program = self.program
         self.instance.currency = self.program.currency
         self.instance.delivery_type = self.program.delivery_type
         return super().save(commit=commit)
+
+
+class ManagedOpportunityInitForm(BaseManagedOpportunityInitForm, OpportunityInitForm):
+    class Meta(OpportunityInitForm.Meta):
+        model = ManagedOpportunity
+
+
+class ManagedOpportunityInitUpdateForm(BaseManagedOpportunityInitForm, OpportunityInitUpdateForm):
+    class Meta(OpportunityInitUpdateForm.Meta):
+        model = ManagedOpportunity
+
+    def set_organization_initial(self):
+        self.fields["organization"].initial = self.instance.organization
