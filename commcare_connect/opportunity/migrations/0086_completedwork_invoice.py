@@ -6,7 +6,7 @@ import django.db.models.deletion
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0084_paymentinvoice_end_date_paymentinvoice_notes_and_more"),
+        ("opportunity", "0085_paymentinvoice_end_date_paymentinvoice_notes_and_more"),
     ]
 
     operations = [

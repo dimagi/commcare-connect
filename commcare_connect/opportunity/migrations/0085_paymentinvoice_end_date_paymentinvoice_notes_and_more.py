@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0083_credentialconfiguration"),
+        ("opportunity", "0084_create_issue_credentials_periodic_task"),
     ]
 
     operations = [
