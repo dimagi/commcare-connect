@@ -1,0 +1,8 @@
+Hi,
+
+You have been invited to join the Program "{{ application.program.name }}".
+
+Click here ({{ program_url }}) to review and apply for the Program.
+
+Thank you,
+CommCare Connect
