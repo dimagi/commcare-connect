@@ -6,7 +6,7 @@
 {% block top_buttons %}
     {{ block.super }}
     {% if not request.is_opportunity_pm %}
-<div x-data="invoiceModal()"
+    <div x-data="invoiceModal()"
       @keydown.escape.window="closeModal()"
       id="invoiceModal"
     >
@@ -24,12 +24,12 @@
           @click.away="closeModal()"
           x-show="open"
           x-transition
-          class="modal"
+          class="modal !max-w-5xl"
           role="dialog"
           aria-labelledby="invoiceModalLabel">
           <div class="modal-content">
             <div class="flex items-center justify-between p-4 border-b">
-              <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create Invoice" %}</h5>
+              <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create New Invoice" %}</h5>
               <button @click="closeModal()" class="button-icon" aria-label="Close" id="invoiceModalClose">
                 <i class="fa-solid fa-xmark"></i>
               </button>
@@ -40,7 +40,7 @@
               hx-target="#invoiceForm"
               hx-swap="innerHTML"
             >
-              <div class="p-4">
+              <div class="p-4 max-h-[75vh] overflow-y-auto">
                 <div id="invoiceForm">{% crispy form %}</div>
               </div>
 
@@ -57,7 +57,7 @@
                   type="submit"
                   class="button button-md primary-dark"
                 >
-                  {% translate "Save changes" %}
+                  {% translate "Submit" %}
                 </button>
               </div>
             </form>
@@ -73,6 +73,22 @@
     Alpine.data('invoiceModal', () => ({
       open: false,
       currency: false,
+      invoiceType: 'service_delivery',
+      startDate: '{{  form.start_date.value|default:"" }}',
+      endDate: '{{  form.end_date.value|default:"" }}',
+      amount: null,
+      usdAmount: null,
+
+      init() {
+        if (this.serviceDeliverySelected) {
+          this.fetchInvoiceLineItems();
+        }
+      },
+
+      serviceDeliverySelected() {
+        return this.invoiceType === 'service_delivery';
+      },
+
       openModal() {
         this.open = true;
         // Initialize currency after modal opens and form is rendered
@@ -104,6 +120,54 @@
             }
           }
         });
+      },
+
+      resetServiceDeliveryFields() {
+        if (this.serviceDeliverySelected()) {
+          this.endDate = null;
+          this.amount = null;
+          this.usdAmount = null;
+          this.resetLineItemsContainer();
+        }
+      },
+
+      resetLineItemsContainer() {
+        document.getElementById('invoice-line-items-wrapper').innerHTML = `
+          <div class="text-sm text-gray-500">
+            {% translate "Select start and end dates for invoice items." %}
+          </div>
+        `;
+      },
+
+      fetchInvoiceLineItems() {
+        if (!this.startDate || !this.endDate) return;
+
+        document.getElementById('invoice-line-items-wrapper').innerHTML = `
+          <div class="flex items-center justify-center p-4">
+            <i class="fa-solid fa-spinner fa-spin mr-1"></i>
+          </div>
+        `;
+
+        fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.id %}', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            start_date: this.startDate,
+            end_date: this.endDate
+          })
+        })
+          .then(response => response.json())
+          .then(data => {
+            document.getElementById('invoice-line-items-wrapper').innerHTML = data.line_items_table_html;
+            this.amount = data.total_amount;
+            this.usdAmount = data.total_usd_amount;
+          })
+          .catch(error => {
+            console.error('Error fetching invoice items:', error);
+          });
       }
     }));
   });

@@ -1,6 +1,7 @@
 from collections import defaultdict
 
-from django.db.models import Sum
+from django.db.models import Count, F, Sum
+from django.db.models.functions import TruncMonth
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -276,3 +277,62 @@ def update_work_payment_date(access: OpportunityAccess):
 
     if works_to_update:
         CompletedWork.objects.bulk_update(works_to_update, ["payment_date"])
+
+
+def get_uninvoiced_completed_works_qs(opportunity, start_date=None, end_date=None):
+    query = CompletedWork.objects.filter(
+        opportunity_access__opportunity=opportunity,
+        status=CompletedWorkStatus.approved,
+        invoice__isnull=True,
+    )
+
+    if start_date:
+        query = query.filter(date_created__gte=start_date)
+    if end_date:
+        query = query.filter(date_created__lte=end_date)
+
+    return query
+
+
+def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
+    from commcare_connect.opportunity.visit_import import get_exchange_rate
+
+    completed_works_qs = get_uninvoiced_completed_works_qs(opportunity, start_date, end_date)
+
+    monthly_pu_records = (
+        completed_works_qs.annotate(
+            month_created=TruncMonth("date_created"),
+        )
+        .values("payment_unit", "month_created")
+        .annotate(
+            payment_unit_name=F("payment_unit__name"),
+            payment_unit_amount=F("payment_unit__amount"),
+            record_count=Count("id"),
+            currency=F("opportunity_access__opportunity__currency"),
+        )
+    )
+
+    invoice_items = []
+    for record in monthly_pu_records:
+        exchange_rate = get_exchange_rate(opportunity.currency, record["month_created"])
+        total_local_amount = record["payment_unit_amount"] * record["record_count"]
+        amount_accrued_usd = total_local_amount / exchange_rate
+
+        invoice_items.append(
+            {
+                "month": record["month_created"],
+                "payment_unit_name": record["payment_unit_name"],
+                "number_approved": record["record_count"],
+                "amount_per_unit": record["payment_unit_amount"],
+                "total_amount_local": total_local_amount,
+                "exchange_rate": exchange_rate,
+                "total_amount_usd": amount_accrued_usd,
+            }
+        )
+
+    return invoice_items
+
+
+def link_invoice_to_completed_works(invoice, start_date=None, end_date=None):
+    completed_works_qs = get_uninvoiced_completed_works_qs(invoice.opportunity, start_date, end_date)
+    completed_works_qs.update(invoice=invoice)

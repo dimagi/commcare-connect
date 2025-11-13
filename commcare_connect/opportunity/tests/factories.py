@@ -251,3 +251,28 @@ class PaymentInvoiceFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class ExchangeRateFactory(DjangoModelFactory):
+    currency_code = "USD"
+    rate = 1.0
+    rate_date = Faker("date_time", tzinfo=timezone.utc)
+
+    class Meta:
+        model = "opportunity.ExchangeRate"
+
+
+class CredentialConfigurationFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+
+    class Meta:
+        model = "opportunity.CredentialConfiguration"
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity = SubFactory(OpportunityFactory)
+    delivery_type = SubFactory(DeliveryTypeFactory)
+
+    class Meta:
+        model = "users.UserCredential"
