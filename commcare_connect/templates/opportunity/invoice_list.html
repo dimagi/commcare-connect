@@ -29,7 +29,7 @@
           aria-labelledby="invoiceModalLabel">
           <div class="modal-content">
             <div class="flex items-center justify-between p-4 border-b">
-              <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create Invoice" %}</h5>
+              <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create New Invoice" %}</h5>
               <button @click="closeModal()" class="button-icon" aria-label="Close" id="invoiceModalClose">
                 <i class="fa-solid fa-xmark"></i>
               </button>
@@ -40,7 +40,7 @@
               hx-target="#invoiceForm"
               hx-swap="innerHTML"
             >
-              <div class="p-4">
+              <div class="p-4 max-h-[75vh] overflow-y-auto">
                 <div id="invoiceForm">{% crispy form %}</div>
               </div>
 
@@ -57,7 +57,7 @@
                   type="submit"
                   class="button button-md primary-dark"
                 >
-                  {% translate "Save changes" %}
+                  {% translate "Submit" %}
                 </button>
               </div>
             </form>
@@ -73,6 +73,12 @@
     Alpine.data('invoiceModal', () => ({
       open: false,
       currency: false,
+      invoiceType: 'service_delivery',
+
+      serviceDeliverySelected() {
+        return this.invoiceType === 'service_delivery';
+      },
+
       openModal() {
         this.open = true;
         // Initialize currency after modal opens and form is rendered
