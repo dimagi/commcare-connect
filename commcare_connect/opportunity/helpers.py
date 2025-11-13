@@ -469,8 +469,16 @@ class OpportunityData:
         three_days_ago = now() - timedelta(days=3)
 
         pending_approvals_sq = Subquery(
-            UserVisit.objects.filter(opportunity_id=OuterRef("pk"), status="pending")
-            .values("opportunity_id")
+            CompletedWork.objects.filter(
+                opportunity_access__opportunity_id=OuterRef("pk"),
+            )
+            .filter(
+                Q(uservisit__status=VisitValidationStatus.pending)  # NM reviews
+                | Q(
+                    uservisit__review_status=VisitReviewStatus.pending, uservisit__review_created_on__isnull=False
+                ),  # PM reviews
+            )
+            .values("opportunity_access__opportunity_id")
             .annotate(count=Count("id", distinct=True))
             .values("count")[:1],
             output_field=IntegerField(),

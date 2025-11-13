@@ -159,6 +159,7 @@ class TestManagedOpportunityInitForm:
         assert managed_opportunity.currency == self.program.currency
         assert managed_opportunity.program == self.program
         assert managed_opportunity.created_by == self.user.email
+        assert managed_opportunity.delivery_type == self.program.delivery_type
 
 
 @pytest.mark.django_db

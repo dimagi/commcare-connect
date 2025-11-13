@@ -222,6 +222,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
             or row["month_group"].year != now.year
             or row["delivery_type_name"] == "All"
         ):
+            assert row["total_eligible_users"] == 10
             continue
         assert row["delivery_type_name"] in delivery_type_slugs
         assert row["users"] == 5
@@ -233,6 +234,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
         assert row["nm_amount_earned"] == 1500
         assert row["nm_amount_paid"] == 500
         assert row["avg_top_paid_flws"] == 400
+        assert row["total_eligible_users"] == 5
 
 
 @pytest.mark.django_db

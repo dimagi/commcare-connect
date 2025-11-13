@@ -40,18 +40,23 @@ def get_connectid_user_counts_cumulative():
     return _get_cumulative_count(total_user_counts), _get_cumulative_count(non_invited_user_counts)
 
 
-def get_eligible_user_counts_cumulative():
+def get_eligible_user_counts_cumulative(delivery_type=None):
+    qs = CompletedWork.objects.filter(
+        status=CompletedWorkStatus.approved,
+        saved_approved_count__gt=0,
+        opportunity_access__opportunity__is_test=False,
+    )
+
+    if delivery_type:
+        qs = qs.filter(opportunity_access__opportunity__delivery_type__slug=delivery_type)
+
     visit_data = (
-        CompletedWork.objects.filter(
-            status=CompletedWorkStatus.approved,
-            saved_approved_count__gt=0,
-            opportunity_access__opportunity__is_test=False,
-        )
-        .annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
+        qs.annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
         .values("month_group")
         .annotate(users=ArrayAgg("opportunity_access__user_id", distinct=True))
         .order_by("month_group")
     )
+
     seen_users = set()
     visit_data_dict = {}
     for item in visit_data:
@@ -216,7 +221,7 @@ def get_table_data_for_year_month(
         )
 
     connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
-    total_eligible_user_counts = get_eligible_user_counts_cumulative()
+    total_eligible_user_counts = get_eligible_user_counts_cumulative(delivery_type)
 
     for group_key in visit_data_dict.keys():
         month_group = group_key[0]
