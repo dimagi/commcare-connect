@@ -56,7 +56,7 @@ jobs:
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: 'C05APTXCTSM'
+          channel-id: 'C09TVKX4N2C'
           payload: |
             {
               "blocks": [
@@ -99,7 +99,7 @@ jobs:
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: 'C05APTXCTSM'
+          channel-id: 'C09TVKX4N2C'
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {
