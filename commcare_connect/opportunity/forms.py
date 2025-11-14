@@ -8,6 +8,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
@@ -162,14 +163,28 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             layout_fields.append(
                 Row(
                     HTML(
-                        f"""
-                        <div class='col-span-2'>
-                            <h6 class='title-sm'>{_("Manage Credentials")}</h6>
-                            <span class='hint'>
-                                {_("Configure credential requirements for learning and delivery.")}
-                            </span>
-                        </div>
-                    """
+                        format_html(
+                            """
+                            <div class='col-span-2'>
+                                <h6 class='title-sm'>{}</h6>
+                                <span class='hint'>
+                                    {}
+                                </span>
+                            </div>
+                            """,
+                            _("Manage Credentials"),
+                            format_html(
+                                _(
+                                    "Configure credential requirements for learning and delivery. For more "
+                                    "information, please refer to the {link_start}following documentation{link_end}."
+                                ),
+                                # TODO: Fill out documentation link when documentation becomes available
+                                link_start=format_html(
+                                    '<a href="{}" target="_blank" class="text-blue-600 hover:underline">', "#"
+                                ),
+                                link_end=format_html("</a>"),
+                            ),
+                        )
                     ),
                     Column(
                         Field("learn_level"),
