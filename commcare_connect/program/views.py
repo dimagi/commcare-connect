@@ -27,6 +27,7 @@ from commcare_connect.organization.decorators import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tasks import send_program_invite_applied_email
 
 from .utils import is_program_manager
 
@@ -195,6 +196,9 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     application.status = action_map[action]["status"]
     application.modified_by = request.user.email
     application.save()
+
+    if action == "apply":
+        send_program_invite_applied_email.delay(application.id)
 
     return redirect(redirect_url)
 
