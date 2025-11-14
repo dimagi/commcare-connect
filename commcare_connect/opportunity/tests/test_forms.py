@@ -1,12 +1,18 @@
 import datetime
+import json
 
 import pytest
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
-from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm
+from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm, OpportunityInitUpdateForm
 from commcare_connect.opportunity.models import CredentialConfiguration, PaymentUnit
-from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentUnitFactory
+from commcare_connect.opportunity.tests.factories import (
+    CommCareAppFactory,
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    PaymentUnitFactory,
+)
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
 
@@ -237,6 +243,208 @@ class TestOpportunityChangeForm:
             form = OpportunityChangeForm(instance=valid_opportunity)
             assert "learn_level" in form.fields
             assert "delivery_level" in form.fields
+
+
+@pytest.mark.django_db
+class TestOpportunityInitUpdateForm:
+    @pytest.fixture
+    def opportunity(self, organization):
+        opportunity = OpportunityFactory(organization=organization)
+
+        learn_app = CommCareAppFactory(
+            organization=organization,
+            cc_app_id="existing-learn-id",
+            cc_domain="existing-learn-domain",
+            name="Existing Learn App",
+            description="Existing learn description",
+            passing_score=65,
+            hq_server=opportunity.hq_server,
+        )
+        deliver_app = CommCareAppFactory(
+            organization=organization,
+            cc_app_id="existing-deliver-id",
+            cc_domain="existing-deliver-domain",
+            name="Existing Deliver App",
+            hq_server=opportunity.hq_server,
+        )
+        opportunity.learn_app = learn_app
+        opportunity.deliver_app = deliver_app
+        opportunity.save(update_fields=["learn_app", "deliver_app"])
+        return opportunity
+
+    def _build_form_data(
+        self,
+        opportunity,
+        *,
+        learn_payload,
+        learn_domain,
+        learn_description,
+        learn_score,
+        deliver_payload,
+        deliver_domain,
+        name="updated opportunity",
+        currency="EUR",
+        include_disabled_fields=True,
+        hq_server=None,
+    ):
+        data = {
+            "name": name,
+            "description": "updated opportunity description",
+            "short_description": "updated short description",
+            "currency": currency,
+            "learn_app_description": learn_description,
+            "learn_app_passing_score": learn_score,
+        }
+        if include_disabled_fields and learn_payload is not None and deliver_payload is not None:
+            data.update(
+                {
+                    "hq_server": hq_server if hq_server is not None else opportunity.hq_server.id,
+                    "api_key": str(opportunity.api_key.id),
+                    "learn_app_domain": learn_domain,
+                    "learn_app": json.dumps(learn_payload),
+                    "deliver_app_domain": deliver_domain,
+                    "deliver_app": json.dumps(deliver_payload),
+                }
+            )
+        elif include_disabled_fields:
+            data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
+        return data
+
+    def _get_form(self, *, opportunity, data):
+        return OpportunityInitUpdateForm(
+            data=data,
+            instance=opportunity,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+        )
+
+    def test_updates_existing_linked_apps(self, opportunity):
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload={"id": learn_app.cc_app_id, "name": "updated learn app"},
+            learn_domain=learn_app.cc_domain,
+            learn_description="updated learn description",
+            learn_score=82,
+            deliver_payload={"id": deliver_app.cc_app_id, "name": "updated deliver app"},
+            deliver_domain=deliver_app.cc_domain,
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert form.is_valid(), form.errors
+
+        updated_opportunity = form.save()
+        updated_opportunity.refresh_from_db()
+        learn_app.refresh_from_db()
+        deliver_app.refresh_from_db()
+
+        assert updated_opportunity.learn_app_id == learn_app.id
+        assert learn_app.name == "updated learn app"
+        assert learn_app.description == "updated learn description"
+        assert learn_app.passing_score == 82
+
+        assert updated_opportunity.deliver_app_id == deliver_app.id
+        assert deliver_app.name == "updated deliver app"
+
+        assert updated_opportunity.currency == "EUR"
+
+    def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
+        original_learn_app = opportunity.learn_app
+        original_deliver_app = opportunity.deliver_app
+        original_learn_name = original_learn_app.name
+        original_deliver_name = original_deliver_app.name
+
+        new_learn_payload = {"id": "new-learn-id", "name": "new learn app"}
+        new_deliver_payload = {"id": "new-deliver-id", "name": "new deliver app"}
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload=new_learn_payload,
+            learn_domain="new-learn-domain",
+            learn_description="new learn description",
+            learn_score=90,
+            deliver_payload=new_deliver_payload,
+            deliver_domain="new-deliver-domain",
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert form.is_valid(), form.errors
+
+        updated_opportunity = form.save()
+        updated_opportunity.refresh_from_db()
+        original_learn_app.refresh_from_db()
+        original_deliver_app.refresh_from_db()
+
+        assert original_learn_app.name == original_learn_name
+        assert original_deliver_app.name == original_deliver_name
+
+        assert updated_opportunity.learn_app.cc_app_id == new_learn_payload["id"]
+        assert updated_opportunity.learn_app.cc_domain == "new-learn-domain"
+        assert updated_opportunity.learn_app.name == "new learn app"
+        assert updated_opportunity.learn_app.description == "new learn description"
+
+        assert updated_opportunity.deliver_app.cc_app_id == new_deliver_payload["id"]
+        assert updated_opportunity.deliver_app.cc_domain == "new-deliver-domain"
+        assert updated_opportunity.deliver_app.name == "new deliver app"
+
+        assert updated_opportunity.learn_app_id != original_learn_app.id
+        assert updated_opportunity.deliver_app_id != original_deliver_app.id
+
+    def test_disabled_fields_submission_errors(self, opportunity):
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+        OpportunityAccessFactory(opportunity=opportunity)
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload={"id": "invalid learn-id", "name": "invalid Learn App"},
+            learn_domain="invalid learn-domain",
+            learn_description="updated learn description",
+            learn_score=82,
+            deliver_payload={"id": "invalid deliver-id", "name": "invalid Deliver App"},
+            deliver_domain="invalid deliver-domain",
+            hq_server=opportunity.hq_server.id,
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert not form.is_valid()
+        assert "hq_server" in form.errors
+        assert "api_key" in form.errors
+        assert "learn_app" in form.errors
+        assert "deliver_app" in form.errors
+
+        learn_app.refresh_from_db()
+        deliver_app.refresh_from_db()
+        assert learn_app.cc_app_id != "invalid learn-id"
+        assert deliver_app.cc_app_id != "invalid deliver-id"
+
+    def test_updates_learn_details_when_fields_disabled(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+        learn_app = opportunity.learn_app
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload=None,
+            learn_domain=None,
+            learn_description="updated learn description",
+            learn_score=91,
+            deliver_payload=None,
+            deliver_domain=None,
+            include_disabled_fields=False,
+            name="updated opportunity",
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert form.is_valid(), form.errors
+
+        updated_opportunity = form.save()
+        learn_app.refresh_from_db()
+
+        assert updated_opportunity.learn_app_id == learn_app.id
+        assert learn_app.description == "updated learn description"
+        assert learn_app.passing_score == 91
 
 
 class TestAddBudgetNewUsersForm:

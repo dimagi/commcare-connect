@@ -4,13 +4,13 @@
 {% load duration_minutes %}
 {% load tailwind_filters %}
 
-{% block title %}{{ request.org }}Create Opportunity{% endblock %}
+{% block title %}{{ request.org }} - {% if is_update %}Edit Opportunity{% else %}Create Opportunity{% endif %}{% endblock %}
 
 {% block content %}
 <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-8"
   x-data="{ showAddApiKeyModal: false }">
-  {% include "opportunity/steps.html" with step='step1' %}
-  <h6 class="title">Create Details</h6>
+  {% include "opportunity/steps.html" with step='step1' org_slug=request.org.slug pk=form.instance.pk %}
+  <h6 class="title">{% if is_update %}Edit Details{% else %}Create Details{% endif %}</h6>
   {% include "components/partial_form.html" %}
 
   <div x-cloak x-show="showAddApiKeyModal" x-transition.opacity class="modal-backdrop">

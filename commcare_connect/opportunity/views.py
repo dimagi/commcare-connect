@@ -48,6 +48,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
+    OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
@@ -140,6 +141,7 @@ from commcare_connect.organization.decorators import (
     org_member_required,
     org_viewer_required,
 )
+from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
@@ -227,12 +229,50 @@ class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        context["is_update"] = False
         return context
 
     def form_valid(self, form: OpportunityInitForm):
         response = super().form_valid(form)
         create_learn_modules_and_deliver_units(self.object.id)
         return response
+
+
+class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
+    model = Opportunity
+    template_name = "opportunity/opportunity_init.html"
+    form_class = OpportunityInitUpdateForm
+    context_object_name = "opportunity"
+
+    def get_form_class(self):
+        opportunity = getattr(self, "object", None)
+        if opportunity is None:
+            opportunity = self.get_object()
+            self.object = opportunity
+        if getattr(opportunity, "managed", False):
+            return ManagedOpportunityInitUpdateForm
+        return super().get_form_class()
+
+    def get_success_url(self):
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        opportunity = getattr(self, "object", None)
+        if opportunity is None:
+            opportunity = self.get_object()
+            self.object = opportunity
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
+        if getattr(opportunity, "managed", False):
+            kwargs["program"] = opportunity.managedopportunity.program
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        context["is_update"] = True
+        return context
 
 
 class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
