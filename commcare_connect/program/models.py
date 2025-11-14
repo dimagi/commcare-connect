@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import DeliveryType, Opportunity
+from commcare_connect.opportunity.models import Country, Currency, DeliveryType, Opportunity
 from commcare_connect.organization.models import Organization
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
@@ -13,6 +13,8 @@ class Program(BaseModel):
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT)
     budget = models.IntegerField()
     currency = models.CharField(max_length=3)
+    currency_fk = models.ForeignKey(Currency, on_delete=models.DO_NOTHING, null=True)
+    country = models.ForeignKey(Country, on_delete=models.DO_NOTHING, null=True)
     start_date = models.DateField()
     end_date = models.DateField()
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)

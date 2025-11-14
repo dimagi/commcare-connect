@@ -59,6 +59,18 @@ class DeliveryType(models.Model):
         return self.name
 
 
+class Currency(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 4217
+    name = models.CharField(max_length=64)
+    is_valid = models.BooleanField(default=True)
+
+
+class Country(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 3166-1 alpha-3
+    name = models.CharField(max_length=128)
+    currency = models.ForeignKey(Currency, on_delete=models.SET_NULL, null=True, blank=True)
+
+
 class Opportunity(BaseModel):
     organization = models.ForeignKey(
         Organization,
@@ -86,6 +98,8 @@ class Opportunity(BaseModel):
     total_budget = models.PositiveBigIntegerField(null=True)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency = models.CharField(max_length=3, null=True)
+    currency_fk = models.ForeignKey(Currency, on_delete=models.DO_NOTHING, null=True)
+    country = models.ForeignKey(Country, on_delete=models.DO_NOTHING, null=True)
     auto_approve_visits = models.BooleanField(default=True)
     auto_approve_payments = models.BooleanField(default=True)
     is_test = models.BooleanField(default=True)
