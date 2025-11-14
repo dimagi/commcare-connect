@@ -250,7 +250,10 @@ class LabsRecordDataView(OpportunityDataExportView, ListCreateAPIView):
             item["opportunity"] = self.opportunity
             item["organization"] = self.opportunity.organization
             pk = item.pop("id", None)
-            obj, created = LabsRecord.objects.update_or_create(defaults=item, **{"id": pk})
+            if pk:
+                obj, created = LabsRecord.objects.update_or_create(defaults=item, id=pk)
+            else:
+                obj = LabsRecord.objects.create(**item)
             instances.append(obj)
         serializer = self.get_serializer(instances, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
