@@ -28,16 +28,47 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     program = serializers.SerializerMethodField()
     visit_count = serializers.SerializerMethodField()
+    org_pay_per_visit = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
-        fields = ["id", "name", "date_created", "organization", "end_date", "is_active", "program", "visit_count"]
+        fields = ["id", "name", "date_created", "organization", "end_date", "is_active", "program", "visit_count", "org_pay_per_visit"]
 
     def get_program(self, obj) -> int:
+        """
+        Get the managed program identifier for the opportunity when it is managed.
+        
+        Parameters:
+            obj (Opportunity): The opportunity instance to inspect.
+        
+        Returns:
+            program_id (int or None): The managed program's ID if the opportunity is managed, otherwise `None`.
+        """
         return obj.managedopportunity.program_id if obj.managed else None
 
     def get_visit_count(self, obj) -> int:
+        """
+        Get the visit count from the provided object.
+        
+        Parameters:
+            obj: The object (typically an Opportunity instance) to read `visit_count` from.
+        
+        Returns:
+            int: The `visit_count` value if present on `obj`, otherwise 0.
+        """
         return getattr(obj, "visit_count", 0)
+
+    def get_org_pay_per_visit(self, obj) -> int:
+        """
+        Get the organization's payment amount per visit for the given opportunity.
+        
+        Parameters:
+            obj (Opportunity): Opportunity model instance whose org_pay_per_visit will be returned.
+        
+        Returns:
+            int: The organization's payment amount per visit.
+        """
+        return obj.org_pay_per_visit
 
 
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
