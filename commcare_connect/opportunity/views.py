@@ -1,4 +1,5 @@
 import datetime
+import json
 import sys
 from collections import Counter, defaultdict
 from datetime import timedelta
@@ -16,9 +17,10 @@ from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Cast, Coalesce
 from django.forms import modelformset_factory
-from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -53,6 +55,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityChangeForm,
     OpportunityFinalizeForm,
     OpportunityInitForm,
+    OpportunityInitUpdateForm,
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
@@ -130,6 +133,7 @@ from commcare_connect.opportunity.tasks import (
     send_push_notification_task,
     update_user_and_send_invite,
 )
+from commcare_connect.opportunity.utils.completed_work import get_uninvoiced_visit_items
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -145,6 +149,7 @@ from commcare_connect.organization.decorators import (
     org_member_required,
     org_viewer_required,
 )
+from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
@@ -232,12 +237,50 @@ class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        context["is_update"] = False
         return context
 
     def form_valid(self, form: OpportunityInitForm):
         response = super().form_valid(form)
         create_learn_modules_and_deliver_units(self.object.id)
         return response
+
+
+class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
+    model = Opportunity
+    template_name = "opportunity/opportunity_init.html"
+    form_class = OpportunityInitUpdateForm
+    context_object_name = "opportunity"
+
+    def get_form_class(self):
+        opportunity = getattr(self, "object", None)
+        if opportunity is None:
+            opportunity = self.get_object()
+            self.object = opportunity
+        if getattr(opportunity, "managed", False):
+            return ManagedOpportunityInitUpdateForm
+        return super().get_form_class()
+
+    def get_success_url(self):
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        opportunity = getattr(self, "object", None)
+        if opportunity is None:
+            opportunity = self.get_object()
+            self.object = opportunity
+        kwargs["user"] = self.request.user
+        kwargs["org_slug"] = self.request.org.slug
+        if getattr(opportunity, "managed", False):
+            kwargs["program"] = opportunity.managedopportunity.program
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
+        context["is_update"] = True
+        return context
 
 
 class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
@@ -1275,7 +1318,6 @@ def invoice_list(request, org_slug, opp_id):
         csrf_token=csrf_token,
     )
 
-    form = PaymentInvoiceForm(opportunity=request.opportunity)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(
         request,
@@ -1283,7 +1325,7 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
-            "form": form,
+            "new_invoice_url": reverse("opportunity:invoice_create", args=(org_slug, opp_id)),
             "path": [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                 {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
@@ -1293,20 +1335,59 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-@org_member_required
-@opportunity_required
-def invoice_create(request, org_slug=None, opp_id=None):
-    if not request.opportunity.managed or request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug, opp_id)
-    form = PaymentInvoiceForm(data=request.POST or None, opportunity=request.opportunity)
-    if request.POST and form.is_valid():
+class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateView):
+    model = PaymentInvoice
+    form_class = PaymentInvoiceForm
+    template_name = "opportunity/invoice_create.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        opportunity = self.get_opportunity()
+        org_slug = self.request.org.slug
+
+        context.update(
+            {
+                "opportunity": opportunity,
+                "path": [
+                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                    {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+                    {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.id))},
+                    {
+                        "title": self.breadcrumb_title,
+                        "url": reverse("opportunity:invoice_create", args=(org_slug, opportunity.id)),
+                    },
+                ],
+            }
+        )
+        return context
+
+    @property
+    def breadcrumb_title(self):
+        service_delivery = PaymentInvoice.InvoiceType.service_delivery
+        if self.request.GET.get("invoice_type", service_delivery) == service_delivery:
+            return "New Service Delivery Invoice"
+        return "New Custom Invoice"
+
+    def post(self, request, org_slug, opp_id, **kwargs):
+        opportunity = self.get_opportunity()
+        if not opportunity.managed or request.is_opportunity_pm:
+            return redirect("opportunity:detail", org_slug, opp_id)
+
+        form = self.get_form()
+        if not form.is_valid():
+            return self.get(request, org_slug, opp_id, **kwargs)
+
         form.save()
-        form = PaymentInvoiceForm(opportunity=request.opportunity)
-        redirect_url = reverse("opportunity:invoice_list", args=[org_slug, opp_id])
-        response = HttpResponse(status=200)
-        response["HX-Redirect"] = redirect_url
-        return response
-    return HttpResponse(render_crispy_form(form))
+        return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["opportunity"] = self.get_opportunity()
+        kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        return kwargs
+
+    def get_success_url(self):
+        return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().id))
 
 
 @org_member_required
@@ -2558,3 +2639,32 @@ def add_api_key(request, org_slug):
         api_key.save()
         form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
     return HttpResponse(render_crispy_form(form))
+
+
+@require_POST
+@opportunity_required
+def invoice_items(request, *args, **kwargs):
+    body = json.loads(request.body)
+    start_date_str = body.get("start_date")
+    end_date_str = body.get("end_date")
+
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date() if start_date_str else None
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None
+
+    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
+    total_local_amount = sum(item["total_amount_local"] for item in line_items)
+    total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+
+    html = render_to_string(
+        "opportunity/partials/invoice_line_items.html",
+        {"line_items": line_items},
+        request=request,
+    )
+
+    return JsonResponse(
+        {
+            "line_items_table_html": html,
+            "total_amount": total_local_amount,
+            "total_usd_amount": total_usd_amount,
+        }
+    )

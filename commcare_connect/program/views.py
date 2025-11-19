@@ -18,14 +18,14 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.views import OpportunityInit
+from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
     org_admin_required,
     org_program_manager_required,
     org_viewer_required,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
+from commcare_connect.program.forms import ManagedOpportunityInitForm, ManagedOpportunityInitUpdateForm, ProgramForm
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
 
 from .utils import is_program_manager
@@ -101,8 +101,7 @@ class ManagedOpportunityList(ProgramManagerMixin, ListView):
         return context
 
 
-class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
-    form_class = ManagedOpportunityInitForm
+class ManagedOpportunityViewMixin:
     program = None
 
     def dispatch(self, request, *args, **kwargs):
@@ -117,6 +116,14 @@ class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
         kwargs = super().get_form_kwargs()
         kwargs["program"] = self.program
         return kwargs
+
+
+class ManagedOpportunityInit(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInit):
+    form_class = ManagedOpportunityInitForm
+
+
+class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInitUpdate):
+    form_class = ManagedOpportunityInitUpdateForm
 
 
 @org_program_manager_required

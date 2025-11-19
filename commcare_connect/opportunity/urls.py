@@ -8,6 +8,7 @@ from commcare_connect.opportunity.views import (
     OpportunityEdit,
     OpportunityFinalize,
     OpportunityInit,
+    OpportunityInitUpdate,
     OpportunityList,
     OpportunityPaymentUnitTableView,
     WorkerDeliverView,
@@ -54,6 +55,7 @@ app_name = "opportunity"
 urlpatterns = [
     path("", view=OpportunityList.as_view(), name="list"),
     path("init/", view=OpportunityInit.as_view(), name="init"),
+    path("<int:opp_id>/init/edit/", view=OpportunityInitUpdate.as_view(), name="init_edit"),
     path("<int:opp_id>/finalize/", view=OpportunityFinalize.as_view(), name="finalize"),
     path("<int:opp_id>/edit", view=OpportunityEdit.as_view(), name="edit"),
     path("<int:opp_id>/", view=OpportunityDashboard.as_view(), name="detail"),
@@ -105,7 +107,7 @@ urlpatterns = [
     path("<int:opp_id>/user_visit_review/", user_visit_review, name="user_visit_review"),
     path("<int:opp_id>/user_invite/", view=opportunity_user_invite, name="user_invite"),
     path("<int:opp_id>/invoice/", views.invoice_list, name="invoice_list"),
-    path("<int:opp_id>/invoice/create/", views.invoice_create, name="invoice_create"),
+    path("<int:opp_id>/invoice/create/", views.InvoiceCreateView.as_view(), name="invoice_create"),
     path("<int:opp_id>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
     path("<int:opp_id>/delete_invites/", views.delete_user_invites, name="delete_user_invites"),
     path("<int:opp_id>/resend_invites/", resend_user_invites, name="resend_user_invites"),
@@ -142,4 +144,5 @@ urlpatterns = [
     path("<int:opp_id>/worker_flag_counts/", views.worker_flag_counts, name="worker_flag_counts"),
     path("add_api_key/", views.add_api_key, name="add_api_key"),
     path("<int:opp_id>/exchange_rate/", views.exchange_rate_preview, name="exchange_rate"),
+    path("<int:opp_id>/invoice_items/", views.invoice_items, name="invoice_items"),
 ]
