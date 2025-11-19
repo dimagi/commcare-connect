@@ -353,30 +353,35 @@ def generate_catchment_area_export(opportunity_id: int, export_format: str):
     return export_tmp_name
 
 
+def get_payment_upload_key(opp_id):
+    return f"bulk_update_payments_opportunity_{opp_id}"
+
+
 @celery_app.task(bind=True)
 def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_format: str):
     from commcare_connect.opportunity.visit_import import ImportException, bulk_update_payments, get_imported_dataset
 
-    set_task_progress(self, "Payment Record Import is in progress.")
-    try:
-        with default_storage.open(file_path, "rb") as f:
-            dataset = get_imported_dataset(f, file_format)
-            headers = dataset.headers or []
-            rows = list(dataset)
+    with cache.lock(get_payment_upload_key(opportunity_id), timeout=600):
+        set_task_progress(self, "Payment Record Import is in progress.")
+        try:
+            with default_storage.open(file_path, "rb") as f:
+                dataset = get_imported_dataset(f, file_format)
+                headers = dataset.headers or []
+                rows = list(dataset)
 
-        status = bulk_update_payments(opportunity_id, headers, rows)
-        messages = [f"Payment status updated successfully for {len(status)} users."]
-        if status.missing_users:
-            messages.append(status.get_missing_message())
+            status = bulk_update_payments(opportunity_id, headers, rows)
+            messages = [f"Payment status updated successfully for {len(status)} users."]
+            if status.missing_users:
+                messages.append(status.get_missing_message())
 
-    except ImportException as e:
-        messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
-    except Exception as e:
-        messages = [f"Unexpected error during payment import: {e}"]
-    finally:
-        default_storage.delete(file_path)
+        except ImportException as e:
+            messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
+        except Exception as e:
+            messages = [f"Unexpected error during payment import: {e}"]
+        finally:
+            default_storage.delete(file_path)
 
-    set_task_progress(self, "<br>".join(messages), is_complete=True)
+        set_task_progress(self, "<br>".join(messages), is_complete=True)
 
 
 @celery_app.task(bind=True)

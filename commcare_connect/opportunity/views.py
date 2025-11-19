@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.core.cache import cache
 from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Cast, Coalesce
@@ -129,6 +130,7 @@ from commcare_connect.opportunity.tasks import (
     generate_user_status_export,
     generate_visit_export,
     generate_work_status_export,
+    get_payment_upload_key,
     invite_user,
     send_push_notification_task,
     update_user_and_send_invite,
@@ -681,10 +683,20 @@ def payment_import(request, org_slug=None, opp_id=None):
     if file_format not in ("csv", "xlsx"):
         raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
 
+    redirect_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
+
+    lock = cache.lock(get_payment_upload_key(request.opportunity.pk))
+    got_lock = lock.acquire(blocking=False)
+
+    if not got_lock:
+        messages.error(request, "Another payment import is in progress. Please try again later.")
+        return redirect(f"{redirect_url}?{request.GET.copy().urlencode()}")
+
+    lock.release()
     file_path = f"{request.opportunity.pk}_{datetime.datetime.now().isoformat}_payment_import"
     saved_path = default_storage.save(file_path, file)
+
     result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
-    redirect_url = reverse("opportunity:worker_payments", args=(org_slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
