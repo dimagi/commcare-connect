@@ -1,7 +1,6 @@
 import datetime
 import json
 import uuid
-from decimal import Decimal
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
@@ -1259,30 +1258,21 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 
 class PaymentInvoiceForm(forms.ModelForm):
-    amount = forms.CharField(
+    amount = forms.DecimalField(
         label="Amount (Local currency)",
-        widget=forms.NumberInput(attrs={"placeholder": "0.00"}),
         help_text=_("Local currency is determined by the opportunity."),
+        decimal_places=2,
     )
-    amount_usd = forms.CharField(
+    amount_usd = forms.DecimalField(
         label="Amount (USD)",
-        widget=forms.NumberInput(attrs={"placeholder": "0.00"}),
         required=False,
-    )
-    invoice_type = forms.CharField(
-        required=True,
-        label=_("Invoice Type"),
-        widget=forms.Select(
-            choices=[
-                ("service_delivery", _("Service Delivery")),
-                ("custom", _("Custom")),
-            ],
-        ),
+        decimal_places=2,
     )
     invoice_number = forms.CharField(
         label=_("Invoice ID"),
         required=False,
         widget=forms.TextInput(attrs={"placeholder": _("Auto-generated on save")}),
+        help_text=_("This value is system-generated and unique."),
     )
 
     class Meta:
@@ -1302,10 +1292,11 @@ class PaymentInvoiceForm(forms.ModelForm):
             "date": _("Generation date"),
             "notes": "",
         }
-        help_texts = {"invoice_number": _("This value is system-generated and is unique.")}
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
+        self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+
         super().__init__(*args, **kwargs)
 
         self.fields["invoice_number"].initial = self.generate_invoice_number()
@@ -1314,72 +1305,11 @@ class PaymentInvoiceForm(forms.ModelForm):
         self.fields["end_date"].initial = str(datetime.date.today())
 
         self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Div(
-                Div(
-                    Field("invoice_number"),
-                    Field(
-                        "invoice_type",
-                        **{
-                            "x-model": "invoiceType",
-                            "x-on:change": "resetServiceDeliveryFields()",
-                        },
-                    ),
-                    css_class="grid grid-cols-2 gap-4",
-                ),
-                Div(
-                    Div(
-                        Field("title"),
-                        **{"x-show": "serviceDeliverySelected()"},
-                    ),
-                    Field(
-                        "date",
-                        **{
-                            "x-ref": "date",
-                            "x-on:change": "convert()",
-                        },
-                    ),
-                    css_class="grid grid-cols-2 gap-4",
-                ),
-                Div(
-                    Div(
-                        Field(
-                            "amount",
-                            label=f"Amount ({self.opportunity.currency})",
-                            **{
-                                "x-model": "amount",
-                                "x-ref": "amount",
-                                "x-on:input.debounce.300ms": "convert()",
-                                ":readonly": "serviceDeliverySelected()",
-                            },
-                        ),
-                        Field(
-                            "amount_usd",
-                            **{
-                                "x-model": "usdAmount",
-                                ":readonly": "serviceDeliverySelected()",
-                            },
-                        ),
-                        css_class="grid grid-cols-2 gap-4",
-                    ),
-                    Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
-                    css_class="flex flex-col",
-                ),
-                Div(
-                    Div(
-                        Field(
-                            "start_date",
-                            **{
-                                "x-on:change": "fetchInvoiceLineItems()",
-                                "x-model": "startDate",
-                            },
-                        ),
-                        Field(
-                            "end_date",
-                            **{"x-on:change": "fetchInvoiceLineItems()", "x-model": "endDate"},
-                        ),
-                        css_class="grid grid-cols-2 gap-4",
-                    ),
+
+        invoice_form_fields = self.invoice_form_fields()
+        if self.is_service_delivery:
+            invoice_form_fields.extend(
+                [
                     Fieldset(
                         "Line Items",
                         Div(
@@ -1388,13 +1318,17 @@ class PaymentInvoiceForm(forms.ModelForm):
                         ),
                     ),
                     Fieldset(
-                        "Service Delivery Details",
+                        "Service Delivery Notes",
                         Field("notes"),
                     ),
-                    css_class="flex flex-col",
-                    **{"x-show": "serviceDeliverySelected()"},
-                ),
-                css_class="flex flex-col",
+                ]
+            )
+
+        self.helper.layout = Layout(
+            *invoice_form_fields,
+            Div(
+                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                css_class="flex justify-end mt-4",
             ),
         )
         self.helper.form_tag = False
@@ -1410,6 +1344,37 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         return date.date()
 
+    def invoice_form_fields(self):
+        first_row = [Field("invoice_number", **{"readonly": "readonly"})]
+        if self.is_service_delivery:
+            first_row.append(Field("title"))
+
+        second_row = [Field("date", **{"x-ref": "date", "x-on:change": "convert()"})]
+        if self.is_service_delivery:
+            second_row.append(Field("start_date"))
+            second_row.append(Field("end_date"))
+
+        return [
+            Div(
+                Div(*first_row, css_class="grid grid-cols-3 gap-6"),
+                Div(*second_row, css_class="grid grid-cols-3 gap-6"),
+                Div(
+                    Field(
+                        "amount",
+                        label=f"Amount ({self.opportunity.currency})",
+                        **{
+                            "x-ref": "amount",
+                            "x-on:input.debounce.300ms": "convert()",
+                        },
+                    ),
+                    Field("amount_usd"),
+                    Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
+                    css_class="grid grid-cols-3 gap-6",
+                ),
+                css_class="flex flex-col gap-4",
+            ),
+        ]
+
     def generate_invoice_number(self):
         return uuid.uuid4().hex[:10].upper()
 
@@ -1419,19 +1384,19 @@ class PaymentInvoiceForm(forms.ModelForm):
         if not invoice_number:
             invoice_number = self.generate_invoice_number()
 
-        if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
+        if PaymentInvoice.objects.filter(invoice_number=invoice_number).exists():
             raise ValidationError(
-                f'Invoice "{invoice_number}" already exists',
+                "Please use a different invoice number",
                 code="invoice_number_reused",
             )
         return invoice_number
 
     def clean(self):
         cleaned_data = super().clean()
-        local_amount = cleaned_data.get("amount")
+        amount = cleaned_data.get("amount")
         date = cleaned_data.get("date")
 
-        if local_amount is None or date is None:
+        if amount is None or date is None:
             return cleaned_data  # Let individual field errors handle missing values
 
         exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
@@ -1439,7 +1404,7 @@ class PaymentInvoiceForm(forms.ModelForm):
             raise ValidationError("Exchange rate not available for selected date.")
 
         cleaned_data["exchange_rate"] = exchange_rate
-        cleaned_data["amount_usd"] = round(Decimal(local_amount) / exchange_rate.rate, 2)
+        cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
 
         if not self.is_service_delivery:
             cleaned_data["title"] = None
@@ -1464,7 +1429,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
         instance.amount_usd = self.cleaned_data["amount_usd"]
-        instance.amount = Decimal(self.cleaned_data["amount"])
+        instance.amount = self.cleaned_data["amount"]
         instance.exchange_rate = self.cleaned_data["exchange_rate"]
         instance.service_delivery = self.is_service_delivery
 
@@ -1477,4 +1442,4 @@ class PaymentInvoiceForm(forms.ModelForm):
 
     @property
     def is_service_delivery(self):
-        return self.cleaned_data.get("invoice_type") == "service_delivery"
+        return self.invoice_type == PaymentInvoice.InvoiceType.service_delivery

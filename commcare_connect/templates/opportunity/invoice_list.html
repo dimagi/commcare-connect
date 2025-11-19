@@ -4,174 +4,31 @@
 {% load i18n %}
 
 {% block top_buttons %}
-    {{ block.super }}
-    {% if not request.is_opportunity_pm %}
-    <div x-data="invoiceModal()"
-      @keydown.escape.window="closeModal()"
-      id="invoiceModal"
-    >
-      <button class="button button-md primary-dark" @click="openModal()">
-        {% translate "Create Invoice" %}
-      </button>
+  {{ block.super }}
+  {% if not request.is_opportunity_pm %}
+  <div x-data="{ open: false }" @click.away="open = false" class="relative">
+    <button @click="open = !open" class="button button-md primary-dark flex flex-row items-center space-x-2">
+      Create Invoice
+      <i :class="open ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all text-xs"></i>
+    </button>
 
-      <div
-        x-cloak
-        x-show="open"
-        x-transition.opacity
-        class="modal-backdrop"
-      >
-        <div
-          @click.away="closeModal()"
-          x-show="open"
-          x-transition
-          class="modal !max-w-5xl"
-          role="dialog"
-          aria-labelledby="invoiceModalLabel">
-          <div class="modal-content">
-            <div class="flex items-center justify-between p-4 border-b">
-              <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create New Invoice" %}</h5>
-              <button @click="closeModal()" class="button-icon" aria-label="Close" id="invoiceModalClose">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
-            </div>
+    <div x-show="open" x-transition.opacity x-cloak
+      class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
+      <ul class="p-2 w-full max-h-80 overflow-y-auto">
+        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+          <a href="{{ new_invoice_url }}?invoice_type=service_delivery">
+            <p class="text-brand-deep-purple text-sm font-medium">Service Delivery</p>
+          </a>
+        </li>
+        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+          <a href="{{ new_invoice_url }}?invoice_type=custom">
+            <p class="text-brand-deep-purple text-sm font-medium">Custom</p>
+          </a>
+        </li>
+      </ul>
 
-            <form
-              hx-post="{% url 'opportunity:invoice_create' org_slug=request.org.slug opp_id=opportunity.pk %}"
-              hx-target="#invoiceForm"
-              hx-swap="innerHTML"
-            >
-              <div class="p-4 max-h-[75vh] overflow-y-auto">
-                <div id="invoiceForm">{% crispy form %}</div>
-              </div>
-
-              <div class="flex justify-end gap-2 p-4">
-                <button
-                  type="button"
-                  @click="closeModal()"
-                  class="button button-md outline-style"
-                >
-                  {% translate "Close" %}
-                </button>
-
-                <button
-                  type="submit"
-                  class="button button-md primary-dark"
-                >
-                  {% translate "Submit" %}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
     </div>
-{% endif %}
-
-{% block inline_js %}
-<script>
-  document.addEventListener('alpine:init', () => {
-    Alpine.data('invoiceModal', () => ({
-      open: false,
-      currency: false,
-      invoiceType: 'service_delivery',
-      startDate: '{{  form.start_date.value|default:"" }}',
-      endDate: '{{  form.end_date.value|default:"" }}',
-      amount: null,
-      usdAmount: null,
-
-      init() {
-        if (this.serviceDeliverySelected) {
-          this.fetchInvoiceLineItems();
-        }
-      },
-
-      serviceDeliverySelected() {
-        return this.invoiceType === 'service_delivery';
-      },
-
-      openModal() {
-        this.open = true;
-        // Initialize currency after modal opens and form is rendered
-        this.$nextTick(() => {
-          this.currency = this.$refs.currencyToggle?.checked || false;
-        });
-      },
-      closeModal() {
-        this.open = false;
-      },
-      convert(replace = false) {
-        // date and amount should be present before making http call
-        if (!this.$refs.amount?.value || !this.$refs.date?.value) return;
-
-        htmx.ajax('POST', '{% url "opportunity:exchange_rate" org_slug=request.org.slug opp_id=opportunity.id %}', {
-          target: '#converted-amount-wrapper',
-          swap: 'innerHTML',
-          values: {
-            amount: this.$refs.amount.value,
-            date: this.$refs.date.value,
-            usd_currency: this.currency,
-            should_replace_amount: replace
-          }
-        }).then(() => {
-          if (replace) {
-            const newAmount = document.querySelector('#exchange-rate-display')?.dataset?.convertedAmount;
-            if (newAmount) {
-              this.$refs.amount.value = newAmount;
-            }
-          }
-        });
-      },
-
-      resetServiceDeliveryFields() {
-        if (this.serviceDeliverySelected()) {
-          this.endDate = null;
-          this.amount = null;
-          this.usdAmount = null;
-          this.resetLineItemsContainer();
-        }
-      },
-
-      resetLineItemsContainer() {
-        document.getElementById('invoice-line-items-wrapper').innerHTML = `
-          <div class="text-sm text-gray-500">
-            {% translate "Select start and end dates for invoice items." %}
-          </div>
-        `;
-      },
-
-      fetchInvoiceLineItems() {
-        if (!this.startDate || !this.endDate) return;
-
-        document.getElementById('invoice-line-items-wrapper').innerHTML = `
-          <div class="flex items-center justify-center p-4">
-            <i class="fa-solid fa-spinner fa-spin mr-1"></i>
-          </div>
-        `;
-
-        fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.id %}', {
-          method: 'POST',
-          headers: {
-            'X-CSRFToken': '{{ csrf_token }}',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            start_date: this.startDate,
-            end_date: this.endDate
-          })
-        })
-          .then(response => response.json())
-          .then(data => {
-            document.getElementById('invoice-line-items-wrapper').innerHTML = data.line_items_table_html;
-            this.amount = data.total_amount;
-            this.usdAmount = data.total_usd_amount;
-          })
-          .catch(error => {
-            console.error('Error fetching invoice items:', error);
-          });
-      }
-    }));
-  });
-</script>
-{% endblock inline_js %}
+  </div>
+  {% endif %}
 
 {% endblock top_buttons %}
