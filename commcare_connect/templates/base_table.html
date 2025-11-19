@@ -2,9 +2,9 @@
 {% load i18n %}
 {% block table-wrapper %}
 {% load sort_link %}
-<div class="overflow-hidden table-container flex flex-col gap-2 mb-1">
+<div class="table-container flex flex-col gap-2 mb-1">
   {% block table %}
-  <div class="w-full overflow-x-auto block">
+  <div class="w-full overflow-x-auto overflow-y-auto block max-h-[70vh]">
     <table class="base-table" {% render_attrs table.attrs %}>
       {% block table.thead %}
       {% if table.show_header %}

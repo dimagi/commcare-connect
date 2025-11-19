@@ -5,7 +5,7 @@
 {% block content %}
 {% if not request.user.is_authenticated %}
 <div class="py-8 px-4 mx-auto max-w-screen-xl text-center lg:py-16">
-    <h1 class="mb-4 text-4xl font-extrabold tracking-tight leading-none text-gray-900 md:text-5xl lg:text-6xl">CommCare Connect</h1>
+    <h1 class="mb-4 text-4xl font-extrabold tracking-tight leading-none text-gray-900 md:text-5xl lg:text-6xl">Connect</h1>
     <p class="mb-8 text-lg font-normal text-gray-500 lg:text-xl sm:px-16 lg:px-48">
       {% blocktrans %}Unlocking more impact from Frontline Workers{% endblocktrans %}
     </p>
@@ -22,7 +22,9 @@
 <div class="card_bg">
   <div class="flex flex-col item-center justify-center gap-4 h-[80vh]">
     <p class="max-w-1/2 mx-auto text-center text-gray-500 text-sm">
-      Welcome to CommCare Connect. You can enter an organisational workspace or create a new one through the dropdown on the top right of this page
+      {% blocktrans %}
+      Welcome to Connect. You can enter an organisational workspace or create a new one through the dropdown on the top right of this page
+      {% endblocktrans %}
     </p>
     <i class="fa-solid fa-box-open text-5xl mx-auto text-gray-500"></i>
   </div>

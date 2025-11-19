@@ -144,7 +144,7 @@ class AcceptInviteView(View):
         if o.accepted:
             return HttpResponse(
                 _(
-                    "This invitation has already been accepted. Open your CommCare Connect App to "
+                    "This invitation has already been accepted. Open your Connect App to "
                     "see more information about the opportunity and begin learning"
                 )
             )
@@ -156,7 +156,7 @@ class AcceptInviteView(View):
         user_invite.save()
         return HttpResponse(
             _(
-                "Thank you for accepting the invitation. Open your CommCare Connect App to "
+                "Thank you for accepting the invitation. Open your Connect App to "
                 "see more information about the opportunity and begin learning"
             )
         )

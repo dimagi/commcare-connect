@@ -1,5 +1,16 @@
 {% extends 'program/program_base.html' %}
 {% load i18n %}
+{% load static %}
+
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
 
 {% block inner %}
 <div x-data="{showProgramEditModal: false}">
@@ -23,7 +34,7 @@
               <div x-cloak x-show="showInviteModal" x-transition.opacity class="modal-backdrop" >
                 <div @click.away="showInviteModal = false" x-transition class="modal">
                   <div class="header">
-                    <h2 class="title">{% translate "Invite Organizations" %}</h2>
+                    <h2 class="title">{% translate "Invite Organization" %}</h2>
                     <button @click="showInviteModal = false" class="button-icon" aria-label="Close">
                       <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
@@ -32,7 +43,7 @@
                     {% csrf_token %}
                     <div class="flex flex-col gap-2 py-4">
                       <label for="organization" class="title-sm">{% translate "Organization" %}</label>
-                      <select id="organization" name="organization" required class="base-dropdown">
+                      <select id="organization" name="organization" required data-tomselect data-tomselect:no-remove-button>
                         {% for org in organizations %}
                           <option value="{{ org.slug }}">{{ org.name }}</option>
                         {% endfor %}

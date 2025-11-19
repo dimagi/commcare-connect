@@ -260,3 +260,19 @@ class ExchangeRateFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.ExchangeRate"
+
+
+class CredentialConfigurationFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+
+    class Meta:
+        model = "opportunity.CredentialConfiguration"
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity = SubFactory(OpportunityFactory)
+    delivery_type = SubFactory(DeliveryTypeFactory)
+
+    class Meta:
+        model = "users.UserCredential"

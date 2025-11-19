@@ -18,15 +18,15 @@ def send_org_invite(membership_id, host_user_id):
     invite_url = build_absolute_uri(None, location)
     message = f"""Hi,
 
-You have been invited to join {membership.organization.name} on Commcare Connect by {host_user.name}.
+You have been invited to join {membership.organization.name} on Connect by {host_user.name}.
 The invite can be accepted by visiting the link.
 
 {invite_url}
 
 Thank You,
-Commcare Connect"""
+Connect"""
     send_mail(
-        subject=f"{host_user.name} has invite you to join '{membership.organization.name}' on CommCare Connect",
+        subject=f"{host_user.name} has invite you to join '{membership.organization.name}' on Connect",
         message=message,
         recipient_list=[membership.user.email],
         from_email=settings.DEFAULT_FROM_EMAIL,

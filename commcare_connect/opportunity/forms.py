@@ -10,6 +10,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import F, Min, Q, Sum, TextChoices
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
@@ -37,8 +38,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
-from commcare_connect.users.credential_levels import DeliveryLevel, LearnLevel
-from commcare_connect.users.models import User
+from commcare_connect.users.models import User, UserCredential
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
@@ -215,14 +215,14 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
 
         self.fields["learn_level"] = forms.ChoiceField(
-            choices=[("", _("None"))] + LearnLevel.choices,
+            choices=[("", _("None"))] + UserCredential.LearnLevel.choices,
             required=False,
             label=_("Learn Level"),
             help_text=_("Credential level required for completing the learning phase."),
             initial=credential_issuer.learn_level if credential_issuer else "",
         )
         self.fields["delivery_level"] = forms.ChoiceField(
-            choices=[("", _("None"))] + DeliveryLevel.choices,
+            choices=[("", _("None"))] + UserCredential.DeliveryLevel.choices,
             required=False,
             label=_("Delivery Level"),
             help_text=_("Credential level required for completing deliveries."),
@@ -281,6 +281,15 @@ class OpportunityInitForm(forms.ModelForm):
         self.org_slug = kwargs.pop("org_slug", "")
         super().__init__(*args, **kwargs)
 
+        self.fields["short_description"].label = format_html(
+            "{} <i class='fa-solid fa-circle-info text-gray-400' x-tooltip.raw='{}'></i>",
+            _("Short description"),
+            _(
+                "This field is used to provide a description to users on the mobile app. "
+                "It is displayed when the user wants to view more information about the opportunity."
+            ),
+        )
+
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
             Row(
@@ -336,6 +345,11 @@ class OpportunityInitForm(forms.ModelForm):
         )
 
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
+        self.fields["description"].label = format_html(
+            "{} <i class='fa-solid fa-circle-info text-gray-400' x-tooltip.raw='{}'></i>",
+            _("Description"),
+            _("This field is used to provide a description to users accessing the opportunity on the web."),
+        )
 
         def get_htmx_swap_attrs(url_query: str, include: str, trigger: str):
             return {
@@ -1104,7 +1118,7 @@ class PaymentUnitForm(forms.ModelForm):
 
 class SendMessageMobileUsersForm(forms.Form):
     title = forms.CharField(
-        empty_value="Notification from CommCare Connect",
+        empty_value="Notification from Connect",
         required=False,
     )
     body = forms.CharField(widget=forms.Textarea)

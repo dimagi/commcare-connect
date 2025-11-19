@@ -4,9 +4,11 @@ from django.db.models import Count, F, Q
 from django.http import JsonResponse, StreamingHttpResponse
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
-from rest_framework.exceptions import NotFound
-from rest_framework.generics import RetrieveAPIView
+from rest_framework import status
+from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.data_export.serializer import (
@@ -14,6 +16,7 @@ from commcare_connect.data_export.serializer import (
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
     InvoiceDataSerializer,
+    LabsRecordDataSerializer,
     OpportunityDataExportSerializer,
     OpportunitySerializer,
     OpportunityUserDataSerializer,
@@ -26,6 +29,7 @@ from commcare_connect.opportunity.models import (
     Assessment,
     CompletedModule,
     CompletedWork,
+    LabsRecord,
     Opportunity,
     OpportunityAccess,
     Payment,
@@ -34,11 +38,21 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
+from commcare_connect.users.models import User
 
 
 class BaseDataExportView(APIView):
     permission_classes = [IsAuthenticated, TokenHasScope]
     required_scopes = ["export"]
+
+
+class OpportunityDataExportView(BaseDataExportView):
+    def check_opportunity_permission(self, user, opp_id):
+        self.opportunity = _get_opportunity_or_404(user, opp_id)
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        self.check_opportunity_permission(request.user, self.kwargs.get("opp_id"))
 
 
 class EchoWriter:
@@ -93,6 +107,34 @@ def _get_opportunity_or_404(user, opp_id):
         raise NotFound()
 
 
+def _get_program_or_404(user, program_id):
+    try:
+        return (
+            Program.objects.filter(
+                organization__memberships__user=user,
+                id=program_id,
+            )
+            .distinct()
+            .get()
+        )
+    except Program.DoesNotExist:
+        raise NotFound()
+
+
+def _get_org_or_404(user, org_id):
+    try:
+        return (
+            Organization.objects.filter(
+                memberships__user=user,
+                id=org_id,
+            )
+            .distinct()
+            .get()
+        )
+    except Organization.DoesNotExist:
+        raise NotFound()
+
+
 class ProgramOpportunityOrganizationDataView(BaseDataExportView):
     @extend_schema(
         responses=inline_serializer(
@@ -124,13 +166,8 @@ class SingleOpportunityDataView(RetrieveAPIView, BaseDataExportView):
         return _get_opportunity_or_404(self.request.user, self.kwargs.get("opp_id"))
 
 
-class OpportunityScopedDataView(BaseStreamingCSVExportView):
-    def check_opportunity_permission(self, user, opp_id):
-        self.opportunity = _get_opportunity_or_404(user, opp_id)
-
-    def check_permissions(self, request):
-        super().check_permissions(request)
-        self.check_opportunity_permission(request.user, self.kwargs.get("opp_id"))
+class OpportunityScopedDataView(OpportunityDataExportView, BaseStreamingCSVExportView):
+    pass
 
 
 class OpportunityUserDataView(OpportunityScopedDataView):
@@ -206,6 +243,88 @@ class AssessmentDataView(OpportunityScopedDataView):
         return Assessment.objects.filter(opportunity=self.opportunity).annotate(
             username=F("opportunity_access__user__username"),
         )
+
+
+class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
+    serializer_class = LabsRecordDataSerializer
+
+    def _check_get_permissions(self, request):
+        params = request.query_params
+        if params.get("opportunity_id"):
+            opp_id = params.get("opportunity_id")
+            self.opportunity = _get_opportunity_or_404(request.user, opp_id)
+        elif params.get("program_id"):
+            program_id = params.get("program_id")
+            self.program = _get_program_or_404(request.user, program_id)
+        elif params.get("organization_id"):
+            org_id = params.get("organization_id")
+            self.organization = _get_org_or_404(request.user, org_id)
+        else:
+            raise PermissionDenied("Specifying an org, opp, or program is required")
+
+    def _check_post_permissions(self, request):
+        data = request.data
+        many = isinstance(data, list)
+        if not many:
+            data = [data]
+        self.data = data
+        opps = set()
+        orgs = set()
+        programs = set()
+        for item in self.data:
+            if item.get("opportunity_id"):
+                opps.add(item["opportunity_id"])
+            if item.get("program_id"):
+                programs.add(item["program_id"])
+            if item.get("organization_id"):
+                orgs.add(item["organization_id"])
+        for opp_id in opps:
+            _get_opportunity_or_404(request.user, opp_id)
+        for program_id in programs:
+            _get_program_or_404(request.user, program_id)
+        for org_id in orgs:
+            _get_org_or_404(request.user, org_id)
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if request.method == "GET":
+            self._check_get_permissions(request)
+        elif request.method == "POST":
+            self._check_post_permissions(request)
+
+    def get_queryset(self):
+        filters = {}
+        query_params = self.request.query_params.copy()
+        for key, value in query_params.items():
+            filters[key] = value
+        queryset = LabsRecord.objects.filter(**filters)
+        if hasattr(self, "opportunity"):
+            queryset = queryset.filter(opportunity=self.opportunity)
+        if hasattr(self, "program"):
+            queryset = queryset.filter(program=self.program)
+        if hasattr(self, "organization"):
+            queryset = queryset.filter(organization=self.organization)
+        queryset = queryset.annotate(
+            username=F("user__username"),
+        )
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        # Handles upsert (update or create) for LabsRecord via JSON data
+
+        instances = []
+        for item in self.data:
+            item = item.copy()
+            username = item.pop("username", None)
+            user = None
+            if username:
+                user = User.objects.get(username=username)
+                item["user"] = user
+            pk = item.pop("id", None)
+            obj, created = LabsRecord.objects.update_or_create(defaults=item, **{"id": pk})
+            instances.append(obj)
+        serializer = self.get_serializer(instances, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class OrganizationProgramDataView(BaseStreamingCSVExportView):

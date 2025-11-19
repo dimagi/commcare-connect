@@ -19,6 +19,7 @@ urlpatterns = [
         views.CompletedModuleDataView.as_view(),
         name="completed_module_data",
     ),
+    path("labs_record/", views.LabsRecordDataView.as_view(), name="labs_record_data"),
     path(
         "program/<int:program_id>/opportunity/",
         views.ProgramOpportunityDataView.as_view(),

@@ -263,7 +263,7 @@ def program_manager_home(request, org):
         pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="opp_id"
     )
 
-    organizations = Organization.objects.exclude(pk=org.pk)
+    organizations = Organization.objects.exclude(pk=org.pk).order_by("name")
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
         {"title": "Pending Invoices", "rows": pending_payments},

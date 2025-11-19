@@ -47,6 +47,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.utils.completed_work import update_status
 from commcare_connect.users.models import User
+from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
 from commcare_connect.utils.datetime import is_date_before
@@ -458,3 +459,8 @@ def fetch_exchange_rates(date=None, currency=None):
         # Parsing it to decimal otherwise the returned object rate will still be in float.
         rate = Decimal(rates[currency])
         return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+
+
+@celery_app.task()
+def issue_user_credentials():
+    UserCredentialIssuer.run()
