@@ -1,0 +1,34 @@
+{% load i18n %}
+
+<div class="overflow-x-auto">
+    <table class="min-w-full rounded-lg shadow-md bg-white">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="px-4 py-3 text-left font-semibold text-gray-700">{% translate "Month" %}</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-700">{% translate "Payment Unit" %}</th>
+                <th class="px-4 py-3 text-right font-semibold text-gray-700">{% translate "Number Approved" %}</th>
+                <th class="px-4 py-3 text-right font-semibold text-gray-700">{% translate "Payment Unit Amount (local)" %}</th>
+                <th class="px-4 py-3 text-right font-semibold text-gray-700">{% translate "Total Amount (local)" %}</th>
+                <th class="px-4 py-3 text-right font-semibold text-gray-700">{% translate "Exchange Rate" %}</th>
+                <th class="px-4 py-3 text-right font-semibold text-gray-700">{% translate "Total Amount (USD)" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr class="even:bg-gray-50 text-gray-800 hover:bg-gray-100">
+                <td class="px-4 py-2">{{ item.month|date:"F Y" }}</td>
+                <td class="px-4 py-2">{{ item.payment_unit_name }}</td>
+                <td class="px-4 py-2 text-right">{{ item.number_approved }}</td>
+                <td class="px-4 py-2 text-right">{{ item.amount_per_unit }}</td>
+                <td class="px-4 py-2 text-right">{{ item.total_amount_local }}</td>
+                <td class="px-4 py-2 text-right">{{ item.exchange_rate }}</td>
+                <td class="px-4 py-2 text-right font-semibold">{{ item.total_amount_usd }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" class="px-4 py-4 text-center text-gray-500">{% translate "No invoice items found." %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
