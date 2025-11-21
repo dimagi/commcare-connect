@@ -71,6 +71,7 @@ class ProgramDataExportSerializer(serializers.ModelSerializer):
 
 class OpportunityUserDataSerializer(serializers.Serializer):
     username = serializers.CharField()
+    name = serializers.CharField()
     phone = serializers.CharField()
     date_learn_started = serializers.DateTimeField()
     user_invite_status = serializers.CharField()
