@@ -3,7 +3,7 @@ from datetime import datetime
 
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models
-from django.db.models.functions import Coalesce, ExtractDay, TruncMonth
+from django.db.models.functions import Coalesce, ExtractDay, Greatest, TruncMonth
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client import fetch_user_counts
@@ -15,6 +15,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
     VisitValidationStatus,
 )
+from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.utils.datetime import get_month_series, get_start_end_dates_from_month_range
 
 ADMIN_REPORT_START = "2023-01"
@@ -223,6 +224,18 @@ def get_table_data_for_year_month(
     connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
     total_eligible_user_counts = get_eligible_user_counts_cumulative(delivery_type)
 
+    activated_personalid_accounts = (
+        UserAnalyticsData.objects.filter(
+            models.Q(has_accepted_opp__isnull=False)
+            | models.Q(has_sent_message__isnull=False)
+            | models.Q(has_viewed_work_history__isnull=False)
+        )
+        .annotate(month_group=TruncMonth(Greatest("has_accepted_opp", "has_sent_message", "has_viewed_work_history")))
+        .values("month_group")
+        .annotate(users=models.Count("username"))
+    )
+    activated_personalid_accounts_data = {item["month_group"]: item["users"] for item in activated_personalid_accounts}
+
     for group_key in visit_data_dict.keys():
         month_group = group_key[0]
         visit_data_dict[group_key].update(
@@ -230,6 +243,7 @@ def get_table_data_for_year_month(
                 "connectid_users": connectid_user_count.get(month_group, 0),
                 "total_eligible_users": total_eligible_user_counts.get(month_group, 0),
                 "non_preregistered_users": non_invited_user_counts.get(month_group, 0),
+                "activated_personalid_acccounts": activated_personalid_accounts_data.get(month_group, 0),
             }
         )
     return list(visit_data_dict.values())
