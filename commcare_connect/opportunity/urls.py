@@ -110,7 +110,7 @@ urlpatterns = [
     path("<int:opp_id>/user_visit_review/", user_visit_review, name="user_visit_review"),
     path("<int:opp_id>/user_invite/", view=opportunity_user_invite, name="user_invite"),
     path("<int:opp_id>/invoice/", views.invoice_list, name="invoice_list"),
-    path("<int:opp_id>/invoice/create/", views.invoice_create, name="invoice_create"),
+    path("<int:opp_id>/invoice/create/", views.InvoiceCreateView.as_view(), name="invoice_create"),
     path("<int:opp_id>/invoice/approve/", views.invoice_approve, name="invoice_approve"),
     path("<int:opp_id>/delete_invites/", views.delete_user_invites, name="delete_user_invites"),
     path("<int:opp_id>/resend_invites/", resend_user_invites, name="resend_user_invites"),

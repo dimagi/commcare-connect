@@ -465,6 +465,10 @@ class ExchangeRate(models.Model):
 
 
 class PaymentInvoice(models.Model):
+    class InvoiceType(models.TextChoices):
+        service_delivery = "service_delivery", gettext("Service Delivery")
+        custom = "custom", gettext("Custom")
+
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -472,6 +476,10 @@ class PaymentInvoice(models.Model):
     invoice_number = models.CharField(max_length=50)
     service_delivery = models.BooleanField(default=True)
     exchange_rate = models.ForeignKey(ExchangeRate, on_delete=models.DO_NOTHING, null=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    title = models.CharField(max_length=255, null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
@@ -536,6 +544,7 @@ class CompletedWork(models.Model):
     saved_org_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
     )
+    invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity_access", "entity_id", "payment_unit")
