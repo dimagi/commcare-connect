@@ -31,7 +31,7 @@ RUN apt-get update \
 RUN addgroup --system django \
     && adduser --system --ingroup django django
 
-ENV DJANGO_SETTINGS_MODULE=config.settings.staging
+ENV DJANGO_SETTINGS_MODULE=config.settings.labs
 
 COPY --from=build-node /app/commcare_connect/static/bundles /app/commcare_connect/static/bundles
 COPY --from=build-python /wheels /wheels
@@ -45,8 +45,8 @@ RUN pip install --no-index --find-links=/wheels \
 WORKDIR /app
 
 COPY ./docker/* /
-RUN chmod +x /entrypoint /start*
-RUN chown django /entrypoint /start*
+RUN chmod +x /entrypoint /start* /migrate
+RUN chown django /entrypoint /start* /migrate
 
 COPY --chown=django:django . /app
 

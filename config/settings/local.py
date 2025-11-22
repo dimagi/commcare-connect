@@ -31,3 +31,30 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # allow running the deid-scripts in development
 INSTALLED_APPS += ["commcare_connect.deid"]
+
+# Labs Mode Configuration
+# ------------------------------------------------------------------------------
+IS_LABS_ENVIRONMENT = True
+
+# OAuth configuration
+LABS_OAUTH_SCOPES = ["export"]
+
+# Disable local registration
+ACCOUNT_ALLOW_REGISTRATION = False
+
+# Override login URL to labs OAuth
+LOGIN_URL = "/labs/login/"
+
+# Custom authentication (session-based, no DB)
+AUTHENTICATION_BACKENDS = [
+    "commcare_connect.labs.auth_backend.LabsOAuthBackend",
+]
+
+# Add labs app to installed apps
+INSTALLED_APPS = INSTALLED_APPS + ["commcare_connect.labs"]  # noqa: F405
+
+# Add labs middleware after standard auth (keep both for local dev/admin)
+MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405
+_auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
+MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.middleware.LabsAuthenticationMiddleware")
+MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.middleware.LabsURLWhitelistMiddleware")
