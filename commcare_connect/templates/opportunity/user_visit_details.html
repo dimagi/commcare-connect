@@ -328,7 +328,7 @@
       hx-swap="none">
       <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
       <button class="button button-md outline-style"
-        {% if user_visit.review_status != "disagree" %}value="disagree"{% else %}disabled{% endif %}
+        {% if user_visit.review_status == "pending" %}value="disagree"{% else %}disabled{% endif %}
         name="review_status">
         {% translate "Disagree" %}
       </button>
@@ -360,10 +360,10 @@
     </button>
     <button class="button button-md negative-light"
     {% if request.org_membership.is_viewer %} disabled {% else %}
-    {% if user_visit.status != "rejected" or user_visit.review_status == "disagree" %}
-      @click="showRejectModal = true; showApproveModal = false;"
-    {% else %}
+    {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %}
       disabled
+    {% else %}
+      @click="showRejectModal = true; showApproveModal = false;"
     {% endif %}
     {% endif %}>
       {% translate "Reject" %}

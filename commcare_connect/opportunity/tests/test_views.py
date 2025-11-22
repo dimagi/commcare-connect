@@ -17,6 +17,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     UserInvite,
     UserInviteStatus,
+    VisitReviewStatus,
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.tasks import invite_user
@@ -153,6 +154,75 @@ def test_approve_visit(
     if opportunity.managed:
         assert justification == visit.justification
     assert response.status_code == HTTPStatus.OK
+
+
+@pytest.mark.django_db
+def test_reject_visit(client: Client, opportunity):
+    reason = "reason test"
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    visit = UserVisitFactory.create(
+        opportunity=opportunity,
+        opportunity_access=access,
+        status=VisitValidationStatus.pending,
+    )
+    accept_visit = UserVisitFactory.create(
+        opportunity=opportunity,
+        opportunity_access=access,
+        status=VisitValidationStatus.approved,
+        review_status=VisitReviewStatus.agree,
+    )
+
+    user = MembershipFactory.create(organization=opportunity.organization).user
+    client.force_login(user)
+    reject_url = reverse("opportunity:reject_visits", args=(opportunity.organization.slug, opportunity.id))
+    response = client.post(reject_url, {"reason": reason, "visit_ids[]": [visit.id, accept_visit.id]}, follow=True)
+    visit.refresh_from_db()
+    assert visit.status == VisitValidationStatus.rejected
+    assert visit.reason == reason
+    assert response.status_code == HTTPStatus.OK
+
+    accept_visit.refresh_from_db()
+    assert accept_visit.status == VisitValidationStatus.approved
+    assert accept_visit.reason is None
+
+
+@pytest.mark.parametrize(
+    "review_status, new_status, expected_status",
+    [
+        ("agree", "disagree", "agree"),
+        ("disagree", "agree", "agree"),
+        ("disagree", "pending", "disagree"),
+    ],
+)
+@pytest.mark.django_db
+def test_user_visit_review(
+    client,
+    program_manager_org,
+    program_manager_org_user_admin,
+    organization,
+    review_status,
+    new_status,
+    expected_status,
+):
+    program = ProgramFactory(organization=program_manager_org)
+    managed_opportunity = ManagedOpportunityFactory(program=program, organization=organization)
+
+    access = OpportunityAccessFactory(opportunity=managed_opportunity)
+    visit = UserVisitFactory.create(
+        opportunity=managed_opportunity, opportunity_access=access, review_status=review_status
+    )
+    client.force_login(program_manager_org_user_admin)
+    url = reverse(
+        "opportunity:user_visit_review",
+        args=(
+            program_manager_org.slug,
+            managed_opportunity.id,
+        ),
+    )
+    response = client.post(url, {"review_status": new_status, "pk": [visit.id]})
+    assert response.status_code == 200
+    visit.refresh_from_db()
+    assert visit.review_status == expected_status
 
 
 @pytest.mark.django_db

@@ -407,6 +407,8 @@ def bulk_update_visit_status_task(
         messages = [f"Visit status updated successfully for {len(status)} visits."]
         if status.missing_visits:
             messages.append(status.get_missing_message())
+        if status.locked_visits:
+            messages.append(status.get_locked_message())
 
         if tracking_info:
             tracking_info = GATrackingInfo.from_dict(tracking_info)

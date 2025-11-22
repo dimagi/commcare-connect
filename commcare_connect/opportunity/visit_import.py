@@ -68,6 +68,7 @@ class InvalidValueError(RowDataError):
 class VisitImportStatus:
     seen_visits: set[str]
     missing_visits: set[str]
+    locked_visits: set[str]
     approved_count: int = 0
     rejected_count: int = 0
 
@@ -75,15 +76,27 @@ class VisitImportStatus:
         return len(self.seen_visits)
 
     def get_missing_message(self):
-        joined = ", ".join(self.missing_visits)
-        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return format_html(
+        return self._create_message(
+            self.missing_visits,
             "<br>{} visits were not found:<br>{}",
-            len(self.missing_visits),
+        )
+
+    def get_locked_message(self):
+        return self._create_message(
+            self.locked_visits,
+            "<br>{} visits could not be updated as they have already been marked as accepted:<br>{}",
+        )
+
+    def _create_message(self, visits, message):
+        joined = ", ".join(visits)
+        wrapped = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
+        return format_html(
+            message,
+            len(visits),
             format_html_join(
                 "<br>",
                 "{}",
-                ((m,) for m in missing),
+                ((w,) for w in wrapped),
             ),
         )
 
@@ -157,6 +170,7 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
     data_by_visit_id = get_data_by_visit_id(headers, rows)
     visit_ids = list(data_by_visit_id.keys())
     missing_visits = set()
+    locked_visits = set()
     seen_visits = set()
     user_ids = set()
     approved_count = 0
@@ -171,6 +185,9 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
                 visit_data = data_by_visit_id[visit.xform_id]
                 status, reason, justification = visit_data
                 changed = False
+                if visit.review_status == VisitReviewStatus.agree:
+                    locked_visits.add(visit.xform_id)
+                    continue
                 if visit.status != status:
                     visit.status = status
                     if opportunity.managed and status == VisitValidationStatus.approved:
@@ -200,7 +217,7 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
             )
             missing_visits |= set(visit_batch) - seen_visits
     bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
-    return VisitImportStatus(seen_visits, missing_visits, approved_count, rejected_count)
+    return VisitImportStatus(seen_visits, missing_visits, locked_visits, approved_count, rejected_count)
 
 
 def get_missing_justification_message(visits_ids):
@@ -726,7 +743,7 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
     }
 
     if not visit_data:
-        return VisitImportStatus(set(), set())
+        return VisitImportStatus(set(), set(), set())
 
     visit_ids = set(visit_data.keys())
     existing_visits = UserVisit.objects.filter(xform_id__in=visit_ids, review_created_on__isnull=False).only(
@@ -736,10 +753,14 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
     to_update = []
     user_ids = set()
     updated_visit_ids = set()
-
+    locked_visit_ids = set()
     with transaction.atomic():
         for visit in existing_visits:
             new_status = visit_data.get(visit.xform_id)
+            if visit.review_status == VisitReviewStatus.agree.value:
+                locked_visit_ids.add(visit.xform_id)
+                continue
+
             if new_status and visit.review_status != new_status:
                 visit.review_status = new_status
                 to_update.append(visit)
@@ -754,4 +775,4 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
 
     missing_visits = visit_ids - {visit.xform_id for visit in existing_visits}
 
-    return VisitImportStatus(updated_visit_ids, missing_visits)
+    return VisitImportStatus(updated_visit_ids, missing_visits, locked_visit_ids)

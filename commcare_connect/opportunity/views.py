@@ -536,6 +536,8 @@ def review_visit_import(request, org_slug=None, opp_id=None):
         message = f"Visit review updated successfully for {len(status)} visits."
         if status.missing_visits:
             message += status.get_missing_message()
+        if status.locked_visits:
+            message += status.get_locked_message()
         messages.success(request, mark_safe(message))
     return redirect(redirect_url)
 
@@ -968,7 +970,7 @@ def reject_visits(request, org_slug=None, opp_id=None):
 
     updated_count = (
         UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
-        .exclude(status=VisitValidationStatus.rejected)
+        .exclude(Q(status=VisitValidationStatus.rejected) | Q(review_status=VisitReviewStatus.agree))
         .update(status=VisitValidationStatus.rejected, reason=reason)
     )
     if visit_ids:
@@ -1223,7 +1225,7 @@ def user_visit_review(request, org_slug, opp_id):
     if request.POST and request.is_opportunity_pm:
         review_status = request.POST.get("review_status").lower()
         updated_reviews = request.POST.getlist("pk")
-        user_visits = UserVisit.objects.filter(pk__in=updated_reviews)
+        user_visits = UserVisit.objects.filter(pk__in=updated_reviews).exclude(review_status=VisitReviewStatus.agree)
         if review_status in [VisitReviewStatus.agree.value, VisitReviewStatus.disagree.value]:
             user_visits.update(review_status=review_status)
             update_payment_accrued(opportunity=request.opportunity, users=[visit.user for visit in user_visits])

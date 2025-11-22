@@ -56,29 +56,46 @@ from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 @pytest.mark.django_db
-def test_bulk_update_visit_status(opportunity: Opportunity, mobile_user: User):
-    access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
-    visits = UserVisitFactory.create_batch(
-        5,
-        opportunity=opportunity,
-        status=VisitValidationStatus.pending.value,
-        user=mobile_user,
-        opportunity_access=access,
-    )
-    dataset = Dataset(headers=["visit id", "status", "rejected reason"])
-    dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
+class TestBulkUpdateVisitStatus:
+    def test_bulk_update_visit_status(self, opportunity: Opportunity, mobile_user: User):
+        access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+        visits = UserVisitFactory.create_batch(
+            5,
+            opportunity=opportunity,
+            status=VisitValidationStatus.pending.value,
+            user=mobile_user,
+            opportunity_access=access,
+        )
+        dataset = Dataset(headers=["visit id", "status", "rejected reason"])
+        dataset.extend([[visit.xform_id, VisitValidationStatus.approved.value, ""] for visit in visits])
 
-    before_update = now()
-    import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
-    after_update = now()
+        before_update = now()
+        import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
+        after_update = now()
 
-    assert not import_status.missing_visits
+        assert not import_status.missing_visits
 
-    updated_visits = UserVisit.objects.filter(opportunity=opportunity)
-    for visit in updated_visits:
+        updated_visits = UserVisit.objects.filter(opportunity=opportunity)
+        for visit in updated_visits:
+            assert visit.status == VisitValidationStatus.approved.value
+            assert visit.status_modified_date is not None
+            assert before_update <= visit.status_modified_date <= after_update
+
+    def test_locked_visits(self, opportunity, mobile_user):
+        access = OpportunityAccess.objects.get(user=mobile_user, opportunity=opportunity)
+        visit = UserVisitFactory.create(
+            opportunity=opportunity,
+            status=VisitValidationStatus.approved.value,
+            review_status=VisitReviewStatus.agree.value,
+            user=mobile_user,
+            opportunity_access=access,
+        )
+        dataset = Dataset(headers=["visit id", "status", "rejected reason"])
+        dataset.extend([[visit.xform_id, VisitValidationStatus.rejected.value, ""]])
+        import_status = bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
+        assert import_status.locked_visits == {visit.xform_id}
+        visit.refresh_from_db()
         assert visit.status == VisitValidationStatus.approved.value
-        assert visit.status_modified_date is not None
-        assert before_update <= visit.status_modified_date <= after_update
 
 
 @pytest.mark.django_db
@@ -767,13 +784,13 @@ class TestBulkReviewVisitImport:
             num_agree,
             opportunity=self.opp,
             review_created_on=self.now_time - timedelta(days=3),
-            status=VisitReviewStatus.pending,
+            status=VisitValidationStatus.pending,
         )
         disagree_visits = UserVisitFactory.create_batch(
             num_disagree,
             opportunity=self.opp,
             review_created_on=self.now_time - timedelta(days=3),
-            status=VisitReviewStatus.pending,
+            status=VisitValidationStatus.pending,
         )
 
         expected_agreed_visits = {visit.xform_id for visit in agree_visits}
@@ -910,3 +927,27 @@ class TestBulkReviewVisitImport:
         with pytest.raises(expected_exception, match=re.escape(expected_message)):
             for row_number, row in enumerate(dataset, start=2):
                 ReviewVisitRowData(row_number, row, dataset.headers)
+
+    def test_locked_visits(self):
+        agree_visits = UserVisitFactory.create_batch(
+            2,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitValidationStatus.pending,
+        )
+        locked_visits = UserVisitFactory.create_batch(
+            2,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        dataset = self._prepare_dataset(agree_visits, VisitReviewStatus.agree.value)
+        dataset.extend(self._prepare_dataset(locked_visits, VisitReviewStatus.disagree.value))
+
+        status = _bulk_update_visit_review_status(self.opp, dataset)
+        assert status.seen_visits == {visit.xform_id for visit in agree_visits}
+        assert status.locked_visits == {visit.xform_id for visit in locked_visits}
+        assert UserVisit.objects.filter(review_status=VisitReviewStatus.agree).count() == len(agree_visits) + len(
+            locked_visits
+        )
