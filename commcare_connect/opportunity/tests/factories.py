@@ -267,3 +267,13 @@ class UserCredentialFactory(DjangoModelFactory):
 
     class Meta:
         model = "users.UserCredential"
+
+
+class BlobMetaFactory(DjangoModelFactory):
+    blob_id = Faker("uuid4")
+    parent_id = Faker("uuid4")
+    content_type = Faker("mime_type")
+    content_length = Faker("pyint", min_value=100, max_value=10000)
+
+    class Meta:
+        model = "opportunity.BlobMeta"

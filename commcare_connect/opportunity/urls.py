@@ -91,7 +91,7 @@ urlpatterns = [
     path("<int:opp_id>/send_message", view=send_message_mobile_users, name="send_message_mobile_users"),
     path("<int:opp_id>/approve_visits", view=approve_visits, name="approve_visits"),
     path("<int:opp_id>/reject_visits", view=reject_visits, name="reject_visits"),
-    path("fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
+    path("<int:opp_id>/fetch_attachment/<blob_id>", view=fetch_attachment, name="fetch_attachment"),
     path(
         "<int:opp_id>/completed_work_table/", view=OpportunityCompletedWorkTable.as_view(), name="completed_work_table"
     ),
