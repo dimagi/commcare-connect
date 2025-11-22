@@ -32,6 +32,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MobileUserFactory
+from commcare_connect.utils.error_codes import ErrorCodes
 
 
 def _setup_opportunity_and_access(mobile_user: User, total_budget, end_date, budget_per_visit=10):
@@ -96,7 +97,7 @@ def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: A
     api_client.force_authenticate(mobile_user_2)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
-    assert response.data == "Opportunity cannot be claimed. (Budget Exhausted)"
+    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
 
 
 def test_claim_endpoint_end_date_exceeded(mobile_user: User, api_client: APIClient):
@@ -106,7 +107,7 @@ def test_claim_endpoint_end_date_exceeded(mobile_user: User, api_client: APIClie
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
-    assert response.data == "Opportunity cannot be claimed. (End date reached)"
+    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_ENDED
 
 
 def test_claim_endpoint_already_claimed_opportunity(mobile_user: User, api_client: APIClient):
@@ -134,7 +135,7 @@ def test_claim_endpoint_less_budget_than_visit(mobile_user: User, api_client: AP
     api_client.force_authenticate(mobile_user)
     response = api_client.post(f"/api/opportunity/{opportunity.id}/claim")
     assert response.status_code == 400
-    assert response.data == "Opportunity cannot be claimed. (Budget Exhausted)"
+    assert response.json()["error_code"] == ErrorCodes.OPPORTUNITY_FULL
 
 
 def test_claim_endpoint_uneven_visits(mobile_user: User, api_client: APIClient):
