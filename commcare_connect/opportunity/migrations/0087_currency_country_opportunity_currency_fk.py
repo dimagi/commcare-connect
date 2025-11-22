@@ -471,7 +471,7 @@ def populate_currency_and_country_fk(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0083_credentialconfiguration"),
+        ("opportunity", "0086_labsrecord_program_alter_labsrecord_opportunity"),
     ]
 
     operations = [
