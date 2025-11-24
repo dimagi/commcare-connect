@@ -344,6 +344,62 @@ def test_bulk_update_payments(opportunity: Opportunity):
         assert payment.payment_operator == f"operator-{index}"
 
 
+@pytest.mark.django_db
+def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
+    mobile_user = MobileUserFactory.create(username="testuser123")
+    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+
+    test_amount = 75
+    test_payment_date_str = "2025-05-20"
+
+    PaymentFactory.create(
+        opportunity_access=access, amount=test_amount, amount_usd=test_amount, date_paid=test_payment_date_str
+    )
+
+    assert Payment.objects.count() == 1
+
+    duplicate_dataset_rows = [
+        (
+            mobile_user.username,
+            mobile_user.phone_number,
+            mobile_user.name,
+            test_amount,
+            test_payment_date_str,
+            "Duplicate Method",
+            "Duplicate Operator",
+        ),
+        (
+            mobile_user.username,
+            mobile_user.phone_number,
+            mobile_user.name,
+            test_amount,
+            "2025-05-21",
+            "Unique Method",
+            "Unique Operator",
+        ),
+    ]
+
+    dataset_headers = [
+        "Username",
+        "Phone Number",
+        "Name",
+        "Payment Amount",
+        "Payment Date (YYYY-MM-DD)",
+        "Payment Method",
+        "Payment Operator",
+    ]
+
+    with pytest.raises(ImportException) as excinfo:
+        bulk_update_payments(opportunity.pk, dataset_headers, duplicate_dataset_rows)
+
+    assert "1 rows have errors" in str(excinfo.value.message)
+
+    error_details = excinfo.value.rows
+    expected_error_substring = "A payment for this user with the same amount and date already exists."
+    assert expected_error_substring in error_details
+    assert Payment.objects.count() == 1
+
+
 @pytest.fixture
 def dataset():
     return Dataset(headers=["latitude", "longitude", "area name", "radius", "active", "username", "site code"])

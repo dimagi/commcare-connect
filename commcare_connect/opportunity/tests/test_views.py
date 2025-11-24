@@ -5,6 +5,7 @@ from unittest import mock
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core.files.storage.handler import StorageHandler
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
@@ -21,10 +22,12 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
+    BlobMetaFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     OpportunityFactory,
+    OrganizationFactory,
     PaymentFactory,
     PaymentUnitFactory,
     UserInviteFactory,
@@ -539,6 +542,107 @@ class TestResendUserInvites:
         assert response.headers["HX-Redirect"] == self.expected_redirect
 
 
+@pytest.mark.django_db
+class TestFetchAttachmentView:
+    def test_user_without_org_membership_cannot_fetch(self, user, organization, client):
+        url = reverse("opportunity:fetch_attachment", args=(organization.slug, "1", "some-blob-id"))
+        client.force_login(user)
+
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_user_cannot_fetch_another_org_opportunity_blob(self, org_user_member, organization, client):
+        different_org = OrganizationFactory()  # Different organization
+        visit = UserVisitFactory(opportunity__organization=different_org)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+
+        url = reverse(
+            "opportunity:fetch_attachment", args=(organization.slug, visit.opportunity.id, blob_meta.blob_id)
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_user_cannot_fetch_blob_from_different_opportunity_on_another_org(
+        self, org_user_member, organization, client
+    ):
+        different_org = OrganizationFactory()  # Different organization
+        visit = UserVisitFactory(opportunity__organization=organization)
+        other_visit = UserVisitFactory(opportunity__organization=different_org)
+        blob_meta = BlobMetaFactory(parent_id=other_visit.xform_id)
+
+        url = reverse(
+            "opportunity:fetch_attachment", args=(organization.slug, visit.opportunity.id, blob_meta.blob_id)
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_user_cannot_fetch_blob_from_different_opportunity_same_org(
+        self, storage_handler_getitem_mock, org_user_member, organization, client
+    ):
+        opp_a = OpportunityFactory(organization=organization)
+        opp_b = OpportunityFactory(organization=organization)
+
+        visit_b = UserVisitFactory(opportunity=opp_b)
+        blob_meta = BlobMetaFactory(parent_id=visit_b.xform_id)
+
+        # Try to fetch blob of a different opportunity
+        url = reverse("opportunity:fetch_attachment", args=(organization.slug, opp_a.id, blob_meta.blob_id))
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+        storage_handler_getitem_mock.assert_not_called()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_user_can_fetch(self, storage_handler_getitem_mock, org_user_member, organization, client):
+        visit = UserVisitFactory(opportunity__organization=organization)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+
+        url = reverse(
+            "opportunity:fetch_attachment", args=(organization.slug, visit.opportunity.id, blob_meta.blob_id)
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 200
+        storage_handler_getitem_mock.assert_called_once()
+
+    def test_user_cannot_fetch_managed_opp(self, org_user_member, organization, client):
+        opp = ManagedOpportunityFactory()
+        opp.program.organization = opp.organization
+        opp.program.save()
+
+        visit = UserVisitFactory(opportunity=opp)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+
+        url = reverse("opportunity:fetch_attachment", args=(organization.slug, opp.id, blob_meta.blob_id))
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_user_can_fetch_managed_opp(self, storage_handler_getitem_mock, org_user_member, organization, client):
+        opp = ManagedOpportunityFactory(organization=organization)
+        opp.program.organization = organization
+        opp.program.save()
+
+        visit = UserVisitFactory(opportunity=opp)
+        blob_meta = BlobMetaFactory(parent_id=visit.xform_id)
+
+        url = reverse("opportunity:fetch_attachment", args=(organization.slug, opp.id, blob_meta.blob_id))
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 200
+        storage_handler_getitem_mock.assert_called_once()
+
+
 def test_views_use_opportunity_decorator_or_mixin():
     """
     Ensure all views in the opportunity module use the
@@ -607,7 +711,6 @@ def test_views_use_opportunity_decorator_or_mixin():
     function_excluded = {
         "export_status",  # Uses task_id parameter, and similar check is applied directly in code.
         "download_export",  # Uses task_id parameter, and similar check is applied directly in code.
-        "fetch_attachment",  # Uses blob_id parameter, not opp_id
         "add_api_key",  # API key management, no opportunity context needed
     }
 

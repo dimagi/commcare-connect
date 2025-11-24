@@ -31,11 +31,3 @@ Connect"""
         recipient_list=[membership.user.email],
         from_email=settings.DEFAULT_FROM_EMAIL,
     )
-
-
-@celery_app.task()
-def add_credential_task(org_pk: int, credential: str, users: list[str]):
-    # Disable temporarily until the new credentials system is ready
-    # org = Organization.objects.get(pk=org_pk)
-    # connect_id_client.add_credential(org, credential, users)
-    pass

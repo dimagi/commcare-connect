@@ -28,7 +28,6 @@ from commcare_connect.opportunity.export import (
     export_user_visit_review_data,
     export_work_status_table,
 )
-from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
@@ -142,25 +141,28 @@ def invite_user(user_id, opportunity_access_id):
 
 
 @celery_app.task()
-def generate_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str, flatten: bool):
+def generate_visit_export(
+    opportunity_id: int, from_date, to_date, status: list[str], export_format: str, flatten: bool
+):
     opportunity = Opportunity.objects.get(id=opportunity_id)
-    logger.info(f"Export for {opportunity.name} with date range {date_range} and status {','.join(status)}")
+    logger.info(
+        f"Export for {opportunity.name} with date range from {from_date} to {to_date} and status {','.join(status)}"
+    )
     exporter = UserVisitExporter(opportunity, flatten)
-    dataset = exporter.get_dataset(DateRanges(date_range), [VisitValidationStatus(s) for s in status])
+    dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
 
 
 @celery_app.task()
-def generate_review_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str):
+def generate_review_visit_export(opportunity_id: int, from_date, to_date, status: list[str], export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     logger.info(
-        f"Export review visit for {opportunity.name} with date range {date_range} and status {','.join(status)}"
+        f"""Export review visit for {opportunity.name} with date
+        from {from_date} to {to_date} and status {','.join(status)}"""
     )
-    dataset = export_user_visit_review_data(
-        opportunity, DateRanges(date_range), [VisitReviewStatus(s) for s in status]
-    )
+    dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
@@ -353,30 +355,35 @@ def generate_catchment_area_export(opportunity_id: int, export_format: str):
     return export_tmp_name
 
 
+def get_payment_upload_key(opp_id):
+    return f"bulk_update_payments_opportunity_{opp_id}"
+
+
 @celery_app.task(bind=True)
 def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_format: str):
     from commcare_connect.opportunity.visit_import import ImportException, bulk_update_payments, get_imported_dataset
 
-    set_task_progress(self, "Payment Record Import is in progress.")
-    try:
-        with default_storage.open(file_path, "rb") as f:
-            dataset = get_imported_dataset(f, file_format)
-            headers = dataset.headers or []
-            rows = list(dataset)
+    with cache.lock(get_payment_upload_key(opportunity_id), timeout=600):
+        set_task_progress(self, "Payment Record Import is in progress.")
+        try:
+            with default_storage.open(file_path, "rb") as f:
+                dataset = get_imported_dataset(f, file_format)
+                headers = dataset.headers or []
+                rows = list(dataset)
 
-        status = bulk_update_payments(opportunity_id, headers, rows)
-        messages = [f"Payment status updated successfully for {len(status)} users."]
-        if status.missing_users:
-            messages.append(status.get_missing_message())
+            status = bulk_update_payments(opportunity_id, headers, rows)
+            messages = [f"Payment status updated successfully for {len(status)} users."]
+            if status.missing_users:
+                messages.append(status.get_missing_message())
 
-    except ImportException as e:
-        messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
-    except Exception as e:
-        messages = [f"Unexpected error during payment import: {e}"]
-    finally:
-        default_storage.delete(file_path)
+        except ImportException as e:
+            messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
+        except Exception as e:
+            messages = [f"Unexpected error during payment import: {e}"]
+        finally:
+            default_storage.delete(file_path)
 
-    set_task_progress(self, "<br>".join(messages), is_complete=True)
+        set_task_progress(self, "<br>".join(messages), is_complete=True)
 
 
 @celery_app.task(bind=True)
@@ -463,4 +470,10 @@ def fetch_exchange_rates(date=None, currency=None):
 
 @celery_app.task()
 def issue_user_credentials():
+    """Runs daily to issue credentials to users who have earned them."""
     UserCredentialIssuer.run()
+
+
+@celery_app.task()
+def submit_credentials_to_personalid_task():
+    UserCredentialIssuer.submit_user_credentials()

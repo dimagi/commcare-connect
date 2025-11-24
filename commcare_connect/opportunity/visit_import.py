@@ -324,7 +324,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         try:
             if payment_date_raw:
                 if isinstance(payment_date_raw, datetime.datetime):
-                    payment_date = payment_date_raw
+                    payment_date = payment_date_raw.date()
                 else:
                     payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
             else:
@@ -339,6 +339,26 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             "payment_method": payment_method,
             "payment_operator": payment_operator,
         }
+        user_last_payment = (
+            Payment.objects.filter(
+                opportunity_access__user__username=username,
+                opportunity_access__opportunity=opportunity,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        date_paid = payment_date if payment_date else datetime.date.today()
+        if (
+            user_last_payment
+            and user_last_payment.amount == amount
+            and user_last_payment.date_paid.date() == date_paid
+        ):
+            invalid_rows.append(
+                (
+                    [escape(r) for r in row],
+                    "A payment for this user with the same amount and date already exists.",
+                )
+            )
         payments_by_user[username].append(payment_row)
 
     if invalid_rows:
@@ -346,39 +366,37 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     seen_users = set()
     payment_ids = []
-    lock_key = f"bulk_update_payments_opportunity_{opportunity.id}"
-    with cache.lock(lock_key, timeout=600):
-        with transaction.atomic():
-            usernames = payments_by_user.keys()
-            users = OpportunityAccess.objects.filter(
-                user__username__in=usernames, opportunity=opportunity, suspended=False
-            ).select_related("user")
+    with transaction.atomic():
+        usernames = payments_by_user.keys()
+        users = OpportunityAccess.objects.filter(
+            user__username__in=usernames, opportunity=opportunity, suspended=False
+        ).select_related("user")
 
-            for access in users:
-                username = access.user.username
-                if username not in payments_by_user:
-                    continue
-                for payment_row in payments_by_user[username]:
-                    amount = payment_row["amount"]
-                    payment_date = payment_row["payment_date"]
-                    if payment_date:
-                        exchange_rate = get_exchange_rate(opportunity.currency, payment_date)
-                    else:
-                        exchange_rate = exchange_rate_today
+        for access in users:
+            username = access.user.username
+            if username not in payments_by_user:
+                continue
+            for payment_row in payments_by_user[username]:
+                amount = payment_row["amount"]
+                payment_date = payment_row["payment_date"]
+                if payment_date:
+                    exchange_rate = get_exchange_rate(opportunity.currency, payment_date)
+                else:
+                    exchange_rate = exchange_rate_today
 
-                    payment_data = {
-                        "opportunity_access": access,
-                        "amount": amount,
-                        "amount_usd": amount / exchange_rate,
-                        "payment_method": payment_row["payment_method"],
-                        "payment_operator": payment_row["payment_operator"],
-                    }
-                    if payment_date:
-                        payment_data["date_paid"] = payment_date
-                    payment = Payment.objects.create(**payment_data)
-                    payment_ids.append(payment.pk)
-                seen_users.add(username)
-                update_work_payment_date(access)
+                payment_data = {
+                    "opportunity_access": access,
+                    "amount": amount,
+                    "amount_usd": amount / exchange_rate,
+                    "payment_method": payment_row["payment_method"],
+                    "payment_operator": payment_row["payment_operator"],
+                }
+                if payment_date:
+                    payment_data["date_paid"] = payment_date
+                payment = Payment.objects.create(**payment_data)
+                payment_ids.append(payment.pk)
+            seen_users.add(username)
+            update_work_payment_date(access)
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
 

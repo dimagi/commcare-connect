@@ -1,6 +1,7 @@
 import datetime
 import json
 import uuid
+from urllib.parse import urlencode
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
@@ -749,22 +750,78 @@ class DateRanges(TextChoices):
 
 class VisitExportForm(forms.Form):
     format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
-    date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
-    status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
+    from_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    to_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        required=False,
+        initial=datetime.date.today().strftime("%Y-%m-%d"),
+    )
+    status = forms.MultipleChoiceField(
+        choices=[("all", "All")] + VisitValidationStatus.choices,
+        widget=forms.SelectMultiple(
+            attrs={
+                "hx-trigger": "change",
+                "hx-target": "#visit-count-warning",
+                "hx-include": "closest form",
+            }
+        ),
+    )
     flatten_form_data = forms.BooleanField(initial=True, required=False)
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        self.review_export = kwargs.pop("review_export", False)
         super().__init__(*args, **kwargs)
+
+        visit_count_url = reverse(
+            "opportunity:visit_export_count", args=(self.opportunity.organization.slug, self.opportunity.id)
+        )
+
+        # if export is for review update the status and url
+        if self.review_export:
+            status_choices = [("all", "All")] + (
+                VisitReviewStatus.choices if self.review_export else VisitValidationStatus.choices
+            )
+            self.fields["status"].choices = status_choices
+
+            visit_count_url = f"{visit_count_url}?{urlencode({'review_export': 'true'})}"
+
+        hx_attrs = {
+            "hx-get": visit_count_url,
+            "hx-trigger": "change",
+            "hx-target": "#visit-count-warning",
+            "hx-include": "closest form",
+        }
+
+        for field_name in ["from_date", "to_date"]:
+            self.fields[field_name].widget.attrs.update(
+                {"max": datetime.date.today().strftime("%Y-%m-%d"), **hx_attrs}
+            )
+
+        self.fields["status"].widget.attrs.update(hx_attrs)
+        self.fields["format"].widget.attrs.update(hx_attrs)
+
         self.helper = FormHelper(self)
+
         self.helper.layout = Layout(
             Row(
                 Field("format"),
-                Field("date_range"),
+                Row(
+                    Field("from_date"),
+                    Field("to_date"),
+                    css_class="grid grid-cols-2 gap-6",
+                ),
                 Field("status"),
                 Field(
                     "flatten_form_data",
                     css_class=CHECKBOX_CLASS,
                     wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
+                Div(
+                    css_id="visit-count-warning",
+                    css_class="text-sm text-center",
                 ),
                 css_class="flex flex-col",
             ),
@@ -777,32 +834,6 @@ class VisitExportForm(forms.Form):
             return []
 
         return [VisitValidationStatus(status) for status in statuses]
-
-
-class ReviewVisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
-    date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
-    status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitReviewStatus.choices, initial=["all"])
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(
-                Field("format"),
-                Field("date_range"),
-                Field("status"),
-                css_class="flex flex-col",
-            ),
-        )
-        self.helper.form_tag = False
-
-    def clean_status(self):
-        statuses = self.cleaned_data["status"]
-        if not statuses or "all" in statuses:
-            return []
-
-        return [VisitReviewStatus(status) for status in statuses]
 
 
 class PaymentExportForm(forms.Form):

@@ -1,7 +1,8 @@
 import csv
 
+from django.core.files.storage import storages
 from django.db.models import Count, F, Q
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
 from rest_framework import status
@@ -27,6 +28,7 @@ from commcare_connect.data_export.serializer import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
+    BlobMeta,
     CompletedModule,
     CompletedWork,
     LabsRecord,
@@ -148,8 +150,12 @@ class ProgramOpportunityOrganizationDataView(BaseDataExportView):
     )
     def get(self, request):
         organizations = Organization.objects.filter(memberships__user=request.user)
-        opportunities = Opportunity.objects.filter(organization__in=organizations).annotate(
-            visit_count=Count("uservisit", distinct=True)
+        opportunities = (
+            Opportunity.objects.filter(
+                Q(organization__in=organizations) | Q(managedopportunity__program__organization__in=organizations)
+            )
+            .annotate(visit_count=Count("uservisit", distinct=True))
+            .distinct()
         )
         programs = Program.objects.filter(organization__in=organizations)
 
@@ -262,7 +268,7 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
         else:
             raise PermissionDenied("Specifying an org, opp, or program is required")
 
-    def _check_post_permissions(self, request):
+    def _check_edit_permissions(self, request):
         data = request.data
         many = isinstance(data, list)
         if not many:
@@ -289,8 +295,8 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
         super().check_permissions(request)
         if request.method == "GET":
             self._check_get_permissions(request)
-        elif request.method == "POST":
-            self._check_post_permissions(request)
+        elif request.method in ["POST", "DELETE"]:
+            self._check_edit_permissions(request)
 
     def get_queryset(self):
         filters = {}
@@ -325,6 +331,21 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
             instances.append(obj)
         serializer = self.get_serializer(instances, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, *args, **kwargs):
+        ids = [item["id"] for item in self.data]
+        LabsRecord.objects.filter(pk__in=ids).delete()
+        return Response(status=status.HTTP_200_OK)
+
+
+class ImageView(OpportunityDataExportView):
+    def get(self, request, *args, **kwargs):
+        blob_id = request.data["blob_id"]
+        blob_meta = BlobMeta.objects.get(blob_id=blob_id)
+        form = UserVisit.objects.get(xform_id=blob_meta.parent_id)
+        _get_opportunity_or_404(request.user, form.opportunity_id)
+        attachment = storages["default"].open(blob_id)
+        return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
 
 
 class OrganizationProgramDataView(BaseStreamingCSVExportView):

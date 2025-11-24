@@ -5,7 +5,7 @@
 <div class="flex flex-col gap-6" x-data="{
     slides: [
       {% for image in user_visit.images %}
-        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug blob_id=image.blob_id %}' },
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity_id blob_id=image.blob_id %}' },
       {% endfor %}
     ],
     currentIndex: 0,
