@@ -20,10 +20,14 @@ class TestUninvoicedVisitItems:
     def test_items_without_prior_invoice(self):
         opp_access = OpportunityAccessFactory()
         CompletedWorkFactory(status=CompletedWorkStatus.pending, opportunity_access=opp_access)
-        assert len(get_uninvoiced_visit_items(opp_access.opportunity)) == 0
+        items, _ = get_uninvoiced_visit_items(opp_access.opportunity)
+        assert len(items) == 0
 
         completed_work = CompletedWorkFactory(status=CompletedWorkStatus.approved, opportunity_access=opp_access)
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
+        completed_work.saved_payment_accrued = completed_work.payment_unit.amount
+        completed_work.save()
+
+        items, _ = get_uninvoiced_visit_items(opp_access.opportunity)
         assert len(items) == 1
 
         invoice_item = items[0]
@@ -40,13 +44,17 @@ class TestUninvoicedVisitItems:
             opportunity_access=opp_access,
             invoice=invoice,
         )
-        assert len(get_uninvoiced_visit_items(opp_access.opportunity)) == 0
+        items, _ = get_uninvoiced_visit_items(opp_access.opportunity)
+        assert len(items) == 0
 
         completed_work = CompletedWorkFactory(
             status=CompletedWorkStatus.approved,
             opportunity_access=opp_access,
         )
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
+        completed_work.saved_payment_accrued = completed_work.payment_unit.amount
+        completed_work.save()
+
+        items, _ = get_uninvoiced_visit_items(opp_access.opportunity)
         assert len(items) == 1
 
         invoice_item = items[0]
@@ -77,11 +85,11 @@ class TestUninvoicedVisitItems:
 
         payment_unit = PaymentUnitFactory()
 
-        self._create_completed_work(opp_access, two_months_ago, payment_unit, n=2)
-        self._create_completed_work(opp_access, one_month_ago, payment_unit, n=1)
-        self._create_completed_work(opp_access, today, payment_unit, n=1)
+        self._create_completed_work(opp_access, two_months_ago, payment_unit, exchange_rate=0.25, n=2)
+        self._create_completed_work(opp_access, one_month_ago, payment_unit, exchange_rate=0.50, n=1)
+        self._create_completed_work(opp_access, today, payment_unit, exchange_rate=0.75, n=1)
 
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
+        items, _ = get_uninvoiced_visit_items(opp_access.opportunity)
         assert len(items) == 3
 
         for item in items:
@@ -109,7 +117,7 @@ class TestUninvoicedVisitItems:
             assert item["amount_per_unit"] == expected_payment_unit.amount
             assert item["total_amount_local"] == total_local_amount
             assert item["exchange_rate"] == expected_exchange_rate
-            assert item["total_amount_usd"] == round(total_local_amount / expected_exchange_rate, 2)
+            assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
 
     @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
     def test_different_pu_items_across_multiple_months(self, mock_get_exchange_rate):
@@ -138,15 +146,15 @@ class TestUninvoicedVisitItems:
         payment_unit1 = PaymentUnitFactory()
         payment_unit2 = PaymentUnitFactory()
 
-        self._create_completed_work(opp_access, two_months_ago, payment_unit1, n=2)
-        self._create_completed_work(opp_access, two_months_ago, payment_unit2, n=1)
+        self._create_completed_work(opp_access, two_months_ago, payment_unit1, exchange_rate=rate_two_months_ago, n=2)
+        self._create_completed_work(opp_access, two_months_ago, payment_unit2, exchange_rate=rate_two_months_ago, n=1)
 
-        self._create_completed_work(opp_access, one_month_ago, payment_unit1, n=1)
+        self._create_completed_work(opp_access, one_month_ago, payment_unit1, exchange_rate=rate_one_month_ago, n=1)
 
-        self._create_completed_work(opp_access, today, payment_unit1, n=1)
-        self._create_completed_work(opp_access, today, payment_unit2, n=1)
+        self._create_completed_work(opp_access, today, payment_unit1, exchange_rate=rate_today, n=1)
+        self._create_completed_work(opp_access, today, payment_unit2, exchange_rate=rate_today, n=1)
 
-        items = get_uninvoiced_visit_items(opp_access.opportunity)
+        items, _ = get_uninvoiced_visit_items(opp_access.opportunity)
         assert len(items) == 5
 
         for item in items:
@@ -193,14 +201,16 @@ class TestUninvoicedVisitItems:
             assert item["amount_per_unit"] == expected_payment_unit.amount
             assert item["total_amount_local"] == total_local_amount
             assert item["exchange_rate"] == expected_exchange_rate
-            assert item["total_amount_usd"] == round(total_local_amount / expected_exchange_rate, 2)
+            assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
 
-    def _create_completed_work(self, opp_access, date_created, payment_unit, n=1):
+    def _create_completed_work(self, opp_access, status_modified_date, payment_unit, exchange_rate=1.0, n=1):
         for _ in range(n):
             cw = CompletedWorkFactory(
                 status=CompletedWorkStatus.approved,
                 opportunity_access=opp_access,
                 payment_unit=payment_unit,
             )
-            cw.date_created = date_created
+            cw.status_modified_date = status_modified_date
+            cw.saved_payment_accrued = cw.payment_unit.amount
+            cw.saved_payment_accrued_usd = cw.saved_payment_accrued / exchange_rate
             cw.save()

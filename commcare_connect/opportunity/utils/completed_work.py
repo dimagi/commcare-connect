@@ -287,50 +287,51 @@ def get_uninvoiced_completed_works_qs(opportunity, start_date=None, end_date=Non
     )
 
     if start_date:
-        query = query.filter(date_created__gte=start_date)
+        query = query.filter(status_modified_date__gte=start_date)
     if end_date:
-        query = query.filter(date_created__lte=end_date)
+        query = query.filter(status_modified_date__lte=end_date)
 
     return query
 
 
-def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
+def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None, limit=None):
     from commcare_connect.opportunity.visit_import import get_exchange_rate
 
     completed_works_qs = get_uninvoiced_completed_works_qs(opportunity, start_date, end_date)
 
     monthly_pu_records = (
         completed_works_qs.annotate(
-            month_created=TruncMonth("date_created"),
+            month_approved=TruncMonth("status_modified_date"),
         )
-        .values("payment_unit", "month_created")
+        .values("payment_unit", "month_approved")
         .annotate(
             payment_unit_name=F("payment_unit__name"),
             payment_unit_amount=F("payment_unit__amount"),
             record_count=Count("id"),
             currency=F("opportunity_access__opportunity__currency"),
+            total_amount_usd=Sum("saved_payment_accrued_usd"),
+            total_amount_local=Sum("saved_payment_accrued"),
         )
     )
 
+    limited_pu_records = monthly_pu_records[:limit] if limit else monthly_pu_records
     invoice_items = []
-    for record in monthly_pu_records:
-        exchange_rate = get_exchange_rate(opportunity.currency, record["month_created"])
-        total_local_amount = record["payment_unit_amount"] * record["record_count"]
-        amount_accrued_usd = round(total_local_amount / exchange_rate, 2)
 
+    for record in limited_pu_records:
+        exchange_rate = get_exchange_rate(opportunity.currency, record["month_approved"])
         invoice_items.append(
             {
-                "month": record["month_created"],
+                "month": record["month_approved"],
                 "payment_unit_name": record["payment_unit_name"],
                 "number_approved": record["record_count"],
                 "amount_per_unit": record["payment_unit_amount"],
-                "total_amount_local": total_local_amount,
+                "total_amount_local": record["total_amount_local"],
+                "total_amount_usd": record["total_amount_usd"],
                 "exchange_rate": exchange_rate,
-                "total_amount_usd": amount_accrued_usd,
             }
         )
 
-    return invoice_items
+    return invoice_items, completed_works_qs.count()
 
 
 def link_invoice_to_completed_works(invoice, start_date=None, end_date=None):

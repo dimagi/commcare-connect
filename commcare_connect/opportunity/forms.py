@@ -1,8 +1,9 @@
 import datetime
 import json
-import uuid
+import secrets
 from urllib.parse import urlencode
 
+import waffle
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
@@ -15,10 +16,11 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
 
-from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.models import (
     CommCareApp,
     CompletedWork,
+    CompletedWorkStatus,
     CredentialConfiguration,
     DeliverUnit,
     DeliverUnitFlagRules,
@@ -1330,10 +1332,13 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         super().__init__(*args, **kwargs)
 
-        self.fields["invoice_number"].initial = self.generate_invoice_number()
-        self.fields["date"].initial = str(datetime.date.today())
-        self.fields["start_date"].initial = str(self.get_earliest_uninvoiced_date())
-        self.fields["end_date"].initial = str(datetime.date.today())
+        if self.is_automated_invoice:
+            self.fields["invoice_number"].initial = self.generate_invoice_number()
+            self.fields["date"].initial = str(datetime.date.today())
+
+            start_date = self.get_start_date_for_invoice()
+            self.fields["start_date"].initial = str(start_date)
+            self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
 
         self.helper = FormHelper(self)
 
@@ -1344,8 +1349,40 @@ class PaymentInvoiceForm(forms.ModelForm):
                     Fieldset(
                         "Line Items",
                         Div(
+                            HTML(
+                                """
+                                {% load i18n %}
+                                <div class="text-sm text-gray-500">
+                                    {% translate "Loading line items..." %}
+                                </div>
+                            """
+                            ),
                             css_id="invoice-line-items-wrapper",
                             css_class="space-y-1 text-sm text-gray-500 mb-4",
+                        ),
+                        HTML(
+                            """
+                            <div x-cloak x-show="totalLineItemsCount > 0" class="mt-2 mb-2">
+                                <span
+                                    class="text-sm text-gray-600"
+                                    x-text="`Showing ${previewLineItemsCount} of ${totalLineItemsCount} items`"
+                                ></span>
+                            </div>
+                            """
+                        ),
+                        HTML(
+                            """
+                            <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
+                                <a type="button"
+                                class="button button-md outline-style"
+                                :href="downloadLineItemsUrl"
+                                target="_blank"
+                                >
+                                    <i class="fa-solid fa-download mr-2"></i>
+                                    {% load i18n %}{% translate "Download All Items" %}
+                                </a>
+                            </div>
+                            """
                         ),
                     ),
                     Fieldset(
@@ -1364,26 +1401,51 @@ class PaymentInvoiceForm(forms.ModelForm):
         )
         self.helper.form_tag = False
 
-    def get_earliest_uninvoiced_date(self):
+    def get_start_date_for_invoice(self):
         date = (
-            CompletedWork.objects.filter(invoice__isnull=True, opportunity_access__opportunity=self.opportunity)
-            .aggregate(earliest_date=Min("date_created"))
+            CompletedWork.objects.filter(
+                invoice__isnull=True,
+                opportunity_access__opportunity=self.opportunity,
+                status=CompletedWorkStatus.approved,
+            )
+            .aggregate(earliest_date=Min("status_modified_date"))
             .get("earliest_date")
         )
-        if not date:
-            return self.opportunity.start_date
 
-        return date.date()
+        start_date = date
+        if date:
+            start_date = date.date()
+        else:
+            start_date = self.opportunity.start_date
+
+        return start_date.replace(day=1)
+
+    def get_end_date_for_invoice(self, start_date):
+        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+
+        if start_date > last_day_previous_month:
+            return datetime.date.today() - datetime.timedelta(days=1)
+        return last_day_previous_month
+
+    @property
+    def is_automated_invoice(self):
+        return waffle.switch_is_active(AUTOMATED_INVOICES)
 
     def invoice_form_fields(self):
-        first_row = [Field("invoice_number", **{"readonly": "readonly"})]
+        invoice_number_attrs = {}
+        if self.is_automated_invoice:
+            invoice_number_attrs["readonly"] = "readonly"
+        first_row = [Field("invoice_number", **invoice_number_attrs)]
+
         if self.is_service_delivery:
             first_row.append(Field("title"))
 
         second_row = [Field("date", **{"x-ref": "date", "x-on:change": "convert()"})]
         if self.is_service_delivery:
-            second_row.append(Field("start_date"))
-            second_row.append(Field("end_date"))
+            second_row.append(
+                Field("start_date", **{"x-model": "startDate", "x-on:change": "fetchInvoiceLineItems()"})
+            )
+            second_row.append(Field("end_date", **{"x-model": "endDate", "x-on:change": "fetchInvoiceLineItems()"}))
 
         return [
             Div(
@@ -1395,10 +1457,11 @@ class PaymentInvoiceForm(forms.ModelForm):
                         label=f"Amount ({self.opportunity.currency})",
                         **{
                             "x-ref": "amount",
+                            "x-model": "amount",
                             "x-on:input.debounce.300ms": "convert()",
                         },
                     ),
-                    Field("amount_usd"),
+                    Field("amount_usd", **{"x-model": "usdAmount"}),
                     Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
                     css_class="grid grid-cols-3 gap-6",
                 ),
@@ -1407,7 +1470,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         ]
 
     def generate_invoice_number(self):
-        return uuid.uuid4().hex[:10].upper()
+        return secrets.token_hex(5).upper()
 
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
@@ -1430,14 +1493,14 @@ class PaymentInvoiceForm(forms.ModelForm):
         if amount is None or date is None:
             return cleaned_data  # Let individual field errors handle missing values
 
-        exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
-        if not exchange_rate:
-            raise ValidationError("Exchange rate not available for selected date.")
-
-        cleaned_data["exchange_rate"] = exchange_rate
-        cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
-
         if not self.is_service_delivery:
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+            if not exchange_rate:
+                raise ValidationError("Exchange rate not available for selected date.")
+
+            cleaned_data["exchange_rate"] = exchange_rate
+            cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
+
             cleaned_data["title"] = None
             cleaned_data["start_date"] = None
             cleaned_data["end_date"] = None
@@ -1461,8 +1524,8 @@ class PaymentInvoiceForm(forms.ModelForm):
         instance.opportunity = self.opportunity
         instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.amount = self.cleaned_data["amount"]
-        instance.exchange_rate = self.cleaned_data["exchange_rate"]
-        instance.service_delivery = self.is_service_delivery
+        instance.exchange_rate = self.cleaned_data.get("exchange_rate")
+        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
 
         if commit:
             instance.save()
@@ -1473,4 +1536,8 @@ class PaymentInvoiceForm(forms.ModelForm):
 
     @property
     def is_service_delivery(self):
-        return self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        """
+        Check if the invoice is for service delivery.
+        This check only governs behavior that we want on v2 invoices.
+        """
+        return self.invoice_type == PaymentInvoice.InvoiceType.service_delivery and self.is_automated_invoice

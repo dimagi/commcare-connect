@@ -8,7 +8,7 @@
   {% if not request.is_opportunity_pm %}
   <div x-data="{ open: false }" @click.away="open = false" class="relative">
     <button @click="open = !open" class="button button-md primary-dark flex flex-row items-center space-x-2">
-      Create Invoice
+      {% translate "Create Invoice" %}
       <i :class="open ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all text-xs"></i>
     </button>
 
@@ -17,12 +17,12 @@
       <ul class="p-2 w-full max-h-80 overflow-y-auto">
         <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
           <a href="{{ new_invoice_url }}?invoice_type=service_delivery">
-            <p class="text-brand-deep-purple text-sm font-medium">Service Delivery</p>
+            <p class="text-brand-deep-purple text-sm font-medium">{% translate "Service Delivery" %}</p>
           </a>
         </li>
         <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
           <a href="{{ new_invoice_url }}?invoice_type=custom">
-            <p class="text-brand-deep-purple text-sm font-medium">Custom</p>
+            <p class="text-brand-deep-purple text-sm font-medium">{% translate "Custom" %}</p>
           </a>
         </li>
       </ul>

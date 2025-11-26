@@ -96,6 +96,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     CompletedWorkTable,
     DeliverUnitTable,
+    InvoiceLineItemsTable,
     LearnModuleTable,
     OpportunityTable,
     PaymentInvoiceTable,
@@ -1359,6 +1360,8 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         context.update(
             {
                 "opportunity": opportunity,
+                "is_service_delivery": self.request.GET.get("invoice_type")
+                == PaymentInvoice.InvoiceType.service_delivery,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
@@ -2585,21 +2588,27 @@ def add_api_key(request, org_slug):
 
 @require_POST
 @opportunity_required
+@org_member_required
 def invoice_items(request, *args, **kwargs):
     body = json.loads(request.body)
-    start_date_str = body.get("start_date")
-    end_date_str = body.get("end_date")
+    start_date_str = body.get("start_date", None)
+    end_date_str = body.get("end_date", None)
 
-    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date() if start_date_str else None
-    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None
+    if not start_date_str or not end_date_str:
+        return JsonResponse({"error": _("Start date and end date are required.")})
 
-    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    preview_size = 25
+    line_items, total_items_count = get_uninvoiced_visit_items(
+        request.opportunity, start_date, end_date, limit=preview_size
+    )
     total_local_amount = sum(item["total_amount_local"] for item in line_items)
     total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
-
     html = render_to_string(
         "opportunity/partials/invoice_line_items.html",
-        {"line_items": line_items},
+        {"table": InvoiceLineItemsTable(line_items)},
         request=request,
     )
 
@@ -2608,8 +2617,34 @@ def invoice_items(request, *args, **kwargs):
             "line_items_table_html": html,
             "total_amount": total_local_amount,
             "total_usd_amount": total_usd_amount,
+            "preview_items_count": len(line_items),
+            "total_items_count": total_items_count,
         }
     )
+
+
+@require_GET
+@org_member_required
+@opportunity_required
+def download_invoice_line_items(request, org_slug, opp_id):
+    start_date_str = request.GET.get("start_date", None)
+    end_date_str = request.GET.get("end_date", None)
+
+    if not start_date_str or not end_date_str:
+        return HttpResponseBadRequest("Start date and end date are required.")
+
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    line_items, _total_count = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
+
+    table = InvoiceLineItemsTable(line_items)
+
+    export_format = "csv"
+    exporter = TableExport(export_format, table)
+    filename = f"invoice_line_items_{start_date}_{end_date}.csv"
+
+    return exporter.response(filename=filename)
 
 
 @login_required
