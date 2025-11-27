@@ -1536,3 +1536,50 @@ class PaymentUnitTable(OrgContextTable):
             "edit_url": edit_url,
         }
         return render_to_string("opportunity/extendable_payment_unit_row.html", context)
+
+
+class InvoiceLineItemsTable(tables.Table):
+    month = tables.Column()
+    payment_unit_name = tables.Column(verbose_name="Payment Unit")
+    number_approved = tables.Column()
+    amount_per_unit = tables.Column(
+        verbose_name="Payment Unit Amount (local)",
+    )
+    total_amount_local = tables.Column(
+        verbose_name="Total Amount (local)",
+    )
+    exchange_rate = tables.Column()
+    total_amount_usd = tables.Column(
+        verbose_name="Total Amount (USD)",
+    )
+
+    class Meta:
+        orderable = False
+        empty_text = "No invoice items found."
+        attrs = {"class": "min-w-full rounded-lg shadow-md bg-white", "thead": {"class": "bg-gray-100"}}
+        row_attrs = {"class": "even:bg-gray-50 text-gray-800 hover:bg-gray-100"}
+
+    def render_month(self, value):
+        return value.strftime("%B %Y")
+
+
+class InvoiceDeliveriesTable(tables.Table):
+    date_approved = DMYTColumn(verbose_name="Date Approved", accessor="status_modified_date")
+    opportunity = tables.Column(verbose_name="Opportunity", accessor="payment_unit__opportunity__name")
+
+    class Meta:
+        model = CompletedWork
+        fields = (
+            "payment_unit",
+            "saved_approved_count",
+            "saved_payment_accrued",
+            "saved_payment_accrued_usd",
+        )
+        sequence = (
+            "payment_unit",
+            "opportunity",
+            "date_approved",
+            "saved_approved_count",
+            "saved_payment_accrued",
+            "saved_payment_accrued_usd",
+        )
