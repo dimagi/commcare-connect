@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0071_paymentinvoice_service_delivery"),
+        ("opportunity", "0071_merge"),
     ]
 
     operations = [
