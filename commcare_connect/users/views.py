@@ -27,6 +27,7 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, OTP_ACCESS
 
 from .helpers import create_hq_user_and_link
@@ -94,17 +95,17 @@ create_user_link_view = CreateUserLinkView.as_view()
 def start_learn_app(request):
     opportunity_id = request.POST.get("opportunity")
     if opportunity_id is None:
-        return HttpResponse("opportunity required", status=400)
+        return Response({"error_code": ErrorCodes.OPPORTUNITY_REQUIRED}, status=400)
     opportunity = Opportunity.objects.get(pk=opportunity_id)
     app = opportunity.learn_app
     domain = app.cc_domain
     user_created = create_hq_user_and_link(request.user, domain, opportunity)
     if not user_created:
-        return HttpResponse("Failed to create user", status=400)
+        return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
     try:
         access_object = OpportunityAccess.objects.get(user=request.user, opportunity=opportunity)
     except OpportunityAccess.DoesNotExist:
-        return HttpResponse("user has no access to opportunity", status=400)
+        return Response({"error_code": ErrorCodes.NO_OPPORTUNITY_ACCESS}, status=400)
     with transaction.atomic():
         if access_object.date_learn_started is None:
             access_object.date_learn_started = now()
@@ -117,7 +118,7 @@ def start_learn_app(request):
         user_invite = UserInvite.objects.get(opportunity_access=access_object)
         user_invite.status = UserInviteStatus.accepted
         user_invite.save()
-    return HttpResponse(status=200)
+    return Response()
 
 
 class AcceptInviteView(View):
