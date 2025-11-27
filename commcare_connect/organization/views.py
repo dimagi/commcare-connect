@@ -65,7 +65,7 @@ def add_members_form(request, org_slug):
     if form.is_valid():
         form.instance.organization = org
         form.save()
-        send_org_invite.delay(membership_id=form.instance.pk, host_user_id=request.user.pk)
+        send_org_invite(membership_id=form.instance.pk, host_user_id=request.user.pk)
     url = reverse("organization:home", args=(org_slug,)) + "?active_tab=members"
     return redirect(url)
 
