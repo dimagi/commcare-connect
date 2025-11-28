@@ -25,7 +25,6 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.reports import urls as reports_urls
 from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.reports.views import _results_to_geojson
 from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.datetime import get_month_series
 from commcare_connect.utils.tests import check_basic_permissions
@@ -291,63 +290,6 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             assert row["nm_amount_paid"] == 1000
             assert row["nm_other_amount_paid"] == 1000
             assert row["avg_top_paid_flws"] == 900
-
-
-def test_results_to_geojson():
-    class MockQuerySet:
-        def __init__(self, results):
-            self.results = results
-
-        def all(self):
-            return self.results
-
-    # Test input
-    results = MockQuerySet(
-        [
-            {"location_str": "20.456 10.123 0 0", "status": "approved", "other_field": "value1"},
-            {"location_str": "40.012 30.789", "status": "rejected", "other_field": "value2"},
-            {"location_str": "invalid location", "status": "unknown", "other_field": "value3"},
-            {"location_str": "bad location", "status": "unknown", "other_field": "value4"},
-            {
-                "location_str": None,
-                "status": "approved",
-                "other_field": "value5",
-            },  # Case where lat/lon are not present
-            {  # Case where lat/lon are null
-                "location_str": None,
-                "status": "rejected",
-                "other_field": "value5",
-            },
-        ]
-    )
-
-    # Call the function
-    geojson = _results_to_geojson(results)
-
-    # Assertions
-    assert geojson["type"] == "FeatureCollection"
-    assert len(geojson["features"]) == 2  # Only the first two results should be included
-
-    # Check the first feature
-    feature1 = geojson["features"][0]
-    assert feature1["type"] == "Feature"
-    assert feature1["geometry"]["type"] == "Point"
-    assert feature1["geometry"]["coordinates"] == [10.123, 20.456]
-    assert feature1["properties"]["status"] == "approved"
-    assert feature1["properties"]["other_field"] == "value1"
-    assert feature1["properties"]["color"] == "#4ade80"
-
-    # Check the second feature
-    feature2 = geojson["features"][1]
-    assert feature2["type"] == "Feature"
-    assert feature2["geometry"]["type"] == "Point"
-    assert feature2["geometry"]["coordinates"] == [30.789, 40.012]
-    assert feature2["properties"]["status"] == "rejected"
-    assert feature2["properties"]["other_field"] == "value2"
-    assert feature2["properties"]["color"] == "#f87171"
-
-    # Check that the other cases are not included
-    assert all(f["properties"]["other_field"] not in ["value3", "value4", "value5"] for f in geojson["features"])
 
 
 class TestKPIReportPermission:
