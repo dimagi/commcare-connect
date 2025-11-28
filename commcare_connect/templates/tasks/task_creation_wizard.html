@@ -1,0 +1,575 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block content %}
+{% csrf_token %}
+<div class="max-w-7xl mx-auto" x-data="taskCreationPage()">
+
+  <!-- Header -->
+  <div class="mb-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Create Tasks</h1>
+        <p class="text-gray-600">Search for opportunities, select FLWs, and bulk create tasks</p>
+      </div>
+      <div class="flex gap-3">
+        {% if has_connect_token %}
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-md">
+          <i class="fa-solid fa-check-circle text-green-600"></i>
+          <span class="text-xs text-green-700">Connected to Connect</span>
+          {% if token_expires_at %}
+          <span class="text-xs text-gray-500">(expires {{ token_expires_at|date:"M d, Y" }})</span>
+          {% endif %}
+        </div>
+        {% else %}
+        <a href="{% url 'audit:connect_oauth_login' %}?next={{ request.path }}"
+           class="px-4 py-2 text-blue-600 bg-white border border-blue-300 rounded-md hover:bg-blue-50 flex items-center gap-2">
+          <i class="fa-solid fa-key"></i>
+          Get Connect OAuth Token
+        </a>
+        {% endif %}
+        <a href="{% url 'tasks:list' %}"
+           class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+          Back to Tasks
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 1: Opportunity Search and Selection -->
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-search mr-2"></i>
+      Step 1: Search and Select Opportunity
+    </h2>
+
+    <!-- Search Input -->
+    <div class="mb-4">
+      <label for="opportunity-search" class="block text-sm font-medium text-gray-700 mb-2">
+        Search Opportunities
+      </label>
+      <div class="relative">
+        <input
+          type="text"
+          id="opportunity-search"
+          x-model="searchQuery"
+          @input.debounce.300ms="searchOpportunities()"
+          placeholder="Search by opportunity name or ID..."
+          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"
+        >
+        <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+          <i class="fa-solid fa-search text-gray-400" x-show="!searching"></i>
+          <i class="fa-solid fa-spinner fa-spin text-brand-indigo" x-show="searching"></i>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mt-1">
+        Search by opportunity name or enter a specific opportunity ID
+      </p>
+    </div>
+
+    <!-- Search Results -->
+    <div x-show="searchResults.length > 0 || searchPerformed" class="mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-medium text-gray-700">
+          Search Results
+          <span x-show="searchResults.length > 0" class="text-brand-indigo">
+            (<span x-text="searchResults.length"></span> found)
+          </span>
+        </h3>
+        <button x-show="!showOpportunityTable && searchResults.length > 0"
+                @click="showOpportunityTable = true"
+                class="text-xs text-brand-indigo hover:text-brand-deep-purple">
+          <i class="fa-solid fa-chevron-down mr-1"></i> Show Table
+        </button>
+      </div>
+
+      <!-- No Results Message -->
+      <div x-show="searchPerformed && searchResults.length === 0 && !searching"
+           class="text-center py-8 text-gray-500">
+        <i class="fa-solid fa-search text-3xl mb-2"></i>
+        <p>No opportunities found matching "<span x-text="searchQuery"></span>"</p>
+      </div>
+
+      <!-- Results Table -->
+      <div x-show="searchResults.length > 0 && showOpportunityTable" class="overflow-x-auto rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Select</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organization</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Visits</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <template x-for="opportunity in searchResults" :key="opportunity.id">
+              <tr class="hover:bg-gray-50 cursor-pointer"
+                  :class="selectedOpportunity && selectedOpportunity.id === opportunity.id ? 'bg-brand-indigo/5' : ''"
+                  @click="selectOpportunity(opportunity)">
+                <td class="px-6 py-4 text-center">
+                  <input type="radio"
+                         :checked="selectedOpportunity && selectedOpportunity.id === opportunity.id"
+                         @click.stop="selectOpportunity(opportunity)"
+                         class="text-brand-indigo focus:ring-brand-indigo">
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-900" x-text="opportunity.id"></td>
+                <td class="px-6 py-4">
+                  <div class="text-sm font-medium text-gray-900" x-text="opportunity.name"></div>
+                  <div class="text-xs text-gray-500" x-text="opportunity.description"></div>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="opportunity.organization_name"></td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="opportunity.program_name || '-'"></td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="opportunity.visit_count || 0"></td>
+                <td class="px-6 py-4">
+                  <span x-show="opportunity.active"
+                        class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                    Active
+                  </span>
+                  <span x-show="!opportunity.active"
+                        class="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                    Inactive
+                  </span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Selected Opportunity Display -->
+    <div x-show="selectedOpportunity" class="mt-4 p-4 bg-brand-indigo/5 border border-brand-indigo/20 rounded-md">
+      <div class="flex items-center justify-between">
+        <div>
+          <h4 class="text-sm font-medium text-gray-900">Selected Opportunity:</h4>
+          <p class="text-sm text-gray-700 mt-1" x-text="selectedOpportunity?.name"></p>
+          <p class="text-xs text-gray-500 mt-1">
+            ID: <span x-text="selectedOpportunity?.id"></span> |
+            Organization: <span x-text="selectedOpportunity?.organization_name"></span>
+          </p>
+        </div>
+        <button @click="clearSelection()" class="text-sm text-red-600 hover:text-red-800">
+          <i class="fa-solid fa-times"></i> Clear
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: FLW Selection -->
+  <div x-show="selectedOpportunity" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-users mr-2"></i>
+      Step 2: Select Field Level Workers
+    </h2>
+
+    <button @click="loadFieldWorkers()"
+            x-show="!fieldWorkersLoaded"
+            :disabled="loadingFieldWorkers"
+            class="px-4 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-deep-purple disabled:bg-gray-300">
+      <i class="fa-solid mr-2" :class="loadingFieldWorkers ? 'fa-spinner fa-spin' : 'fa-download'"></i>
+      <span x-text="loadingFieldWorkers ? 'Loading FLWs...' : 'Load Field Level Workers'"></span>
+    </button>
+
+    <div x-show="fieldWorkersLoaded">
+      <!-- Select All / Deselect All -->
+      <div class="mb-4 flex items-center justify-between">
+        <div>
+          <span class="text-sm font-medium text-gray-700">
+            <span x-text="selectedFLWs.length"></span> of <span x-text="fieldWorkers.length"></span> FLWs selected
+          </span>
+        </div>
+        <div class="flex gap-2">
+          <button @click="selectAllFLWs()" class="text-sm text-brand-indigo hover:text-brand-deep-purple">
+            Select All
+          </button>
+          <button @click="deselectAllFLWs()" class="text-sm text-gray-600 hover:text-gray-800">
+            Deselect All
+          </button>
+        </div>
+      </div>
+
+      <!-- FLW Table -->
+      <div class="overflow-x-auto rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <input type="checkbox"
+                       @change="toggleAllFLWs($event)"
+                       :checked="selectedFLWs.length === fieldWorkers.length && fieldWorkers.length > 0"
+                       class="text-brand-indigo focus:ring-brand-indigo">
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Visits</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Active</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <template x-for="(flw, index) in fieldWorkers" :key="`flw-${index}`">
+              <tr class="hover:bg-gray-50"
+                  :class="selectedFLWs.includes(flw.username) ? 'bg-green-50' : ''">
+                <td class="px-6 py-4 text-center">
+                  <input type="checkbox"
+                         :checked="selectedFLWs.includes(flw.username)"
+                         @change="toggleFLW(flw.username)"
+                         class="text-brand-indigo focus:ring-brand-indigo">
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-900" x-text="flw.id || '-'"></td>
+                <td class="px-6 py-4">
+                  <div class="text-sm font-medium text-gray-900" x-text="flw.name || '-'"></div>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="flw.username || '-'"></td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="flw.phone_number || '-'"></td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="flw.total_visits || '0'"></td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="flw.approved_visits || '0'"></td>
+                <td class="px-6 py-4 text-sm text-gray-500" x-text="flw.last_active ? new Date(flw.last_active).toLocaleDateString() : '-'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Task Details -->
+  <div x-show="selectedFLWs.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-clipboard-list mr-2"></i>
+      Step 3: Task Details
+    </h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Task Type -->
+      <div>
+        <label for="task-type" class="block text-sm font-medium text-gray-700 mb-2">Task Type</label>
+        <select id="task-type"
+                x-model="taskDetails.task_type"
+                class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+          <option value="warning">Warning</option>
+          <option value="deactivation">Deactivation</option>
+        </select>
+      </div>
+
+      <!-- Priority -->
+      <div>
+        <label for="priority" class="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+        <select id="priority"
+                x-model="taskDetails.priority"
+                class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+
+      <!-- Title -->
+      <div class="md:col-span-2">
+        <label for="title" class="block text-sm font-medium text-gray-700 mb-2">Title <span class="text-red-500">*</span></label>
+        <input type="text"
+               id="title"
+               x-model="taskDetails.title"
+               placeholder="Enter task title..."
+               class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+      </div>
+
+      <!-- Description -->
+      <div class="md:col-span-2">
+        <label for="description" class="block text-sm font-medium text-gray-700 mb-2">Description <span class="text-red-500">*</span></label>
+        <textarea id="description"
+                  x-model="taskDetails.description"
+                  rows="4"
+                  placeholder="Enter task description..."
+                  class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"></textarea>
+      </div>
+
+      <!-- Learning Assignment Text -->
+      <div class="md:col-span-2">
+        <label for="learning-text" class="block text-sm font-medium text-gray-700 mb-2">Learning Assignment Text (Optional)</label>
+        <textarea id="learning-text"
+                  x-model="taskDetails.learning_assignment_text"
+                  rows="3"
+                  placeholder="Enter learning module or training details..."
+                  class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Review and Create -->
+  <div x-show="selectedFLWs.length > 0 && taskDetails.title && taskDetails.description"
+       class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-check-circle mr-2"></i>
+      Step 4: Review and Create
+    </h2>
+
+    <div class="space-y-4">
+      <!-- Summary -->
+      <div class="bg-gray-50 p-4 rounded-md">
+        <h3 class="text-sm font-medium text-gray-900 mb-2">Summary</h3>
+        <ul class="text-sm text-gray-700 space-y-1">
+          <li><strong>Opportunity:</strong> <span x-text="selectedOpportunity?.name"></span></li>
+          <li><strong>FLWs Selected:</strong> <span x-text="selectedFLWs.length"></span></li>
+          <li><strong>Task Type:</strong> <span x-text="taskDetails.task_type"></span></li>
+          <li><strong>Priority:</strong> <span x-text="taskDetails.priority"></span></li>
+          <li><strong>Title:</strong> <span x-text="taskDetails.title"></span></li>
+        </ul>
+      </div>
+
+      <!-- Warning Message -->
+      <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-md">
+        <p class="text-sm text-yellow-800">
+          <i class="fa-solid fa-exclamation-triangle mr-2"></i>
+          This will create <strong><span x-text="selectedFLWs.length"></span> task(s)</strong> (one for each selected FLW).
+        </p>
+      </div>
+
+      <!-- Error Message -->
+      <div x-show="error" class="bg-red-50 border border-red-200 p-4 rounded-md">
+        <p class="text-sm text-red-800" x-text="error"></p>
+      </div>
+
+      <!-- Success Message -->
+      <div x-show="success" class="bg-green-50 border border-green-200 p-4 rounded-md">
+        <p class="text-sm text-green-800">
+          <i class="fa-solid fa-check-circle mr-2"></i>
+          Successfully created <span x-text="createdCount"></span> task(s)!
+          <template x-if="creationErrors.length > 0">
+            <span class="block mt-2">
+              <strong>Warnings:</strong> <span x-text="creationErrors.length"></span> error(s) occurred.
+            </span>
+          </template>
+        </p>
+        <a href="{% url 'tasks:list' %}" class="inline-block mt-2 text-sm text-green-600 hover:text-green-800">
+          View all tasks →
+        </a>
+      </div>
+
+      <!-- Create Button -->
+      <div class="flex justify-end gap-3">
+        <button @click="resetForm()"
+                :disabled="creating"
+                class="px-6 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:bg-gray-100">
+          Reset Form
+        </button>
+        <button @click="createTasks()"
+                :disabled="creating || success"
+                class="px-6 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-deep-purple disabled:bg-gray-300">
+          <i class="fa-solid mr-2" :class="creating ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+          <span x-text="creating ? 'Creating Tasks...' : 'Create Tasks'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function taskCreationPage() {
+  return {
+    // Search state
+    searchQuery: '',
+    searchResults: [],
+    searchPerformed: false,
+    searching: false,
+    showOpportunityTable: true,
+
+    // Selection state
+    selectedOpportunity: null,
+
+    // FLW state
+    fieldWorkers: [],
+    selectedFLWs: [],
+    fieldWorkersLoaded: false,
+    loadingFieldWorkers: false,
+
+    // Task details
+    taskDetails: {
+      task_type: 'warning',
+      priority: 'medium',
+      title: '',
+      description: '',
+      learning_assignment_text: '',
+      assigned_to_id: null
+    },
+
+    // Creation state
+    creating: false,
+    success: false,
+    error: null,
+    createdCount: 0,
+    creationErrors: [],
+
+    async searchOpportunities() {
+      if (!this.searchQuery.trim()) {
+        this.searchResults = [];
+        this.searchPerformed = false;
+        return;
+      }
+
+      this.searching = true;
+      try {
+        const response = await fetch(`{% url 'tasks:opportunity_search' %}?query=${encodeURIComponent(this.searchQuery)}`);
+        const data = await response.json();
+
+        if (data.success) {
+          this.searchResults = data.opportunities;
+          this.searchPerformed = true;
+        } else {
+          this.error = data.error || 'Failed to search opportunities';
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+        this.error = 'Failed to search opportunities';
+      } finally {
+        this.searching = false;
+      }
+    },
+
+    selectOpportunity(opportunity) {
+      this.selectedOpportunity = opportunity;
+      this.fieldWorkersLoaded = false;
+      this.fieldWorkers = [];
+      this.selectedFLWs = [];
+      this.showOpportunityTable = false;  // Collapse table
+      this.loadFieldWorkers();  // Auto-load FLWs
+    },
+
+    clearSelection() {
+      this.selectedOpportunity = null;
+      this.fieldWorkersLoaded = false;
+      this.fieldWorkers = [];
+      this.selectedFLWs = [];
+      this.showOpportunityTable = true;  // Show table again
+    },
+
+    async loadFieldWorkers() {
+      if (!this.selectedOpportunity) return;
+
+      this.loadingFieldWorkers = true;
+      try {
+        const response = await fetch(`/tasks/api/opportunities/${this.selectedOpportunity.id}/field-workers/`);
+        const data = await response.json();
+
+        if (data.success) {
+          this.fieldWorkers = data.field_workers;
+          this.fieldWorkersLoaded = true;
+        } else {
+          this.error = data.error || 'Failed to load field workers';
+        }
+      } catch (error) {
+        console.error('Load FLW error:', error);
+        this.error = 'Failed to load field workers';
+      } finally {
+        this.loadingFieldWorkers = false;
+      }
+    },
+
+    toggleFLW(flwUsername) {
+      const index = this.selectedFLWs.indexOf(flwUsername);
+      if (index > -1) {
+        this.selectedFLWs.splice(index, 1);
+      } else {
+        this.selectedFLWs.push(flwUsername);
+      }
+    },
+
+    toggleAllFLWs(event) {
+      if (event.target.checked) {
+        this.selectAllFLWs();
+      } else {
+        this.deselectAllFLWs();
+      }
+    },
+
+    selectAllFLWs() {
+      this.selectedFLWs = this.fieldWorkers.map(flw => flw.username);
+    },
+
+    deselectAllFLWs() {
+      this.selectedFLWs = [];
+    },
+
+    async createTasks() {
+      // Validate
+      if (!this.selectedOpportunity) {
+        this.error = 'Please select an opportunity';
+        return;
+      }
+
+      if (this.selectedFLWs.length === 0) {
+        this.error = 'Please select at least one FLW';
+        return;
+      }
+
+      if (!this.taskDetails.title || !this.taskDetails.description) {
+        this.error = 'Please fill in title and description';
+        return;
+      }
+
+      this.creating = true;
+      this.error = null;
+
+      try {
+        const response = await fetch('{% url 'tasks:bulk_create' %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          },
+          body: JSON.stringify({
+            opportunity_id: this.selectedOpportunity.id,
+            flw_ids: this.selectedFLWs,
+            ...this.taskDetails
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          this.success = true;
+          this.createdCount = data.created_count;
+          this.creationErrors = data.errors || [];
+        } else {
+          this.error = data.error || 'Failed to create tasks';
+        }
+      } catch (error) {
+        console.error('Create tasks error:', error);
+        this.error = 'Failed to create tasks: ' + error.message;
+      } finally {
+        this.creating = false;
+      }
+    },
+
+    resetForm() {
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.searchPerformed = false;
+      this.showOpportunityTable = true;
+      this.selectedOpportunity = null;
+      this.fieldWorkers = [];
+      this.selectedFLWs = [];
+      this.fieldWorkersLoaded = false;
+      this.taskDetails = {
+        task_type: 'warning',
+        priority: 'medium',
+        title: '',
+        description: '',
+        learning_assignment_text: '',
+        assigned_to_id: null
+      };
+      this.success = false;
+      this.error = null;
+      this.createdCount = 0;
+      this.creationErrors = [];
+    }
+  }
+}
+</script>
+{% endblock %}

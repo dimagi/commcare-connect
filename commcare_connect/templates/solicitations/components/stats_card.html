@@ -1,0 +1,137 @@
+{% comment %}
+Reusable stats card component for solicitation dashboards.
+Used by both admin overview and user dashboard.
+
+Parameters:
+- stats: dictionary with statistics data
+- title: card title
+- subtitle: card subtitle
+- show_programs: whether to show programs count (for user dashboard)
+{% endcomment %}
+
+<div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+    <div class="flex items-start justify-between">
+        <div class="flex-1">
+            <h1 class="text-3xl font-bold text-brand-deep-purple mb-2">
+                <i class="fa-solid fa-chart-bar mr-3 text-brand-indigo"></i>
+                {{ title }}
+            </h1>
+            <p class="text-gray-600 mb-6">{{ subtitle }}</p>
+
+            <!-- Key Information -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="flex items-center text-sm text-gray-600">
+                    <i class="fa-solid fa-clipboard-list mr-2 text-gray-400"></i>
+                    <span>{{ stats.total_active_solicitations }} active solicitation{{ stats.total_active_solicitations|pluralize }}</span>
+                </div>
+                <div class="flex items-center text-sm text-gray-600">
+                    <i class="fa-solid fa-paper-plane mr-2 text-gray-400"></i>
+                    <span>{{ stats.total_responses }} total response{{ stats.total_responses|pluralize }}</span>
+                </div>
+                {% if show_programs %}
+                <div class="flex items-center text-sm text-gray-600">
+                    <i class="fa-solid fa-sitemap mr-2 text-gray-400"></i>
+                    <span>{{ stats.programs_count }} program{{ stats.programs_count|pluralize }}</span>
+                </div>
+                {% else %}
+                <div class="flex items-center text-sm text-gray-600">
+                    <i class="fa-solid fa-building mr-2 text-gray-400"></i>
+                    <span>{{ stats.total_organizations_with_programs }} program organization{{ stats.total_organizations_with_programs|pluralize }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="flex items-center gap-x-4">
+            <a href="{% url 'solicitations:list' %}"
+               class="button button-md outline-style"
+               target="_blank">
+                <i class="fa-solid fa-external-link-alt mr-2"></i>
+                Public View
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics with Pipe Separators -->
+    <div class="bg-neutral-100 rounded-lg w-full px-5 py-4 mt-6">
+        <div class="flex gap-2 w-full items-center justify-between flex-wrap">
+            <!-- Active Solicitations -->
+            <div class="flex gap-2 items-start">
+                <div class="infocard-dark">
+                    <i class="fa-solid fa-clipboard-list"></i>
+                    <div>
+                        <h6>Active Solicitations</h6>
+                        <p>{{ stats.total_active_solicitations }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+            <!-- EOIs -->
+            <div class="flex gap-2 items-start">
+                <div class="infocard-dark">
+                    <i class="fa-solid fa-hand-paper"></i>
+                    <div>
+                        <h6>EOIs</h6>
+                        <p>{{ stats.total_eois }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+            <!-- RFPs -->
+            <div class="flex gap-2 items-start">
+                <div class="infocard-dark">
+                    <i class="fa-solid fa-file-contract"></i>
+                    <div>
+                        <h6>RFPs</h6>
+                        <p>{{ stats.total_rfps }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+            <!-- Total Responses -->
+            <div class="flex gap-2 items-start">
+                <div class="infocard-dark">
+                    <i class="fa-solid fa-paper-plane"></i>
+                    <div>
+                        <h6>{% if show_programs %}My{% else %}Total{% endif %} Responses</h6>
+                        <p>{{ stats.total_responses }}</p>
+                    </div>
+                </div>
+            </div>
+
+            {% if show_programs %}
+            <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+            <!-- Programs -->
+            <div class="flex gap-2 items-start">
+                <div class="infocard-dark">
+                    <i class="fa-solid fa-sitemap"></i>
+                    <div>
+                        <h6>Programs</h6>
+                        <p>{{ stats.programs_count }}</p>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+            <!-- Program Organizations -->
+            <div class="flex gap-2 items-start">
+                <div class="infocard-dark">
+                    <i class="fa-solid fa-building"></i>
+                    <div>
+                        <h6>Program Organizations</h6>
+                        <p>{{ stats.total_organizations_with_programs }}</p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    {% block page_title %}Solicitations{% endblock %} - CommCare Connect
+{% endblock %}
+
+{% block content %}
+    {% block hero_section %}
+        <!-- Hero Section with brand styling -->
+        <div class="bg-gradient-to-br from-brand-indigo to-brand-cornflower-blue py-16">
+            <div class="max-w-screen-xl mx-auto px-4">
+                <div class="text-center">
+                    <h1 class="text-4xl md:text-5xl font-bold mb-4 text-brand-deep-purple">
+                        {% block hero_title %}Partner with CommCare Connect{% endblock %}
+                    </h1>
+                    <p class="text-xl mb-8 max-w-3xl mx-auto text-brand-deep-purple">
+                        {% block hero_description %}
+                        Discover opportunities to collaborate with us in delivering life-saving health interventions
+                        to underserved communities worldwide.
+                        {% endblock %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    {% endblock %}
+
+    <div class="max-w-screen-xl mx-auto px-4 py-8">
+        {% block main_content %}{% endblock %}
+    </div>
+{% endblock %}
+
+{% block javascript %}
+    {{ block.super }}
+    <script src="{% static 'js/datetime-utils.js' %}" defer></script>
+{% endblock %}
