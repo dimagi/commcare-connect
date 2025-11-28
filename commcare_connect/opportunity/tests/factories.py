@@ -134,12 +134,23 @@ class UserVisitFactory(DjangoModelFactory):
     deliver_unit = SubFactory(DeliverUnitFactory)
     status = Faker("enum", enum_cls=VisitValidationStatus)
     visit_date = Faker("date_time", tzinfo=timezone.utc)
+    date_created = Faker("date_time", tzinfo=timezone.utc)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
     completed_work = SubFactory(CompletedWorkFactory)
 
     class Meta:
         model = "opportunity.UserVisit"
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        # allow overriding auto_now_add
+        date_created = kwargs.pop("date_created", None)
+        visit = super()._create(model_class, *args, **kwargs)
+        if date_created is not None:
+            model_class.objects.filter(pk=visit.pk).update(date_created=date_created)
+            visit.date_created = date_created
+        return visit
 
 
 class OpportunityClaimFactory(DjangoModelFactory):

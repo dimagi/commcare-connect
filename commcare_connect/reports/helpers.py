@@ -127,8 +127,8 @@ def get_table_data_for_year_month(
 
     max_visit_date = (
         UserVisit.objects.filter(completed_work_id=models.OuterRef("id"), status=VisitValidationStatus.approved)
-        .values_list("visit_date")
-        .order_by("-visit_date")[:1]
+        .values_list("date_created")
+        .order_by("-date_created")[:1]
     )
     time_to_payment = models.ExpressionWrapper(
         models.F("payment_date") - models.Subquery(max_visit_date), output_field=models.DurationField()

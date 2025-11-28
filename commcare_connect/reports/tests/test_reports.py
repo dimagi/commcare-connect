@@ -77,7 +77,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
                     payment_date=today + timedelta(minutes=30),
                 )
                 UserVisitFactory(
-                    visit_date=today - timedelta(i * 10),
+                    date_created=today - timedelta(i * 10),
                     opportunity_access=access,
                     completed_work=cw,
                     status=VisitValidationStatus.approved,
@@ -200,7 +200,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 payment_date=now + timedelta(minutes=1),
             )
             UserVisitFactory(
-                visit_date=now - timedelta(i * 10),
+                date_created=now - timedelta(i * 10),
                 opportunity_access=access,
                 completed_work=cw,
                 status=VisitValidationStatus.approved,
@@ -259,7 +259,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             payment_date=now + timedelta(minutes=1),
         )
         UserVisitFactory(
-            visit_date=now - timedelta(i * 10),
+            date_created=now - timedelta(i * 10),
             opportunity_access=access,
             completed_work=cw,
             status=VisitValidationStatus.approved,

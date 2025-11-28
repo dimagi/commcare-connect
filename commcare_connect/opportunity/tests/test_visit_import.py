@@ -709,8 +709,16 @@ def test_nm_flagged_visit_review_status_without_justification(mobile_user: User,
     dataset = Dataset(headers=["visit id", "status", "rejected reason", "justification"])
     dataset.extend([[visit.xform_id, VisitValidationStatus.approved, "", ""] for visit in visits])
     msg = get_missing_justification_message([visit.xform_id for visit in visits])
-    with pytest.raises(ImportException, match=msg):
+    with pytest.raises(ImportException) as exc:
         bulk_update_visit_status(opportunity.pk, dataset.headers, list(dataset))
+
+    error_msg = str(exc.value)
+    assert error_msg.split(":")[0] == msg.split(":")[0]
+
+    def _ids(text):
+        return {visit_id.strip() for visit_id in text.split(": ")[1].split(",")}
+
+    assert _ids(msg) == _ids(error_msg)
 
 
 @pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
