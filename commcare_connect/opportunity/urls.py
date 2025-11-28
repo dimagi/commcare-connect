@@ -76,13 +76,9 @@ urlpatterns = [
     path("<int:opp_id>/payment_unit/<int:pk>/edit", view=edit_payment_unit, name="edit_payment_unit"),
     path("<int:opp_id>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<int:opp_id>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
+    path("<int:opp_id>/user_visits/", view=views.user_visit_verification, name="user_visits_list"),
     path(
-        "<int:opp_id>/user_visits/<int:pk>/",
-        view=views.user_visit_verification,
-        name="user_visits_list",
-    ),
-    path(
-        "<int:opp_id>/user_visit_verification_table/<int:pk>/",
+        "<int:opp_id>/user_visit_verification_table/",
         view=views.VisitVerificationTableView.as_view(),
         name="user_visit_verification_table",
     ),
