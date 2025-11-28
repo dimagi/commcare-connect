@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html' with path=path %}
+<div class="card_bg">
+  <div class="card_title mb-4">
+    {% translate "Create New Invoice" %}
+  </div>
+  <div x-data="invoiceFormHandler()">
+    {% include "components/partial_form.html" %}
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('invoiceFormHandler', () => ({
+      open: false,
+      currency: false,
+
+      convert(replace = false) {
+        // date and amount should be present before making http call
+        if (!this.$refs.amount?.value || !this.$refs.date?.value) return;
+
+        htmx.ajax('POST', '{% url "opportunity:exchange_rate" org_slug=request.org.slug opp_id=opportunity.id %}', {
+          target: '#converted-amount-wrapper',
+          swap: 'innerHTML',
+          values: {
+            amount: this.$refs.amount.value,
+            date: this.$refs.date.value,
+            usd_currency: this.currency,
+            should_replace_amount: replace
+          }
+        }).then(() => {
+          if (replace) {
+            const newAmount = document.querySelector('#exchange-rate-display')?.dataset?.convertedAmount;
+            if (newAmount) {
+              this.$refs.amount.value = newAmount;
+            }
+          }
+        });
+      }
+    }));
+  });
+</script>
+{% endblock content %}
