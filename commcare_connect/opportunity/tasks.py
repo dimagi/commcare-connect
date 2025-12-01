@@ -9,7 +9,9 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.core.mail import send_mail
 from django.db import transaction
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext
@@ -38,6 +40,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaim,
     Payment,
+    PaymentInvoice,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -479,3 +482,49 @@ def issue_user_credentials():
 @celery_app.task()
 def submit_credentials_to_personalid_task():
     UserCredentialIssuer.submit_user_credentials()
+
+
+@celery_app.task()
+def send_invoice_paid_mail(opportunity_id, invoice_ids):
+    logger.info(f"Sending invoice paid notification for opportunity {opportunity_id} and invoices {invoice_ids}")
+    opportunity = Opportunity.objects.get(pk=opportunity_id)
+    nm_org = opportunity.organization
+    recipient_emails = nm_org.get_member_emails()
+    if not recipient_emails:
+        logger.info(f"No recipient emails found for organization {nm_org.slug}. Skipping invoice paid email.")
+        return
+
+    invoices = PaymentInvoice.objects.filter(id__in=invoice_ids)
+
+    base_invoice_list_url = build_absolute_uri(
+        None,
+        reverse(
+            "opportunity:invoice_list",
+            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.id},
+        ),
+    )
+
+    for invoice in invoices:
+        subject = f"[{opportunity.name}] Invoice {invoice.invoice_number} Has Been Paid"
+        invoice_url = f"{base_invoice_list_url}?highlight={invoice.invoice_number}"
+        context = {
+            "invoice": invoice,
+            "invoice_url": invoice_url,
+            "opportunity": opportunity,
+        }
+
+        text_body = render_to_string(
+            "opportunity/email/invoice_paid.txt",
+            context,
+        )
+        html_body = render_to_string(
+            "opportunity/email/invoice_paid.html",
+            context,
+        )
+        send_mail(
+            subject=subject,
+            message=text_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipient_emails,
+            html_message=html_body,
+        )

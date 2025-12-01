@@ -29,7 +29,7 @@
             <div style="overflow:hidden; border-radius:8px;">
               {% for row in table.paginated_rows %}
                 {% block table.tbody.row %}
-                  <tr class="group" {{ row.attrs.as_html }}>
+                  <tr {{ row.attrs.as_html }} class="group">
                     {% for column, cell in row.items %}
                       <td {{ column.attrs.td.as_html }}>
                         {% if column.localize == None %}

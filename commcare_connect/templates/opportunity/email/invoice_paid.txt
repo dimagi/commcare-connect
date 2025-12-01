@@ -1,0 +1,20 @@
+Hi,
+
+Your invoice for the Opportunity {{ opportunity.name }} has been paid.
+
+Invoice Details:
+
+Invoice Number: {{ invoice.invoice_number }}
+
+Amount Paid: {{opportunity.currency}} {{ invoice.amount }}
+
+Invoice Date: {{ invoice.date }}
+
+Payment Date: {{ invoice.payment.created_at }}
+
+You can view the invoice here: {{ invoice_url }}
+
+If you have any questions, please contact your Program Manager.
+
+Thank you,
+Connect

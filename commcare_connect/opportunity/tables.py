@@ -392,10 +392,16 @@ class PaymentInvoiceTable(OpportunityContextTable):
             "actions",
         )
         empty_text = "No Payment Invoices"
+        row_attrs = {
+            "class": lambda record, table: (
+                "bg-yellow-100" if record.invoice_number == table.highlight_invoice_number else ""
+            ),
+        }
 
     def __init__(self, *args, **kwargs):
         self.csrf_token = kwargs.pop("csrf_token")
         self.opportunity = kwargs.pop("opportunity")
+        self.highlight_invoice_number = kwargs.pop("highlight_invoice_number", None)
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency})"
 
