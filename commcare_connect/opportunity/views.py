@@ -1,4 +1,5 @@
 import datetime
+import json
 import sys
 from collections import Counter, defaultdict
 from datetime import timedelta
@@ -6,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from urllib.parse import urlencode, urlparse
 
+import waffle
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
 from django.conf import settings
@@ -17,9 +19,10 @@ from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Cast, Coalesce
 from django.forms import modelformset_factory
-from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, HttpResponseNotFound
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -35,6 +38,7 @@ from django_tables2.export import TableExport
 from geopy import distance
 
 from commcare_connect.connect_id_client import fetch_users
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -42,6 +46,7 @@ from commcare_connect.opportunity.filters import DeliverFilterSet, FilterMixin, 
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
+    AutomatedPaymentInvoiceForm,
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
@@ -94,6 +99,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     CompletedWorkTable,
     DeliverUnitTable,
+    InvoiceDeliveriesTable,
+    InvoiceLineItemsTable,
     LearnModuleTable,
     OpportunityTable,
     PaymentInvoiceTable,
@@ -125,6 +132,10 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_push_notification_task,
     update_user_and_send_invite,
+)
+from commcare_connect.opportunity.utils.completed_work import (
+    get_uninvoiced_completed_works_qs,
+    get_uninvoiced_visit_items,
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
@@ -1327,7 +1338,6 @@ def invoice_list(request, org_slug, opp_id):
         csrf_token=csrf_token,
     )
 
-    form = PaymentInvoiceForm(opportunity=request.opportunity)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(
         request,
@@ -1335,7 +1345,7 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
-            "form": form,
+            "new_invoice_url": reverse("opportunity:invoice_create", args=(org_slug, opp_id)),
             "path": [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                 {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
@@ -1345,20 +1355,66 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-@org_member_required
-@opportunity_required
-def invoice_create(request, org_slug=None, opp_id=None):
-    if not request.opportunity.managed or request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug, opp_id)
-    form = PaymentInvoiceForm(data=request.POST or None, opportunity=request.opportunity)
-    if request.POST and form.is_valid():
+class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateView):
+    model = PaymentInvoice
+    template_name = "opportunity/invoice_create.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        opportunity = self.get_opportunity()
+        org_slug = self.request.org.slug
+
+        context.update(
+            {
+                "opportunity": opportunity,
+                "is_service_delivery": self.request.GET.get("invoice_type")
+                == PaymentInvoice.InvoiceType.service_delivery,
+                "path": [
+                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                    {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+                    {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.id))},
+                    {
+                        "title": self.breadcrumb_title,
+                        "url": reverse("opportunity:invoice_create", args=(org_slug, opportunity.id)),
+                    },
+                ],
+            }
+        )
+        return context
+
+    @property
+    def form_class(self):
+        if waffle.switch_is_active(AUTOMATED_INVOICES):
+            return AutomatedPaymentInvoiceForm
+        return PaymentInvoiceForm
+
+    @property
+    def breadcrumb_title(self):
+        service_delivery = PaymentInvoice.InvoiceType.service_delivery
+        if self.request.GET.get("invoice_type", service_delivery) == service_delivery:
+            return "New Service Delivery Invoice"
+        return "New Custom Invoice"
+
+    def post(self, request, org_slug, opp_id, **kwargs):
+        opportunity = self.get_opportunity()
+        if not opportunity.managed or request.is_opportunity_pm:
+            return redirect("opportunity:detail", org_slug, opp_id)
+
+        form = self.get_form()
+        if not form.is_valid():
+            return self.get(request, org_slug, opp_id, **kwargs)
+
         form.save()
-        form = PaymentInvoiceForm(opportunity=request.opportunity)
-        redirect_url = reverse("opportunity:invoice_list", args=[org_slug, opp_id])
-        response = HttpResponse(status=200)
-        response["HX-Redirect"] = redirect_url
-        return response
-    return HttpResponse(render_crispy_form(form))
+        return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["opportunity"] = self.get_opportunity()
+        kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        return kwargs
+
+    def get_success_url(self):
+        return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().id))
 
 
 @org_member_required
@@ -2553,6 +2609,62 @@ def add_api_key(request, org_slug):
         api_key.save()
         form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
     return HttpResponse(render_crispy_form(form))
+
+
+@require_POST
+@opportunity_required
+@org_member_required
+def invoice_items(request, *args, **kwargs):
+    body = json.loads(request.body)
+    start_date_str = body.get("start_date", None)
+    end_date_str = body.get("end_date", None)
+
+    if not start_date_str or not end_date_str:
+        return JsonResponse({"error": _("Start date and end date are required.")})
+
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
+    total_local_amount = sum(item["total_amount_local"] for item in line_items)
+    total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+
+    html = render_to_string(
+        "opportunity/partials/invoice_line_items.html",
+        {"table": InvoiceLineItemsTable(line_items)},
+        request=request,
+    )
+
+    return JsonResponse(
+        {
+            "line_items_table_html": html,
+            "total_amount": total_local_amount,
+            "total_usd_amount": total_usd_amount,
+        }
+    )
+
+
+@require_GET
+@org_member_required
+@opportunity_required
+def download_invoice_line_items(request, org_slug, opp_id):
+    start_date_str = request.GET.get("start_date", None)
+    end_date_str = request.GET.get("end_date", None)
+
+    if not start_date_str or not end_date_str:
+        return HttpResponseBadRequest("Start date and end date are required.")
+
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
+    table = InvoiceDeliveriesTable(deliveries)
+
+    export_format = "csv"
+    exporter = TableExport(export_format, table)
+    filename = f"invoice_line_items_{start_date}_{end_date}.csv"
+
+    return exporter.response(filename=filename)
 
 
 @login_required
