@@ -8,4 +8,4 @@ Program: '{{ application.program.name }}'
 Click here ({{ program_url }}) to review the program for which the Network Manager has applied.
 
 Thank you,
-CommCare Connect
+Connect

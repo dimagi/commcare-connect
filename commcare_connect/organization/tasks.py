@@ -1,14 +1,11 @@
 from allauth.utils import build_absolute_uri
-from django.conf import settings
-from django.core.mail import send_mail
 from django.urls import reverse
 
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.users.models import User
-from config import celery_app
+from commcare_connect.utils.tasks import send_mail_async
 
 
-@celery_app.task()
 def send_org_invite(membership_id, host_user_id):
     membership = UserOrganizationMembership.objects.get(pk=membership_id)
     host_user = User.objects.get(pk=host_user_id)
@@ -25,9 +22,9 @@ The invite can be accepted by visiting the link.
 
 Thank You,
 Connect"""
-    send_mail(
-        subject=f"{host_user.name} has invite you to join '{membership.organization.name}' on Connect",
+
+    send_mail_async.delay(
+        subject=f"{host_user.name} has invited you to join '{membership.organization.name}' on Connect",
         message=message,
         recipient_list=[membership.user.email],
-        from_email=settings.DEFAULT_FROM_EMAIL,
     )
