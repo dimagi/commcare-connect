@@ -23,6 +23,7 @@ from commcare_connect.opportunity.models import (
     Payment,
 )
 from commcare_connect.users.helpers import create_hq_user_and_link
+from commcare_connect.utils.error_codes import ErrorCodes
 
 
 class OpportunityViewSet(viewsets.ReadOnlyModelViewSet):
@@ -76,9 +77,9 @@ class ClaimOpportunityView(APIView):
         if OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists():
             return Response(status=200, data="Opportunity is already claimed")
         if opportunity.remaining_budget < opportunity.minimum_budget_per_visit:
-            return Response(status=400, data="Opportunity cannot be claimed. (Budget Exhausted)")
+            return Response({"error_code": ErrorCodes.OPPORTUNITY_FULL}, status=400)
         if opportunity.end_date < datetime.date.today():
-            return Response(status=400, data="Opportunity cannot be claimed. (End date reached)")
+            return Response({"error_code": ErrorCodes.OPPORTUNITY_ENDED}, status=400)
 
         with transaction.atomic():
             claim, created = OpportunityClaim.objects.get_or_create(
@@ -96,7 +97,7 @@ class ClaimOpportunityView(APIView):
         domain = opportunity.deliver_app.cc_domain
         user_created = create_hq_user_and_link(self.request.user, domain, opportunity)
         if not user_created:
-            return Response("Failed to create user", status=400)
+            return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
         return Response(status=201)
 
 
@@ -111,7 +112,7 @@ class ConfirmPaymentView(APIView):
         elif confirmed_value == "true":
             confirmed = True
         else:
-            return Response("confirmed must be 'true' or 'false'", status=400)
+            return Response({"error_code": ErrorCodes.INVALID_FLAG}, status=400)
         payment.confirmed = confirmed
         payment.confirmation_date = now()
         payment.save()
