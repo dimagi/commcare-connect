@@ -15,6 +15,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
     VisitValidationStatus,
 )
+from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.utils.datetime import get_month_series, get_start_end_dates_from_month_range
 
 ADMIN_REPORT_START = "2023-01"
@@ -223,6 +224,13 @@ def get_table_data_for_year_month(
     connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
     total_eligible_user_counts = get_eligible_user_counts_cumulative(delivery_type)
 
+    hq_sso_users = (
+        UserAnalyticsData.objects.annotate(month_group=TruncMonth("has_sso_on_hq_app"))
+        .values("month_group")
+        .annotate(users=models.Count("username"))
+    )
+    hq_sso_users_data = {item["month_group"]: item["users"] for item in hq_sso_users}
+
     for group_key in visit_data_dict.keys():
         month_group = group_key[0]
         visit_data_dict[group_key].update(
@@ -230,6 +238,7 @@ def get_table_data_for_year_month(
                 "connectid_users": connectid_user_count.get(month_group, 0),
                 "total_eligible_users": total_eligible_user_counts.get(month_group, 0),
                 "non_preregistered_users": non_invited_user_counts.get(month_group, 0),
+                "hq_sso_users": hq_sso_users_data.get(month_group, 0),
             }
         )
     return list(visit_data_dict.values())
