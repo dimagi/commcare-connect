@@ -1,0 +1,1014 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50" x-data="streamlinedActionInterface()">
+  <!-- Simple Top Bar -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <a href="{% url 'tasks:list' %}" class="text-gray-600 hover:text-gray-900">
+        <i class="fa-solid fa-arrow-left"></i> Back to Actions
+      </a>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-500">Action #{{ task.id }}</span>
+      <a href="{% url 'tasks:detail' task.id %}" class="text-xs text-purple-600 hover:text-purple-800">
+        <i class="fa-solid fa-eye mr-1"></i> Alternate View
+      </a>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto p-6">
+
+    <!-- Main Issue Card -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
+
+        <!-- FLW Header -->
+        <div class="text-white px-6 py-5" style="background: linear-gradient(to right, #7c3aed, #9333ea);">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-4">
+              <div class="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold">
+                {{ task.flw_name|slice:":1"|upper }}
+              </div>
+              <div>
+                <h1 class="text-2xl font-bold mb-1">{{ task.flw_name }}</h1>
+                <div class="text-sm opacity-90">{{ task.flw_username }}</div>
+                <div class="text-sm opacity-75 mt-1">{{ task.opportunity }}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <!-- Previous Issues Button -->
+              <button @click="showPreviousIssues = !showPreviousIssues"
+                      class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-sm border border-white/20 transition-colors">
+                <i class="fa-solid fa-history mr-1"></i>
+                Previous Issues (1)
+              </button>
+
+              {% if task.action_type == "warning" %}
+              <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-yellow-400 text-yellow-900 font-medium">
+                <i class="fa-solid fa-exclamation-triangle mr-1"></i> Warning Issued
+              </span>
+              {% else %}
+              <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-red-400 text-red-900 font-medium">
+                <i class="fa-solid fa-ban mr-1"></i> Temporarily Deactivated
+              </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Previous Issues Dropdown -->
+          <div x-show="showPreviousIssues"
+               x-transition:enter="transition ease-out duration-200"
+               x-transition:enter-start="opacity-0 -translate-y-2"
+               x-transition:enter-end="opacity-100 translate-y-0"
+               class="mt-4 bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
+            <div class="text-sm font-medium mb-2">Past 90 Days</div>
+            <div class="space-y-2">
+              {% for issue in task.flw_history %}
+              <a href="{% url 'tasks:detail' issue.id %}"
+                 class="flex items-center justify-between p-2 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors">
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-circle-check text-green-300"></i>
+                  <span>{{ issue.issue }}</span>
+                </div>
+                <span class="text-xs opacity-75">{{ issue.date|timesince }} ago</span>
+              </a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+      <!-- Issue Summary -->
+      <div class="px-6 py-5 border-b border-gray-200">
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">What Happened</h2>
+        <p class="text-gray-700 mb-3">
+          {% if task.id == 1001 %}
+          Photo quality issues detected during audit. The "glasses on face" images were not taken from the proper angle. Photos must be head-on, from shoulders up, to properly verify glasses fit. A warning has been sent to the worker and they have been assigned the Image Capture learning module.
+          {% elif task.action_type == "warning" %}
+          Quality issues were detected in their work during an audit. A warning notification has been sent to the worker.
+          {% else %}
+          Serious quality issues were detected during an audit. The worker has been temporarily deactivated from this opportunity.
+          {% endif %}
+        </p>
+        <div class="flex items-center gap-4 text-sm text-gray-600">
+          <span><i class="fa-solid fa-calendar mr-1"></i> {{ task.created|date:"M d, Y" }}</span>
+          <span><i class="fa-solid fa-clock mr-1"></i> {{ task.created|timesince }} ago</span>
+          <a href="/audit/session/{{ task.audit_session_id }}/"
+             class="text-brand-indigo hover:underline">
+            <i class="fa-solid fa-file-alt mr-1"></i> View Audit Report #{{ task.audit_session_id }}
+          </a>
+        </div>
+      </div>
+
+
+      <!-- Primary Actions -->
+      <div class="px-6 py-4 bg-gray-50">
+        <div class="flex gap-3">
+
+          <!-- Initiate AI Assistant (First) -->
+          <button @click="showAIModal()"
+                  class="flex-1 flex items-center gap-2 px-3 py-3 bg-white border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all group">
+            <div class="w-9 h-9 rounded-full bg-green-100 text-green-600 flex items-center justify-center group-hover:bg-green-500 group-hover:text-white transition-colors flex-shrink-0">
+              <i class="fa-solid fa-robot text-sm"></i>
+            </div>
+            <div class="text-left flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900 group-hover:text-green-700 whitespace-nowrap">Initiate AI Assistant</div>
+              <div class="text-xs text-gray-500 truncate">Start AI conversation</div>
+            </div>
+          </button>
+
+          <!-- Assign Learning -->
+          <button @click="showLearningModal()"
+                  class="flex-1 flex items-center gap-2 px-3 py-3 bg-white border-2 border-gray-200 rounded-lg hover:border-indigo-500 hover:bg-indigo-50 transition-all group">
+            <div class="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-colors flex-shrink-0">
+              <i class="fa-solid fa-graduation-cap text-sm"></i>
+            </div>
+            <div class="text-left flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900 group-hover:text-indigo-700 whitespace-nowrap">Assign Learning</div>
+              <div class="text-xs text-gray-500 truncate">Select modules</div>
+            </div>
+          </button>
+
+          <!-- Assign to Network Manager -->
+          <button @click="showAssignModal('Network Manager')"
+                  class="flex-1 flex items-center gap-2 px-3 py-3 bg-white border-2 border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all group">
+            <div class="w-9 h-9 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center group-hover:bg-purple-500 group-hover:text-white transition-colors flex-shrink-0">
+              <i class="fa-solid fa-user-check text-sm"></i>
+            </div>
+            <div class="text-left flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900 group-hover:text-purple-700 whitespace-nowrap">Assign to NM</div>
+              <div class="text-xs text-gray-500 truncate">Route for review</div>
+            </div>
+          </button>
+
+          <!-- Assign to Program Manager -->
+          <button @click="showAssignModal('Program Manager')"
+                  class="flex-1 flex items-center gap-2 px-3 py-3 bg-white border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group">
+            <div class="w-9 h-9 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-colors flex-shrink-0">
+              <i class="fa-solid fa-user-tie text-sm"></i>
+            </div>
+            <div class="text-left flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900 group-hover:text-blue-700 whitespace-nowrap">Assign to PM</div>
+              <div class="text-xs text-gray-500 truncate">Escalate decision</div>
+            </div>
+          </button>
+
+          <!-- Mark as Resolved -->
+          <button @click="showResolveModal()"
+                  class="flex-1 flex items-center gap-2 px-3 py-3 bg-white border-2 border-gray-200 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
+            <div class="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors flex-shrink-0">
+              <i class="fa-solid fa-check-circle text-sm"></i>
+            </div>
+            <div class="text-left flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900 group-hover:text-emerald-700 whitespace-nowrap">Mark as Resolved</div>
+              <div class="text-xs text-gray-500 truncate">Close this issue</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Add Comment Section -->
+      <div class="px-6 py-4 border-t border-gray-200">
+        <textarea
+          x-model="newComment"
+          class="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-brand-indigo focus:border-transparent resize-none"
+          rows="3"
+          placeholder="Add a note or comment..."></textarea>
+        <div class="flex justify-between items-center mt-2">
+          <button @click="uploadAttachment()"
+                  class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+            <i class="fa-solid fa-paperclip mr-2"></i> Upload Attachment
+          </button>
+          <button @click="postComment()"
+                  :disabled="!newComment.trim()"
+                  :class="newComment.trim() ? 'bg-brand-indigo hover:bg-brand-deep-purple text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
+                  class="px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+            <i class="fa-solid fa-paper-plane mr-2"></i> Add comment
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <h3 class="font-semibold text-gray-900">History</h3>
+        <p class="text-sm text-gray-600 mt-1">Actions, communications, and learning assignments for this issue</p>
+      </div>
+
+      <div class="p-6">
+        <!-- Timeline (Human Events + Learning) -->
+        <div class="space-y-4">
+          {% for item in task.timeline %}
+          {% if "Comment" in item.action or "Learning" in item.action or "AI Conversation" in item.action or "Reactivation" in item.action or "Acknowledged" in item.action or "Created" in item.action %}
+
+          {% if "AI Conversation" in item.action %}
+          <!-- AI Conversation (Expandable) -->
+          <div class="border-l-4 border-green-400 bg-green-50 rounded-lg" x-data="aiConversationHandler({% if item.session_id %}'{{ item.session_id }}'{% else %}null{% endif %}, [])">
+            <button @click="expanded = !expanded"
+                    class="w-full flex gap-4 p-4 text-left hover:bg-green-100 transition-colors">
+              <div class="flex-shrink-0">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center bg-green-100 text-green-600">
+                  <i class="fa-solid fa-robot"></i>
+                </div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between mb-1">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #d1fae5; color: #065f46;">
+                      AI Assistant
+                    </span>
+                    {% if item.session_id %}
+                    <span class="text-xs text-gray-500">{{ item.session_id }}</span>
+                    {% endif %}
+                  </div>
+                  <span class="text-xs text-gray-500 whitespace-nowrap ml-2">
+                    {{ item.timestamp|timesince }} ago
+                  </span>
+                </div>
+                <div class="text-sm text-gray-600 mb-1">
+                  {{ item.action }}
+                  <i class="fa-solid ml-1" :class="expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                </div>
+                <p class="text-sm text-gray-800">{{ item.description }}</p>
+              </div>
+            </button>
+
+            <div x-show="expanded" class="px-4 pb-4 space-y-3">
+
+              {% if not item.session_id %}
+              <!-- Form to add session ID -->
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 class="text-sm font-semibold text-blue-900 mb-3">
+                  <i class="fa-solid fa-link mr-2"></i>
+                  Link OCS Session
+                </h4>
+                <form @submit.prevent="submitSessionId()">
+                  <div class="space-y-3">
+                    <div>
+                      <label class="block text-xs font-medium text-gray-700 mb-1">
+                        OCS Session ID
+                      </label>
+                      <input
+                        type="text"
+                        x-model="sessionIdInput"
+                        placeholder="e.g., ocs-session-1234"
+                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors"
+                      :disabled="loading"
+                    >
+                      <i class="fa-solid fa-plus mr-2"></i>
+                      <span x-text="loading ? 'Linking...' : 'Link Session'"></span>
+                    </button>
+                  </div>
+                </form>
+
+                <p class="text-xs text-gray-600 mt-3">
+                  <i class="fa-solid fa-info-circle mr-1"></i>
+                  Find the session ID in the OCS dashboard, then enter it here to view the conversation.
+                </p>
+              </div>
+              {% else %}
+
+              <!-- Loading State -->
+              <div x-show="loading" class="text-center py-8 text-gray-500">
+                <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
+                <p class="text-sm">Loading conversation from OCS...</p>
+              </div>
+
+              <!-- Error State -->
+              <div x-show="error" class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
+                <i class="fa-solid fa-exclamation-triangle mr-2"></i>
+                <span x-text="error"></span>
+              </div>
+
+              <!-- Conversation Display -->
+              <div x-show="!loading && !error && messages.length > 0" class="space-y-3">
+                <template x-for="msg in messages" :key="msg.timestamp">
+                  <div class="flex gap-3">
+                    <div
+                      :class="msg.actor.includes('AI') ? 'bg-green-200 text-green-700' : 'bg-gray-200 text-gray-700'"
+                      class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center">
+                      <i :class="msg.actor.includes('AI') ? 'fa-solid fa-robot' : 'fa-solid fa-user'" class="text-xs"></i>
+                    </div>
+                    <div
+                      :class="msg.actor.includes('AI') ? 'border-green-200' : 'border-gray-200'"
+                      class="flex-1 bg-white rounded-lg p-3 border shadow-sm">
+                      <div class="text-xs text-gray-500 mb-1">
+                        <span x-text="msg.actor"></span>
+                        <span x-show="msg.timestamp"> • </span>
+                        <span x-text="formatTimestamp(msg.timestamp)"></span>
+                      </div>
+                      <p class="text-sm text-gray-800" x-text="msg.message"></p>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <!-- No messages state -->
+              <div x-show="!loading && !error && messages.length === 0" class="text-center py-4 text-gray-500 text-sm">
+                <i class="fa-solid fa-comments text-2xl mb-2 text-gray-300"></i>
+                <p>No conversation messages found</p>
+              </div>
+
+              <div x-show="!loading && !error && messages.length > 0" class="pt-2 border-t border-green-200 text-xs text-gray-600 flex items-center gap-2">
+                <i class="fa-solid fa-check-circle text-green-600"></i>
+                <span>Conversation completed • Issue documented</span>
+              </div>
+              {% endif %}
+
+            </div>
+          </div>
+          {% else %}
+          <!-- Regular timeline item -->
+          <div class="flex gap-4 p-4 {% if 'Learning Completed' in item.action or 'Acknowledged' in item.action %}border-l-4 border-green-400 bg-green-50{% else %}bg-gray-50{% endif %} rounded-lg border border-gray-200">
+            <div class="flex-shrink-0">
+              <div class="w-10 h-10 rounded-full flex items-center justify-center {% if 'Learning Completed' in item.action or 'Acknowledged' in item.action %}bg-green-100 text-green-600{% elif 'Learning Assigned' in item.action %}bg-blue-100 text-blue-600{% elif item.actor == task.flw_name %}bg-green-100 text-green-600{% else %}bg-gray-100 text-gray-600{% endif %}">
+                <i class="fa-solid {% if 'Learning Assigned' in item.action %}fa-graduation-cap{% elif 'Learning Completed' in item.action %}fa-check-circle{% else %}fa-comment{% endif %}"></i>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  {% if item.actor_role == "program_manager" %}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #dbeafe; color: #1e40af;">
+                    Program Manager
+                  </span>
+                  {% elif item.actor_role == "network_manager" %}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #e9d5ff; color: #6b21a8;">
+                    Network Manager
+                  </span>
+                  {% endif %}
+                  <span class="font-medium text-gray-900">{{ item.display_name }}</span>
+                </div>
+                <span class="text-xs text-gray-500 whitespace-nowrap ml-2">
+                  {{ item.timestamp|timesince }} ago
+                </span>
+              </div>
+              <div class="text-sm text-gray-600 mb-1">{{ item.action }}</div>
+              {% if item.description %}
+              <p class="text-sm text-gray-800 leading-relaxed">{{ item.description }}</p>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assign Modal -->
+  <div x-show="showAssign"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showAssign = false"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">
+          Assign to <span x-text="assignTo"></span>
+        </h3>
+        <button @click="showAssign = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Add a note (optional)</label>
+        <textarea
+          x-model="assignNote"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-indigo resize-none"
+          rows="3"
+          placeholder="Explain why you're assigning this..."></textarea>
+      </div>
+      <div class="flex gap-3">
+        <button @click="showAssign = false"
+                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+        <button @click="confirmAssign()"
+                class="flex-1 px-4 py-2 bg-brand-indigo text-white rounded-lg hover:bg-brand-deep-purple transition-colors font-medium">
+          Assign
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Initiate AI Assistant Modal -->
+  <div x-show="showAI"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showAI = false"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Initiate AI Assistant</h3>
+        <button @click="showAI = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+      <p class="text-sm text-gray-600 mb-4">Configure and initiate an AI assistant conversation with {{ task.flw_name }}.</p>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Participant ID (UUID)
+          <span class="text-red-500">*</span>
+        </label>
+        <input type="text"
+               x-model="aiParams.identifier"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+               placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000">
+        <p class="text-xs text-gray-500 mt-1">Unique identifier for the participant (CommCare Connect UUID)</p>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Bot ID (Experiment UUID)
+          <span class="text-red-500">*</span>
+        </label>
+        <input type="text"
+               x-model="aiParams.experiment"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+               placeholder="e.g., 123e4567-e89b-12d3-a456-426614174000">
+        <p class="text-xs text-gray-500 mt-1">The experiment/bot ID to use from OCS</p>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Platform
+          <span class="text-red-500">*</span>
+        </label>
+        <select x-model="aiParams.platform"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent">
+          <option value="commcare_connect">CommCare Connect</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="telegram">Telegram</option>
+          <option value="api">API</option>
+          <option value="web">Web</option>
+          <option value="slack">Slack</option>
+          <option value="facebook">Facebook Messenger</option>
+          <option value="sureadhere">SureAdhere</option>
+        </select>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Prompt Instructions (for AI only)
+          <span class="text-red-500">*</span>
+        </label>
+        <textarea
+          x-model="aiParams.prompt_text"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+          rows="4"
+          placeholder="Instructions for the bot - the user won't see this text..."></textarea>
+        <p class="text-xs text-gray-500 mt-1">These instructions are sent to the LLM - the end user never sees this</p>
+      </div>
+
+      <div class="mb-4">
+        <label class="flex items-center">
+          <input type="checkbox"
+                 x-model="aiParams.start_new_session"
+                 class="rounded border-gray-300 text-green-600 focus:ring-green-500">
+          <span class="ml-2 text-sm text-gray-700">Start new session (ignore existing conversation)</span>
+        </label>
+      </div>
+
+      <!-- Progress Feedback -->
+      <div x-show="aiProgress.show" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div class="flex items-start gap-3">
+          <div class="flex-shrink-0 mt-0.5">
+            <i class="fa-solid fa-spinner fa-spin text-blue-600" x-show="aiProgress.status === 'triggering' || aiProgress.status === 'polling'"></i>
+            <i class="fa-solid fa-check-circle text-green-600" x-show="aiProgress.status === 'success'"></i>
+            <i class="fa-solid fa-exclamation-triangle text-yellow-600" x-show="aiProgress.status === 'partial'"></i>
+          </div>
+          <div class="flex-1 text-sm">
+            <div class="font-medium text-gray-900" x-text="aiProgress.message"></div>
+            <div x-show="aiProgress.detail" class="text-xs text-gray-600 mt-1" x-text="aiProgress.detail"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <button @click="cancelAI()" :disabled="aiLoading && aiProgress.status === 'triggering'" class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed">
+          <span x-text="aiLoading ? 'Close' : 'Cancel'"></span>
+        </button>
+        <button @click="initiateAI()" :disabled="aiLoading" class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fa-solid mr-2" :class="aiLoading ? 'fa-spinner fa-spin' : 'fa-robot'"></i>
+          <span x-text="aiLoading ? 'Initiating...' : 'Initiate AI'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assign Learning Modal -->
+  <div x-show="showLearning"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showLearning = false"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Assign Learning Modules</h3>
+        <button @click="showLearning = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+      <p class="text-sm text-gray-600 mb-4">Select one or more learning modules to assign to {{ task.flw_name }}:</p>
+
+      <div class="space-y-2 mb-4">
+        <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox"
+                 value="Working Hours"
+                 x-model="selectedModules"
+                 class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+          <div class="flex-1">
+            <div class="font-medium text-sm text-gray-900">Working Hours</div>
+            <div class="text-xs text-gray-600">Understanding proper working hours and scheduling requirements</div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox"
+                 value="Visit Duration"
+                 x-model="selectedModules"
+                 class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+          <div class="flex-1">
+            <div class="font-medium text-sm text-gray-900">Visit Duration</div>
+            <div class="text-xs text-gray-600">Learn optimal visit timing and quality interaction standards</div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox"
+                 value="Screening Process"
+                 x-model="selectedModules"
+                 class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+          <div class="flex-1">
+            <div class="font-medium text-sm text-gray-900">Screening Process</div>
+            <div class="text-xs text-gray-600">Proper screening procedures and assessment techniques</div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox"
+                 value="Reading Fit Process"
+                 x-model="selectedModules"
+                 class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+          <div class="flex-1">
+            <div class="font-medium text-sm text-gray-900">Reading Fit Process</div>
+            <div class="text-xs text-gray-600">Verification procedures for reading glasses fit and comfort</div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox"
+                 value="Image Capture"
+                 x-model="selectedModules"
+                 class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+          <div class="flex-1">
+            <div class="font-medium text-sm text-gray-900">Image Capture</div>
+            <div class="text-xs text-gray-600">Learn proper photography techniques for documentation</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Add an internal note (optional)
+        </label>
+        <textarea
+          x-model="learningNote"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+          rows="2"
+          placeholder="e.g., I also assigned an additional learning module..."></textarea>
+      </div>
+
+      <div class="flex gap-3">
+        <button @click="showLearning = false" class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+          Cancel
+        </button>
+        <button @click="assignLearning()"
+                :disabled="selectedModules.length === 0"
+                :class="selectedModules.length > 0 ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
+                class="flex-1 px-4 py-2 rounded-lg transition-colors">
+          <i class="fa-solid fa-graduation-cap mr-2"></i>
+          Assign (<span x-text="selectedModules.length"></span>)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resolve Modal -->
+  <div x-show="showResolve"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showResolve = false"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Mark as Resolved</h3>
+        <button @click="showResolve = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Resolution notes</label>
+        <textarea
+          x-model="resolveNote"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 resize-none"
+          rows="3"
+          placeholder="How was this resolved?"></textarea>
+      </div>
+      <div class="flex gap-3">
+        <button @click="showResolve = false"
+                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+        <button @click="confirmResolve()"
+                class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
+          <i class="fa-solid fa-check mr-2"></i> Resolve
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div x-show="showToast"
+       x-transition:enter="transition ease-out duration-300 transform"
+       x-transition:enter-start="translate-y-2 opacity-0"
+       x-transition:enter-end="translate-y-0 opacity-100"
+       class="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50">
+    <i class="fa-solid fa-check-circle text-green-400"></i>
+    <span x-text="toastMessage"></span>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+<script>
+  // Helper function to get CSRF token from cookies
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  function streamlinedActionInterface() {
+    return {
+      newComment: '',
+      showHistory: false,
+      showPreviousIssues: false,
+      showAIConversation: false,
+      showAssign: false,
+      showAI: false,
+      showLearning: false,
+      showResolve: false,
+      assignTo: '',
+      assignNote: '',
+      resolveNote: '',
+      selectedModules: [],
+      learningNote: '',
+      aiParams: {
+        identifier: '',
+        experiment: '',
+        platform: 'commcare_connect',
+        prompt_text: '',
+        start_new_session: true
+      },
+      aiLoading: false,
+      aiProgress: {
+        show: false,
+        status: '', // 'triggering', 'polling', 'success', 'partial', 'error'
+        message: '',
+        detail: ''
+      },
+      aiPollingInterval: null,
+      showToast: false,
+      toastMessage: '',
+
+      init() {
+        // Simple, no keyboard shortcuts
+      },
+
+      showAssignModal(role) {
+        this.assignTo = role;
+        this.assignNote = '';
+        this.showAssign = true;
+      },
+
+      showAIModal() {
+        // Pre-populate with the username for this task's user
+        this.aiParams.identifier = '{{ task.flw_username }}';
+        this.showAI = true;
+      },
+
+      showLearningModal() {
+        this.selectedModules = [];
+        this.learningNote = '';
+        this.showLearning = true;
+      },
+
+      showResolveModal() {
+        this.resolveNote = '';
+        this.showResolve = true;
+      },
+
+      confirmAssign() {
+        this.showToastMessage('Assigned to ' + this.assignTo);
+        this.showAssign = false;
+        // In real implementation, would make API call
+      },
+
+      cancelAI() {
+        if (this.aiPollingInterval) {
+          clearInterval(this.aiPollingInterval);
+          this.aiPollingInterval = null;
+        }
+        this.showAI = false;
+        this.aiLoading = false;
+        this.aiProgress.show = false;
+      },
+
+      async pollForSessionId(taskId, taskAiSessionId, maxAttempts = 10) {
+        let attempts = 0;
+
+        return new Promise((resolve) => {
+          this.aiPollingInterval = setInterval(async () => {
+            attempts++;
+
+            this.aiProgress.status = 'polling';
+            this.aiProgress.message = 'Retrieving session ID...';
+            this.aiProgress.detail = `Attempt ${attempts} of ${maxAttempts}`;
+
+            try {
+              const response = await fetch(`/tasks/${taskId}/ai/sessions/?session_id=${taskAiSessionId}`, {
+                method: 'GET',
+                headers: {
+                  'X-CSRFToken': getCookie('csrftoken')
+                }
+              });
+
+              if (response.ok) {
+                const data = await response.json();
+                if (data.sessions && data.sessions.length > 0) {
+                  const latestSession = data.sessions[0];
+                  if (latestSession.ocs_session_id) {
+                    clearInterval(this.aiPollingInterval);
+                    this.aiPollingInterval = null;
+                    resolve({ success: true, sessionId: latestSession.ocs_session_id });
+                    return;
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error polling for session:', error);
+            }
+
+            if (attempts >= maxAttempts) {
+              clearInterval(this.aiPollingInterval);
+              this.aiPollingInterval = null;
+              resolve({ success: false });
+            }
+          }, 1000); // Poll every 1 second
+        });
+      },
+
+      async initiateAI() {
+        // Validate required fields
+        if (!this.aiParams.identifier || !this.aiParams.experiment || !this.aiParams.prompt_text) {
+          this.showToastMessage('Please fill in all required fields');
+          return;
+        }
+
+        this.aiLoading = true;
+        this.aiProgress.show = true;
+        this.aiProgress.status = 'triggering';
+        this.aiProgress.message = 'Triggering AI conversation...';
+        this.aiProgress.detail = '';
+
+        try {
+          const response = await fetch('{% url "tasks:ai_initiate" task.id %}', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(this.aiParams)
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            this.aiProgress.status = 'success';
+            this.aiProgress.message = 'Conversation triggered successfully!';
+            this.aiProgress.detail = 'Now retrieving session ID...';
+
+            // If we got session_id immediately, great!
+            if (data.session_id) {
+              this.aiProgress.status = 'success';
+              this.aiProgress.message = 'Session created successfully!';
+              this.aiProgress.detail = `Session ID: ${data.session_id}`;
+
+              setTimeout(() => {
+                this.showToastMessage('AI Assistant conversation initiated successfully!');
+                window.location.reload();
+              }, 2000);
+            } else {
+              // Poll for session_id using the specific TaskAISession ID
+              const result = await this.pollForSessionId({{ task.id }}, data.task_ai_session_id, 10);
+
+              if (result.success) {
+                this.aiProgress.status = 'success';
+                this.aiProgress.message = 'Session created successfully!';
+                this.aiProgress.detail = `Session ID: ${result.sessionId}`;
+
+                setTimeout(() => {
+                  this.showToastMessage('AI Assistant conversation initiated successfully!');
+                  window.location.reload();
+                }, 2000);
+              } else {
+                this.aiProgress.status = 'partial';
+                this.aiProgress.message = 'Conversation initiated, but session ID not yet available';
+                this.aiProgress.detail = 'The session may still be processing. Check back in a moment.';
+                this.aiLoading = false;
+
+                setTimeout(() => {
+                  this.showToastMessage('AI conversation initiated. Session ID pending.');
+                  window.location.reload();
+                }, 3000);
+              }
+            }
+          } else {
+            this.aiLoading = false;
+            this.aiProgress.show = false;
+            const errorMsg = data.error || 'Failed to initiate AI';
+            console.error('AI initiation failed:', errorMsg);
+            this.showToastMessage('Error: ' + errorMsg);
+          }
+        } catch (error) {
+          console.error('AI initiation error:', error);
+          this.aiLoading = false;
+          this.aiProgress.show = false;
+          this.showToastMessage('Failed to initiate AI. Check console for details.');
+        }
+      },
+
+      assignLearning() {
+        if (this.selectedModules.length === 0) {
+          this.showToastMessage('Please select at least one module');
+          return;
+        }
+        this.showToastMessage(`Assigned ${this.selectedModules.length} learning module(s)`);
+        this.showLearning = false;
+        // In real implementation, would make API call
+      },
+
+      confirmResolve() {
+        this.showToastMessage('Action marked as resolved');
+        this.showResolve = false;
+        // In real implementation, would update status
+      },
+
+      postComment() {
+        if (!this.newComment.trim()) return;
+        this.showToastMessage('Comment posted');
+        this.newComment = '';
+        // In real implementation, would make API call
+      },
+
+      uploadAttachment() {
+        this.showToastMessage('Attachment upload functionality (to be implemented)');
+        // In real implementation, would open file picker and upload file
+      },
+
+      showToastMessage(message) {
+        this.toastMessage = message;
+        this.showToast = true;
+        setTimeout(() => {
+          this.showToast = false;
+        }, 3000);
+      }
+    }
+  }
+
+  function aiConversationHandler(sessionId, cachedConversation) {
+    return {
+      expanded: false,
+      loading: false,
+      error: null,
+      messages: Array.isArray(cachedConversation) ? cachedConversation : [],
+      sessionIdInput: '',
+      hasSessionId: sessionId !== null,
+
+      async init() {
+        // If we have a session ID but no cached conversation, load it
+        if (this.hasSessionId && this.messages.length === 0) {
+          await this.loadConversation();
+        }
+      },
+
+      getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      },
+
+      async submitSessionId() {
+        if (!this.sessionIdInput.trim()) return;
+
+        this.loading = true;
+        this.error = null;
+
+        try {
+          const formData = new FormData();
+          formData.append('session_id', this.sessionIdInput.trim());
+
+          const response = await fetch('{% url "tasks:add_ai_session" task.id %}', {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': this.getCookie('csrftoken')
+            },
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            // Reload the page to show the linked session
+            window.location.reload();
+          } else {
+            this.error = data.error || 'Failed to link session';
+          }
+        } catch (error) {
+          console.error('Error linking session:', error);
+          this.error = 'Network error. Please try again.';
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async loadConversation() {
+        this.loading = true;
+        this.error = null;
+
+        try {
+          const response = await fetch('{% url "tasks:ai_transcript" task.id %}');
+          const data = await response.json();
+
+          if (data.success) {
+            this.messages = data.messages || [];
+          } else {
+            this.error = data.error || 'Failed to load conversation';
+          }
+        } catch (error) {
+          console.error('Error loading conversation:', error);
+          this.error = 'Network error loading conversation';
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      formatTimestamp(timestamp) {
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        return date.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    }
+  }
+</script>
+{% endblock %}

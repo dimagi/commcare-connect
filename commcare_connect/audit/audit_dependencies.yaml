@@ -1,0 +1,74 @@
+# Audit Dependencies Configuration
+# This file defines the minimal data needed to create UserVisit records for audit purposes
+
+# HQ Server Configuration
+hq_server:
+  name: 'CommCare HQ (Audit)'
+  url: 'https://www.commcarehq.org'
+  # Note: oauth_application will be created automatically or use existing
+
+# Organization Configuration
+organization:
+  name: 'Audit Organization'
+  slug: 'audit-org' # Will be auto-generated if not provided
+  program_manager: false
+
+# User Configuration (for FLW being audited)
+user:
+  username: 'audit_flw_user'
+  email: 'audit.flw@example.com'
+  name: 'Audit FLW User'
+  # Note: password will be auto-generated
+
+# CommCare App Configuration
+commcare_app:
+  name: 'Audit CommCare App'
+  description: 'CommCare application for audit purposes'
+  cc_domain: 'connect-experiments' # Use your actual domain
+  cc_app_id: '86bab9977e9afe5a61dbd30e0e500da7' # Use your actual app ID
+  passing_score: 80
+
+# Opportunity Configuration
+opportunity:
+  name: 'Audit Opportunity'
+  description: 'Opportunity created for audit purposes'
+  short_description: 'Audit Opp'
+  active: true
+  start_date: '2020-01-01'
+  end_date: '2025-12-31'
+  total_budget: 10000
+  currency: 'USD'
+  auto_approve_visits: true
+  auto_approve_payments: true
+  is_test: true
+  managed: false
+
+# Payment Unit Configuration
+payment_unit:
+  name: 'Audit Payment Unit'
+  amount: 10.00
+  max_total: 1000
+  max_daily: 10
+  start_date: '2020-01-01'
+  end_date: '2025-12-31'
+
+# Deliver Unit Configuration
+deliver_unit:
+  name: 'Audit Deliver Unit'
+  slug: 'audit-deliver'
+  optional: false
+
+# Delivery Type Configuration (optional)
+delivery_type:
+  name: 'Audit Delivery'
+
+# Additional Configuration
+audit_config:
+  # Whether to create OpportunityAccess record (recommended: true)
+  create_opportunity_access: true
+
+  # Whether to create PaymentUnit (recommended: true for complete setup)
+  create_payment_unit: true
+
+  # Default visit status for audit visits
+  default_visit_status: 'approved' # or "pending"
