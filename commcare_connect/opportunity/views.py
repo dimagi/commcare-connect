@@ -470,9 +470,12 @@ def review_visit_export(request, org_slug, opp_id):
 def export_status(request, org_slug, task_id):
     task = AsyncResult(task_id)
     task_meta = task._get_task_meta()
-    opportunity_id = task_meta.get("args")[0]
-    # Make sure opportunity exists for the given org_slug
-    get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
+
+    if task_args := task_meta.get("args"):
+        opportunity_id = task_args[0]
+        # Make sure opportunity exists for the given org_slug
+        get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
+
     status = task_meta.get("status")
     progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
     if status == "FAILURE":
