@@ -1422,6 +1422,23 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
 @org_member_required
 @opportunity_required
 @require_POST
+def submit_invoice(request, org_slug, opp_id):
+    if not request.opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
+        return redirect("opportunity:detail", org_slug, opp_id)
+
+    invoice_id = request.POST.get("pk")
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, pk=invoice_id)
+    if invoice.status != InvoiceStatus.PENDING:
+        return HttpResponseBadRequest("Only invoices with status 'Pending' can be submitted for approval.")
+
+    invoice.status = InvoiceStatus.SUBMITTED
+    invoice.save()
+    return redirect("opportunity:invoice_list", org_slug, opp_id)
+
+
+@org_member_required
+@opportunity_required
+@require_POST
 def invoice_approve(request, org_slug, opp_id):
     if not request.opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
         return redirect("opportunity:detail", org_slug, opp_id)
