@@ -8,7 +8,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import F, Q, Sum, TextChoices
+from django.db.models import F, Min, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -18,6 +18,8 @@ from waffle import switch_is_active
 from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.models import (
     CommCareApp,
+    CompletedWork,
+    CompletedWorkStatus,
     CredentialConfiguration,
     DeliverUnit,
     DeliverUnitFlagRules,
@@ -34,6 +36,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User, UserCredential
@@ -1289,7 +1292,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     usd_currency = forms.BooleanField(
         required=False,
         initial=False,
-        label="USD Currency",
+        label=_("Specify in USD"),
         widget=forms.CheckboxInput(),
     )
 
@@ -1411,13 +1414,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     usd_currency = forms.BooleanField(
         required=False,
         initial=False,
-        label="USD Currency",
+        label=_("Specify in USD"),
         widget=forms.CheckboxInput(),
     )
 
     class Meta:
         model = PaymentInvoice
-        fields = ("title", "date", "invoice_number", "start_date", "end_date", "notes")
+        fields = ("title", "date", "invoice_number", "start_date", "end_date", "notes", "amount", "amount_usd")
         widgets = {
             "date": forms.DateInput(attrs={"type": "date"}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
@@ -1430,7 +1433,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         labels = {
             "title": _("Invoice title"),
             "date": _("Generation date"),
-            "notes": _("Service Delivery Notes"),
+            "notes": "",
         }
 
     def __init__(self, *args, **kwargs):
@@ -1445,6 +1448,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount (Local Currency)")
             self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
+            start_date = self.get_start_date_for_invoice()
+            self.fields["start_date"].initial = str(start_date)
+            self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
         else:
             self.fields["usd_currency"].widget.attrs.update(
                 {
@@ -1457,7 +1463,43 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         invoice_form_fields = self.invoice_form_fields()
         if self.is_service_delivery:
-            invoice_form_fields.append(Field("notes"))
+            invoice_form_fields.extend(
+                [
+                    Fieldset(
+                        "Line Items",
+                        Div(
+                            HTML(
+                                """
+                                {% load i18n %}
+                                <div class="text-sm text-gray-500">
+                                    {% translate "Loading line items..." %}
+                                </div>
+                            """
+                            ),
+                            css_id="invoice-line-items-wrapper",
+                            css_class="space-y-1 text-sm text-gray-500 mb-4",
+                        ),
+                        HTML(
+                            """
+                            <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
+                                <a type="button"
+                                class="button button-md outline-style"
+                                :href="downloadLineItemsUrl"
+                                target="_blank"
+                                >
+                                    <i class="fa-solid fa-download mr-2"></i>
+                                    {% load i18n %}{% translate "Download All Items" %}
+                                </a>
+                            </div>
+                            """
+                        ),
+                    ),
+                    Fieldset(
+                        "Service Delivery Notes",
+                        Field("notes"),
+                    ),
+                ]
+            )
 
         self.helper.layout = Layout(
             *invoice_form_fields,
@@ -1467,6 +1509,32 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         )
         self.helper.form_tag = False
+
+    def get_start_date_for_invoice(self):
+        date = (
+            CompletedWork.objects.filter(
+                invoice__isnull=True,
+                opportunity_access__opportunity=self.opportunity,
+                status=CompletedWorkStatus.approved,
+            )
+            .aggregate(earliest_date=Min("status_modified_date"))
+            .get("earliest_date")
+        )
+
+        start_date = date
+        if date:
+            start_date = date.date()
+        else:
+            start_date = self.opportunity.start_date
+
+        return start_date.replace(day=1)
+
+    def get_end_date_for_invoice(self, start_date):
+        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+
+        if start_date > last_day_previous_month:
+            return datetime.date.today() - datetime.timedelta(days=1)
+        return last_day_previous_month
 
     def invoice_form_fields(self):
         invoice_number_attrs = {}
@@ -1478,21 +1546,37 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         second_row = [Field("date", **{"x-ref": "date", "x-on:change": "convert()"})]
         if self.is_service_delivery:
-            second_row.append(Field("start_date"))
-            second_row.append(Field("end_date"))
+            second_row.append(
+                Field("start_date", **{"x-model": "startDate", "x-on:change": "fetchInvoiceLineItems()"})
+            )
+            second_row.append(Field("end_date", **{"x-model": "endDate", "x-on:change": "fetchInvoiceLineItems()"}))
+
+        amount_field_attrs = {
+            "x-ref": "amount",
+            "x-model": "amount",
+            "x-on:input.debounce.300ms": "convert()",
+        }
+        amount_usd_field_attrs = {
+            "x-model": "usdAmount",
+        }
+        if self.is_service_delivery:
+            amount_field_attrs["readonly"] = "readonly"
+            amount_usd_field_attrs["readonly"] = "readonly"
 
         third_row = [
             Field(
                 "amount",
                 label=f"Amount ({self.opportunity.currency})",
-                **{
-                    "x-ref": "amount",
-                    "x-on:input.debounce.300ms": "convert()",
-                },
+                **amount_field_attrs,
             ),
         ]
         if self.is_service_delivery:
-            third_row.append(Field("amount_usd"))
+            third_row.append(
+                Field(
+                    "amount_usd",
+                    **amount_usd_field_attrs,
+                ),
+            )
         else:
             third_row.append(
                 Field(
@@ -1540,6 +1624,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             return cleaned_data  # Let individual field errors handle missing values
 
         if not self.is_service_delivery:
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+            if not exchange_rate:
+                raise ValidationError("Exchange rate not available for selected date.")
+
+            cleaned_data["exchange_rate"] = exchange_rate
+            cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
+
             cleaned_data["title"] = None
             cleaned_data["start_date"] = None
             cleaned_data["end_date"] = None
@@ -1558,7 +1649,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         else:
             start_date = cleaned_data.get("start_date")
             end_date = cleaned_data.get("end_date")
-            if start_date and end_date and end_date < start_date:
+
+            if not start_date:
+                raise ValidationError({"start_date": "Start date is required for service delivery invoices."})
+            if not end_date:
+                raise ValidationError({"end_date": "End date is required for service delivery invoices."})
+
+            if end_date < start_date:
                 raise ValidationError({"end_date": "End date cannot be earlier than start date."})
 
         return cleaned_data
@@ -1573,6 +1670,9 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         if commit:
             instance.save()
+            if self.is_service_delivery:
+                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
+
         return instance
 
     @property

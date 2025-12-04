@@ -1536,3 +1536,65 @@ class PaymentUnitTable(OrgContextTable):
             "edit_url": edit_url,
         }
         return render_to_string("opportunity/extendable_payment_unit_row.html", context)
+
+
+class InvoiceLineItemsTable(tables.Table):
+    month = tables.Column()
+    payment_unit_name = tables.Column(verbose_name="Payment Unit")
+    number_approved = tables.Column()
+    amount_per_unit = tables.Column(
+        verbose_name="Payment Unit Amount (local)",
+    )
+    total_amount_local = tables.Column(
+        verbose_name="Total Amount (local)",
+    )
+    exchange_rate = tables.Column()
+    total_amount_usd = tables.Column(
+        verbose_name="Total Amount (USD)",
+    )
+
+    def __init__(self, currency, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if currency:
+            self.columns["amount_per_unit"].column.verbose_name = f"Payment Unit Amount ({currency})"
+            self.columns["total_amount_local"].column.verbose_name = f"Total Amount ({currency})"
+
+    class Meta:
+        orderable = False
+        empty_text = "No invoice items found."
+        attrs = {"class": "min-w-full rounded-lg shadow-md bg-white", "thead": {"class": "bg-gray-100"}}
+        row_attrs = {"class": "even:bg-gray-50 text-gray-800 hover:bg-gray-100"}
+
+    def render_month(self, value):
+        return value.strftime("%B %Y")
+
+
+class InvoiceDeliveriesTable(tables.Table):
+    date_approved = DMYTColumn(verbose_name=_("Date Approved"), accessor="status_modified_date")
+    opportunity = tables.Column(verbose_name=_("Opportunity"), accessor="payment_unit__opportunity__name")
+    approved_count = tables.Column(verbose_name=_("Approved Deliveries"), accessor="saved_approved_count")
+    payment_accrued = tables.Column(verbose_name=_("Payment Accrued"), accessor="saved_payment_accrued")
+    payment_accrued_usd = tables.Column(verbose_name=_("Payment Accrued (USD)"), accessor="saved_payment_accrued_usd")
+    entity_name = tables.Column(verbose_name=_("Beneficiary"), accessor="entity_name")
+    date_created = DMYTColumn(verbose_name=_("Date of Delivery"), accessor="date_created")
+    username = tables.Column(verbose_name=_("Worker"), accessor="opportunity_access__user__name")
+
+    def __init__(self, currency, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.columns["payment_accrued"].column.verbose_name = f"Payment Accrued ({currency})"
+
+    class Meta:
+        model = CompletedWork
+        fields = ("payment_unit",)
+        sequence = (
+            "payment_unit",
+            "opportunity",
+            "entity_name",
+            "username",
+            "date_created",
+            "date_approved",
+            "approved_count",
+            "payment_accrued",
+            "payment_accrued_usd",
+        )

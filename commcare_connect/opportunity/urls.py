@@ -146,5 +146,11 @@ urlpatterns = [
     path("<int:opp_id>/worker_flag_counts/", views.worker_flag_counts, name="worker_flag_counts"),
     path("add_api_key/", views.add_api_key, name="add_api_key"),
     path("<int:opp_id>/exchange_rate/", views.exchange_rate_preview, name="exchange_rate"),
+    path("<int:opp_id>/invoice_items/", views.invoice_items, name="invoice_items"),
+    path(
+        "<int:opp_id>/invoice_items/download/",
+        views.download_invoice_line_items,
+        name="download_invoice_line_items",
+    ),
     path("<int:opp_id>/visit_export_count/", views.visit_export_count, name="visit_export_count"),
 ]

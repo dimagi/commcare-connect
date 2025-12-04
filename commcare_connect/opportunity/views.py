@@ -1,4 +1,5 @@
 import datetime
+import json
 import sys
 from collections import Counter, defaultdict
 from datetime import timedelta
@@ -18,9 +19,10 @@ from django.core.files.storage import default_storage, storages
 from django.db.models import Count, DecimalField, FloatField, Func, Max, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Cast, Coalesce
 from django.forms import modelformset_factory
-from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, HttpResponseNotFound
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -97,6 +99,8 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tables import (
     CompletedWorkTable,
     DeliverUnitTable,
+    InvoiceDeliveriesTable,
+    InvoiceLineItemsTable,
     LearnModuleTable,
     OpportunityTable,
     PaymentInvoiceTable,
@@ -128,6 +132,10 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_push_notification_task,
     update_user_and_send_invite,
+)
+from commcare_connect.opportunity.utils.completed_work import (
+    get_uninvoiced_completed_works_qs,
+    get_uninvoiced_visit_items,
 )
 from commcare_connect.opportunity.visit_import import (
     ImportException,
@@ -1359,6 +1367,8 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         context.update(
             {
                 "opportunity": opportunity,
+                "is_service_delivery": self.request.GET.get("invoice_type")
+                == PaymentInvoice.InvoiceType.service_delivery,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
@@ -2589,6 +2599,62 @@ def add_api_key(request, org_slug):
         api_key.save()
         form = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
     return HttpResponse(render_crispy_form(form))
+
+
+@require_POST
+@opportunity_required
+@org_member_required
+def invoice_items(request, *args, **kwargs):
+    body = json.loads(request.body)
+    start_date_str = body.get("start_date", None)
+    end_date_str = body.get("end_date", None)
+
+    if not start_date_str or not end_date_str:
+        return JsonResponse({"error": _("Start date and end date are required.")})
+
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
+    total_local_amount = sum(item["total_amount_local"] for item in line_items)
+    total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+
+    html = render_to_string(
+        "opportunity/partials/invoice_line_items.html",
+        {"table": InvoiceLineItemsTable(request.opportunity.currency, line_items)},
+        request=request,
+    )
+
+    return JsonResponse(
+        {
+            "line_items_table_html": html,
+            "total_amount": total_local_amount,
+            "total_usd_amount": total_usd_amount,
+        }
+    )
+
+
+@require_GET
+@org_member_required
+@opportunity_required
+def download_invoice_line_items(request, org_slug, opp_id):
+    start_date_str = request.GET.get("start_date", None)
+    end_date_str = request.GET.get("end_date", None)
+
+    if not start_date_str or not end_date_str:
+        return HttpResponseBadRequest("Start date and end date are required.")
+
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
+    table = InvoiceDeliveriesTable(request.opportunity.currency, deliveries)
+
+    export_format = "csv"
+    exporter = TableExport(export_format, table)
+    filename = f"invoice_line_items_{start_date}_{end_date}.csv"
+
+    return exporter.response(filename=filename)
 
 
 @login_required
