@@ -1,6 +1,5 @@
 import datetime
 import json
-import secrets
 from urllib.parse import urlencode
 
 from crispy_forms.helper import FormHelper
@@ -8,7 +7,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import F, Min, Q, Sum, TextChoices
+from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -18,8 +17,6 @@ from waffle import switch_is_active
 from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.models import (
     CommCareApp,
-    CompletedWork,
-    CompletedWorkStatus,
     CredentialConfiguration,
     DeliverUnit,
     DeliverUnitFlagRules,
@@ -38,6 +35,11 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
+from commcare_connect.opportunity.utils.invoice import (
+    generate_invoice_number,
+    get_end_date_for_invoice,
+    get_start_date_for_invoice,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User, UserCredential
@@ -1445,15 +1447,15 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         super().__init__(*args, **kwargs)
 
-        self.fields["invoice_number"].initial = self.generate_invoice_number()
+        self.fields["invoice_number"].initial = generate_invoice_number()
         self.fields["date"].initial = str(datetime.date.today())
 
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount (Local Currency)")
             self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
-            start_date = self.get_start_date_for_invoice()
+            start_date = get_start_date_for_invoice(self.opportunity)
             self.fields["start_date"].initial = str(start_date)
-            self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
+            self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
         else:
             self.fields["usd_currency"].widget.attrs.update(
                 {
@@ -1512,32 +1514,6 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         )
         self.helper.form_tag = False
-
-    def get_start_date_for_invoice(self):
-        date = (
-            CompletedWork.objects.filter(
-                invoice__isnull=True,
-                opportunity_access__opportunity=self.opportunity,
-                status=CompletedWorkStatus.approved,
-            )
-            .aggregate(earliest_date=Min("status_modified_date"))
-            .get("earliest_date")
-        )
-
-        start_date = date
-        if date:
-            start_date = date.date()
-        else:
-            start_date = self.opportunity.start_date
-
-        return start_date.replace(day=1)
-
-    def get_end_date_for_invoice(self, start_date):
-        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
-
-        if start_date > last_day_previous_month:
-            return datetime.date.today() - datetime.timedelta(days=1)
-        return last_day_previous_month
 
     def invoice_form_fields(self):
         invoice_number_attrs = {}
@@ -1602,14 +1578,11 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         ]
 
-    def generate_invoice_number(self):
-        return secrets.token_hex(5).upper()
-
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
 
         if not invoice_number:
-            invoice_number = self.generate_invoice_number()
+            invoice_number = generate_invoice_number()
 
         if PaymentInvoice.objects.filter(invoice_number=invoice_number).exists():
             raise ValidationError(
