@@ -7,6 +7,7 @@ from functools import partial
 from http import HTTPStatus
 from urllib.parse import urlencode, urlparse
 
+import waffle
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
 from django.conf import settings
@@ -51,6 +52,7 @@ from django_tables2.export import TableExport
 from geopy import distance
 
 from commcare_connect.connect_id_client import fetch_users
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -58,6 +60,7 @@ from commcare_connect.opportunity.filters import DeliverFilterSet, FilterMixin, 
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
+    AutomatedPaymentInvoiceForm,
     DeliverUnitFlagsForm,
     FormJsonValidationRulesForm,
     HQApiKeyCreateForm,
@@ -1357,7 +1360,6 @@ def invoice_list(request, org_slug, opp_id):
         highlight_invoice_number=highlight_invoice_number,
     )
 
-    form = PaymentInvoiceForm(opportunity=request.opportunity)
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
     return render(
         request,
@@ -1365,7 +1367,7 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
-            "form": form,
+            "new_invoice_url": reverse("opportunity:invoice_create", args=(org_slug, opp_id)),
             "path": [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                 {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
@@ -1375,20 +1377,64 @@ def invoice_list(request, org_slug, opp_id):
     )
 
 
-@org_member_required
-@opportunity_required
-def invoice_create(request, org_slug=None, opp_id=None):
-    if not request.opportunity.managed or request.is_opportunity_pm:
-        return redirect("opportunity:detail", org_slug, opp_id)
-    form = PaymentInvoiceForm(data=request.POST or None, opportunity=request.opportunity)
-    if request.POST and form.is_valid():
+class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateView):
+    model = PaymentInvoice
+    template_name = "opportunity/invoice_create.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        opportunity = self.get_opportunity()
+        org_slug = self.request.org.slug
+
+        context.update(
+            {
+                "opportunity": opportunity,
+                "path": [
+                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                    {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+                    {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.id))},
+                    {
+                        "title": self.breadcrumb_title,
+                        "url": reverse("opportunity:invoice_create", args=(org_slug, opportunity.id)),
+                    },
+                ],
+            }
+        )
+        return context
+
+    @property
+    def form_class(self):
+        if waffle.switch_is_active(AUTOMATED_INVOICES):
+            return AutomatedPaymentInvoiceForm
+        return PaymentInvoiceForm
+
+    @property
+    def breadcrumb_title(self):
+        service_delivery = PaymentInvoice.InvoiceType.service_delivery
+        if self.request.GET.get("invoice_type", service_delivery) == service_delivery:
+            return "New Service Delivery Invoice"
+        return "New Custom Invoice"
+
+    def post(self, request, org_slug, opp_id, **kwargs):
+        opportunity = self.get_opportunity()
+        if not opportunity.managed or request.is_opportunity_pm:
+            return redirect("opportunity:detail", org_slug, opp_id)
+
+        form = self.get_form()
+        if not form.is_valid():
+            return self.get(request, org_slug, opp_id, **kwargs)
+
         form.save()
-        form = PaymentInvoiceForm(opportunity=request.opportunity)
-        redirect_url = reverse("opportunity:invoice_list", args=[org_slug, opp_id])
-        response = HttpResponse(status=200)
-        response["HX-Redirect"] = redirect_url
-        return response
-    return HttpResponse(render_crispy_form(form))
+        return redirect(reverse("opportunity:invoice_list", args=[org_slug, opp_id]))
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["opportunity"] = self.get_opportunity()
+        kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        return kwargs
+
+    def get_success_url(self):
+        return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().id))
 
 
 @org_member_required
