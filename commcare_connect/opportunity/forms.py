@@ -26,6 +26,7 @@ from commcare_connect.opportunity.models import (
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
+    InvoiceStatus,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -1307,6 +1308,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        self.invoice_status = kwargs.pop("invoice_status", InvoiceStatus.PENDING)
         super().__init__(*args, **kwargs)
 
         self.fields["usd_currency"].widget.attrs.update(
@@ -1389,6 +1391,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data["exchange_rate"]
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.invoice_status = self.invoice_status
 
         if commit:
             instance.save()

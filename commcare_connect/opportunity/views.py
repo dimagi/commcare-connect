@@ -81,6 +81,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     ExchangeRate,
     FormJsonValidationRules,
+    InvoiceStatus,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -1411,6 +1412,7 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        kwargs["invoice_status"] = self.request.GET.get("invoice_status", InvoiceStatus.SUBMITTED)
         return kwargs
 
     def get_success_url(self):
@@ -1434,6 +1436,8 @@ def invoice_approve(request, org_slug, opp_id):
             invoice=invoice,
         )
         payment.save()
+        invoice.status = InvoiceStatus.APPROVED
+        invoice.save()
     return redirect("opportunity:invoice_list", org_slug, opp_id)
 
 
