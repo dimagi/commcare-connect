@@ -294,10 +294,18 @@ def get_uninvoiced_completed_works_qs(opportunity, start_date=None, end_date=Non
     return query
 
 
-def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
-    from commcare_connect.opportunity.visit_import import get_exchange_rate
+def get_invoiced_visit_items(payment_invoice):
+    completed_works_qs = CompletedWork.objects.filter(invoice=payment_invoice)
+    return get_invoice_items(completed_works_qs)
 
+
+def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
     completed_works_qs = get_uninvoiced_completed_works_qs(opportunity, start_date, end_date)
+    return get_invoice_items(completed_works_qs)
+
+
+def get_invoice_items(completed_works_qs):
+    from commcare_connect.opportunity.visit_import import get_exchange_rate
 
     monthly_pu_records = (
         completed_works_qs.annotate(

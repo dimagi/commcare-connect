@@ -134,6 +134,7 @@ from commcare_connect.opportunity.tasks import (
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.utils.completed_work import (
+    get_invoiced_visit_items,
     get_uninvoiced_completed_works_qs,
     get_uninvoiced_visit_items,
 )
@@ -1334,8 +1335,8 @@ def invoice_list(request, org_slug, opp_id):
         queryset,
         org_slug=org_slug,
         opportunity=request.opportunity,
-        exclude=("actions",) if not request.is_opportunity_pm else tuple(),
         csrf_token=csrf_token,
+        is_pm=request.is_opportunity_pm,
     )
 
     RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
@@ -1415,6 +1416,78 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
 
     def get_success_url(self):
         return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().id))
+
+
+class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailView):
+    model = PaymentInvoice
+    template_name = "opportunity/invoice_detail.html"
+
+    def get_object(self, queryset=None):
+        opportunity = self.get_opportunity()
+        return get_object_or_404(
+            PaymentInvoice,
+            id=self.kwargs.get("pk"),
+            opportunity_id=opportunity.id,
+            opportunity__organization=self.request.org,
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        invoice = self.object
+        opportunity = invoice.opportunity
+        org_slug = self.request.org.slug
+        context.update(
+            {
+                "opportunity": opportunity,
+                "form": self.get_form(),
+                "is_service_delivery": invoice.service_delivery,
+                "path": [
+                    {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                    {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+                    {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.id))},
+                    {
+                        "title": self.breadcrumb_title,
+                        "url": reverse("opportunity:invoice_review", args=(org_slug, opportunity.id, invoice.pk)),
+                    },
+                ],
+            }
+        )
+        return context
+
+    def get_form(self):
+        invoice = self.object
+        opportunity = invoice.opportunity
+        invoice_type = (
+            PaymentInvoice.InvoiceType.service_delivery
+            if invoice.service_delivery
+            else PaymentInvoice.InvoiceType.custom
+        )
+
+        if not waffle.switch_is_active(AUTOMATED_INVOICES):
+            return PaymentInvoiceForm(
+                instance=invoice,
+                opportunity=opportunity,
+                invoice_type=invoice_type,
+                read_only=True,
+            )
+
+        line_items_table = None
+        if invoice.service_delivery:
+            completed_works = get_invoiced_visit_items(invoice)
+            line_items_table = InvoiceLineItemsTable(opportunity.currency, completed_works)
+        return AutomatedPaymentInvoiceForm(
+            instance=invoice,
+            opportunity=opportunity,
+            invoice_type=invoice_type,
+            line_items_table=line_items_table,
+            read_only=True,
+        )
+
+    @property
+    def breadcrumb_title(self):
+        if self.object.service_delivery:
+            return _("Review Service Delivery Invoice")
+        return _("Review Custom Invoice")
 
 
 @org_member_required
@@ -2640,16 +2713,19 @@ def invoice_items(request, *args, **kwargs):
 def download_invoice_line_items(request, org_slug, opp_id):
     start_date_str = request.GET.get("start_date", None)
     end_date_str = request.GET.get("end_date", None)
+    invoice_id = request.GET.get("invoice_id", None)
 
     if not start_date_str or not end_date_str:
         return HttpResponseBadRequest("Start date and end date are required.")
 
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    if invoice_id:
+        deliveries = CompletedWork.objects.filter(invoice_id=invoice_id)
+    else:
+        deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
 
-    deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
     table = InvoiceDeliveriesTable(request.opportunity.currency, deliveries)
-
     export_format = "csv"
     exporter = TableExport(export_format, table)
     filename = f"invoice_line_items_{start_date}_{end_date}.csv"

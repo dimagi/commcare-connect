@@ -703,3 +703,49 @@ class TestAutomatedPaymentInvoiceForm:
         invoice = form.save()
 
         assert CompletedWork.objects.get(id=cw.id).invoice == invoice
+
+    def test_readonly_form_initialization(self, valid_opportunity):
+        invoice = PaymentInvoiceFactory(
+            opportunity=valid_opportunity,
+            service_delivery=True,
+            start_date=datetime.date(2025, 10, 1),
+            end_date=datetime.date(2025, 10, 31),
+            date=datetime.date(2025, 10, 5),
+            amount=150.50,
+            invoice_number="ABC123",
+        )
+
+        form = AutomatedPaymentInvoiceForm(
+            instance=invoice,
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            read_only=True,
+        )
+
+        for field in form.fields.values():
+            assert field.widget.attrs.get("readonly") == "readonly"
+
+        assert form.fields["start_date"].initial == "2025-10-01"
+        assert form.fields["end_date"].initial == "2025-10-31"
+        assert form.initial["invoice_number"] == "ABC123"
+        assert form.initial["date"] == datetime.date(2025, 10, 5)
+        assert form.initial["amount"] == 150.50
+
+    def test_readonly_form_with_line_items_table(self, valid_opportunity):
+        invoice = PaymentInvoiceFactory(
+            opportunity=valid_opportunity,
+            service_delivery=True,
+            start_date=datetime.date(2025, 10, 1),
+            end_date=datetime.date(2025, 10, 31),
+        )
+
+        mock_table = "MockLineItemsTable"
+        form = AutomatedPaymentInvoiceForm(
+            instance=invoice,
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            read_only=True,
+            line_items_table=mock_table,
+        )
+
+        assert form.line_items_table == mock_table

@@ -1,5 +1,5 @@
 import inspect
-from datetime import timedelta
+from datetime import date, timedelta
 from http import HTTPStatus
 from unittest import mock
 
@@ -9,8 +9,11 @@ from django.core.files.storage.handler import StorageHandler
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
+from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES
+from commcare_connect.opportunity.forms import AutomatedPaymentInvoiceForm, PaymentInvoiceForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     Opportunity,
@@ -30,6 +33,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     OrganizationFactory,
     PaymentFactory,
+    PaymentInvoiceFactory,
     PaymentUnitFactory,
     UserInviteFactory,
     UserVisitFactory,
@@ -834,3 +838,171 @@ def test_views_use_opportunity_decorator_or_mixin():
 
     if errors:
         pytest.fail("\n".join(errors))
+
+
+@pytest.mark.django_db
+class TestInvoiceReviewView:
+    @pytest.fixture
+    def setup_invoice(self, organization, org_user_member):
+        program = ProgramFactory(organization=organization, budget=10000)
+        opportunity = ManagedOpportunityFactory(
+            program=program,
+            organization=organization,
+            managed=True,
+        )
+        invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            service_delivery=True,
+            start_date=date(2025, 10, 1),
+            end_date=date(2025, 10, 31),
+            amount=150.50,
+            amount_usd=100.33,
+            invoice_number="INV-001",
+            date=date(2025, 11, 1),
+        )
+
+        return {
+            "opportunity": opportunity,
+            "invoice": invoice,
+            "user": org_user_member,
+        }
+
+    def test_get_invoice_review_view_success(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+        )
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert "form" in response.context
+        assert response.context["opportunity"].id == opportunity.id
+        assert response.context["is_service_delivery"] is True
+
+        path = response.context["path"]
+        assert len(path) == 4
+        assert path[0]["title"] == "Opportunities"
+        assert path[1]["title"] == opportunity.name
+        assert path[2]["title"] == "Invoices"
+        assert path[3]["title"] == "Review Invoice"
+
+    def test_invoice_not_found(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.id, 99999),
+        )
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_invoice_wrong_opportunity(self, client, setup_invoice, organization):
+        invoice = setup_invoice["invoice"]
+        user = setup_invoice["user"]
+
+        program = ProgramFactory(organization=organization, budget=10000)
+        other_opportunity = ManagedOpportunityFactory(
+            program=program,
+            organization=organization,
+        )
+        PaymentUnitFactory(opportunity=other_opportunity)
+
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(organization.slug, other_opportunity.id, invoice.pk),
+        )
+        response = client.get(url)
+
+        assert response.status_code == 404
+
+    def test_form_is_readonly(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        with override_switch(AUTOMATED_INVOICES, active=True):
+            client.force_login(user)
+            url = reverse(
+                "opportunity:invoice_review",
+                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            )
+            response = client.get(url)
+            form = response.context["form"]
+            assert form.read_only is True
+            for field_name, field in form.fields.items():
+                assert field.widget.attrs.get("readonly") == "readonly", f"Field {field_name} should be readonly"
+
+    def test_custom_invoice_no_line_items(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+        custom_invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            service_delivery=False,
+            amount=200.00,
+            invoice_number="CUSTOM-001",
+            date=date(2025, 11, 1),
+        )
+
+        with override_switch(AUTOMATED_INVOICES, active=True):
+            client.force_login(user)
+            url = reverse(
+                "opportunity:invoice_review",
+                args=(opportunity.organization.slug, opportunity.id, custom_invoice.pk),
+            )
+            response = client.get(url)
+
+            form = response.context["form"]
+            assert form.line_items_table is None
+
+    def test_unauthorized_user_cannot_access(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        unauthorized_user = UserFactory()
+
+        client.force_login(unauthorized_user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+        )
+        response = client.get(url)
+
+        # Should redirect (permission denied) or return 403/404
+        assert response.status_code in [302, 403, 404]
+
+    def test_legacy_form_when_switch_inactive(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        with override_switch(AUTOMATED_INVOICES, active=False):
+            client.force_login(user)
+            url = reverse(
+                "opportunity:invoice_review",
+                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            )
+            response = client.get(url)
+            form = response.context["form"]
+            assert isinstance(form, PaymentInvoiceForm)
+
+    def test_automated_form_when_switch_active(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        with override_switch(AUTOMATED_INVOICES, active=True):
+            client.force_login(user)
+            url = reverse(
+                "opportunity:invoice_review",
+                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            )
+            response = client.get(url)
+            form = response.context["form"]
+            assert isinstance(form, AutomatedPaymentInvoiceForm)

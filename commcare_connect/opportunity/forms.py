@@ -1307,6 +1307,7 @@ class PaymentInvoiceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        self.read_only = kwargs.pop("read_only", False)
         super().__init__(*args, **kwargs)
 
         self.fields["usd_currency"].widget.attrs.update(
@@ -1317,7 +1318,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         )
 
         self.helper = FormHelper(self)
-        self.helper.layout = Layout(
+        layout_fields = [
             Row(
                 Field(
                     "date",
@@ -1343,11 +1344,17 @@ class PaymentInvoiceForm(forms.ModelForm):
                 ),
                 css_class="flex flex-col",
             ),
-            Div(
-                Submit("submit", "Submit", css_class="button button-md primary-dark"),
-                css_class="flex justify-end mt-4",
-            ),
-        )
+        ]
+
+        if not self.read_only:
+            layout_fields.append(
+                Div(
+                    Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                    css_class="flex justify-end mt-4",
+                )
+            )
+
+        self.helper.layout = Layout(*layout_fields)
         self.helper.form_tag = False
 
     def clean_invoice_number(self):
@@ -1439,18 +1446,28 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        self.read_only = kwargs.pop("read_only", False)
+        self.line_items_table = kwargs.pop("line_items_table", None)
 
         super().__init__(*args, **kwargs)
+        if self.read_only:
+            for field in self.fields.values():
+                field.widget.attrs["readonly"] = "readonly"
 
-        self.fields["invoice_number"].initial = self.generate_invoice_number()
-        self.fields["date"].initial = str(datetime.date.today())
+        if not self.instance.pk:
+            self.fields["invoice_number"].initial = self.generate_invoice_number()
+            self.fields["date"].initial = str(datetime.date.today())
 
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount (Local Currency)")
             self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
-            start_date = self.get_start_date_for_invoice()
-            self.fields["start_date"].initial = str(start_date)
-            self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
+            if self.instance.pk:
+                self.fields["start_date"].initial = str(self.instance.start_date)
+                self.fields["end_date"].initial = str(self.instance.end_date)
+            else:
+                start_date = self.get_start_date_for_invoice()
+                self.fields["start_date"].initial = str(start_date)
+                self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
         else:
             self.fields["usd_currency"].widget.attrs.update(
                 {
@@ -1465,35 +1482,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if self.is_service_delivery:
             invoice_form_fields.extend(
                 [
-                    Fieldset(
-                        "Line Items",
-                        Div(
-                            HTML(
-                                """
-                                {% load i18n %}
-                                <div class="text-sm text-gray-500">
-                                    {% translate "Loading line items..." %}
-                                </div>
-                            """
-                            ),
-                            css_id="invoice-line-items-wrapper",
-                            css_class="space-y-1 text-sm text-gray-500 mb-4",
-                        ),
-                        HTML(
-                            """
-                            <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
-                                <a type="button"
-                                class="button button-md outline-style"
-                                :href="downloadLineItemsUrl"
-                                target="_blank"
-                                >
-                                    <i class="fa-solid fa-download mr-2"></i>
-                                    {% load i18n %}{% translate "Download All Items" %}
-                                </a>
-                            </div>
-                            """
-                        ),
-                    ),
+                    self.line_items,
                     Fieldset(
                         "Service Delivery Notes",
                         Field("notes"),
@@ -1501,13 +1490,15 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 ]
             )
 
-        self.helper.layout = Layout(
-            *invoice_form_fields,
-            Div(
-                Submit("submit", "Submit", css_class="button button-md primary-dark"),
-                css_class="flex justify-end mt-4",
-            ),
-        )
+        if not self.read_only:
+            invoice_form_fields.append(
+                Div(
+                    Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                    css_class="flex justify-end mt-4",
+                )
+            )
+
+        self.helper.layout = Layout(*invoice_form_fields)
         self.helper.form_tag = False
 
     def get_start_date_for_invoice(self):
@@ -1546,10 +1537,12 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         second_row = [Field("date", **{"x-ref": "date", "x-on:change": "convert()"})]
         if self.is_service_delivery:
-            second_row.append(
-                Field("start_date", **{"x-model": "startDate", "x-on:change": "fetchInvoiceLineItems()"})
+            start_date_attrs = (
+                {} if self.read_only else {"x-model": "startDate", "x-on:change": "fetchInvoiceLineItems()"}
             )
-            second_row.append(Field("end_date", **{"x-model": "endDate", "x-on:change": "fetchInvoiceLineItems()"}))
+            end_date_attrs = {} if self.read_only else {"x-model": "endDate", "x-on:change": "fetchInvoiceLineItems()"}
+            second_row.append(Field("start_date", **start_date_attrs))
+            second_row.append(Field("end_date", **end_date_attrs))
 
         amount_field_attrs = {
             "x-ref": "amount",
@@ -1678,3 +1671,40 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
     @property
     def is_service_delivery(self):
         return self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+
+    @property
+    def line_items(self):
+        if self.line_items_table:
+            table = HTML(
+                """
+                {% load django_tables2 %}
+                <div class="overflow-x-auto mb-4">
+                    {% render_table form.line_items_table %}
+                </div>
+                """
+            )
+        else:
+            table = HTML(
+                """
+                <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
+            """
+            )
+
+        return Fieldset(
+            "Line Items",
+            table,
+            HTML(
+                """
+                <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
+                    <a type="button"
+                    class="button button-md outline-style"
+                    :href="downloadLineItemsUrl"
+                    target="_blank"
+                    >
+                        <i class="fa-solid fa-download mr-2"></i>
+                        {% load i18n %}{% translate "Download All Items" %}
+                    </a>
+                </div>
+                """
+            ),
+        )
