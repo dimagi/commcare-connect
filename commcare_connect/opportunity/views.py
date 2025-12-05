@@ -49,12 +49,19 @@ from django.views.generic import CreateView, DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
 from geopy import distance
+from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
+from commcare_connect.flags.switch_names import USER_VISIT_FILTERS
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
-from commcare_connect.opportunity.filters import DeliverFilterSet, FilterMixin, OpportunityListFilterSet
+from commcare_connect.opportunity.filters import (
+    DeliverFilterSet,
+    FilterMixin,
+    OpportunityListFilterSet,
+    UserVisitFilterSet,
+)
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
@@ -166,7 +173,7 @@ from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrac
 from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
-from commcare_connect.utils.tables import get_duration_min, get_validated_page_size
+from commcare_connect.utils.tables import PAGE_SIZE_OPTIONS, get_duration_min, get_validated_page_size
 
 EXPORT_ROW_LIMIT = 10_000
 
@@ -944,9 +951,9 @@ def approve_visits(request, org_slug, opp_id):
         .only("status", "review_status", "flagged", "justification", "review_created_on")
     )
 
-    if len({visit.user_id for visit in visits}) > 1:
+    if len(visits) > max(PAGE_SIZE_OPTIONS):
         return HttpResponseBadRequest(
-            "All visits must belong to the same user.",
+            "Maximum 100 visits allowed for bulk approval",
             headers={"HX-Trigger": "form_error"},
         )
 
@@ -971,7 +978,8 @@ def approve_visits(request, org_slug, opp_id):
         visits, ["status", "review_created_on", "review_status", "justification"]
     )
     if visits:
-        update_payment_accrued(opportunity=visits[0].opportunity, users=[visits[0].user], incremental=True)
+        user_ids = visits.values_list("user_id", flat=True).distinct()
+        update_payment_accrued(opportunity=visits[0].opportunity, users=user_ids, incremental=True)
     send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
@@ -984,14 +992,19 @@ def reject_visits(request, org_slug=None, opp_id=None):
     visit_ids = request.POST.getlist("visit_ids[]")
     reason = request.POST.get("reason", "").strip()
 
-    updated_count = (
-        UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
-        .exclude(Q(status=VisitValidationStatus.rejected) | Q(review_status=VisitReviewStatus.agree))
-        .update(status=VisitValidationStatus.rejected, reason=reason)
-    )
-    if visit_ids:
-        visit = UserVisit.objects.get(id=visit_ids[0])
-        update_payment_accrued(opportunity=request.opportunity, users=[visit.user])
+    visits = UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
+    if len(visits) > max(PAGE_SIZE_OPTIONS):
+        return HttpResponseBadRequest(
+            "Maximum 100 visits allowed for bulk rejection",
+            headers={"HX-Trigger": "form_error"},
+        )
+
+    updated_count = visits.exclude(
+        Q(status=VisitValidationStatus.rejected) | Q(review_status=VisitReviewStatus.agree)
+    ).update(status=VisitValidationStatus.rejected, reason=reason)
+    if visits.exists():
+        user_ids = visits.values_list("user_id", flat=True).distinct()
+        update_payment_accrued(opportunity=request.opportunity, users=user_ids)
 
     send_event_to_ga(request, Event("bulk_reject_confirm", {"updated": updated_count, "total": len(visit_ids)}))
 
@@ -1161,7 +1174,8 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
     # Clear the cached opportunity access for the suspended user
     remove_opportunity_access_cache(access.user, access.opportunity)
 
-    return redirect("opportunity:user_visits_list", org_slug, opp_id, pk)
+    url = reverse("opportunity:user_visits_list", args=(org_slug, opp_id))
+    return redirect(f"{url}?user={access.user_id}")
 
 
 @require_POST
@@ -1559,14 +1573,54 @@ def sync_deliver_units(request, org_slug, opp_id):
 
 @org_viewer_required
 @opportunity_required
-def user_visit_verification(request, org_slug, opp_id, pk):
-    opportunity_access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=pk)
+def user_visit_verification(request, org_slug, opp_id):
+    opportunity = get_opportunity_or_404(opp_id, org_slug)
+    base_queryset = UserVisit.objects.filter(opportunity=opportunity).order_by("visit_date")
+    filter_set = UserVisitFilterSet(
+        request.GET,
+        queryset=base_queryset,
+        request=request,
+        opportunity=opportunity,
+    )
+    user_visit_filters_enabled = switch_is_active(USER_VISIT_FILTERS)
 
-    user_visit_counts = get_user_visit_counts(opportunity_access_id=pk)
-    visits = UserVisit.objects.filter(opportunity_access=opportunity_access, flagged=True, flag_reason__isnull=False)
+    if filter_set.form.is_valid():
+        cleaned_data = filter_set.form.cleaned_data
+        filters_applied_count = len(
+            [
+                cleaned_data.get(name)
+                for name in filter_set.filters.keys()
+                if cleaned_data.get(name) not in (None, "", [], ())
+            ]
+        )
+        filtered_queryset = filter_set.qs
+        selected_user_id_raw = cleaned_data.get("user")
+        selected_user_id = int(selected_user_id_raw) if selected_user_id_raw else None
+        selected_flags = set(cleaned_data.get("flags") or [])
+    else:
+        filters_applied_count = 0
+        filtered_queryset = base_queryset
+        selected_user_id = None
+        selected_flags = set()
+
+    selected_opportunity_access = None
+    if selected_user_id:
+        selected_opportunity_access = (
+            OpportunityAccess.objects.filter(opportunity=opportunity, user_id=selected_user_id)
+            .select_related("user")
+            .first()
+        )
+
+    if not user_visit_filters_enabled and not selected_opportunity_access:
+        raise Http404("A valid worker must be specified.")
+
+    user_visit_counts = get_user_visit_counts(opportunity, filtered_queryset)
+    visits = filtered_queryset.filter(flagged=True, flag_reason__isnull=False)
     flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
     for visit in visits:
         for flag, _description in visit.flag_reason.get("flags", []):
+            if selected_flags and flag not in selected_flags:
+                continue
             flag_label = FlagLabels.get_label(flag)
             if visit.status == VisitValidationStatus.approved:
                 if request.opportunity.managed and visit.review_created_on is not None:
@@ -1582,10 +1636,34 @@ def user_visit_verification(request, org_slug, opp_id, pk):
                 flagged_info[flag_label]["rejected"] += 1
             flagged_info[flag_label]["name"] = flag_label
     flagged_info = flagged_info.values()
-    last_payment_details = Payment.objects.filter(opportunity_access=opportunity_access).order_by("-date_paid").first()
-    pending_payment = max(opportunity_access.payment_accrued - opportunity_access.total_paid, 0)
+
+    access_filter = Q(opportunity=opportunity)
+    if selected_opportunity_access:
+        access_filter &= Q(id=selected_opportunity_access.id)
+
+    payment_accrued_total = OpportunityAccess.objects.filter(access_filter).aggregate(
+        total_accrued=Sum("payment_accrued")
+    ).get("total_accrued") or Decimal("0")
+
+    payment_filter = Q(opportunity_access__opportunity=opportunity)
+    if selected_opportunity_access:
+        payment_filter &= Q(opportunity_access=selected_opportunity_access)
+
+    last_payment_details = (
+        Payment.objects.filter(payment_filter)
+        .select_related("opportunity_access__user")
+        .order_by("-date_paid")
+        .first()
+    )
+
+    total_paid = Payment.objects.filter(payment_filter).aggregate(total_paid=Sum("amount")).get(
+        "total_paid"
+    ) or Decimal("0")
+    pending_payment = max(payment_accrued_total - total_paid, Decimal("0"))
     pending_completed_work_count = CompletedWork.objects.filter(
-        opportunity_access=opportunity_access, status=CompletedWorkStatus.pending, saved_approved_count__gt=0
+        payment_filter,
+        status=CompletedWorkStatus.pending,
+        saved_approved_count__gt=0,
     ).count()
 
     path = []
@@ -1605,7 +1683,7 @@ def user_visit_verification(request, org_slug, opp_id, pk):
                 "title": "Connect Workers",
                 "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id)),
             },
-            {"title": opportunity_access.user.name, "url": request.path},
+            {"title": "Visits", "url": request.path},
         ]
     )
 
@@ -1613,24 +1691,28 @@ def user_visit_verification(request, org_slug, opp_id, pk):
         request,
         "opportunity/user_visit_verification.html",
         context={
-            "opportunity_access": opportunity_access,
+            "opportunity": opportunity,
             "counts": user_visit_counts,
             "flagged_info": flagged_info,
             "last_payment_details": last_payment_details,
             "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
-            "opportunity": opportunity_access.opportunity,
+            "payment_accrued_total": payment_accrued_total,
+            "total_paid": total_paid,
             "pending_completed_work_count": pending_completed_work_count,
             "pending_payment": pending_payment,
+            "selected_opportunity_access": selected_opportunity_access,
+            "filter_form": filter_set.form if user_visit_filters_enabled else None,
+            "filters_applied_count": filters_applied_count,
+            "user_visit_filters_enabled": user_visit_filters_enabled,
             "path": path,
         },
     )
     return response
 
 
-def get_user_visit_counts(opportunity_access_id: int, date=None):
-    opportunity_access = OpportunityAccess.objects.get(id=opportunity_access_id)
+def get_user_visit_counts(opportunity, queryset):
     visit_count_kwargs = {}
-    if opportunity_access.opportunity.managed:
+    if opportunity.managed:
         visit_count_kwargs = dict(
             pending_review=Count(
                 "id",
@@ -1657,11 +1739,7 @@ def get_user_visit_counts(opportunity_access_id: int, date=None):
             ),
         )
 
-    filter_kwargs = {"opportunity_access": opportunity_access}
-    if date:
-        filter_kwargs.update({"visit_date__date": date})
-
-    user_visit_counts = UserVisit.objects.filter(**filter_kwargs).aggregate(
+    user_visit_counts = queryset.filter(opportunity=opportunity).aggregate(
         **visit_count_kwargs,
         approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
         pending=Count("id", filter=Q(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])),
@@ -1672,11 +1750,12 @@ def get_user_visit_counts(opportunity_access_id: int, date=None):
     return user_visit_counts
 
 
-class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
+class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, FilterMixin, SingleTableView):
     model = UserVisit
     table_class = UserVisitVerificationTable
     template_name = "opportunity/user_visit_verification_table.html"
     exclude_columns = []
+    filter_class = UserVisitFilterSet
 
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
@@ -1687,23 +1766,31 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
         return self.table
 
     def dispatch(self, request, *args, **kwargs):
+        self.opportunity = get_opportunity_or_404(kwargs["opp_id"], kwargs["org_slug"])
         response = super().dispatch(request, *args, **kwargs)
-        url = reverse(
-            "opportunity:user_visits_list",
-            args=[request.org.slug, self.kwargs["opp_id"], self.kwargs["pk"]],
-        )
+        url = reverse("opportunity:user_visits_list", args=[request.org.slug, self.kwargs["opp_id"]])
         query_params = request.GET.urlencode()
-        response["HX-Replace-Url"] = f"{url}?{query_params}"
+        response["HX-Replace-Url"] = f"{url}?{query_params}" if query_params else url
         return response
+
+    def get_filter_kwargs(self):
+        queryset = UserVisit.objects.filter(opportunity=self.opportunity)
+        return {
+            "queryset": queryset,
+            "request": self.request,
+            "opportunity": self.opportunity,
+        }
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["organization"] = self.request.org
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
+        kwargs["hide_worker_name"] = bool(self.request.GET.get("user"))
         return kwargs
 
     def get_context_data(self, **kwargs):
-        user_visit_counts = get_user_visit_counts(self.kwargs["pk"], self.filter_date)
+        filter_queryset = getattr(self, "filter_queryset", None)
+        user_visit_counts = get_user_visit_counts(self.opportunity, filter_queryset)
 
         if self.request.is_opportunity_pm:
             tabs = [
@@ -1773,54 +1860,56 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
             )
 
         context = super().get_context_data(**kwargs)
-        context["opportunity_access"] = self.opportunity_access
+        context["opportunity"] = self.opportunity
         context["tabs"] = tabs
+        persisted_filters = []
+        for name, values in self.request.GET.lists():
+            if name in {"page", "filter_status", "sort"}:
+                continue
+            for value in values:
+                if value in ("", None):
+                    continue
+                persisted_filters.append((name, value))
+        context["persisted_filters"] = persisted_filters
         return context
 
     def get_queryset(self):
-        self.opportunity_access = get_object_or_404(
-            OpportunityAccess, opportunity=self.get_opportunity(), pk=self.kwargs["pk"]
-        )
+        self.exclude_columns = []
+        self.filter_set = self._get_filter()
+        base_queryset = UserVisit.objects.filter(opportunity=self.opportunity)
+        if self.filter_set is not None and self.filter_set.form.is_valid():
+            self.filter_queryset = self.filter_set.qs
+        else:
+            self.filter_queryset = base_queryset
+        queryset = self.filter_queryset
 
         self.filter_status = self.request.GET.get("filter_status")
-        self.filter_date = self.request.GET.get("filter_date")
-        filter_kwargs = {"opportunity_access": self.opportunity_access}
-        if self.filter_date:
-            date = datetime.datetime.strptime(self.filter_date, "%Y-%m-%d")
-            filter_kwargs.update({"visit_date__date": date})
-
         if self.filter_status == "pending":
-            filter_kwargs.update({"status__in": [VisitValidationStatus.pending, VisitValidationStatus.duplicate]})
+            queryset = queryset.filter(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])
             self.exclude_columns = ["last_activity"]
         if self.filter_status == "approved":
-            filter_kwargs.update({"status": VisitValidationStatus.approved})
+            queryset = queryset.filter(status=VisitValidationStatus.approved)
         if self.filter_status == "rejected":
-            filter_kwargs.update({"status": VisitValidationStatus.rejected})
+            queryset = queryset.filter(status=VisitValidationStatus.rejected)
 
         if self.filter_status == "pending_review":
-            filter_kwargs.update(
-                {
-                    "review_status": VisitReviewStatus.pending,
-                    "status": VisitValidationStatus.approved,
-                    "review_created_on__isnull": False,
-                }
+            queryset = queryset.filter(
+                review_status=VisitReviewStatus.pending,
+                status=VisitValidationStatus.approved,
+                review_created_on__isnull=False,
             )
         if self.filter_status == "disagree":
-            filter_kwargs.update(
-                {
-                    "review_status": VisitReviewStatus.disagree,
-                    "review_created_on__isnull": False,
-                }
+            queryset = queryset.filter(
+                review_status=VisitReviewStatus.disagree,
+                review_created_on__isnull=False,
             )
         if self.filter_status == "agree":
-            filter_kwargs.update(
-                {
-                    "review_status": VisitReviewStatus.agree,
-                    "status": VisitValidationStatus.approved,
-                    "review_created_on__isnull": False,
-                }
+            queryset = queryset.filter(
+                review_status=VisitReviewStatus.agree,
+                status=VisitValidationStatus.approved,
+                review_created_on__isnull=False,
             )
-        return UserVisit.objects.filter(**filter_kwargs).order_by("visit_date")
+        return queryset.order_by("visit_date")
 
 
 @org_viewer_required
