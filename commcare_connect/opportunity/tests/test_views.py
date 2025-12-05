@@ -198,7 +198,9 @@ def test_reject_visit(client: Client, opportunity):
     ],
 )
 @pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.views.update_payment_accrued")
 def test_user_visit_review(
+    mock_update_payment_accrued,
     client,
     program_manager_org,
     program_manager_org_user_admin,
@@ -226,6 +228,14 @@ def test_user_visit_review(
     assert response.status_code == 200
     visit.refresh_from_db()
     assert visit.review_status == expected_status
+
+    if new_status in ["agree", "disagree"]:
+        expected_users = [visit.user] if review_status != "agree" else []
+        mock_update_payment_accrued.assert_called_once()
+        call_kwargs = mock_update_payment_accrued.call_args.kwargs
+        assert call_kwargs["users"] == expected_users
+    else:
+        mock_update_payment_accrued.assert_not_called()
 
 
 @pytest.mark.django_db
