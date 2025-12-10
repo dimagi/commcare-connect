@@ -3,7 +3,7 @@ from datetime import datetime
 
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models
-from django.db.models.functions import Coalesce, ExtractDay, TruncMonth
+from django.db.models.functions import Coalesce, ExtractDay, Least, TruncMonth
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client import fetch_user_counts
@@ -15,6 +15,7 @@ from commcare_connect.opportunity.models import (
     UserVisit,
     VisitValidationStatus,
 )
+from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.utils.datetime import get_month_series, get_start_end_dates_from_month_range
 
 ADMIN_REPORT_START = "2023-01"
@@ -34,22 +35,29 @@ def _get_cumulative_count(count_data: dict[str, int]):
 
 
 def get_connectid_user_counts_cumulative():
-    connectid_user_count = fetch_user_counts()
-    return _get_cumulative_count(connectid_user_count)
+    user_counts = fetch_user_counts()
+    total_user_counts = user_counts.get("total_users", {})
+    non_invited_user_counts = user_counts.get("non_invited_users", {})
+    return _get_cumulative_count(total_user_counts), _get_cumulative_count(non_invited_user_counts)
 
 
-def get_eligible_user_counts_cumulative():
+def get_eligible_user_counts_cumulative(delivery_type=None):
+    qs = CompletedWork.objects.filter(
+        status=CompletedWorkStatus.approved,
+        saved_approved_count__gt=0,
+        opportunity_access__opportunity__is_test=False,
+    )
+
+    if delivery_type:
+        qs = qs.filter(opportunity_access__opportunity__delivery_type__slug=delivery_type)
+
     visit_data = (
-        CompletedWork.objects.filter(
-            status=CompletedWorkStatus.approved,
-            saved_approved_count__gt=0,
-            opportunity_access__opportunity__is_test=False,
-        )
-        .annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
+        qs.annotate(month_group=TruncMonth(Coalesce("status_modified_date", "date_created")))
         .values("month_group")
         .annotate(users=ArrayAgg("opportunity_access__user_id", distinct=True))
         .order_by("month_group")
     )
+
     seen_users = set()
     visit_data_dict = {}
     for item in visit_data:
@@ -120,8 +128,8 @@ def get_table_data_for_year_month(
 
     max_visit_date = (
         UserVisit.objects.filter(completed_work_id=models.OuterRef("id"), status=VisitValidationStatus.approved)
-        .values_list("visit_date")
-        .order_by("-visit_date")[:1]
+        .values_list("date_created")
+        .order_by("-date_created")[:1]
     )
     time_to_payment = models.ExpressionWrapper(
         models.F("payment_date") - models.Subquery(max_visit_date), output_field=models.DurationField()
@@ -213,14 +221,29 @@ def get_table_data_for_year_month(
             }
         )
 
-    connectid_user_count = get_connectid_user_counts_cumulative()
-    total_eligible_user_counts = get_eligible_user_counts_cumulative()
+    connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
+    total_eligible_user_counts = get_eligible_user_counts_cumulative(delivery_type)
+
+    activated_personalid_accounts = (
+        UserAnalyticsData.objects.filter(
+            models.Q(has_ever_earned_payment__isnull=False) | models.Q(has_sso_on_hq_app__isnull=False)
+        )
+        .annotate(month_group=TruncMonth(Least("has_ever_earned_payment", "has_sso_on_hq_app")))
+        .values("month_group")
+        .annotate(users=models.Count("username"))
+    )
+    activated_personalid_accounts_data = {
+        item["month_group"].strftime("%Y-%m"): item["users"] for item in activated_personalid_accounts
+    }
+
     for group_key in visit_data_dict.keys():
         month_group = group_key[0]
         visit_data_dict[group_key].update(
             {
                 "connectid_users": connectid_user_count.get(month_group, 0),
                 "total_eligible_users": total_eligible_user_counts.get(month_group, 0),
+                "non_preregistered_users": non_invited_user_counts.get(month_group, 0),
+                "activated_personalid_accounts": activated_personalid_accounts_data.get(month_group, 0),
             }
         )
     return list(visit_data_dict.values())

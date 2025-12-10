@@ -5,7 +5,7 @@
 <div class="flex flex-col gap-6" x-data="{
     slides: [
       {% for image in user_visit.images %}
-        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug blob_id=image.blob_id %}' },
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity_id blob_id=image.blob_id %}' },
       {% endfor %}
     ],
     currentIndex: 0,
@@ -328,7 +328,7 @@
       hx-swap="none">
       <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
       <button class="button button-md outline-style"
-        {% if user_visit.review_status != "disagree" %}value="disagree"{% else %}disabled{% endif %}
+        {% if user_visit.review_status == "pending" %}value="disagree"{% else %}disabled{% endif %}
         name="review_status">
         {% translate "Disagree" %}
       </button>
@@ -342,6 +342,16 @@
   {% endif %}
 {% else %}
   <div>
+    <button class="button button-md negative-light"
+    {% if request.org_membership.is_viewer %} disabled {% else %}
+    {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %}
+      disabled
+    {% else %}
+      @click="showRejectModal = true; showApproveModal = false;"
+    {% endif %}
+    {% endif %}>
+      {% translate "Reject" %}
+    </button>
     <button class="button button-md positive-light"
     {% if request.org_membership.is_viewer %} disabled {% else %}
     {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %}
@@ -357,16 +367,6 @@
     {% endif %}
     {% endif %}>
       {% translate "Approve" %}
-    </button>
-    <button class="button button-md negative-light"
-    {% if request.org_membership.is_viewer %} disabled {% else %}
-    {% if user_visit.status != "rejected" or user_visit.review_status == "disagree" %}
-      @click="showRejectModal = true; showApproveModal = false;"
-    {% else %}
-      disabled
-    {% endif %}
-    {% endif %}>
-      {% translate "Reject" %}
     </button>
   </div>
 

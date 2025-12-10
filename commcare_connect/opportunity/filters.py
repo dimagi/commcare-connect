@@ -48,6 +48,18 @@ class FilterMixin:
             return {name: f.form.cleaned_data.get(name) for name in f.filters.keys()}
         return {}
 
+    def get_filter_usage_data(self):
+        values = self.get_filter_values()
+        applied = [k for k, v in values.items() if v not in (None, "", [])]
+        if not applied:
+            return None
+
+        return {
+            "filters": applied,
+            "filter_count": len(applied),
+            "page_path": self.request.path,
+        }
+
     def filters_applied_count(self):
         return len([v for v in self.get_filter_values().values() if v not in (None, "", [])])
 
@@ -55,6 +67,7 @@ class FilterMixin:
         return {
             "filter_form": self.get_filter_form(),
             "filters_applied_count": self.filters_applied_count(),
+            "filter_usage_data": self.get_filter_usage_data(),
         }
 
 

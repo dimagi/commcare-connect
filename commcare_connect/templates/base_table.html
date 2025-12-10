@@ -2,9 +2,9 @@
 {% load i18n %}
 {% block table-wrapper %}
 {% load sort_link %}
-<div class="overflow-hidden table-container flex flex-col gap-2 mb-1">
+<div class="table-container flex flex-col gap-2 mb-1">
   {% block table %}
-  <div class="w-full overflow-x-auto block">
+  <div class="w-full overflow-x-auto overflow-y-auto block max-h-[70vh]">
     <table class="base-table" {% render_attrs table.attrs %}>
       {% block table.thead %}
       {% if table.show_header %}
@@ -29,7 +29,7 @@
             <div style="overflow:hidden; border-radius:8px;">
               {% for row in table.paginated_rows %}
                 {% block table.tbody.row %}
-                  <tr class="group" {{ row.attrs.as_html }}>
+                  <tr {{ row.attrs.as_html }} class="group">
                     {% for column, cell in row.items %}
                       <td {{ column.attrs.td.as_html }}>
                         {% if column.localize == None %}

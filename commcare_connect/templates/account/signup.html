@@ -83,7 +83,7 @@
     <form method="post" action="{% provider_login_url "commcarehq" process="login" %}">
       <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer" type="submit">
           {% csrf_token %}
-          <div class="w-6 h-6"><img src="{% static 'images/logo-color.svg' %}" alt="Compact Logo" class="w-full"></div>
+          <div class="w-6 h-6"><img src="{% static 'images/commcare-logo-color.svg' %}" alt="Compact Logo" class="w-full"></div>
       <span class="text-sm">{% blocktranslate %}Sign up with CommCareHQ{% endblocktranslate %}</span>
       </button>
     </form>

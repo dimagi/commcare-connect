@@ -4,110 +4,31 @@
 {% load i18n %}
 
 {% block top_buttons %}
-    {{ block.super }}
-    {% if not request.is_opportunity_pm %}
-<div x-data="invoiceModal()"
-      @keydown.escape.window="closeModal()"
-      id="invoiceModal"
-    >
-      <button class="button button-md primary-dark" @click="openModal()">
-        {% translate "Create Invoice" %}
-      </button>
+  {{ block.super }}
+  {% if not request.is_opportunity_pm %}
+  <div x-data="{ open: false }" @click.away="open = false" class="relative">
+    <button @click="open = !open" class="button button-md primary-dark flex flex-row items-center space-x-2">
+      {% translate "Create Invoice" %}
+      <i :class="open ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all text-xs"></i>
+    </button>
 
-      <div
-        x-cloak
-        x-show="open"
-        x-transition.opacity
-        class="modal-backdrop"
-      >
-        <div
-          @click.away="closeModal()"
-          x-show="open"
-          x-transition
-          class="modal"
-          role="dialog"
-          aria-labelledby="invoiceModalLabel">
-          <div class="modal-content">
-            <div class="flex items-center justify-between p-4 border-b">
-              <h5 class="text-lg font-medium" id="invoiceModalLabel">{% translate "Create Invoice" %}</h5>
-              <button @click="closeModal()" class="button-icon" aria-label="Close" id="invoiceModalClose">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
-            </div>
+    <div x-show="open" x-transition.opacity x-cloak
+      class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
+      <ul class="p-2 w-full max-h-80 overflow-y-auto">
+        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+          <a href="{{ new_invoice_url }}?invoice_type=service_delivery">
+            <p class="text-brand-deep-purple text-sm font-medium">{% translate "Service Delivery" %}</p>
+          </a>
+        </li>
+        <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+          <a href="{{ new_invoice_url }}?invoice_type=custom">
+            <p class="text-brand-deep-purple text-sm font-medium">{% translate "Custom" %}</p>
+          </a>
+        </li>
+      </ul>
 
-            <form
-              hx-post="{% url 'opportunity:invoice_create' org_slug=request.org.slug opp_id=opportunity.pk %}"
-              hx-target="#invoiceForm"
-              hx-swap="innerHTML"
-            >
-              <div class="p-4">
-                <div id="invoiceForm">{% crispy form %}</div>
-              </div>
-
-              <div class="flex justify-end gap-2 p-4">
-                <button
-                  type="button"
-                  @click="closeModal()"
-                  class="button button-md outline-style"
-                >
-                  {% translate "Close" %}
-                </button>
-
-                <button
-                  type="submit"
-                  class="button button-md primary-dark"
-                >
-                  {% translate "Save changes" %}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
     </div>
-{% endif %}
-
-{% block inline_js %}
-<script>
-  document.addEventListener('alpine:init', () => {
-    Alpine.data('invoiceModal', () => ({
-      open: false,
-      currency: false,
-      openModal() {
-        this.open = true;
-        // Initialize currency after modal opens and form is rendered
-        this.$nextTick(() => {
-          this.currency = this.$refs.currencyToggle?.checked || false;
-        });
-      },
-      closeModal() {
-        this.open = false;
-      },
-      convert(replace = false) {
-        // date and amount should be present before making http call
-        if (!this.$refs.amount?.value || !this.$refs.date?.value) return;
-
-        htmx.ajax('POST', '{% url "opportunity:exchange_rate" org_slug=request.org.slug opp_id=opportunity.id %}', {
-          target: '#converted-amount-wrapper',
-          swap: 'innerHTML',
-          values: {
-            amount: this.$refs.amount.value,
-            date: this.$refs.date.value,
-            usd_currency: this.currency,
-            should_replace_amount: replace
-          }
-        }).then(() => {
-          if (replace) {
-            const newAmount = document.querySelector('#exchange-rate-display')?.dataset?.convertedAmount;
-            if (newAmount) {
-              this.$refs.amount.value = newAmount;
-            }
-          }
-        });
-      }
-    }));
-  });
-</script>
-{% endblock inline_js %}
+  </div>
+  {% endif %}
 
 {% endblock top_buttons %}

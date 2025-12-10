@@ -42,15 +42,16 @@ DELIVER_UNIT_JSONPATH = parse("$..deliver")
 
 def process_xform(xform: XForm, hq_server: HQServer):
     """Process a form received from CommCare HQ."""
-    app = get_app(xform.domain, xform.app_id, hq_server)
     user = get_user(xform)
 
-    opportunity = get_opportunity(deliver_app=app)
+    opportunity = get_opportunity(xform.domain, hq_server, deliver_app_id=xform.app_id)
     if opportunity:
+        app = opportunity.deliver_app
         process_deliver_form(user, xform, app, opportunity)
 
-    opportunity = get_opportunity(learn_app=app)
+    opportunity = get_opportunity(xform.domain, hq_server, learn_app_id=xform.app_id)
     if opportunity:
+        app = opportunity.learn_app
         process_learn_form(user, xform, app, opportunity)
 
 
@@ -364,30 +365,34 @@ def get_or_create_deliver_unit(app, unit_data):
     return unit
 
 
-def get_opportunity(*, learn_app=None, deliver_app=None):
-    if not learn_app and not deliver_app:
-        raise ValueError("One of learn_app or deliver_app must be provided")
-
-    kwargs = {}
-    if learn_app:
-        kwargs = {"learn_app": learn_app}
-    if deliver_app:
-        kwargs = {"deliver_app": deliver_app}
+def get_opportunity(domain, hq_server, deliver_app_id=None, learn_app_id=None):
+    if not (learn_app_id or deliver_app_id):
+        raise ValueError("One of learn_app_id or deliver_app_id along with domain must be provided")
+    if learn_app_id:
+        kwargs = {
+            "learn_app__cc_domain": domain,
+            "learn_app__cc_app_id": learn_app_id,
+        }
+    if deliver_app_id:
+        kwargs = {
+            "deliver_app__cc_domain": domain,
+            "deliver_app__cc_app_id": deliver_app_id,
+        }
 
     try:
-        return Opportunity.objects.get(active=True, end_date__gte=now().date(), **kwargs)
+        opportunity = Opportunity.objects.get(active=True, end_date__gte=now().date(), **kwargs)
+        if learn_app_id:
+            app = opportunity.learn_app
+        elif deliver_app_id:
+            app = opportunity.deliver_app
+        if app.hq_server != hq_server:
+            raise ProcessingError(f"CommCare App {app.id} not found on {hq_server}")
+        return opportunity
     except Opportunity.DoesNotExist:
         pass
     except Opportunity.MultipleObjectsReturned:
-        app = learn_app or deliver_app
-        raise ProcessingError(f"Multiple active opportunities found for CommCare app {app.cc_app_id}.")
-
-
-def get_app(domain, app_id, hq_server):
-    app = CommCareApp.objects.filter(cc_domain=domain, cc_app_id=app_id, hq_server=hq_server).first()
-    if not app:
-        raise ProcessingError(f"CommCare app {app_id} not found.")
-    return app
+        app_id = learn_app_id or deliver_app_id
+        raise ProcessingError(f"Multiple active opportunities found for CommCare app {app_id}.")
 
 
 def get_user(xform: XForm):

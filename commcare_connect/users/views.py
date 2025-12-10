@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -26,6 +27,7 @@ from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, OTP_ACCESS
 
 from .helpers import create_hq_user_and_link
@@ -93,17 +95,17 @@ create_user_link_view = CreateUserLinkView.as_view()
 def start_learn_app(request):
     opportunity_id = request.POST.get("opportunity")
     if opportunity_id is None:
-        return HttpResponse("opportunity required", status=400)
+        return Response({"error_code": ErrorCodes.OPPORTUNITY_REQUIRED}, status=400)
     opportunity = Opportunity.objects.get(pk=opportunity_id)
     app = opportunity.learn_app
     domain = app.cc_domain
     user_created = create_hq_user_and_link(request.user, domain, opportunity)
     if not user_created:
-        return HttpResponse("Failed to create user", status=400)
+        return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
     try:
         access_object = OpportunityAccess.objects.get(user=request.user, opportunity=opportunity)
     except OpportunityAccess.DoesNotExist:
-        return HttpResponse("user has no access to opportunity", status=400)
+        return Response({"error_code": ErrorCodes.NO_OPPORTUNITY_ACCESS}, status=400)
     with transaction.atomic():
         if access_object.date_learn_started is None:
             access_object.date_learn_started = now()
@@ -116,25 +118,49 @@ def start_learn_app(request):
         user_invite = UserInvite.objects.get(opportunity_access=access_object)
         user_invite.status = UserInviteStatus.accepted
         user_invite.save()
-    return HttpResponse(status=200)
+    return Response()
 
 
-@require_GET
-def accept_invite(request, invite_id):
-    try:
-        o = OpportunityAccess.objects.get(invite_id=invite_id)
-    except OpportunityAccess.DoesNotExist:
-        return HttpResponse("This link is invalid. Please try again", status=404)
-    with transaction.atomic():
+class AcceptInviteView(View):
+    def get(self, request, invite_id):
+        try:
+            access = OpportunityAccess.objects.get(invite_id=invite_id)
+        except OpportunityAccess.DoesNotExist:
+            return HttpResponse("This link is invalid. Please try again", status=404)
+        get_token(request)
+        return render(
+            request,
+            "users/accept_invite_confirm.html",
+            context={
+                "opportunity_name": access.opportunity.name,
+            },
+        )
+
+    def post(self, request, invite_id):
+        try:
+            o = OpportunityAccess.objects.get(invite_id=invite_id)
+        except OpportunityAccess.DoesNotExist:
+            return HttpResponse("This link is invalid. Please try again", status=404)
+
+        if o.accepted:
+            return HttpResponse(
+                _(
+                    "This invitation has already been accepted. Open your Connect App to "
+                    "see more information about the opportunity and begin learning"
+                )
+            )
+
         o.accepted = True
         o.save()
         user_invite = UserInvite.objects.get(opportunity_access=o)
         user_invite.status = UserInviteStatus.accepted
         user_invite.save()
-    return HttpResponse(
-        "Thank you for accepting the invitation. Open your CommCare Connect App to "
-        "see more information about the opportunity and begin learning"
-    )
+        return HttpResponse(
+            _(
+                "Thank you for accepting the invitation. Open your Connect App to "
+                "see more information about the opportunity and begin learning"
+            )
+        )
 
 
 @login_required
@@ -163,6 +189,7 @@ class SMSStatusCallbackView(APIView):
 
 
 # used for loading api key dropdown
+@require_GET
 @login_required
 def get_api_keys(request):
     hq_server = request.GET.get("hq_server")

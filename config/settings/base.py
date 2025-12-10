@@ -287,6 +287,7 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
+CELERY_TASK_TRACK_STARTED = True
 
 # django-allauth
 # ------------------------------------------------------------------------------

@@ -1,0 +1,40 @@
+{% load i18n %}
+
+<p>{% trans "Hi," %}</p>
+
+<p>
+    {% blocktrans with opp_name=opportunity.name %}
+        Your invoice for the Opportunity <strong>{{ opp_name }}</strong> has been <strong>paid</strong>.
+    {% endblocktrans %}
+</p>
+
+<p><strong>{% trans "Invoice Details" %}</strong></p>
+<ul>
+    <li><strong>{% trans "Invoice Number" %}:</strong> {{ invoice.invoice_number }}</li>
+    <li><strong>{% trans "Amount Paid" %}:</strong> {{ opportunity.currency }} {{ invoice.amount }}</li>
+    <li><strong>{% trans "Invoice Date" %}:</strong> {{ invoice.date }}</li>
+    <li><strong>{% trans "Payment Date" %}:</strong> {{ invoice.payment.created_at }}</li>
+</ul>
+
+<p style="margin: 24px 0;">
+    <a href="{{ invoice_url }}"
+       style="
+            background-color: #3843d0;
+            color: #ffffff;
+            padding: 10px 15px;
+            text-decoration: none;
+            border-radius: 6px;
+            display: inline-block;
+       ">
+        {% trans "View Invoice" %}
+    </a>
+</p>
+
+<p>
+    {% trans "If you have any questions, please contact your Program Manager." %}
+</p>
+
+<p>
+    {% blocktrans %}Thank you,{% endblocktrans %}<br>
+    Connect
+</p>

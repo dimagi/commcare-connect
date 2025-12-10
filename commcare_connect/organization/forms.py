@@ -3,24 +3,41 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext
 
+from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.users.models import User
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
 
 
 class OrganizationChangeForm(forms.ModelForm):
     class Meta:
         model = Organization
-        fields = ("name",)
+        fields = ("name", "program_manager")
         labels = {
             "name": gettext("Organization Name"),
+            "program_manager": gettext("Enable Program Manager"),
         }
 
     def __init__(self, *args, **kwargs):
+        user = kwargs.pop("user")
         super().__init__(*args, **kwargs)
+
+        layout_fields = [layout.Field("name")]
+
+        if user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
+            layout_fields.append(
+                layout.Field(
+                    "program_manager",
+                    css_class=CHECKBOX_CLASS,
+                    wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                )
+            )
+        else:
+            del self.fields["program_manager"]
 
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
-            layout.Field("name"),
+            *layout_fields,
             layout.Div(
                 layout.Submit("submit", gettext("Update"), css_class="button button-md primary-dark"),
                 css_class="flex justify-end",

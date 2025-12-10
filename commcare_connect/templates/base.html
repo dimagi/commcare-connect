@@ -6,7 +6,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     {% include 'favicon.html' %}
-    <title>CommCare Connect</title>
+    <title>Connect</title>
     {% block css %}
        <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
        <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
@@ -20,7 +20,9 @@
     {% endblock javascript %}
   </head>
   <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
-    {% include 'layouts/sidenav.html'%}
+    {% block sidenav %}
+      {% include 'layouts/sidenav.html'%}
+    {% endblock %}
     <div class="flex-1  px-4">
       {% include 'layouts/header.html'%}
       <div class="h-5 w-full mt-16"></div>

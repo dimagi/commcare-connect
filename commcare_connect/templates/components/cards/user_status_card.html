@@ -5,10 +5,12 @@
     <h3 class="text-base font-medium text-brand-deep-purple">User Status Details</h3>
     <div>
       {% if opportunity_access.suspended and not request.org_membership.is_viewer %}
-        <a class="button button-sm primary-light"
-        href="{% url "opportunity:revoke_user_suspension" org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}?next={{ request.path|urlencode }}">
+        <button
+          hx-post="{% url 'opportunity:revoke_user_suspension' org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}"
+          hx-vals='{"next": "{{ request.path }}"}'
+          class="button button-sm primary-light">
           {% translate "Revoke Suspension" %}
-        </a>
+        </button>
       {% else %}
       <button  {% if request.org_membership.is_viewer %} disabled {% endif %}
                class="button button-sm primary-light" @click="showSuspendModal = true">

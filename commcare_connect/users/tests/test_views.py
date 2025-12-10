@@ -10,10 +10,12 @@ from django.http import HttpRequest
 from django.test import RequestFactory
 from django.urls import reverse
 
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserInviteFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.users.views import UserRedirectView, UserUpdateView, create_user_link_view
+from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
 
@@ -144,3 +146,72 @@ class TestRetrieveUserOTPView:
 
         client.force_login(user)
         return client.post(self.url, data={"phone_number": "+1234567890"}, follow=True)
+
+
+@pytest.mark.django_db
+class TestStartLearnAppView:
+    @property
+    def url(self):
+        return reverse("users:start_learn_app")
+
+    def _post(self, client, user, data, create_user_result=True):
+        client.force_authenticate(user)
+        with patch(
+            "commcare_connect.users.views.create_hq_user_and_link", return_value=create_user_result
+        ) as mock_create:
+            response = client.post(self.url, data=data)
+        return response, mock_create
+
+    @pytest.mark.parametrize(
+        "data, create_user_result, setup_access, expected_error",
+        [
+            # Case 1: Missing opportunity
+            ({}, True, False, ErrorCodes.OPPORTUNITY_REQUIRED),
+            # Case 2: HQ user creation fails
+            (lambda opp: {"opportunity": opp.id}, False, False, ErrorCodes.FAILED_USER_CREATE),
+            # Case 3: No access for the given opportunity
+            (lambda opp: {"opportunity": opp.id}, True, False, ErrorCodes.NO_OPPORTUNITY_ACCESS),
+        ],
+    )
+    def test_start_learning_errors(
+        self,
+        data,
+        create_user_result,
+        setup_access,
+        expected_error,
+        opportunity,
+        user,
+        api_client,
+    ):
+        if callable(data):
+            data = data(opportunity)
+
+        if setup_access:
+            OpportunityAccessFactory(opportunity=opportunity, user=user)
+
+        response, mock_create = self._post(
+            api_client,
+            user,
+            data=data,
+            create_user_result=create_user_result,
+        )
+
+        assert response.status_code == 400
+        if expected_error == ErrorCodes.OPPORTUNITY_REQUIRED:
+            mock_create.assert_not_called()
+        else:
+            mock_create.assert_called_once()
+        assert response.json()["error_code"] == expected_error
+
+    def test_starts_learning_successfully(self, opportunity, user, api_client):
+        access = OpportunityAccessFactory(opportunity=opportunity, user=user)
+        UserInviteFactory(opportunity=opportunity, opportunity_access=access)
+
+        response, mock_create = self._post(
+            api_client,
+            user,
+            data={"opportunity": opportunity.id},
+            create_user_result=True,
+        )
+        assert response.status_code == 200
+        mock_create.assert_called_once()
