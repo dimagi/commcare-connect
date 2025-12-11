@@ -549,8 +549,11 @@ def generate_automated_service_delivery_invoice():
 
     CHUNK_SIZE = 100
     invoices_chunk = []
-
-    for opportunity in Opportunity.objects.filter(active=True, managed=True).iterator(chunk_size=CHUNK_SIZE):
+    opportunity_ids = [1157]
+    for opportunity in Opportunity.objects.filter(pk__in=opportunity_ids, active=True, managed=True).iterator(
+        chunk_size=CHUNK_SIZE
+    ):
+        print("Processing opportunity:", opportunity.id)
         start_date = get_start_date_for_invoice(opportunity)
         end_date = get_end_date_for_invoice(start_date)
         invoice_number = generate_invoice_number()
