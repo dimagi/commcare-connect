@@ -572,7 +572,10 @@ def review_visit_import(request, org_slug=None, opp_id=None):
             messages.warning(request, mark_safe(status.get_missing_message()))
         if status.locked_visits:
             messages.warning(request, mark_safe(status.get_locked_message()))
-        messages.success(request, mark_safe(f"Visit review updated successfully for {len(status)} visits."))
+        if status.seen_visits:
+            messages.success(
+                request, mark_safe(f"Visit review updated successfully for {len(status.seen_visits)} visits.")
+            )
     return redirect(redirect_url)
 
 

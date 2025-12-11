@@ -25,6 +25,10 @@
   --color-brand-blue-light: #94a3b8;
   --color-brand-sunset-light: #fc5f3633;
   --color-brand-border-light: #e2e8f0;
+  --color-message-success: #e6f5e5;
+  --color-message-success-text: #218079;
+  --color-message-warning-text: #bc950f;
+  --color-message-warning: #fff4cd;
   --width-screen-sm: var(--breakpoint-sm);
 }
 
