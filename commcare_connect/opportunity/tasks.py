@@ -549,7 +549,7 @@ def generate_automated_service_delivery_invoice():
 
     CHUNK_SIZE = 100
     invoices_chunk = []
-    opportunity_ids = [1157]
+    opportunity_ids = [1159, 169]
     for opportunity in Opportunity.objects.filter(pk__in=opportunity_ids, active=True, managed=True).iterator(
         chunk_size=CHUNK_SIZE
     ):
