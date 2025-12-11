@@ -16,7 +16,18 @@
     {% crispy form %}
   </div>
 
-  <div class="mt-6 flex justify-between">
+
+  <div class="mt-6 flex justify-start gap-4">
+    {% if invoice_status == 'pending' %}
+      <a
+        hx-post="{% url 'opportunity:submit_invoice' org_slug=request.org.slug opp_id=opportunity.id %}"
+        hx-vals='{"invoice_id": "{{ invoice.id }}"}'
+        hx-swap="innerHTML"
+        class="button button-md primary-dark"
+      >
+        {% translate "Submit for Approval" %}
+      </a>
+    {% endif %}
     <a href="{% url 'opportunity:invoice_list' org_slug=request.org.slug opp_id=opportunity.id %}"
        class="button button-md outline-style">
       {% translate "Back to Invoices" %}

@@ -377,6 +377,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
     exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
     amount_usd = tables.Column(verbose_name="Amount (USD)")
+    status = tables.Column(verbose_name="Invoice Status")
 
     class Meta:
         model = PaymentInvoice
@@ -388,6 +389,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
             "exchange_rate",
             "date",
             "invoice_number",
+            "status",
             "payment_status",
             "payment_date",
             "service_delivery",
