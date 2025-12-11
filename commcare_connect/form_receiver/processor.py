@@ -201,7 +201,7 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
             lat, lon, *_ = visit["location"].split(" ")
             dist = distance((lat, lon), (cur_lat, cur_lon))
             if dist.m <= opportunity_flags.location:
-                flags.append(["location", "Visit location is too close to another visit"])
+                flags.append(["location", f"Visit location is {dist.m}m from another visit"])
                 break
     if opportunity_flags.catchment_areas:
         areas = access.catchmentarea_set.filter(active=True)

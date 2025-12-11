@@ -1,6 +1,5 @@
 import datetime
 import json
-import sys
 from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -2067,7 +2066,6 @@ def user_visit_details(request, org_slug, opp_id, pk):
 
     user_forms = []
     other_forms = []
-    closest_distance = sys.maxsize
 
     if user_visit.location:
         lat, lon, _, precision = user_visit.location.split(" ")
@@ -2103,7 +2101,6 @@ def user_visit_details(request, org_slug, opp_id, pk):
             try:
                 other_lat, other_lon, *_ = loc.location.split()
                 dist = distance.distance((lat, lon), (float(other_lat), float(other_lon))).m
-                closest_distance = int(min(closest_distance, dist))
                 if dist <= 250:
                     visit_info = {
                         "entity_name": loc.entity_name,
@@ -2146,7 +2143,7 @@ def user_visit_details(request, org_slug, opp_id, pk):
             user_forms=user_forms[:5],
             other_forms=other_forms[:5],
             visit_data=visit_data,
-            closest_distance=closest_distance,
+            min_allowed_distance=verification_flags_config.location,
             verification_flags_config=verification_flags_config,
             flags=flags,
             flag_count=flag_count,

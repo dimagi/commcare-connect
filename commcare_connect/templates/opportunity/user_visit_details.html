@@ -182,7 +182,7 @@
       {% if user_visit.location %}
       <div>
         <div class="text-sm text-brand-blue-light">{% translate "Location" %}</div>
-        <div class="text-sm font-normal text-brand-deep-purple">{% translate "Less than" %} {{ closest_distance }} {% translate "metres" %}</div>
+        <div class="text-sm font-normal text-brand-deep-purple">{% translate "Less than" %} {{ min_allowed_distance }} {% translate "metres from another visit" %}</div>
       </div>
       {% endif %}
       <div>
