@@ -6,6 +6,7 @@ from django.http import HttpResponseRedirect
 from django.test import Client
 from django.urls import reverse
 
+from commcare_connect.opportunity.models import Currency
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
@@ -43,7 +44,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "description": "A description for the new program",
             "delivery_type": self.delivery_type.id,
             "budget": 10000,
-            "currency": "USD",
+            "currency_fk": "USD",
             "start_date": "2024-01-01",
             "end_date": "2024-12-31",
         }
@@ -69,7 +70,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "delivery_type": self.delivery_type.id,
             "organization": self.organization.id,
             "budget": 15000,
-            "currency": "EUR",
+            "currency_fk": Currency.objects.get(code="EUR").pk,
             "start_date": "2024-02-01",
             "end_date": "2024-11-30",
         }
@@ -79,6 +80,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         self.program.refresh_from_db()
         assert self.program.name == "Updated Program Name"
         assert self.program.organization.slug == old_org
+        assert self.program.currency_fk == data["currency_fk"]
         assert "Program 'Updated Program Name' updated successfully." in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]

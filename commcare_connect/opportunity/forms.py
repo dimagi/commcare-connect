@@ -21,7 +21,9 @@ from commcare_connect.opportunity.models import (
     CommCareApp,
     CompletedWork,
     CompletedWorkStatus,
+    Country,
     CredentialConfiguration,
+    Currency,
     DeliverUnit,
     DeliverUnitFlagRules,
     ExchangeRate,
@@ -104,13 +106,27 @@ class OpportunityUserInviteForm(forms.Form):
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
+    currency_fk = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.filter(is_valid=True).order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a currency"),
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a country"),
+    )
+
     class Meta:
         model = Opportunity
         fields = [
             "name",
             "description",
             "active",
-            "currency",
+            "currency_fk",
+            "country",
             "short_description",
             "is_test",
             "delivery_type",
@@ -169,7 +185,8 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 Column(
                     Field("end_date"),
                 ),
-                Column(Field("currency")),
+                Column(Field("currency_fk")),
+                Column(Field("country")),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
             Row(
@@ -293,6 +310,18 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 class OpportunityInitForm(forms.ModelForm):
     managed_opp = False
     app_hint_text = "Add required apps to the opportunity. All fields are mandatory."
+    currency_fk = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.filter(is_valid=True).order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a currency"),
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a country"),
+    )
 
     class Meta:
         model = Opportunity
@@ -300,7 +329,8 @@ class OpportunityInitForm(forms.ModelForm):
             "name",
             "description",
             "short_description",
-            "currency",
+            "currency_fk",
+            "country",
             "hq_server",
         ]
 
@@ -333,7 +363,8 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("description"),
                 ),
                 Column(
-                    Field("currency"),
+                    Field("currency_fk"),
+                    Field("country"),
                     Field("hq_server"),
                     Column(
                         Field("api_key", wrapper_class="flex-1"),
@@ -514,7 +545,6 @@ class OpportunityInitForm(forms.ModelForm):
         if self.managed_opp:
             opportunity.organization = self.cleaned_data.get("organization")
         else:
-            opportunity.currency = self.cleaned_data["currency"].upper()
             opportunity.organization = organization
 
         opportunity.api_key, _ = HQApiKey.objects.get_or_create(
@@ -552,7 +582,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         if not getattr(opportunity, "pk", None):
             return
 
-        for field_name in ("name", "short_description", "description", "currency"):
+        for field_name in ("name", "short_description", "description", "currency_fk", "country"):
             if field_name in self.fields:
                 self.fields[field_name].initial = getattr(opportunity, field_name)
 
@@ -622,8 +652,6 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         opportunity = self.instance
         if self.managed_opp and self.cleaned_data.get("organization"):
             opportunity.organization = self.cleaned_data.get("organization")
-        if not self.managed_opp:
-            opportunity.currency = self.cleaned_data["currency"].upper()
 
         created_by = opportunity.created_by or self.user.email
         hq_server = self.cleaned_data["hq_server"]
@@ -985,7 +1013,10 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
-        self.fields["total_budget"].label += f" ({self.opportunity.currency})"
+        currency = getattr(self.opportunity, "currency_fk", None)
+        currency_code = currency.code if currency else ""
+        if currency_code:
+            self.fields["total_budget"].label += f" ({currency_code})"
 
         self.fields["add_users"].widget.attrs.update(
             {
@@ -1347,6 +1378,9 @@ class PaymentInvoiceForm(forms.ModelForm):
             }
         )
 
+        currency = getattr(self.opportunity, "currency_fk", None)
+        currency_code = currency.code if currency else ""
+
         self.helper = FormHelper(self)
         layout_fields = [
             Row(
@@ -1359,7 +1393,7 @@ class PaymentInvoiceForm(forms.ModelForm):
                 ),
                 Field(
                     "amount",
-                    label=f"Amount ({self.opportunity.currency})",
+                    label=f"Amount ({currency_code})" if currency_code else "Amount",
                     **{
                         "x-ref": "amount",
                         "x-on:input.debounce.300ms": "convert()",
@@ -1405,7 +1439,8 @@ class PaymentInvoiceForm(forms.ModelForm):
         if amount is None or date is None:
             return cleaned_data  # Let individual field errors handle missing values
 
-        exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+        currency = getattr(self.opportunity, "currency_fk", None)
+        exchange_rate = ExchangeRate.latest_exchange_rate(currency.code if currency else None, date)
         if not exchange_rate:
             raise ValidationError("Exchange rate not available for selected date.")
 

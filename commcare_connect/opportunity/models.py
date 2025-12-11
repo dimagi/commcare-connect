@@ -64,11 +64,17 @@ class Currency(models.Model):
     name = models.CharField(max_length=64)
     is_valid = models.BooleanField(default=True)
 
+    def __str__(self):
+        return f"{self.code} ({self.name})"
+
 
 class Country(models.Model):
     code = models.CharField(max_length=3, primary_key=True)  # ISO 3166-1 alpha-3
     name = models.CharField(max_length=128)
     currency = models.ForeignKey(Currency, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
 
 
 class Opportunity(BaseModel):
