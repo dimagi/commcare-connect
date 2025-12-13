@@ -16,6 +16,12 @@ from commcare_connect.reports.helpers import get_table_data_for_year_month
 
 from .tables import AdminReportTable
 
+
+class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_superuser
+
+
 COUNTRY_CURRENCY_CHOICES = [
     ("ETB", "Ethiopia"),
     ("KES", "Kenya"),
