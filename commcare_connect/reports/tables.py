@@ -8,7 +8,7 @@ class AdminReportTable(tables.Table):
     delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=("All"))
     connectid_users = columns.Column(verbose_name="ConnectID Accounts")
     non_preregistered_users = columns.Column(verbose_name="Non-Preregistered Users")
-    total_eligible_users = columns.Column(verbose_name="Total Paid Users")
+    activated_connect_users = columns.Column(verbose_name="Activated Connect Users")
     users = SumColumn(verbose_name="Paid Users")
     hq_sso_users = columns.Column("PersonalID users authenticated to CCHQ app")
     activated_personalid_accounts = columns.Column(verbose_name="Activated PersonalID Accounts")

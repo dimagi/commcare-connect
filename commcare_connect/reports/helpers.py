@@ -41,7 +41,7 @@ def get_connectid_user_counts_cumulative():
     return _get_cumulative_count(total_user_counts), _get_cumulative_count(non_invited_user_counts)
 
 
-def get_eligible_user_counts_cumulative(delivery_type=None):
+def get_activated_connect_user_counts_cumulative(delivery_type=None):
     qs = CompletedWork.objects.filter(
         status=CompletedWorkStatus.approved,
         saved_approved_count__gt=0,
@@ -222,7 +222,7 @@ def get_table_data_for_year_month(
         )
 
     connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
-    total_eligible_user_counts = get_eligible_user_counts_cumulative(delivery_type)
+    total_activated_connect_user_counts = get_activated_connect_user_counts_cumulative(delivery_type)
 
     hq_sso_users = (
         UserAnalyticsData.objects.annotate(month_group=TruncMonth("has_sso_on_hq_app"))
@@ -247,7 +247,7 @@ def get_table_data_for_year_month(
         visit_data_dict[group_key].update(
             {
                 "connectid_users": connectid_user_count.get(month_group, 0),
-                "total_eligible_users": total_eligible_user_counts.get(month_group, 0),
+                "activated_connect_users": total_activated_connect_user_counts.get(month_group, 0),
                 "non_preregistered_users": non_invited_user_counts.get(month_group, 0),
                 "hq_sso_users": hq_sso_users_data.get(month_group, 0),
                 "activated_personalid_accounts": activated_personalid_accounts_data.get(month_group, 0),
