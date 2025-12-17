@@ -1505,9 +1505,8 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         if not self.instance.pk:
             self.fields["invoice_number"].initial = generate_invoice_number()
             self.fields["date"].initial = str(datetime.date.today())
-        else:
-            self.status = self.instance.status
-            self.fields["status"].initial = self.instance.get_status_display()
+            if self.is_service_delivery:
+                self.fields["date"].widget.attrs.update({"readonly": "readonly"})
 
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount (Local Currency)")
