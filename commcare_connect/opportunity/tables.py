@@ -17,6 +17,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
+    InvoiceStatus,
     LearnModule,
     OpportunityAccess,
     PaymentInvoice,
@@ -379,6 +380,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
     exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
     amount_usd = tables.Column(verbose_name="Amount (USD)")
     invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery")
+    status = tables.Column(verbose_name="Invoice Status")
 
     class Meta:
         model = PaymentInvoice
@@ -390,6 +392,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
             "exchange_rate",
             "date",
             "invoice_number",
+            "status",
             "payment_status",
             "payment_date",
             "invoice_type",
@@ -437,7 +440,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                 f'{_("Review")}</a>'
             )
         pay_button = ""
-        if self.is_pm:
+        if self.is_pm and record.status == InvoiceStatus.SUBMITTED:
             invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opportunity.id])
             disabled = "disabled" if getattr(record, "payment", None) else ""
             pay_button = f"""
