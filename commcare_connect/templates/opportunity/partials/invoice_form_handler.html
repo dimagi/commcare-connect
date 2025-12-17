@@ -89,7 +89,17 @@
         }
 
         return url.toString();
+      },
+
+      submitForApproval() {
+        htmx.ajax('POST', '{% url "opportunity:submit_invoice" org_slug=request.org.slug opp_id=opportunity.id %}', {
+          values: {
+              invoice_id: this.invoiceId,
+              notes: this.$refs.notes ? this.$refs.notes.value : ""
+          },
+        });
       }
+
     }));
   });
 </script>

@@ -987,7 +987,10 @@ class TestInvoiceReviewView:
             form = response.context["form"]
             assert form.read_only is True
             for field_name, field in form.fields.items():
-                assert field.widget.attrs.get("readonly") == "readonly", f"Field {field_name} should be readonly"
+                if field_name == "notes":
+                    assert field.widget.attrs.get("readonly") is None, f"Field {field_name} should be editable"
+                else:
+                    assert field.widget.attrs.get("readonly") == "readonly", f"Field {field_name} should be readonly"
 
         with override_switch(AUTOMATED_INVOICES, active=True):
             response = client.get(url)

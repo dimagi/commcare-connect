@@ -25,3 +25,7 @@ def get_start_end_dates_from_month_range(from_date: datetime.date, to_date: date
     end_date = datetime.date(to_date.year, to_date.month, calendar.monthrange(to_date.year, to_date.month)[1])
     end_time = datetime.datetime.combine(end_date, datetime.time.max, tzinfo=datetime.UTC)
     return start_time, end_time
+
+
+def get_end_date_previous_month():
+    return datetime.date.today().replace(day=1) - datetime.timedelta(days=1)

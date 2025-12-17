@@ -1,6 +1,5 @@
 import datetime
 import json
-import secrets
 from urllib.parse import urlencode
 
 from crispy_forms.helper import FormHelper
@@ -8,7 +7,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import F, Min, Q, Sum, TextChoices
+from django.db.models import F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -19,14 +18,13 @@ from waffle import switch_is_active
 from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.models import (
     CommCareApp,
-    CompletedWork,
-    CompletedWorkStatus,
     CredentialConfiguration,
     DeliverUnit,
     DeliverUnitFlagRules,
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
+    InvoiceStatus,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -38,6 +36,11 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
+from commcare_connect.opportunity.utils.invoice import (
+    generate_invoice_number,
+    get_end_date_for_invoice,
+    get_start_date_for_invoice,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User, UserCredential
@@ -1335,10 +1338,16 @@ class PaymentInvoiceForm(forms.ModelForm):
         self.opportunity = kwargs.pop("opportunity")
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING)
         super().__init__(*args, **kwargs)
         if self.read_only:
+            self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
             for field in self.fields.values():
                 field.widget.attrs["readonly"] = "readonly"
+
+        if self.instance.pk:
+            self.status = self.instance.status
+            self.fields["status"].initial = self.instance.get_status_display()
 
         self.fields["usd_currency"].widget.attrs.update(
             {
@@ -1367,6 +1376,7 @@ class PaymentInvoiceForm(forms.ModelForm):
                 ),
                 Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
                 Field("invoice_number"),
+                Field("status"),
                 Field(
                     "usd_currency",
                     css_class=CHECKBOX_CLASS,
@@ -1426,6 +1436,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data["exchange_rate"]
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.status = self.status
 
         if commit:
             instance.save()
@@ -1463,7 +1474,11 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "end_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "notes": forms.Textarea(
-                attrs={"rows": 3, "placeholder": _("Describe service delivery details, references, or notes...")}
+                attrs={
+                    "rows": 3,
+                    "x-ref": "notes",
+                    "placeholder": _("Describe service delivery details, references, or notes..."),
+                }
             ),
             "title": forms.TextInput(attrs={"placeholder": _("e.g. October Services")}),
         }
@@ -1478,17 +1493,23 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
         self.line_items_table = kwargs.pop("line_items_table", None)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING)
+        self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
         super().__init__(*args, **kwargs)
         if self.read_only:
+            self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
             for field in self.fields.values():
                 field.widget.attrs["readonly"] = "readonly"
 
         if not self.instance.pk:
-            self.fields["invoice_number"].initial = self.generate_invoice_number()
+            self.fields["invoice_number"].initial = generate_invoice_number()
             self.fields["date"].initial = str(datetime.date.today())
             if self.is_service_delivery:
                 self.fields["date"].widget.attrs.update({"readonly": "readonly"})
+        else:
+            self.status = self.instance.status
+            self.fields["status"].initial = self.instance.get_status_display()
 
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount (Local Currency)")
@@ -1497,9 +1518,12 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 self.fields["start_date"].initial = str(self.instance.start_date)
                 self.fields["end_date"].initial = str(self.instance.end_date)
             else:
-                start_date = self.get_start_date_for_invoice()
+                start_date = get_start_date_for_invoice(self.opportunity)
                 self.fields["start_date"].initial = str(start_date)
-                self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
+                self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
+
+            if self.read_only and self.status == InvoiceStatus.PENDING and not self.is_opportunity_pm:
+                self.fields["notes"].widget.attrs.pop("readonly", None)
         else:
             self.fields["usd_currency"].widget.attrs.update(
                 {
@@ -1533,32 +1557,6 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.helper.layout = Layout(*invoice_form_fields)
         self.helper.form_tag = False
 
-    def get_start_date_for_invoice(self):
-        date = (
-            CompletedWork.objects.filter(
-                invoice__isnull=True,
-                opportunity_access__opportunity=self.opportunity,
-                status=CompletedWorkStatus.approved,
-            )
-            .aggregate(earliest_date=Min("status_modified_date"))
-            .get("earliest_date")
-        )
-
-        start_date = date
-        if date:
-            start_date = date.date()
-        else:
-            start_date = self.opportunity.start_date
-
-        return start_date.replace(day=1)
-
-    def get_end_date_for_invoice(self, start_date):
-        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
-
-        if start_date > last_day_previous_month:
-            return datetime.date.today() - datetime.timedelta(days=1)
-        return last_day_previous_month
-
     def invoice_form_fields(self):
         invoice_number_attrs = {}
         invoice_number_attrs["readonly"] = "readonly"
@@ -1566,6 +1564,8 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         if self.is_service_delivery:
             first_row.append(Field("title"))
+        if self.read_only:
+            first_row.append(Field("status"))
 
         second_row = [Field("date", **{"x-ref": "date", "x-on:change": "convert()"})]
         if self.is_service_delivery:
@@ -1624,14 +1624,11 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         ]
 
-    def generate_invoice_number(self):
-        return secrets.token_hex(5).upper()
-
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
 
         if not invoice_number:
-            invoice_number = self.generate_invoice_number()
+            invoice_number = generate_invoice_number()
 
         if PaymentInvoice.objects.filter(invoice_number=invoice_number).exists():
             raise ValidationError(
@@ -1692,6 +1689,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         instance.amount = self.cleaned_data["amount"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.status = self.status
 
         if commit:
             instance.save()

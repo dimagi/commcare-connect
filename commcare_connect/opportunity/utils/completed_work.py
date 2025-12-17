@@ -344,6 +344,7 @@ def get_invoice_items(completed_works_qs):
                 "total_amount_local": record["total_amount_local"],
                 "total_amount_usd": record["total_amount_usd"],
                 "exchange_rate": exchange_rate,
+                "currency": currency,
             }
         )
 

@@ -543,7 +543,7 @@ class TestAutomatedPaymentInvoiceForm:
         valid_opportunity.start_date = datetime.date(2025, 1, 15)
         valid_opportunity.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity)
+        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, is_opportunity_pm=False)
 
         assert form.fields["invoice_number"].initial
         assert form.fields["date"].initial == str(datetime.date.today())
@@ -562,7 +562,9 @@ class TestAutomatedPaymentInvoiceForm:
         cw.status_modified_date = datetime.date(2025, 10, 1)
         cw.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity, invoice_type="service_delivery", is_opportunity_pm=False
+        )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
         invoice = PaymentInvoiceFactory(opportunity=valid_opportunity)
@@ -576,7 +578,9 @@ class TestAutomatedPaymentInvoiceForm:
         cw.status_modified_date = datetime.date(2025, 10, 20)
         cw.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity, invoice_type="service_delivery", is_opportunity_pm=False
+        )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
     def test_duplicate_invoice_number(self, valid_opportunity):
@@ -596,6 +600,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "notes": "",
                 "title": "",
             },
+            is_opportunity_pm=False,
         )
         assert not form.is_valid()
         assert form.errors["invoice_number"][0] == "Please use a different invoice number"
@@ -615,6 +620,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "notes": "",
                 "title": "",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -638,6 +644,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "notes": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -664,6 +671,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "notes": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -697,6 +705,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "notes": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
 
         assert form.is_valid()
@@ -720,10 +729,14 @@ class TestAutomatedPaymentInvoiceForm:
             opportunity=valid_opportunity,
             invoice_type="service_delivery",
             read_only=True,
+            is_opportunity_pm=False,
         )
 
-        for field in form.fields.values():
-            assert field.widget.attrs.get("readonly") == "readonly"
+        for name, field in form.fields.items():
+            if name == "notes":
+                assert field.widget.attrs.get("readonly") is None
+            else:
+                assert field.widget.attrs.get("readonly") == "readonly"
 
         assert form.fields["start_date"].initial == "2025-10-01"
         assert form.fields["end_date"].initial == "2025-10-31"
@@ -746,6 +759,7 @@ class TestAutomatedPaymentInvoiceForm:
             invoice_type="service_delivery",
             read_only=True,
             line_items_table=mock_table,
+            is_opportunity_pm=False,
         )
 
         assert form.line_items_table == mock_table

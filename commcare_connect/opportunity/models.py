@@ -465,6 +465,12 @@ class ExchangeRate(models.Model):
             return fetch_exchange_rates(date, currency_code)
 
 
+class InvoiceStatus(models.TextChoices):
+    PENDING = "pending", gettext("Pending")
+    SUBMITTED = "submitted", gettext("Submitted")
+    APPROVED = "approved", gettext("Approved")
+
+
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
         service_delivery = "service_delivery", gettext("Service Delivery")
@@ -481,6 +487,7 @@ class PaymentInvoice(models.Model):
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
+    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING, max_length=50)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")

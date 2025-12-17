@@ -102,6 +102,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnitFlagRules,
     ExchangeRate,
     FormJsonValidationRules,
+    InvoiceStatus,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -1459,6 +1460,8 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        kwargs["status"] = InvoiceStatus.SUBMITTED
+        kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
 
     def get_success_url(self):
@@ -1489,6 +1492,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 "opportunity": opportunity,
                 "form": self.get_form(),
                 "is_service_delivery": invoice.service_delivery,
+                "invoice_status": invoice.status,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
@@ -1529,6 +1533,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
             invoice_type=invoice_type,
             line_items_table=line_items_table,
             read_only=True,
+            is_opportunity_pm=self.request.is_opportunity_pm,
         )
 
     @property
@@ -1536,6 +1541,38 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         if self.object.service_delivery:
             return _("Review Service Delivery Invoice")
         return _("Review Custom Invoice")
+
+
+@org_member_required
+@opportunity_required
+@require_POST
+def submit_invoice(request, org_slug, opp_id):
+    if not (request.opportunity.managed and request.org_membership):
+        return HttpResponse(
+            status=302,
+            headers={"HX-Redirect": reverse("opportunity:detail", args=[org_slug, opp_id])},
+        )
+
+    invoice_id = request.POST.get("invoice_id")
+    notes = request.POST.get("notes")
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, pk=invoice_id)
+    if invoice.status != InvoiceStatus.PENDING:
+        return HttpResponseBadRequest("Only invoices with status 'Pending' can be submitted for approval.")
+
+    invoice.status = InvoiceStatus.SUBMITTED
+    if invoice.service_delivery:
+        invoice.notes = notes
+        invoice.save(update_fields=["status", "notes"])
+    else:
+        invoice.save(update_fields=["status"])
+    messages.success(
+        request, _("Invoice %(invoice_number)s submitted for approval.") % {"invoice_number": invoice.invoice_number}
+    )
+
+    return HttpResponse(
+        status=204,
+        headers={"HX-Redirect": reverse("opportunity:invoice_list", args=[org_slug, opp_id])},
+    )
 
 
 @org_member_required
@@ -1550,6 +1587,8 @@ def invoice_approve(request, org_slug, opp_id):
     paid_invoice_ids = []
     payments = []
     for inv in invoices:
+        if inv.status != InvoiceStatus.SUBMITTED:
+            return HttpResponseBadRequest(_("Only submitted invoice can be approved."))
         paid_invoice_ids.append(inv.id)
         payments.append(
             Payment(
@@ -1559,6 +1598,9 @@ def invoice_approve(request, org_slug, opp_id):
                 invoice=inv,
             )
         )
+        inv.status = InvoiceStatus.APPROVED
+        inv.save(update_fields=["status"])
+
     Payment.objects.bulk_create(payments)
 
     transaction.on_commit(partial(send_invoice_paid_mail.delay, request.opportunity.id, paid_invoice_ids))
