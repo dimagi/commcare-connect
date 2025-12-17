@@ -16,4 +16,6 @@ class Migration(migrations.Migration):
         ("reports", "0001_initial"),
     ]
 
-    operations = [migrations.RunPython(delete_cache_report_task, migrations.RunPython.noop)]
+    operations = [
+        migrations.RunPython(delete_cache_report_task, migrations.RunPython.noop, hints={"run_on_secondary": False})
+    ]

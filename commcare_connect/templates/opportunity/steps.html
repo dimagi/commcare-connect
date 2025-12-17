@@ -2,7 +2,7 @@
 {% load crispy_forms_tags %}
 
 <div class="stepper mb-4" id="nav-tab" role="tablist">
-  <a class=" {% if step == 'step1' %}active{% endif %}" id="step1-tab" data-toggle="tab">
+  <a class="{% if step == 'step1' %}active{% endif %}" id="step1-tab" data-toggle="tab" {% if pk and org_slug %}href="{% url 'opportunity:init_edit' org_slug=org_slug opp_id=pk %}"{% endif %}>
     <h6>1</h6>
     <span>Create Opportunity</span>
   </a>

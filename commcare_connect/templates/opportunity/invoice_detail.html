@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% load i18n crispy_forms_tags %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html' with path=path %}
+<div class="card_bg">
+  <div class="card_title mb-4">
+    {% if is_service_delivery %}
+      {% translate "Review Service Delivery Invoice" %}
+    {% else %}
+      {% translate "Review Custom Invoice" %}
+    {% endif %}
+    <span class="badge badge-sm bg-gray-200 text-gray-700 ml-2">{% translate "Read Only" %}</span>
+    {% if form.instance.payment %}
+      <span class="badge badge-sm bg-gray-200 text-gray-700 ml-2">{% translate "Paid" %}</span>
+    {% endif %}
+  </div>
+  <div x-data="invoiceFormHandler()">
+    {% crispy form %}
+  </div>
+
+  <div class="mt-6 flex gap-2">
+    <a href="{% url 'opportunity:invoice_list' org_slug=request.org.slug opp_id=opportunity.id %}"
+       class="button button-md outline-style">
+      {% translate "Back to Invoices" %}
+    </a>
+    {% if request.is_opportunity_pm %}
+      <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.id %}"
+              hx-vals='{"pk": {{ form.instance.id }}}'
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              class="button button-md primary-dark justify-center !inline-flex"
+              {% if form.instance.payment %}disabled{% endif %}>
+        {% translate "Pay" %}
+      </button>
+    {% endif %}
+  </div>
+</div>
+
+{% include "opportunity/partials/invoice_form_handler.html" with is_read_only=True %}
+{% endblock content %}

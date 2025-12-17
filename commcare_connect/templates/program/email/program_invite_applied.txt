@@ -1,0 +1,11 @@
+Hi,
+
+A new Network Manager has applied for a program.
+
+Network Manager: '{{ application.organization.name }}'
+Program: '{{ application.program.name }}'
+
+Click here ({{ program_url }}) to review the program for which the Network Manager has applied.
+
+Thank you,
+Connect

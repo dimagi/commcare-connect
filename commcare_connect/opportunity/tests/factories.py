@@ -134,12 +134,23 @@ class UserVisitFactory(DjangoModelFactory):
     deliver_unit = SubFactory(DeliverUnitFactory)
     status = Faker("enum", enum_cls=VisitValidationStatus)
     visit_date = Faker("date_time", tzinfo=timezone.utc)
+    date_created = Faker("date_time", tzinfo=timezone.utc)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
     completed_work = SubFactory(CompletedWorkFactory)
 
     class Meta:
         model = "opportunity.UserVisit"
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        # allow overriding auto_now_add
+        date_created = kwargs.pop("date_created", None)
+        visit = super()._create(model_class, *args, **kwargs)
+        if date_created is not None:
+            model_class.objects.filter(pk=visit.pk).update(date_created=date_created)
+            visit.date_created = date_created
+        return visit
 
 
 class OpportunityClaimFactory(DjangoModelFactory):
@@ -251,3 +262,38 @@ class PaymentInvoiceFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class ExchangeRateFactory(DjangoModelFactory):
+    currency_code = "USD"
+    rate = 1.0
+    rate_date = Faker("date_time", tzinfo=timezone.utc)
+
+    class Meta:
+        model = "opportunity.ExchangeRate"
+
+
+class CredentialConfigurationFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+
+    class Meta:
+        model = "opportunity.CredentialConfiguration"
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity = SubFactory(OpportunityFactory)
+    delivery_type = SubFactory(DeliveryTypeFactory)
+
+    class Meta:
+        model = "users.UserCredential"
+
+
+class BlobMetaFactory(DjangoModelFactory):
+    blob_id = Faker("uuid4")
+    parent_id = Faker("uuid4")
+    content_type = Faker("mime_type")
+    content_length = Faker("pyint", min_value=100, max_value=10000)
+
+    class Meta:
+        model = "opportunity.BlobMeta"

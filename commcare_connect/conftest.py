@@ -52,7 +52,7 @@ def user(db) -> User:
 
 
 @pytest.fixture()
-def opportunity(request):
+def opportunity(request, organization):
     hq_server = HQServerFactory()
     api_key = HQApiKeyFactory(hq_server=hq_server)
     learn_app = CommCareAppFactory(hq_server=hq_server)
@@ -64,6 +64,7 @@ def opportunity(request):
         "api_key": api_key,
         "learn_app": learn_app,
         "deliver_app": deliver_app,
+        "organization": organization,
     }
     opp_options.update(getattr(request, "param", {}).get("opp_options", {}))
     if opp_options.get("managed", False):

@@ -12,6 +12,19 @@
 <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 
+{% block inline_javascript %}
+{{ block.super }}
+{% if filter_usage_data %}
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const data = {{ filter_usage_data|safe }};
+    window.gtmSendEvent('filters_applied', data);
+  });
+</script>
+{% endif %}
+{% endblock inline_javascript %}
+
+
 {% block content %}
 {% load i18n %}
 <div class="flex items-center justify-center">

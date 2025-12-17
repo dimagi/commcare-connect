@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html' with path=path %}
+<div class="card_bg">
+  <div class="card_title mb-4">
+    {% translate "Create New Invoice" %}
+  </div>
+  <div x-data="invoiceFormHandler()">
+    {% include "components/partial_form.html" %}
+  </div>
+</div>
+
+{% include "opportunity/partials/invoice_form_handler.html" %}
+{% endblock content %}

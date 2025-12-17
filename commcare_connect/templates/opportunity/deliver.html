@@ -71,13 +71,13 @@
 
                     <div class="mb-4">
                       <label class="inline-flex items-center">
-                        <input type="radio" name="form_type" value="nm_review" x-model="selectedForm"
+                        <input type="radio" name="form_type" value="nm_review" x-model="selectedForm"  @change="htmx.process($root)"
                                class="text-primary">
                         <span class="ml-2">User Visits Sheet</span>
                       </label>
                       {% if opportunity.managed %}
                         <label class="inline-flex items-center mr-4">
-                          <input type="radio" name="form_type" value="pm_review" x-model="selectedForm"
+                          <input type="radio" name="form_type" value="pm_review" x-model="selectedForm"  @change="htmx.process($root)"
                                  class="text-primary" checked>
                           <span class="ml-2">PM Review Sheet</span>
                         </label>
@@ -98,7 +98,7 @@
 
                   <div class="footer">
                     <button type="button" @click="showVisitExportModal = false" class="button button-md outline-style">Close</button>
-                    <button type="submit" class="button button-md primary-dark">Export</button>
+                    <button type="submit" disabled id="export-submit-btn" class="button button-md primary-dark">Export</button>
                   </div>
                 </form>
             </div>

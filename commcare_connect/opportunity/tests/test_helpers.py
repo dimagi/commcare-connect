@@ -336,8 +336,8 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.total_deliveries == 4
     assert result.flagged_deliveries_waiting_for_review == 2
     assert result.flagged_deliveries_waiting_for_review_since_yesterday == 2
-    assert result.visits_pending_for_pm_review == 2
-    assert result.visits_pending_for_pm_review_since_yesterday == 1
+    assert result.deliveries_pending_for_pm_review == 2
+    assert result.deliveries_pending_for_pm_review_since_yesterday == 1
     assert result.recent_payment == today
     assert result.workers_invited == 3
     assert result.pending_invites == 1

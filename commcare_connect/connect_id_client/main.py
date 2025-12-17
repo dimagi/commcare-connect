@@ -10,7 +10,6 @@ from commcare_connect.connect_id_client.models import (
     MessagingBulkResponse,
     MessagingResponse,
 )
-from commcare_connect.organization.models import Organization
 
 GET = "GET"
 POST = "POST"
@@ -43,15 +42,10 @@ def send_message_bulk(messages: list[Message]) -> MessagingBulkResponse:
     return MessagingBulkResponse.build(**data)
 
 
-def add_credential(organization: Organization, credential: str, users: list[str]):
-    json = {
-        "users": users,
-        "organization": organization.slug,
-        "organization_name": organization.name,
-        "credential": credential,
-    }
-    _make_request(POST, "/users/add_credential", json=json, timeout=30)
-    return
+def add_credentials(credentials_items: list[dict]):
+    json = {"credentials": credentials_items}
+    response = _make_request(POST, "/users/add_credential", json=json, timeout=30)
+    return response.json()
 
 
 def fetch_credentials(org_slug=None):
@@ -88,9 +82,15 @@ def update_payment_statuses(update_data):
 
 @quickcache(vary_on=[], timeout=60 * 60)
 def fetch_user_counts() -> dict[str, int]:
-    response = _make_request(GET, "/users/fetch_user_counts")
+    response = _make_request(GET, "/users/fetch_user_counts", timeout=30)
     data = response.json()
     return data
+
+
+def fetch_user_analytics() -> list[dict]:
+    response = _make_request(GET, "/users/fetch_user_analytics")
+    data = response.json()
+    return data.get("data", [])
 
 
 def get_user_otp(phone_number):

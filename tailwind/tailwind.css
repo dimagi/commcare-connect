@@ -27,6 +27,29 @@
   --color-brand-border-light: #e2e8f0;
   --width-screen-sm: var(--breakpoint-sm);
 }
+
+/* ------ Tippy.js tooltip ------ */
+.tippy-box {
+  background-color: var(--color-brand-indigo);
+  color: white;
+}
+
+.tippy-box[data-placement^='top'] > .tippy-arrow::before {
+  border-top-color: var(--color-brand-indigo);
+}
+
+.tippy-box[data-placement^='bottom'] > .tippy-arrow::before {
+  border-bottom-color: var(--color-brand-indigo);
+}
+
+.tippy-box[data-placement^='left'] > .tippy-arrow::before {
+  border-left-color: var(--color-brand-indigo);
+}
+
+.tippy-box[data-placement^='right'] > .tippy-arrow::before {
+  border-right-color: var(--color-brand-indigo);
+}
+
 /* ----- background -------*/
 .card_bg {
   @apply rounded-lg bg-white p-6 shadow-sm;
@@ -246,7 +269,7 @@
 /*-- tooltips ---------------------------------------*/
 @layer components {
   .tooltip {
-    @apply text-brand-deep-purple relative rounded-sm bg-white px-2 py-2 text-sm shadow-sm;
+    @apply text-brand-deep-purple relative rounded-sm bg-blue-500 px-2 py-2 text-sm shadow-sm;
   }
 
   .tooltip::before {

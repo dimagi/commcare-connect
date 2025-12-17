@@ -18,15 +18,20 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.views import OpportunityInit
+from commcare_connect.opportunity.views import OpportunityInit, OpportunityInitUpdate
 from commcare_connect.organization.decorators import (
     org_admin_required,
     org_program_manager_required,
     org_viewer_required,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
+from commcare_connect.program.forms import ManagedOpportunityInitForm, ManagedOpportunityInitUpdateForm, ProgramForm
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tasks import (
+    send_opportunity_created_email,
+    send_program_invite_applied_email,
+    send_program_invite_email,
+)
 
 from .utils import is_program_manager
 
@@ -101,8 +106,7 @@ class ManagedOpportunityList(ProgramManagerMixin, ListView):
         return context
 
 
-class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
-    form_class = ManagedOpportunityInitForm
+class ManagedOpportunityViewMixin:
     program = None
 
     def dispatch(self, request, *args, **kwargs):
@@ -113,10 +117,25 @@ class ManagedOpportunityInit(ProgramManagerMixin, OpportunityInit):
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
         return super().dispatch(request, *args, **kwargs)
 
+    def form_valid(self, form):
+        is_create = self.object is None
+        response = super().form_valid(form)
+        if is_create:
+            send_opportunity_created_email(self.object.id)
+        return response
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["program"] = self.program
         return kwargs
+
+
+class ManagedOpportunityInit(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInit):
+    form_class = ManagedOpportunityInitForm
+
+
+class ManagedOpportunityInitUpdate(ManagedOpportunityViewMixin, ProgramManagerMixin, OpportunityInitUpdate):
+    form_class = ManagedOpportunityInitUpdateForm
 
 
 @org_program_manager_required
@@ -143,6 +162,8 @@ def invite_organization(request, org_slug, pk):
         messages.success(request, "Organization invited successfully!")
     else:
         messages.info(request, "The invitation for this organization has been updated.")
+
+    send_program_invite_email(obj.id)
 
     return redirect(reverse("program:home", kwargs={"org_slug": org_slug}))
 
@@ -195,6 +216,9 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     application.status = action_map[action]["status"]
     application.modified_by = request.user.email
     application.save()
+
+    if action == "apply":
+        send_program_invite_applied_email(application.id)
 
     return redirect(redirect_url)
 
@@ -256,7 +280,7 @@ def program_manager_home(request, org):
         pending_payments_data, org.slug, "opportunity:invoice_list", small_text=True, opportunity_slug="opp_id"
     )
 
-    organizations = Organization.objects.exclude(pk=org.pk)
+    organizations = Organization.objects.exclude(pk=org.pk).order_by("name")
     recent_activities = [
         {"title": "Pending Review", "rows": pending_review},
         {"title": "Pending Invoices", "rows": pending_payments},

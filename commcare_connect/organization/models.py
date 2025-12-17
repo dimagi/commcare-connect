@@ -24,6 +24,9 @@ class Organization(BaseModel):
     def __str__(self):
         return self.slug
 
+    def get_member_emails(self):
+        return list(self.memberships.values_list("user__email", flat=True))
+
 
 class UserOrganizationMembership(models.Model):
     class Role(models.TextChoices):

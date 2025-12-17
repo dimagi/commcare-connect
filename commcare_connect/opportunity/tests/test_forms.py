@@ -1,34 +1,56 @@
 import datetime
+import json
+from unittest.mock import patch
 
 import pytest
+from dateutil.relativedelta import relativedelta
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
-from commcare_connect.opportunity.forms import AddBudgetNewUsersForm, OpportunityChangeForm
-from commcare_connect.opportunity.models import CredentialConfiguration, PaymentUnit
-from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityFactory, PaymentUnitFactory
+from commcare_connect.opportunity.forms import (
+    AddBudgetNewUsersForm,
+    AutomatedPaymentInvoiceForm,
+    OpportunityChangeForm,
+    OpportunityInitUpdateForm,
+)
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
+    CredentialConfiguration,
+    PaymentUnit,
+)
+from commcare_connect.opportunity.tests.factories import (
+    CommCareAppFactory,
+    CompletedWorkFactory,
+    ExchangeRateFactory,
+    OpportunityAccessFactory,
+    OpportunityFactory,
+    PaymentInvoiceFactory,
+    PaymentUnitFactory,
+)
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
+
+
+@pytest.fixture
+def valid_opportunity(organization):
+    opp = OpportunityFactory(
+        organization=organization,
+        active=True,
+        learn_app=CommCareAppFactory(cc_app_id="test_learn_app"),
+        deliver_app=CommCareAppFactory(cc_app_id="test_deliver_app"),
+        name="Test Opportunity",
+        description="Test Description",
+        short_description="Short Description",
+        currency="USD",
+        is_test=False,
+        end_date=datetime.date.today() + datetime.timedelta(days=30),
+    )
+    PaymentUnitFactory(opportunity=opp)
+    return opp
 
 
 @pytest.mark.django_db
 class TestOpportunityChangeForm:
-    @pytest.fixture
-    def valid_opportunity(self, organization):
-        opp = OpportunityFactory(
-            organization=organization,
-            active=True,
-            learn_app=CommCareAppFactory(cc_app_id="test_learn_app"),
-            deliver_app=CommCareAppFactory(cc_app_id="test_deliver_app"),
-            name="Test Opportunity",
-            description="Test Description",
-            short_description="Short Description",
-            currency="USD",
-            is_test=False,
-            end_date=datetime.date.today() + datetime.timedelta(days=30),
-        )
-        PaymentUnitFactory(opportunity=opp)
-        return opp
-
     @pytest.fixture
     def base_form_data(self, valid_opportunity):
         return {
@@ -239,6 +261,208 @@ class TestOpportunityChangeForm:
             assert "delivery_level" in form.fields
 
 
+@pytest.mark.django_db
+class TestOpportunityInitUpdateForm:
+    @pytest.fixture
+    def opportunity(self, organization):
+        opportunity = OpportunityFactory(organization=organization)
+
+        learn_app = CommCareAppFactory(
+            organization=organization,
+            cc_app_id="existing-learn-id",
+            cc_domain="existing-learn-domain",
+            name="Existing Learn App",
+            description="Existing learn description",
+            passing_score=65,
+            hq_server=opportunity.hq_server,
+        )
+        deliver_app = CommCareAppFactory(
+            organization=organization,
+            cc_app_id="existing-deliver-id",
+            cc_domain="existing-deliver-domain",
+            name="Existing Deliver App",
+            hq_server=opportunity.hq_server,
+        )
+        opportunity.learn_app = learn_app
+        opportunity.deliver_app = deliver_app
+        opportunity.save(update_fields=["learn_app", "deliver_app"])
+        return opportunity
+
+    def _build_form_data(
+        self,
+        opportunity,
+        *,
+        learn_payload,
+        learn_domain,
+        learn_description,
+        learn_score,
+        deliver_payload,
+        deliver_domain,
+        name="updated opportunity",
+        currency="EUR",
+        include_disabled_fields=True,
+        hq_server=None,
+    ):
+        data = {
+            "name": name,
+            "description": "updated opportunity description",
+            "short_description": "updated short description",
+            "currency": currency,
+            "learn_app_description": learn_description,
+            "learn_app_passing_score": learn_score,
+        }
+        if include_disabled_fields and learn_payload is not None and deliver_payload is not None:
+            data.update(
+                {
+                    "hq_server": hq_server if hq_server is not None else opportunity.hq_server.id,
+                    "api_key": str(opportunity.api_key.id),
+                    "learn_app_domain": learn_domain,
+                    "learn_app": json.dumps(learn_payload),
+                    "deliver_app_domain": deliver_domain,
+                    "deliver_app": json.dumps(deliver_payload),
+                }
+            )
+        elif include_disabled_fields:
+            data["hq_server"] = hq_server if hq_server is not None else opportunity.hq_server.id
+        return data
+
+    def _get_form(self, *, opportunity, data):
+        return OpportunityInitUpdateForm(
+            data=data,
+            instance=opportunity,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+        )
+
+    def test_updates_existing_linked_apps(self, opportunity):
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload={"id": learn_app.cc_app_id, "name": "updated learn app"},
+            learn_domain=learn_app.cc_domain,
+            learn_description="updated learn description",
+            learn_score=82,
+            deliver_payload={"id": deliver_app.cc_app_id, "name": "updated deliver app"},
+            deliver_domain=deliver_app.cc_domain,
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert form.is_valid(), form.errors
+
+        updated_opportunity = form.save()
+        updated_opportunity.refresh_from_db()
+        learn_app.refresh_from_db()
+        deliver_app.refresh_from_db()
+
+        assert updated_opportunity.learn_app_id == learn_app.id
+        assert learn_app.name == "updated learn app"
+        assert learn_app.description == "updated learn description"
+        assert learn_app.passing_score == 82
+
+        assert updated_opportunity.deliver_app_id == deliver_app.id
+        assert deliver_app.name == "updated deliver app"
+
+        assert updated_opportunity.currency == "EUR"
+
+    def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
+        original_learn_app = opportunity.learn_app
+        original_deliver_app = opportunity.deliver_app
+        original_learn_name = original_learn_app.name
+        original_deliver_name = original_deliver_app.name
+
+        new_learn_payload = {"id": "new-learn-id", "name": "new learn app"}
+        new_deliver_payload = {"id": "new-deliver-id", "name": "new deliver app"}
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload=new_learn_payload,
+            learn_domain="new-learn-domain",
+            learn_description="new learn description",
+            learn_score=90,
+            deliver_payload=new_deliver_payload,
+            deliver_domain="new-deliver-domain",
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert form.is_valid(), form.errors
+
+        updated_opportunity = form.save()
+        updated_opportunity.refresh_from_db()
+        original_learn_app.refresh_from_db()
+        original_deliver_app.refresh_from_db()
+
+        assert original_learn_app.name == original_learn_name
+        assert original_deliver_app.name == original_deliver_name
+
+        assert updated_opportunity.learn_app.cc_app_id == new_learn_payload["id"]
+        assert updated_opportunity.learn_app.cc_domain == "new-learn-domain"
+        assert updated_opportunity.learn_app.name == "new learn app"
+        assert updated_opportunity.learn_app.description == "new learn description"
+
+        assert updated_opportunity.deliver_app.cc_app_id == new_deliver_payload["id"]
+        assert updated_opportunity.deliver_app.cc_domain == "new-deliver-domain"
+        assert updated_opportunity.deliver_app.name == "new deliver app"
+
+        assert updated_opportunity.learn_app_id != original_learn_app.id
+        assert updated_opportunity.deliver_app_id != original_deliver_app.id
+
+    def test_disabled_fields_submission_errors(self, opportunity):
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+        OpportunityAccessFactory(opportunity=opportunity)
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload={"id": "invalid learn-id", "name": "invalid Learn App"},
+            learn_domain="invalid learn-domain",
+            learn_description="updated learn description",
+            learn_score=82,
+            deliver_payload={"id": "invalid deliver-id", "name": "invalid Deliver App"},
+            deliver_domain="invalid deliver-domain",
+            hq_server=opportunity.hq_server.id,
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert not form.is_valid()
+        assert "hq_server" in form.errors
+        assert "api_key" in form.errors
+        assert "learn_app" in form.errors
+        assert "deliver_app" in form.errors
+
+        learn_app.refresh_from_db()
+        deliver_app.refresh_from_db()
+        assert learn_app.cc_app_id != "invalid learn-id"
+        assert deliver_app.cc_app_id != "invalid deliver-id"
+
+    def test_updates_learn_details_when_fields_disabled(self, opportunity):
+        OpportunityAccessFactory(opportunity=opportunity)
+        learn_app = opportunity.learn_app
+
+        form_data = self._build_form_data(
+            opportunity,
+            learn_payload=None,
+            learn_domain=None,
+            learn_description="updated learn description",
+            learn_score=91,
+            deliver_payload=None,
+            deliver_domain=None,
+            include_disabled_fields=False,
+            name="updated opportunity",
+        )
+
+        form = self._get_form(opportunity=opportunity, data=form_data)
+        assert form.is_valid(), form.errors
+
+        updated_opportunity = form.save()
+        learn_app.refresh_from_db()
+
+        assert updated_opportunity.learn_app_id == learn_app.id
+        assert learn_app.description == "updated learn description"
+        assert learn_app.passing_score == 91
+
+
 class TestAddBudgetNewUsersForm:
     @pytest.fixture(
         params=[
@@ -311,3 +535,217 @@ class TestAddBudgetNewUsersForm:
             assert not form.is_valid()
             assert "total_budget" in form.errors
             assert form.errors["total_budget"][0] == "Total budget exceeds program budget."
+
+
+@pytest.mark.django_db
+class TestAutomatedPaymentInvoiceForm:
+    def test_form_initialization(self, valid_opportunity):
+        valid_opportunity.start_date = datetime.date(2025, 1, 15)
+        valid_opportunity.save()
+
+        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity)
+
+        assert form.fields["invoice_number"].initial
+        assert form.fields["date"].initial == str(datetime.date.today())
+
+        assert form.fields["start_date"].initial == "2025-01-01"
+
+        today = datetime.date.today()
+        last_day_of_previous_month = today.replace(day=1) + relativedelta(days=-1)
+        assert form.fields["end_date"].initial == str(last_day_of_previous_month)
+
+    def test_start_date_equal_to_first_uninvoiced_completed_work_month_start(self, valid_opportunity):
+        cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access__opportunity=valid_opportunity,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 1)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
+
+        invoice = PaymentInvoiceFactory(opportunity=valid_opportunity)
+        cw.invoice = invoice
+        cw.save()
+
+        cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access__opportunity=valid_opportunity,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 20)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
+
+    def test_duplicate_invoice_number(self, valid_opportunity):
+        ExchangeRateFactory()
+        PaymentInvoiceFactory(opportunity=valid_opportunity, invoice_number="INV-001")
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "invoice_number": "INV-001",
+                "date": "2025-11-06",
+                "usd_currency": False,
+                "local_amount": 100.0,
+                "start_date": None,
+                "end_date": None,
+                "notes": "",
+                "title": "",
+            },
+        )
+        assert not form.is_valid()
+        assert form.errors["invoice_number"][0] == "Please use a different invoice number"
+
+    def test_valid_form(self, valid_opportunity):
+        ExchangeRateFactory()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "date": "2025-11-06",
+                "usd_currency": False,
+                "amount": 100.0,
+                "start_date": None,
+                "end_date": None,
+                "notes": "",
+                "title": "",
+            },
+        )
+        assert form.is_valid()
+        invoice = form.save()
+        assert invoice.amount == 100.0
+        assert invoice.date == datetime.date(2025, 11, 6)
+
+    @patch("commcare_connect.opportunity.forms.link_invoice_to_completed_works")
+    def test_non_service_delivery_form(self, mock_link_invoice, valid_opportunity):
+        ExchangeRateFactory()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "invoice_number": "INV-001",
+                "date": "2025-11-06",
+                "usd_currency": False,
+                "amount": 100.0,
+                "title": "Consulting Services Invoice",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "notes": "Monthly consulting services rendered.",
+            },
+        )
+        assert form.is_valid()
+        invoice = form.save()
+        assert not invoice.service_delivery
+        assert invoice.start_date is None
+        assert invoice.end_date is None
+        assert invoice.notes is None
+        assert invoice.title is None
+        mock_link_invoice.assert_not_called()
+
+    @patch("commcare_connect.opportunity.forms.link_invoice_to_completed_works")
+    def test_service_delivery_form(self, mock_link_invoice, valid_opportunity):
+        ExchangeRateFactory()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-001",
+                "amount": 100.0,
+                "date": "2025-11-06",
+                "title": "Consulting Services Invoice",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "notes": "Monthly consulting services rendered.",
+            },
+        )
+        assert form.is_valid()
+        invoice = form.save()
+        assert invoice.service_delivery
+        assert str(invoice.start_date) == "2025-10-01"
+        assert str(invoice.end_date) == "2025-10-31"
+        assert invoice.notes == "Monthly consulting services rendered."
+
+        mock_link_invoice.assert_called_once()
+
+    def test_invoice_linkage(self, valid_opportunity):
+        ExchangeRateFactory()
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            status=CompletedWorkStatus.approved,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
+        assert CompletedWork.objects.get(id=cw.id).invoice is None
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-001",
+                "amount": 100.0,
+                "date": "2025-11-06",
+                "title": "Consulting Services Invoice",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "notes": "Monthly consulting services rendered.",
+            },
+        )
+
+        assert form.is_valid()
+        invoice = form.save()
+
+        assert CompletedWork.objects.get(id=cw.id).invoice == invoice
+
+    def test_readonly_form_initialization(self, valid_opportunity):
+        invoice = PaymentInvoiceFactory(
+            opportunity=valid_opportunity,
+            service_delivery=True,
+            start_date=datetime.date(2025, 10, 1),
+            end_date=datetime.date(2025, 10, 31),
+            date=datetime.date(2025, 10, 5),
+            amount=150.50,
+            invoice_number="ABC123",
+        )
+
+        form = AutomatedPaymentInvoiceForm(
+            instance=invoice,
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            read_only=True,
+        )
+
+        for field in form.fields.values():
+            assert field.widget.attrs.get("readonly") == "readonly"
+
+        assert form.fields["start_date"].initial == "2025-10-01"
+        assert form.fields["end_date"].initial == "2025-10-31"
+        assert form.initial["invoice_number"] == "ABC123"
+        assert form.initial["date"] == datetime.date(2025, 10, 5)
+        assert form.initial["amount"] == 150.50
+
+    def test_readonly_form_with_line_items_table(self, valid_opportunity):
+        invoice = PaymentInvoiceFactory(
+            opportunity=valid_opportunity,
+            service_delivery=True,
+            start_date=datetime.date(2025, 10, 1),
+            end_date=datetime.date(2025, 10, 31),
+        )
+
+        mock_table = "MockLineItemsTable"
+        form = AutomatedPaymentInvoiceForm(
+            instance=invoice,
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            read_only=True,
+            line_items_table=mock_table,
+        )
+
+        assert form.line_items_table == mock_table

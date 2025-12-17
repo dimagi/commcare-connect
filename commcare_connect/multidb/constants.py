@@ -11,11 +11,13 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    PaymentInvoice,
     PaymentUnit,
     UserVisit,
 )
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
+from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.models import ConnectIDUserLink, User
 
 PUBLICATION_NAME = "tables_for_superset_pub"
@@ -42,4 +44,6 @@ REPLICATION_ALLOWED_MODELS = [
     Program,
     User,
     UserVisit,
+    UserAnalyticsData,
+    PaymentInvoice,
 ]

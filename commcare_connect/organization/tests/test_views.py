@@ -1,4 +1,5 @@
 import pytest
+from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
 from django.urls import reverse
 
@@ -66,3 +67,40 @@ class TestRemoveMembersView:
         assert str(messages[0]) == "You cannot remove yourself from the organization."
 
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
+
+
+@pytest.mark.django_db
+class TestOrganizationHomeView:
+    def url(self, org_slug):
+        return reverse("organization:home", args=(org_slug,))
+
+    def test_program_manager_requires_permission(self, client, org_user_admin, organization):
+        organization.program_manager = False
+        organization.save(update_fields=["program_manager"])
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "program_manager": "on"},
+        )
+
+        assert response.status_code == 200
+        organization.refresh_from_db()
+        assert organization.program_manager is False
+
+    def test_program_manager_updates_with_permission(self, client, org_user_admin, organization):
+        organization.program_manager = False
+        organization.save(update_fields=["program_manager"])
+        permission = Permission.objects.get(codename="org_management_settings_access")
+        org_user_admin.user_permissions.add(permission)
+        org_user_admin.refresh_from_db()
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(org_slug=organization.slug),
+            data={"name": organization.name, "program_manager": "on"},
+        )
+
+        assert response.status_code == 200
+        organization.refresh_from_db()
+        assert organization.program_manager is True
