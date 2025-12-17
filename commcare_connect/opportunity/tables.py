@@ -379,13 +379,13 @@ class PaymentInvoiceTable(OpportunityContextTable):
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
     exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
     amount_usd = tables.Column(verbose_name="Amount (USD)")
-    invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery")
     status = tables.Column(verbose_name="Invoice Status")
+    invoice_type = tables.Column(verbose_name="Invoice Type")
 
     class Meta:
         model = PaymentInvoice
         orderable = False
-        fields = ("amount", "date", "invoice_number", "service_delivery")
+        fields = ("amount", "date", "invoice_number")
         sequence = (
             "amount",
             "amount_usd",
@@ -423,8 +423,8 @@ class PaymentInvoiceTable(OpportunityContextTable):
             return value.date_paid
         return
 
-    def render_invoice_type(self, value):
-        if value == PaymentInvoice.InvoiceType.service_delivery:
+    def render_invoice_type(self, record):
+        if record.service_delivery:
             return _("Service Delivery")
         return _("Other")
 
