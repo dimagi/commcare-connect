@@ -593,7 +593,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "local_amount": 100.0,
                 "start_date": None,
                 "end_date": None,
-                "notes": "",
+                "description": "",
                 "title": "",
             },
         )
@@ -612,8 +612,9 @@ class TestAutomatedPaymentInvoiceForm:
                 "amount": 100.0,
                 "start_date": None,
                 "end_date": None,
-                "notes": "",
+                "description": "A mandatory description",
                 "title": "",
+                "date_of_expense": "2025-11-05",
             },
         )
         assert form.is_valid()
@@ -636,7 +637,8 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
-                "notes": "Monthly consulting services rendered.",
+                "description": "Monthly consulting services rendered.",
+                "date_of_expense": "2025-11-05",
             },
         )
         assert form.is_valid()
@@ -644,7 +646,6 @@ class TestAutomatedPaymentInvoiceForm:
         assert not invoice.service_delivery
         assert invoice.start_date is None
         assert invoice.end_date is None
-        assert invoice.notes is None
         assert invoice.title is None
         mock_link_invoice.assert_not_called()
 
@@ -662,7 +663,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
-                "notes": "Monthly consulting services rendered.",
+                "description": "Monthly consulting services rendered.",
             },
         )
         assert form.is_valid()
@@ -670,7 +671,7 @@ class TestAutomatedPaymentInvoiceForm:
         assert invoice.service_delivery
         assert str(invoice.start_date) == "2025-10-01"
         assert str(invoice.end_date) == "2025-10-31"
-        assert invoice.notes == "Monthly consulting services rendered."
+        assert invoice.description == "Monthly consulting services rendered."
 
         mock_link_invoice.assert_called_once()
 
@@ -695,7 +696,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
-                "notes": "Monthly consulting services rendered.",
+                "description": "Monthly consulting services rendered.",
             },
         )
 

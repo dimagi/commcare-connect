@@ -480,7 +480,8 @@ class PaymentInvoice(models.Model):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
-    notes = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    date_of_expense = models.DateField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
