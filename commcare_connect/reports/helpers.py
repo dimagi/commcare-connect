@@ -98,10 +98,10 @@ def get_table_data_for_year_month(
             "nm_amount_earned": 0,
             "avg_time_to_payment": 0,
             "max_time_to_payment": 0,
-            "nm_amount_paid": 0,
-            "nm_other_amount_paid": 0,
+            "intervention_funding_deployed": 0,
+            "organization_funding_deployed": 0,
             "flw_amount_paid": 0,
-            "avg_top_paid_flws": 0,
+            "avg_top_earned_flws": 0,
         }
     )
     for date in timeseries:
@@ -146,6 +146,9 @@ def get_table_data_for_year_month(
             users=models.Count("opportunity_access__user_id", distinct=True),
             services=models.Sum("saved_approved_count", default=0),
             flw_amount_earned=models.Sum("saved_payment_accrued_usd", default=0),
+            intervention_funding_deployed=models.Sum(
+                "saved_org_payment_accrued_usd", default=0, filter=models.Q(invoice__service_delivery=True)
+            ),
             nm_amount_earned=models.Sum(
                 models.F("saved_org_payment_accrued_usd") + models.F("saved_payment_accrued_usd"), default=0
             ),
@@ -174,13 +177,25 @@ def get_table_data_for_year_month(
         visit_data_dict[group_key].update(item)
 
     payment_query = Payment.objects.filter(created_at__range=(start_date, end_date))
+    flw_amount_paid_data = (
+        payment_query.filter(**filter_kwargs)
+        .annotate(month_group=TruncMonth("created_at"))
+        .values("month_group")
+        .annotate(flw_amount_paid=models.Sum("amount_usd", default=0))
+        .order_by("month_group")
+    )
+    for item in flw_amount_paid_data:
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
+        visit_data_dict[group_key].update(item)
+
     nm_amount_paid_data = (
         payment_query.filter(**filter_kwargs_nm)
         .annotate(month_group=TruncMonth("created_at"))
         .values("month_group")
         .annotate(
-            nm_amount_paid=models.Sum("amount_usd", default=0, filter=models.Q(invoice__service_delivery=True)),
-            nm_other_amount_paid=models.Sum("amount_usd", default=0, filter=models.Q(invoice__service_delivery=False)),
+            organization_funding_deployed=models.Sum(
+                "amount_usd", default=0, filter=models.Q(invoice__service_delivery=False)
+            ),
         )
         .order_by("month_group")
     )
@@ -188,38 +203,7 @@ def get_table_data_for_year_month(
         group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
         visit_data_dict[group_key].update(item)
 
-    avg_top_flw_amount_paid = (
-        payment_query.filter(**filter_kwargs)
-        .annotate(month_group=TruncMonth("created_at"))
-        .values("month_group", "opportunity_access__user_id")
-        .annotate(approved_sum=models.Sum("amount_usd", default=0))
-        .order_by("month_group")
-    )
-    delivery_type_grouped_users = defaultdict(set)
-    for item in avg_top_flw_amount_paid:
-        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
-        delivery_type_grouped_users[group_key].add((item["opportunity_access__user_id"], item["approved_sum"]))
-    for group_key, users in delivery_type_grouped_users.items():
-        month_group, delivery_type_name = group_key
-        sum_total_users = defaultdict(int)
-        for user, amount in users:
-            sum_total_users[user] += amount
-
-        # take atleast 1 top user in cases where this variable is 0
-        top_five_percent_flw_count = len(sum_total_users) // 20 or 1
-        flw_amount_paid = sum(sum_total_users.values())
-        avg_top_paid_flws = (
-            sum(sorted(sum_total_users.values(), reverse=True)[:top_five_percent_flw_count])
-            // top_five_percent_flw_count
-        )
-        visit_data_dict[group_key].update(
-            {
-                "month_group": datetime.strptime(month_group, "%Y-%m"),
-                "delivery_type_name": delivery_type_name,
-                "flw_amount_paid": flw_amount_paid,
-                "avg_top_paid_flws": avg_top_paid_flws,
-            }
-        )
+    _calculate_avg_top_earned_flws(base_visit_data_qs, start_date, end_date, visit_data_dict, delivery_type_name)
 
     connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
     total_activated_connect_user_counts = get_activated_connect_user_counts_cumulative(delivery_type)
@@ -254,3 +238,29 @@ def get_table_data_for_year_month(
             }
         )
     return list(visit_data_dict.values())
+
+
+def _calculate_avg_top_earned_flws(base_visit_data_qs, start_date, end_date, visit_data_dict, delivery_type_name):
+    avg_top_flw_amount_earned = (
+        base_visit_data_qs.annotate(filter_date=Coalesce("status_modified_date", "date_created"))
+        .filter(filter_date__range=(start_date, end_date))
+        .annotate(month_group=TruncMonth("filter_date"))
+        .values("month_group", "opportunity_access__user_id")
+        .annotate(earned_sum=models.Sum("saved_payment_accrued_usd", default=0))
+        .order_by("month_group")
+    )
+    delivery_type_grouped_users = defaultdict(set)
+    for item in avg_top_flw_amount_earned:
+        group_key = item["month_group"].strftime("%Y-%m"), item.get("delivery_type_name", delivery_type_name)
+        delivery_type_grouped_users[group_key].add((item["opportunity_access__user_id"], item["earned_sum"]))
+    for group_key, users in delivery_type_grouped_users.items():
+        sum_total_users = defaultdict(int)
+        for user, amount in users:
+            sum_total_users[user] += amount
+        # Take at least 1 top user in cases where this variable is 0
+        top_five_percent_flw_count = len(sum_total_users) // 20 or 1
+        avg_top_earned_flws = (
+            sum(sorted(sum_total_users.values(), reverse=True)[:top_five_percent_flw_count])
+            // top_five_percent_flw_count
+        )
+        visit_data_dict[group_key].update({"avg_top_earned_flws": avg_top_earned_flws})
