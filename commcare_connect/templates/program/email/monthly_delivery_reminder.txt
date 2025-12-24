@@ -1,0 +1,13 @@
+Hi,
+
+This is a reminder to review pending deliveries before the end of the month so they can be included in invoices.
+
+Organization: '{{ organization.name }}'
+
+Please review the pending deliveries for the following opportunities:
+{% for opportunity in opportunities %}
+- {{ opportunity.name }}: {{ opportunity.url }}
+{% endfor %}
+
+Thank you,
+Connect
