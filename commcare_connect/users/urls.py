@@ -7,6 +7,7 @@ from commcare_connect.users.views import (
     ResendInvitesView,
     RetrieveUserOTPView,
     SMSStatusCallbackView,
+    UserToggleView,
     create_user_link_view,
     demo_user_tokens,
     start_learn_app,
@@ -27,4 +28,5 @@ urlpatterns = [
     path("invited_user/", CheckInvitedUserView.as_view(), name="check_invited_user"),
     path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
     path("connect_user_otp/", RetrieveUserOTPView.as_view(), name="connect_user_otp"),
+    path("toggles/", UserToggleView.as_view(), name="user_toggle_view"),
 ]
