@@ -1,4 +1,7 @@
+import importlib
+
 import pytest
+from django.apps import apps as django_apps
 from rest_framework.test import APIClient, APIRequestFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
@@ -146,3 +149,15 @@ def program_manager_org_user_member(program_manager_org) -> User:
 @pytest.fixture
 def program_manager_org_user_admin(program_manager_org) -> User:
     return program_manager_org.memberships.filter(role="admin").first().user
+
+
+@pytest.fixture(autouse=True)
+def ensure_currency_country_data(db):
+    # These models get flushed in between tests; so make sure they exist
+    Currency = django_apps.get_model("opportunity", "Currency")
+    if Currency.objects.exists():
+        return
+    migration_module = importlib.import_module(
+        "commcare_connect.opportunity.migrations.0092_currency_country_opportunity_currency_fk"
+    )
+    migration_module.load_currency_and_country_data(django_apps, schema_editor=None)

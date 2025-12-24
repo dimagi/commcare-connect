@@ -338,7 +338,7 @@ def network_manager_home(request, org):
             "opportunity__id": data.id,
             "opportunity__name": data.name,
             "opportunity__organization__name": data.organization.name,
-            "count": f"{data.currency} {data.pending_payment}",
+            "count": f"{data.currency_code} {data.pending_payment}",
         }
         for data in pending_payments_data_opps
     ]

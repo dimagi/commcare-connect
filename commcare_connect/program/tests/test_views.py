@@ -43,7 +43,8 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "description": "A description for the new program",
             "delivery_type": self.delivery_type.id,
             "budget": 10000,
-            "currency": "USD",
+            "currency_fk": "USD",
+            "country": "USA",
             "start_date": "2024-01-01",
             "end_date": "2024-12-31",
         }
@@ -69,7 +70,8 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "delivery_type": self.delivery_type.id,
             "organization": self.organization.id,
             "budget": 15000,
-            "currency": "EUR",
+            "currency_fk": "INR",
+            "country": "IND",
             "start_date": "2024-02-01",
             "end_date": "2024-11-30",
         }
@@ -79,6 +81,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         self.program.refresh_from_db()
         assert self.program.name == "Updated Program Name"
         assert self.program.organization.slug == old_org
+        assert self.program.currency_fk_id == data["currency_fk"]
         assert "Program 'Updated Program Name' updated successfully." in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]

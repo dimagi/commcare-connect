@@ -123,7 +123,7 @@ class CompletedWorkUpdater:
                 from commcare_connect.opportunity.visit_import import get_exchange_rate
 
                 amount_accrued = approved_count * completed_work.payment_unit.amount
-                exchange_rate = get_exchange_rate(self.opportunity.currency, completed_work.status_modified_date)
+                exchange_rate = get_exchange_rate(self.opportunity.currency_code, completed_work.status_modified_date)
                 amount_accrued_usd = amount_accrued / exchange_rate
                 # if it's a managed opportunity we also need to update the org payment amounts
                 if self.opportunity.managed:
@@ -222,7 +222,7 @@ def _update_status_set_saved_fields_and_get_payment_accrued(completed_work, oppo
 
             amount_accrued = approved_count * completed_work.payment_unit.amount
             exchange_rate = get_exchange_rate(
-                opportunity_access.opportunity.currency, completed_work.status_modified_date
+                opportunity_access.opportunity.currency_code, completed_work.status_modified_date
             )
             amount_accrued_usd = amount_accrued / exchange_rate
             # if it's a managed opportunity we also need to update the org payment amounts
@@ -316,7 +316,7 @@ def get_invoice_items(completed_works_qs):
             payment_unit_name=F("payment_unit__name"),
             payment_unit_amount=F("payment_unit__amount"),
             record_count=Count("id"),
-            currency=F("opportunity_access__opportunity__currency"),
+            currency=F("opportunity_access__opportunity__currency_fk__code"),
             total_amount_usd=Sum("saved_payment_accrued_usd"),
             total_amount_local=Sum("saved_payment_accrued"),
         )

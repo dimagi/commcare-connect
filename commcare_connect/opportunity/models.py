@@ -59,6 +59,23 @@ class DeliveryType(models.Model):
         return self.name
 
 
+class Currency(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 4217
+    name = models.CharField(max_length=64)
+
+    def __str__(self):
+        return f"{self.code} ({self.name})"
+
+
+class Country(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 3166-1 alpha-3
+    name = models.CharField(max_length=128)
+    currency = models.ForeignKey(Currency, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Opportunity(BaseModel):
     organization = models.ForeignKey(
         Organization,
@@ -88,6 +105,8 @@ class Opportunity(BaseModel):
     payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency = models.CharField(max_length=3, null=True)
+    currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     auto_approve_visits = models.BooleanField(default=True)
     auto_approve_payments = models.BooleanField(default=True)
     is_test = models.BooleanField(default=True)
@@ -97,6 +116,13 @@ class Opportunity(BaseModel):
 
     def __str__(self):
         return self.name
+
+    @property
+    def currency_code(self):
+        if self.currency_fk:
+            return self.currency_fk.code
+        else:
+            return None
 
     @property
     def org_pay_per_visit(self):

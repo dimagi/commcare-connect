@@ -411,7 +411,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.highlight_invoice_number = kwargs.pop("highlight_invoice_number", None)
         self.is_pm = kwargs.pop("is_pm", False)
         super().__init__(*args, **kwargs)
-        self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency})"
+        self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
 
     def render_payment_status(self, value):
         if value is not None:
@@ -648,7 +648,7 @@ class OpportunityTable(BaseOpportunityList):
         if value is None:
             value = 0
 
-        value = f"{record.currency} {intcomma(value)}"
+        value = f"{record.currency_code} {intcomma(value)}"
         return self.render_worker_list_url_column(
             value=value, opp_id=record.id, url_slug="worker_payments", sort="sort=-total_paid"
         )
@@ -735,7 +735,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
     def render_worker_earnings(self, value, record):
         url = reverse("opportunity:worker_payments", args=(self.org_slug, record.id))
         url += "?sort=-payment_accrued"
-        value = f"{record.currency} {intcomma(value)}"
+        value = f"{record.currency_code} {intcomma(value)}"
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
 
@@ -1137,7 +1137,7 @@ class WorkerPaymentsTable(tables.Table):
         super().__init__(*args, **kwargs)
 
         try:
-            currency = self.data[0].opportunity.currency
+            currency = self.data[0].opportunity.currency_code
         except (IndexError, AttributeError):
             currency = ""
 

@@ -246,7 +246,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             user=user,
             opportunity__is_test=False,
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-            opportunity__currency=opp_currency,
+            opportunity__currency_fk_id=opp_currency,
         )
         cw = CompletedWorkFactory(
             status_modified_date=now,

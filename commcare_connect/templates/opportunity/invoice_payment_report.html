@@ -36,7 +36,7 @@
     href="{% url report_view_name org_slug=request.org.slug opp_id=opportunity.pk %}"
     class="px-4 py-2 font-medium {% if not request.GET.usd %}bg-brand-indigo text-white pointer-events-none{% else %}text-gray-600{% endif %}">
     <i class="fas fa-coins"></i>
-    {{opportunity.currency}}
+    {{opportunity.currency_code}}
   </a>
   <div class="w-px h-6 bg-gray-200"></div>
   <a

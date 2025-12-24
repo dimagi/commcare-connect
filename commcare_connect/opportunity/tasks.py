@@ -292,7 +292,7 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                     "title": gettext("Payment received"),
                     "body": gettext(
                         "You have received a payment of "
-                        f"{opportunity.currency} {payment.amount} for {opportunity.name}.",
+                        f"{opportunity.currency_code} {payment.amount} for {opportunity.name}.",
                     ),
                     "payment_id": str(payment.id),
                 },

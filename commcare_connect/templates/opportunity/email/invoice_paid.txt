@@ -6,7 +6,7 @@ Invoice Details:
 
 Invoice Number: {{ invoice.invoice_number }}
 
-Amount Paid: {{opportunity.currency}} {{ invoice.amount }}
+Amount Paid: {{opportunity.currency_code}} {{ invoice.amount }}
 
 Invoice Date: {{ invoice.date }}
 

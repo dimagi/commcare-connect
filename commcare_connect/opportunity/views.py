@@ -453,7 +453,7 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
             {
                 "name": "Max Budget",
                 "count": header_with_tooltip(
-                    f"{object.currency} {intcomma(object.total_budget)}",
+                    f"{object.currency_code} {intcomma(object.total_budget)}",
                     "Maximum payments that can be made for workers and organization",
                 ),
                 "icon": "fa-money-bill",
@@ -670,7 +670,7 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
         direction = "added to" if budget_increase >= 0 else "removed from"
         messages.success(
             request,
-            f"{request.opportunity.currency} {abs(form.budget_increase)} was {direction} the opportunity budget.",
+            f"{request.opportunity.currency_code} {abs(form.budget_increase)} was {direction} the opportunity budget.",
         )
 
         redirect_url = reverse("opportunity:add_budget_existing_users", args=[org_slug, opp_id])
@@ -1298,7 +1298,7 @@ def payment_report(request, org_slug, opp_id):
         return redirect("opportunity:detail", org_slug, opp_id)
 
     amount_field = "amount"
-    currency = request.opportunity.currency
+    currency = request.opportunity.currency_code
     if usd:
         amount_field = "amount_usd"
         currency = "USD"
@@ -1529,7 +1529,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         line_items_table = None
         if invoice.service_delivery:
             completed_works = get_invoiced_visit_items(invoice)
-            line_items_table = InvoiceLineItemsTable(opportunity.currency, completed_works)
+            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, completed_works)
         return AutomatedPaymentInvoiceForm(
             instance=invoice,
             opportunity=opportunity,
@@ -2608,7 +2608,7 @@ def opportunity_worker_progress(request, org_slug, opp_id):
     paid_percentage = safe_percent(result.total_paid or 0, result.total_accrued or 0)
 
     def amount_with_currency(amount):
-        return f"{result.currency + ' ' if result.currency else ''}{intcomma(amount or 0)}"
+        return f"{result.currency_code + ' ' if result.currency_code else ''}{intcomma(amount or 0)}"
 
     worker_progress = [
         {
@@ -2761,7 +2761,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "panels": deliveries_panels,
         },
         {
-            "title": f"Worker Payments ({request.opportunity.currency})",
+            "title": f"Worker Payments ({request.opportunity.currency_code})",
             "sub_heading": "Last Payment",
             "value": stats.recent_payment or "--",
             "panels": [
@@ -2810,7 +2810,7 @@ def exchange_rate_preview(request, org_slug, opp_id):
         exchange_info = "Please select a date for exchange rate."
         converted_amount_display = ""
     else:
-        exchange_rate = ExchangeRate.latest_exchange_rate(request.opportunity.currency, rate_date)
+        exchange_rate = ExchangeRate.latest_exchange_rate(request.opportunity.currency_code, rate_date)
         if exchange_rate:
             exchange_info = format_html(
                 "Exchange Rate on {}: <b>{}</b>",
@@ -2818,7 +2818,7 @@ def exchange_rate_preview(request, org_slug, opp_id):
                 exchange_rate.rate,
             )
             other_currency_amount = None
-            currency = request.opportunity.currency
+            currency = request.opportunity.currency_code
 
             if usd_currency:
                 if replace_amount:
@@ -2883,7 +2883,7 @@ def invoice_items(request, *args, **kwargs):
 
     html = render_to_string(
         "opportunity/partials/invoice_line_items.html",
-        {"table": InvoiceLineItemsTable(request.opportunity.currency, line_items)},
+        {"table": InvoiceLineItemsTable(request.opportunity.currency_code, line_items)},
         request=request,
     )
 
@@ -2917,7 +2917,7 @@ def download_invoice_line_items(request, org_slug, opp_id):
     else:
         deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
 
-    table = InvoiceDeliveriesTable(request.opportunity.currency, deliveries)
+    table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries)
     export_format = "csv"
     exporter = TableExport(export_format, table)
     filename = f"invoice_line_items_{start_date}_{end_date}.csv"
