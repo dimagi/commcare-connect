@@ -1678,7 +1678,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             return cleaned_data  # Let individual field errors handle missing values
 
         if not self.is_service_delivery:
-            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
             if not exchange_rate:
                 raise ValidationError("Exchange rate not available for selected date.")
 
@@ -1690,7 +1690,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             cleaned_data["end_date"] = None
             cleaned_data["notes"] = None
 
-            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
             if not exchange_rate:
                 raise ValidationError("Exchange rate not available for selected date.")
 

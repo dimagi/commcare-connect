@@ -12,7 +12,6 @@ class Program(BaseModel):
     description = models.CharField()
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT)
     budget = models.PositiveBigIntegerField()
-    currency = models.CharField(max_length=3)
     currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     start_date = models.DateField()
