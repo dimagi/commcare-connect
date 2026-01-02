@@ -57,7 +57,7 @@ class TestOpportunityChangeForm:
             "description": "Updated Description",
             "short_description": "Updated Short Description",
             "active": True,
-            "currency_fk": "EUR",
+            "currency": "EUR",
             "country": valid_opportunity.country,
             "is_test": False,
             "delivery_type": valid_opportunity.delivery_type.id,
@@ -74,7 +74,7 @@ class TestOpportunityChangeForm:
             "description",
             "short_description",
             "active",
-            "currency_fk",
+            "currency",
             "country",
             "is_test",
             "delivery_type",
@@ -88,7 +88,7 @@ class TestOpportunityChangeForm:
             "description": valid_opportunity.description,
             "short_description": valid_opportunity.short_description,
             "active": valid_opportunity.active,
-            "currency_fk": valid_opportunity.currency_fk.code,
+            "currency": valid_opportunity.currency.code,
             "country": valid_opportunity.country.code,
             "is_test": valid_opportunity.is_test,
             "delivery_type": valid_opportunity.delivery_type.id,
@@ -102,7 +102,7 @@ class TestOpportunityChangeForm:
             "name",
             "description",
             "short_description",
-            "currency_fk",
+            "currency",
             "country",
         ],
     )
@@ -196,10 +196,10 @@ class TestOpportunityChangeForm:
     @pytest.mark.parametrize(
         "data_updates,expected_valid",
         [
-            ({"currency_fk": "USD", "additional_users": 5}, True),
-            ({"currency_fk": "EUR", "additional_users": 10}, True),
-            ({"currency_fk": "INVALID", "additional_users": 5}, False),
-            ({"currency_fk": "USD", "additional_users": -5}, True),
+            ({"currency": "USD", "additional_users": 5}, True),
+            ({"currency": "EUR", "additional_users": 10}, True),
+            ({"currency": "INVALID", "additional_users": 5}, False),
+            ({"currency": "USD", "additional_users": -5}, True),
         ],
     )
     def test_valid_combinations(self, valid_opportunity, base_form_data, data_updates, expected_valid):
@@ -310,7 +310,7 @@ class TestOpportunityInitUpdateForm:
             "name": name,
             "description": "updated opportunity description",
             "short_description": "updated short description",
-            "currency_fk": currency_code,
+            "currency": currency_code,
             "country": opportunity.country,
             "learn_app_description": learn_description,
             "learn_app_passing_score": learn_score,
@@ -368,7 +368,7 @@ class TestOpportunityInitUpdateForm:
         assert updated_opportunity.deliver_app_id == deliver_app.id
         assert deliver_app.name == "updated deliver app"
 
-        assert updated_opportunity.currency_fk.code == "EUR"
+        assert updated_opportunity.currency.code == "EUR"
 
     def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
         original_learn_app = opportunity.learn_app

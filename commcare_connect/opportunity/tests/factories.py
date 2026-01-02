@@ -57,7 +57,7 @@ class OpportunityFactory(DjangoModelFactory):
     total_budget = Faker("pyint", min_value=1000, max_value=10000)
     api_key = SubFactory(HQApiKeyFactory)
     delivery_type = SubFactory(DeliveryTypeFactory)
-    currency_fk = LazyFunction(lambda: Currency.objects.get(code="USD"))
+    currency = LazyFunction(lambda: Currency.objects.get(code="USD"))
     country = LazyFunction(lambda: Country.objects.get(code="USA"))
     hq_server = SubFactory(HQServerFactory)
 

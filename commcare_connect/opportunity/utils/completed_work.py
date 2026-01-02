@@ -316,7 +316,7 @@ def get_invoice_items(completed_works_qs):
             payment_unit_name=F("payment_unit__name"),
             payment_unit_amount=F("payment_unit__amount"),
             record_count=Count("id"),
-            currency=F("opportunity_access__opportunity__currency_fk__code"),
+            currency=F("opportunity_access__opportunity__currency__code"),
             total_amount_usd=Sum("saved_payment_accrued_usd"),
             total_amount_local=Sum("saved_payment_accrued"),
         )
