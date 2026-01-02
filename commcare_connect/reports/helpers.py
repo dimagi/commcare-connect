@@ -122,8 +122,8 @@ def get_table_data_for_year_month(
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})
     if country_currency:
-        filter_kwargs.update({"opportunity_access__opportunity__currency_fk": country_currency})
-        filter_kwargs_nm.update({"invoice__opportunity__currency_fk": country_currency})
+        filter_kwargs.update({"opportunity_access__opportunity__currency": country_currency})
+        filter_kwargs_nm.update({"invoice__opportunity__currency": country_currency})
 
     max_visit_date = (
         UserVisit.objects.filter(completed_work_id=models.OuterRef("id"), status=VisitValidationStatus.approved)
