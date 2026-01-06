@@ -123,8 +123,8 @@ def export_user_visit_review_data(
     user_visits = UserVisit.objects.filter(
         opportunity=opportunity,
         review_created_on__isnull=False,
-        review_created_on__gte=from_date,
-        review_created_on__lte=to_date,
+        visit_date__gte=from_date,
+        visit_date__lte=to_date,
     )
     if status and "all" not in status:
         user_visits = user_visits.filter(review_status__in=status)
