@@ -58,7 +58,8 @@ class TestOpportunityChangeForm:
             "description": "Updated Description",
             "short_description": "Updated Short Description",
             "active": True,
-            "currency": "EUR",
+            "currency_fk": "EUR",
+            "country": valid_opportunity.country,
             "is_test": False,
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": (datetime.date.today() + datetime.timedelta(days=60)).isoformat(),
@@ -74,7 +75,8 @@ class TestOpportunityChangeForm:
             "description",
             "short_description",
             "active",
-            "currency",
+            "currency_fk",
+            "country",
             "is_test",
             "delivery_type",
             "end_date",
@@ -87,7 +89,8 @@ class TestOpportunityChangeForm:
             "description": valid_opportunity.description,
             "short_description": valid_opportunity.short_description,
             "active": valid_opportunity.active,
-            "currency": valid_opportunity.currency,
+            "currency_fk": valid_opportunity.currency_fk.code,
+            "country": valid_opportunity.country.code,
             "is_test": valid_opportunity.is_test,
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": valid_opportunity.end_date.isoformat(),
@@ -100,7 +103,8 @@ class TestOpportunityChangeForm:
             "name",
             "description",
             "short_description",
-            "currency",
+            "currency_fk",
+            "country",
         ],
     )
     def test_required_fields(self, valid_opportunity, field, base_form_data):
@@ -193,10 +197,10 @@ class TestOpportunityChangeForm:
     @pytest.mark.parametrize(
         "data_updates,expected_valid",
         [
-            ({"currency": "USD", "additional_users": 5}, True),
-            ({"currency": "EUR", "additional_users": 10}, True),
-            ({"currency": "INVALID", "additional_users": 5}, False),
-            ({"currency": "USD", "additional_users": -5}, True),
+            ({"currency_fk": "USD", "additional_users": 5}, True),
+            ({"currency_fk": "EUR", "additional_users": 10}, True),
+            ({"currency_fk": "INVALID", "additional_users": 5}, False),
+            ({"currency_fk": "USD", "additional_users": -5}, True),
         ],
     )
     def test_valid_combinations(self, valid_opportunity, base_form_data, data_updates, expected_valid):
@@ -299,7 +303,7 @@ class TestOpportunityInitUpdateForm:
         deliver_payload,
         deliver_domain,
         name="updated opportunity",
-        currency="EUR",
+        currency_code="EUR",
         include_disabled_fields=True,
         hq_server=None,
     ):
@@ -307,7 +311,8 @@ class TestOpportunityInitUpdateForm:
             "name": name,
             "description": "updated opportunity description",
             "short_description": "updated short description",
-            "currency": currency,
+            "currency_fk": currency_code,
+            "country": opportunity.country,
             "learn_app_description": learn_description,
             "learn_app_passing_score": learn_score,
         }
@@ -364,7 +369,7 @@ class TestOpportunityInitUpdateForm:
         assert updated_opportunity.deliver_app_id == deliver_app.id
         assert deliver_app.name == "updated deliver app"
 
-        assert updated_opportunity.currency == "EUR"
+        assert updated_opportunity.currency_fk.code == "EUR"
 
     def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
         original_learn_app = opportunity.learn_app
@@ -543,7 +548,7 @@ class TestAutomatedPaymentInvoiceForm:
         valid_opportunity.start_date = datetime.date(2025, 1, 15)
         valid_opportunity.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity)
+        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, is_opportunity_pm=False)
 
         assert form.fields["invoice_number"].initial
         assert form.fields["date"].initial == str(datetime.date.today())
@@ -562,7 +567,9 @@ class TestAutomatedPaymentInvoiceForm:
         cw.status_modified_date = datetime.date(2025, 10, 1)
         cw.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity, invoice_type="service_delivery", is_opportunity_pm=False
+        )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
         invoice = PaymentInvoiceFactory(opportunity=valid_opportunity)
@@ -576,7 +583,9 @@ class TestAutomatedPaymentInvoiceForm:
         cw.status_modified_date = datetime.date(2025, 10, 20)
         cw.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity, invoice_type="service_delivery", is_opportunity_pm=False
+        )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
     def test_duplicate_invoice_number(self, valid_opportunity):
@@ -596,6 +605,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "description": "",
                 "title": "",
             },
+            is_opportunity_pm=False,
         )
         assert not form.is_valid()
         assert form.errors["invoice_number"][0] == "Please use a different invoice number"
@@ -616,6 +626,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "",
                 "date_of_expense": "2025-11-05",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -640,6 +651,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "description": "Monthly consulting services rendered.",
                 "date_of_expense": "2025-11-05",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -665,6 +677,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "description": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -698,6 +711,7 @@ class TestAutomatedPaymentInvoiceForm:
                 "end_date": "2025-10-31",
                 "description": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
 
         assert form.is_valid()
@@ -721,10 +735,14 @@ class TestAutomatedPaymentInvoiceForm:
             opportunity=valid_opportunity,
             invoice_type="service_delivery",
             read_only=True,
+            is_opportunity_pm=False,
         )
 
-        for field in form.fields.values():
-            assert field.widget.attrs.get("readonly") == "readonly"
+        for name, field in form.fields.items():
+            if name == "notes":
+                assert field.widget.attrs.get("readonly") is None
+            else:
+                assert field.widget.attrs.get("readonly") == "readonly"
 
         assert form.fields["start_date"].initial == "2025-10-01"
         assert form.fields["end_date"].initial == "2025-10-31"
@@ -747,6 +765,7 @@ class TestAutomatedPaymentInvoiceForm:
             invoice_type="service_delivery",
             read_only=True,
             line_items_table=mock_table,
+            is_opportunity_pm=False,
         )
 
         assert form.line_items_table == mock_table

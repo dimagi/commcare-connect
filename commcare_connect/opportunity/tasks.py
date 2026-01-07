@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import httpx
 import sentry_sdk
+import waffle
 from allauth.utils import build_absolute_uri
 from django.conf import settings
 from django.core.cache import cache
@@ -20,6 +21,7 @@ from tablib import Dataset
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
@@ -35,6 +37,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     DeliverUnit,
     ExchangeRate,
+    InvoiceStatus,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -47,12 +50,17 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import update_status
+from commcare_connect.opportunity.utils.completed_work import (
+    get_uninvoiced_visit_items,
+    link_invoice_to_completed_works,
+    update_status,
+)
+from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
-from commcare_connect.utils.datetime import is_date_before
+from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
@@ -284,7 +292,7 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                     "title": gettext("Payment received"),
                     "body": gettext(
                         "You have received a payment of "
-                        f"{opportunity.currency} {payment.amount} for {opportunity.name}.",
+                        f"{opportunity.currency_code} {payment.amount} for {opportunity.name}.",
                     ),
                     "payment_id": str(payment.id),
                 },
@@ -528,3 +536,59 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
             recipient_list=recipient_emails,
             html_message=html_body,
         )
+
+
+@celery_app.task()
+def generate_automated_service_delivery_invoice():
+    if not waffle.switch_is_active(AUTOMATED_INVOICES_MONTHLY):
+        return
+
+    CHUNK_SIZE = 100
+    invoices_chunk = []
+    end_date_prev_month = get_end_date_previous_month()
+
+    opp_start_date = datetime.date(2026, 1, 1)
+    for opportunity in Opportunity.objects.filter(active=True, managed=True, start_date__gte=opp_start_date).iterator(
+        chunk_size=CHUNK_SIZE
+    ):
+        start_date = get_start_date_for_invoice(opportunity)
+        # Below indicates there are no uninvoiced completed works to invoice in previous month or earlier
+        if start_date > end_date_prev_month:
+            continue
+
+        invoice_number = generate_invoice_number()
+        line_items = get_uninvoiced_visit_items(opportunity, start_date, end_date_prev_month)
+        if not line_items:
+            continue
+
+        total_local_amount = sum(item["total_amount_local"] for item in line_items)
+        total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+        exchange_rate = ExchangeRate.latest_exchange_rate(line_items[-1]["currency"], line_items[-1]["month"])
+
+        payment_invoice = PaymentInvoice(
+            opportunity=opportunity,
+            amount=total_local_amount,
+            amount_usd=total_usd_amount,
+            date=datetime.datetime.utcnow(),
+            start_date=start_date,
+            end_date=end_date_prev_month,
+            status=InvoiceStatus.PENDING,
+            invoice_number=invoice_number,
+            service_delivery=True,
+            exchange_rate=exchange_rate,
+        )
+        invoices_chunk.append(payment_invoice)
+
+        if len(invoices_chunk) == CHUNK_SIZE:
+            _bulk_create_and_link_invoices(invoices_chunk)
+            invoices_chunk = []
+
+    if invoices_chunk:
+        _bulk_create_and_link_invoices(invoices_chunk)
+
+
+def _bulk_create_and_link_invoices(invoices_chunk):
+    with transaction.atomic():
+        PaymentInvoice.objects.bulk_create(invoices_chunk)
+        for invoice in invoices_chunk:
+            link_invoice_to_completed_works(invoice, start_date=invoice.start_date, end_date=invoice.end_date)

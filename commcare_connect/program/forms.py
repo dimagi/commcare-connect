@@ -3,6 +3,7 @@ from crispy_forms.layout import Button, Column, Field, Layout, Row, Submit
 from django import forms
 
 from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
+from commcare_connect.opportunity.models import Country, Currency
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 
@@ -10,6 +11,19 @@ DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
 
 
 class ProgramForm(forms.ModelForm):
+    currency_fk = forms.ModelChoiceField(
+        label="Currency",
+        queryset=Currency.objects.order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label="Select a currency",
+    )
+    country = forms.ModelChoiceField(
+        label="Country",
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label="Select a country",
+    )
+
     class Meta:
         model = Program
         fields = [
@@ -17,7 +31,8 @@ class ProgramForm(forms.ModelForm):
             "description",
             "delivery_type",
             "budget",
-            "currency",
+            "currency_fk",
+            "country",
             "start_date",
             "end_date",
         ]
@@ -34,7 +49,8 @@ class ProgramForm(forms.ModelForm):
             Field("delivery_type"),
             Row(
                 Field("budget"),
-                Field("currency"),
+                Field("currency_fk"),
+                Field("country"),
                 css_class="grid grid-cols-2 gap-2",
             ),
             Row(
@@ -68,7 +84,6 @@ class ProgramForm(forms.ModelForm):
             self.instance.organization = self.organization
             self.instance.created_by = self.user.email
         self.instance.modified_by = self.user.email
-        self.instance.currency = self.cleaned_data["currency"].upper()
         return super().save(commit=commit)
 
 
@@ -79,10 +94,12 @@ class BaseManagedOpportunityInitForm:
         self.program = kwargs.pop("program")
         super().__init__(*args, **kwargs)
 
-        # Managed opportunities should use the currency specified in the program.
-        self.fields["currency"].initial = self.program.currency
-        self.fields["currency"].widget = forms.TextInput(attrs={"readonly": "readonly", "disabled": True})
-        self.fields["currency"].required = False
+        # Managed opportunities should use the currency/country specified in the program.
+        for field_name in ["currency_fk", "country"]:
+            form_field = self.fields[field_name]
+            form_field.initial = getattr(self.program, field_name)
+            form_field.widget.attrs.update({"readonly": "readonly", "disabled": True})
+            form_field.required = False
 
         program_members = Organization.objects.filter(
             programapplication__program=self.program, programapplication__status=ProgramApplicationStatus.ACCEPTED
@@ -106,7 +123,7 @@ class BaseManagedOpportunityInitForm:
 
     def save(self, commit=True):
         self.instance.program = self.program
-        self.instance.currency = self.program.currency
+        self.instance.currency_fk = self.program.currency_fk
         self.instance.delivery_type = self.program.delivery_type
         return super().save(commit=commit)
 

@@ -313,9 +313,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     invalid_rows = []
     payments_by_user = defaultdict(list)
-    exchange_rate_today = get_exchange_rate(opportunity.currency)
+    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
     if not exchange_rate_today:
-        raise ImportException(f"Currency code {opportunity.currency} is invalid")
+        raise ImportException(f"Currency code {opportunity.currency_code} is invalid")
 
     for row in rows:
         row = list(row)
@@ -397,7 +397,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
                 amount = payment_row["amount"]
                 payment_date = payment_row["payment_date"]
                 if payment_date:
-                    exchange_rate = get_exchange_rate(opportunity.currency, payment_date)
+                    exchange_rate = get_exchange_rate(opportunity.currency_code, payment_date)
                 else:
                     exchange_rate = exchange_rate_today
 

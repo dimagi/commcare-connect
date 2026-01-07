@@ -1,6 +1,5 @@
 import datetime
 import json
-import secrets
 from urllib.parse import urlencode
 
 from crispy_forms.helper import FormHelper
@@ -21,12 +20,15 @@ from commcare_connect.opportunity.models import (
     CommCareApp,
     CompletedWork,
     CompletedWorkStatus,
+    Country,
     CredentialConfiguration,
+    Currency,
     DeliverUnit,
     DeliverUnitFlagRules,
     ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
+    InvoiceStatus,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -38,6 +40,11 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
+from commcare_connect.opportunity.utils.invoice import (
+    generate_invoice_number,
+    get_end_date_for_invoice,
+    get_start_date_for_invoice,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User, UserCredential
@@ -104,13 +111,27 @@ class OpportunityUserInviteForm(forms.Form):
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
+    currency_fk = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a currency"),
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a country"),
+    )
+
     class Meta:
         model = Opportunity
         fields = [
             "name",
             "description",
             "active",
-            "currency",
+            "currency_fk",
+            "country",
             "short_description",
             "is_test",
             "delivery_type",
@@ -169,7 +190,8 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 Column(
                     Field("end_date"),
                 ),
-                Column(Field("currency")),
+                Column(Field("currency_fk")),
+                Column(Field("country")),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
             Row(
@@ -293,6 +315,18 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 class OpportunityInitForm(forms.ModelForm):
     managed_opp = False
     app_hint_text = "Add required apps to the opportunity. All fields are mandatory."
+    currency_fk = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a currency"),
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a country"),
+    )
 
     class Meta:
         model = Opportunity
@@ -300,7 +334,8 @@ class OpportunityInitForm(forms.ModelForm):
             "name",
             "description",
             "short_description",
-            "currency",
+            "currency_fk",
+            "country",
             "hq_server",
         ]
 
@@ -333,7 +368,8 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("description"),
                 ),
                 Column(
-                    Field("currency"),
+                    Field("currency_fk"),
+                    Field("country"),
                     Field("hq_server"),
                     Column(
                         Field("api_key", wrapper_class="flex-1"),
@@ -514,7 +550,6 @@ class OpportunityInitForm(forms.ModelForm):
         if self.managed_opp:
             opportunity.organization = self.cleaned_data.get("organization")
         else:
-            opportunity.currency = self.cleaned_data["currency"].upper()
             opportunity.organization = organization
 
         opportunity.api_key, _ = HQApiKey.objects.get_or_create(
@@ -552,7 +587,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         if not getattr(opportunity, "pk", None):
             return
 
-        for field_name in ("name", "short_description", "description", "currency"):
+        for field_name in ("name", "short_description", "description", "currency_fk", "country"):
             if field_name in self.fields:
                 self.fields[field_name].initial = getattr(opportunity, field_name)
 
@@ -622,8 +657,6 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         opportunity = self.instance
         if self.managed_opp and self.cleaned_data.get("organization"):
             opportunity.organization = self.cleaned_data.get("organization")
-        if not self.managed_opp:
-            opportunity.currency = self.cleaned_data["currency"].upper()
 
         created_by = opportunity.created_by or self.user.email
         hq_server = self.cleaned_data["hq_server"]
@@ -985,7 +1018,8 @@ class AddBudgetNewUsersForm(forms.Form):
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
-        self.fields["total_budget"].label += f" ({self.opportunity.currency})"
+        if self.opportunity.currency_code:
+            self.fields["total_budget"].label += f" ({self.opportunity.currency_code})"
 
         self.fields["add_users"].widget.attrs.update(
             {
@@ -1335,10 +1369,16 @@ class PaymentInvoiceForm(forms.ModelForm):
         self.opportunity = kwargs.pop("opportunity")
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING)
         super().__init__(*args, **kwargs)
         if self.read_only:
+            self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
             for field in self.fields.values():
                 field.widget.attrs["readonly"] = "readonly"
+
+        if self.instance.pk:
+            self.status = self.instance.status
+            self.fields["status"].initial = self.instance.get_status_display()
 
         self.fields["usd_currency"].widget.attrs.update(
             {
@@ -1346,6 +1386,8 @@ class PaymentInvoiceForm(forms.ModelForm):
                 "x-on:change": "currency = $event.target.checked; convert(true)",
             }
         )
+
+        currency_code = self.opportunity.currency_code
 
         self.helper = FormHelper(self)
         layout_fields = [
@@ -1359,7 +1401,7 @@ class PaymentInvoiceForm(forms.ModelForm):
                 ),
                 Field(
                     "amount",
-                    label=f"Amount ({self.opportunity.currency})",
+                    label=f"Amount ({currency_code})" if currency_code else "Amount",
                     **{
                         "x-ref": "amount",
                         "x-on:input.debounce.300ms": "convert()",
@@ -1367,6 +1409,7 @@ class PaymentInvoiceForm(forms.ModelForm):
                 ),
                 Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
                 Field("invoice_number"),
+                Field("status"),
                 Field(
                     "usd_currency",
                     css_class=CHECKBOX_CLASS,
@@ -1405,7 +1448,8 @@ class PaymentInvoiceForm(forms.ModelForm):
         if amount is None or date is None:
             return cleaned_data  # Let individual field errors handle missing values
 
-        exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+        currency = getattr(self.opportunity, "currency_fk", None)
+        exchange_rate = ExchangeRate.latest_exchange_rate(currency.code if currency else None, date)
         if not exchange_rate:
             raise ValidationError("Exchange rate not available for selected date.")
 
@@ -1426,6 +1470,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         instance.amount_usd = self.cleaned_data["amount_usd"]
         instance.exchange_rate = self.cleaned_data["exchange_rate"]
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.status = self.status
 
         if commit:
             instance.save()
@@ -1494,6 +1539,8 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
         self.line_items_table = kwargs.pop("line_items_table", None)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING)
+        self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
         super().__init__(*args, **kwargs)
 
@@ -1505,14 +1552,20 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
     def prepare_fields(self):
         if self.read_only:
+            self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
             for field in self.fields.values():
                 field.widget.attrs["readonly"] = "readonly"
         else:
             self.fields["date"].widget.attrs.update({"readonly": "readonly"})
 
         if not self.instance.pk:
-            self.fields["invoice_number"].initial = self.generate_invoice_number()
+            self.fields["invoice_number"].initial = generate_invoice_number()
             self.fields["date"].initial = str(datetime.date.today())
+            if self.is_service_delivery:
+                self.fields["date"].widget.attrs.update({"readonly": "readonly"})
+        else:
+            self.status = self.instance.status
+            self.fields["status"].initial = self.instance.get_status_display()
 
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount ({currency_code})").format(
@@ -1530,9 +1583,12 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 self.fields["start_date"].initial = str(self.instance.start_date)
                 self.fields["end_date"].initial = str(self.instance.end_date)
             else:
-                start_date = self.get_start_date_for_invoice()
+                start_date = get_start_date_for_invoice(self.opportunity)
                 self.fields["start_date"].initial = str(start_date)
-                self.fields["end_date"].initial = str(self.get_end_date_for_invoice(start_date))
+                self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
+
+            if self.read_only and self.status == InvoiceStatus.PENDING and not self.is_opportunity_pm:
+                self.fields["notes"].widget.attrs.pop("readonly", None)
         else:
             self.fields["usd_currency"].widget.attrs.update(
                 {
@@ -1604,6 +1660,18 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             Field("start_date", **start_date_attrs),
             Field("end_date", **end_date_attrs),
         ]
+        first_row.append(Field("title"))
+        if self.read_only:
+            first_row.append(Field("status"))
+
+        second_row = [Field("date", **{"x-ref": "date", "x-on:change": "convert()"})]
+        if self.is_service_delivery:
+            start_date_attrs = (
+                {} if self.read_only else {"x-model": "startDate", "x-on:change": "fetchInvoiceLineItems()"}
+            )
+            end_date_attrs = {} if self.read_only else {"x-model": "endDate", "x-on:change": "fetchInvoiceLineItems()"}
+            second_row.append(Field("start_date", **start_date_attrs))
+            second_row.append(Field("end_date", **end_date_attrs))
 
         third_row = [
             Field(
@@ -1676,14 +1744,11 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             ),
         ]
 
-    def generate_invoice_number(self):
-        return secrets.token_hex(5).upper()
-
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
 
         if not invoice_number:
-            invoice_number = self.generate_invoice_number()
+            invoice_number = generate_invoice_number()
 
         if PaymentInvoice.objects.filter(invoice_number=invoice_number).exists():
             raise ValidationError(
@@ -1743,6 +1808,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         instance.amount = self.cleaned_data["amount"]
         instance.exchange_rate = self.cleaned_data.get("exchange_rate")
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.status = self.status
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
 
         if commit:

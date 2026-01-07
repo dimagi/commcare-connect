@@ -17,22 +17,30 @@
   </div>
   <div x-data="invoiceFormHandler()">
     {% crispy form %}
-  </div>
-
-  <div class="mt-6 flex gap-2">
-    <a href="{% url 'opportunity:invoice_list' org_slug=request.org.slug opp_id=opportunity.id %}"
-       class="button button-md outline-style">
-      {% translate "Back to Invoices" %}
-    </a>
-    {% if request.is_opportunity_pm %}
-      <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.id %}"
-              hx-vals='{"pk": {{ form.instance.id }}}'
-              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-              class="button button-md primary-dark justify-center !inline-flex"
-              {% if form.instance.payment %}disabled{% endif %}>
-        {% translate "Pay" %}
-      </button>
-    {% endif %}
+    <div class="mt-6 flex justify-start gap-4">
+      <a href="{% url 'opportunity:invoice_list' org_slug=request.org.slug opp_id=opportunity.id %}"
+         class="button button-md outline-style">
+        {% translate "Back to Invoices" %}
+      </a>
+      {% if request.is_opportunity_pm %}
+        {% if invoice_status == 'submitted' %}
+          <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.id %}"
+                  hx-vals='{"pk": {{ form.instance.id }}}'
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                  class="button button-md primary-dark justify-center !inline-flex"
+                  {% if form.instance.payment %}disabled{% endif %}>
+            {% translate "Pay" %}
+          </button>
+        {% endif %}
+      {% elif invoice_status == 'pending' %}
+        <a
+          @click="submitForApproval()"
+          class="button button-md primary-dark"
+        >
+          {% translate "Submit for Approval" %}
+        </a>
+      {% endif %}
+    </div>
   </div>
 </div>
 

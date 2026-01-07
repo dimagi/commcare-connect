@@ -1,4 +1,7 @@
+import importlib
+
 import pytest
+from django.apps import apps as django_apps
 
 from commcare_connect.opportunity.models import Opportunity, OpportunityClaimLimit, UserVisit
 from commcare_connect.opportunity.tests.factories import (
@@ -9,6 +12,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
+    OpportunityFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
@@ -121,6 +125,64 @@ def test_access_visit_count(opportunity: Opportunity):
     )
     update_payment_accrued(opportunity, [access.user])
     assert access.visit_count == 1
+
+
+@pytest.mark.django_db
+def test_populate_currency_and_country_fk():
+    migration_module = importlib.import_module(
+        "commcare_connect.opportunity.migrations.0092_currency_country_opportunity_currency_fk"
+    )
+    populate_currency_and_country_fk = migration_module.populate_currency_and_country_fk
+
+    OpportunityModel = django_apps.get_model("opportunity", "Opportunity")
+    CurrencyModel = django_apps.get_model("opportunity", "Currency")
+    CountryModel = django_apps.get_model("opportunity", "Country")
+
+    # Ensure currency / country rows exist (loaded via migration)
+    single_country_currency = "KES"  # Kenya only
+    multi_country_currency = "USD"  # Multiple ISO countries share USD
+    valid_currency_only = "INR"
+
+    assert CurrencyModel.objects.filter(code=valid_currency_only).exists()
+    assert CountryModel.objects.filter(code="KEN", currency_id=single_country_currency).exists()
+    assert CurrencyModel.objects.filter(code=multi_country_currency).exists()
+
+    invalid_currency_code = "ZZZ"
+    # Create opportunities that fall in various categories
+    opp_valid = OpportunityFactory(currency=valid_currency_only, currency_fk=None, country=None)
+    opp_single = OpportunityFactory(currency=single_country_currency, currency_fk=None, country=None)
+    opp_multi = OpportunityFactory(currency=multi_country_currency, currency_fk=None, country=None)
+    opp_invalid = OpportunityFactory(currency=invalid_currency_code, currency_fk=None, country=None)
+
+    OpportunityModel.objects.filter(id__in=[opp_valid.id, opp_single.id, opp_multi.id, opp_invalid.id]).update(
+        currency_fk=None, country=None
+    )
+
+    initial_country_count = CountryModel.objects.count()
+    initial_currency_count = CurrencyModel.objects.count()
+
+    populate_currency_and_country_fk(django_apps, schema_editor=None)
+
+    for opp in [opp_valid, opp_single, opp_multi, opp_invalid]:
+        opp.refresh_from_db()
+
+    # valid currency should map to fk
+    assert opp_valid.currency_fk.code == valid_currency_only
+
+    # single-country currency auto-sets the country fk
+    assert opp_single.currency_fk.code == single_country_currency
+    assert opp_single.country_id == CountryModel.objects.get(code="KEN").pk
+
+    # multi-country currencies should stay NULL for country
+    assert opp_multi.currency_fk.code == multi_country_currency
+    assert opp_multi.country_id is None
+
+    # invalid currencies fall back to USD without creating new currency rows
+    assert not CurrencyModel.objects.filter(code=invalid_currency_code).exists()
+    assert opp_invalid.currency_fk_id == multi_country_currency
+    assert opp_invalid.country_id is None
+    assert CountryModel.objects.count() == initial_country_count
+    assert CurrencyModel.objects.count() == initial_currency_count
 
 
 @pytest.mark.django_db

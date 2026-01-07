@@ -25,6 +25,18 @@
   --color-brand-blue-light: #94a3b8;
   --color-brand-sunset-light: #fc5f3633;
   --color-brand-border-light: #e2e8f0;
+  --color-message-success: #e6f5e5;
+  --color-message-success-text: #218079;
+  --color-message-warning-text: #bc950f;
+  --color-message-warning: #fff4cd;
+  --color-message-error: #fad4d4;
+  --color-message-error-text: #900000;
+  --color-message-info: #eef0ff;
+  --color-message-info-text: #3a42c7;
+  --color-message-success-border: #7abfb4;
+  --color-message-warning-border: #dbb646;
+  --color-message-info-border: #3a42c7;
+  --color-message-error-border: #900000;
   --width-screen-sm: var(--breakpoint-sm);
 }
 
