@@ -9,14 +9,15 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameField(
-            model_name="paymentinvoice",
-            old_name="notes",
-            new_name="description",
-        ),
-        migrations.AddField(
-            model_name="paymentinvoice",
-            name="date_of_expense",
-            field=models.DateField(blank=True, null=True),
-        ),
+        # both are already applied
+        # migrations.RenameField(
+        #     model_name="paymentinvoice",
+        #     old_name="notes",
+        #     new_name="description",
+        # ),
+        # migrations.AddField(
+        #     model_name="paymentinvoice",
+        #     name="date_of_expense",
+        #     field=models.DateField(blank=True, null=True),
+        # ),
     ]
