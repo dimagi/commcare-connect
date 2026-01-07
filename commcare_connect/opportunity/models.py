@@ -512,6 +512,7 @@ class PaymentInvoice(models.Model):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
+    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING, max_length=50)
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
 
