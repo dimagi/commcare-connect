@@ -9,7 +9,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        both are already applied
         migrations.RenameField(
             model_name="paymentinvoice",
             old_name="notes",
