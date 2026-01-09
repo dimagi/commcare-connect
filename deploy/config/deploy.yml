@@ -26,3 +26,6 @@ registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
   username: AWS
   password: <%= %x(./registry_password.sh) %>
+
+labels:
+  traefik.http.middlewares.test-compress.compress: true
