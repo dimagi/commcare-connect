@@ -66,7 +66,7 @@ class ProgramForm(forms.ModelForm):
                     **{"@click": "showProgramAddModal = showProgramEditModal = false"},
                 ),
                 Submit("submit", "Submit", css_class="button button-md primary-dark"),
-                css_class="float-end",
+                css_class="flex gap-3 justify-end mt-4",
             ),
         )
 
