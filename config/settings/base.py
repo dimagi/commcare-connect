@@ -318,6 +318,7 @@ REST_FRAMEWORK = {
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
     "ALLOWED_VERSIONS": ["1.0"],
+    "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",
 }
 
 CORS_URLS_REGEX = r"^/api/.*$"
