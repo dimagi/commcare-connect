@@ -27,7 +27,7 @@ from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_acces
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.datetime import get_month_series
-from commcare_connect.utils.tests import check_basic_permissions
+from commcare_connect.utils.test_utils import check_basic_permissions
 
 
 def get_month_range_start_end(months=1):

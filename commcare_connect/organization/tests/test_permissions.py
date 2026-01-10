@@ -7,7 +7,7 @@ from commcare_connect.opportunity.views import OrganizationUserMemberRoleMixin, 
 from commcare_connect.organization.decorators import org_admin_required, org_member_required, org_viewer_required
 from commcare_connect.organization.urls import urlpatterns as org_url_patterns
 from commcare_connect.users.tests.factories import UserFactory
-from commcare_connect.utils.tests import check_basic_permissions
+from commcare_connect.utils.test_utils import check_basic_permissions
 
 
 class TestAllOrgAccessPermission:
