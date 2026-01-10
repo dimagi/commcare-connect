@@ -413,7 +413,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
 
-    def render_payment_status(self, value):
+    def render_payment_status(self, record, value):
+        if record.status == InvoiceStatus.ARCHIVED:
+            return "Archived"
         if value is not None:
             return "Paid"
         return "Pending"
@@ -427,6 +429,16 @@ class PaymentInvoiceTable(OpportunityContextTable):
         if record.service_delivery:
             return _("Service Delivery")
         return _("Other")
+
+    def render_status(self, record):
+        tooltips = {
+            "Pending": _("Under review by Program Manager."),
+            "Approved": _("Invoice Approved and Paid."),
+            "Submitted": _("Submitted to Program Manager for Approval."),
+            "Archived": _("Invoice Archived. No User Actions Allowed."),
+        }
+        status = record.get_status_display()
+        return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
 
     def render_actions(self, record):
         review_button = ""
