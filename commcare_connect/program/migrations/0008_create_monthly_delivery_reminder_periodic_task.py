@@ -10,7 +10,7 @@ def create_monthly_delivery_reminder_periodic_task(apps, schema_editor):
         minute="0",
         hour="9",
         day_of_week="*",
-        day_of_month="25",
+        day_of_month="*",
         month_of_year="*",
     )
     PeriodicTask.objects.update_or_create(
