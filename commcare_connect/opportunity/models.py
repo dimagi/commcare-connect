@@ -77,7 +77,6 @@ class Country(models.Model):
 
 
 class Opportunity(BaseModel):
-    opportunity_id = models.UUIDField(editable=False, null=True)
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -276,7 +275,6 @@ class XFormBaseModel(models.Model):
 
 
 class OpportunityAccess(models.Model):
-    opportunity_access_id = models.UUIDField(editable=False, null=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     date_learn_started = models.DateTimeField(null=True)
@@ -420,7 +418,6 @@ class Assessment(XFormBaseModel):
 
 
 class PaymentUnit(models.Model):
-    payment_unit_id = models.UUIDField(editable=False, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
     amount = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
@@ -525,7 +522,6 @@ class PaymentInvoice(models.Model):
 
 
 class Payment(models.Model):
-    payment_id = models.UUIDField(editable=False, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -713,7 +709,6 @@ class UserVisitQuerySet(models.QuerySet):
 class UserVisit(XFormBaseModel):
     objects = UserVisitQuerySet.as_manager()
 
-    user_visit_id = models.UUIDField(editable=False, null=True)
     opportunity = models.ForeignKey(
         Opportunity,
         on_delete=models.CASCADE,
@@ -878,7 +873,6 @@ class UserInvite(models.Model):
 
 
 class FormJsonValidationRules(models.Model):
-    form_json_validation_rules_id = models.UUIDField(editable=False, null=True)
     slug = models.SlugField()
     name = models.CharField(max_length=25)
     deliver_unit = models.ManyToManyField(DeliverUnit)
