@@ -92,6 +92,8 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "commcare_connect.tasks",
+    "commcare_connect.audit",
     "commcare_connect.commcarehq_provider",
     "commcare_connect.commcarehq",
     "commcare_connect.data_export",
@@ -102,6 +104,7 @@ LOCAL_APPS = [
     "commcare_connect.organization",
     "commcare_connect.program",
     "commcare_connect.reports",
+    "commcare_connect.solicitations",
     "commcare_connect.users",
     "commcare_connect.web",
 ]
@@ -304,6 +307,11 @@ ACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSignupForm"}
 SOCIALACCOUNT_ADAPTER = "commcare_connect.users.adapters.SocialAccountAdapter"
 SOCIALACCOUNT_FORMS = {"signup": "commcare_connect.users.forms.UserSocialSignupForm"}
 SOCIALACCOUNT_STORE_TOKENS = True
+SOCIALACCOUNT_PROVIDERS = {
+    "connect": {
+        "SCOPE": ["export"],
+    }
+}
 
 # django-rest-framework
 # -------------------------------------------------------------------------------
@@ -381,6 +389,11 @@ OAUTH2_PROVIDER = {
 }
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
+# Connect Production OAuth (for audit data extraction)
+CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")
+CONNECT_OAUTH_CLIENT_ID = env("CONNECT_OAUTH_CLIENT_ID", default="")
+CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
+
 
 # Twilio settings
 TWILIO_ACCOUNT_SID = env("TWILIO_SID", default=None)
@@ -399,3 +412,8 @@ WAFFLE_CREATE_MISSING_SWITCHES = True
 GTM_ID = env("GTM_ID", default="")
 GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
 GA_API_SECRET = env("GA_API_SECRET", default="")
+
+# OCS (Open Chat Studio) API Configuration
+# ------------------------------------------------------------------------------
+OCS_BASE_URL = env("OCS_BASE_URL", default="")
+OCS_API_KEY = env("OCS_API_KEY", default="")

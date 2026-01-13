@@ -1,0 +1,193 @@
+{% extends "solicitations/public_base.html" %}
+{% load static %}
+
+
+{% block page_title %}{{ solicitation.title }}{% endblock %}
+
+{% block hero_title %}{{ solicitation.get_solicitation_type_display }}{% endblock %}
+
+{% block hero_description %}
+    {{ solicitation.title }}
+{% endblock %}
+
+{% block main_content %}
+    <!-- Breadcrumb Navigation -->
+    {% include 'components/breadcrumbs.html' with path=path %}
+
+    <!-- Header Section -->
+    <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative mb-8">
+        <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+
+        <div class="flex w-full justify-between">
+            <div class="w-full">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
+                        {{ solicitation.get_solicitation_type_display }}
+                    </span>
+                    <div class="flex items-center gap-1 text-sm text-green-600">
+                        <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Active</span>
+                    </div>
+                </div>
+                <p class="card_title">{{ solicitation.title }}</p>
+                <p class="card_description w-full max-w-3xl">{{ solicitation.description|truncatewords:30 }}</p>
+            </div>
+            <div class="flex items-start justify-end gap-6">
+                {% if solicitation.can_accept_responses %}
+                    {% if has_submitted_response %}
+                        <div class="text-right">
+                            <a href="{% url 'solicitations:user_response_detail' pk=submitted_response.pk %}"
+                               class="button button-md primary-dark">
+                                <i class="fa-solid fa-eye mr-2"></i>
+                                View Response
+                            </a>
+                            <p class="text-xs text-gray-600 mt-2">
+                                Submitted <time class="local-datetime" datetime="{{ submitted_response.submission_date|date:'c' }}">{{ submitted_response.submission_date|date:"M j, Y \a\t g:i A" }}</time>
+                            </p>
+                        </div>
+                    {% elif has_draft %}
+                        <a href="{% url 'solicitations:respond' solicitation_pk=solicitation.pk %}"
+                           class="button button-md primary-dark">
+                            Continue Draft
+                        </a>
+                    {% else %}
+                        <a href="{% url 'solicitations:respond' solicitation_pk=solicitation.pk %}"
+                           class="button button-md primary-dark">
+                            Submit Response
+                        </a>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Key Information Row -->
+        <div class="bg-neutral-100 rounded-lg w-full px-5 py-4">
+            <div class="flex gap-2 w-full items-center justify-between flex-wrap">
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-building"></i>
+                        <div>
+                            <h6>Program</h6>
+                            <p>{{ solicitation.program.name }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-location-dot"></i>
+                        <div>
+                            <h6>Target Population</h6>
+                            <p>{{ solicitation.target_population }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {% if solicitation.estimated_scale %}
+                    <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                    <div class="flex gap-2 items-start">
+                        <div class="infocard-dark">
+                            <i class="fa-solid fa-chart-bar"></i>
+                            <div>
+                                <h6>Scale</h6>
+                                <p>{{ solicitation.estimated_scale }}</p>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-clock"></i>
+                        <div>
+                            <h6>Application Deadline</h6>
+                            <p>{{ solicitation.application_deadline|date:"M j, Y" }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-calendar-check"></i>
+                        <div>
+                            <h6>Start Date</h6>
+                            <p>{{ solicitation.expected_start_date|date:"M Y"|default:"TBD" }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                <div class="flex gap-2 items-start">
+                    <div class="infocard-dark">
+                        <i class="fa-solid fa-calendar-xmark"></i>
+                        <div>
+                            <h6>End Date</h6>
+                            <p>{{ solicitation.expected_end_date|date:"M Y"|default:"TBD" }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content Sections -->
+    <div class="space-y-8">
+        <!-- Description Section -->
+        <div>
+            <h2 class="card_title mb-4">Program Description</h2>
+            <div class="card_description leading-relaxed">
+                {{ solicitation.description|linebreaks }}
+            </div>
+        </div>
+
+        <!-- Scope of Work -->
+        <div>
+            <h2 class="card_title mb-4">Scope of Work</h2>
+            <div class="card_description leading-relaxed">
+                {{ solicitation.scope_of_work|linebreaks }}
+            </div>
+        </div>
+
+        <!-- Questions Section -->
+        {% if questions %}
+            <div>
+                <h2 class="card_title mb-4">Application Questions</h2>
+                <p class="card_description mb-6">
+                    When you're ready to apply, you'll be asked to provide information on the following:
+                </p>
+
+                <div class="space-y-3">
+                    {% for question in questions %}
+                        <div class="flex items-start gap-3">
+                            <span class="flex-shrink-0 w-6 h-6 bg-brand-indigo/10 text-brand-indigo text-xs font-medium rounded-full flex items-center justify-center mt-1">
+                                {{ question.order }}
+                            </span>
+                            <p class="card_description">{{ question.question_text }}</p>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        <!-- Contact Information -->
+        <div>
+            <h3 class="card_title mb-4">Contact Information</h3>
+            <div class="card_description mb-4">
+                Contact the program team for more information about this opportunity.
+            </div>
+            <a href="mailto:{{ solicitation.program.organization.name|slugify }}@commcareconnect.org"
+               class="button button-md outline-style">
+                <i class="fa-solid fa-envelope mr-2"></i>
+                Get in Touch
+            </a>
+        </div>
+    </div>
+{% endblock %}

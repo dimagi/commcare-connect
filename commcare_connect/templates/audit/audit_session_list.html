@@ -1,0 +1,361 @@
+{% extends 'base.html' %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+
+{% block content %}
+{% csrf_token %}
+<div class="flex items-center justify-center">
+  <div class="flex flex-col gap-2 w-full">
+    <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+      <p class="text-sm text-brand-deep-purple">{% translate "Audit Sessions" %}</p>
+      <div class="flex gap-x-3 items-center">
+        {% if has_connect_token %}
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-md">
+          <i class="fa-solid fa-check-circle text-green-600"></i>
+          <span class="text-xs text-green-700">Connected to Connect</span>
+          {% if token_expires_at %}
+          <span class="text-xs text-gray-500">(expires {{ token_expires_at|date:"M d, Y" }})</span>
+          {% endif %}
+        </div>
+        <a href="{% url 'labs:status' %}" class="button button-sm outline-style text-blue-600 hover:bg-blue-50 border-blue-300 hover:border-blue-400">
+          <i class="fa-solid fa-flask mr-2"></i>
+          Labs Status
+        </a>
+        {% else %}
+        <a href="{% url 'audit:connect_oauth_login' %}?next=/audit/" class="button button-sm outline-style text-blue-600 hover:bg-blue-50 border-blue-300 hover:border-blue-400">
+          <i class="fa-solid fa-key mr-2"></i>
+          Get Connect OAuth Token
+        </a>
+        {% endif %}
+        <a class="button button-md outline-style" href="{% url 'audit:export_all' %}">
+          <i class="fa-solid fa-download mr-2"></i>
+          {% translate "Export All" %}
+        </a>
+        <a class="button button-md primary-dark" href="{% url 'audit:creation_wizard' %}">
+          <i class="fa-solid fa-plus mr-2"></i>
+          {% translate "Create Audit" %}
+        </a>
+      </div>
+    </div>
+
+    <!-- Sessions Table -->
+    <div class="flex flex-col w-full gap-2">
+      <div class="w-full overflow-y-auto rounded-lg shadow-xs">
+        {% render_table table %}
+      </div>
+    </div>
+
+    <!-- Database Status Panel -->
+    <div class="mt-6 bg-gray-50 rounded-lg shadow-sm border border-gray-200 p-6" x-data="databaseStatus()">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">
+          <i class="fa-solid fa-database mr-2"></i>
+          Database Status
+        </h3>
+        <div class="flex gap-x-3">
+          <button
+            @click="startDownload()"
+            class="button button-md outline-style text-blue-600 hover:bg-blue-50 border-blue-300 hover:border-blue-400"
+            :disabled="downloading">
+            <i class="fa-solid mr-2" :class="downloading ? 'fa-spinner fa-spin' : 'fa-download'"></i>
+            <span x-text="downloading ? 'Starting...' : 'Download Missing Attachments'"></span>
+          </button>
+          <button
+            @click="resetDatabase()"
+            class="button button-md outline-style text-red-600 hover:bg-red-50 border-red-300 hover:border-red-400">
+            <i class="fa-solid fa-trash mr-2"></i>
+            Reset Database
+          </button>
+        </div>
+      </div>
+
+      <div class="flex flex-row gap-3 flex-nowrap">
+        <div class="bg-white p-3 rounded-lg border border-gray-200 flex-1 min-w-0">
+          <div class="text-xl font-bold text-brand-indigo" x-text="stats.opportunities || '-'"></div>
+          <div class="text-xs text-gray-600">Opportunities</div>
+        </div>
+        <div class="bg-white p-3 rounded-lg border border-gray-200 flex-1 min-w-0">
+          <div class="text-xl font-bold text-brand-indigo" x-text="stats.users || '-'"></div>
+          <div class="text-xs text-gray-600">Users/FLWs</div>
+        </div>
+        <div class="bg-white p-3 rounded-lg border border-gray-200 flex-1 min-w-0">
+          <div class="text-xl font-bold text-brand-indigo" x-text="stats.visits || '-'"></div>
+          <div class="text-xs text-gray-600">User Visits</div>
+        </div>
+        <div class="bg-white p-3 rounded-lg border border-gray-200 flex-1 min-w-0">
+          <div class="text-xl font-bold text-brand-indigo" x-text="stats.audit_sessions || '-'"></div>
+          <div class="text-xs text-gray-600">Audit Sessions</div>
+        </div>
+        <div class="bg-white p-3 rounded-lg border border-gray-200 flex-1 min-w-0">
+          <div class="text-xl font-bold text-brand-indigo" x-text="stats.assessments || '-'"></div>
+          <div class="text-xs text-gray-600">Assessments</div>
+        </div>
+        <div class="bg-white p-3 rounded-lg border border-gray-200 flex-1 min-w-0">
+          <div class="text-xl font-bold text-brand-indigo" x-text="stats.attachments || '-'"></div>
+          <div class="text-xs text-gray-600">Attachments</div>
+        </div>
+      </div>
+
+      <div class="mt-4 text-xs text-gray-500">
+        <i class="fa-solid fa-info-circle mr-1"></i>
+        Reset will clear opportunities, users/FLWs, visits, and audit sessions. Login accounts and system configuration are preserved.
+      </div>
+
+      <!-- Progress Modal (inside same x-data scope) -->
+      <div x-show="showProgressModal"
+           class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+           x-cloak
+           @keydown.escape.window="closeProgress()">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg" @click.away="">
+          <div class="mb-6">
+            <h3 class="text-lg font-semibold text-gray-900" x-text="progressTitle"></h3>
+            <p class="text-sm text-gray-600 mt-1" x-text="progressMessage"></p>
+          </div>
+
+          <!-- Progress Steps -->
+          <div class="space-y-4 mb-6">
+            <template x-for="step in progressSteps" :key="step.name">
+              <div class="space-y-2">
+                <!-- Step Header -->
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <!-- Status Icon -->
+                    <span x-show="step.status === 'complete'" class="text-green-600">
+                      <i class="fa-solid fa-check-circle"></i>
+                    </span>
+                    <span x-show="step.status === 'in_progress'" class="text-brand-indigo">
+                      <i class="fa-solid fa-spinner fa-spin"></i>
+                    </span>
+                    <span x-show="step.status === 'pending'" class="text-gray-400">
+                      <i class="fa-regular fa-circle"></i>
+                    </span>
+
+                    <!-- Step Message -->
+                    <span class="text-sm font-medium"
+                          :class="{
+                            'text-green-600': step.status === 'complete',
+                            'text-brand-indigo': step.status === 'in_progress',
+                            'text-gray-500': step.status === 'pending'
+                          }"
+                          x-text="step.message"></span>
+                  </div>
+
+                  <!-- Percentage -->
+                  <span class="text-xs text-gray-500"
+                        x-show="step.status !== 'pending'"
+                        x-text="`${step.percentage}%`"></span>
+                </div>
+
+                <!-- Progress Bar -->
+                <div x-show="step.status !== 'pending'" class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div class="h-full transition-all duration-300"
+                       :class="{
+                         'bg-green-500': step.status === 'complete',
+                         'bg-brand-indigo': step.status === 'in_progress'
+                       }"
+                       :style="`width: ${step.percentage}%`"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Error Message -->
+          <div x-show="progressError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+            <p class="text-sm text-red-800" x-text="progressError"></p>
+          </div>
+
+          <!-- Cancel/Close Button -->
+          <div class="flex justify-end gap-3">
+            <button
+              @click="closeProgress()"
+              class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+              <span x-text="(progressStage === 'complete' || progressStage === 'error') ? 'Close' : 'Cancel'"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function databaseStatus() {
+  return {
+    stats: {
+      opportunities: '-',
+      users: '-',
+      visits: '-',
+      audit_sessions: '-',
+      assessments: '-',
+      attachments: '-'
+    },
+    downloading: false,
+
+    // Progress modal state
+    showProgressModal: false,
+    progressTitle: 'Downloading Missing Attachments',
+    progressMessage: 'Initializing...',
+    progressStage: 'loading',
+    progressError: null,
+    progressTaskId: null,
+    progressPollInterval: null,
+    progressSteps: [
+      { name: 'scanning', message: 'Scanning audit sessions...', percentage: 0, status: 'pending' },
+      { name: 'attachments', message: 'Downloading attachments...', percentage: 0, status: 'pending' },
+      { name: 'assessments', message: 'Regenerating assessments...', percentage: 0, status: 'pending' }
+    ],
+
+    async loadStats() {
+      try {
+        const response = await fetch('{% url "audit:database_stats" %}');
+        const data = await response.json();
+        if (data.success) {
+          this.stats = data.stats;
+        }
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
+    },
+
+    async startDownload() {
+      this.downloading = true;
+
+      try {
+        const response = await fetch('{% url "audit:download_missing_attachments" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          }
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.task_id) {
+          this.progressTaskId = data.task_id;
+          this.showProgressModal = true;
+          this.startProgressPolling();
+        } else {
+          alert('Failed to start download: ' + (data.error || 'Unknown error'));
+          this.downloading = false;
+        }
+      } catch (error) {
+        console.error('Download error:', error);
+        alert('Failed to start download. Please try again.');
+        this.downloading = false;
+      }
+    },
+
+    startProgressPolling() {
+      this.progressPollInterval = setInterval(() => this.pollProgress(), 500);
+    },
+
+    stopProgressPolling() {
+      if (this.progressPollInterval) {
+        clearInterval(this.progressPollInterval);
+        this.progressPollInterval = null;
+      }
+    },
+
+    async pollProgress() {
+      if (!this.progressTaskId) return;
+
+      try {
+        const response = await fetch(`{% url "audit:audit_progress" %}?task_id=${this.progressTaskId}`);
+        const data = await response.json();
+
+        if (data.error) {
+          this.progressError = data.error;
+          this.progressStage = 'error';
+          this.stopProgressPolling();
+          this.downloading = false;
+          return;
+        }
+
+        this.progressMessage = data.message || 'Processing...';
+        this.progressStage = data.stage || 'processing';
+
+        // Update individual steps
+        if (data.steps && Array.isArray(data.steps)) {
+          data.steps.forEach(dataStep => {
+            const step = this.progressSteps.find(s => s.name === dataStep.name);
+            if (step) {
+              step.message = dataStep.message;
+              step.percentage = dataStep.percentage;
+              step.status = dataStep.status;
+            }
+          });
+        }
+
+        // Handle completion
+        if (data.stage === 'complete') {
+          this.stopProgressPolling();
+
+          if (data.result && data.result.stats) {
+            const stats = data.result.stats;
+            this.progressMessage = `Complete! Downloaded ${stats.attachments_downloaded} attachments, regenerated ${stats.sessions_regenerated} sessions.`;
+          }
+
+          // Close modal after a brief delay
+          setTimeout(() => {
+            this.showProgressModal = false;
+            this.downloading = false;
+            // Reload page to refresh stats
+            window.location.reload();
+          }, 2000);
+        }
+
+        // Handle errors
+        if (data.stage === 'error') {
+          this.progressError = data.message;
+          this.stopProgressPolling();
+          this.downloading = false;
+        }
+      } catch (error) {
+        console.error('Progress poll error:', error);
+      }
+    },
+
+    closeProgress() {
+      this.showProgressModal = false;
+      this.stopProgressPolling();
+      this.downloading = false;
+    },
+
+    async resetDatabase() {
+      if (!confirm('⚠️ WARNING: This will delete all opportunities, users/FLWs, visits, and audit sessions.\n\nLogin accounts (superusers/staff) and system configuration will be preserved.\n\nAre you sure you want to continue?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch('{% url "audit:reset_database" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert(`✅ Database reset complete!\n\nDeleted:\n- ${data.deleted.opportunities} opportunities\n- ${data.deleted.users} users/FLWs\n- ${data.deleted.visits} visits\n- ${data.deleted.audit_sessions} audit sessions`);
+          window.location.reload();
+        } else {
+          alert('Failed to reset database: ' + (data.error || 'Unknown error'));
+        }
+      } catch (error) {
+        console.error('Reset error:', error);
+        alert('Failed to reset database. Please try again.');
+      }
+    },
+
+    init() {
+      this.loadStats();
+    }
+  }
+}
+</script>
+
+{% endblock %}

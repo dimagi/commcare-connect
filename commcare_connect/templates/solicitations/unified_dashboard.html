@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% load render_table from django_tables2 %}
+{% load static %}
+
+{% block page_title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+    <!-- Breadcrumb Navigation (Program Dashboard Only) -->
+    {% if show_breadcrumb %}
+        {% include 'components/breadcrumbs.html' with path=path %}
+    {% endif %}
+
+    <!-- Program Dashboard Header (Program Mode Only) -->
+    {% if dashboard_mode == 'program' %}
+        <div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <h1 class="text-3xl font-bold text-brand-deep-purple mb-2">{{ page_title }}</h1>
+                    <p class="text-gray-600 mb-6">{{ page_subtitle }}</p>
+
+                    <!-- Key Information -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fa-solid fa-building mr-2 text-gray-400"></i>
+                            <span>Program: {{ program.name }}</span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fa-solid fa-clipboard-list mr-2 text-gray-400"></i>
+                            <span>{{ stats.total_solicitations }} solicitation{{ stats.total_solicitations|pluralize }}</span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <i class="fa-solid fa-paper-plane mr-2 text-gray-400"></i>
+                            <span>{{ stats.total_responses }} total response{{ stats.total_responses|pluralize }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-x-4">
+                    <a href="{% url 'org_solicitations:program_solicitation_create' org_slug=request.org.slug program_pk=program.pk %}" class="button button-md primary-dark">
+                        <i class="fa-solid fa-plus mr-2"></i>
+                        Create New Solicitation
+                    </a>
+                </div>
+            </div>
+
+            <!-- Statistics with Pipe Separators -->
+            <div class="bg-neutral-100 rounded-lg w-full px-5 py-4 mt-6">
+                <div class="flex items-center justify-evenly">
+                    <!-- Total Solicitations -->
+                    <div class="infocard-dark !w-fit text-center">
+                        <i class="fa-solid fa-file-lines"></i>
+                        <div>
+                            <h6 class="text-center">Total Solicitations</h6>
+                            <p class="text-center">{{ stats.total_solicitations }}</p>
+                        </div>
+                    </div>
+
+                    <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                    <!-- Active EOIs -->
+                    <div class="infocard-dark !w-fit text-center">
+                        <i class="fa-solid fa-hand-paper"></i>
+                        <div>
+                            <h6 class="text-center">Active EOIs</h6>
+                            <p class="text-center">{{ stats.active_eois }}</p>
+                        </div>
+                    </div>
+
+                    <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                    <!-- Active RFPs -->
+                    <div class="infocard-dark !w-fit text-center">
+                        <i class="fa-solid fa-file-contract"></i>
+                        <div>
+                            <h6 class="text-center">Active RFPs</h6>
+                            <p class="text-center">{{ stats.active_rfps }}</p>
+                        </div>
+                    </div>
+
+                    <div class="w-0.5 h-10 bg-slate-200 bg-opacity-30"></div>
+
+                    <!-- Total Responses -->
+                    <div class="infocard-dark !w-fit text-center">
+                        <i class="fa-solid fa-inbox"></i>
+                        <div>
+                            <h6 class="text-center">Total Responses</h6>
+                            <p class="text-center">{{ stats.total_responses }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <!-- Standard Header Card with Stats (Admin and User modes) -->
+        {% include "solicitations/components/stats_card.html" with title=page_title subtitle=page_subtitle %}
+    {% endif %}
+
+    <!-- Programs Table (Admin and User modes only) -->
+    {% if programs_table and dashboard_mode != 'program' %}
+        <div class="flex flex-col w-full gap-2 mb-8">
+            <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+                <p class="text-sm text-brand-deep-purple">Programs</p>
+            </div>
+            <div class="w-full overflow-y-auto rounded-lg shadow-xs">
+                {% render_table programs_table %}
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Solicitations Table -->
+    <div class="flex flex-col w-full gap-2 mb-8">
+        <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+            <p class="text-sm text-brand-deep-purple">Solicitations</p>
+        </div>
+        <div class="w-full overflow-y-auto rounded-lg shadow-xs">
+            {% render_table table %}
+        </div>
+    </div>
+
+    <!-- Responses & Reviews Table -->
+    <div class="flex flex-col w-full gap-2 mb-8">
+        <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+            <p class="text-sm text-brand-deep-purple">Responses & Reviews</p>
+        </div>
+        <div class="w-full overflow-y-auto rounded-lg shadow-xs">
+            {% render_table responses_and_reviews_table %}
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,40 @@
+<!-- Response Answers Component -->
+<div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+    <h2 class="text-xl font-semibold text-brand-deep-purple mb-6">
+        <i class="fa-solid fa-clipboard-question mr-2"></i>
+        {{ section_title|default:"Response Answers" }}
+    </h2>
+
+    {% if questions_with_answers %}
+        <div class="space-y-6">
+            {% for item in questions_with_answers %}
+                <div class="pb-6">
+                    <div class="flex items-start">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-medium text-gray-900 mb-3">
+                                {{ forloop.counter }}. {{ item.question.question_text }}
+                                {% if item.question.is_required %}
+                                    <span class="text-red-500">*</span>
+                                {% endif %}
+                            </h3>
+                            {% if item.answer %}
+                                <div class="bg-gray-50 rounded-lg p-4">
+                                    <p class="text-gray-700 whitespace-pre-wrap">{{ item.answer }}</p>
+                                </div>
+                            {% else %}
+                                <div class="bg-gray-50 rounded-lg p-4">
+                                    <p class="text-gray-500 italic">No answer provided</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-center py-8">
+            <i class="fa-solid fa-clipboard-question text-4xl text-gray-300 mb-4"></i>
+            <p class="text-gray-500">No questions were defined for this solicitation.</p>
+        </div>
+    {% endif %}
+</div>

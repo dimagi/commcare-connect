@@ -1,0 +1,1459 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block content %}
+{% csrf_token %}
+<div class="max-w-7xl mx-auto" x-data="auditCreationPage()">
+
+  <!-- Header -->
+  <div class="mb-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">Create New Audit Session</h1>
+        <p class="text-gray-600">Search and select opportunities, configure audit criteria, and preview FLW counts</p>
+      </div>
+      <div class="flex gap-3">
+        <button
+          @click="showImportModal = true"
+          class="px-4 py-2 text-brand-indigo bg-white border border-brand-indigo rounded-md hover:bg-brand-indigo/5 flex items-center gap-2">
+          <i class="fa-solid fa-upload"></i>
+          Import Audit Definition
+        </button>
+        <a href="{% url 'audit:session_list' %}"
+           class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+          ← Back to Sessions
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 1: Program Search and Selection -->
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-search mr-2"></i>
+      Step 1: Search and Select Opportunities
+    </h2>
+
+    <!-- Search Input -->
+    <div class="mb-4">
+      <label for="program-search" class="block text-sm font-medium text-gray-700 mb-2">
+        Search Opportunities
+      </label>
+      <div class="relative">
+        <input
+          type="text"
+          id="opportunity-search"
+          x-model="searchQuery"
+          @input.debounce.300ms="searchOpportunities()"
+          placeholder="Search by opportunity name or ID..."
+          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"
+        >
+        <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+          <i class="fa-solid fa-search text-gray-400" x-show="!searching"></i>
+          <i class="fa-solid fa-spinner fa-spin text-brand-indigo" x-show="searching"></i>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mt-1">
+        Search by opportunity name or enter a specific opportunity ID
+      </p>
+    </div>
+
+    <!-- Search Results -->
+    <div x-show="searchResults.length > 0 || searchPerformed" class="mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-medium text-gray-700">
+          Search Results
+          <span x-show="searchResults.length > 0" class="text-brand-indigo">
+            (<span x-text="searchResults.length"></span> found)
+          </span>
+        </h3>
+        <div class="flex gap-2">
+          <button
+            @click="tableExpanded = !tableExpanded"
+            x-show="searchResults.length > 0"
+            class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+            <i class="fa-solid" :class="tableExpanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            <span x-text="tableExpanded ? 'Hide Table' : 'Show Table'"></span>
+          </button>
+          <button
+            @click="clearSearch()"
+            x-show="searchQuery || searchResults.length > 0"
+            class="text-xs text-gray-500 hover:text-gray-700">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <!-- No Results Message -->
+      <div x-show="searchPerformed && searchResults.length === 0 && !searching"
+           class="text-center py-8 text-gray-500">
+        <i class="fa-solid fa-search text-3xl mb-2"></i>
+        <p>No opportunities found matching "<span x-text="searchQuery"></span>"</p>
+        <p class="text-sm">Try a different search term or opportunity ID</p>
+      </div>
+
+      <!-- Selected Opportunities Summary -->
+      <div x-show="selectedOpportunities.length > 0" class="mb-4 pb-4 border-b">
+        <h3 class="text-sm font-medium text-gray-700 mb-3">
+          Selected Opportunities (<span x-text="selectedOpportunities.length"></span>)
+        </h3>
+        <div class="flex flex-wrap gap-2">
+          <template x-for="opportunity in selectedOpportunities" :key="opportunity.id">
+            <div class="flex items-center gap-2 px-3 py-1 bg-brand-indigo text-white rounded-full text-sm">
+              <span x-text="opportunity.name"></span>
+              <button @click="removeOpportunitySelection(opportunity)" class="hover:text-gray-200">
+                <i class="fa-solid fa-times"></i>
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div x-show="searchResults.length > 0 && tableExpanded" class="overflow-hidden table-container flex flex-col gap-2 mb-1">
+        <div class="w-full overflow-x-auto block">
+          <table class="base-table">
+            <thead>
+              <tr>
+                <th class="w-12">
+                  <span>Select</span>
+                </th>
+                <th class="w-16">
+                  <span>ID</span>
+                </th>
+                <th class="w-1/4">
+                  <span>Opportunity Name</span>
+                </th>
+                <th class="w-1/6">
+                  <span>Organization</span>
+                </th>
+                <th class="w-1/6">
+                  <span>Program</span>
+                </th>
+                <th class="w-20 text-center">
+                  <span>Visits</span>
+                </th>
+                <th class="w-24">
+                  <span>Dates</span>
+                </th>
+                <th class="w-24">
+                  <span>Status</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="opportunity in searchResults" :key="opportunity.id">
+                <tr class="group hover:bg-gray-50 cursor-pointer"
+                    :class="selectedOpportunities.some(o => o.id === opportunity.id) ? 'bg-brand-indigo/5' : ''"
+                    @click="toggleOpportunitySelection(opportunity)">
+                  <td class="text-center">
+                    <input type="checkbox"
+                           :checked="selectedOpportunities.some(o => o.id === opportunity.id)"
+                           class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded"
+                           @click.stop="toggleOpportunitySelection(opportunity)">
+                  </td>
+                  <td>
+                    <span x-text="opportunity.id"></span>
+                  </td>
+                  <td>
+                    <div class="truncate max-w-xs" :title="opportunity.name + (opportunity.description ? ': ' + opportunity.description : '')" x-text="opportunity.name"></div>
+                  </td>
+                  <td>
+                    <span class="truncate block max-w-[150px]" :title="opportunity.organization_name" x-text="opportunity.organization_name"></span>
+                  </td>
+                  <td>
+                    <span class="truncate block max-w-[150px]" :title="opportunity.program_name" x-text="opportunity.program_name || '-'"></span>
+                  </td>
+                  <td class="text-center">
+                    <template x-if="opportunity.visit_count !== undefined">
+                      <span class="inline-flex items-center justify-center px-2 py-1 text-sm font-medium rounded bg-blue-50 text-blue-700" x-text="opportunity.visit_count"></span>
+                    </template>
+                    <template x-if="opportunity.visit_count === undefined">
+                      <i class="fa-solid fa-spinner fa-spin text-gray-400"></i>
+                    </template>
+                  </td>
+                  <td>
+                    <template x-if="opportunity.start_date">
+                      <div>
+                        <div x-text="formatDate(opportunity.start_date)"></div>
+                        <template x-if="opportunity.end_date">
+                          <div class="text-xs text-gray-500">to <span x-text="formatDate(opportunity.end_date)"></span></div>
+                        </template>
+                      </div>
+                    </template>
+                  </td>
+                  <td>
+                    <div class="flex flex-wrap gap-1">
+                      <span x-show="opportunity.active" class="inline-flex px-2 py-1 text-xs rounded bg-green-50 text-green-700">
+                        Active
+                      </span>
+                      <span x-show="!opportunity.active" class="inline-flex px-2 py-1 text-xs rounded bg-red-50 text-red-700">
+                        Inactive
+                      </span>
+                      <span x-show="opportunity.is_test" class="inline-flex px-2 py-1 text-xs rounded bg-orange-50 text-orange-700">
+                        Test
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Audit Granularity -->
+  <div x-show="selectedOpportunities.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-layer-group mr-2"></i>
+      Step 2: Select Audit Granularity
+    </h2>
+
+    <div class="space-y-3">
+      <!-- Combined Option -->
+      <div class="flex items-start p-4 border border-gray-200 rounded-lg hover:border-brand-indigo transition-colors">
+        <input
+          type="radio"
+          id="granularity-combined"
+          name="granularity"
+          value="combined"
+          x-model="auditCriteria.granularity"
+          class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+        >
+        <div class="ml-3 flex-1">
+          <label for="granularity-combined" class="text-sm font-medium text-gray-700 cursor-pointer">
+            One audit for all selected opportunities
+          </label>
+          <p class="text-xs text-gray-500 mt-1">
+            Creates a single audit session combining all FLWs across all selected opportunities. Best for organization-wide quality reviews.
+          </p>
+        </div>
+      </div>
+
+      <!-- Per Opportunity Option -->
+      <div class="flex items-start p-4 border border-gray-200 rounded-lg hover:border-brand-indigo transition-colors">
+        <input
+          type="radio"
+          id="granularity-per-opp"
+          name="granularity"
+          value="per_opp"
+          x-model="auditCriteria.granularity"
+          class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+        >
+        <div class="ml-3 flex-1">
+          <label for="granularity-per-opp" class="text-sm font-medium text-gray-700 cursor-pointer">
+            One audit per opportunity
+          </label>
+          <p class="text-xs text-gray-500 mt-1">
+            Creates <span x-text="selectedOpportunities.length"></span> separate audit session(s), one for each opportunity. Best for comparing performance across different programs.
+          </p>
+        </div>
+      </div>
+
+      <!-- Per FLW Option -->
+      <div class="flex items-start p-4 border border-gray-200 rounded-lg hover:border-brand-indigo transition-colors">
+        <input
+          type="radio"
+          id="granularity-per-flw"
+          name="granularity"
+          value="per_flw"
+          x-model="auditCriteria.granularity"
+          class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+        >
+        <div class="ml-3 flex-1">
+          <label for="granularity-per-flw" class="text-sm font-medium text-gray-700 cursor-pointer">
+            One audit per FLW
+          </label>
+          <p class="text-xs text-gray-500 mt-1">
+            Creates separate audit sessions for each field worker across all opportunities. Best for individual performance reviews and coaching.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Audit Criteria -->
+  <div x-show="selectedOpportunities.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-cog mr-2"></i>
+      Step 3: Configure Audit Criteria
+    </h2>
+
+    <!-- Audit Type Selection -->
+    <div class="mb-6">
+      <label class="block text-sm font-medium text-gray-700 mb-3">
+        Select Audit Type
+      </label>
+      <div class="space-y-3">
+        <!-- Date Range Option -->
+        <div class="flex items-start">
+          <input
+            type="radio"
+            id="audit-type-date-range"
+            name="audit-type"
+            value="date_range"
+            x-model="auditCriteria.type"
+            class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+          >
+          <div class="ml-3 flex-1">
+            <label for="audit-type-date-range" class="text-sm font-medium text-gray-700 cursor-pointer">
+              Date Range
+            </label>
+            <p class="text-xs text-gray-500">
+              Audit all visits within a specific date range
+            </p>
+
+            <!-- Date Range Inputs -->
+            <div x-show="auditCriteria.type === 'date_range'" class="mt-3 grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  x-model="auditCriteria.startDate"
+                  class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"
+                >
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                <input
+                  type="date"
+                  x-model="auditCriteria.endDate"
+                  class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Last N per FLW Option -->
+        <div class="flex items-start">
+          <input
+            type="radio"
+            id="audit-type-per-flw"
+            name="audit-type"
+            value="last_n_per_flw"
+            x-model="auditCriteria.type"
+            class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+          >
+          <div class="ml-3 flex-1">
+            <label for="audit-type-per-flw" class="text-sm font-medium text-gray-700 cursor-pointer">
+              Last N Visits per FLW
+            </label>
+            <p class="text-xs text-gray-500">
+              Audit the most recent N visits for each Field Learning Worker
+            </p>
+
+            <!-- Per FLW Count Input -->
+            <div x-show="auditCriteria.type === 'last_n_per_flw'" class="mt-3">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Number of visits per FLW</label>
+              <div class="flex items-center gap-4">
+                <input
+                  type="number"
+                  x-model.number="auditCriteria.countPerFlw"
+                  :disabled="auditCriteria.allVisitsPerFlw"
+                  min="1"
+                  max="1000"
+                  placeholder="e.g., 100"
+                  class="w-32 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    x-model="auditCriteria.allVisitsPerFlw"
+                    @change="if (auditCriteria.allVisitsPerFlw) { auditCriteria.countPerFlw = 99999; } else { auditCriteria.countPerFlw = 100; }"
+                    class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded"
+                  >
+                  <span class="ml-2 text-sm text-gray-700">All visits</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Last N per Opportunity Option -->
+        <div class="flex items-start">
+          <input
+            type="radio"
+            id="audit-type-per-opp"
+            name="audit-type"
+            value="last_n_per_opp"
+            x-model="auditCriteria.type"
+            class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+          >
+          <div class="ml-3 flex-1">
+            <label for="audit-type-per-opp" class="text-sm font-medium text-gray-700 cursor-pointer">
+              Last N Visits per Opportunity
+            </label>
+            <p class="text-xs text-gray-500">
+              Audit the most recent N visits from each selected opportunity (N × number of opportunities total)
+            </p>
+
+            <!-- Per Opportunity Count Input -->
+            <div x-show="auditCriteria.type === 'last_n_per_opp'" class="mt-3">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Number of visits per opportunity</label>
+              <input
+                type="number"
+                x-model.number="auditCriteria.countPerOpp"
+                min="1"
+                max="10000"
+                placeholder="e.g., 500"
+                class="w-32 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- Last N across ALL Opportunities Option -->
+        <div class="flex items-start">
+          <input
+            type="radio"
+            id="audit-type-across-all"
+            name="audit-type"
+            value="last_n_across_all"
+            x-model="auditCriteria.type"
+            class="mt-1 h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300"
+          >
+          <div class="ml-3 flex-1">
+            <label for="audit-type-across-all" class="text-sm font-medium text-gray-700 cursor-pointer">
+              Last N Visits across All Opportunities
+            </label>
+            <p class="text-xs text-gray-500">
+              Audit the most recent N visits total across all selected opportunities combined, regardless of FLW or opportunity
+            </p>
+
+            <!-- Across All Count Input -->
+            <div x-show="auditCriteria.type === 'last_n_across_all'" class="mt-3">
+              <label class="block text-xs font-medium text-gray-600 mb-1">Total number of visits</label>
+              <input
+                type="number"
+                x-model.number="auditCriteria.countAcrossAll"
+                min="1"
+                max="10000"
+                placeholder="e.g., 1000"
+                class="w-32 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo"
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sampling Configuration -->
+    <div class="mt-6 pt-6 border-t border-gray-200">
+      <label class="block text-sm font-medium text-gray-700 mb-3">
+        <i class="fa-solid fa-percentage mr-1"></i>
+        Sampling Configuration
+      </label>
+      <p class="text-xs text-gray-600 mb-4">
+        Control what percentage of matching visits to include in the audit. Use sampling to create manageable audit sizes for large datasets.
+      </p>
+
+      <div class="space-y-4">
+        <!-- Sampling Percentage Slider -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-sm text-gray-700">Sample Percentage</label>
+            <div class="flex items-center gap-2">
+              <span class="text-lg font-semibold text-brand-indigo" x-text="auditCriteria.samplePercentage + '%'"></span>
+              <span class="text-xs text-gray-500" x-show="auditCriteria.samplePercentage === 100">(No sampling)</span>
+            </div>
+          </div>
+
+          <!-- Slider -->
+          <input
+            type="range"
+            x-model.number="auditCriteria.samplePercentage"
+            min="1"
+            max="100"
+            step="1"
+            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-brand-indigo"
+          >
+
+          <!-- Quick Selection Buttons -->
+          <div class="flex gap-2 mt-3">
+            <button
+              @click="auditCriteria.samplePercentage = 25"
+              :class="auditCriteria.samplePercentage === 25 ? 'bg-brand-indigo text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              class="px-3 py-1 text-xs rounded-md transition-colors">
+              25%
+            </button>
+            <button
+              @click="auditCriteria.samplePercentage = 50"
+              :class="auditCriteria.samplePercentage === 50 ? 'bg-brand-indigo text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              class="px-3 py-1 text-xs rounded-md transition-colors">
+              50%
+            </button>
+            <button
+              @click="auditCriteria.samplePercentage = 75"
+              :class="auditCriteria.samplePercentage === 75 ? 'bg-brand-indigo text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              class="px-3 py-1 text-xs rounded-md transition-colors">
+              75%
+            </button>
+            <button
+              @click="auditCriteria.samplePercentage = 100"
+              :class="auditCriteria.samplePercentage === 100 ? 'bg-brand-indigo text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              class="px-3 py-1 text-xs rounded-md transition-colors">
+              100% (All)
+            </button>
+          </div>
+        </div>
+
+        <!-- Sampling Explanation -->
+        <div class="bg-blue-50 border border-blue-200 rounded-md p-3">
+          <div class="flex items-start gap-2">
+            <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
+            <div class="text-xs text-blue-800">
+              <p class="font-medium mb-1">How sampling works:</p>
+              <ul class="list-disc list-inside space-y-1 text-blue-700">
+                <template x-if="auditCriteria.samplePercentage === 100">
+                  <li>All matching visits will be included in the audit (no sampling)</li>
+                </template>
+                <template x-if="auditCriteria.samplePercentage < 100">
+                  <li>A random <span x-text="auditCriteria.samplePercentage + '%'"></span> of matching visits will be selected</li>
+                  <li>The same sample will be used for both preview and final audit creation</li>
+                </template>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Preview Button -->
+    <div class="flex justify-center mt-6 gap-3">
+      <button
+        @click="updatePreview()"
+        :disabled="!isAuditCriteriaValid() || updating"
+        class="px-6 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-indigo/90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2">
+        <i class="fa-solid fa-refresh" :class="{'fa-spin': updating}"></i>
+        <span x-text="updating ? 'Updating...' : 'Update Preview'"></span>
+      </button>
+      <button
+        @click="exportAuditDefinition()"
+        :disabled="!auditDefinitionId"
+        class="px-6 py-2 bg-white text-brand-indigo border border-brand-indigo rounded-md hover:bg-brand-indigo/5 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed flex items-center gap-2">
+        <i class="fa-solid fa-download"></i>
+        <span>Export Definition</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 4: Preview Results -->
+  <div x-show="previewResults.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-eye mr-2"></i>
+      Step 4: Preview Audit Scope
+    </h2>
+
+    <div class="space-y-6">
+      <template x-for="result in previewResults" :key="result.opportunity_id">
+        <div class="border border-gray-200 rounded-lg">
+          <!-- Opportunity Header -->
+          <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 rounded-t-lg">
+            <div class="flex items-center justify-between">
+              <h3 class="font-medium text-brand-deep-purple" x-text="result.opportunity_name"></h3>
+              <span class="text-sm text-gray-500">ID: <span x-text="result.opportunity_id"></span></span>
+            </div>
+            <div class="mt-2 flex items-center gap-6 text-sm">
+              <span class="text-blue-600">
+                <i class="fa-solid fa-users mr-1"></i>
+                <span x-text="result.total_flws"></span> FLWs
+              </span>
+              <span class="text-green-600">
+                <i class="fa-solid fa-chart-line mr-1"></i>
+                <span x-text="result.total_visits"></span> Total Visits
+              </span>
+              <span class="text-purple-600">
+                <i class="fa-solid fa-calculator mr-1"></i>
+                <span x-text="result.avg_visits_per_flw"></span> Avg per FLW
+              </span>
+              <span class="text-gray-500">
+                <i class="fa-solid fa-calendar mr-1"></i>
+                <span x-text="result.date_range"></span>
+              </span>
+            </div>
+          </div>
+
+          <!-- FLW Details Table -->
+          <div class="p-4">
+            <template x-if="result.flws && result.flws.length > 0">
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                        <input type="checkbox" @change="toggleAllFlws(result)" :checked="areAllFlwsSelected(result)" class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+                      </th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        FLW Name
+                      </th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Connect ID
+                      </th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Visits in Audit
+                      </th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date Range
+                      </th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Prior Audits
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-for="flw in result.flws" :key="flw.connect_id">
+                      <tr class="hover:bg-gray-50">
+                        <td class="px-2 py-2 text-center whitespace-nowrap">
+                          <input type="checkbox" :checked="isFlwSelected(flw)" @change="toggleFlwSelection(flw)" class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                          <span x-text="flw.name"></span>
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                          <span x-text="flw.connect_id || flw.user_id"></span>
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                          <span x-text="flw.visit_count"></span>
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                          <template x-if="flw.earliest_visit && flw.latest_visit">
+                            <span>
+                              <span x-text="formatDate(flw.earliest_visit)"></span> -
+                              <span x-text="formatDate(flw.latest_visit)"></span>
+                            </span>
+                          </template>
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                          <template x-if="flw.prior_audit_tags && flw.prior_audit_tags.length > 0">
+                            <div class="flex flex-wrap gap-1">
+                              <template x-for="tag in flw.prior_audit_tags" :key="tag">
+                                <span class="inline-flex px-2 py-1 text-xs rounded bg-purple-50 text-purple-700" x-text="tag"></span>
+                              </template>
+                            </div>
+                          </template>
+                          <template x-if="!flw.prior_audit_tags || flw.prior_audit_tags.length === 0">
+                            <span class="text-gray-400 text-xs">None</span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+                    </template>
+
+            <!-- Loading state for FLW details -->
+            <template x-if="!result.flws">
+              <div class="text-center py-4 text-gray-500">
+                <i class="fa-solid fa-spinner fa-spin mr-2"></i>
+                Loading FLW details...
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Audit Metadata and Action Buttons -->
+  <div x-show="selectedOpportunities.length > 0 && previewResults.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+      <i class="fa-solid fa-tag mr-2"></i>
+      Step 4: Audit Metadata
+    </h2>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Audit Title <span class="text-gray-500 text-xs">(optional)</span>
+        </label>
+        <input
+          type="text"
+          x-model="auditTitle"
+          placeholder="e.g., Week of Jan 1-7, 2024"
+          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+        <p class="text-xs text-gray-500 mt-1">Descriptive title for this audit (e.g., date range, purpose)</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Audit Tag <span class="text-gray-500 text-xs">(optional)</span>
+        </label>
+        <input
+          type="text"
+          x-model="auditTag"
+          placeholder="e.g., first_10, quarterly_q1"
+          class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+        <p class="text-xs text-gray-500 mt-1">Tag for categorizing audits (e.g., "first_10" for first 10 visits milestone)</p>
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-4">
+      <button
+        @click="clearAllSelections()"
+        class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+        Clear All
+      </button>
+      <button
+        @click="createAuditSession()"
+        :disabled="!previewResults.length || creating || updating"
+        class="px-4 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-indigo/90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2">
+        <i class="fa-solid fa-plus" :class="{'fa-spin': creating || updating}"></i>
+        <span x-text="creating ? 'Creating...' : (updating ? 'Loading...' : 'Create Audit Session')"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div x-show="showImportModal"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+       x-cloak
+       @keydown.escape.window="showImportModal = false">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" @click.away="showImportModal = false">
+      <div class="mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Import Audit Definition</h3>
+        <p class="text-sm text-gray-600 mt-1">Upload a previously exported audit definition JSON file</p>
+      </div>
+
+      <!-- File Upload -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          Select JSON File
+        </label>
+        <input
+          type="file"
+          accept=".json"
+          @change="handleImportFileSelect($event)"
+          class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-indigo file:text-white hover:file:bg-brand-indigo/90">
+      </div>
+
+      <!-- Error Message -->
+      <div x-show="importError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+        <p class="text-sm text-red-800" x-text="importError"></p>
+      </div>
+
+      <!-- Success Message -->
+      <div x-show="importSuccess" class="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
+        <p class="text-sm text-green-800" x-text="importSuccess"></p>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex justify-end gap-3">
+        <button
+          @click="closeImportModal()"
+          class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+          Cancel
+        </button>
+        <button
+          @click="importAuditDefinition()"
+          :disabled="!importFile || importing"
+          class="px-4 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-indigo/90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2">
+          <i class="fa-solid fa-upload" :class="{'fa-spin': importing}"></i>
+          <span x-text="importing ? 'Importing...' : 'Import'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reusable Progress Modal -->
+  <div x-show="showProgressModal"
+       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+       x-cloak
+       @keydown.escape.window="cancelProgress()">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg" @click.away="">
+      <div class="mb-6">
+        <h3 class="text-lg font-semibold text-gray-900" x-text="progressTitle"></h3>
+        <p class="text-sm text-gray-600 mt-1" x-text="progressMessage"></p>
+      </div>
+
+      <!-- Progress Steps -->
+      <div class="space-y-4 mb-6">
+        <template x-for="step in progressSteps" :key="step.name">
+          <div class="space-y-2">
+            <!-- Step Header -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <!-- Status Icon -->
+                <span x-show="step.status === 'complete'" class="text-green-600">
+                  <i class="fa-solid fa-check-circle"></i>
+                </span>
+                <span x-show="step.status === 'in_progress'" class="text-brand-indigo">
+                  <i class="fa-solid fa-spinner fa-spin"></i>
+                </span>
+                <span x-show="step.status === 'pending'" class="text-gray-400">
+                  <i class="fa-regular fa-circle"></i>
+                </span>
+
+                <!-- Step Message -->
+                <span class="text-sm font-medium"
+                      :class="{
+                        'text-green-600': step.status === 'complete',
+                        'text-brand-indigo': step.status === 'in_progress',
+                        'text-gray-500': step.status === 'pending'
+                      }"
+                      x-text="step.message"></span>
+              </div>
+
+              <!-- Percentage -->
+              <span class="text-xs text-gray-500"
+                    x-show="step.status !== 'pending'"
+                    x-text="`${step.percentage}%`"></span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div x-show="step.status !== 'pending'" class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div class="h-full transition-all duration-300"
+                   :class="{
+                     'bg-green-500': step.status === 'complete',
+                     'bg-brand-indigo': step.status === 'in_progress'
+                   }"
+                   :style="`width: ${step.percentage}%`"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Error Message -->
+      <div x-show="progressError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+        <p class="text-sm text-red-800" x-text="progressError"></p>
+      </div>
+
+      <!-- Cancel/Close Button -->
+      <div class="flex justify-end gap-3">
+        <button
+          @click="cancelProgress()"
+          :disabled="progressStage === 'complete' && progressMode === 'creation'"
+          class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+          <span x-text="(progressStage === 'complete' || progressStage === 'error' || progressStage === 'cancelled') ? 'Close' : 'Cancel'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function auditCreationPage() {
+  return {
+    // Progress tracking state (reusable for preview and creation)
+    showProgressModal: false,
+    progressTitle: '',
+    progressMessage: 'Initializing...',
+    progressPercentage: 0,
+    progressStage: 'loading',
+    progressError: null,
+    progressTaskId: null,
+    progressPollInterval: null,
+    progressSteps: [],
+    progressMode: 'creation', // 'preview' or 'creation'
+
+    // Import/Export state
+    showImportModal: false,
+    importFile: null,
+    importing: false,
+    importError: null,
+    importSuccess: null,
+
+    // Search state
+    searchQuery: '',
+    searchResults: [],
+    searchPerformed: false,
+    searching: false,
+    tableExpanded: true,
+
+    // Selection state
+    selectedOpportunities: [],
+
+    // Audit criteria state
+    auditCriteria: {
+      granularity: 'combined',  // 'combined', 'per_opp', 'per_flw'
+      type: 'date_range',
+      startDate: '',
+      endDate: '',
+      countPerFlw: 100,
+      countPerOpp: 500,
+      countAcrossAll: 1000,
+      allVisitsPerFlw: false,
+      samplePercentage: 100
+    },
+
+    // Preview state
+    previewResults: [],
+    auditDefinitionId: null,  // Stores the audit definition ID from preview
+    updating: false,
+    creating: false,
+
+    // FLW selection state
+    selectedFlwUserIds: [],  // Array of user_ids for selected FLWs
+
+    // Audit metadata
+    auditTitle: '',
+    auditTag: '',
+
+    // Methods
+    async searchOpportunities() {
+      if (!this.searchQuery.trim()) {
+        this.searchResults = [];
+        this.searchPerformed = false;
+        return;
+      }
+
+      this.searching = true;
+
+      const response = await fetch(`{% url "audit:program_search" %}?q=${encodeURIComponent(this.searchQuery)}&limit=20`);
+      const data = await response.json();
+
+      if (data.success) {
+        this.searchResults = data.opportunities;
+        this.searchPerformed = true;
+      } else {
+        console.error('Search failed:', data.error);
+        this.searchResults = [];
+      }
+
+      this.searching = false;
+    },
+
+    toggleOpportunitySelection(opportunity) {
+      const index = this.selectedOpportunities.findIndex(o => o.id === opportunity.id);
+      if (index >= 0) {
+        this.selectedOpportunities.splice(index, 1);
+      } else {
+        this.selectedOpportunities.push(opportunity);
+      }
+    },
+
+    removeOpportunitySelection(opportunity) {
+      const index = this.selectedOpportunities.findIndex(o => o.id === opportunity.id);
+      if (index >= 0) {
+        this.selectedOpportunities.splice(index, 1);
+      }
+    },
+
+
+    clearSearch() {
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.searchPerformed = false;
+    },
+
+    clearAllSelections() {
+      this.selectedOpportunities = [];
+      this.previewResults = [];
+      this.selectedFlwUserIds = [];
+      this.auditTitle = '';
+      this.auditTag = '';
+    },
+
+    // FLW selection methods
+    isFlwSelected(flw) {
+      return this.selectedFlwUserIds.includes(flw.user_id || flw.connect_id);
+    },
+
+    toggleFlwSelection(flw) {
+      const userId = flw.user_id || flw.connect_id;
+      const index = this.selectedFlwUserIds.indexOf(userId);
+      if (index >= 0) {
+        this.selectedFlwUserIds.splice(index, 1);
+      } else {
+        this.selectedFlwUserIds.push(userId);
+      }
+    },
+
+    toggleAllFlws(result) {
+      if (!result.flws || result.flws.length === 0) return;
+
+      const allSelected = this.areAllFlwsSelected(result);
+      if (allSelected) {
+        // Deselect all FLWs in this result
+        result.flws.forEach(flw => {
+          const userId = flw.user_id || flw.connect_id;
+          const index = this.selectedFlwUserIds.indexOf(userId);
+          if (index >= 0) {
+            this.selectedFlwUserIds.splice(index, 1);
+          }
+        });
+      } else {
+        // Select all FLWs in this result
+        result.flws.forEach(flw => {
+          const userId = flw.user_id || flw.connect_id;
+          if (!this.selectedFlwUserIds.includes(userId)) {
+            this.selectedFlwUserIds.push(userId);
+          }
+        });
+      }
+    },
+
+    areAllFlwsSelected(result) {
+      if (!result.flws || result.flws.length === 0) return false;
+      return result.flws.every(flw =>
+        this.selectedFlwUserIds.includes(flw.user_id || flw.connect_id)
+      );
+    },
+
+    formatDate(dateString) {
+      if (!dateString) return '';
+      return new Date(dateString).toLocaleDateString();
+    },
+
+    // Audit criteria validation
+    isAuditCriteriaValid() {
+      if (!this.auditCriteria.type) return false;
+
+      switch (this.auditCriteria.type) {
+        case 'date_range':
+          return this.auditCriteria.startDate && this.auditCriteria.endDate;
+        case 'last_n_per_flw':
+          return this.auditCriteria.countPerFlw && this.auditCriteria.countPerFlw > 0;
+        case 'last_n_per_opp':
+          return this.auditCriteria.countPerOpp && this.auditCriteria.countPerOpp > 0;
+        case 'last_n_across_all':
+          return this.auditCriteria.countAcrossAll && this.auditCriteria.countAcrossAll > 0;
+        default:
+          return false;
+      }
+    },
+
+    // Initialize progress modal for preview
+    initPreviewProgress() {
+      this.progressMode = 'preview';
+      this.progressTitle = 'Generating Preview';
+      this.progressMessage = 'Initializing...';
+      this.progressPercentage = 0;
+      this.progressStage = 'loading';
+      this.progressError = null;
+      this.progressSteps = [
+        { name: 'loading_ids', message: 'Loading visit IDs...', percentage: 0, status: 'pending' },
+        { name: 'sampling', message: 'Applying sampling...', percentage: 0, status: 'pending' },
+        { name: 'calculating', message: 'Calculating preview...', percentage: 0, status: 'pending' }
+      ];
+    },
+
+    // Initialize progress modal for creation
+    initCreationProgress() {
+      this.progressMode = 'creation';
+      this.progressTitle = 'Creating Audit Session';
+      this.progressMessage = 'Initializing...';
+      this.progressPercentage = 0;
+      this.progressStage = 'loading';
+      this.progressError = null;
+      this.progressSteps = [
+        { name: 'opportunities', message: 'Loading opportunities...', percentage: 0, status: 'pending' },
+        { name: 'users', message: 'Loading users...', percentage: 0, status: 'pending' },
+        { name: 'sessions', message: 'Creating sessions...', percentage: 0, status: 'pending' },
+        { name: 'attachments', message: 'Downloading attachments...', percentage: 0, status: 'pending' }
+      ];
+    },
+
+    // Update preview with FLW counts and progress tracking
+    async updatePreview() {
+      if (!this.isAuditCriteriaValid() || this.selectedOpportunities.length === 0) {
+        return;
+      }
+
+      this.updating = true;
+      this.previewResults = [];
+      this.auditDefinitionId = null;  // Clear previous audit definition
+      this.initPreviewProgress();
+      this.showProgressModal = true;
+
+      try {
+        const payload = {
+          opportunities: this.selectedOpportunities.map(o => o.id),
+          criteria: this.auditCriteria
+        };
+
+        // Start the preview generation in background thread
+        const response = await fetch('{% url "audit:preview_audit" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!data.success || !data.task_id) {
+          this.progressError = data.error || 'Failed to start preview generation';
+          this.progressStage = 'error';
+          this.updating = false;
+          return;
+        }
+
+        this.progressTaskId = data.task_id;
+
+        // Start polling for progress
+        this.progressPollInterval = setInterval(() => this.pollProgress(), 500);
+
+      } catch (error) {
+        console.error('Preview error:', error);
+        this.progressError = 'Failed to generate preview. Please try again.';
+        this.progressStage = 'error';
+        this.updating = false;
+      }
+    },
+
+    // Poll for progress updates (works for both preview and creation)
+    async pollProgress() {
+      if (!this.progressTaskId) return;
+
+      try {
+        const response = await fetch(`{% url "audit:audit_progress" %}?task_id=${this.progressTaskId}`);
+        const data = await response.json();
+
+        if (data.error) {
+          this.progressError = data.error;
+          this.progressStage = 'error';
+          this.stopProgressPolling();
+          return;
+        }
+
+        this.progressMessage = data.message || 'Processing...';
+        this.progressPercentage = data.percentage || 0;
+        this.progressStage = data.stage || 'processing';
+
+        // Update individual steps
+        if (data.steps && Array.isArray(data.steps)) {
+          data.steps.forEach(dataStep => {
+            const step = this.progressSteps.find(s => s.name === dataStep.name);
+            if (step) {
+              step.message = dataStep.message;
+              step.percentage = dataStep.percentage;
+              step.status = dataStep.status;
+            }
+          });
+        }
+
+        // Handle completion
+        if (data.stage === 'complete') {
+          this.stopProgressPolling();
+
+          // For preview mode, update preview results and close modal
+          if (this.progressMode === 'preview') {
+            if (data.result && data.result.preview_results) {
+              this.previewResults = data.result.preview_results;
+              this.auditDefinitionId = data.result.audit_definition_id || null;
+              this.updating = false;
+
+              // Auto-select all FLWs by default
+              this.selectedFlwUserIds = [];
+              this.previewResults.forEach(result => {
+                if (result.flws && result.flws.length > 0) {
+                  result.flws.forEach(flw => {
+                    const userId = flw.user_id || flw.connect_id;
+                    if (userId && !this.selectedFlwUserIds.includes(userId)) {
+                      this.selectedFlwUserIds.push(userId);
+                    }
+                  });
+                }
+              });
+            }
+            setTimeout(() => {
+              this.showProgressModal = false;
+            }, 500);
+          }
+          // For creation mode, redirect to audit page
+          else if (this.progressMode === 'creation') {
+            if (data.result && data.result.redirect_url) {
+              setTimeout(() => {
+                window.location.href = data.result.redirect_url;
+              }, 500);
+            }
+          }
+        }
+
+        // Handle errors
+        if (data.stage === 'error') {
+          this.progressError = data.message;
+          this.stopProgressPolling();
+          if (this.progressMode === 'preview') {
+            this.updating = false;
+          } else {
+            this.creating = false;
+          }
+        }
+
+        // Handle cancellation
+        if (data.cancelled || data.stage === 'cancelled') {
+          this.progressMessage = 'Cancelled';
+          this.progressStage = 'cancelled';
+          this.stopProgressPolling();
+          if (this.progressMode === 'preview') {
+            this.updating = false;
+          } else {
+            this.creating = false;
+          }
+        }
+
+      } catch (error) {
+        console.error('Progress poll error:', error);
+        this.progressError = 'Failed to fetch progress';
+        this.stopProgressPolling();
+      }
+    },
+
+    stopProgressPolling() {
+      if (this.progressPollInterval) {
+        clearInterval(this.progressPollInterval);
+        this.progressPollInterval = null;
+      }
+    },
+
+    async cancelProgress() {
+      if (this.progressStage === 'complete' || this.progressStage === 'error' || this.progressStage === 'cancelled') {
+        this.showProgressModal = false;
+        if (this.progressMode === 'preview') {
+          this.updating = false;
+        } else {
+          this.creating = false;
+        }
+        return;
+      }
+
+      if (this.progressTaskId) {
+        try {
+          await fetch(`{% url "audit:audit_progress" %}?task_id=${this.progressTaskId}`, {
+            method: 'DELETE',
+            headers: {
+              'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+          });
+        } catch (error) {
+          console.error('Cancel error:', error);
+        }
+      }
+
+      this.stopProgressPolling();
+      this.showProgressModal = false;
+      if (this.progressMode === 'preview') {
+        this.updating = false;
+      } else {
+        this.creating = false;
+      }
+    },
+
+    // Create audit session with progress tracking
+    async createAuditSession() {
+      if (!this.previewResults.length) {
+        return;
+      }
+
+      this.creating = true;
+      this.initCreationProgress();
+      this.showProgressModal = true;
+
+      try {
+        const payload = {
+          opportunities: this.selectedOpportunities.map(o => o.id),
+          criteria: this.auditCriteria,
+          audit_definition_id: this.auditDefinitionId,
+          preview: this.previewResults,
+          selected_flw_user_ids: this.selectedFlwUserIds.length > 0 ? this.selectedFlwUserIds : null,
+          audit_title: this.auditTitle,
+          audit_tag: this.auditTag
+        };
+
+        // Start the audit creation in background thread
+        const response = await fetch('{% url "audit:create_session" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!data.success || !data.task_id) {
+          this.progressError = data.error || 'Failed to start audit creation';
+          this.progressStage = 'error';
+          return;
+        }
+
+        this.progressTaskId = data.task_id;
+
+        // Start polling for progress
+        this.progressPollInterval = setInterval(() => this.pollProgress(), 500);
+
+      } catch (error) {
+        console.error('Creation error:', error);
+        this.progressError = 'Failed to create audit session. Please try again.';
+        this.progressStage = 'error';
+        this.stopProgressPolling();
+      }
+    },
+
+    // Export audit definition
+    exportAuditDefinition() {
+      if (!this.auditDefinitionId) {
+        alert('Please generate a preview first before exporting');
+        return;
+      }
+
+      // Trigger download by navigating to the export URL
+      window.location.href = `/audit/api/definition/${this.auditDefinitionId}/export/`;
+    },
+
+    // Handle file selection for import
+    handleImportFileSelect(event) {
+      this.importFile = event.target.files[0];
+      this.importError = null;
+      this.importSuccess = null;
+    },
+
+    // Import audit definition
+    async importAuditDefinition() {
+      if (!this.importFile) {
+        this.importError = 'Please select a file';
+        return;
+      }
+
+      this.importing = true;
+      this.importError = null;
+      this.importSuccess = null;
+
+      try {
+        const formData = new FormData();
+        formData.append('definition_file', this.importFile);
+
+        const response = await fetch('{% url "audit:definition_import" %}', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          },
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.definition) {
+          this.importSuccess = data.message || 'Import successful!';
+
+          // Load the imported definition into the UI
+          await this.loadImportedDefinition(data.definition);
+
+          setTimeout(() => {
+            this.closeImportModal();
+          }, 1500);
+        } else {
+          this.importError = data.error || 'Import failed';
+        }
+      } catch (error) {
+        console.error('Import error:', error);
+        this.importError = 'Failed to import definition. Please try again.';
+      } finally {
+        this.importing = false;
+      }
+    },
+
+    // Load imported definition into the UI
+    async loadImportedDefinition(definition) {
+      console.log('Loading imported definition:', definition);
+
+      // Load audit definition ID
+      this.auditDefinitionId = definition.id;
+
+      // Load audit criteria
+      this.auditCriteria.granularity = definition.granularity;
+      this.auditCriteria.type = definition.audit_type;
+      this.auditCriteria.samplePercentage = definition.sample_percentage || 100;
+
+      // Load type-specific criteria
+      if (definition.audit_type === 'date_range') {
+        this.auditCriteria.startDate = definition.start_date || '';
+        this.auditCriteria.endDate = definition.end_date || '';
+      } else if (definition.audit_type === 'last_n_per_flw') {
+        this.auditCriteria.countPerFlw = definition.count_per_flw || 100;
+        // Check if "all visits" was selected (represented by a very large number)
+        this.auditCriteria.allVisitsPerFlw = definition.count_per_flw >= 99999;
+      } else if (definition.audit_type === 'last_n_per_opp') {
+        this.auditCriteria.countPerOpp = definition.count_per_opp || 500;
+      } else if (definition.audit_type === 'last_n_across_all') {
+        this.auditCriteria.countAcrossAll = definition.count_across_all || 1000;
+      }
+
+      // Load preview results if available
+      if (definition.preview_data && Array.isArray(definition.preview_data)) {
+        this.previewResults = definition.preview_data;
+      }
+
+      // Load selected opportunities
+      if (definition.opportunity_ids && definition.opportunity_ids.length > 0) {
+        // Fetch opportunity details for the selected IDs
+        try {
+          const oppIds = definition.opportunity_ids.join(',');
+          const response = await fetch(`{% url "audit:program_search" %}?q=${oppIds}&limit=100`);
+          const oppData = await response.json();
+
+          if (oppData.success && oppData.opportunities) {
+            // Filter to only the opportunities that are in the definition
+            this.selectedOpportunities = oppData.opportunities.filter(
+              opp => definition.opportunity_ids.includes(opp.id)
+            );
+
+            // If we didn't find all opportunities via search, create placeholder objects
+            if (this.selectedOpportunities.length < definition.opportunity_ids.length) {
+              const foundIds = this.selectedOpportunities.map(o => o.id);
+              const missingIds = definition.opportunity_ids.filter(id => !foundIds.includes(id));
+
+              // Add placeholders for missing opportunities
+              missingIds.forEach(id => {
+                this.selectedOpportunities.push({
+                  id: id,
+                  name: `Opportunity ${id}`,
+                  description: '(Imported)',
+                  organization_name: 'Unknown'
+                });
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching opportunity details:', error);
+          // Create placeholder opportunities if fetch fails
+          this.selectedOpportunities = definition.opportunity_ids.map(id => ({
+            id: id,
+            name: `Opportunity ${id}`,
+            description: '(Imported)',
+            organization_name: 'Unknown'
+          }));
+        }
+      }
+    },
+
+    // Close import modal
+    closeImportModal() {
+      this.showImportModal = false;
+      this.importFile = null;
+      this.importError = null;
+      this.importSuccess = null;
+      // Reset file input
+      const fileInput = document.querySelector('input[type="file"]');
+      if (fileInput) {
+        fileInput.value = '';
+      }
+    },
+
+    // Initialize
+    init() {
+      // Set default dates (last 30 days)
+      const today = new Date();
+      const thirtyDaysAgo = new Date(today);
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+
+      this.auditCriteria.endDate = today.toISOString().split('T')[0];
+      this.auditCriteria.startDate = thirtyDaysAgo.toISOString().split('T')[0];
+
+      // Load some initial opportunities
+      this.searchOpportunities();
+    }
+  }
+}
+</script>
+
+{% endblock %}

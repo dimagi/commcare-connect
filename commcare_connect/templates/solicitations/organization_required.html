@@ -1,0 +1,96 @@
+{% extends "solicitations/public_base.html" %}
+{% load i18n %}
+
+{% block title %}Organization Membership Required{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Breadcrumbs -->
+    {% if path %}
+        {% include 'components/breadcrumbs.html' with path=path %}
+    {% else %}
+        <ul class="breadcrumb mb-8">
+            <li>
+                <a href="{% url 'solicitations:list' %}">Solicitations</a>
+                <i class="fa-solid fa-chevron-right"></i>
+            </li>
+            {% if solicitation %}
+            <li>
+                <a href="{% url 'solicitations:detail' solicitation.pk %}">{{ solicitation.title }}</a>
+                <i class="fa-solid fa-chevron-right"></i>
+            </li>
+            {% endif %}
+            <li>
+                <a href="#">Organization Required</a>
+            </li>
+        </ul>
+    {% endif %}
+
+    <!-- Error Card -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+        <div class="text-center">
+            <!-- Icon -->
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100 mb-6">
+                <i class="fa-solid fa-building text-2xl text-yellow-600"></i>
+            </div>
+
+            <!-- Title -->
+            <h1 class="text-2xl font-bold text-gray-900 mb-4">
+                Organization Membership Required
+            </h1>
+
+            <!-- Description -->
+            <div class="text-gray-600 mb-8 space-y-4">
+                <p class="text-lg">
+                    To submit a response to <strong>"{{ solicitation.title }}"</strong>, you need to be a member of an organization.
+                </p>
+                <p>
+                    Organizations can submit responses on behalf of their members. This helps us track which entity is responding to the solicitation.
+                </p>
+            </div>
+
+            <!-- Action Options -->
+            <div class="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+                <!-- Option 1: Join Existing Organization -->
+                <div class="bg-gray-50 rounded-lg p-6 text-left">
+                    <div class="flex items-center mb-3">
+                        <i class="fa-solid fa-users text-brand-indigo mr-2"></i>
+                        <h3 class="font-semibold text-gray-900">Join an Organization</h3>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4">
+                        If you're already part of an organization, ask your administrator to add you as a member.
+                    </p>
+                    <div class="text-xs text-gray-500">
+                        <strong>What you need:</strong> An invitation from your organization's admin
+                    </div>
+                </div>
+
+                <!-- Option 2: Create New Organization -->
+                <div class="bg-gray-50 rounded-lg p-6 text-left">
+                    <div class="flex items-center mb-3">
+                        <i class="fa-solid fa-plus text-brand-indigo mr-2"></i>
+                        <h3 class="font-semibold text-gray-900">Create an Organization</h3>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4">
+                        Create a new organization if you're responding on behalf of a new entity.
+                    </p>
+                    <a href="{% url 'organization_create' %}"
+                       class="inline-flex items-center px-4 py-2 bg-brand-indigo text-white text-sm font-medium rounded-md hover:bg-brand-indigo-dark transition-colors">
+                        <i class="fa-solid fa-plus mr-2"></i>
+                        Create Organization
+                    </a>
+                </div>
+            </div>
+
+            <!-- Back Button -->
+            <div class="mt-8">
+                <a href="{% url 'solicitations:detail' solicitation.pk %}"
+                   class="inline-flex items-center text-gray-600 hover:text-gray-900 transition-colors">
+                    <i class="fa-solid fa-arrow-left mr-2"></i>
+                    Back to Solicitation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

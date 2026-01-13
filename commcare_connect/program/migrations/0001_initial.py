@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ("date_modified", models.DateTimeField(auto_now=True)),
                 ("name", models.CharField(max_length=255)),
                 ("slug", models.SlugField(max_length=255, unique=True)),
-                ("description", models.CharField()),
+                ("description", models.CharField(max_length=255)),
                 ("budget", models.IntegerField()),
                 ("currency", models.CharField(max_length=3)),
                 ("start_date", models.DateField()),

@@ -1,0 +1,129 @@
+{% extends "solicitations/public_base.html" %}
+{% load static %}
+
+{% block page_title %}Response Submitted Successfully{% endblock %}
+
+{% block hero_title %}Response Submitted{% endblock %}
+
+{% block hero_description %}
+    Your response has been successfully submitted
+{% endblock %}
+
+{% block main_content %}
+    <div class="max-w-4xl mx-auto">
+        <!-- Success Message -->
+        <div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-check text-2xl text-green-600"></i>
+                </div>
+                <h2 class="text-2xl font-semibold text-brand-deep-purple mb-2">
+                    Thank You!
+                </h2>
+                <p class="text-gray-600">
+                    Your response has been successfully submitted and is now under review.
+                </p>
+            </div>
+
+            <!-- Response Details -->
+            <div class="bg-gray-50 rounded-lg p-6 mb-8">
+                <h3 class="text-lg font-medium text-brand-deep-purple mb-4">
+                    <i class="fa-solid fa-info-circle mr-2"></i>
+                    Submission Details
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="font-medium text-gray-700">Solicitation:</span>
+                        <span class="ml-2">{{ response.solicitation.title }}</span>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Type:</span>
+                        <span class="ml-2">{{ response.solicitation.get_solicitation_type_display }}</span>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Organization:</span>
+                        <span class="ml-2">{{ response.organization.name }}</span>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Submitted:</span>
+<parameter name="new_string">                        <span class="ml-2"><time class="local-datetime" datetime="{{ response.submission_date|date:'c' }}">{{ response.submission_date|date:"M j, Y \a\t g:i A" }}</time></span>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Submitted by:</span>
+                        <span class="ml-2">{{ response.submitted_by.get_full_name }}</span>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Status:</span>
+                        <span class="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                            {{ response.get_status_display }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Next Steps -->
+            <div class="bg-blue-50 rounded-lg p-6 mb-8">
+                <h3 class="text-lg font-medium text-brand-deep-purple mb-4">
+                    <i class="fa-solid fa-route mr-2"></i>
+                    What Happens Next?
+                </h3>
+                <div class="space-y-3 text-sm text-gray-700">
+                    <div class="flex items-start">
+                        <div class="w-6 h-6 bg-brand-indigo text-white rounded-full flex items-center justify-center text-xs mr-3 mt-0.5 flex-shrink-0">
+                            1
+                        </div>
+                        <div>
+                            <span class="font-medium">Review Process:</span>
+                            The program team will review your response along with others received.
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="w-6 h-6 bg-brand-indigo text-white rounded-full flex items-center justify-center text-xs mr-3 mt-0.5 flex-shrink-0">
+                            2
+                        </div>
+                        <div>
+                            <span class="font-medium">Evaluation:</span>
+                            Responses will be evaluated based on the criteria outlined in the solicitation.
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="w-6 h-6 bg-brand-indigo text-white rounded-full flex items-center justify-center text-xs mr-3 mt-0.5 flex-shrink-0">
+                            3
+                        </div>
+                        <div>
+                            <span class="font-medium">Notification:</span>
+                            You will be notified of the outcome via email to the address on file.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact Information -->
+            <div class="bg-yellow-50 rounded-lg p-6 mb-8">
+                <h3 class="text-lg font-medium text-brand-deep-purple mb-3">
+                    <i class="fa-solid fa-envelope mr-2"></i>
+                    Questions?
+                </h3>
+                <p class="text-sm text-gray-700">
+                    If you have any questions about your submission or the review process, please contact the program team.
+                    You can reference your submission using the details above.
+                </p>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6 border-t border-gray-200">
+                <a href="{% url 'solicitations:detail' pk=response.solicitation.pk %}"
+                   class="button button-md outline-style">
+                    <i class="fa-solid fa-arrow-left mr-2"></i>
+                    Back to Solicitation
+                </a>
+
+                <a href="{% url 'solicitations:list' %}"
+                   class="button button-md primary-dark">
+                    <i class="fa-solid fa-list mr-2"></i>
+                    View All Opportunities
+                </a>
+            </div>
+        </div>
+    </div>
+{% endblock %}

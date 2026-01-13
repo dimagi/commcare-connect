@@ -1,0 +1,1001 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto" x-data="auditInterface()" @keydown.window="handleKeydown($event)">
+  <!-- Integrated Header and Progress Panel - Matching Connect App Style -->
+  <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-4">
+    <!-- Session Info Section -->
+    <div class="flex flex-col justify-center text-white min-w-0 flex-shrink-0" style="width: 300px;">
+      <h1 class="text-xl font-bold mb-1">Audit Session</h1>
+      <p class="text-sm opacity-90 truncate">{{ session.flw_username }} • {{ session.opportunity_name }}</p>
+      <p class="text-xs opacity-75">{{ session.start_date }} to {{ session.end_date }}</p>
+      <div class="flex gap-2 mt-2">
+        <a href="{% url 'audit:session_list' %}"
+           class="px-2 py-1 text-xs bg-white/20 hover:bg-white/30 text-white rounded transition-colors">
+          ← Back
+        </a>
+        <a href="{% url 'audit:bulk_assessment' session.pk %}"
+           class="px-2 py-1 text-xs bg-white/20 hover:bg-white/30 text-white rounded transition-colors">
+          <i class="fa-solid fa-images mr-1"></i>Bulk Assessment
+        </a>
+        {% if session.status == 'completed' %}
+        <a href="{% url 'audit:session_export' session.pk %}"
+           class="px-2 py-1 text-xs bg-white/20 hover:bg-white/30 text-white rounded transition-colors">
+          Export
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    <!-- Visit Counter Card -->
+    <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+      <div class="flex justify-between items-center">
+        <div class="text-2xl font-medium" x-text="visitIndex + 1"></div>
+        <div class="hidden lg:block">
+          <i class="fa-solid fa-file-lines text-xl"></i>
+        </div>
+      </div>
+      <div class="pt-4 text-sm flex items-center justify-between">
+        <span>Current Visit</span>
+        <span class="text-xs opacity-75">of <span x-text="totalVisits"></span></span>
+      </div>
+    </div>
+
+    <!-- Progress Card -->
+    <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+      <div class="flex justify-between items-center">
+        <div class="text-2xl font-medium" x-text="progressPercentage + '%'"></div>
+        <div class="hidden lg:block">
+          <i class="fa-solid fa-chart-line text-xl"></i>
+        </div>
+      </div>
+      <div class="pt-4 text-sm flex items-center justify-between">
+        <span>Progress</span>
+        <span class="text-xs opacity-75"><span x-text="auditedCount"></span> audited</span>
+      </div>
+    </div>
+
+    <!-- Shortcuts Card -->
+    <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+      <div class="flex justify-between items-center">
+        <div class="text-lg">
+          <kbd class="px-1.5 py-1 bg-white/20 text-white rounded text-xs mr-1">P</kbd>
+          <kbd class="px-1.5 py-1 bg-white/20 text-white rounded text-xs mr-1">F</kbd>
+          <kbd class="px-1.5 py-1 bg-white/20 text-white rounded text-xs">←→</kbd>
+        </div>
+        <div class="hidden lg:block">
+          <i class="fa-solid fa-keyboard text-xl"></i>
+        </div>
+      </div>
+      <div class="pt-4 text-sm">
+        <span>Keyboard Shortcuts</span>
+      </div>
+    </div>
+
+    <!-- Navigation Controls -->
+    <div class="flex flex-col gap-2 h-full justify-center">
+      <button @click="navigateToVisit(previousIndex)"
+              :disabled="!hasPrevious"
+              :class="hasPrevious ? 'px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm rounded-lg transition-colors flex items-center gap-2' : 'px-4 py-2 bg-white/10 text-white/50 text-sm rounded-lg cursor-not-allowed flex items-center gap-2'">
+        <i class="fa-solid fa-arrow-left"></i>
+        Prev
+      </button>
+      <button @click="navigateToVisit(nextIndex)"
+              :disabled="!hasNext"
+              :class="hasNext ? 'px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm rounded-lg transition-colors flex items-center gap-2' : 'px-4 py-2 bg-white/10 text-white/50 text-sm rounded-lg cursor-not-allowed flex items-center gap-2'">
+        Next
+        <i class="fa-solid fa-arrow-right"></i>
+      </button>
+    </div>
+  </div>
+
+  {% if current_visit %}
+  <!-- Current Visit - Ultra Compact for Rapid Approval -->
+  <div class="bg-slate-50 rounded-lg">
+    <!-- Top Row: Visit Info + Pass/Fail Buttons -->
+    <div class="px-4 py-3 border-b border-gray-200">
+        <div class="flex items-center justify-between">
+            <!-- Left: Visit Metadata -->
+            <div class="flex items-center gap-4 text-sm">
+              <span><strong class="text-brand-deep-purple" x-text="currentVisit?.visit_date || '{{ current_visit.visit_date|date:"M d, H:i" }}'"></strong></span>
+              <span class="text-brand-blue-light" x-text="currentVisit?.entity_name || '{{ current_visit.entity_name|default:"No Entity" }}'"></span>
+              <span class="text-brand-blue-light" x-text="(currentVisit?.location || '{{ current_visit.location|default:"No Location" }}').substring(0, 25) + ((currentVisit?.location || '{{ current_visit.location|default:"No Location" }}').length > 25 ? '...' : '')"></span>
+              <span class="text-brand-blue-light" x-text="(currentVisit?.image_count || {{ current_visit.images.count }}) + ' images'"></span>
+              <!-- Status Badge -->
+              <div x-show="currentVisit?.audit_result?.result || {% if current_visit.audit_result %}true{% else %}false{% endif %}"
+                   class="inline-flex items-center px-2 py-1 rounded text-xs font-medium"
+                   :class="{
+                     'bg-green-100 text-green-800': (currentVisit?.audit_result?.result || '{% if current_visit.audit_result %}{{ current_visit.audit_result.result }}{% endif %}') === 'pass',
+                     'bg-red-100 text-red-800': (currentVisit?.audit_result?.result || '{% if current_visit.audit_result %}{{ current_visit.audit_result.result }}{% endif %}') === 'fail'
+                   }"
+                   x-text="(currentVisit?.audit_result?.result || '{% if current_visit.audit_result %}{{ current_visit.audit_result.result }}{% endif %}').charAt(0).toUpperCase() + (currentVisit?.audit_result?.result || '{% if current_visit.audit_result %}{{ current_visit.audit_result.result }}{% endif %}').slice(1)">
+              </div>
+              <div x-show="!currentVisit?.audit_result?.result && !{% if current_visit.audit_result %}true{% else %}false{% endif %}"
+                   class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                Pending
+              </div>
+          </div>
+
+            <!-- Right: Pass/Fail Buttons -->
+            <div class="flex gap-4">
+              <button @click="submitResult('pass')"
+                      :disabled="submitting"
+                      class="w-32 py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300"
+                      :class="submitting ? 'opacity-50 cursor-not-allowed transform-none' : ''">
+                <span x-show="!submitting" class="flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-thumbs-up"></i>
+                  PASS
+                </span>
+                <span x-show="submitting" class="flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-spinner fa-spin"></i>
+                  Saving...
+                </span>
+              </button>
+              <button @click="submitResult('fail')"
+                      :disabled="submitting"
+                      class="w-32 py-3 text-white font-bold text-lg rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-red-300"
+                      style="background-color: #dc2626 !important;"
+                      :class="submitting ? 'opacity-50 cursor-not-allowed transform-none' : ''"
+                      @mouseenter="$event.target.style.backgroundColor = '#b91c1c'"
+                      @mouseleave="$event.target.style.backgroundColor = '#dc2626'">
+                <span x-show="!submitting" class="flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-thumbs-down"></i>
+                  FAIL
+              </span>
+                <span x-show="submitting" class="flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-spinner fa-spin"></i>
+                  Saving...
+              </span>
+              </button>
+          </div>
+        </div>
+      </div>
+
+    <!-- Controls and Notes -->
+    <div class="px-4 pb-3 border-b border-gray-200">
+      <div class="flex items-center justify-between gap-4">
+        <!-- Visit Note Toggle -->
+        <div x-data="{ visitNoteOpen: false }" class="flex-grow">
+          <button @click="visitNoteOpen = !visitNoteOpen"
+                  class="flex items-center gap-2 text-sm text-brand-blue-light hover:text-brand-deep-purple">
+            <i class="fas fa-chevron-right transition-transform" :class="visitNoteOpen ? 'rotate-90' : ''"></i>
+            Add Visit Note
+          </button>
+          <div x-show="visitNoteOpen" x-transition class="mt-2">
+            <textarea x-model="currentNotes"
+                      placeholder="Add notes about this visit..."
+                      class="w-full p-2 border border-gray-300 rounded text-sm resize-none"
+                      rows="3"></textarea>
+          </div>
+        </div>
+
+        <!-- Widget Size Control -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-600 whitespace-nowrap">Widget Size:</span>
+          <input type="range"
+                 x-model="widgetSize"
+                 min="250"
+                 max="500"
+                 step="50"
+                 class="w-24">
+          <span class="text-xs text-gray-600 w-12" x-text="widgetSize + 'px'"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assessment Widgets Grid -->
+    {% if current_visit.images.exists %}
+    <div class="p-4">
+      <!-- AJAX-loaded assessments (shown after navigation) -->
+      <div x-show="currentVisit && currentVisit.assessments && currentVisit.assessments.length > 0"
+           class="grid gap-4"
+           :style="`grid-template-columns: repeat(auto-fill, minmax(${widgetSize}px, 1fr))`">
+        <template x-for="assessment in (currentVisit?.assessments || [])" :key="assessment.id">
+          <div class="bg-white rounded-lg shadow-sm border-2 hover:shadow-md transition-shadow"
+               :class="{
+                 'border-green-500': assessment.result === 'pass',
+                 'border-red-500': assessment.result === 'fail',
+                 'border-gray-200': !assessment.result
+               }">
+
+            <!-- Image -->
+            <div class="relative bg-gray-100"
+                 :style="`height: ${widgetSize}px`">
+              <img :src="assessment.image_url"
+                   alt="Assessment image"
+                   class="w-full h-full object-contain cursor-pointer"
+                   @click="openImageModal(assessment.image_url)">
+
+              <!-- Status Badge -->
+              <div class="absolute top-2 right-2 flex gap-1">
+                <span x-show="assessment.result === 'pass'"
+                      class="px-2 py-1 bg-green-500 text-white text-xs font-bold rounded shadow">
+                  <i class="fa-solid fa-check"></i> PASS
+                </span>
+                <span x-show="assessment.result === 'fail'"
+                      class="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded shadow">
+                  <i class="fa-solid fa-times"></i> FAIL
+                </span>
+              </div>
+
+              <!-- Question ID Badge -->
+              <div x-show="assessment.question_id" class="absolute top-2 left-2">
+                <span class="px-2 py-1 bg-brand-indigo text-white text-xs font-medium rounded shadow"
+                      x-text="assessment.question_id"></span>
+              </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="p-3 space-y-2">
+              <!-- Pass/Fail Buttons -->
+              <div class="grid grid-cols-2 gap-2">
+                <button @click="updateAssessment(assessment.id, 'pass')"
+                        :disabled="assessment.submitting"
+                        class="px-3 py-2 rounded font-medium text-sm transition-all"
+                        :class="assessment.result === 'pass'
+                          ? 'bg-green-600 text-white'
+                          : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-300'"
+                        :style="assessment.result === 'pass' ? '' : ''">
+                  <i class="fa-solid" :class="assessment.submitting ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                  <span x-text="assessment.submitting ? 'Saving...' : 'Pass'"></span>
+                </button>
+
+                <button @click="updateAssessment(assessment.id, 'fail')"
+                        :disabled="assessment.submitting"
+                        class="px-3 py-2 rounded font-medium text-sm transition-all"
+                        :class="assessment.result === 'fail'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-300'">
+                  <i class="fa-solid" :class="assessment.submitting ? 'fa-spinner fa-spin' : 'fa-times'"></i>
+                  <span x-text="assessment.submitting ? 'Saving...' : 'Fail'"></span>
+                </button>
+              </div>
+
+              <!-- Notes Section -->
+              <div>
+                <button @click="assessment.noteOpen = !assessment.noteOpen"
+                        class="flex items-center gap-1 text-xs text-gray-600 hover:text-brand-indigo">
+                  <i class="fas fa-chevron-right transition-transform text-xs" :class="assessment.noteOpen ? 'rotate-90' : ''"></i>
+                  <span x-text="assessment.notes ? 'Edit Note' : 'Add Note'"></span>
+                </button>
+                <div x-show="assessment.noteOpen" x-transition class="mt-1">
+                  <textarea x-model="assessment.notes"
+                            @blur="updateAssessmentNote(assessment.id, assessment.notes)"
+                            placeholder="Add note..."
+                            class="w-full p-2 border border-gray-300 rounded text-xs resize-none"
+                            rows="2"></textarea>
+                </div>
+                <div x-show="assessment.notes && !assessment.noteOpen" class="mt-1 p-2 bg-gray-50 rounded text-xs text-gray-700">
+                  <span x-text="assessment.notes"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Initial page load assessments (hidden after first AJAX navigation) -->
+      <div x-show="!currentVisit"
+           class="grid gap-4"
+           :style="`grid-template-columns: repeat(auto-fill, minmax(${widgetSize}px, 1fr))`">
+          {% for image in current_visit_images %}
+          {% if image.assessment %}
+          <div class="bg-white rounded-lg shadow-sm border-2 hover:shadow-md transition-shadow"
+               :class="{
+                 'border-green-500': assessments['{{ image.assessment.id }}']?.result === 'pass',
+                 'border-red-500': assessments['{{ image.assessment.id }}']?.result === 'fail',
+                 'border-gray-200': !assessments['{{ image.assessment.id }}']?.result
+               }"
+               x-data="{ noteOpen: false }">
+
+            <!-- Image -->
+            <div class="relative bg-gray-100"
+                 :style="`height: ${widgetSize}px`">
+              <img src="{% url 'audit:image' image.blob_id %}"
+                   alt="Assessment image"
+                   class="w-full h-full object-contain cursor-pointer"
+                   @click="openImageModal('{% url 'audit:image' image.blob_id %}')">
+
+              <!-- Status Badge -->
+              <div class="absolute top-2 right-2 flex gap-1">
+                <span x-show="assessments['{{ image.assessment.id }}']?.result === 'pass'"
+                      class="px-2 py-1 bg-green-500 text-white text-xs font-bold rounded shadow">
+                  <i class="fa-solid fa-check"></i> PASS
+                </span>
+                <span x-show="assessments['{{ image.assessment.id }}']?.result === 'fail'"
+                      class="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded shadow">
+                  <i class="fa-solid fa-times"></i> FAIL
+                </span>
+              </div>
+
+              <!-- Question ID Badge -->
+              {% if image.question_id %}
+              <div class="absolute top-2 left-2">
+                <span class="px-2 py-1 bg-brand-indigo text-white text-xs font-medium rounded shadow">
+                  {{ image.question_id }}
+                </span>
+              </div>
+              {% endif %}
+            </div>
+
+            <!-- Controls -->
+            <div class="p-3 space-y-2">
+              <!-- Pass/Fail Buttons -->
+              <div class="grid grid-cols-2 gap-2">
+                <button @click="updateAssessment({{ image.assessment.id }}, 'pass')"
+                        :disabled="assessments['{{ image.assessment.id }}']?.submitting"
+                        class="px-3 py-2 rounded font-medium text-sm transition-all"
+                        :class="assessments['{{ image.assessment.id }}']?.result === 'pass'
+                          ? 'bg-green-600 text-white'
+                          : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-300'">
+                  <i class="fa-solid" :class="assessments['{{ image.assessment.id }}']?.submitting ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                  <span x-text="assessments['{{ image.assessment.id }}']?.submitting ? 'Saving...' : 'Pass'"></span>
+                </button>
+
+                <button @click="updateAssessment({{ image.assessment.id }}, 'fail')"
+                        :disabled="assessments['{{ image.assessment.id }}']?.submitting"
+                        class="px-3 py-2 rounded font-medium text-sm transition-all"
+                        :class="assessments['{{ image.assessment.id }}']?.result === 'fail'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-300'">
+                  <i class="fa-solid" :class="assessments['{{ image.assessment.id }}']?.submitting ? 'fa-spinner fa-spin' : 'fa-times'"></i>
+                  <span x-text="assessments['{{ image.assessment.id }}']?.submitting ? 'Saving...' : 'Fail'"></span>
+                </button>
+              </div>
+
+              <!-- Notes Section -->
+              <div x-show="!currentVisit && assessments['{{ image.assessment.id }}']">
+                <button @click="noteOpen = !noteOpen"
+                        class="flex items-center gap-1 text-xs text-gray-600 hover:text-brand-indigo">
+                  <i class="fas fa-chevron-right transition-transform text-xs" :class="noteOpen ? 'rotate-90' : ''"></i>
+                  <span x-text="(assessments['{{ image.assessment.id }}'] && assessments['{{ image.assessment.id }}'].notes) ? 'Edit Note' : 'Add Note'"></span>
+                </button>
+                <div x-show="noteOpen" x-transition class="mt-1">
+                  <textarea x-model="assessments['{{ image.assessment.id }}'].notes"
+                            @blur="updateAssessmentNote({{ image.assessment.id }}, assessments['{{ image.assessment.id }}'].notes)"
+                            placeholder="Add note..."
+                            class="w-full p-2 border border-gray-300 rounded text-xs resize-none"
+                            rows="2"></textarea>
+                </div>
+                <div x-show="assessments['{{ image.assessment.id }}'] && assessments['{{ image.assessment.id }}'].notes && !noteOpen" class="mt-1 p-2 bg-gray-50 rounded text-xs text-gray-700">
+                  <span x-text="assessments['{{ image.assessment.id }}'] ? assessments['{{ image.assessment.id }}'].notes : ''"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+      </div>
+
+
+  {% else %}
+  <!-- No visits message -->
+  <div class="text-center py-12">
+    <div class="text-gray-500">
+      <i class="fas fa-inbox text-4xl mb-4"></i>
+      <h3 class="text-lg font-medium">No visits found</h3>
+      <p class="text-sm">No approved visits with images found for this audit session.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Audit Completion Section -->
+  <div x-show="progressPercentage === 100 || {% if session.status == 'completed' %}true{% else %}false{% endif %}"
+       x-transition
+       class="mt-6 bg-white rounded-lg shadow-md border border-gray-200">
+    <div class="p-6">
+      <h2 class="text-xl font-bold text-brand-deep-purple mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-flag-checkered"></i>
+        Complete Audit
+      </h2>
+
+      {% if session.status == 'completed' %}
+      <!-- Show completed status -->
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-check-circle text-green-600 text-xl"></i>
+              <h3 class="text-lg font-semibold text-green-800">Audit Completed</h3>
+            </div>
+            <p class="text-sm text-green-700">
+              Completed on {{ session.completed_at|date:"M d, Y \a\t H:i" }}
+            </p>
+            {% if session.overall_result %}
+            <div class="mt-2">
+              <span class="text-sm font-medium text-green-700">Overall Result: </span>
+              <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium
+                           {% if session.overall_result == 'pass' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                {{ session.overall_result|upper }}
+              </span>
+            </div>
+            {% endif %}
+            {% if session.notes %}
+            <div class="mt-3">
+              <p class="text-sm font-medium text-green-700 mb-1">Notes:</p>
+              <p class="text-sm text-gray-700 bg-white rounded p-2">{{ session.notes }}</p>
+            </div>
+            {% endif %}
+            {% if session.kpi_notes %}
+            <div class="mt-3">
+              <p class="text-sm font-medium text-green-700 mb-1">KPI Notes:</p>
+              <p class="text-sm text-gray-700 bg-white rounded p-2">{{ session.kpi_notes }}</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Reopen button -->
+      <button @click="uncompleteAudit()"
+              :disabled="submittingCompletion"
+              class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+              :class="submittingCompletion ? 'opacity-50 cursor-not-allowed' : ''">
+        <i class="fa-solid fa-rotate-left"></i>
+        <span x-show="!submittingCompletion">Reopen Audit</span>
+        <span x-show="submittingCompletion" class="flex items-center gap-2">
+          <i class="fa-solid fa-spinner fa-spin"></i>
+          Reopening...
+        </span>
+      </button>
+
+      {% else %}
+      <!-- Completion form -->
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Overall Result <span class="text-red-500">*</span>
+          </label>
+          <div class="flex gap-4">
+            <label class="flex items-center">
+              <input type="radio" x-model="overallResult" value="pass" class="mr-2">
+              <span class="px-4 py-2 bg-green-100 text-green-800 rounded font-medium">PASS</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" x-model="overallResult" value="fail" class="mr-2">
+              <span class="px-4 py-2 bg-red-100 text-red-800 rounded font-medium">FAIL</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Overall Audit Notes
+          </label>
+          <textarea x-model="completionNotes"
+                    placeholder="Enter any additional notes about this audit..."
+                    class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-brand-indigo focus:border-transparent"
+                    rows="4"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            KPI Notes
+          </label>
+          <textarea x-model="kpiNotes"
+                    placeholder="Enter KPI-related notes or reasons for failure..."
+                    class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-brand-indigo focus:border-transparent"
+                    rows="3"></textarea>
+        </div>
+
+        <button @click="completeAudit()"
+                :disabled="!overallResult || submittingCompletion"
+                class="px-6 py-3 bg-brand-indigo hover:bg-brand-deep-purple text-white font-bold rounded-lg transition-colors flex items-center gap-2"
+                :class="(!overallResult || submittingCompletion) ? 'opacity-50 cursor-not-allowed' : ''">
+          <i class="fa-solid fa-check-circle"></i>
+          <span x-show="!submittingCompletion">Mark as Complete</span>
+          <span x-show="submittingCompletion" class="flex items-center gap-2">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            Completing...
+          </span>
+        </button>
+
+        <p class="text-xs text-gray-500 italic">
+          Note: Once marked complete, you can still reopen the audit if needed.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Image Modal -->
+  <div x-show="showImageModal"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75"
+       style="display: none;"
+       @click="closeImageModal()"
+       @keydown.escape="closeImageModal()">
+    <div class="relative max-w-full max-h-full p-4">
+      <img :src="modalImageSrc"
+           alt="Full size image"
+           class="max-w-full max-h-full object-contain rounded shadow-2xl"
+           @click.stop="">
+      <button @click="closeImageModal()"
+              class="absolute top-2 right-2 text-white bg-black bg-opacity-50 hover:bg-opacity-75 rounded-full w-8 h-8 flex items-center justify-center text-xl font-bold">
+        ×
+        </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function auditInterface() {
+  return {
+    // State from Django context
+    visitIndex: {{ visit_index }},
+    totalVisits: {{ total_visits }},
+    auditedCount: {{ audited_count }},
+    pendingCount: {{ pending_count }},
+    progressPercentage: {{ progress_percentage }},
+    hasPrevious: {{ has_previous|yesno:"true,false" }},
+    hasNext: {{ has_next|yesno:"true,false" }},
+    previousIndex: {{ previous_index }},
+    nextIndex: {{ next_index }},
+
+            // Local state
+            currentNotes: '{% if current_visit.audit_result %}{{ current_visit.audit_result.notes|escapejs }}{% endif %}',
+            submitting: false,
+
+            // Widget sizing
+            widgetSize: 350, // Default widget size in pixels
+            imageHeight: 128, // Old image sizing - kept for compatibility
+            isDragging: false,
+
+            // Image modal
+    showImageModal: false,
+            modalImageSrc: '',
+
+            // Current visit data (for AJAX updates)
+            currentVisit: null,
+
+            // Assessment states (keyed by assessment ID)
+            assessments: {},
+
+            // Image notes (keyed by blob_id) - deprecated, using assessments now
+            imageNotes: {{ current_image_notes_json|safe|default:"{}" }},
+
+            // Completion state
+            overallResult: '{% if session.overall_result %}{{ session.overall_result }}{% endif %}',
+            completionNotes: '',
+            kpiNotes: '',
+            submittingCompletion: false,
+
+    // Initialize
+    init() {
+      // Set widget size from URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const size = urlParams.get('widgetSize');
+      if (size) {
+        this.widgetSize = parseInt(size);
+      }
+
+      // Initialize assessments from server data
+      {% for image in current_visit_images %}
+      {% if image.assessment %}
+      this.assessments['{{ image.assessment.id }}'] = {
+        result: '{{ image.assessment.result|default:'' }}',
+        notes: `{{ image.assessment.notes|escapejs }}`,
+        submitting: false
+      };
+      {% endif %}
+      {% endfor %}
+
+      // Listen for browser back/forward navigation
+      window.addEventListener('popstate', (event) => {
+        // Get visit index from history state or URL parameter
+        let visitIndex;
+        if (event.state && event.state.visitIndex !== undefined) {
+          visitIndex = event.state.visitIndex;
+        } else {
+          // Convert from 1-based URL parameter to 0-based index
+          const urlParams = new URLSearchParams(window.location.search);
+          visitIndex = parseInt(urlParams.get('visit') || '1') - 1;
+        }
+
+        // Get widget size from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const widgetSizeParam = urlParams.get('widgetSize');
+        if (widgetSizeParam) {
+          this.widgetSize = parseInt(widgetSizeParam);
+        }
+
+        // Load the visit data for the new URL
+        this.loadVisitData(visitIndex);
+      });
+    },
+
+            // Methods
+            async navigateToVisit(index) {
+              if (index >= 0 && index < this.totalVisits) {
+                // Update URL without reloading (convert 0-based index to 1-based URL)
+                const url = new URL(window.location);
+                url.searchParams.set('visit', index + 1);
+                if (this.widgetSize !== 350) { // Only add if not default
+                  url.searchParams.set('widgetSize', Math.round(this.widgetSize));
+                }
+                // Store the visit index in the history state
+                window.history.pushState({ visitIndex: index }, '', url.toString());
+
+                // Fetch new visit data via AJAX
+                await this.loadVisitData(index);
+              }
+            },
+
+            async loadVisitData(visitIndex) {
+              try {
+                // Convert 0-based index to 1-based URL parameter
+                const response = await fetch(`{% url "audit:visit_data" session.id %}?visit=${visitIndex + 1}`);
+                const data = await response.json();
+
+                // Update all the state with new visit data
+                this.visitIndex = data.visit_index;
+                this.totalVisits = data.total_visits;
+                this.auditedCount = data.audited_count;
+                this.pendingCount = data.pending_count;
+                this.progressPercentage = data.progress_percentage;
+                this.hasPrevious = data.has_previous;
+                this.hasNext = data.has_next;
+                this.previousIndex = data.previous_index;
+                this.nextIndex = data.next_index;
+
+                // Update visit-specific data
+                this.currentVisit = data;
+                this.currentNotes = data.audit_result ? data.audit_result.notes : '';
+
+                // Add UI state properties to assessments
+                if (data.assessments && data.assessments.length > 0) {
+                  for (const assessment of data.assessments) {
+                    assessment.submitting = false;
+                    assessment.noteOpen = false;
+                  }
+                }
+
+                // Also populate the assessments state object for compatibility with static widgets
+                this.assessments = {};
+                if (data.assessments && data.assessments.length > 0) {
+                  for (const assessment of data.assessments) {
+                    this.assessments[assessment.id] = {
+                      result: assessment.result || '',
+                      notes: assessment.notes || '',
+                      submitting: false
+                    };
+                  }
+                }
+
+                // Load existing image notes or clear for new visit (deprecated, keeping for compatibility)
+                this.imageNotes = {};
+
+                // Close modal if open
+                this.closeImageModal();
+
+      } catch (error) {
+                console.error('Error loading visit data:', error);
+                // Fallback to page reload on error (convert 0-based index to 1-based URL)
+                const url = new URL(window.location);
+                url.searchParams.set('visit', visitIndex + 1);
+                if (this.widgetSize !== 350) {
+                  url.searchParams.set('widgetSize', Math.round(this.widgetSize));
+                }
+                window.location.href = url.toString();
+              }
+            },
+
+
+    updateUrlWithImageSize() {
+      const url = new URL(window.location);
+      if (this.imageHeight !== 128) { // Only add if not default
+        url.searchParams.set('imageSize', Math.round(this.imageHeight));
+      } else {
+        url.searchParams.delete('imageSize');
+      }
+      // Update URL without reloading
+      window.history.replaceState({}, '', url.toString());
+    },
+
+    // Slider functionality
+    startDrag(event) {
+      event.preventDefault();
+      this.isDragging = true;
+
+      const handleMove = (e) => {
+        if (!this.isDragging) return;
+
+        const slider = event.target.parentElement;
+        const rect = slider.getBoundingClientRect();
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+                const percentage = x / rect.width;
+
+                // Map percentage to height range (80px to 400px)
+                this.imageHeight = 80 + (percentage * (400 - 80));
+        this.updateUrlWithImageSize();
+      };
+
+      const handleEnd = () => {
+        this.isDragging = false;
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleEnd);
+        document.removeEventListener('touchmove', handleMove);
+        document.removeEventListener('touchend', handleEnd);
+      };
+
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleEnd);
+      document.addEventListener('touchmove', handleMove);
+      document.addEventListener('touchend', handleEnd);
+    },
+
+            setImageSizeFromClick(event) {
+              if (this.isDragging) return;
+
+              const rect = event.currentTarget.getBoundingClientRect();
+              const x = event.clientX - rect.left;
+              const percentage = x / rect.width;
+
+              // Map percentage to height range (80px to 400px)
+              this.imageHeight = 80 + (percentage * (400 - 80));
+              this.updateUrlWithImageSize();
+            },
+
+    async submitResult(result) {
+      if (this.submitting) return;
+
+      this.submitting = true;
+
+        try {
+          console.log('Submitting image notes:', this.imageNotes);
+          const formData = new FormData();
+          formData.append('visit_id', this.currentVisit?.visit_id || '{{ current_visit.id }}');
+          formData.append('result', result);
+          formData.append('notes', this.currentNotes);
+          formData.append('current_index', this.visitIndex);
+          formData.append('auto_advance', 'true');
+
+          // Filter out the _open keys (they're UI state, not actual notes)
+          const actualImageNotes = {};
+          for (const [key, value] of Object.entries(this.imageNotes)) {
+            if (!key.endsWith('_open')) {
+              actualImageNotes[key] = value;
+            }
+          }
+          const imageNotesJson = JSON.stringify(actualImageNotes);
+          console.log('Image notes JSON:', imageNotesJson);
+          formData.append('image_notes', imageNotesJson);
+          formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        const response = await fetch('{% url "audit:result_update" session.id %}', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Update progress
+          this.auditedCount = data.audited_count;
+          this.progressPercentage = data.progress_percentage;
+          this.pendingCount = data.total_visits - data.audited_count;
+
+                  // Auto-advance if there's a next visit
+                  if (data.should_advance) {
+                    setTimeout(async () => {
+                      await this.navigateToVisit(data.next_index);
+                    }, 300); // Faster transition for rapid workflow
+                  } else {
+                    // Just reload current visit data to show updated status
+                    setTimeout(async () => {
+                      await this.loadVisitData(this.visitIndex);
+                    }, 300);
+                  }
+        } else {
+          alert('Error saving result: ' + data.error);
+        }
+      } catch (error) {
+        alert('Error saving result: ' + error.message);
+      } finally {
+        this.submitting = false;
+      }
+            },
+
+            // Image modal functions
+            openImageModal(imageSrc) {
+              this.modalImageSrc = imageSrc;
+              this.showImageModal = true;
+            },
+
+            closeImageModal() {
+              this.showImageModal = false;
+              this.modalImageSrc = '';
+            },
+
+            // Assessment management functions
+            async updateAssessment(assessmentId, result) {
+              // Initialize assessment state if not exists
+              if (!this.assessments[assessmentId]) {
+                this.assessments[assessmentId] = { result: '', notes: '', submitting: false };
+              }
+
+              if (this.assessments[assessmentId].submitting) return;
+
+              this.assessments[assessmentId].submitting = true;
+
+              try {
+                const formData = new FormData();
+                formData.append('result', result);
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+                const response = await fetch(`/audit/api/assessment/${assessmentId}/update/`, {
+                  method: 'POST',
+                  body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                  this.assessments[assessmentId].result = result;
+
+                  // Update currentVisit if it exists (for AJAX-loaded data)
+                  if (this.currentVisit && this.currentVisit.assessments) {
+                    const assessment = this.currentVisit.assessments.find(a => a.id === assessmentId);
+                    if (assessment) {
+                      assessment.result = result;
+                    }
+                  }
+                } else {
+                  alert('Error updating assessment: ' + data.error);
+                }
+              } catch (error) {
+                alert('Error updating assessment: ' + error.message);
+              } finally {
+                this.assessments[assessmentId].submitting = false;
+              }
+            },
+
+            async updateAssessmentNote(assessmentId, notes) {
+              // Initialize assessment state if not exists
+              if (!this.assessments[assessmentId]) {
+                this.assessments[assessmentId] = { result: '', notes: '', submitting: false };
+              }
+
+              try {
+                const formData = new FormData();
+                formData.append('notes', notes || '');
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+                const response = await fetch(`/audit/api/assessment/${assessmentId}/update/`, {
+                  method: 'POST',
+                  body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                  this.assessments[assessmentId].notes = notes;
+
+                  // Update currentVisit if it exists (for AJAX-loaded data)
+                  if (this.currentVisit && this.currentVisit.assessments) {
+                    const assessment = this.currentVisit.assessments.find(a => a.id === assessmentId);
+                    if (assessment) {
+                      assessment.notes = notes;
+                    }
+                  }
+                } else {
+                  console.error('Error updating assessment note:', data.error);
+                }
+              } catch (error) {
+                console.error('Error updating assessment note:', error.message);
+              }
+            },
+
+            // Keyboard shortcuts for rapid workflow
+    handleKeydown(event) {
+      // Only handle if not typing in a text field
+      if (event.target.tagName === 'TEXTAREA' || event.target.tagName === 'INPUT') return;
+
+      switch(event.key) {
+        case 'p':
+        case 'P':
+        case '1':
+          event.preventDefault();
+          this.submitResult('pass');
+          break;
+        case 'f':
+        case 'F':
+        case '2':
+          event.preventDefault();
+          this.submitResult('fail');
+          break;
+        case 'ArrowLeft':
+          event.preventDefault();
+          if (this.hasPrevious) this.navigateToVisit(this.previousIndex);
+          break;
+                case 'ArrowRight':
+                  event.preventDefault();
+                  if (this.hasNext) this.navigateToVisit(this.nextIndex);
+                  break;
+                case 'Escape':
+                  event.preventDefault();
+                  if (this.showImageModal) this.closeImageModal();
+                  break;
+      }
+    },
+
+            // Complete audit session
+            async completeAudit() {
+              if (!this.overallResult || this.submittingCompletion) return;
+
+              this.submittingCompletion = true;
+
+              try {
+                const formData = new FormData();
+                formData.append('overall_result', this.overallResult);
+                formData.append('notes', this.completionNotes);
+                formData.append('kpi_notes', this.kpiNotes);
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+                const response = await fetch('{% url "audit:session_complete" session.id %}', {
+                  method: 'POST',
+                  body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                  // Reload page to show completed status
+                  window.location.reload();
+                } else {
+                  alert('Error completing audit: ' + data.error);
+                }
+              } catch (error) {
+                alert('Error completing audit: ' + error.message);
+              } finally {
+                this.submittingCompletion = false;
+              }
+            },
+
+            // Uncomplete (reopen) audit session
+            async uncompleteAudit() {
+              if (this.submittingCompletion) return;
+
+              if (!confirm('Are you sure you want to reopen this audit? It will be marked as in progress.')) {
+                return;
+              }
+
+              this.submittingCompletion = true;
+
+              try {
+                const formData = new FormData();
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+                const response = await fetch('{% url "audit:session_uncomplete" session.id %}', {
+                  method: 'POST',
+                  body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                  // Reload page to show in-progress status
+                  window.location.reload();
+                } else {
+                  alert('Error reopening audit: ' + data.error);
+                }
+              } catch (error) {
+                alert('Error reopening audit: ' + error.message);
+              } finally {
+                this.submittingCompletion = false;
+              }
+            }
+  };
+}
+</script>
+{% endblock %}

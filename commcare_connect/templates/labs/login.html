@@ -1,0 +1,97 @@
+{% extends "account/base.html" %}
+
+{% load static %}
+
+{% block head_title %}Sign In - Labs{% endblock %}
+
+{% block inner %}
+<div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+  <div class="flex items-center gap-2">
+    <h6 class="title text-blue-600">Labs Login</h6>
+    <span class="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-1 rounded">EXPERIMENTAL</span>
+  </div>
+
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="p-3 rounded {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'success' %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if user_profile %}
+    <!-- Already Logged In -->
+    <div class="bg-green-50 border-l-4 border-green-400 p-4 space-y-3">
+      <p class="text-sm font-semibold text-green-800">
+        <i class="fa-solid fa-check-circle mr-1"></i> You are already logged in
+      </p>
+
+      <div class="space-y-2">
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-user text-green-600 mt-1"></i>
+          <div>
+            <p class="text-xs text-green-700 font-semibold">Username</p>
+            <p class="text-sm text-green-800">{{ user_profile.username }}</p>
+          </div>
+        </div>
+
+        {% if user_profile.email %}
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-envelope text-green-600 mt-1"></i>
+          <div>
+            <p class="text-xs text-green-700 font-semibold">Email</p>
+            <p class="text-sm text-green-800">{{ user_profile.email }}</p>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      <a href="/audit/" class="button button-md primary-dark w-full px-6 py-3">
+        <i class="fa-solid fa-clipboard-check mr-2"></i>
+        <span class="relative z-20">Go to Audit</span>
+      </a>
+
+      <a href="/tasks/" class="button button-md primary-dark w-full px-6 py-3">
+        <i class="fa-solid fa-list-check mr-2"></i>
+        <span class="relative z-20">Go to Tasks</span>
+      </a>
+
+      <form method="post" action="{% url 'labs:logout' %}" class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="button button-md outline-style w-full px-6 py-3">
+          <i class="fa-solid fa-right-from-bracket mr-2"></i>
+          <span class="relative z-20">Logout</span>
+        </button>
+      </form>
+    </div>
+
+  {% else %}
+    <!-- Not Logged In -->
+    <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+      <p class="text-sm font-semibold text-blue-800 mb-2">
+        <i class="fa-solid fa-flask mr-1"></i> Labs Mode - Experimental Environment
+      </p>
+      <p class="text-sm text-blue-700">
+        Click below to authenticate with <strong>connect.dimagi.com</strong>. You'll authorize this application,
+        then return here to access experimental features. Session-based authentication - no passwords stored locally.
+      </p>
+    </div>
+
+    <div class="flex justify-center w-full">
+      <a href="{% url 'labs:oauth_initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}"
+         class="button button-md primary-dark px-6 py-3">
+        <i class="fa-solid fa-right-to-bracket mr-2"></i>
+        <span class="relative z-20">Authorize with Connect</span>
+      </a>
+    </div>
+  {% endif %}
+
+  <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4">
+    <i class="fa-solid fa-lock mr-1"></i> Secure OAuth authentication only
+  </div>
+</div>
+{% endblock %}

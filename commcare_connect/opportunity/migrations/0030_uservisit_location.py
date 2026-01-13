@@ -12,6 +12,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="uservisit",
             name="location",
-            field=models.CharField(null=True),
+            field=models.CharField(max_length=255, null=True),
         ),
     ]

@@ -1,0 +1,39 @@
+<!-- File Attachments Component -->
+<div class="bg-white rounded-xl shadow-sm p-8 mb-8">
+    <h2 class="text-xl font-semibold text-brand-deep-purple mb-6">
+        <i class="fa-solid fa-paperclip mr-2"></i>
+        {{ section_title|default:"File Attachments" }}
+    </h2>
+
+    {% if response.file_attachments.exists %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% for attachment in response.file_attachments.all %}
+                <div class="flex items-center p-4 bg-gray-50 rounded-lg">
+                    <div class="flex-shrink-0 w-10 h-10 bg-brand-indigo rounded-lg flex items-center justify-center mr-3">
+                        <i class="fa-solid fa-file text-white"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 truncate">
+                            {{ attachment.original_filename|default:attachment.file.name|default:"Untitled" }}
+                        </p>
+                        <p class="text-sm text-gray-500">
+                            Uploaded <span class="local-datetime" datetime="{{ attachment.date_created|date:'c' }}">{{ attachment.date_created|date:"M j, Y" }}</span>
+                        </p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <a href="{{ attachment.file.url }}"
+                           class="text-brand-indigo hover:text-brand-indigo-dark"
+                           target="_blank">
+                            <i class="fa-solid fa-download"></i>
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-center py-8">
+            <i class="fa-solid fa-paperclip text-4xl text-gray-300 mb-4"></i>
+            <p class="text-gray-500">No supporting documents were provided with this response.</p>
+        </div>
+    {% endif %}
+</div>

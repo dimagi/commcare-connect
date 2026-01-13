@@ -20,7 +20,8 @@ certifi==2023.7.22
     # via
     #   -c requirements/base.txt
     #   requests
-cffi==1.15.1
+    #   sentry-sdk
+cffi==2.0.0
     # via
     #   -c requirements/base.txt
     #   cryptography
@@ -68,7 +69,7 @@ packaging==23.1
     #   gunicorn
 psycopg2==2.9.6
     # via -r requirements/production.in
-pycparser==2.21
+pycparser==2.22
     # via
     #   -c requirements/base.txt
     #   cffi
@@ -82,6 +83,8 @@ requests==2.31.0
     #   django-anymail
 s3transfer==0.6.1
     # via boto3
+sentry-sdk==1.29.2
+    # via -r requirements/production.in
 six==1.16.0
     # via
     #   -c requirements/base.txt
@@ -96,6 +99,7 @@ urllib3==1.26.16
     #   botocore
     #   django-anymail
     #   requests
+    #   sentry-sdk
 zope-event==5.0
     # via
     #   -c requirements/base.txt

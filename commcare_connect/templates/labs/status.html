@@ -1,0 +1,109 @@
+{% extends "account/base.html" %}
+
+{% load static %}
+
+{% block head_title %}Labs Status{% endblock %}
+
+{% block inner %}
+<div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+  <div class="flex items-center gap-2">
+    <h6 class="title text-blue-600">Labs Authentication Status</h6>
+    <span class="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-1 rounded">EXPERIMENTAL</span>
+  </div>
+
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="p-3 rounded {% if message.tags == 'error' %}bg-red-100 text-red-800{% elif message.tags == 'success' %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if user_profile %}
+    <div class="bg-green-50 border-l-4 border-green-400 p-4 space-y-3">
+      <p class="text-sm font-semibold text-green-800">
+        <i class="fa-solid fa-check-circle mr-1"></i> You are authenticated
+      </p>
+
+      <div class="space-y-2">
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-user text-green-600 mt-1"></i>
+          <div>
+            <p class="text-xs text-green-700 font-semibold">Username</p>
+            <p class="text-sm text-green-800">{{ user_profile.username }}</p>
+          </div>
+        </div>
+
+        {% if user_profile.email %}
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-envelope text-green-600 mt-1"></i>
+          <div>
+            <p class="text-xs text-green-700 font-semibold">Email</p>
+            <p class="text-sm text-green-800">{{ user_profile.email }}</p>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if user_profile.first_name or user_profile.last_name %}
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-id-card text-green-600 mt-1"></i>
+          <div>
+            <p class="text-xs text-green-700 font-semibold">Name</p>
+            <p class="text-sm text-green-800">{{ user_profile.first_name }} {{ user_profile.last_name }}</p>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 space-y-2">
+      <p class="text-sm font-semibold text-yellow-800">
+        <i class="fa-solid fa-info-circle mr-1"></i> About OAuth Tokens
+      </p>
+      <p class="text-sm text-yellow-700">
+        Your authentication is stored as a secure OAuth token in your browser session. If you're experiencing
+        authentication issues or want to re-authenticate, you can clear your token below.
+      </p>
+    </div>
+
+    <div class="space-y-3">
+      <form method="post" action="{% url 'labs:logout' %}" class="w-full">
+        {% csrf_token %}
+        <button type="submit"
+                class="w-full flex gap-2 items-center justify-center rounded-lg bg-red-600 hover:bg-red-700 p-3 cursor-pointer transition-colors shadow-sm">
+          <i class="fa-solid fa-right-from-bracket text-white"></i>
+          <span class="text-sm text-white font-medium">Clear Token & Logout</span>
+        </button>
+      </form>
+
+      <a href="/audit/"
+         class="block w-full text-center rounded-lg bg-blue-600 hover:bg-blue-700 p-3 text-sm text-white font-medium transition-colors shadow-sm">
+        <i class="fa-solid fa-arrow-left mr-2"></i>Back to Audit
+      </a>
+    </div>
+
+  {% else %}
+    <div class="bg-gray-50 border-l-4 border-gray-400 p-4 space-y-2">
+      <p class="text-sm font-semibold text-gray-800">
+        <i class="fa-solid fa-circle-xmark mr-1"></i> Not authenticated
+      </p>
+      <p class="text-sm text-gray-700">
+        You are not currently logged in to the Labs environment.
+      </p>
+    </div>
+
+    <div class="space-y-2">
+      <a href="{% url 'labs:login' %}"
+         class="block w-full text-center rounded-lg bg-blue-600 hover:bg-blue-700 p-3 text-sm text-white font-medium transition-colors shadow-sm">
+        <i class="fa-solid fa-right-to-bracket mr-2"></i>Login to Labs
+      </a>
+    </div>
+  {% endif %}
+
+  <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4">
+    <i class="fa-solid fa-flask mr-1"></i> Labs Environment
+  </div>
+</div>
+{% endblock %}

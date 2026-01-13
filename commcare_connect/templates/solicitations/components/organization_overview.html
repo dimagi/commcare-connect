@@ -1,0 +1,117 @@
+{% comment %}
+Reusable organization overview component for solicitation views.
+
+Parameters:
+- organization: Organization object to display
+- show_expandable: whether to show the expandable profile section (default: true)
+- compact: whether to use compact layout (default: false)
+- show_icon: whether to show the building icon (default: true)
+
+Usage examples:
+{% include "solicitations/components/organization_overview.html" with organization=response.organization %}
+{% include "solicitations/components/organization_overview.html" with organization=response.organization compact=true %}
+{% include "solicitations/components/organization_overview.html" with organization=response.organization show_expandable=false %}
+{% endcomment %}
+
+<div class="{% if compact %}bg-gray-50 rounded-lg p-4{% else %}bg-white rounded-xl shadow-sm p-6 mb-8{% endif %}"
+     x-data="{ expanded: false }">
+
+    <!-- Basic Organization Information (Always Visible) -->
+    <div class="flex items-start justify-between">
+        <div class="flex items-start gap-3 flex-1">
+            {% if show_icon|default:true %}
+                <div class="flex-shrink-0 w-10 h-10 bg-brand-indigo rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-building text-white text-sm"></i>
+                </div>
+            {% endif %}
+
+            <div class="flex-1 min-w-0">
+                <h3 class="{% if compact %}text-base{% else %}text-lg{% endif %} font-semibold text-brand-deep-purple mb-1">
+                    {{ organization.name }}
+                </h3>
+
+                <div class="flex items-center gap-4 text-sm text-gray-600">
+                    <div class="flex items-center gap-1">
+                        <i class="fa-solid fa-tag text-gray-400 text-xs"></i>
+                        <span>{{ organization.slug }}</span>
+                    </div>
+
+                    {% if organization.program_manager %}
+                        <div class="flex items-center gap-1">
+                            <span class="badge badge-sm primary-light">
+                                <i class="fa-solid fa-cogs mr-1"></i>
+                                Program Manager
+                            </span>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Member count (if available) -->
+                {% if organization.members.count %}
+                    <div class="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                        <i class="fa-solid fa-users text-gray-400"></i>
+                        <span>{{ organization.members.count }} member{{ organization.members.count|pluralize }}</span>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Expandable Toggle (if enabled) -->
+        {% if show_expandable|default:true %}
+            <button @click="expanded = !expanded"
+                    class="flex-shrink-0 text-gray-400 hover:text-brand-indigo transition-colors duration-200">
+                <i class="fa-solid fa-chevron-down transform transition-transform duration-200"
+                   :class="{ 'rotate-180': expanded }"></i>
+            </button>
+        {% endif %}
+    </div>
+
+    <!-- Expandable Profile Section -->
+    {% if show_expandable|default:true %}
+        <div x-show="expanded"
+             x-transition
+             class="mt-4 pt-4 border-t border-gray-200">
+
+            <h4 class="text-sm font-medium text-brand-deep-purple mb-3">
+                <i class="fa-solid fa-info-circle mr-2"></i>
+                Organization Profile
+            </h4>
+
+            <!-- Placeholder for future organization data -->
+            <div class="bg-gray-50 rounded-lg p-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <div class="text-gray-500 mb-1">Description</div>
+                        <div class="text-gray-400 italic">Future Org Data Model would Populate Here</div>
+                    </div>
+
+                    <div>
+                        <div class="text-gray-500 mb-1">Location</div>
+                        <div class="text-gray-400 italic">Future Org Data Model would Populate Here</div>
+                    </div>
+
+                    <div>
+                        <div class="text-gray-500 mb-1">Contact Information</div>
+                        <div class="text-gray-400 italic">Future Org Data Model would Populate Here</div>
+                    </div>
+
+                    <div>
+                        <div class="text-gray-500 mb-1">Organization Type</div>
+                        <div class="text-gray-400 italic">Future Org Data Model would Populate Here</div>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <div class="text-gray-500 mb-1">Capabilities & Experience</div>
+                        <div class="text-gray-400 italic">Future Org Data Model would Populate Here</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Future: Add metrics, history, etc. -->
+            <div class="mt-3 text-xs text-gray-500">
+                <i class="fa-solid fa-clock mr-1"></i>
+                Organization created {{ organization.date_created|date:"M j, Y" }}
+            </div>
+        </div>
+    {% endif %}
+</div>

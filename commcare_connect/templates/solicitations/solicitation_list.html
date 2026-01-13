@@ -1,0 +1,174 @@
+{% extends "solicitations/public_base.html" %}
+{% load static %}
+
+{% block page_title %}
+    {% if current_type == 'eoi' %}
+        Expressions of Interest
+    {% elif current_type == 'rfp' %}
+        Requests for Proposals
+    {% else %}
+        Current Opportunities
+    {% endif %}
+{% endblock %}
+
+{% block hero_title %}
+    {% if current_type == 'eoi' %}
+        Expressions of Interest
+    {% elif current_type == 'rfp' %}
+        Requests for Proposals
+    {% else %}
+        Current Opportunities
+    {% endif %}
+{% endblock %}
+
+{% block hero_description %}
+    {% if current_type == 'eoi' %}
+        Initial opportunities to express your interest in partnering with CommCare Connect programs.
+    {% elif current_type == 'rfp' %}
+        Detailed proposal requests for selected partners to submit comprehensive implementation plans.
+    {% else %}
+        Browse our current partnership opportunities including Expressions of Interest and Requests for Proposals.
+    {% endif %}
+{% endblock %}
+
+{% block main_content %}
+    <!-- Filter Section -->
+    <div class="card_bg mb-8">
+        <div class="flex flex-wrap gap-2">
+            <a href="{% url 'solicitations:list' %}"
+               class="button button-sm {% if current_type == 'all' %}primary-dark{% else %}outline-style{% endif %}">
+                All Opportunities ({{ total_active }})
+            </a>
+            <a href="{% url 'solicitations:eoi_list' %}"
+               class="button button-sm {% if current_type == 'eoi' %}primary-dark{% else %}outline-style{% endif %}">
+                EOIs ({{ eoi_count }})
+            </a>
+            <a href="{% url 'solicitations:rfp_list' %}"
+               class="button button-sm {% if current_type == 'rfp' %}primary-dark{% else %}outline-style{% endif %}">
+                RFPs ({{ rfp_count }})
+            </a>
+        </div>
+    </div>
+
+
+
+    <!-- Solicitations Grid -->
+    {% if solicitations %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {% for solicitation in solicitations %}
+                <div class="card_bg hover:shadow-lg transition-all duration-300">
+                    <!-- Card Header -->
+                    <div class="mb-4">
+                        <div class="flex items-start justify-between mb-3">
+                            <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
+                                {{ solicitation.get_solicitation_type_display }}
+                            </span>
+                            <div class="flex items-center gap-1 text-sm text-green-600">
+                                <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span>Active</span>
+                            </div>
+                        </div>
+
+                        <h3 class="card_title mb-2">
+                            <a href="{% url 'solicitations:detail' solicitation.pk %}"
+                               class="hover:text-brand-cornflower-blue transition-colors">
+                                {{ solicitation.title }}
+                            </a>
+                        </h3>
+
+                        <p class="card_description mb-3">
+                            {{ solicitation.description|truncatewords:25 }}
+                        </p>
+                    </div>
+
+                    <!-- Card Body -->
+                    <div class="mb-4">
+                        <div class="space-y-2 text-sm text-gray-600">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-location-dot text-gray-400"></i>
+                                <span>{{ solicitation.target_population }}</span>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-building text-gray-400"></i>
+                                <span>{{ solicitation.program.organization.name }}</span>
+                            </div>
+
+                            {% if solicitation.estimated_scale %}
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-chart-bar text-gray-400"></i>
+                                    <span>{{ solicitation.estimated_scale }}</span>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Card Footer -->
+                    <div class="pt-4 border-t border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <div class="text-sm text-gray-600">
+                                <span class="font-medium">Deadline:</span>
+                                {{ solicitation.application_deadline|date:"M d, Y" }}
+                            </div>
+                            <a href="{% url 'solicitations:detail' solicitation.pk %}"
+                               class="button button-sm primary-dark">
+                                View Details
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+            <div class="flex justify-center">
+                <nav class="flex items-center gap-2">
+                    {% if page_obj.has_previous %}
+                        <a href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}"
+                           class="button button-sm outline-style">First</a>
+                        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}"
+                           class="button button-sm outline-style">Previous</a>
+                    {% endif %}
+
+                    <span class="px-4 py-2 text-sm text-brand-deep-purple font-medium">
+                        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                    </span>
+
+                    {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}"
+                           class="button button-sm outline-style">Next</a>
+                        <a href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}"
+                           class="button button-sm outline-style">Last</a>
+                    {% endif %}
+                </nav>
+            </div>
+        {% endif %}
+
+    {% else %}
+        <!-- Empty State -->
+        <div class="text-center py-12">
+            <i class="fa-solid fa-box-open text-5xl text-gray-400 mx-auto mb-4"></i>
+            <h3 class="card_title mb-2">
+                {% if search_query %}
+                    No opportunities found matching "{{ search_query }}"
+                {% else %}
+                    No opportunities available
+                {% endif %}
+            </h3>
+            <p class="card_description mb-6">
+                {% if search_query %}
+                    Try adjusting your search terms or browse all opportunities.
+                {% else %}
+                    Check back soon for new partnership opportunities.
+                {% endif %}
+            </p>
+            {% if search_query %}
+                <a href="{% url 'solicitations:list' %}"
+                   class="button button-md primary-dark">
+                    View All Opportunities
+                </a>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}

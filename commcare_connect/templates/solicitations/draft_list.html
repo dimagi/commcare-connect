@@ -1,0 +1,114 @@
+{% extends "solicitations/public_base.html" %}
+{% load i18n %}
+
+
+{% block title %}My Drafts{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">My Draft Responses</h1>
+                <p class="text-gray-600 mt-2">Continue working on your saved responses</p>
+            </div>
+            <a href="{% url 'solicitations:list' %}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                <i class="fa-solid fa-arrow-left mr-2"></i>
+                Browse Solicitations
+            </a>
+        </div>
+    </div>
+
+    {% if drafts %}
+        <!-- Drafts Grid -->
+        <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {% for draft in drafts %}
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <!-- Status Badge -->
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <i class="fa-solid fa-pencil mr-1"></i>
+                            Draft
+                        </span>
+                        <span class="text-xs text-gray-500">
+                            {{ draft.solicitation.get_solicitation_type_display }}
+                        </span>
+                    </div>
+
+                    <!-- Solicitation Info -->
+                    <div class="mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
+                            {{ draft.solicitation.title }}
+                        </h3>
+                        <p class="text-sm text-gray-600 line-clamp-3">
+                            {{ draft.solicitation.description|truncatewords:20 }}
+                        </p>
+                    </div>
+
+                    <!-- Meta Info -->
+                    <div class="space-y-2 mb-4 text-sm text-gray-500">
+                        <div class="flex items-center">
+                            <i class="fa-solid fa-calendar-days w-4 mr-2"></i>
+                            <span>Deadline: {{ draft.solicitation.application_deadline|date:"M j, Y" }}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fa-solid fa-clock w-4 mr-2"></i>
+                            <span>Last saved: <time class="local-datetime" datetime="{{ draft.date_modified|date:'c' }}">{{ draft.date_modified|date:"M j, Y g:i A" }}</time></span>
+                        </div>
+                        {% if draft.solicitation.budget %}
+                            <div class="flex items-center">
+                                <i class="fa-solid fa-dollar-sign w-4 mr-2"></i>
+                                <span>${{ draft.solicitation.budget|floatformat:0 }}</span>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Progress Indicator -->
+                    {% if draft.responses %}
+                        <div class="mb-4">
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-gray-600">Progress</span>
+                                <span class="text-gray-900">{{ draft.responses|length }} field{{ draft.responses|length|pluralize }} saved</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
+                                <div class="bg-brand-indigo h-2 rounded-full" style="width: 30%"></div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-4">
+                        <a href="{% url 'solicitations:respond' solicitation_pk=draft.solicitation.pk %}"
+                           class="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-indigo-dark">
+                            <i class="fa-solid fa-edit mr-2"></i>
+                            Continue
+                        </a>
+                        <a href="{% url 'solicitations:detail' draft.solicitation.pk %}"
+                           class="inline-flex items-center justify-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                            <i class="fa-solid fa-eye"></i>
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <!-- Empty State -->
+        <div class="text-center py-12">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 mb-6">
+                <i class="fa-solid fa-file-lines text-2xl text-gray-400"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No drafts yet</h3>
+            <p class="text-gray-600 mb-6">
+                When you start responding to solicitations and save your progress, your drafts will appear here.
+            </p>
+            <a href="{% url 'solicitations:list' %}"
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-indigo-dark">
+                <i class="fa-solid fa-search mr-2"></i>
+                Browse Solicitations
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
