@@ -319,3 +319,20 @@ class TestConfirmPaymentView:
         )
         response = api_client.post(f"/api/payment/{payment.pk}/confirm", {"confirmed": "true"})
         assert response.status_code == 404
+
+    def test_confirm_payment_unauthenticated(
+        self,
+        mobile_user: User,
+        api_client: APIClient,
+        opportunity: Opportunity,
+    ):
+        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity)
+        payment = Payment.objects.create(
+            amount=10,
+            date_paid=datetime.date.today(),
+            opportunity_access=access,
+        )
+
+        response = api_client.post(f"/api/payment/{payment.pk}/confirm", {"confirmed": "true"})
+
+        assert response.status_code == 401
