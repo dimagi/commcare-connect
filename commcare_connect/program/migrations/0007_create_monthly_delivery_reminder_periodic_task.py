@@ -29,7 +29,7 @@ def delete_monthly_delivery_reminder_periodic_task(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("program", "0007_set_uuid_unique"),
+        ("program", "0006_backfill_uuid_fields"),
     ]
 
     operations = [
