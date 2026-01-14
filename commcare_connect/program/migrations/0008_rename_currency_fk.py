@@ -5,12 +5,12 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0093_remove_opportunity_currency"),
+        ("program", "0007_remove_program_currency"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name="opportunity",
+            model_name="program",
             old_name="currency_fk",
             new_name="currency",
         ),
