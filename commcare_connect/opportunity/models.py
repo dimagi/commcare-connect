@@ -422,7 +422,7 @@ class PaymentUnit(models.Model):
     payment_unit_id = models.UUIDField(editable=False, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
     amount = models.PositiveIntegerField()
-    org_amount = models.PositiveIntegerField(null=True)
+    org_amount = models.PositiveIntegerField(default=0)
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
