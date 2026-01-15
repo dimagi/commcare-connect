@@ -129,7 +129,7 @@ celery -A config.celery_app worker -B -l info
 
 ### Maildev
 
-[Mailev](https://github.com/maildev/maildev) is a very simple-to-use tool for testing locally generated emails. Maildev has a [docker image](https://hub.docker.com/r/maildev/maildev) availble to run the tool, so you can just follow the commands below to get maildev up and running locally.
+[Maildev](https://github.com/maildev/maildev) is a very simple-to-use tool for testing locally generated emails. Maildev has a [docker image](https://hub.docker.com/r/maildev/maildev) available to run the tool, so you can just follow the commands below to get maildev up and running locally.
 
 1. Pull the image from docker hub
 
