@@ -127,6 +127,30 @@ or you can embed the beat service inside a worker with the `-B` option (not reco
 celery -A config.celery_app worker -B -l info
 ```
 
+### Maildev
+
+[Mailev](https://github.com/maildev/maildev) is a very simple-to-use tool for testing locally generated emails. Maildev has a [docker image](https://hub.docker.com/r/maildev/maildev) availble to run the tool, so you can just follow the commands below to get maildev up and running locally.
+
+1. Pull the image from docker hub
+
+```
+docker pull maildev/maildev
+```
+
+2. Create the container
+
+```
+docker run -p 1080:1080 -p 1025:1025 --name connect-maildev maildev/maildev
+```
+
+3. Now tell your local env to use maildev by adding the following to your `.env` file (remember to restart the webserver if it's running)
+
+```
+MAILDEV_ENABLED=True
+```
+
+Maildev is now running and all emails sent from your local environment will be handled by maildev. You can inspect what the emails look like by accessing maildev directly in the browser (http://localhost:1080).
+
 ## Deployment
 
 The following details how to deploy this application.
