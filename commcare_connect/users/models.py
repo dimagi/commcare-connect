@@ -58,7 +58,6 @@ class User(AbstractUser):
             ("all_org_access", "Allow admin access to all organizations"),
             ("view_commcarehq_form_link", "Can view CommCareHQ form link"),
             ("org_management_settings_access", "Can manage organizations settings"),
-            ("invoice_report_access", "Allow access to Invoice reports"),
         ]
 
     def __str__(self):
