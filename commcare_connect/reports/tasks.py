@@ -1,9 +1,13 @@
 import logging
+import uuid
 from collections import defaultdict
 from itertools import chain
 
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db.models import Case, Count, DateTimeField, F, IntegerField, Max, Min, Q, Sum, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
+from django_tables2.export.export import TableExport
 
 from commcare_connect.connect_id_client.main import fetch_user_analytics
 from commcare_connect.opportunity.models import CompletedWorkStatus, OpportunityAccess
@@ -128,3 +132,20 @@ def sync_user_analytics_data():
     )
 
     logger.info(f"Updated UserAnalyticsData for {len(result)} users.")
+
+
+@celery_app.task()
+def export_invoice_report_task(filters_data):
+    from commcare_connect.reports.views import InvoiceReportFilter, InvoiceReportTable, InvoiceReportView
+
+    logger.info("Starting invoice report export task with filters: %s", filters_data)
+
+    qs = InvoiceReportView.get_invoice_queryset()
+    filterset = InvoiceReportFilter(filters_data, queryset=qs)
+    table = InvoiceReportTable(filterset.qs)
+
+    exporter = TableExport("csv", table)
+    filename = f"invoice-report-{uuid.uuid4()}.csv"
+    content = exporter.export()
+    default_storage.save(filename, ContentFile(content.encode("utf-8")))
+    return filename

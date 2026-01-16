@@ -181,7 +181,7 @@ from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
-from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
+from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import PAGE_SIZE_OPTIONS, get_duration_min, get_validated_page_size
@@ -503,23 +503,16 @@ def review_visit_export(request, org_slug, opp_id):
 @org_member_required
 @require_GET
 def export_status(request, org_slug, task_id):
-    task = AsyncResult(task_id)
-    task_meta = task._get_task_meta()
-    opportunity_id = task_meta.get("args")[0]
-    # Make sure opportunity exists for the given org_slug
-    get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-    status = task_meta.get("status")
-    progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
-    if status == "FAILURE":
-        progress["error"] = task_meta.get("result")
-    return render(
+    def ownership_check(request, task_meta):
+        opportunity_id = task_meta.get("args")[0]
+        get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
+
+    return render_export_status(
         request,
-        "components/upload_progress_bar.html",
-        {
-            "task_id": task_id,
-            "current_time": now().microsecond,
-            "progress": progress,
-        },
+        task_id=task_id,
+        download_url=reverse("opportunity:download_export", args=(org_slug, task_id)),
+        export_status_url=reverse("opportunity:export_status", args=(org_slug, task_id)),
+        ownership_check=ownership_check,
     )
 
 
@@ -527,16 +520,12 @@ def export_status(request, org_slug, task_id):
 @require_GET
 def download_export(request, org_slug, task_id):
     task_meta = AsyncResult(task_id)._get_task_meta()
-    saved_filename = task_meta.get("result")
     opportunity_id = task_meta.get("args")[0]
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
     op_slug = slugify(opportunity.name)
-    export_format = saved_filename.split(".")[-1]
-    filename = f"{org_slug}_{op_slug}_export.{export_format}"
-
-    export_file = storages["default"].open(saved_filename)
-    return FileResponse(
-        export_file, as_attachment=True, filename=filename, content_type=TableExport.FORMATS[export_format]
+    return download_export_file(
+        task_id=task_id,
+        filename_without_ext=f"{org_slug}_{op_slug}_export",
     )
 
 
