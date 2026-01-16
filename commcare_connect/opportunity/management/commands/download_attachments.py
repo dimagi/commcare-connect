@@ -126,7 +126,7 @@ class Command(BaseCommand):
     def _download_visit_with_retries(self, visit_id: int, index: int, total: int, max_retries: int, delay: float):
         for attempt in range(1, max_retries + 1):
             try:
-                download_user_visit_attachments(visit_id)
+                download_user_visit_attachments.run(visit_id)
             except Exception as exc:  # noqa: BLE001
                 if attempt >= max_retries:
                     self.stderr.write(
