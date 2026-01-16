@@ -234,7 +234,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     }
 
     if action not in action_map:
-        return redirect(redirect_url)
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
 
     application.status = action_map[action]["status"]
     application.modified_by = request.user.email
@@ -243,7 +243,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     if action == "apply":
         send_program_invite_applied_email(application.id)
 
-    return redirect(redirect_url)
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 @org_viewer_required
