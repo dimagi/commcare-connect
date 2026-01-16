@@ -1,6 +1,11 @@
+from django.urls import reverse
+from django.utils.html import format_html
+from django.utils.translation import gettext as _
 from django_tables2 import columns, tables
 
+from commcare_connect.opportunity.models import PaymentInvoice
 from commcare_connect.opportunity.tables import SumColumn
+from commcare_connect.utils.tables import DMYTColumn
 
 
 class AdminReportTable(tables.Table):
@@ -34,3 +39,54 @@ class AdminReportTable(tables.Table):
 
     def render_max_time_to_payment(self, record, value):
         return f"{value} days"
+
+
+class InvoiceReportTable(tables.Table):
+    opportunity_id = columns.Column(
+        accessor="opportunity__id",
+        verbose_name=_("Opportunity ID"),
+    )
+    opportunity_name = columns.Column(
+        accessor="opportunity__name",
+        verbose_name=_("Opportunity Name"),
+    )
+    invoice_number = columns.Column(orderable=False, verbose_name=_("Invoice Number"))
+    amount = columns.Column(verbose_name=_("Amount"))
+    amount_usd = columns.Column(verbose_name=_("Amount (USD)"))
+    invoice_type = columns.Column(verbose_name=_("Type"), accessor="service_delivery")
+    status = columns.Column(verbose_name=_("Status"))
+    date = DMYTColumn(verbose_name=_("Date of Payment"), accessor="date_paid")
+
+    class Meta:
+        model = PaymentInvoice
+        fields = (
+            "opportunity_id",
+            "opportunity_name",
+            "invoice_number",
+            "amount",
+            "amount_usd",
+            "invoice_type",
+            "status",
+            "date",
+        )
+
+    def render_invoice_number(self, value, record):
+        url = reverse(
+            "opportunity:invoice_review",
+            args=[record.org_slug, record.opportunity_id, record.id],
+        )
+        return format_html(
+            '<a href="{}" class="underline text-brand-deep-purple">{}</a>',
+            url,
+            value,
+        )
+
+    def render_amount(self, record):
+        return f"{record.opportunity.currency_code} {record.amount}"
+
+    def render_invoice_type(self, record):
+        return (
+            PaymentInvoice.InvoiceType.service_delivery.label
+            if record.service_delivery
+            else PaymentInvoice.InvoiceType.custom.label
+        )
