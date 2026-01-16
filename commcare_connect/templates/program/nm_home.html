@@ -32,21 +32,23 @@
             {% endif %}
           </div>
         </div>
+
         <div class="w-full">
           <p class="card_title">{{ program.name }}</p>
           <p class="card_description w-full max-w-1/2">{{ program.description }}</p>
         </div>
+
+        <div class="infocard-dark">
+            <i class="fa-solid fa-file-circle-check"></i>
+            <div>
+                <h6>Delivery Type</h6>
+                <p>{{ program.delivery_type.name }}</p>
+            </div>
+        </div>
+
         <div class="flex justify-between items-center">
           <!-- program info -->
           <div class="flex items-center gap-6">
-              <div class="infocard-dark">
-                  <i class="fa-solid fa-file-circle-check"></i>
-                  <div>
-                      <h6>Delivery Type</h6>
-                      <p>{{ program.delivery_type.name }}</p>
-                  </div>
-              </div>
-              <div class="line my-2 h-8 w-1 bg-gray-200"></div>
               <div class="infocard-dark">
                   <i class="fa-solid fa-calendar-check"></i>
                   <div>
@@ -62,30 +64,30 @@
                   </div>
               </div>
           </div>
-
-          <!-- button -->
-          {% if program.status == 'invited' %}
-            <button {% if request.org_membership.is_viewer %}
-                    disabled
-                    {% else %}
-                    hx-post="{% url "program:apply_or_decline_application" request.org.slug program.id program.application_id "apply" %}"
-                    hx-swap="outerHTML"
-                    hx-target="body"
-                    {% endif %}
-                  class="button button-md primary-dark">
-              Apply
-            </button>
-          {% elif program.status == 'applied' %}
-            <button class="button button-md neutral" disabled>Apply</button>
-          {% elif program.status == 'accepted' %}
-            {% if program.managed_opportunities_for_org %}
-              <button class="button button-md outline-style" @click="showOpp = !showOpp">
-                <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
-                <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-              </button>
-            {% endif %}
-          {% endif %}
         </div>
+
+        {% if program.status == 'invited' %}
+          <button {% if request.org_membership.is_viewer %}
+                  disabled
+                  {% else %}
+                  hx-post="{% url "program:apply_or_decline_application" request.org.slug program.id program.application_id "apply" %}"
+                  hx-swap="outerHTML"
+                  hx-target="body"
+                  {% endif %}
+                class="button button-sm primary-dark">
+            Apply
+          </button>
+        {% elif program.status == 'applied' %}
+          <button class="button button-sm neutral" disabled>Apply</button>
+        {% elif program.status == 'accepted' %}
+          {% if program.managed_opportunities_for_org %}
+            <button class="button button-sm outline-style" @click="showOpp = !showOpp">
+              <span class="relative z-20" x-text="showOpp ? 'Hide Opportunities' : 'View Opportunities'"></span>
+              <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </button>
+          {% endif %}
+        {% endif %}
+
         {% if program.status == 'accepted' %}
           {% if program.managed_opportunities_for_org %}
             <div id="opportunity-container" class="flex flex-col gap-y-4 py-4" style="display:none;" x-cloak x-show="showOpp">
