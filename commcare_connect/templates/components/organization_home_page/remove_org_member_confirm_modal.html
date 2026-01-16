@@ -1,9 +1,9 @@
 {% load i18n %}
 
 <div x-show="showConfirmRemoveMembershipModal" x-cloak x-transition.opacity
-    class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop"
+    class="modal-backdrop"
     @keydown.escape.window="showConfirmRemoveMembershipModal = false">
-    <div @click.outside="showConfirmRemoveMembershipModal = false" class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+    <div @click.outside="showConfirmRemoveMembershipModal = false" class="modal">
 
         <div class="flex justify-between items-center pb-2 mb-4">
             <h2 class="text-lg font-medium text-brand-deep-purple">

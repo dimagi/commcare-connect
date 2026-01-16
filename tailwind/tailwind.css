@@ -674,11 +674,11 @@
 
 @layer {
   .modal {
-    @apply relative z-50 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
+    @apply relative z-50 mx-auto my-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
   }
 
   .modal-backdrop {
-    @apply fixed inset-0 z-40 flex items-center justify-center bg-black/40;
+    @apply fixed inset-0 z-40 overflow-y-auto bg-black/40 p-4;
   }
 
   .modal .dialog-box {
