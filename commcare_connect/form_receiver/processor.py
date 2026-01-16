@@ -259,7 +259,10 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
-    access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
     payment_unit = deliver_unit.payment_unit
     if not payment_unit:
         raise ProcessingError(
