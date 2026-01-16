@@ -63,6 +63,7 @@ class OrganizationDataExportSerializer(serializers.ModelSerializer):
 class ProgramDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     delivery_type = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    currency = serializers.CharField(source="currency_fk_id", read_only=True)
 
     class Meta:
         model = Program

@@ -1568,7 +1568,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 
         if self.is_service_delivery:
             self.fields["amount"].label = _("Amount ({currency_code})").format(
-                currency_code=self.opportunity.currency or "Local Currency"
+                currency_code=self.opportunity.currency_code or "Local Currency"
             )
             self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
 
@@ -1769,7 +1769,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             return cleaned_data  # Let individual field errors handle missing values
 
         if not self.is_service_delivery:
-            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
             if not exchange_rate:
                 raise ValidationError("Exchange rate not available for selected date.")
 
@@ -1780,7 +1780,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             cleaned_data["start_date"] = None
             cleaned_data["end_date"] = None
 
-            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency, date)
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
             if not exchange_rate:
                 raise ValidationError("Exchange rate not available for selected date.")
 

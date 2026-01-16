@@ -41,7 +41,6 @@ def valid_opportunity(organization):
         name="Test Opportunity",
         description="Test Description",
         short_description="Short Description",
-        currency="USD",
         is_test=False,
         end_date=datetime.date.today() + datetime.timedelta(days=30),
     )
