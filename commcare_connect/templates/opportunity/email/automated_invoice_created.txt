@@ -1,0 +1,17 @@
+Hi,
+
+The following invoices have been auto-created for your organization {{ organization.name }}.
+
+Invoices Details:
+
+{% for invoice_item in invoices_items %}
+    Opportunity: {{ invoice_item.opportunity.name }}
+    Invoice Number: {{ invoice_item.invoice.invoice_number }}
+    Invoice Amount: {{ invoice_item.opportunity.currency_code }} {{ invoice_item.invoice.amount }}
+    View Invoice: invoice_item.invoice_url
+{% endfor %}
+
+If you have any questions, please contact your Program Manager.
+
+Thank you,
+Connect

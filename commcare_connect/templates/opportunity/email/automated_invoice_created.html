@@ -1,0 +1,42 @@
+{% load i18n %}
+
+<p>{% trans "Hi," %}</p>
+
+<p>
+    The following invoices have been auto-created for your organization <strong>{{ organization.name }}</strong>.
+</p>
+
+<p><strong>{% trans "Invoices Details" %}</strong></p>
+<table style="border-collapse: collapse; width: 100%; max-width: 600px;">
+    <thead>
+        <tr>
+            <th style="border: 1px solid #dddddd; text-align: left; padding: 8px">{% trans "Opportunity" %}</th>
+            <th style="border: 1px solid #dddddd; text-align: left; padding: 8px">{% trans "Invoice Number" %}</th>
+            <th style="border: 1px solid #dddddd; text-align: left; padding: 8px">{% trans "Invoice Amount" %}</th>
+            <th style="border: 1px solid #dddddd; text-align: left; padding: 8px"></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for invoice_item in invoices_items %}
+        <tr>
+            <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">{{ invoice_item.opportunity.name }}</td>
+            <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">{{ invoice_item.invoice.invoice_number }}</td>
+            <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">{{ invoice_item.opportunity.currency_code }} {{ invoice_item.invoice.amount }}</td>
+            <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">
+                <a href="{{ invoice_item.invoice_url }}">
+                    {% trans "View Invoice" %}
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<p>
+    {% trans "If you have any questions, please contact your Program Manager." %}
+</p>
+
+<p>
+    {% blocktrans %}Thank you,{% endblocktrans %}<br>
+    Connect
+</p>
