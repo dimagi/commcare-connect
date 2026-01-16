@@ -215,6 +215,8 @@ X_FRAME_OPTIONS = "DENY"
 
 # EMAIL
 # ------------------------------------------------------------------------------
+MAILDEV_ENABLED = env("MAILDEV_ENABLED", default="False") == "True"
+
 EMAIL_BACKEND = env(
     "DJANGO_EMAIL_BACKEND",
     default="django.core.mail.backends.console.EmailBackend",
