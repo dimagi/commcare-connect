@@ -1,5 +1,6 @@
 import datetime
 import importlib
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import timedelta
 from http import HTTPStatus
@@ -9,7 +10,9 @@ from uuid import uuid4
 import pytest
 from django.utils.timezone import now
 from rest_framework.test import APIClient
+from waffle.testutils import override_switch
 
+from commcare_connect.flags.switch_names import CONCURRENT_SUBMISSIONS_LOCK
 from commcare_connect.form_receiver.processor import update_completed_learn_date
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
@@ -318,6 +321,33 @@ def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClien
     visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
     assert visit.status == VisitValidationStatus.duplicate
     assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit.flag_reason.get("flags", [])
+
+
+@pytest.mark.django_db(transaction=True)
+@override_switch(CONCURRENT_SUBMISSIONS_LOCK, active=True)
+def test_receiver_duplicate_concurrent_submissions(user_with_connectid_link: User, opportunity: Opportunity):
+    oauth_application = opportunity.hq_server.oauth_application
+    user = user_with_connectid_link
+    form_json = _create_opp_and_form_json(opportunity, user=user)
+    entity_id = form_json["form"]["deliver"]["entity_id"]
+
+    def submit_form():
+        client = APIClient()
+        payload = deepcopy(form_json)
+        payload["id"] = str(uuid4())
+        add_credentials(client, user, oauth_application=oauth_application)
+        response = client.post("/api/receiver/", data=payload, format="json")
+        assert response.status_code == HTTPStatus.OK, response.data
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(submit_form) for _ in range(2)]
+        for future in futures:
+            future.result()
+
+    visits = UserVisit.objects.filter(entity_id=entity_id)
+    assert visits.count() == 2
+    statuses = {visit.status for visit in visits}
+    assert VisitValidationStatus.duplicate in statuses
 
 
 def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
