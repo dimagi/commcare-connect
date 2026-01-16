@@ -3,18 +3,24 @@ from datetime import date, timedelta
 import django_filters
 import django_tables2 as tables
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Column, Layout, Row
+from crispy_forms.layout import Column, Field, Layout, Row
+from django import forms
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.db.models import F
 from django.urls import reverse
 from django.utils.functional import cached_property
 from django_filters.views import FilterView
+from django_tables2.views import SingleTableMixin
 
-from commcare_connect.opportunity.models import CompletedWork, DeliveryType, Opportunity
+from commcare_connect.opportunity.models import CompletedWork, DeliveryType, InvoiceStatus, Opportunity, PaymentInvoice
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 from commcare_connect.reports.decorators import KPIReportMixin
 from commcare_connect.reports.helpers import get_table_data_for_year_month
+from commcare_connect.utils.permission_const import INVOICE_REPORT_ACCESS
+from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
 
-from .tables import AdminReportTable
+from .tables import AdminReportTable, InvoiceReportTable
 
 COUNTRY_CURRENCY_CHOICES = [
     ("ETB", "Ethiopia"),
@@ -135,3 +141,113 @@ class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelF
     @property
     def object_list(self):
         return get_table_data_for_year_month(**self.filter_values)
+
+
+class InvoiceReportFilter(django_filters.FilterSet):
+    opportunity_id = django_filters.ModelChoiceFilter(
+        field_name="opportunity",
+        queryset=Opportunity.objects.all(),
+        label="Opportunity",
+        widget=forms.Select(
+            attrs={
+                "data-tomselect": "1",
+                "placeholder": "Select Opportunity",
+            }
+        ),
+    )
+
+    status = django_filters.MultipleChoiceFilter(
+        choices=InvoiceStatus.choices,
+        label="Status",
+        widget=forms.SelectMultiple(
+            attrs={
+                "data-tomselect": "1",
+                "placeholder": "Select status",
+            }
+        ),
+    )
+
+    from_date = django_filters.DateFilter(
+        field_name="date_paid__date",
+        lookup_expr="gte",
+        label="From Payment Date",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+        input_formats=["%Y-%m-%d"],
+    )
+
+    to_date = django_filters.DateFilter(
+        field_name="date_paid__date",
+        lookup_expr="lte",
+        label="To Payment Date",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+        input_formats=["%Y-%m-%d"],
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.form.helper = FormHelper()
+        self.form.helper.form_tag = False
+        self.form.helper.disable_csrf = True
+        self.form.helper.layout = Layout(
+            Field("opportunity_id"),
+            Field("status"),
+            Row(
+                Field("from_date"),
+                Field("to_date"),
+                css_class="grid grid-cols-2 gap-4",
+            ),
+        )
+
+    class Meta:
+        model = PaymentInvoice
+        fields = ["opportunity_id", "status", "from_date", "to_date"]
+
+
+class InvoiceReportView(
+    LoginRequiredMixin,
+    PermissionRequiredMixin,
+    SingleTableMixin,
+    FilterView,
+):
+    model = PaymentInvoice
+    table_class = InvoiceReportTable
+    filterset_class = InvoiceReportFilter
+    permission_required = INVOICE_REPORT_ACCESS
+    paginate_by = DEFAULT_PAGE_SIZE
+
+    def get_paginate_by(self, table):
+        return get_validated_page_size(self.request)
+
+    def get_template_names(self):
+        if self.request.htmx:
+            return ["base_table.html"]
+        return ["reports/invoice_report.html"]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["title"] = "Invoice Report"
+
+        if self.filterset:
+            filter_fields = self.filterset.form.fields.keys()
+            context["filters_applied_count"] = sum(
+                1 for key in filter_fields if self.filterset.data.get(key) not in ("", None)
+            )
+        else:
+            context["filters_applied_count"] = 0
+
+        return context
+
+    def get_queryset(self):
+        return (
+            PaymentInvoice.objects.select_related(
+                "opportunity__managedopportunity__program__organization",
+                "payment",
+            )
+            .annotate(
+                date_paid=F("payment__date_paid"),
+                org_slug=F("opportunity__managedopportunity__program__organization__slug"),
+            )
+            .order_by("-date")
+        )
