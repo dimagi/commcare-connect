@@ -23,7 +23,7 @@ class ProgramFactory(DjangoModelFactory):
     description = Faker("text", max_nb_chars=200)
     delivery_type = SubFactory(DeliveryTypeFactory)
     budget = Faker("random_int", min=1000, max=100000)
-    currency_fk = LazyFunction(_get_default_currency)
+    currency = LazyFunction(_get_default_currency)
     country = LazyFunction(_get_default_country)
     start_date = Faker("date_this_decade", before_today=True, after_today=False)
     end_date = Faker("date_this_decade", before_today=False, after_today=True)

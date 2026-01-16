@@ -111,7 +111,7 @@ class OpportunityUserInviteForm(forms.Form):
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
-    currency_fk = forms.ModelChoiceField(
+    currency = forms.ModelChoiceField(
         label=_("Currency"),
         queryset=Currency.objects.order_by("code"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
@@ -130,7 +130,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             "name",
             "description",
             "active",
-            "currency_fk",
+            "currency",
             "country",
             "short_description",
             "is_test",
@@ -190,7 +190,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 Column(
                     Field("end_date"),
                 ),
-                Column(Field("currency_fk")),
+                Column(Field("currency")),
                 Column(Field("country")),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
@@ -315,7 +315,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 class OpportunityInitForm(forms.ModelForm):
     managed_opp = False
     app_hint_text = "Add required apps to the opportunity. All fields are mandatory."
-    currency_fk = forms.ModelChoiceField(
+    currency = forms.ModelChoiceField(
         label=_("Currency"),
         queryset=Currency.objects.order_by("code"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
@@ -334,7 +334,7 @@ class OpportunityInitForm(forms.ModelForm):
             "name",
             "description",
             "short_description",
-            "currency_fk",
+            "currency",
             "country",
             "hq_server",
         ]
@@ -368,7 +368,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("description"),
                 ),
                 Column(
-                    Field("currency_fk"),
+                    Field("currency"),
                     Field("country"),
                     Field("hq_server"),
                     Column(
@@ -587,7 +587,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         if not getattr(opportunity, "pk", None):
             return
 
-        for field_name in ("name", "short_description", "description", "currency_fk", "country"):
+        for field_name in ("name", "short_description", "description", "currency", "country"):
             if field_name in self.fields:
                 self.fields[field_name].initial = getattr(opportunity, field_name)
 
@@ -1448,7 +1448,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         if amount is None or date is None:
             return cleaned_data  # Let individual field errors handle missing values
 
-        currency = getattr(self.opportunity, "currency_fk", None)
+        currency = getattr(self.opportunity, "currency", None)
         exchange_rate = ExchangeRate.latest_exchange_rate(currency.code if currency else None, date)
         if not exchange_rate:
             raise ValidationError("Exchange rate not available for selected date.")
