@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
 from django.http import Http404
@@ -33,9 +34,30 @@ def slugify_uniquely(value, model, slugfield="slug"):
         suffix += 1
 
 
-def get_object_by_uuid_or_int(queryset: QuerySet, lookup_value: str, uuid_field: str):
+def get_object_for_api_version(request, queryset, pk, int_field, uuid_field):
+    """
+    Fetch object correctly based on what version request is using.
+
+    V2 uses the UUID model field exclusively, while V1 supports both int IDs and UUIDs.
+    Fetch object from queryset using appropriate field based on request API version.
+    """
+    if request.version == "1.0":
+        return get_object_by_uuid_or_int(
+            queryset,
+            lookup_value=pk,
+            int_field=int_field,
+            uuid_field=uuid_field,
+        )
+    else:
+        try:
+            return get_object_or_404(queryset, **{uuid_field: pk})
+        except ValidationError:
+            raise Http404("Invalid UUID format.")
+
+
+def get_object_by_uuid_or_int(queryset: QuerySet, lookup_value: str, uuid_field: str, int_field: str = "pk"):
     if lookup_value.isdigit():
-        return get_object_or_404(queryset, pk=int(lookup_value))
+        return get_object_or_404(queryset, **{int_field: int(lookup_value)})
 
     try:
         uuid_val = uuid.UUID(lookup_value)
