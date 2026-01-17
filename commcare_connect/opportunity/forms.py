@@ -7,7 +7,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import F, Q, Sum, TextChoices
+from django.db.models import Count, F, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -34,6 +34,7 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
+    UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
 )
@@ -968,9 +969,58 @@ class AddBudgetExistingUsersForm(forms.Form):
             )
 
         if additional_visits and selected_users:
+            if adjustment_type == self.AdjustmentType.DECREASE:
+                self._validate_decrease_additional_visits(selected_users, additional_visits, adjustment_type)
             self.budget_increase = self._validate_budget(selected_users, additional_visits)
 
         return cleaned_data
+
+    def _validate_decrease_additional_visits(self, selected_users, additional_visits, adjustment_type):
+        claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).select_related(
+            "opportunity_claim__opportunity_access__user", "opportunity_claim__opportunity_access", "payment_unit"
+        )
+        claim_limits_list = list(claim_limits)
+        completed_visits_map = self._get_completed_visits_map(claim_limits_list)
+
+        invalid_users = []
+        for claim_limit in claim_limits_list:
+            new_max_visits = claim_limit.max_visits - additional_visits
+            key = (claim_limit.opportunity_claim.opportunity_access.id, claim_limit.payment_unit.id)
+            completed_count = completed_visits_map.get(key, 0)
+
+            if new_max_visits < completed_count:
+                invalid_users.append(claim_limit.opportunity_claim)
+
+        if invalid_users:
+            if len(invalid_users) <= 10:
+                users_or_count = ", ".join([user.opportunity_access.user.username for user in invalid_users])
+            else:
+                users_or_count = len(invalid_users)
+            raise forms.ValidationError(
+                {
+                    "additional_visits": f"Cannot decrease the number of visits for {users_or_count} user(s)."
+                    f" The visit count cannot be reduced below the number of already"
+                    f" completed visits."
+                }
+            )
+
+    def _get_completed_visits_map(self, claim_limits_list):
+        access_ids = {cl.opportunity_claim.opportunity_access.id for cl in claim_limits_list}
+        payment_unit_ids = {cl.payment_unit.id for cl in claim_limits_list}
+        visits_qs = (
+            UserVisit.objects.filter(
+                opportunity_access_id__in=access_ids,
+                deliver_unit__payment_unit_id__in=payment_unit_ids,
+            )
+            .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
+            .values("opportunity_access_id", "deliver_unit__payment_unit_id")
+            .annotate(visit_count=Count("id"))
+        )
+        visit_counts = {
+            (visit["opportunity_access_id"], visit["deliver_unit__payment_unit_id"]): visit["visit_count"]
+            for visit in visits_qs
+        }
+        return visit_counts
 
     def clean_end_date(self):
         end_date = self.cleaned_data.get("end_date")
