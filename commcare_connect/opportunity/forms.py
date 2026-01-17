@@ -969,9 +969,11 @@ class AddBudgetExistingUsersForm(forms.Form):
             )
 
         if additional_visits and selected_users:
+            self.budget_change = self._get_budget_change(selected_users, additional_visits)
             if adjustment_type == self.AdjustmentType.DECREASE:
                 self._validate_decrease_additional_visits(selected_users, additional_visits, adjustment_type)
-            self.budget_increase = self._validate_budget(selected_users, additional_visits)
+            else:
+                self._validate_budget_increase()
 
         return cleaned_data
 
@@ -1022,25 +1024,26 @@ class AddBudgetExistingUsersForm(forms.Form):
         }
         return visit_counts
 
+    def _get_budget_change(self, selected_users, additional_visits):
+        claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
+        if self.cleaned_data.get("adjustment_type") == self.AdjustmentType.DECREASE:
+            additional_visits = -additional_visits
+        org_pay = self.opportunity.managedopportunity.org_pay_per_visit if self.opportunity.managed else 0
+        budget_change = sum((ocl.payment_unit.amount + org_pay) * additional_visits for ocl in claims)
+        return budget_change
+
     def clean_end_date(self):
         end_date = self.cleaned_data.get("end_date")
         if end_date and end_date < datetime.date.today():
             raise forms.ValidationError("End date cannot be in the past.")
         return end_date
 
-    def _validate_budget(self, selected_users, additional_visits):
-        claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-        org_pay = self.opportunity.managedopportunity.org_pay_per_visit if self.opportunity.managed else 0
-
-        budget_increase = sum((ocl.payment_unit.amount + org_pay) * additional_visits for ocl in claims)
-
+    def _validate_budget_increase(self):
         if self.opportunity.managed:
             # NM cannot increase the opportunity budget they can only
             # assign new visits if the opportunity has remaining budget.
-            if budget_increase > self.opportunity.remaining_budget:
+            if self.budget_change > self.opportunity.remaining_budget:
                 raise forms.ValidationError({"additional_visits": "Additional visits exceed the opportunity budget."})
-
-        return budget_increase
 
     def save(self):
         selected_users = self.cleaned_data["selected_users"]
@@ -1049,10 +1052,13 @@ class AddBudgetExistingUsersForm(forms.Form):
 
         if additional_visits:
             claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-            claims.update(max_visits=F("max_visits") + additional_visits)
+            if self.cleaned_data.get("adjustment_type") == self.AdjustmentType.DECREASE:
+                claims.update(max_visits=F("max_visits") - additional_visits)
+            else:
+                claims.update(max_visits=F("max_visits") + additional_visits)
 
             if not self.opportunity.managed:
-                self.opportunity.total_budget += self.budget_increase
+                self.opportunity.total_budget += self.budget_change
                 self.opportunity.save()
 
         if end_date:
