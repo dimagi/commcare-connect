@@ -2516,7 +2516,7 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OpportunityObjectMi
             and self.request.org_membership
             and not self.request.org_membership.is_viewer
         ) or program_manager
-        kwargs["is_managed_opp"] = self.get_opportunity().managed
+        kwargs["is_program_manager"] = program_manager
         return kwargs
 
 

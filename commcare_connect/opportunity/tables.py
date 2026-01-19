@@ -1552,7 +1552,7 @@ class PaymentUnitTable(OrgContextTable):
 
     def __init__(self, *args, **kwargs):
         self.can_edit = kwargs.pop("can_edit", False)
-        if not kwargs.pop("is_managed_opp", False):
+        if not kwargs.pop("is_program_manager", False):
             kwargs["exclude"] = "org_amount"
         super().__init__(*args, **kwargs)
 
