@@ -161,11 +161,6 @@ class Opportunity(BaseModel):
         return claimed
 
     @property
-    def utilised_budget(self):
-        completed_works = CompletedWork.objects.filter(opportunity_access__opportunity=self)
-        return sum(cw.saved_payment_accrued + cw.payment_unit.org_amount for cw in completed_works)
-
-    @property
     def claimed_visits(self):
         opp_access = OpportunityAccess.objects.filter(opportunity=self)
         opportunity_claim = OpportunityClaim.objects.filter(opportunity_access__in=opp_access)
