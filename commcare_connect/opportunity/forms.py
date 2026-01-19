@@ -708,10 +708,15 @@ class OpportunityFinalizeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.budget_per_user = kwargs.pop("budget_per_user")
         self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
+        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
+
+        payment_calculation_string = (
+            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0)"
+        )
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
@@ -724,9 +729,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 Field("end_date", wrapper_class="flex-1"),
                 Field(
                     "max_users",
-                    oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                    f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
-                    f"* parseInt(this.value || 0)",
+                    oninput=payment_calculation_string,
                 ),
                 Field("total_budget", readonly=True, wrapper_class="form-group "),
                 css_class="grid grid-cols-2 gap-6",

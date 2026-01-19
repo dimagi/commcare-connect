@@ -355,13 +355,18 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         payment_units = opportunity.paymentunit_set.all()
         budget_per_user = 0
         payment_units_max_total = 0
+        cumulative_pu_budget_per_user = 0
+
         for pu in payment_units:
             budget_per_user += pu.amount * pu.max_total
             payment_units_max_total += pu.max_total
+            cumulative_pu_budget_per_user += (pu.amount + pu.org_amount) * pu.max_total
+
         kwargs["budget_per_user"] = budget_per_user
         kwargs["current_start_date"] = opportunity.start_date
         kwargs["opportunity"] = opportunity
         kwargs["payment_units_max_total"] = payment_units_max_total
+        kwargs["cumulative_pu_budget_per_user"] = cumulative_pu_budget_per_user
         return kwargs
 
     def form_valid(self, form):
