@@ -746,7 +746,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         data=request.POST or None,
         payment_units=request.opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
         org_slug=org_slug,
-        opportunity_id=request.opportunity.pk,
+        opportunity=request.opportunity,
     )
     if form.is_valid():
         form.instance.opportunity = request.opportunity
@@ -819,7 +819,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         data=request.POST or None,
         payment_units=opportunity_payment_units,
         org_slug=org_slug,
-        opportunity_id=request.opportunity.pk,
+        opportunity=request.opportunity,
     )
     if form.is_valid():
         form.save()

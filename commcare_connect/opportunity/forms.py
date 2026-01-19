@@ -734,22 +734,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
-        if self.opportunity.managed:
-            self.helper.layout.fields.insert(
-                -2,
-                Row(
-                    Field(
-                        "org_pay_per_visit",
-                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                        f"* parseInt(this.value || 0)) "
-                        f"* parseInt(document.getElementById('id_max_users')?.value || 0)",
-                    )
-                ),
-            )
-            self.fields["org_pay_per_visit"] = forms.IntegerField(
-                required=True, widget=forms.NumberInput(), initial=self.instance.org_pay_per_visit
-            )
-
         self.fields["max_users"] = forms.IntegerField(
             label="Max Connect Workers", initial=int(self.instance.number_of_users)
         )
@@ -1195,7 +1179,7 @@ class AddBudgetNewUsersForm(forms.Form):
 class PaymentUnitForm(forms.ModelForm):
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
         help_texts = {
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
@@ -1204,12 +1188,19 @@ class PaymentUnitForm(forms.ModelForm):
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
+        labels = {
+            "amount": _("Worker pay per visit"),
+            "org_amount": _("Org pay per visit"),
+            "max_total": _("Maximum visits per user"),
+            "max_daily": _("Maximum visits per day"),
+        }
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+
         deliver_units = kwargs.pop("deliver_units", [])
         payment_units = kwargs.pop("payment_units", [])
         org_slug = kwargs.pop("org_slug")
-        opportunity_id = kwargs.pop("opportunity_id")
 
         super().__init__(*args, **kwargs)
 
@@ -1219,7 +1210,7 @@ class PaymentUnitForm(forms.ModelForm):
                 Row(
                     Column(Field("name"), Field("description")),
                     Column(
-                        Field("amount"),
+                        self.get_amounts_div(),
                         Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
                         Field("start_date"),
                         Field("end_date"),
@@ -1234,7 +1225,7 @@ class PaymentUnitForm(forms.ModelForm):
                         HTML(
                             f"""
                     <button type="button" class="button button-md outline-style" id="sync-button"
-                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
+                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, self.opportunity.pk))}"
                     hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
                     event.detail.successful && location.reload();
                     this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
@@ -1289,6 +1280,18 @@ class PaymentUnitForm(forms.ModelForm):
                 if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
+
+    def get_amounts_div(self):
+        fields = [
+            Field("amount"),
+        ]
+        if self.opportunity.managed:
+            fields.append(Field("org_amount"))
+
+        return Div(
+            *fields,
+            css_class="grid grid-cols-2 gap-4",
+        )
 
     def clean(self):
         cleaned_data = super().clean()
