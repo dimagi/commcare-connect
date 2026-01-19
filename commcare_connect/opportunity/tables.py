@@ -1547,7 +1547,8 @@ class PaymentUnitTable(OrgContextTable):
     name = tables.Column(verbose_name="Payment Unit Name")
     max_total = tables.Column(verbose_name="Total Deliveries")
     deliver_units = tables.Column(verbose_name="Delivery Units")
-    org_amount = tables.Column(verbose_name="Org pay")
+    amount = tables.Column(verbose_name="Worker pay per delivery")
+    org_amount = tables.Column(verbose_name="Org pay per delivery")
 
     def __init__(self, *args, **kwargs):
         self.can_edit = kwargs.pop("can_edit", False)
