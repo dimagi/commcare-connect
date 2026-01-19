@@ -715,7 +715,7 @@ class OpportunityFinalizeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         payment_calculation_string = (
-            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0)"
+            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
         )
 
         self.helper = FormHelper(self)
