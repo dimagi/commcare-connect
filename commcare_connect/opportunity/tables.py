@@ -1547,14 +1547,12 @@ class PaymentUnitTable(OrgContextTable):
     name = tables.Column(verbose_name="Payment Unit Name")
     max_total = tables.Column(verbose_name="Total Deliveries")
     deliver_units = tables.Column(verbose_name="Delivery Units")
-    org_pay = tables.Column(verbose_name="Org pay", empty_values=())
+    org_amount = tables.Column(verbose_name="Org pay")
 
     def __init__(self, *args, **kwargs):
         self.can_edit = kwargs.pop("can_edit", False)
-        # For managed opp
-        self.org_pay_per_visit = kwargs.pop("org_pay_per_visit", False)
-        if not self.org_pay_per_visit:
-            kwargs["exclude"] = "org_pay"
+        if not kwargs.pop("is_managed_opp", False):
+            kwargs["exclude"] = "org_amount"
         super().__init__(*args, **kwargs)
 
     class Meta:
@@ -1566,15 +1564,12 @@ class PaymentUnitTable(OrgContextTable):
             "start_date",
             "end_date",
             "amount",
-            "org_pay",
+            "org_amount",
             "max_total",
             "max_daily",
             "deliver_units",
         )
         empty_text = "No payment units for this opportunity."
-
-    def render_org_pay(self, record):
-        return self.org_pay_per_visit
 
     def render_deliver_units(self, record):
         deliver_units = record.deliver_units.all()

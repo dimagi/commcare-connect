@@ -484,10 +484,9 @@ class TestAddBudgetNewUsersForm:
             program=self.program,
             organization=organization,
             total_budget=self.opp_total_budget_initially,
-            org_pay_per_visit=org_pay,
             managed=True,
         )
-        PaymentUnitFactory(opportunity=self.opportunity, max_total=max_total, amount=amount)
+        PaymentUnitFactory(opportunity=self.opportunity, max_total=max_total, amount=amount, org_amount=org_pay)
 
     @pytest.mark.parametrize("num_new_users, expected_budget", [(3, 60), (5, 84)])
     def test_valid_add_users(self, setup, num_new_users, expected_budget):

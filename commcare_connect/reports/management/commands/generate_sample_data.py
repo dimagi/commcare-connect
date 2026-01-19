@@ -137,7 +137,8 @@ class Command(BaseCommand):
             program = ProgramFactory(organization=org, delivery_type=DeliveryTypeFactory())
             ProgramApplicationFactory(program=program, organization=invited_org)
             managed_opp = ManagedOpportunityFactory(
-                organization=invited_org, program=program, org_pay_per_visit=random.randint(500, 1000)
+                organization=invited_org,
+                program=program,
             )
             managed_opportunities.append(managed_opp)
 

@@ -105,9 +105,10 @@ def test_add_budget_existing_users_for_managed_opportunity(
         program=program,
         organization=organization,
         total_budget=initial_total_budget,
-        org_pay_per_visit=org_pay_per_visit,
     )
-    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit)
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
     claim_limit = OpportunityClaimLimitFactory(

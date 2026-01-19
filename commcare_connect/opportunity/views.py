@@ -177,7 +177,6 @@ from commcare_connect.organization.decorators import (
     org_viewer_required,
 )
 from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
-from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
@@ -379,10 +378,6 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         if start_date:
             opportunity.start_date = start_date
 
-        if opportunity.managed:
-            ManagedOpportunity.objects.filter(id=opportunity.id).update(
-                org_pay_per_visit=form.cleaned_data["org_pay_per_visit"]
-            )
         response = super().form_valid(form)
         return response
 
@@ -2521,8 +2516,7 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OpportunityObjectMi
             and self.request.org_membership
             and not self.request.org_membership.is_viewer
         ) or program_manager
-        if self.get_opportunity().managed:
-            kwargs["org_pay_per_visit"] = self.get_opportunity().org_pay_per_visit
+        kwargs["is_managed_opp"] = self.get_opportunity().managed
         return kwargs
 
 
