@@ -1,21 +1,36 @@
 import datetime
+from decimal import Decimal
 from unittest import mock
 
 import pytest
 from django.utils.timezone import now
+from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.opportunity.models import BlobMeta, Opportunity, OpportunityAccess
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
+from commcare_connect.opportunity.models import (
+    BlobMeta,
+    CompletedWorkStatus,
+    ExchangeRate,
+    InvoiceStatus,
+    Opportunity,
+    OpportunityAccess,
+    PaymentInvoice,
+)
 from commcare_connect.opportunity.tasks import (
     _get_inactive_message,
     add_connect_users,
     download_user_visit_attachments,
+    generate_automated_service_delivery_invoice,
 )
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
+    CompletedWorkFactory,
     LearnModuleFactory,
+    OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityFactory,
+    PaymentUnitFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
@@ -160,3 +175,152 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         blob_id, content_file = save_blob.call_args_list[0].args
         assert str(blob_id) == blob_meta.blob_id
         assert content_file.read() == b"asdas"
+
+
+@pytest.mark.django_db
+class TestGenerateAutomatedServiceDeliveryInvoice:
+    @pytest.fixture(autouse=True)
+    def setup_mocks(self):
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.get_start_date_for_invoice") as mock_start_date,
+            mock.patch("commcare_connect.opportunity.tasks.get_end_date_previous_month") as mock_end_date,
+            mock.patch("commcare_connect.opportunity.tasks.generate_invoice_number") as mock_invoice_number,
+            mock.patch(
+                "commcare_connect.opportunity.models.ExchangeRate.latest_exchange_rate",
+                create=True,
+            ) as mock_latest_exchange_rate,
+        ):
+            mock_start_date.return_value = datetime.date(2024, 1, 1)
+            mock_end_date.return_value = datetime.date(2024, 1, 31)
+            mock_invoice_number.side_effect = ["INV001", "INV002", "INV003", "INV004", "INV005"]
+
+            rate = ExchangeRate.objects.create(
+                currency_code="USD", rate=Decimal("1.00"), rate_date=datetime.date(2024, 1, 31)
+            )
+            mock_latest_exchange_rate.return_value = rate
+
+            self.mock_start_date = mock_start_date
+            self.mock_end_date = mock_end_date
+            self.mock_invoice_number = mock_invoice_number
+
+            yield
+
+    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
+    def test_generate_invoice_for_two_active_managed_opportunities(self):
+        opportunity1 = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
+        opportunity2 = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 12, 1))
+
+        payment_unit1 = PaymentUnitFactory(opportunity=opportunity1, amount=Decimal("100.00"))
+        payment_unit2 = PaymentUnitFactory(opportunity=opportunity2, amount=Decimal("50.00"))
+
+        access1 = OpportunityAccessFactory(opportunity=opportunity1)
+        access2 = OpportunityAccessFactory(opportunity=opportunity2)
+
+        completed_work1 = CompletedWorkFactory(
+            opportunity_access=access1,
+            payment_unit=payment_unit1,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 4),
+        )
+        completed_work1.saved_payment_accrued = Decimal("100.00")
+        completed_work1.save()
+        completed_work2 = CompletedWorkFactory(
+            opportunity_access=access2,
+            payment_unit=payment_unit2,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 5),
+        )
+        completed_work2.saved_payment_accrued = Decimal("50.00")
+        completed_work2.save()
+
+        generate_automated_service_delivery_invoice()
+
+        invoices = PaymentInvoice.objects.all()
+        assert invoices.count() == 2
+
+        completed_work1.refresh_from_db()
+        completed_work2.refresh_from_db()
+
+        invoice1 = PaymentInvoice.objects.get(opportunity=opportunity1)
+        assert invoice1.amount == Decimal("100.00")
+        assert invoice1.status == InvoiceStatus.PENDING
+        assert invoice1.start_date == datetime.date(2024, 1, 1)
+        assert invoice1.end_date == datetime.date(2024, 1, 31)
+        assert invoice1.invoice_number == "INV001"
+        assert completed_work1.invoice == invoice1
+
+        invoice2 = PaymentInvoice.objects.get(opportunity=opportunity2)
+        assert invoice2.amount == Decimal("50.00")
+        assert invoice2.status == InvoiceStatus.PENDING
+        assert invoice2.start_date == datetime.date(2024, 1, 1)
+        assert invoice2.end_date == datetime.date(2024, 1, 31)
+        assert invoice2.invoice_number == "INV002"
+        assert completed_work2.invoice == invoice2
+
+    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
+    def test_no_invoice_for_inactive_opportunities(self):
+        inactive_opportunity = OpportunityFactory(active=False, managed=True, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=inactive_opportunity)
+        access = OpportunityAccessFactory(opportunity=inactive_opportunity)
+        completed_work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 5),
+        )
+        completed_work.saved_payment_accrued = Decimal("100.00")
+        completed_work.save()
+
+        generate_automated_service_delivery_invoice()
+
+        completed_work.refresh_from_db()
+
+        assert PaymentInvoice.objects.count() == 0
+        assert completed_work.invoice is None
+
+    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
+    def test_no_invoice_for_active_unmanaged_opportunity(self):
+        unmanaged_opportunity = OpportunityFactory(active=True, managed=False, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=unmanaged_opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=unmanaged_opportunity)
+        completed_work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 5),
+        )
+        completed_work.saved_payment_accrued = Decimal("100.00")
+        completed_work.save()
+
+        generate_automated_service_delivery_invoice()
+
+        assert PaymentInvoice.objects.count() == 0
+        assert completed_work.invoice is None
+
+    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=False)
+    def test_no_invoice_when_switch_inactive(self):
+        opportunity = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        completed_work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=now(),
+        )
+        completed_work.saved_payment_accrued = Decimal("100.00")
+        completed_work.save()
+
+        generate_automated_service_delivery_invoice()
+
+        assert PaymentInvoice.objects.count() == 0
+        assert completed_work.invoice is None
+
+    @override_switch(AUTOMATED_INVOICES_MONTHLY, active=True)
+    def test_no_invoice_with_no_approved_work(self):
+        opportunity = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
+
+        generate_automated_service_delivery_invoice()
+
+        invoice = PaymentInvoice.objects.filter(opportunity=opportunity)
+        assert len(invoice) == 0

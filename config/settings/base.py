@@ -309,15 +309,15 @@ SOCIALACCOUNT_STORE_TOKENS = True
 # -------------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
         "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
+        "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
-    "ALLOWED_VERSIONS": ["1.0"],
+    "ALLOWED_VERSIONS": ["1.0", "2.0"],
+    "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",
 }
 
 CORS_URLS_REGEX = r"^/api/.*$"

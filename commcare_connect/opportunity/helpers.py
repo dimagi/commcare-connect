@@ -668,6 +668,7 @@ def get_opportunity_delivery_progress(opp_id):
             CompletedWork.objects.filter(
                 opportunity_access__opportunity_id=OuterRef("pk"),
                 uservisit__review_status=VisitReviewStatus.pending,
+                uservisit__status=VisitValidationStatus.approved,
                 uservisit__review_created_on__isnull=False,
             )
             .values("opportunity_access__opportunity_id")
@@ -684,6 +685,7 @@ def get_opportunity_delivery_progress(opp_id):
                 opportunity_access__opportunity_id=OuterRef("pk"),
                 uservisit__review_status=VisitReviewStatus.pending,
                 uservisit__review_created_on__isnull=False,
+                uservisit__status=VisitValidationStatus.approved,
                 uservisit__review_created_on__gte=yesterday,
             )
             .values("opportunity_access__opportunity_id")

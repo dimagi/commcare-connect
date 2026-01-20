@@ -34,6 +34,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import download_user_visit_attachments
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
+from commcare_connect.utils.lock import try_redis_lock
 
 LEARN_MODULE_JSONPATH = parse("$..module")
 ASSESSMENT_JSONPATH = parse("$..assessment")
@@ -259,7 +260,10 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
-    access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
     payment_unit = deliver_unit.payment_unit
     if not payment_unit:
         raise ProcessingError(
@@ -267,21 +271,25 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
-    counts = (
-        UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
-        .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
-        .aggregate(
-            daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
-            total=Count("*"),
-            entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
-        )
-    )
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
 
-    with transaction.atomic():
+    # handle concurrent form submissions for same entity id
+    lock_key = f"visit_processor:{access.id}:{deliver_unit.id}:{entity_id}"
+    with try_redis_lock(lock_key, timeout=30, blocking_timeout=5) as acquired, transaction.atomic():
+        if not acquired:
+            raise ProcessingError("Error processing form, please retry again.")
+        counts = (
+            UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
+            .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
+            .aggregate(
+                daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
+                total=Count("*"),
+                entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
+            )
+        )
         user_visit = UserVisit(
             opportunity=opportunity,
             user=user,

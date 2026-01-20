@@ -131,7 +131,7 @@
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Accrued Amount ({{ opportunity.currency }})</span>
+            <span>Accrued Amount ({{ opportunity.currency_code }})</span>
           </div>
         </div>
 
@@ -144,7 +144,7 @@
             </div>
           </div>
           <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Paid Amount ({{ opportunity.currency }})</span>
+            <span>Paid Amount ({{ opportunity.currency_code }})</span>
           {% if last_payment_details %}
             <i class="fa-solid ml-2 cursor-pointer"
                :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"

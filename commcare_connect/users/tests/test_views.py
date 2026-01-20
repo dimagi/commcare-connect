@@ -1,3 +1,4 @@
+import json
 from unittest import mock
 from unittest.mock import patch
 
@@ -10,11 +11,12 @@ from django.http import HttpRequest
 from django.test import RequestFactory
 from django.urls import reverse
 
+from commcare_connect.flags.tests.factories import SwitchFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserInviteFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
-from commcare_connect.users.views import UserRedirectView, UserUpdateView, create_user_link_view
+from commcare_connect.users.views import UserRedirectView, UserToggleView, UserUpdateView, create_user_link_view
 from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
@@ -215,3 +217,40 @@ class TestStartLearnAppView:
         )
         assert response.status_code == 200
         mock_create.assert_called_once()
+
+
+class TestUserToggleView:
+    def test_no_toggles(self, mobile_user: User, rf: RequestFactory):
+        user_toggle_view = UserToggleView.as_view()
+        request = rf.get("/fake-url/", data={"username": "abc"})
+        request.user = mobile_user
+        with mock.patch(
+            "oauth2_provider.views.mixins.ClientProtectedResourceMixin.authenticate_client"
+        ) as authenticate_client:
+            authenticate_client.return_value = True
+            response = user_toggle_view(request)
+        data = json.loads(response.content)
+
+        assert response.status_code == 200
+        assert "toggles" in data
+        assert data["toggles"] == []
+
+    def test_toggles(self, mobile_user: User, rf: RequestFactory):
+        SwitchFactory(name="TEST_SWITCH")
+        user_toggle_view = UserToggleView.as_view()
+        request = rf.get("/fake-url/", data={"username": "abc"})
+        request.user = mobile_user
+        with mock.patch(
+            "oauth2_provider.views.mixins.ClientProtectedResourceMixin.authenticate_client"
+        ) as authenticate_client:
+            authenticate_client.return_value = True
+            response = user_toggle_view(request)
+        data = json.loads(response.content)
+
+        assert response.status_code == 200
+        assert "toggles" in data
+        toggle_response = data["toggles"][0]
+        assert toggle_response["name"] == "TEST_SWITCH"
+        assert toggle_response["active"] is True
+        assert "created" in toggle_response
+        assert "modified" in toggle_response

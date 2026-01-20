@@ -27,7 +27,7 @@ from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_acces
 from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.utils.datetime import get_month_series
-from commcare_connect.utils.tests import check_basic_permissions
+from commcare_connect.utils.test_utils import check_basic_permissions
 
 
 def get_month_range_start_end(months=1):
@@ -66,6 +66,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
                     opportunity__is_test=False,
                     opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
                 )
+                inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
                 cw = CompletedWorkFactory(
                     status_modified_date=today,
                     opportunity_access=access,
@@ -74,6 +75,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
                     saved_payment_accrued_usd=i * 100,
                     saved_org_payment_accrued_usd=100,
                     payment_date=today + timedelta(minutes=30),
+                    invoice=inv,
                 )
                 UserVisitFactory(
                     date_created=today - timedelta(i * 10),
@@ -81,10 +83,19 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
                     completed_work=cw,
                     status=VisitValidationStatus.approved,
                 )
-                PaymentFactory(opportunity_access=access, date_paid=today, amount_usd=i * 100, confirmed=True)
-                inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-                PaymentFactory(invoice=inv, date_paid=today, amount_usd=100)
+                PaymentFactory(opportunity_access=access, date_paid=today, amount_usd=i * 50, confirmed=True)
+                PaymentFactory(invoice=inv, date_paid=today, amount_usd=50)
                 other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+                CompletedWorkFactory(
+                    status_modified_date=today,
+                    opportunity_access=access,
+                    status=CompletedWorkStatus.approved,
+                    saved_approved_count=0,
+                    saved_payment_accrued_usd=0,
+                    saved_org_payment_accrued_usd=100,
+                    payment_date=today + timedelta(minutes=30),
+                    invoice=other_inv,
+                )
                 PaymentFactory(invoice=other_inv, date_paid=today, amount_usd=100)
 
     fetch_user_counts.clear()
@@ -100,18 +111,17 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
         assert date(row["month_group"].year, row["month_group"].month, 1) in months
         total_connectid_user_count += connectid_user_counts.get(row["month_group"].strftime("%Y-%m"))
         assert row["connectid_users"] == total_connectid_user_count
-        assert row["total_eligible_users"] == 10
+        assert row["activated_connect_users"] == 10
         assert row["non_preregistered_users"] == total_connectid_user_count
         assert row["users"] == 10
         assert row["services"] == 10
         assert row["avg_time_to_payment"] == 50
         assert 0 <= row["max_time_to_payment"] <= 90
         assert row["flw_amount_earned"] == 4500
-        assert row["flw_amount_paid"] == 4500
-        assert row["nm_amount_earned"] == 5500
-        assert row["nm_amount_paid"] == 1000
-        assert row["nm_other_amount_paid"] == 1000
-        assert row["avg_top_paid_flws"] == 900
+        assert row["flw_amount_paid"] == 2250
+        assert row["intervention_funding_deployed"] == 5500
+        assert row["organization_funding_deployed"] == 1000
+        assert row["avg_top_earned_flws"] == 900
 
 
 @pytest.mark.django_db
@@ -189,6 +199,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 opportunity__delivery_type__slug=slug,
                 opportunity__delivery_type__name=slug,
             )
+            inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
             cw = CompletedWorkFactory(
                 status_modified_date=now,
                 opportunity_access=access,
@@ -197,6 +208,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 saved_payment_accrued_usd=i * 100,
                 saved_org_payment_accrued_usd=100,
                 payment_date=now + timedelta(minutes=1),
+                invoice=inv,
             )
             UserVisitFactory(
                 date_created=now - timedelta(i * 10),
@@ -204,9 +216,8 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 completed_work=cw,
                 status=VisitValidationStatus.approved,
             )
-            PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
-            inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-            PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
+            PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 50, confirmed=True)
+            PaymentFactory(invoice=inv, date_paid=now, amount_usd=50)
     fetch_user_counts.clear()
     httpx_mock.add_response(
         method="GET",
@@ -221,7 +232,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
             or row["month_group"].year != now.year
             or row["delivery_type_name"] == "All"
         ):
-            assert row["total_eligible_users"] == 10
+            assert row["activated_connect_users"] == 10
             continue
         assert row["delivery_type_name"] in delivery_type_slugs
         assert row["users"] == 5
@@ -229,11 +240,10 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
         assert row["avg_time_to_payment"] == 25
         assert row["max_time_to_payment"] == 40
         assert row["flw_amount_earned"] == 1000
-        assert row["flw_amount_paid"] == 1000
-        assert row["nm_amount_earned"] == 1500
-        assert row["nm_amount_paid"] == 500
-        assert row["avg_top_paid_flws"] == 400
-        assert row["total_eligible_users"] == 5
+        assert row["flw_amount_paid"] == 500
+        assert row["intervention_funding_deployed"] == 1500
+        assert row["avg_top_earned_flws"] == 400
+        assert row["activated_connect_users"] == 5
 
 
 @pytest.mark.django_db
@@ -246,8 +256,9 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             user=user,
             opportunity__is_test=False,
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-            opportunity__currency=opp_currency,
+            opportunity__currency_fk_id=opp_currency,
         )
+        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
         cw = CompletedWorkFactory(
             status_modified_date=now,
             opportunity_access=access,
@@ -256,6 +267,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             saved_payment_accrued_usd=i * 100,
             saved_org_payment_accrued_usd=100,
             payment_date=now + timedelta(minutes=1),
+            invoice=inv,
         )
         UserVisitFactory(
             date_created=now - timedelta(i * 10),
@@ -263,10 +275,19 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             completed_work=cw,
             status=VisitValidationStatus.approved,
         )
-        PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 100, confirmed=True)
-        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-        PaymentFactory(invoice=inv, date_paid=now, amount_usd=100)
+        PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 50, confirmed=True)
+        PaymentFactory(invoice=inv, date_paid=now, amount_usd=50)
         other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        CompletedWorkFactory(
+            status_modified_date=now,
+            opportunity_access=access,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=0,
+            saved_payment_accrued_usd=0,
+            saved_org_payment_accrued_usd=100,
+            payment_date=now + timedelta(minutes=1),
+            invoice=other_inv,
+        )
         PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
     fetch_user_counts.clear()
     httpx_mock.add_response(
@@ -285,11 +306,10 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             assert row["avg_time_to_payment"] == 50
             assert 0 <= row["max_time_to_payment"] <= 90
             assert row["flw_amount_earned"] == 4500
-            assert row["flw_amount_paid"] == 4500
-            assert row["nm_amount_earned"] == 5500
-            assert row["nm_amount_paid"] == 1000
-            assert row["nm_other_amount_paid"] == 1000
-            assert row["avg_top_paid_flws"] == 900
+            assert row["flw_amount_paid"] == 2250
+            assert row["intervention_funding_deployed"] == 5500
+            assert row["organization_funding_deployed"] == 1000
+            assert row["avg_top_earned_flws"] == 900
 
 
 class TestKPIReportPermission:

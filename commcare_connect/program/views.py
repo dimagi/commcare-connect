@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
 from django.db.models.functions import Concat
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
@@ -78,7 +79,29 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
         status = ("created", "updated")[is_edit]
         message = f"Program '{self.object.name}' {status} successfully."
         messages.success(self.request, message)
+        if self.request.htmx:
+            res = HttpResponse()
+            res["HX-Redirect"] = self.get_success_url()
+            return res
+
         return response
+
+    def form_invalid(self, form):
+        if self.request.htmx:  # For HTMX requests, return only the form fragment
+            return self.render_to_response(self.get_context_data(form=form))
+        return super().form_invalid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        if self.object:
+            context["hx_post_url"] = reverse("program:edit", args=[self.request.org.slug, self.object.pk])
+            context["hx_target"] = "#program-edit-form"
+        else:
+            context["hx_post_url"] = reverse("program:init", args=[self.request.org.slug])
+            context["hx_target"] = "#program-add-form"
+
+        return context
 
     def get_success_url(self):
         return reverse("program:home", kwargs={"org_slug": self.request.org.slug})
@@ -273,7 +296,14 @@ def program_manager_home(request, org):
             payment__isnull=True,
         )
         .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
-        .annotate(count=Concat(F("opportunity__currency"), Value(" "), Sum("amount"), output_field=CharField()))
+        .annotate(
+            count=Concat(
+                F("opportunity__currency_fk__code"),
+                Value(" "),
+                Sum("amount"),
+                output_field=CharField(),
+            )
+        )
     )
 
     pending_payments = _make_recent_activity_data(
@@ -338,7 +368,7 @@ def network_manager_home(request, org):
             "opportunity__id": data.id,
             "opportunity__name": data.name,
             "opportunity__organization__name": data.organization.name,
-            "count": f"{data.currency} {data.pending_payment}",
+            "count": f"{data.currency_code} {data.pending_payment}",
         }
         for data in pending_payments_data_opps
     ]

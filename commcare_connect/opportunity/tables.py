@@ -17,6 +17,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
+    InvoiceStatus,
     LearnModule,
     OpportunityAccess,
     PaymentInvoice,
@@ -378,20 +379,23 @@ class PaymentInvoiceTable(OpportunityContextTable):
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
     exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
     amount_usd = tables.Column(verbose_name="Amount (USD)")
+    status = tables.Column(verbose_name="Invoice Status")
+    invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery", empty_values=())
 
     class Meta:
         model = PaymentInvoice
         orderable = False
-        fields = ("amount", "date", "invoice_number", "service_delivery")
+        fields = ("amount", "date", "invoice_number")
         sequence = (
             "amount",
             "amount_usd",
             "exchange_rate",
             "date",
             "invoice_number",
+            "status",
             "payment_status",
             "payment_date",
-            "service_delivery",
+            "invoice_type",
             "actions",
         )
         empty_text = "No Payment Invoices"
@@ -407,9 +411,11 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.highlight_invoice_number = kwargs.pop("highlight_invoice_number", None)
         self.is_pm = kwargs.pop("is_pm", False)
         super().__init__(*args, **kwargs)
-        self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency})"
+        self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
 
-    def render_payment_status(self, value):
+    def render_payment_status(self, record, value):
+        if record.status == InvoiceStatus.ARCHIVED:
+            return "Archived"
         if value is not None:
             return "Paid"
         return "Pending"
@@ -418,6 +424,21 @@ class PaymentInvoiceTable(OpportunityContextTable):
         if value is not None:
             return value.date_paid
         return
+
+    def render_invoice_type(self, record):
+        if record.service_delivery:
+            return _("Service Delivery")
+        return _("Other")
+
+    def render_status(self, record):
+        tooltips = {
+            "Pending": _("Under review by Program Manager."),
+            "Approved": _("Invoice Approved and Paid."),
+            "Submitted": _("Submitted to Program Manager for Approval."),
+            "Archived": _("Invoice Archived. No User Actions Allowed."),
+        }
+        status = record.get_status_display()
+        return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
 
     def render_actions(self, record):
         review_button = ""
@@ -431,7 +452,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                 f'{_("Review")}</a>'
             )
         pay_button = ""
-        if self.is_pm:
+        if self.is_pm and record.status == InvoiceStatus.SUBMITTED:
             invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opportunity.id])
             disabled = "disabled" if getattr(record, "payment", None) else ""
             pay_button = f"""
@@ -639,7 +660,7 @@ class OpportunityTable(BaseOpportunityList):
         if value is None:
             value = 0
 
-        value = f"{record.currency} {intcomma(value)}"
+        value = f"{record.currency_code} {intcomma(value)}"
         return self.render_worker_list_url_column(
             value=value, opp_id=record.id, url_slug="worker_payments", sort="sort=-total_paid"
         )
@@ -726,7 +747,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
     def render_worker_earnings(self, value, record):
         url = reverse("opportunity:worker_payments", args=(self.org_slug, record.id))
         url += "?sort=-payment_accrued"
-        value = f"{record.currency} {intcomma(value)}"
+        value = f"{record.currency_code} {intcomma(value)}"
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
 
@@ -1128,7 +1149,7 @@ class WorkerPaymentsTable(tables.Table):
         super().__init__(*args, **kwargs)
 
         try:
-            currency = self.data[0].opportunity.currency
+            currency = self.data[0].opportunity.currency_code
         except (IndexError, AttributeError):
             currency = ""
 
@@ -1211,6 +1232,7 @@ class WorkerLearnTable(OrgContextTable):
         )
 
         order_by = ("-last_active",)
+        row_attrs = {"class": "group"}
 
     def render_user(self, value, record):
         if not record.accepted:
@@ -1346,6 +1368,7 @@ class WorkerDeliveryTable(OrgContextTable):
             "action",
         )
         order_by = ("user.name", "-last_active")
+        row_attrs = {"class": "group"}
 
     def __init__(self, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")

@@ -59,7 +59,25 @@ class DeliveryType(models.Model):
         return self.name
 
 
+class Currency(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 4217
+    name = models.CharField(max_length=64)
+
+    def __str__(self):
+        return f"{self.code} ({self.name})"
+
+
+class Country(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 3166-1 alpha-3
+    name = models.CharField(max_length=128)
+    currency = models.ForeignKey(Currency, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Opportunity(BaseModel):
+    opportunity_id = models.UUIDField(editable=False, null=True)
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -87,7 +105,8 @@ class Opportunity(BaseModel):
     # Whether users payment phone numbers are required or not
     payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
-    currency = models.CharField(max_length=3, null=True)
+    currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     auto_approve_visits = models.BooleanField(default=True)
     auto_approve_payments = models.BooleanField(default=True)
     is_test = models.BooleanField(default=True)
@@ -97,6 +116,13 @@ class Opportunity(BaseModel):
 
     def __str__(self):
         return self.name
+
+    @property
+    def currency_code(self):
+        if self.currency_fk:
+            return self.currency_fk.code
+        else:
+            return None
 
     @property
     def org_pay_per_visit(self):
@@ -251,6 +277,7 @@ class XFormBaseModel(models.Model):
 
 
 class OpportunityAccess(models.Model):
+    opportunity_access_id = models.UUIDField(editable=False, null=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     date_learn_started = models.DateTimeField(null=True)
@@ -394,6 +421,7 @@ class Assessment(XFormBaseModel):
 
 
 class PaymentUnit(models.Model):
+    payment_unit_id = models.UUIDField(editable=False, null=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
     amount = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
@@ -467,6 +495,13 @@ class ExchangeRate(models.Model):
             return fetch_exchange_rates(date, currency_code)
 
 
+class InvoiceStatus(models.TextChoices):
+    PENDING = "pending", gettext("Pending")
+    SUBMITTED = "submitted", gettext("Submitted")
+    APPROVED = "approved", gettext("Approved")
+    ARCHIVED = "archived", gettext("Archived")
+
+
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
         service_delivery = "service_delivery", gettext("Service Delivery")
@@ -482,13 +517,17 @@ class PaymentInvoice(models.Model):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
-    notes = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    date_of_expense = models.DateField(null=True, blank=True)
+    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING, max_length=50)
+    archived_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
 
 
 class Payment(models.Model):
+    payment_id = models.UUIDField(editable=False, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -676,6 +715,7 @@ class UserVisitQuerySet(models.QuerySet):
 class UserVisit(XFormBaseModel):
     objects = UserVisitQuerySet.as_manager()
 
+    user_visit_id = models.UUIDField(editable=False, null=True)
     opportunity = models.ForeignKey(
         Opportunity,
         on_delete=models.CASCADE,
@@ -840,6 +880,7 @@ class UserInvite(models.Model):
 
 
 class FormJsonValidationRules(models.Model):
+    form_json_validation_rules_id = models.UUIDField(editable=False, null=True)
     slug = models.SlugField()
     name = models.CharField(max_length=25)
     deliver_unit = models.ManyToManyField(DeliverUnit)

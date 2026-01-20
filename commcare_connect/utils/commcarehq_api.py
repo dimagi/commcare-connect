@@ -94,5 +94,8 @@ async def _get_commcare_app_json(client, domain):
     data = response.json()
 
     for application in data.get("objects", []):
-        applications.append({"id": application.get("id"), "name": application.get("name")})
+        app_name = application.get("name")
+        if not application.get("is_released"):
+            app_name = f"Unreleased - {app_name}"
+        applications.append({"id": application.get("id"), "name": app_name})
     return applications

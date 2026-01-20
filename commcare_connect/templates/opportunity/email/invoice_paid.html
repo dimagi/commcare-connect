@@ -11,7 +11,7 @@
 <p><strong>{% trans "Invoice Details" %}</strong></p>
 <ul>
     <li><strong>{% trans "Invoice Number" %}:</strong> {{ invoice.invoice_number }}</li>
-    <li><strong>{% trans "Amount Paid" %}:</strong> {{ opportunity.currency }} {{ invoice.amount }}</li>
+    <li><strong>{% trans "Amount Paid" %}:</strong> {{ opportunity.currency_code }} {{ invoice.amount }}</li>
     <li><strong>{% trans "Invoice Date" %}:</strong> {{ invoice.date }}</li>
     <li><strong>{% trans "Payment Date" %}:</strong> {{ invoice.payment.created_at }}</li>
 </ul>

@@ -1,7 +1,7 @@
 <div
   class="flex items-center justify-center"
   {% if not progress.complete %}
-    hx-get="{% url 'opportunity:export_status' request.org.slug task_id %}"
+    hx-get="{{ export_status_url }}"
     hx-trigger="load delay:2s"
     hx-target="this"
     hx-swap="outerHTML"
@@ -34,7 +34,7 @@
     {% if not progress.message %}
       <div>
         <a class="button button-sm text-brand-deep-purple"
-           href="{% url 'opportunity:download_export' request.org.slug task_id %}">
+           href="{{ download_url }}">
           <i class="fa-solid fa-circle-down"></i> Download Export
         </a>
       </div>
