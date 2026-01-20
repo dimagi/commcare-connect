@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0075_opportunityaccess_completed_learn_date_and_more"),
+        ("opportunity", "0075_merge_20250523_1011"),
     ]
 
     operations = [
