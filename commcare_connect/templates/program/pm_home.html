@@ -30,7 +30,7 @@
                 @htmx:after-request="showProgramEditModal = true">
                 <i class="fa-solid fa-pen"></i>
               </button>
-              <button class="button button-sm outline-style" @click="showInviteModal = true">Invite</button>
+              <button class="button button-sm outline-style" @click="showInviteModal = true">{% translate "Invite" %}</button>
               <div x-cloak x-show="showInviteModal" x-transition.opacity class="modal-backdrop" >
                 <div @click.away="showInviteModal = false" x-transition class="modal">
                   <div class="header">
@@ -51,8 +51,8 @@
                       <span class="hint">{% blocktrans %} Select the organization you want to invite.{% endblocktrans %}</span>
                     </div>
                     <div class="footer">
-                      <button type="button" @click="showInviteModal = false" class="button button-md outline-style">Close</button>
-                      <button type="submit" class="button button-md primary-dark">Invite</button>
+                      <button type="button" @click="showInviteModal = false" class="button button-md outline-style">{% translate "Close" %}</button>
+                      <button type="submit" class="button button-md primary-dark">{% translate "Invite" %}</button>
                     </div>
                   </form>
                 </div>
@@ -60,57 +60,48 @@
             </div>
           </div>
           {% with applications=program.programapplication_set.all %}
-          <div class="flex justify-between xl:items-center items-start xl:flex-row flex-col gap-2">
-            <!-- program info -->
-            <div class="flex flex-col md:flex-row md:items-center items-start lg:gap-6 gap-3">
-              <div class="infocard-dark">
-                  <i class="fa-solid fa-file-circle-check"></i>
-                  <div>
-                      <h6>Delivery Type</h6>
-                      <p>{{program.delivery_type.name}}</p>
-                  </div>
+
+          <div class="infocard-dark">
+              <i class="fa-solid fa-file-circle-check"></i>
+              <div>
+                  <h6>{% translate "Delivery Type" %}</h6>
+                  <p>{{program.delivery_type.name}}</p>
               </div>
-              <div class="line my-2 h-8 w-1 bg-gray-200 lg:block hidden"></div>
+          </div>
+
+          <div class="flex justify-between xl:items-center items-start xl:flex-row flex-col lg:gap-6 gap-3">
+            <div class="flex flex-row items-center lg:gap-6 gap-3">
               <div class="infocard-dark">
                   <i class="fa-solid fa-calendar-check"></i>
                   <div>
-                      <h6>Start Date</h6>
+                      <h6>{% translate "Start Date" %}</h6>
                       <p>{{program.start_date}}</p>
                   </div>
               </div>
               <i class="fa-solid fa-arrow-right text-brand-mango"></i>
               <div class="infocard-dark">
                   <div>
-                      <h6>End Date</h6>
+                      <h6>{% translate "End Date" %}</h6>
                       <p>{{program.end_date}}</p>
                   </div>
               </div>
-              <div class="line my-2 h-8 w-1 bg-gray-200 lg:block hidden"></div>
-              <div class="infocard-dark">
-                  <i class="fa-solid fa-money-bill-wave"></i>
-                  <div>
-                      <h6>Budget</h6>
-                      <p>{{program.budget}} {{program.currency_code|default:''}}</p>
-                  </div>
-              </div>
             </div>
-
-            <!-- button -->
-
-            {% if applications %}
-              <button class="button button-md outline-style" @click="showOpp = !showOpp">
-                <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
-                <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-              </button>
-            {% endif %}
-
+            <div class="line my-2 h-8 w-0.5 bg-gray-200 lg:block hidden"></div>
+            <div class="infocard-dark">
+                <i class="fa-solid fa-money-bill-wave"></i>
+                <div>
+                    <h6>{% translate "Budget" %}</h6>
+                    <p>{{program.budget}} {{program.currency_code|default:''}}</p>
+                </div>
+            </div>
           </div>
+
           <!-- progress -->
           <div class="bg-neutral-100 rounded-lg w-full h-20 flex items-center px-5 justify-evenly gap-6">
             <div class="infocard-dark !w-fit">
                 <i class="fa-solid fa-envelope"></i>
                 <div>
-                    <h6>Invited</h6>
+                    <h6>{% translate "Invited" %}</h6>
                     <p>{{program.invited}}</p>
                 </div>
             </div>
@@ -118,7 +109,7 @@
             <div class="infocard-dark !w-fit">
                 <i class="fa-solid fa-file-lines"></i>
                 <div>
-                    <h6>Applied</h6>
+                    <h6>{% translate "Applied" %}</h6>
                     <p>{{program.applied}}</p>
                 </div>
             </div>
@@ -126,11 +117,18 @@
             <div class="infocard-dark !w-fit">
                 <i class="fa-solid fa-circle-check"></i>
                 <div>
-                    <h6>Accepted</h6>
+                    <h6>{% translate "Accepted" %}</h6>
                     <p>{{program.accepted}}</p>
                 </div>
             </div>
           </div>
+
+          {% if applications %}
+            <button class="button button-sm outline-style" @click="showOpp = !showOpp">
+              <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
+              <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </button>
+          {% endif %}
 
           <div class="flex flex-col gap-y-4" x-cloak x-show="showOpp">
           {% for application in applications %}
@@ -141,15 +139,15 @@
                     <p class="hint">{{ application.date_created|date }}</p>
                     <div class="flex items-center gap-2 font-normal">
                       {% if application.status == 'rejected' %}
-                      <span class="badge badge-md negative-dark">Rejected</span>
+                      <span class="badge badge-md negative-dark">{% translate "Rejected" %}</span>
                       {% elif application.status == 'declined' %}
-                      <span class="badge badge-md negative-dark">Declined</span>
+                      <span class="badge badge-md negative-dark">{% translate "Declined" %}</span>
                       {% elif application.status == 'invited' %}
-                      <span class="badge badge-md warning-dark">Invited</span>
+                      <span class="badge badge-md warning-dark">{% translate "Invited" %}</span>
                       {% elif application.status == 'applied' %}
-                      <span class="badge badge-md primary-dark">Applied</span>
+                      <span class="badge badge-md primary-dark">{% translate "Applied" %}</span>
                       {% elif application.status == 'accepted' %}
-                      <span class="badge badge-md positive-dark">Accepted</span>
+                      <span class="badge badge-md positive-dark">{% translate "Accepted" %}</span>
                       {% endif %}
                     </div>
                   </div>
@@ -166,27 +164,27 @@
                     hx-post="{% url 'program:manage_application' request.org.slug application.id 'reject' %}"
                     hx-swap="outerHTML"
                     hx-target="body">
-                    Reject
+                    {% translate "Reject" %}
                   </button>
                   <button class="button button-md primary-dark" value="accept"
                     hx-post="{% url 'program:manage_application' request.org.slug application.id 'accept' %}"
                     hx-swap="outerHTML"
                     hx-target="body">
-                  Accept
+                    {% translate "Accept" %}
                   </button>
                 </div>
                 {% elif application.status == 'accepted' %}
                 <a class="button button-md button-outline-rounded me-1"
                   href="{% url "program:opportunity_init" request.org.slug program.id %}">
                   <div class="flex items-center justify-between gap-4">
-                    <p class="text-sm">Create Opportunity</p>
+                    <p class="text-sm">{% translate "Create Opportunity" %}</p>
                     <i class="fa-solid fa-arrow-right"></i>
                   </div>
                 </a>
                 <a class="button button-md button-outline-rounded"
                   href="{% url "opportunity:list" request.org.slug %}?program={{program.slug}}">
                   <div class="flex items-center justify-between gap-4">
-                    <p class="text-sm">View Opportunities</p>
+                    <p class="text-sm">{% translate "View Opportunities" %}</p>
                     <i class="fa-solid fa-arrow-right"></i>
                   </div>
                 </a>
@@ -203,7 +201,7 @@
   <div x-cloak x-show="showProgramEditModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showProgramEditModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center mb-2">
-        <h2 class="title">Edit Program</h2>
+        <h2 class="title">{% translate "Edit Program" %}</h2>
         <button @click="showProgramEditModal = false" class="button-icon" aria-label="Close">
           <i class="fa-solid fa-xmark"></i>
         </button>

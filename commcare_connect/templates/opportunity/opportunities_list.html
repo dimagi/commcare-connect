@@ -40,12 +40,12 @@
         </span>
         {% endif %}
       </button>
-      {% if request.org_membership.is_viewer %}
-      <button disabled class="button button-md primary-dark">Add Opportunity</button>
-      {% else %}
+      {% if request.org.program_manager and request.org_membership.is_admin %}
       <a class="button button-md primary-dark" href="{% url 'opportunity:init' request.org.slug %}">
         Add Opportunity
       </a>
+      {% else %}
+      <button disabled class="button button-md primary-dark">Add Opportunity</button>
       {% endif %}
       <div x-show="showFilterModal" class="modal-backdrop">
         <div class="modal">
