@@ -8,9 +8,10 @@ def backfill_org_amount(apps, schema_editor):
 
     payment_units_to_update = []
     for pu in PaymentUnit.objects.filter(opportunity__managed=True):
-        if org_amount := pu.opportunity.managedopportunity.org_pay_per_visit:
-            pu.org_amount = org_amount
-            payment_units_to_update.append(pu)
+        if m_opp := getattr(pu.opportunity, "managedopportunity", None):        
+            if org_amount := m_opp.org_pay_per_visit:
+                pu.org_amount = org_amount
+                payment_units_to_update.append(pu)
 
         if len(payment_units_to_update) >= 200:
             PaymentUnit.objects.bulk_update(payment_units_to_update, ["org_amount"])
