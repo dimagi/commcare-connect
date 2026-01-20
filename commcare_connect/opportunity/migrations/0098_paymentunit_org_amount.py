@@ -6,10 +6,18 @@ from django.db import migrations, models
 def backfill_org_amount(apps, schema_editor):
     PaymentUnit = apps.get_model("opportunity", "PaymentUnit")
 
+    payment_units_to_update = []
     for pu in PaymentUnit.objects.filter(opportunity__managed=True):
         if org_amount := pu.opportunity.managedopportunity.org_pay_per_visit:
             pu.org_amount = org_amount
-            pu.save(update_fields=["org_amount"])
+            payment_units_to_update.append(pu)
+
+        if len(payment_units_to_update) >= 200:
+            PaymentUnit.objects.bulk_update(payment_units_to_update, ["org_amount"])
+            payment_units_to_update = []
+
+    if payment_units_to_update:
+        PaymentUnit.objects.bulk_update(payment_units_to_update, ["org_amount"])
 
 
 class Migration(migrations.Migration):
@@ -23,5 +31,5 @@ class Migration(migrations.Migration):
             name="org_amount",
             field=models.PositiveIntegerField(default=0),
         ),
-        migrations.RunPython(backfill_org_amount, hints={"run_on_secondary": True}),
+        migrations.RunPython(backfill_org_amount, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": True}),
     ]
