@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0098_paymentinvoice_payment_invoice_id"),
+        ("opportunity", "0099_paymentinvoice_payment_invoice_id"),
     ]
 
     operations = [

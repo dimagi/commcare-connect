@@ -18,7 +18,7 @@ def gen_uuid(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0097_remove_opportunity_currency"),
+        ("opportunity", "0098_purge_stale_opportunities_periodic_task"),
     ]
 
     operations = [
