@@ -7,7 +7,7 @@ from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row,
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import F, Min, Q, Sum, TextChoices
+from django.db.models import Count, F, Min, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -36,6 +36,7 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
+    UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
 )
@@ -707,10 +708,15 @@ class OpportunityFinalizeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.budget_per_user = kwargs.pop("budget_per_user")
         self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
+        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
+
+        payment_calculation_string = (
+            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
+        )
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
@@ -723,31 +729,13 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 Field("end_date", wrapper_class="flex-1"),
                 Field(
                     "max_users",
-                    oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                    f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
-                    f"* parseInt(this.value || 0)",
+                    oninput=payment_calculation_string,
                 ),
                 Field("total_budget", readonly=True, wrapper_class="form-group "),
                 css_class="grid grid-cols-2 gap-6",
             ),
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
-
-        if self.opportunity.managed:
-            self.helper.layout.fields.insert(
-                -2,
-                Row(
-                    Field(
-                        "org_pay_per_visit",
-                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                        f"* parseInt(this.value || 0)) "
-                        f"* parseInt(document.getElementById('id_max_users')?.value || 0)",
-                    )
-                ),
-            )
-            self.fields["org_pay_per_visit"] = forms.IntegerField(
-                required=True, widget=forms.NumberInput(), initial=self.instance.org_pay_per_visit
-            )
 
         self.fields["max_users"] = forms.IntegerField(
             label="Max Connect Workers", initial=int(self.instance.number_of_users)
@@ -920,8 +908,15 @@ class OpportunityAccessCreationForm(forms.ModelForm):
 
 
 class AddBudgetExistingUsersForm(forms.Form):
-    additional_visits = forms.IntegerField(
-        widget=forms.NumberInput(attrs={"x-model": "additionalVisits"}), required=False
+    class AdjustmentType(TextChoices):
+        INCREASE_VISITS = "increase_visits", _("Increase Visits")
+        DECREASE_VISITS = "decrease_visits", _("Decrease Visits")
+
+    number_of_visits = forms.IntegerField(
+        widget=forms.NumberInput(attrs={"x-model": "numberOfVisits", "min": 1}),
+        required=False,
+        min_value=1,
+        label=_("Number of Visits"),
     )
     end_date = forms.DateField(
         widget=forms.DateInput(
@@ -935,6 +930,12 @@ class AddBudgetExistingUsersForm(forms.Form):
         label="Extended Opportunity End date",
         required=False,
     )
+    adjustment_type = forms.ChoiceField(
+        choices=AdjustmentType.choices,
+        widget=forms.RadioSelect(attrs={"x-model": "adjustmentType"}),
+        required=False,
+        label="",
+    )
 
     def __init__(self, *args, **kwargs):
         opportunity_claims = kwargs.pop("opportunity_claims", [])
@@ -947,47 +948,125 @@ class AddBudgetExistingUsersForm(forms.Form):
     def clean(self):
         cleaned_data = super().clean()
         selected_users = cleaned_data.get("selected_users")
-        additional_visits = cleaned_data.get("additional_visits")
+        number_of_visits = cleaned_data.get("number_of_visits")
+        adjustment_type = cleaned_data.get("adjustment_type")
 
-        if not selected_users and not additional_visits and not cleaned_data.get("end_date"):
-            raise forms.ValidationError("Please select users and specify either additional visits or end date.")
+        if not selected_users:
+            raise forms.ValidationError({"selected_users": gettext("Please select workers to update.")})
+        elif not number_of_visits and not cleaned_data.get("end_date"):
+            raise forms.ValidationError(gettext("Please specify either number of visits or end date."))
 
-        if additional_visits and selected_users:
-            self.budget_increase = self._validate_budget(selected_users, additional_visits)
+        if number_of_visits and not adjustment_type:
+            raise forms.ValidationError(
+                {"adjustment_type": gettext("Please select an adjustment type for number of visits.")}
+            )
+
+        if number_of_visits and selected_users:
+            self.budget_change = self._get_budget_change(selected_users, number_of_visits)
+            if adjustment_type == self.AdjustmentType.DECREASE_VISITS:
+                self._validate_decrease_visits(selected_users, number_of_visits)
+            else:
+                self._validate_budget_increase()
 
         return cleaned_data
+
+    def _validate_decrease_visits(self, selected_users, number_of_visits):
+        claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).select_related(
+            "opportunity_claim__opportunity_access__user", "opportunity_claim__opportunity_access", "payment_unit"
+        )
+        claim_limits_list = list(claim_limits)
+        completed_visits_map = self._get_completed_visits_map(claim_limits_list)
+
+        invalid_users = []
+        for claim_limit in claim_limits_list:
+            new_max_visits = claim_limit.max_visits - number_of_visits
+            key = (claim_limit.opportunity_claim.opportunity_access.id, claim_limit.payment_unit.id)
+            completed_count = completed_visits_map.get(key, 0)
+
+            if new_max_visits < completed_count:
+                invalid_users.append(claim_limit.opportunity_claim)
+
+        if invalid_users:
+            usernames_set = {user.opportunity_access.user.username for user in invalid_users}
+            if len(usernames_set) <= 10:
+                usernames = ", ".join(usernames_set)
+                users_message = f"{gettext('user(s)')}: {usernames}"
+            else:
+                users_message = f"{len(usernames_set)} {gettext('user(s)')}"
+            raise forms.ValidationError(
+                {
+                    "number_of_visits": gettext(
+                        "Cannot decrease the number of visits for %(users)s."
+                        " The visit count cannot be reduced below the number of already"
+                        " completed visits."
+                    )
+                    % {"users": users_message}
+                }
+            )
+
+    def _get_completed_visits_map(self, claim_limits_list):
+        access_ids = {cl.opportunity_claim.opportunity_access.id for cl in claim_limits_list}
+        payment_unit_ids = {cl.payment_unit.id for cl in claim_limits_list}
+        visits_qs = (
+            UserVisit.objects.filter(
+                opportunity_access_id__in=access_ids,
+                deliver_unit__payment_unit_id__in=payment_unit_ids,
+            )
+            .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
+            .values("opportunity_access_id", "deliver_unit__payment_unit_id")
+            .annotate(visit_count=Count("id"))
+        )
+        visit_counts = {
+            (visit["opportunity_access_id"], visit["deliver_unit__payment_unit_id"]): visit["visit_count"]
+            for visit in visits_qs
+        }
+        return visit_counts
+
+    def _get_budget_change(self, selected_users, number_of_visits):
+        claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
+        if self.cleaned_data.get("adjustment_type") == self.AdjustmentType.DECREASE_VISITS:
+            number_of_visits = -number_of_visits
+
+        budget_change = 0
+        for ocl in claim_limits:
+            org_amount = ocl.payment_unit.org_amount if self.opportunity.managed else 0
+            budget_change += (ocl.payment_unit.amount + org_amount) * number_of_visits
+
+        return budget_change
 
     def clean_end_date(self):
         end_date = self.cleaned_data.get("end_date")
         if end_date and end_date < datetime.date.today():
-            raise forms.ValidationError("End date cannot be in the past.")
+            raise forms.ValidationError(gettext("End date cannot be in the past."))
         return end_date
 
-    def _validate_budget(self, selected_users, additional_visits):
-        claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-        org_pay = self.opportunity.managedopportunity.org_pay_per_visit if self.opportunity.managed else 0
-
-        budget_increase = sum((ocl.payment_unit.amount + org_pay) * additional_visits for ocl in claims)
-
+    def _validate_budget_increase(self):
         if self.opportunity.managed:
             # NM cannot increase the opportunity budget they can only
             # assign new visits if the opportunity has remaining budget.
-            if budget_increase > self.opportunity.remaining_budget:
-                raise forms.ValidationError({"additional_visits": "Additional visits exceed the opportunity budget."})
-
-        return budget_increase
+            if self.budget_change > self.opportunity.remaining_budget:
+                raise forms.ValidationError(
+                    {
+                        "number_of_visits": gettext(
+                            "The number of visits being increased exceeds the opportunity budget."
+                        )
+                    }
+                )
 
     def save(self):
         selected_users = self.cleaned_data["selected_users"]
-        additional_visits = self.cleaned_data["additional_visits"]
+        number_of_visits = self.cleaned_data["number_of_visits"]
         end_date = self.cleaned_data["end_date"]
 
-        if additional_visits:
+        if number_of_visits:
             claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-            claims.update(max_visits=F("max_visits") + additional_visits)
+            if self.cleaned_data.get("adjustment_type") == self.AdjustmentType.DECREASE_VISITS:
+                claims.update(max_visits=F("max_visits") - number_of_visits)
+            else:
+                claims.update(max_visits=F("max_visits") + number_of_visits)
 
             if not self.opportunity.managed:
-                self.opportunity.total_budget += self.budget_increase
+                self.opportunity.total_budget += self.budget_change
                 self.opportunity.save()
 
         if end_date:
@@ -1010,7 +1089,7 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
-        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total"))
+        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total", "org_amount"))
 
         super().__init__(*args, **kwargs)
 
@@ -1030,7 +1109,7 @@ class AddBudgetNewUsersForm(forms.Form):
                 id_total_budget.value =
                 {self.opportunity.total_budget} +
                 {json.dumps(self.payments_units)}.reduce(
-                    (sum, u) => sum + (u.amount + {self.opportunity.org_pay_per_visit})
+                    (sum, u) => sum + (u.amount + u.org_amount)
                     * u.max_total * parseInt(this.value || 0),
                     0
                 );
@@ -1057,11 +1136,9 @@ class AddBudgetNewUsersForm(forms.Form):
         increased_budget = 0
         total_program_budget = 0
         claimed_program_budget = 0
-        org_pay = 0
 
         if self.opportunity.managed:
             manage_opp = self.opportunity.managedopportunity
-            org_pay = manage_opp.org_pay_per_visit
             program = manage_opp.program
             total_program_budget = program.budget
             claimed_program_budget = (
@@ -1073,7 +1150,8 @@ class AddBudgetNewUsersForm(forms.Form):
 
         if add_users:
             for payment_unit in self.payments_units:
-                increased_budget += (payment_unit["amount"] + org_pay) * payment_unit["max_total"] * add_users
+                org_amount = payment_unit["org_amount"] if self.opportunity.managed else 0
+                increased_budget += (payment_unit["amount"] + org_amount) * payment_unit["max_total"] * add_users
 
             # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
             if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
@@ -1105,7 +1183,7 @@ class AddBudgetNewUsersForm(forms.Form):
 class PaymentUnitForm(forms.ModelForm):
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
         help_texts = {
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
@@ -1114,12 +1192,19 @@ class PaymentUnitForm(forms.ModelForm):
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
+        labels = {
+            "amount": _("Worker pay per visit"),
+            "org_amount": _("Org pay per visit"),
+            "max_total": _("Maximum visits per user"),
+            "max_daily": _("Maximum visits per day"),
+        }
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+
         deliver_units = kwargs.pop("deliver_units", [])
         payment_units = kwargs.pop("payment_units", [])
         org_slug = kwargs.pop("org_slug")
-        opportunity_id = kwargs.pop("opportunity_id")
 
         super().__init__(*args, **kwargs)
 
@@ -1129,7 +1214,7 @@ class PaymentUnitForm(forms.ModelForm):
                 Row(
                     Column(Field("name"), Field("description")),
                     Column(
-                        Field("amount"),
+                        self.get_amounts_div(),
                         Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
                         Field("start_date"),
                         Field("end_date"),
@@ -1144,7 +1229,7 @@ class PaymentUnitForm(forms.ModelForm):
                         HTML(
                             f"""
                     <button type="button" class="button button-md outline-style" id="sync-button"
-                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
+                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, self.opportunity.pk))}"
                     hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
                     event.detail.successful && location.reload();
                     this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
@@ -1199,6 +1284,18 @@ class PaymentUnitForm(forms.ModelForm):
                 if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
+
+    def get_amounts_div(self):
+        fields = [
+            Field("amount"),
+        ]
+        if self.opportunity.managed:
+            fields.append(Field("org_amount"))
+
+        return Div(
+            *fields,
+            css_class="grid grid-cols-2 gap-4",
+        )
 
     def clean(self):
         cleaned_data = super().clean()
