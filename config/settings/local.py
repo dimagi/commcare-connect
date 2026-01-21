@@ -32,6 +32,8 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # allow running the deid-scripts in development
 INSTALLED_APPS += ["commcare_connect.deid"]
 
+MAILDEV_ENABLED = env.bool("MAILDEV_ENABLED", default=False)
+
 if MAILDEV_ENABLED:  # noqa: F405
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = "localhost"
