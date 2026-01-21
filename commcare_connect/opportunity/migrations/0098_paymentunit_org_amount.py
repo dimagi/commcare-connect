@@ -32,5 +32,5 @@ class Migration(migrations.Migration):
             name="org_amount",
             field=models.PositiveIntegerField(default=0),
         ),
-        migrations.RunPython(backfill_org_amount, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": True}),
+        migrations.RunPython(backfill_org_amount, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]
