@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
     dependencies = [
         ("program", "0008_create_monthly_delivery_reminder_periodic_task"),
-        ("opportunity", "0098_paymentunit_org_amount"),
+        ("opportunity", "00101_paymentunit_org_amount"),
     ]
 
     operations = [
