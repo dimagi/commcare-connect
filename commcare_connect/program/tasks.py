@@ -1,10 +1,20 @@
 from allauth.utils import build_absolute_uri
+from django.db.models import F
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext as _
 
-from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
+    Opportunity,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
+from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
 from commcare_connect.utils.tasks import send_mail_async
+from config import celery_app
 
 
 def send_program_invite_applied_email(application_id):
@@ -92,3 +102,100 @@ def _get_membership_users_emails(organization):
 
 def _get_program_home_url(org_slug):
     return build_absolute_uri(None, reverse("program:home", kwargs={"org_slug": org_slug}))
+
+
+@celery_app.task()
+def send_monthly_delivery_reminder_email():
+    organizations_with_pending_deliveries = Organization.objects.filter(
+        opportunity__opportunityaccess__completedwork__status=CompletedWorkStatus.pending
+    ).distinct()
+
+    for organization in organizations_with_pending_deliveries.iterator(chunk_size=50):
+        send_nm_reminder_for_opportunities(
+            organization=organization,
+        )
+        send_pm_reminder_for_opportunities(
+            organization=organization,
+        )
+
+
+def send_nm_reminder_for_opportunities(organization):
+    opp_ids_pending_review = (
+        CompletedWork.objects.filter(
+            opportunity_access__opportunity__organization=organization,
+            uservisit__status=VisitValidationStatus.pending,
+        )
+        .values_list("opportunity_access__opportunity_id", flat=True)
+        .distinct()
+    )
+
+    if not opp_ids_pending_review:
+        return
+
+    opportunities = organization.opportunities.filter(
+        id__in=opp_ids_pending_review,
+    ).only("name", "id")
+
+    _send_org_email_for_opportunities(
+        organization=organization,
+        opportunities=opportunities,
+        recipient_emails=_get_membership_users_emails(organization),
+    )
+
+
+def send_pm_reminder_for_opportunities(organization):
+    opp_ids_pending_pm_review = (
+        CompletedWork.objects.filter(
+            opportunity_access__opportunity__organization=organization,
+            opportunity_access__opportunity__managed=True,
+            uservisit__review_status=VisitReviewStatus.pending,
+            uservisit__status=VisitValidationStatus.approved,
+        )
+        .values_list("opportunity_access__opportunity_id", flat=True)
+        .distinct()
+    )
+
+    if not opp_ids_pending_pm_review:
+        return
+
+    opportunities = Opportunity.objects.filter(id__in=opp_ids_pending_pm_review).annotate(
+        program_organization=F("managedopportunity__program__organization")
+    )
+
+    recipient_emails = set()
+    for opp in opportunities:
+        recipient_emails.update(_get_membership_users_emails(opp.program_organization))
+
+    _send_org_email_for_opportunities(
+        organization=organization,
+        opportunities=opportunities,
+        recipient_emails=list(recipient_emails),
+    )
+
+
+def _send_org_email_for_opportunities(organization, opportunities, recipient_emails):
+    if not recipient_emails:
+        return
+
+    opportunity_links = []
+    for opportunity in opportunities:
+        worker_deliver_url = build_absolute_uri(
+            None,
+            reverse("opportunity:worker_deliver", kwargs={"org_slug": organization.slug, "opp_id": opportunity.id}),
+        )
+        opportunity_links.append({"name": opportunity.name, "url": worker_deliver_url})
+
+    context = {
+        "organization": organization,
+        "opportunities": opportunity_links,
+    }
+
+    message = render_to_string("program/email/monthly_delivery_reminder.txt", context)
+    html_message = render_to_string("program/email/monthly_delivery_reminder.html", context)
+
+    send_mail_async.delay(
+        subject=_("Reminder: Please Review Pending Deliveries"),
+        message=message,
+        recipient_list=recipient_emails,
+        html_message=html_message,
+    )
