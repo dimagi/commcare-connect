@@ -5,7 +5,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("program", "0007_remove_program_currency"),
+        ("program", "0008_create_monthly_delivery_reminder_periodic_task"),
         ("opportunity", "0098_paymentunit_org_amount"),
     ]
 
