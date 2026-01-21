@@ -45,6 +45,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 
 
 class OpportunityFactory(DjangoModelFactory):
+    opportunity_id = Faker("uuid4")
     organization = SubFactory(OrganizationFactory)
     name = Faker("name")
     description = Faker("text")

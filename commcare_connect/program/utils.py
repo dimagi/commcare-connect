@@ -4,7 +4,10 @@ from commcare_connect.program.models import ManagedOpportunity
 
 @quickcache(vary_on=["opp_id"], timeout=60 * 60 * 24)
 def get_managed_opp(opp_id) -> ManagedOpportunity | None:
-    return ManagedOpportunity.objects.select_related("program__organization").filter(id=opp_id).first()
+    queryset = ManagedOpportunity.objects.select_related("program__organization")
+    if str(opp_id).isdigit():
+        return queryset.filter(pk=int(opp_id)).first()
+    return queryset.filter(opportunity_id=opp_id).first()
 
 
 def is_program_manager(request):

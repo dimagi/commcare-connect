@@ -51,7 +51,7 @@
           </div>
         </div>
 
-        {% url 'opportunity:visit_import' request.org.slug opportunity.pk as visit_import_url %}
+        {% url 'opportunity:visit_import' request.org.slug opportunity.opportunity_id as visit_import_url %}
         {% include "components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}
 
         <!--User visit export modal-->
