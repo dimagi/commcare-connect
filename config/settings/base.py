@@ -215,7 +215,7 @@ X_FRAME_OPTIONS = "DENY"
 
 # EMAIL
 # ------------------------------------------------------------------------------
-MAILDEV_ENABLED = env("MAILDEV_ENABLED", default="False") == "True"
+MAILDEV_ENABLED = env.bool("MAILDEV_ENABLED", default=False)
 
 EMAIL_BACKEND = env(
     "DJANGO_EMAIL_BACKEND",
