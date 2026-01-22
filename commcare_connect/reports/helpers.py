@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import datetime
 
@@ -6,6 +7,7 @@ from django.db import models
 from django.db.models.functions import Coalesce, ExtractDay, Least, TruncMonth
 from django.utils.timezone import now
 
+from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_user_counts
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -17,6 +19,8 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.utils.datetime import get_month_series, get_start_end_dates_from_month_range
+
+logger = logging.getLogger(__name__)
 
 ADMIN_REPORT_START = "2023-01"
 
@@ -68,6 +72,10 @@ def get_activated_connect_user_counts_cumulative(delivery_type=None):
     return _get_cumulative_count(visit_data_dict)
 
 
+@quickcache(
+    vary_on=["from_date", "to_date", "delivery_type", "program", "network_manager", "opportunity", "country_currency"],
+    timeout=60 * 60 * 24,
+)
 def get_table_data_for_year_month(
     from_date=None,
     to_date=None,
@@ -77,6 +85,10 @@ def get_table_data_for_year_month(
     opportunity=None,
     country_currency=None,
 ):
+    logger.info(
+        f"KPI Filters: {from_date},{to_date},{delivery_type},{program},{network_manager}"
+        f",{opportunity},{country_currency}"
+    )
     from_date = from_date or now().date()
     to_date = to_date if to_date and to_date <= now().date() else now().date()
     timeseries = get_month_series(from_date, to_date)
