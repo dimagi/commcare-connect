@@ -28,7 +28,6 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     program = serializers.SerializerMethodField()
     visit_count = serializers.SerializerMethodField()
-    org_pay_per_visit = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -41,7 +40,6 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "is_active",
             "program",
             "visit_count",
-            "org_pay_per_visit",
         ]
 
     def get_program(self, obj) -> int:
@@ -49,9 +47,6 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
 
     def get_visit_count(self, obj) -> int:
         return getattr(obj, "visit_count", 0)
-
-    def get_org_pay_per_visit(self, obj) -> int:
-        return obj.org_pay_per_visit
 
 
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
