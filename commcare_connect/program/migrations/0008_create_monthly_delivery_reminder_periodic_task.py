@@ -8,9 +8,9 @@ def create_monthly_delivery_reminder_periodic_task(apps, schema_editor):
     # Create a schedule for the 25th of every month at 9:00 AM UTC
     schedule, _ = CrontabSchedule.objects.get_or_create(
         minute="0",
-        hour="9",
+        hour="13",
         day_of_week="*",
-        day_of_month="25",
+        day_of_month="*",
         month_of_year="*",
     )
     PeriodicTask.objects.update_or_create(
