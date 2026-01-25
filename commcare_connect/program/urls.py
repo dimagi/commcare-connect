@@ -26,7 +26,7 @@ urlpatterns = [
     path("<slug:pk>/invite", view=invite_organization, name="invite_organization"),
     path("application/<slug:application_id>/<str:action>", manage_application, name="manage_application"),
     path(
-        "<slug:uuid>/application/<slug:application_id>/<str:action>/",
+        "<slug:pk>/application/<slug:application_id>/<str:action>/",
         view=apply_or_decline_application,
         name="apply_or_decline_application",
     ),

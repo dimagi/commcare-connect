@@ -191,7 +191,7 @@ EXPORT_ROW_LIMIT = 10_000
 
 
 def get_opportunity_or_404(pk, org_slug):
-    opp = get_object_by_uuid_or_int(Opportunity.objects.all(), pk, uuid_field="opportunity_id")
+    opp = get_object_by_uuid_or_int(Opportunity.objects.all(), str(pk), uuid_field="opportunity_id")
 
     if (opp.organization and opp.organization.slug == org_slug) or (
         opp.managed and opp.managedopportunity.program.organization.slug == org_slug

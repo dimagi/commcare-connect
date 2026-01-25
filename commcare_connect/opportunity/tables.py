@@ -884,7 +884,7 @@ class UserVisitVerificationTable(tables.Table):
         row_attrs = {
             "hx-get": lambda record, table: reverse(
                 "opportunity:user_visit_details",
-                args=[table.organization.slug, record.opportunity_id, record.user_visit_id],
+                args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
             ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
