@@ -216,6 +216,7 @@ def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list
                 to_update, fields=["status", "reason", "review_created_on", "justification", "status_modified_date"]
             )
             missing_visits |= set(visit_batch) - seen_visits
+
     bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
     return VisitImportStatus(seen_visits, missing_visits, locked_visits, approved_count, rejected_count)
 
