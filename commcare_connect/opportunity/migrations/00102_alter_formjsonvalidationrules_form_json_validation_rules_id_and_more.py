@@ -6,7 +6,7 @@ import uuid
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0097_remove_opportunity_currency"),
+        ("opportunity", "00101_paymentunit_org_amount"),
     ]
 
     operations = [

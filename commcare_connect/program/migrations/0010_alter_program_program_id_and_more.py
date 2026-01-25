@@ -6,7 +6,7 @@ import uuid
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("program", "0007_remove_program_currency"),
+        ("program", "0009_remove_managedopportunity_org_pay_per_visit"),
     ]
 
     operations = [
