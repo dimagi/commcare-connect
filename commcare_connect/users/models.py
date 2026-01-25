@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.db import models
@@ -18,6 +20,7 @@ class User(AbstractUser):
 
     username_validator = UnicodeUsernameValidator()
 
+    user_id = models.UUIDField(editable=False, null=True, default=uuid4)
     # First and last name do not cover name patterns around the globe
     name = models.CharField(_("Name of User"), blank=True, max_length=255)
     first_name = None  # type: ignore
