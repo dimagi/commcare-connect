@@ -102,6 +102,8 @@ class Opportunity(BaseModel):
     start_date = models.DateField(default=datetime.date.today)
     end_date = models.DateField(null=True)
     total_budget = models.PositiveBigIntegerField(null=True)
+    # Whether users payment phone numbers are required or not
+    payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
@@ -121,10 +123,6 @@ class Opportunity(BaseModel):
             return self.currency_fk.code
         else:
             return None
-
-    @property
-    def org_pay_per_visit(self):
-        return self.managedopportunity.org_pay_per_visit if self.managed else 0
 
     @property
     def is_setup_complete(self):
@@ -150,24 +148,19 @@ class Opportunity(BaseModel):
         opp_access = OpportunityAccess.objects.filter(opportunity=self)
         opportunity_claim = OpportunityClaim.objects.filter(opportunity_access__in=opp_access)
         claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__in=opportunity_claim)
-        org_pay = self.org_pay_per_visit
 
         payment_unit_counts = claim_limits.values("payment_unit").annotate(
-            visits_count=Sum("max_visits"), amount=F("payment_unit__amount")
+            visits_count=Sum("max_visits"), amount=F("payment_unit__amount"), org_amount=F("payment_unit__org_amount")
         )
         claimed = 0
+
         for count in payment_unit_counts:
             visits_count = count["visits_count"]
             amount = count["amount"]
-            claimed += visits_count * (amount + org_pay)
+            org_amount = count["org_amount"] if self.managed else 0
+            claimed += visits_count * (amount + org_amount)
 
         return claimed
-
-    @property
-    def utilised_budget(self):
-        completed_works = CompletedWork.objects.filter(opportunity_access__opportunity=self)
-        org_pay = self.org_pay_per_visit
-        return sum(cw.saved_payment_accrued + org_pay for cw in completed_works)
 
     @property
     def claimed_visits(self):
@@ -195,9 +188,8 @@ class Opportunity(BaseModel):
 
         budget_per_user = 0
         payment_units = self.paymentunit_set.all()
-        org_pay = self.org_pay_per_visit
         for pu in payment_units:
-            budget_per_user += pu.max_total * (pu.amount + org_pay)
+            budget_per_user += pu.max_total * (pu.amount + pu.org_amount)
 
         return self.total_budget / budget_per_user
 
@@ -422,6 +414,7 @@ class PaymentUnit(models.Model):
     payment_unit_id = models.UUIDField(editable=False, null=True, default=uuid4)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
     amount = models.PositiveIntegerField()
+    org_amount = models.PositiveIntegerField(default=0)
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
@@ -505,6 +498,7 @@ class PaymentInvoice(models.Model):
         service_delivery = "service_delivery", gettext("Service Delivery")
         custom = "custom", gettext("Custom")
 
+    payment_invoice_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)

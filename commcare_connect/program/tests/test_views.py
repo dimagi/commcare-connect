@@ -30,7 +30,9 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         self.program = ProgramFactory.create(organization=self.organization)
         self.delivery_type = DeliveryTypeFactory.create()
         self.init_url = reverse("program:init", kwargs={"org_slug": self.organization.slug})
-        self.edit_url = reverse("program:edit", kwargs={"org_slug": self.organization.slug, "pk": self.program.pk})
+        self.edit_url = reverse(
+            "program:edit", kwargs={"org_slug": self.organization.slug, "pk": self.program.program_id}
+        )
 
     def test_create_view(self):
         response = self.client.get(self.init_url)
@@ -98,7 +100,7 @@ class TestInviteOrganizationView(BaseProgramTest):
             "program:invite_organization",
             kwargs={
                 "org_slug": self.organization.slug,
-                "pk": self.program.pk,
+                "pk": self.program.program_id,
             },
         )
 

@@ -174,7 +174,7 @@
 
     <div class="w-full grid grid-cols-10 gap-2">
       <div class="col-span-6" hx-indicator="#loading-spinner">
-        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.id %}{% querystring %}"
+        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
               hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
 

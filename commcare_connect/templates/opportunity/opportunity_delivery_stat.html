@@ -2,7 +2,7 @@
 <!-- Skeleton Loader with HTMX call -->
 <div
   id="opp-stats-container"
-  hx-get="{% url 'opportunity:delivery_stats' request.org.slug object.id %}"
+  hx-get="{% url 'opportunity:delivery_stats' request.org.slug object.opportunity_id %}"
   hx-trigger="load"
   hx-target="#opp-stats-container"
   hx-swap="innerHTML"
