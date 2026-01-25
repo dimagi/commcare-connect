@@ -29,7 +29,7 @@ class Migration(migrations.Migration):
     atomic = False
 
     dependencies = [
-        ("opportunity", "0103_alter_opportunity_opportunity_id"),
+        ("opportunity", "0107_alter_opportunity_opportunity_id"),
     ]
 
     operations = [

@@ -6,7 +6,7 @@ import uuid
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0102_alter_formjsonvalidationrules_form_json_validation_rules_id_and_more"),
+        ("opportunity", "0106_alter_formjsonvalidationrules_form_json_validation_rules_id_and_more"),
     ]
 
     operations = [

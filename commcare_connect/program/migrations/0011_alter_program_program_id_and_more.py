@@ -24,7 +24,7 @@ def gen_uuid(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("program", "0008_alter_program_program_id_and_more"),
+        ("program", "0010_alter_program_program_id_and_more"),
     ]
 
     operations = [

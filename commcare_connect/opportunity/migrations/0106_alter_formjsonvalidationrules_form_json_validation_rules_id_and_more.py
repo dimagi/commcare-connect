@@ -6,7 +6,7 @@ import uuid
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0101_alter_uservisit_user_visit_id"),
+        ("opportunity", "0105_alter_uservisit_user_visit_id"),
     ]
 
     operations = [

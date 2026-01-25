@@ -27,7 +27,7 @@ def gen_uuid(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0098_alter_formjsonvalidationrules_form_json_validation_rules_id_and_more"),
+        ("opportunity", "00102_alter_formjsonvalidationrules_form_json_validation_rules_id_and_more"),
     ]
 
     operations = [
