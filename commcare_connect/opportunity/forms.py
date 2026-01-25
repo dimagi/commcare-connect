@@ -135,6 +135,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             "short_description",
             "is_test",
             "delivery_type",
+            "payment_info_required",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -837,7 +838,9 @@ class VisitExportForm(forms.Form):
         self.review_export = kwargs.pop("review_export", False)
         super().__init__(*args, **kwargs)
 
-        visit_count_url = reverse("opportunity:visit_export_count", args=(self.org_slug, self.opportunity.id))
+        visit_count_url = reverse(
+            "opportunity:visit_export_count", args=(self.org_slug, self.opportunity.opportunity_id)
+        )
 
         # if export is for review update the status and url
         if self.review_export:

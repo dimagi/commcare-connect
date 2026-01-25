@@ -47,7 +47,7 @@
                 <!-- Modal body / Tab content -->
                 <div class="z-50 bg-white ">
                     <div x-show="selectedTab === 'Learn App'"
-                            hx-get="{% url 'opportunity:learn_module_table' request.org.slug opportunity.id %}"
+                            hx-get="{% url 'opportunity:learn_module_table' request.org.slug opportunity.opportunity_id %}"
                             hx-trigger="tabShown from:body"
                             hx-swap="innerHTML"
                             class=" rounded-lg h-full w-full">
@@ -58,7 +58,7 @@
 
                     <!-- Deliver App Content -->
                     <div x-show="selectedTab === 'Deliver App'"
-                            hx-get="{% url 'opportunity:deliver_unit_table' request.org.slug opportunity.id %}"
+                            hx-get="{% url 'opportunity:deliver_unit_table' request.org.slug opportunity.opportunity_id %}"
                             hx-trigger="tabShown from:body"
                             hx-swap="innerHTML"
                             class="rounded-lg h-full w-full">
@@ -69,7 +69,7 @@
 
                     <!-- Payment Units Content -->
                     <div x-show="selectedTab === 'Payments Units'"
-                            hx-get="{% url 'opportunity:payment_unit_table' request.org.slug opportunity.id %}"
+                            hx-get="{% url 'opportunity:payment_unit_table' request.org.slug opportunity.opportunity_id %}"
                            hx-trigger="tabShown from:body"
                             hx-swap="innerHTML"
                             class="rounded-lg h-full w-full">
