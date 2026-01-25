@@ -165,7 +165,7 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         "commcare_connect.opportunity.tasks.default_storage.save"
     ) as save_blob:
         get_response.return_value.content = b"asdas"
-        download_user_visit_attachments(user_visit.id)
+        download_user_visit_attachments.run(user_visit.id)
         blob_meta = BlobMeta.objects.first()
 
         assert blob_meta.name == "myimage.jpg"
