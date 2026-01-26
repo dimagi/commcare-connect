@@ -29,7 +29,7 @@ def delete_periodic_task(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0097_remove_opportunity_currency"),
+        ("opportunity", "0106_backfill_payment_invoice_uuid_field"),
     ]
 
     operations = [
