@@ -102,6 +102,8 @@ class Opportunity(BaseModel):
     start_date = models.DateField(default=datetime.date.today)
     end_date = models.DateField(null=True)
     total_budget = models.PositiveBigIntegerField(null=True)
+    # Whether users payment phone numbers are required or not
+    payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
     currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
