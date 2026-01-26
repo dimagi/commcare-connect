@@ -14,12 +14,13 @@ from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
-from commcare_connect.opportunity.forms import AutomatedPaymentInvoiceForm, PaymentInvoiceForm
+from commcare_connect.opportunity.forms import AutomatedPaymentInvoiceForm, PaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    PaymentUnit,
     UserInvite,
     UserInviteStatus,
     VisitReviewStatus,
@@ -28,6 +29,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
+    DeliverUnitFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
@@ -93,9 +95,10 @@ def test_add_budget_existing_users_for_managed_opportunity(
         program=program,
         organization=organization,
         total_budget=initial_total_budget,
-        org_pay_per_visit=org_pay_per_visit,
     )
-    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit)
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
     claim_limit = OpportunityClaimLimitFactory(
@@ -1071,3 +1074,123 @@ class TestInvoiceReviewView:
             response = client.get(url)
             form = response.context["form"]
             assert isinstance(form, AutomatedPaymentInvoiceForm)
+
+
+@pytest.mark.django_db
+class TestAddPaymentUnitView:
+    def test_org_amount_field_visible_for_managed_opportunity(self, client):
+        managed_opportunity = ManagedOpportunityFactory()
+        organization = managed_opportunity.organization
+        organization.program_manager = True
+        organization.save()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        client.force_login(user)
+
+        url = reverse("opportunity:add_payment_unit", args=(organization.slug, managed_opportunity.id))
+        response = client.get(url)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "org_amount" in content
+        assert 'name="org_amount"' in content
+
+    def test_org_amount_field_hidden_for_regular_opportunity(self, client):
+        opportunity = OpportunityFactory()
+        organization = opportunity.organization
+        organization.program_manager = False
+        organization.save()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        client.force_login(user)
+        url = reverse("opportunity:add_payment_unit", args=(organization.slug, opportunity.id))
+        response = client.get(url)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="org_amount"' not in content
+
+    def test_add_payment_unit_form_with_managed_opportunity(self, client):
+        managed_opportunity = ManagedOpportunityFactory()
+        organization = managed_opportunity.organization
+        organization.program_manager = True
+        organization.save()
+
+        deliver_unit = DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=None)
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        client.force_login(user)
+        url = reverse("opportunity:add_payment_units", args=(organization.slug, managed_opportunity.id))
+
+        form_data = {
+            "name": "Test Payment Unit",
+            "description": "Test Description",
+            "amount": 100,
+            "org_amount": 50,
+            "max_total": 10,
+            "max_daily": 2,
+            "required_deliver_units": [deliver_unit.id],
+            "optional_deliver_units": [],
+            "payment_units": [],
+        }
+        client.post(url, data=form_data)
+
+        payment_unit = PaymentUnit.objects.get(opportunity=managed_opportunity, name="Test Payment Unit")
+        assert payment_unit.org_amount == 50
+
+    def test_add_payment_unit_form_with_regular_opportunity(self, client):
+        opportunity = OpportunityFactory()
+        opportunity.managed = False
+        opportunity.save()
+
+        organization = opportunity.organization
+        organization.program_manager = False
+        organization.save()
+
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+
+        deliver_units = [deliver_unit]
+        payment_units = []
+        org_slug = organization.slug
+
+        form = PaymentUnitForm(
+            deliver_units=deliver_units, payment_units=payment_units, org_slug=org_slug, opportunity=opportunity
+        )
+
+        amounts_div = form.get_amounts_div()
+        amount_fields = amounts_div.fields
+        assert len(amount_fields) == 1
+        first_field = amount_fields[0]
+        assert hasattr(first_field, "fields") and first_field.fields[0] == "amount"
+
+        payment_unit = PaymentUnit(
+            opportunity=opportunity,
+            name="Test Payment Unit",
+            description="Test Description",
+            amount=100,
+            max_total=10,
+            max_daily=2,
+        )
+        assert payment_unit.org_amount == 0
+
+        managed_opportunity = opportunity
+        managed_opportunity.managed = True
+        managed_opportunity.save()
+
+        managed_form = PaymentUnitForm(
+            deliver_units=deliver_units,
+            payment_units=payment_units,
+            org_slug=org_slug,
+            opportunity=managed_opportunity,
+        )
+
+        managed_amounts_div = managed_form.get_amounts_div()
+        managed_amount_fields = managed_amounts_div.fields
+
+        assert len(managed_amount_fields) == 2

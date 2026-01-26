@@ -51,10 +51,9 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     }
     payment_units = [payment_unit_sub, payment_unit1, payment_unit2]
     budget_per_user = sum(pu.max_total * pu.amount for pu in payment_units)
-    org_pay = 0
+
     if opportunity.managed:
-        org_pay = opportunity.managedopportunity.org_pay_per_visit
-        budget_per_user += sum(pu.max_total * org_pay for pu in payment_units)
+        budget_per_user += sum(pu.max_total * pu.org_amount for pu in payment_units)
     opportunity.total_budget = budget_per_user * 3
 
     payment_units = [payment_unit1, payment_unit2, payment_unit_sub]
@@ -71,9 +70,9 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     ocl1 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit1)
     ocl2 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit2)
 
-    assert opportunity.claimed_budget == (ocl1.max_visits * (payment_unit1.amount + org_pay)) + (
-        ocl2.max_visits * (payment_unit2.amount + org_pay)
-    )
+    assert opportunity.claimed_budget == (
+        ocl1.max_visits * (payment_unit1.amount + (payment_unit1.org_amount if opportunity.managed else 0))
+    ) + (ocl2.max_visits * (payment_unit2.amount + (payment_unit2.org_amount if opportunity.managed else 0)))
     assert opportunity.remaining_budget == opportunity.total_budget - opportunity.claimed_budget
 
 
