@@ -518,7 +518,7 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
         None,
         reverse(
             "opportunity:invoice_list",
-            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.id},
+            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.opportunity_id},
         ),
     )
 

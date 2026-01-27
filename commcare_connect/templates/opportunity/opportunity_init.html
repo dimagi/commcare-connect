@@ -9,7 +9,7 @@
 {% block content %}
 <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-8"
   x-data="{ showAddApiKeyModal: false }">
-  {% include "opportunity/steps.html" with step='step1' org_slug=request.org.slug pk=form.instance.pk %}
+  {% include "opportunity/steps.html" with step='step1' org_slug=request.org.slug pk=form.instance.opportunity_id %}
   <h6 class="title">{% if is_update %}Edit Details{% else %}Create Details{% endif %}</h6>
   {% include "components/partial_form.html" %}
 

@@ -195,9 +195,9 @@ class DeliverStatusTable(OrgContextTable):
     def render_details(self, record):
         base_url = reverse(
             "opportunity:user_visits_list",
-            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.id},
+            kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.opportunity_id},
         )
-        url = f"{base_url}?{urlencode({'user': record.user_id})}"
+        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
         return mark_safe(f'<a href="{url}">View Details</a>')
 
     def render_last_visit_date(self, record, value):
@@ -262,10 +262,15 @@ class SuspendedUsersTable(tables.Table):
     def render_revoke_suspension(self, record, value):
         revoke_url = reverse(
             "opportunity:revoke_user_suspension",
-            args=(record.opportunity.organization.slug, record.opportunity.id, record.pk),
+            args=(
+                record.opportunity.organization.slug,
+                record.opportunity.opportunity_id,
+                record.opportunity_access_id,
+            ),
         )
         page_url = reverse(
-            "opportunity:suspended_users_list", args=(record.opportunity.organization.slug, record.opportunity_id)
+            "opportunity:suspended_users_list",
+            args=(record.opportunity.organization.slug, record.opportunity.opportunity_id),
         )
         return render_to_string(
             "opportunity/partials/revoke_suspension.html",
@@ -444,7 +449,8 @@ class PaymentInvoiceTable(OpportunityContextTable):
         review_button = ""
         if waffle.switch_is_active(INVOICE_REVIEW):
             invoice_review_url = reverse(
-                "opportunity:invoice_review", args=[self.org_slug, self.opportunity.id, record.pk]
+                "opportunity:invoice_review",
+                args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
             )
             review_button = (
                 f'<a href="{invoice_review_url}" '
@@ -453,12 +459,14 @@ class PaymentInvoiceTable(OpportunityContextTable):
             )
         pay_button = ""
         if self.is_pm and record.status == InvoiceStatus.SUBMITTED:
-            invoice_approve_url = reverse("opportunity:invoice_approve", args=[self.org_slug, self.opportunity.id])
+            invoice_approve_url = reverse(
+                "opportunity:invoice_approve", args=[self.org_slug, self.opportunity.opportunity_id]
+            )
             disabled = "disabled" if getattr(record, "payment", None) else ""
             pay_button = f"""
                 <button
                     hx-post="{invoice_approve_url}"
-                    hx-vals='{{"pk": "{record.pk}"}}'
+                    hx-vals='{{"pk": "{record.payment_invoice_id}"}}'
                     hx-headers='{{"X-CSRFToken": "{self.csrf_token}"}}'
                     class="button button-md primary-dark"
                     {disabled}>
@@ -589,7 +597,7 @@ class BaseOpportunityList(OrgContextTable):
         return format_html('<div class="{}">{}</div>', all_classes, value)
 
     def render_opportunity(self, value, record):
-        url = reverse("opportunity:detail", args=(self.org_slug, record.id))
+        url = reverse("opportunity:detail", args=(self.org_slug, record.opportunity_id))
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes="justify-start text-wrap")
 
@@ -646,14 +654,14 @@ class OpportunityTable(BaseOpportunityList):
         )
 
     def render_pending_invites(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id)
+        return self.render_worker_list_url_column(value=value, opp_id=record.opportunity_id)
 
     def render_inactive_workers(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id, sort="sort=last_active")
+        return self.render_worker_list_url_column(value=value, opp_id=record.opportunity_id, sort="sort=last_active")
 
     def render_pending_approvals(self, value, record):
         return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, url_slug="worker_deliver", sort="sort=-pending"
+            value=value, opp_id=record.opportunity_id, url_slug="worker_deliver", sort="sort=-pending"
         )
 
     def render_payments_due(self, value, record):
@@ -662,18 +670,18 @@ class OpportunityTable(BaseOpportunityList):
 
         value = f"{record.currency_code} {intcomma(value)}"
         return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, url_slug="worker_payments", sort="sort=-total_paid"
+            value=value, opp_id=record.opportunity_id, url_slug="worker_payments", sort="sort=-total_paid"
         )
 
     def render_actions(self, record):
         actions = [
             {
                 "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
+                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
             },
             {
                 "title": "View Connect Workers",
-                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.id]),
+                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
             },
         ]
 
@@ -681,7 +689,7 @@ class OpportunityTable(BaseOpportunityList):
             actions.append(
                 {
                     "title": "View Invoices",
-                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.id]),
+                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
                 }
             )
 
@@ -732,27 +740,27 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         )
 
     def render_active_workers(self, value, record):
-        return self.render_worker_list_url_column(value=value, opp_id=record.id)
+        return self.render_worker_list_url_column(value=value, opp_id=record.opportunity_id)
 
     def render_total_deliveries(self, value, record):
         return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, url_slug="worker_deliver", sort="sort=-delivered"
+            value=value, opp_id=record.opportunity_id, url_slug="worker_deliver", sort="sort=-delivered"
         )
 
     def render_verified_deliveries(self, value, record):
         return self.render_worker_list_url_column(
-            value=value, opp_id=record.id, url_slug="worker_deliver", sort="sort=-approved"
+            value=value, opp_id=record.opportunity_id, url_slug="worker_deliver", sort="sort=-approved"
         )
 
     def render_worker_earnings(self, value, record):
-        url = reverse("opportunity:worker_payments", args=(self.org_slug, record.id))
+        url = reverse("opportunity:worker_payments", args=(self.org_slug, record.opportunity_id))
         url += "?sort=-payment_accrued"
         value = f"{record.currency_code} {intcomma(value)}"
         value = format_html('<a href="{}">{}</a>', url, value)
         return self._render_div(value, extra_classes=self.stats_style)
 
     def render_opportunity(self, record):
-        url = reverse("opportunity:detail", args=(self.org_slug, record.id))
+        url = reverse("opportunity:detail", args=(self.org_slug, record.opportunity_id))
         html = format_html(
             """
             <a href={} class="flex flex-col items-start text-wrap w-50">
@@ -770,11 +778,11 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         actions = [
             {
                 "title": "View Opportunity",
-                "url": reverse("opportunity:detail", args=[self.org_slug, record.id]),
+                "url": reverse("opportunity:detail", args=[self.org_slug, record.opportunity_id]),
             },
             {
                 "title": "View Connect Workers",
-                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.id]),
+                "url": reverse("opportunity:worker_list", args=[self.org_slug, record.opportunity_id]),
             },
         ]
 
@@ -782,7 +790,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
             actions.append(
                 {
                     "title": "View Invoices",
-                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.id]),
+                    "url": reverse("opportunity:invoice_list", args=[self.org_slug, record.opportunity_id]),
                 }
             )
 
@@ -876,7 +884,7 @@ class UserVisitVerificationTable(tables.Table):
         row_attrs = {
             "hx-get": lambda record, table: reverse(
                 "opportunity:user_visit_details",
-                args=[table.organization.slug, record.opportunity_id, record.pk],
+                args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
             ),
             "hx-trigger": "click",
             "hx-indicator": "#visit-loading-indicator",
@@ -1238,7 +1246,9 @@ class WorkerLearnTable(OrgContextTable):
         if not record.accepted:
             return "-"
 
-        url = reverse("opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.id))
+        url = reverse(
+            "opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.opportunity_access_id)
+        )
         return format_html(
             """
             <a href="{}" class="flex flex-col items-start w-40">
@@ -1252,7 +1262,9 @@ class WorkerLearnTable(OrgContextTable):
         )
 
     def render_action(self, record):
-        url = reverse("opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.id))
+        url = reverse(
+            "opportunity:worker_learn_progress", args=(self.org_slug, self.opp_id, record.opportunity_access_id)
+        )
         return format_html(
             """ <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
                 <a href="{url}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
@@ -1396,7 +1408,7 @@ class WorkerDeliveryTable(OrgContextTable):
 
     def render_action(self, record):
         base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        url = f"{base_url}?{urlencode({'user': record.user_id})}"
+        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
         template = """
             <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
                 <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
@@ -1410,7 +1422,7 @@ class WorkerDeliveryTable(OrgContextTable):
             return ""
 
         base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        url = f"{base_url}?{urlencode({'user': record.user_id})}"
+        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
 
         return format_html(
             """
@@ -1473,8 +1485,8 @@ class WorkerDeliveryTable(OrgContextTable):
 
         params = {
             "status": status,
-            "payment_unit_id": record.payment_unit_id,
-            "access_id": record.pk,
+            "payment_unit_id": record.payment_unit_payment_unit_id,
+            "access_id": record.opportunity_access_id,
         }
         full_url = f"{url}?{urlencode(params)}"
 
@@ -1580,7 +1592,10 @@ class PaymentUnitTable(OrgContextTable):
         count = deliver_units.count()
 
         if self.can_edit:
-            edit_url = reverse("opportunity:edit_payment_unit", args=(self.org_slug, record.opportunity.id, record.id))
+            edit_url = reverse(
+                "opportunity:edit_payment_unit",
+                args=(self.org_slug, record.opportunity.opportunity_id, record.payment_unit_id),
+            )
         else:
             edit_url = None
 

@@ -31,7 +31,7 @@
             <button type="button" class="ga-delete-invites-cancel-btn button button-md outline-style" @click="{{ modal_name }} = false">
                 {% trans 'Cancel' %}
             </button>
-            <form hx-post="{% url 'opportunity:delete_user_invites' org_slug=request.org.slug opp_id=opportunity.pk %}"
+            <form hx-post="{% url 'opportunity:delete_user_invites' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
                   hx-trigger="submit"
                   hx-on::after-request="if(event.detail.xhr.status >= 400) { alert ('{% trans "Oops! Something went wrong. Please try again or contact support." %}') }"
                   class="inline">
