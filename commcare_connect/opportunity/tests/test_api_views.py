@@ -389,3 +389,40 @@ class TestConfirmPaymentView:
         response = api_client.post(endpoint_func(payment), invalid_payload, format="json")
         assert response.status_code == 400
         assert response.data["error_code"] == ErrorCodes.INVALID_FLAG
+
+
+@pytest.mark.django_db
+def test_confirm_payment_request_v2(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    api_client.force_authenticate(mobile_user_with_connect_link)
+    payment = Payment.objects.create(amount=10, date_paid=datetime.date.today(), opportunity_access=access)
+
+    # Single
+    endpoint = f"/api/payment/{payment.payment_id}/confirm"
+    payload = {"confirmed": "true"}
+    response = api_client.post(
+        endpoint,
+        payload,
+        format="json",
+        HTTP_ACCEPT="application/json; version=2.0",
+    )
+    assert response.status_code == 200
+
+    # Bulk
+    endpoint = "/api/payment/confirm"
+    payload = {
+        "payments": [
+            {"id": str(payment.payment_id), "confirmed": "true"},
+        ],
+    }
+    response = api_client.post(
+        endpoint,
+        payload,
+        format="json",
+        HTTP_ACCEPT="application/json; version=2.0",
+    )
+    assert response.status_code == 200

@@ -832,8 +832,10 @@ class OpportunityClaimLimit(models.Model):
             OpportunityClaimLimit.objects.get_or_create(
                 opportunity_claim=claim,
                 payment_unit=payment_unit,
-                defaults={"max_visits": min(remaining, payment_unit.max_total)},
-                end_date=payment_unit.end_date,
+                defaults={
+                    "max_visits": min(remaining, payment_unit.max_total),
+                    "end_date": payment_unit.end_date,
+                },
             )
 
 
