@@ -45,6 +45,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 
 
 class OpportunityFactory(DjangoModelFactory):
+    opportunity_id = Faker("uuid4")
     organization = SubFactory(OrganizationFactory)
     name = Faker("name")
     description = Faker("text")
@@ -99,6 +100,7 @@ class PaymentUnitFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     amount = Faker("pyint", min_value=1, max_value=10)
+    org_amount = Faker("pyint", min_value=0, max_value=10)
     max_daily = Faker("pyint", min_value=1, max_value=10)
     max_total = LazyAttribute(lambda o: o.max_daily * 2)
 

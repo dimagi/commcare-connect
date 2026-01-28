@@ -9,7 +9,7 @@
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% block modals %}
-        {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.pk as user_status_export_url %}
+        {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.opportunity_id as user_status_export_url %}
         {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Connect Workers") export_url=user_status_export_url export_form=export_form %}
         {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
     {% endblock %}
@@ -18,11 +18,11 @@
         <i class="fa-solid fa-plus"></i>
       </button>
     {% else %}
-      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="button-icon" x-tooltip.raw="{% trans 'Add Worker' %}">
+      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="button-icon" x-tooltip.raw="{% trans 'Add Worker' %}">
         <i class="fa-solid fa-plus"></i>
       </a>
     {% endif %}
-    <form hx-post="{% url 'opportunity:resend_user_invites' org_slug=request.org.slug opp_id=opportunity.pk %}"
+    <form hx-post="{% url 'opportunity:resend_user_invites' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
           hx-trigger="submit"
           hx-on::after-request="if(event.detail.xhr.status >= 400) { alert ('{% trans "Oops! Something went wrong. Please try again or contact support." %}') }"
           class="inline">

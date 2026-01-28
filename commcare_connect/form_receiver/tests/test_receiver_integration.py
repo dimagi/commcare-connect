@@ -1,5 +1,6 @@
 import datetime
 import importlib
+import random
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import timedelta
@@ -255,6 +256,8 @@ def test_receiver_deliver_form_max_visits_reached(
     def submit_form_for_random_entity(form_json):
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
+        # generate random locations for form submissions
+        duplicate_json["metadata"]["location"] = " ".join([str(random.uniform(-90, 90)) for _ in range(4)])
         make_request(api_client, duplicate_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     payment_units = opportunity.paymentunit_set.all()
@@ -269,7 +272,7 @@ def test_receiver_deliver_form_max_visits_reached(
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 5
     # First four are not over-limit
-    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
+    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
 
@@ -665,11 +668,11 @@ def test_receiver_verification_flags_catchment_areas(
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
     assert opportunity.managed
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_with_connect_link)
-    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity, org_amount=2)
     deliver_unit = DeliverUnitFactory(app=payment_unit.opportunity.deliver_app, payment_unit=payment_unit)
     completed_work = CompletedWorkFactory(
         opportunity_access=access, status=CompletedWorkStatus.pending, payment_unit=payment_unit
@@ -701,7 +704,7 @@ def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client:
     assert completed_work.status == CompletedWorkStatus.approved
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize(
     "visit_status, review_status",
     [
@@ -725,7 +728,7 @@ def test_receiver_visit_review_status(
     assert visit.review_status == review_status
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_receiver_duplicate_managed_opportunity(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
@@ -887,7 +890,7 @@ def test_update_completed_learn_date_migration(opportunity, mobile_user):
     )
 
     migration_module = importlib.import_module(
-        "commcare_connect.opportunity.migrations.0075_opportunityaccess_completed_learn_date_and_more"
+        "commcare_connect.opportunity.migrations.0074_opportunityaccess_completed_learn_date_and_more"
     )
     back_fill_completed_learn_date = migration_module._back_fill_completed_learn_date
 

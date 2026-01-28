@@ -6,12 +6,14 @@ import httpx
 import sentry_sdk
 import waffle
 from allauth.utils import build_absolute_uri
+from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
@@ -23,6 +25,7 @@ from commcare_connect.connect_id_client import fetch_users, send_message, send_m
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
+from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
     export_catchment_area_table,
@@ -149,6 +152,30 @@ def invite_user(user_id, opportunity_access_id):
         },
     )
     send_message(message)
+
+
+@celery_app.task()
+def delete_stale_opportunities():
+    cutoff = now() - relativedelta(months=6)
+    visit_exists = UserVisit.objects.filter(opportunity=OuterRef("pk"))
+    stale_opportunities = (
+        Opportunity.objects.filter(date_created__lt=cutoff)
+        .annotate(has_visits=Exists(visit_exists))
+        .filter(has_visits=False)
+        .order_by("id")
+    )
+    count = 0
+    for opportunity in stale_opportunities:
+        logger.info(
+            "Deleting stale opportunity %s (%s) created on %s",
+            opportunity.id,
+            opportunity.name,
+            opportunity.date_created,
+        )
+        deleted = delete_opportunity(opportunity)
+        if deleted:
+            count += 1
+    logger.info("Deleted %s stale opportunities created before %s", count, cutoff)
 
 
 @celery_app.task()
@@ -518,7 +545,7 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
         None,
         reverse(
             "opportunity:invoice_list",
-            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.id},
+            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.opportunity_id},
         ),
     )
 
