@@ -309,8 +309,18 @@ def send_push_notification_task(user_ids: list[int], title: str, body: str):
     send_message(message)
 
 
-@celery_app.task()
-def download_user_visit_attachments(user_visit_id: id):
+RETRYABLE_EXCS = (httpx.ReadTimeout, httpx.ConnectTimeout)
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=RETRYABLE_EXCS,
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def download_user_visit_attachments(self, user_visit_id: int):
     user_visit = UserVisit.objects.get(id=user_visit_id)
     api_key = user_visit.opportunity.api_key
     blobs = user_visit.form_json.get("attachments", {})
