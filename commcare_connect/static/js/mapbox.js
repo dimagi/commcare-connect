@@ -181,6 +181,33 @@ const MapboxUtils = {
     marker.addTo(map);
     return marker;
   },
+
+  drawPolygon(map, sourceId, coordinates, fillColor) {
+    map.on('load', () => {
+      map.addSource(sourceId, {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [coordinates],
+          },
+        },
+      });
+
+      // Add a new layer to visualize the polygon.
+      map.addLayer({
+        id: sourceId,
+        type: 'fill',
+        source: sourceId,
+        layout: {},
+        paint: {
+          'fill-color': fillColor || '#0080ff',
+          'fill-opacity': 0.5,
+        },
+      });
+    });
+  },
 };
 
 window.MapboxUtils = MapboxUtils;
