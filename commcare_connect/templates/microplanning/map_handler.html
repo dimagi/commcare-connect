@@ -3,6 +3,7 @@
         Alpine.data("mapController", () => ({
             panelOpen: true,
             map: null,
+            selectedWards: [],
 
             init() {
                 this.$nextTick(() => {
@@ -29,9 +30,6 @@
                 this.map.on('style.load', () => {
                     this.map.setFog({});
                 });
-                this.map.on('draw.create', this.onMapDrawCreate.bind(this));
-                this.map.on('draw.delete', this.onMapDrawDelete.bind(this));
-                this.map.on('draw.update', this.onMapDrawUpdate.bind(this));
 
                 const $mapContainer = document.getElementById('map');
                 const observer = new ResizeObserver(() => {
@@ -40,20 +38,21 @@
                 observer.observe($mapContainer);
             },
 
-            onMapDrawCreate(event) {
-                // Todo
-            },
-
-            onMapDrawUpdate(event) {
-                // Todo
-            },
-
-            onMapDrawDelete(event) {
-                // Todo
-            },
-
             togglePanel() {
                 this.panelOpen = !this.panelOpen;
+            },
+
+            fetchSelectedWards() {
+                if (!this.selectedWards || this.selectedWards.length === 0) return;
+
+                const url = `{% url 'microplanning:get_wards_features' org_slug=request.org.slug %}?wards=${this.selectedWards}`;
+                fetch(url).then(response => response.json()).then(data => {
+                    if (!data) return;
+                    for (const wardFeatures of data) {
+                        const sourceId = `ward-${wardFeatures.id}-source`;
+                        MapboxUtils.drawFeature(this.map, sourceId, wardFeatures.features);
+                    }
+                });
             }
         }));
     });

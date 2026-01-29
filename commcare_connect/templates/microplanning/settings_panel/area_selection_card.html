@@ -1,0 +1,6 @@
+{% load i18n %}
+{% load crispy_forms_tags %}
+
+<form @submit.prevent="fetchSelectedWards">
+    {% crispy form %}
+</form>

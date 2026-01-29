@@ -182,30 +182,22 @@ const MapboxUtils = {
     return marker;
   },
 
-  drawPolygon(map, sourceId, coordinates, fillColor) {
-    map.on('load', () => {
-      map.addSource(sourceId, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [coordinates],
-          },
-        },
-      });
+  drawFeature(map, sourceId, featureData, fillColor) {
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: featureData,
+    });
 
-      // Add a new layer to visualize the polygon.
-      map.addLayer({
-        id: sourceId,
-        type: 'fill',
-        source: sourceId,
-        layout: {},
-        paint: {
-          'fill-color': fillColor || '#0080ff',
-          'fill-opacity': 0.5,
-        },
-      });
+    // Add a new layer to visualize the polygon.
+    map.addLayer({
+      id: sourceId,
+      type: 'fill',
+      source: sourceId,
+      layout: {},
+      paint: {
+        'fill-color': fillColor || '#0080ff',
+        'fill-opacity': 0.5,
+      },
     });
   },
 };
