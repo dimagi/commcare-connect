@@ -195,7 +195,6 @@ class TestOpportunityFinalizeForm:
             "end_date": timezone.now().date() + timezone.timedelta(days=20),
             "total_budget": 5000,
             "max_users": 3,
-            "org_pay_per_visit": 7,
         }
         form = self.get_form(**form_data)
         assert form.is_valid()
@@ -239,19 +238,6 @@ class TestOpportunityFinalizeForm:
         form = self.get_form(**form_data)
         assert not form.is_valid()
         assert form.errors["total_budget"] == ["Budget exceeds the program budget."]
-
-    def test_form_invalid_org_pay_per_visit(self):
-        self.opportunity.managed = True
-        self.opportunity.save()
-        form_data = {
-            "start_date": timezone.now().date() + timezone.timedelta(days=2),
-            "end_date": timezone.now().date() + timezone.timedelta(days=20),
-            "total_budget": 5000,
-            "org_pay_per_visit": "invalid",  # Invalid value
-        }
-        form = self.get_form(**form_data)
-        assert not form.is_valid()
-        assert "org_pay_per_visit" in form.errors
 
     def test_form_no_org_pay_per_visit_field(self):
         self.opportunity.managed = False
