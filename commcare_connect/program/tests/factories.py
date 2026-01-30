@@ -20,6 +20,7 @@ def _get_default_country():
 
 class ProgramFactory(DjangoModelFactory):
     name = Faker("name")
+    program_id = Faker("uuid4")
     description = Faker("text", max_nb_chars=200)
     delivery_type = SubFactory(DeliveryTypeFactory)
     budget = Faker("random_int", min=1000, max=100000)

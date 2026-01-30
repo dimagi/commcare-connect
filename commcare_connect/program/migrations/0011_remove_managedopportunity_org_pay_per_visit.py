@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
     dependencies = [
         ("program", "0010_alter_program_program_id_and_more"),
-        ("opportunity", "0105_paymentunit_org_amount"),
+        ("opportunity", "0108_paymentunit_org_amount"),
     ]
 
     operations = [

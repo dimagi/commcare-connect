@@ -59,7 +59,7 @@
                 {% if not form.instance.id %}
                   @click="deleteForm()"
                 {% else %}
-                  hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.pk pk=form.instance.id %}"
+                  hx-delete="{% url "opportunity:delete_form_json_rule" org_slug=request.org.slug opp_id=opportunity.opportunity_id pk=form.instance.form_json_validation_rules_id %}"
                   hx-target="closest #form_json_form"
                   hx-swap="outerHTML"
                   @click="decrementFormCount()"

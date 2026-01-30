@@ -13,12 +13,12 @@
   <ul>
      {% if not opportunity.managed or is_opportunity_pm %}
     <li>
-       <a href="{% url 'opportunity:edit' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+       <a href="{% url 'opportunity:edit' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Edit Opportunity</a
       >
     </li>
     <li>
-       <a href="{% url 'opportunity:add_payment_unit' request.org.slug opportunity.id %}"
+       <a href="{% url 'opportunity:add_payment_unit' request.org.slug opportunity.opportunity_id %}"
         class="block px-4 py-2.5 text-sm text-brand-deep-purple">
         Add Payment Unit
       </a>
@@ -27,7 +27,7 @@
 
     {% if opportunity.managed %}
     <li>
-       <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+       <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >View Invoices</a
       >
     </li>
@@ -44,24 +44,24 @@
       </div>
     </li>
     <li>
-      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Add Connect Workers</a
       >
     </li>
     <li>
-      <a href="{% url 'opportunity:add_budget_existing_users' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a href="{% url 'opportunity:add_budget_existing_users' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Add Budget</a
       >
     </li>
     {% if not opportunity.managed or is_opportunity_pm %}
     <li>
-      <a  href="{% url 'opportunity:verification_flags_config' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a  href="{% url 'opportunity:verification_flags_config' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Verification Flags</a
       >
     </li>
     {% endif %}
     <li>
-      <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
+      <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >Send Message</a
       >
     </li>

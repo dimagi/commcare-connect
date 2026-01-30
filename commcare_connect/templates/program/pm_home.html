@@ -25,7 +25,7 @@
             </div>
             <div class="flex items-start justify-end gap-6">
               <button class="button-icon"
-                hx-get="{% url "program:edit" request.org.slug program.id %}"
+                hx-get="{% url "program:edit" request.org.slug program.program_id %}"
                 hx-target="#program-edit-form"
                 @htmx:after-request="showProgramEditModal = true">
                 <i class="fa-solid fa-pen"></i>
@@ -39,7 +39,7 @@
                       <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
                   </div>
-                  <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.id %}" method="post">
+                  <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.program_id %}" method="post">
                     {% csrf_token %}
                     <div class="flex flex-col gap-2 py-4">
                       <label for="organization" class="title-sm">{% translate "Organization" %}</label>
@@ -175,7 +175,7 @@
                 </div>
                 {% elif application.status == 'accepted' %}
                 <a class="button button-md button-outline-rounded me-1"
-                  href="{% url "program:opportunity_init" request.org.slug program.id %}">
+                  href="{% url "program:opportunity_init" request.org.slug program.program_id %}">
                   <div class="flex items-center justify-between gap-4">
                     <p class="text-sm">{% translate "Create Opportunity" %}</p>
                     <i class="fa-solid fa-arrow-right"></i>
