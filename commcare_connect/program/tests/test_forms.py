@@ -37,7 +37,7 @@ class TestProgramForm:
             "description": "This is a test description.",
             "delivery_type": delivery_type.id,
             "budget": 10000,
-            "currency_fk": "USD",
+            "currency": "USD",
             "country": "USA",
             "start_date": timezone.now().date(),
             "end_date": timezone.now().date() + timezone.timedelta(days=30),
@@ -65,14 +65,14 @@ class TestProgramForm:
     def test_program_form_currency_length(self, program_manager_org_user_admin, program_manager_org, delivery_type):
         program_data = self._get_program_data(delivery_type)
         program_data.update(
-            currency_fk="INVALID",
+            currency="INVALID",
         )
 
         form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org, data=program_data)
 
         assert not form.is_valid()
         assert len(form.errors) == 1
-        assert "currency_fk" in form.errors
+        assert "currency" in form.errors
 
     @pytest.mark.django_db
     def test_program_form_save(self, program_manager_org_user_admin, program_manager_org, delivery_type):
@@ -87,7 +87,7 @@ class TestProgramForm:
         assert program.organization == program_manager_org
         assert program.created_by == program_manager_org_user_admin.email
         assert program.modified_by == program_manager_org_user_admin.email
-        assert program.currency_fk.code == program_data["currency_fk"]
+        assert program.currency.code == program_data["currency"]
 
 
 @pytest.mark.django_db
@@ -123,9 +123,9 @@ class TestManagedOpportunityInitForm:
 
     def test_form_initialization(self):
         form = ManagedOpportunityInitForm(program=self.program, org_slug=self.organization.slug)
-        assert form.fields["currency_fk"].initial == self.program.currency_fk
-        assert form.fields["currency_fk"].widget.attrs.get("readonly") == "readonly"
-        assert form.fields["currency_fk"].widget.attrs.get("disabled") is True
+        assert form.fields["currency"].initial == self.program.currency
+        assert form.fields["currency"].widget.attrs.get("readonly") == "readonly"
+        assert form.fields["currency"].widget.attrs.get("disabled") is True
         assert "organization" in form.fields
 
     def test_form_validation_valid_data(self):
@@ -158,7 +158,7 @@ class TestManagedOpportunityInitForm:
         assert ManagedOpportunity.objects.count() == 1
         managed_opportunity = ManagedOpportunity.objects.first()
         assert managed_opportunity.name == "Test managed opportunity"
-        assert managed_opportunity.currency_fk == self.program.currency_fk
+        assert managed_opportunity.currency == self.program.currency
         assert managed_opportunity.program == self.program
         assert managed_opportunity.created_by == self.user.email
         assert managed_opportunity.delivery_type == self.program.delivery_type
