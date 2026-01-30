@@ -505,6 +505,7 @@ class PaymentInvoice(models.Model):
         service_delivery = "service_delivery", gettext("Service Delivery")
         custom = "custom", gettext("Custom")
 
+    payment_invoice_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)

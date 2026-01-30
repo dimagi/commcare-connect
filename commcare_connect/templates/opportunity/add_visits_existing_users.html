@@ -204,7 +204,7 @@
           <h3 class="mb-2">Add Budget for New Connect Workers</h3>
           <div
             id="new_user_container"
-            hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.pk %}"
+            hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
             hx-swap="innerHTML"
             hx-trigger="loadNewUserForm from:body">
             <h2 class="text-center text-gray-500 italic animate-pulse py-4">Loading...</h2>

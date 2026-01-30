@@ -120,6 +120,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
         model = Opportunity
         fields = [
             "id",
+            "opportunity_id",
             "name",
             "description",
             "short_description",
@@ -230,6 +231,7 @@ class UserVisitSerializer(serializers.ModelSerializer):
         model = UserVisit
         fields = [
             "id",
+            "user_visit_id",
             "status",
             "visit_date",
             "deliver_unit_name",
@@ -283,7 +285,7 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ["id", "amount", "date_paid", "confirmed", "confirmation_date"]
+        fields = ["id", "payment_id", "amount", "date_paid", "confirmed", "confirmation_date"]
 
 
 class DeliveryProgressSerializer(serializers.Serializer):

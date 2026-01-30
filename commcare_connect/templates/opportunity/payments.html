@@ -13,10 +13,10 @@
       >
         <i class="fa-solid fa-download text-brand-deep-purple"></i>
       </button>
-      {% url 'opportunity:payment_import' request.org.slug opportunity.pk as payment_import_url %}
+      {% url 'opportunity:payment_import' request.org.slug opportunity.opportunity_id as payment_import_url %}
       {% include "components/worker_page/import_modal.html" with modal_name="showPaymentImportModal" modal_title=_("Import Payment Records") import_url=payment_import_url input_name="payments" input_help_text=_('The file must contain at least the "Username", "Amount" and "Payment Date" columns.') %}
 
-      {% url 'opportunity:payment_export' org_slug=request.org.slug opp_id=opportunity.pk as payment_export_url %}
+      {% url 'opportunity:payment_export' org_slug=request.org.slug opp_id=opportunity.opportunity_id as payment_export_url %}
       {% include "components/worker_page/export_modal.html" with modal_name="showPaymentExportModal" modal_title=_("Export Workers for Payments") export_url=payment_export_url export_form=export_form %}
   </div>
 {% endblock %}

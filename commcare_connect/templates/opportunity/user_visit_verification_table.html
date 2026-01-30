@@ -7,7 +7,7 @@
  <form
       x-ref="visitForm"
       class="flex flex-col w-full gap-2"
-      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.id %}"
+      hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.opportunity_id %}"
       hx-trigger="reload_table from:body"
       hx-swap="outerHTML"
   >
@@ -55,8 +55,8 @@
 </form>
 
 <!--Bulk Approve Modal -->
-{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=opportunity.id as reject_url %}
-{% url 'opportunity:approve_visits' org_slug=request.org.slug opp_id=opportunity.id as approve_url %}
+{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=opportunity.opportunity_id as reject_url %}
+{% url 'opportunity:approve_visits' org_slug=request.org.slug opp_id=opportunity.opportunity_id as approve_url %}
 {% include 'opportunity/bulk_approval_reject_modal.html' with modal_name="showBulkApproveModal" title=opportunity.managed|yesno:"Justification for Approval,Confirm Approval" form_action=approve_url textarea_required=opportunity.managed textarea_placeholder="Please provide a reason for approving flagged visits." textarea_name="justification" note_text="Note: Visits that are already approved will not be affected by this action or have already been accepted by a PM" submit_btn_text="Approve" submit_btn_class="positive-dark" %}
 {% include "opportunity/bulk_approval_reject_modal.html" with modal_name="showBulkRejectModal" title="Reason for Rejection" form_action=reject_url textarea_required=True textarea_placeholder="Please provide a reason for rejecting visit." textarea_name="reason" note_text="Note: Visits that are already rejected will not be affected by this action." submit_btn_text="Reject" submit_btn_class="negative-dark" %}
 

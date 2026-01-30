@@ -162,6 +162,7 @@ class UserVisitFilterSet(django_filters.FilterSet):
         choices=[],
         empty_label="All",
         widget=forms.Select(attrs={"data-tomselect": "1"}),
+        method="filter_user",
     )
     visit_date = django_filters.DateFilter(
         label="Visit Date",
@@ -202,7 +203,7 @@ class UserVisitFilterSet(django_filters.FilterSet):
             user_queryset = (
                 User.objects.filter(opportunityaccess__opportunity=opportunity).distinct().order_by("name", "username")
             )
-            user_choices = [(str(user.id), f"{user.name} ({user.username})") for user in user_queryset]
+            user_choices = [(str(user.user_id), f"{user.name} ({user.username})") for user in user_queryset]
             user_filter.extra["choices"] = user_choices
 
         if opportunity and "flags" in self.filters:
@@ -216,6 +217,11 @@ class UserVisitFilterSet(django_filters.FilterSet):
         if not value:
             return queryset
         return queryset.with_any_flags(value)
+
+    def filter_user(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(user__user_id=value)
 
     def _restrict_to_user_filter(self):
         for filter_name in list(self.filters.keys()):
