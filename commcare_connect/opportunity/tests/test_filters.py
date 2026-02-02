@@ -81,3 +81,24 @@ def test_uservisit_filterset_user_only_when_switch_disabled():
     )
 
     assert list(filterset.filters.keys()) == ["user"]
+
+
+@pytest.mark.django_db
+@override_switch(USER_VISIT_FILTERS, active=False)
+def test_uservisit_filterset_filters_by_user_id():
+    opp = OpportunityFactory()
+    access_1 = OpportunityAccessFactory(opportunity=opp)
+    access_2 = OpportunityAccessFactory(opportunity=opp)
+
+    visit_1 = UserVisitFactory(opportunity=opp, opportunity_access=access_1, user=access_1.user)
+    visit_2 = UserVisitFactory(opportunity=opp, opportunity_access=access_2, user=access_2.user)
+
+    filterset = UserVisitFilterSet(
+        data={"user": str(access_1.user.user_id)},
+        queryset=UserVisit.objects.filter(opportunity=opp),
+        opportunity=opp,
+    )
+
+    filtered_visits = set(filterset.qs.values_list("id", flat=True))
+    assert visit_1.id in filtered_visits
+    assert visit_2.id not in filtered_visits

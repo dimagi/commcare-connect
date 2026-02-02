@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="paymentinvoice",
             name="payment_invoice_id",
-            field=models.UUIDField(editable=False, null=True, default=uuid4),
+            field=models.UUIDField(editable=False, null=True),
         ),
         migrations.RunPython(gen_uuid, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

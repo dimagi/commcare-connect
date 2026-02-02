@@ -197,7 +197,7 @@ class DeliverStatusTable(OrgContextTable):
             "opportunity:user_visits_list",
             kwargs={"org_slug": self.org_slug, "opp_id": record.opportunity.opportunity_id},
         )
-        url = f"{base_url}?{urlencode({'user': record.user_id})}"
+        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
         return mark_safe(f'<a href="{url}">View Details</a>')
 
     def render_last_visit_date(self, record, value):
@@ -1408,7 +1408,7 @@ class WorkerDeliveryTable(OrgContextTable):
 
     def render_action(self, record):
         base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        url = f"{base_url}?{urlencode({'user': record.user_id})}"
+        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
         template = """
             <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">
                 <a href="{}"><i class="fa-solid fa-chevron-right text-brand-deep-purple"></i></a>
@@ -1422,7 +1422,7 @@ class WorkerDeliveryTable(OrgContextTable):
             return ""
 
         base_url = reverse("opportunity:user_visits_list", args=(self.org_slug, self.opp_id))
-        url = f"{base_url}?{urlencode({'user': record.user_id})}"
+        url = f"{base_url}?{urlencode({'user': record.user.user_id})}"
 
         return format_html(
             """
