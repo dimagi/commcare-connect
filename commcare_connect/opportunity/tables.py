@@ -11,7 +11,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django_tables2 import columns
 
-from commcare_connect.flags.switch_names import INVOICE_REVIEW
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
@@ -436,14 +436,16 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return _("Other")
 
     def render_status(self, record):
-        tooltips = {
-            "Pending": _("Under review by Program Manager."),
-            "Approved": _("Invoice Approved and Paid."),
-            "Submitted": _("Submitted to Program Manager for Approval."),
-            "Archived": _("Invoice Archived. No User Actions Allowed."),
-        }
-        status = record.get_status_display()
-        return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
+        if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            tooltips = {
+                "Pending": _("Under review by Program Manager."),
+                "Approved": _("Invoice Approved and Paid."),
+                "Submitted": _("Submitted to Program Manager for Approval."),
+                "Archived": _("Invoice Archived. No User Actions Allowed."),
+            }
+            status = record.get_status_display()
+            return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
+        return record.get_status_display()
 
     def render_actions(self, record):
         review_button = ""

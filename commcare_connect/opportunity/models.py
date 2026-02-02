@@ -11,8 +11,10 @@ from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext
+from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -502,6 +504,24 @@ class InvoiceStatus(models.TextChoices):
     PAID = "paid", gettext("Paid")
     ARCHIVED = "archived", gettext("Archived")
 
+    @staticmethod
+    def old_labels_map():
+        return {
+            "pending_nm_review": gettext("Pending"),
+            "pending_pm_review": gettext("Submitted"),
+            "ready_to_pay": gettext("Ready to Pay"),
+            "cancelled_by_nm": gettext("Cancelled by Network Manager"),
+            "rejected_by_pm": gettext("Rejected by Program Manager"),
+            "paid": gettext("Approved"),
+            "archived": gettext("Archived"),
+        }
+
+    @classmethod
+    def get_label(cls, status):
+        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            return cls.old_labels_map().get(status, status)
+        return cls(status).label
+
 
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
@@ -526,6 +546,9 @@ class PaymentInvoice(models.Model):
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
+
+    def get_status_display(self):
+        return InvoiceStatus.get_label(self.status)
 
 
 class Payment(models.Model):
