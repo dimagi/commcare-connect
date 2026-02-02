@@ -1370,7 +1370,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         self.opportunity = kwargs.pop("opportunity")
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
-        self.status = kwargs.pop("status", InvoiceStatus.PENDING)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING_NM_REVIEW)
         super().__init__(*args, **kwargs)
         if self.read_only:
             self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
@@ -1540,7 +1540,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
         self.read_only = kwargs.pop("read_only", False)
         self.line_items_table = kwargs.pop("line_items_table", None)
-        self.status = kwargs.pop("status", InvoiceStatus.PENDING)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING_NM_REVIEW)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
 
         super().__init__(*args, **kwargs)
@@ -1586,7 +1586,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 self.fields["start_date"].initial = str(start_date)
                 self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
 
-            if self.read_only and self.status == InvoiceStatus.PENDING and not self.is_opportunity_pm:
+            if self.read_only and self.status == InvoiceStatus.PENDING_NM_REVIEW and not self.is_opportunity_pm:
                 self.fields["description"].widget.attrs.pop("readonly", None)
         else:
             self.fields["usd_currency"].widget.attrs.update(

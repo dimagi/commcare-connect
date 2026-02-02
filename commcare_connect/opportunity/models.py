@@ -494,9 +494,12 @@ class ExchangeRate(models.Model):
 
 
 class InvoiceStatus(models.TextChoices):
-    PENDING = "pending", gettext("Pending")
-    SUBMITTED = "submitted", gettext("Submitted")
-    APPROVED = "approved", gettext("Approved")
+    PENDING_NM_REVIEW = "pending_nm_review", gettext("Pending Network Manager Review")
+    PENDING_PM_REVIEW = "pending_pm_review", gettext("Pending Program Manager Review")
+    CANCELLED_BY_NM = "cancelled_by_nm", gettext("Cancelled by Network Manager")
+    READY_TO_PAY = "ready_to_pay", gettext("Ready to Pay")
+    REJECTED_BY_PM = "rejected_by_pm", gettext("Rejected by Program Manager")
+    PAID = "paid", gettext("Paid")
     ARCHIVED = "archived", gettext("Archived")
 
 
@@ -518,7 +521,7 @@ class PaymentInvoice(models.Model):
     title = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
-    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING, max_length=50)
+    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
     archived_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:

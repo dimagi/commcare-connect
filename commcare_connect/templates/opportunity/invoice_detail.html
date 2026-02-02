@@ -23,7 +23,7 @@
         {% translate "Back to Invoices" %}
       </a>
       {% if request.is_opportunity_pm %}
-        {% if invoice_status == 'submitted' %}
+        {% if invoice_status == 'pending_pm_review' %}
           <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
                   hx-vals='{"pk": "{{ form.instance.payment_invoice_id }}"}'
                   hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
@@ -32,7 +32,7 @@
             {% translate "Pay" %}
           </button>
         {% endif %}
-      {% elif invoice_status == 'pending' %}
+      {% elif invoice_status == 'pending_nm_review' %}
         <a
           @click="submitForApproval()"
           class="button button-md primary-dark"

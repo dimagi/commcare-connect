@@ -1481,7 +1481,7 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
-        kwargs["status"] = InvoiceStatus.SUBMITTED
+        kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
         if waffle.switch_is_active(AUTOMATED_INVOICES):
             kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
@@ -1587,10 +1587,10 @@ def submit_invoice(request, org_slug, opp_id):
     invoice_id = request.POST.get("invoice_id")
     notes = request.POST.get("notes")
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
-    if invoice.status != InvoiceStatus.PENDING:
+    if invoice.status != InvoiceStatus.PENDING_NM_REVIEW:
         return HttpResponseBadRequest("Only invoices with status 'Pending' can be submitted for approval.")
 
-    invoice.status = InvoiceStatus.SUBMITTED
+    invoice.status = InvoiceStatus.PENDING_PM_REVIEW
     if invoice.service_delivery:
         invoice.description = notes
         invoice.save(update_fields=["status", "description"])
@@ -1623,7 +1623,7 @@ def invoice_approve(request, org_slug, opp_id):
     paid_invoice_ids = []
     payments = []
     for inv in invoices:
-        if inv.status != InvoiceStatus.SUBMITTED:
+        if inv.status != InvoiceStatus.PENDING_PM_REVIEW:
             return HttpResponseBadRequest(_("Only submitted invoice can be approved."))
         paid_invoice_ids.append(inv.id)
         payments.append(
@@ -1634,7 +1634,7 @@ def invoice_approve(request, org_slug, opp_id):
                 invoice=inv,
             )
         )
-        inv.status = InvoiceStatus.APPROVED
+        inv.status = InvoiceStatus.PAID
         inv.save(update_fields=["status"])
 
     Payment.objects.bulk_create(payments)

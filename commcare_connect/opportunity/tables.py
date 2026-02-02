@@ -458,7 +458,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
                 f'{_("Review")}</a>'
             )
         pay_button = ""
-        if self.is_pm and record.status == InvoiceStatus.SUBMITTED:
+        if self.is_pm and record.status == InvoiceStatus.PENDING_PM_REVIEW:
             invoice_approve_url = reverse(
                 "opportunity:invoice_approve", args=[self.org_slug, self.opportunity.opportunity_id]
             )

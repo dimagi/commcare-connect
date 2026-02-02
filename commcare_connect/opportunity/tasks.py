@@ -611,7 +611,7 @@ def generate_automated_service_delivery_invoice():
             date=datetime.datetime.utcnow(),
             start_date=start_date,
             end_date=end_date_prev_month,
-            status=InvoiceStatus.PENDING,
+            status=InvoiceStatus.PENDING_NM_REVIEW,
             invoice_number=invoice_number,
             service_delivery=True,
             exchange_rate=exchange_rate,
