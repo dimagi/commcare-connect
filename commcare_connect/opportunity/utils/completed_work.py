@@ -127,7 +127,7 @@ class CompletedWorkUpdater:
                 amount_accrued_usd = amount_accrued / exchange_rate
                 # if it's a managed opportunity we also need to update the org payment amounts
                 if self.opportunity.managed:
-                    org_amount_accrued = approved_count * self.opportunity.org_pay_per_visit
+                    org_amount_accrued = approved_count * completed_work.payment_unit.org_amount
                     org_amount_accrued_usd = org_amount_accrued / exchange_rate
 
             completed_work.saved_completed_count = completed_count
@@ -227,7 +227,7 @@ def _update_status_set_saved_fields_and_get_payment_accrued(completed_work, oppo
             amount_accrued_usd = amount_accrued / exchange_rate
             # if it's a managed opportunity we also need to update the org payment amounts
             if opportunity_access.opportunity.managed:
-                org_amount_accrued = approved_count * opportunity_access.managed_opportunity.org_pay_per_visit
+                org_amount_accrued = approved_count * completed_work.payment_unit.org_amount
                 org_amount_accrued_usd = org_amount_accrued / exchange_rate
 
         completed_work.saved_completed_count = completed_count

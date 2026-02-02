@@ -177,7 +177,6 @@ from commcare_connect.organization.decorators import (
     org_viewer_required,
 )
 from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
-from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
@@ -355,13 +354,18 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         payment_units = opportunity.paymentunit_set.all()
         budget_per_user = 0
         payment_units_max_total = 0
+        cumulative_pu_budget_per_user = 0
+
         for pu in payment_units:
             budget_per_user += pu.amount * pu.max_total
             payment_units_max_total += pu.max_total
+            cumulative_pu_budget_per_user += (pu.amount + pu.org_amount) * pu.max_total
+
         kwargs["budget_per_user"] = budget_per_user
         kwargs["current_start_date"] = opportunity.start_date
         kwargs["opportunity"] = opportunity
         kwargs["payment_units_max_total"] = payment_units_max_total
+        kwargs["cumulative_pu_budget_per_user"] = cumulative_pu_budget_per_user
         return kwargs
 
     def form_valid(self, form):
@@ -374,10 +378,6 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         if start_date:
             opportunity.start_date = start_date
 
-        if opportunity.managed:
-            ManagedOpportunity.objects.filter(id=opportunity.id).update(
-                org_pay_per_visit=form.cleaned_data["org_pay_per_visit"]
-            )
         response = super().form_valid(form)
         return response
 
@@ -584,17 +584,19 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
     if form.is_valid():
         form.save()
 
-        additional_visits = form.cleaned_data.get("additional_visits")
+        number_of_visits = form.cleaned_data.get("number_of_visits")
         selected_users = form.cleaned_data.get("selected_users")
         end_date = form.cleaned_data.get("end_date")
+        adjustment_type = form.cleaned_data.get("adjustment_type")
         message_parts = []
 
-        if additional_visits and selected_users:
-            visit_text = f"{additional_visits} visit{'s' if additional_visits != 1 else ''}"
+        if number_of_visits and selected_users:
+            visit_text = f"visits by {number_of_visits}"
             user_text = f"{len(selected_users)} worker{'s' if len(selected_users) != 1 else ''}"
-            message_parts.append(f"Added {visit_text} to {user_text}.")
+            change_type = "Increased" if adjustment_type == form.AdjustmentType.INCREASE_VISITS else "Decreased"
+            message_parts.append(f"{change_type} {visit_text} for {user_text}.")
             if not request.opportunity.managed:
-                message_parts.append(f"Budget increased by {form.budget_increase:.2f}.")
+                message_parts.append(f"Budget {change_type.lower()} by {abs(form.budget_change):.2f}.")
 
         if end_date:
             message_parts.append(f"Extended opportunity end date to {end_date} for selected workers.")
@@ -744,7 +746,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         data=request.POST or None,
         payment_units=request.opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
         org_slug=org_slug,
-        opportunity_id=request.opportunity.pk,
+        opportunity=request.opportunity,
     )
     if form.is_valid():
         form.instance.opportunity = request.opportunity
@@ -817,7 +819,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         data=request.POST or None,
         payment_units=opportunity_payment_units,
         org_slug=org_slug,
-        opportunity_id=request.opportunity.pk,
+        opportunity=request.opportunity,
     )
     if form.is_valid():
         form.save()
@@ -2514,8 +2516,7 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OpportunityObjectMi
             and self.request.org_membership
             and not self.request.org_membership.is_viewer
         ) or program_manager
-        if self.get_opportunity().managed:
-            kwargs["org_pay_per_visit"] = self.get_opportunity().org_pay_per_visit
+        kwargs["is_program_manager"] = program_manager
         return kwargs
 
 
