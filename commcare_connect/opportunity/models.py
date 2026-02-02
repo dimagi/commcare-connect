@@ -105,7 +105,7 @@ class Opportunity(BaseModel):
     # Whether users payment phone numbers are required or not
     payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
-    currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     auto_approve_visits = models.BooleanField(default=True)
     auto_approve_payments = models.BooleanField(default=True)
@@ -119,8 +119,8 @@ class Opportunity(BaseModel):
 
     @property
     def currency_code(self):
-        if self.currency_fk:
-            return self.currency_fk.code
+        if self.currency:
+            return self.currency.code
         else:
             return None
 

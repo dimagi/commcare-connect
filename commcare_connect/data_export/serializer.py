@@ -58,7 +58,7 @@ class OrganizationDataExportSerializer(serializers.ModelSerializer):
 class ProgramDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     delivery_type = serializers.SlugRelatedField(read_only=True, slug_field="slug")
-    currency = serializers.CharField(source="currency_fk_id", read_only=True)
+    currency = serializers.CharField(source="currency_id", read_only=True)
 
     class Meta:
         model = Program
@@ -249,7 +249,7 @@ class CompletedModuleDataSerializer(serializers.ModelSerializer):
 
 class OpportunitySerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
-    currency = serializers.CharField(source="currency_fk_id", read_only=True)
+    currency = serializers.CharField(source="currency_id", read_only=True)
     learn_app = CommCareAppSerializer()
     deliver_app = CommCareAppSerializer()
     payment_units = PaymentUnitSerializer(source="paymentunit_set", many=True)
