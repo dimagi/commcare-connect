@@ -54,7 +54,12 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW, USER_VISIT_FILTERS
+from commcare_connect.flags.switch_names import (
+    AUTOMATED_INVOICES,
+    INVOICE_REVIEW,
+    UPDATES_TO_MARK_AS_PAID_WORKFLOW,
+    USER_VISIT_FILTERS,
+)
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -1481,7 +1486,10 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
-        kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
+        else:
+            kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
         if waffle.switch_is_active(AUTOMATED_INVOICES):
             kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
