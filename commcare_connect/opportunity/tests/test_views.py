@@ -2,6 +2,7 @@ import inspect
 from datetime import date, timedelta
 from http import HTTPStatus
 from unittest import mock
+from uuid import uuid4
 
 import pytest
 from django.contrib.messages import get_messages
@@ -626,8 +627,8 @@ def test_tiered_queryset_basic():
     ],
 )
 def test_tab_param_persistence(rf, opportunity, organization, referring_url, should_persist):
-    tab_a_url = reverse("opportunity:worker_deliver", args=(organization.slug, opportunity.id))
-    tab_b_url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    tab_a_url = reverse("opportunity:worker_deliver", args=(organization.slug, opportunity.opportunity_id))
+    tab_b_url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.opportunity_id))
 
     # Step 1: Visit tab A with GET params from any non-tab page
     request_a = rf.get(tab_a_url, {"status": "active"}, HTTP_REFERER="/anywhere-else")
@@ -1107,7 +1108,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         with override_switch(INVOICE_REVIEW, active=False):
             response = client.get(url)
@@ -1123,7 +1124,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         response = client.get(url)
 
@@ -1147,7 +1148,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, 99999),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, uuid4()),
         )
         response = client.get(url)
         assert response.status_code == 404
@@ -1167,7 +1168,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(organization.slug, other_opportunity.id, invoice.pk),
+            args=(organization.slug, other_opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         response = client.get(url)
 
@@ -1180,7 +1181,7 @@ class TestInvoiceReviewView:
         user = setup_invoice["user"]
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         client.force_login(user)
 
@@ -1217,7 +1218,7 @@ class TestInvoiceReviewView:
             client.force_login(user)
             url = reverse(
                 "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.id, custom_invoice.pk),
+                args=(opportunity.organization.slug, opportunity.opportunity_id, custom_invoice.payment_invoice_id),
             )
             response = client.get(url)
 
@@ -1233,7 +1234,7 @@ class TestInvoiceReviewView:
         client.force_login(unauthorized_user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         response = client.get(url)
 
@@ -1250,7 +1251,7 @@ class TestInvoiceReviewView:
             client.force_login(user)
             url = reverse(
                 "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
             )
             response = client.get(url)
             form = response.context["form"]
@@ -1266,7 +1267,7 @@ class TestInvoiceReviewView:
             client.force_login(user)
             url = reverse(
                 "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
             )
             response = client.get(url)
             form = response.context["form"]
