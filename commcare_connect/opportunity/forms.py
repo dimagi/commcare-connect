@@ -984,6 +984,10 @@ class AddBudgetExistingUsersForm(forms.Form):
 
         invalid_users = []
         for claim_limit in claim_limits_list:
+            if number_of_visits > claim_limit.max_visits:
+                invalid_users.append(claim_limit.opportunity_claim)
+                continue
+
             new_max_visits = claim_limit.max_visits - number_of_visits
             key = (claim_limit.opportunity_claim.opportunity_access.id, claim_limit.payment_unit.id)
             completed_count = completed_visits_map.get(key, 0)
@@ -1003,7 +1007,7 @@ class AddBudgetExistingUsersForm(forms.Form):
                     "number_of_visits": gettext(
                         "Cannot decrease the number of visits for %(users)s."
                         " The visit count cannot be reduced below the number of already"
-                        " completed visits."
+                        " completed visits or zero."
                     )
                     % {"users": users_message}
                 }
