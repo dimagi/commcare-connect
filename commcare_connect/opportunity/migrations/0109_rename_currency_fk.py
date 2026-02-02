@@ -5,7 +5,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0105_purge_stale_opportunities_periodic_task"),
+        ("opportunity", "0108_paymentunit_org_amount"),
     ]
 
     operations = [

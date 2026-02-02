@@ -5,7 +5,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("program", "0010_alter_program_program_id_and_more"),
+        ("program", "0011_remove_managedopportunity_org_pay_per_visit"),
     ]
 
     operations = [
