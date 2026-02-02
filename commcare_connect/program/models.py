@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -7,7 +9,7 @@ from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
 class Program(BaseModel):
-    program_id = models.UUIDField(editable=False, null=True)
+    program_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     description = models.CharField()
@@ -54,7 +56,7 @@ class ProgramApplicationStatus(models.TextChoices):
 
 
 class ProgramApplication(BaseModel):
-    program_application_id = models.UUIDField(editable=False, null=True)
+    program_application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     program = models.ForeignKey(Program, on_delete=models.CASCADE)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     status = models.CharField(

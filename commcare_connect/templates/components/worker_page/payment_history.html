@@ -36,7 +36,7 @@
           paid on <b>{{ latest_payment.date_paid|date }}</b> to <b>{{ access.display_name }}</b>.
       </div>
       <div class="footer flex justify-end gap-4">
-        <form action="{% url "opportunity:payment_delete" org_slug=request.org.slug opp_id=access.opportunity_id access_id=access.pk pk=latest_payment.pk %}" method="post">
+        <form action="{% url "opportunity:payment_delete" org_slug=request.org.slug opp_id=access.opportunity.opportunity_id access_id=access.opportunity_access_id pk=latest_payment.payment_id %}" method="post">
           {% csrf_token %}
           <div class="flex justify-end gap-2 pt-4">
             <button type="button" class="button button-md outline-style" @click="rollbackPaymentModal = false">

@@ -5,7 +5,7 @@
 <div class="flex flex-col gap-6" x-data="{
     slides: [
       {% for image in user_visit.images %}
-        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity_id blob_id=image.blob_id %}' },
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id blob_id=image.blob_id %}' },
       {% endfor %}
     ],
     currentIndex: 0,
@@ -72,7 +72,7 @@
         this.modalCurrentIndex = index;
     }
 }"
-  hx-get="{% url "opportunity:user_visit_details" request.org.slug user_visit.opportunity_id user_visit.id %}"
+  hx-get="{% url "opportunity:user_visit_details" request.org.slug user_visit.opportunity.opportunity_id user_visit.user_visit_id %}"
   hx-swap="outerHTML"
   hx-trigger="reload_table from:body"
   hx-indicator="#visit-loading-indicator"
@@ -324,7 +324,7 @@
 {% if request.is_opportunity_pm %}
   {% if user_visit.review_created_on %}
   <div class="flex gap-4">
-    <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity_id %}"
+    <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity.opportunity_id %}"
       hx-swap="none">
       <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
       <button class="button button-md outline-style"
@@ -358,7 +358,7 @@
       {% if user_visit.opportunity.managed %}
       @click="showRejectModal = false; showApproveModal = true;"
       {% else %}
-      hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity_id %}"
+      hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
       hx-vals='{"visit_ids[]": "{{ user_visit.id }}"}'
       hx-swap="none"
       {% endif %}
@@ -378,7 +378,7 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity_id  %}"
+      <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id  %}"
         hx-swap="none"
         @submit="showRejectModal = false">
         {% csrf_token %}
@@ -408,7 +408,7 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity_id %}"
+      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
         hx-swap="none"
         @submit="showApproveModal = false">
         {% csrf_token %}

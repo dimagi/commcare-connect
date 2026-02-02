@@ -41,14 +41,26 @@ class Command(BaseCommand):
             return
 
         default_conn = connections[DEFAULT_DB_ALIAS]
-        self.stdout.write("Creating publication in the default database...")
 
         table_list = self.get_table_list()
         if not table_list:
             raise CommandError("No valid tables found for publication.")
 
+        self.stdout.write("Granting select permissions to replication user...")
+        replication_user = "postgres_repl"
+        replication_user = (
+            input(f"Enter replication username on primary [{replication_user}]: ").strip() or replication_user
+        )
+
         # Create publication
         with default_conn.cursor() as cursor:
+            # Refresh SELECT permissions to replication user
+            cursor.execute(
+                psycopg2.sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {};").format(
+                    psycopg2.sql.Identifier(replication_user)
+                )
+            )
+            self.stdout.write("Creating publication in the default database...")
             # Check if publication exists
             cursor.execute("SELECT pubname FROM pg_publication WHERE pubname = %s;", [PUBLICATION_NAME])
             publication_exists = cursor.fetchone()
@@ -111,6 +123,14 @@ class Command(BaseCommand):
                     """
                 )
                 self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' created successfully."))
+            self.stdout.write("Granting select permissions to superset postgres user...")
+            superset_user = "superset_readonly"
+            superset_user = input(f"Enter superset postgres username [{superset_user}]: ").strip() or superset_user
+            cursor.execute(
+                psycopg2.sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {};").format(
+                    psycopg2.sql.Identifier(superset_user)
+                )
+            )
 
         # Close the manually created connection
         secondary_conn.close()

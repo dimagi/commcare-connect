@@ -838,7 +838,9 @@ class VisitExportForm(forms.Form):
         self.review_export = kwargs.pop("review_export", False)
         super().__init__(*args, **kwargs)
 
-        visit_count_url = reverse("opportunity:visit_export_count", args=(self.org_slug, self.opportunity.id))
+        visit_count_url = reverse(
+            "opportunity:visit_export_count", args=(self.org_slug, self.opportunity.opportunity_id)
+        )
 
         # if export is for review update the status and url
         if self.review_export:
@@ -1279,7 +1281,6 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
         )
 
         self.fields["duplicate"].required = False
-        self.fields["location"].required = False
         self.fields["gps"].required = False
         self.fields["catchment_areas"].required = False
         if self.instance:

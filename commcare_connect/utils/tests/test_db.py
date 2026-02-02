@@ -1,10 +1,11 @@
 import uuid
+from dataclasses import dataclass
 
 import pytest
 from django.db import models
 from django.http import Http404
 
-from commcare_connect.utils.db import get_object_by_uuid_or_int
+from commcare_connect.utils.db import get_object_by_uuid_or_int, get_object_or_list_for_api_version
 
 
 class Example(models.Model):
@@ -12,6 +13,11 @@ class Example(models.Model):
 
     class Meta:
         app_label = "utils"
+
+
+@dataclass
+class MockRequest:
+    version: str
 
 
 @pytest.fixture(scope="class")
@@ -26,6 +32,77 @@ def create_example_table(django_db_blocker):
     with django_db_blocker.unblock():
         with connection.schema_editor() as schema_editor:
             schema_editor.delete_model(Example)
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("create_example_table")
+class TestGetObjectForApiVersion:
+    @pytest.mark.parametrize(
+        "api_version,lookup_value",
+        [
+            ("2.0", lambda obj: str(obj.example_id)),
+            ("1.0", lambda obj: str(obj.example_id)),
+            ("1.0", lambda obj: str(obj.pk)),
+            ("27.0", lambda obj: str(obj.example_id)),
+        ],
+    )
+    def test_get_object_for_api_version(self, api_version, lookup_value):
+        obj = Example.objects.create()
+        lookup = lookup_value(obj)
+
+        request = MockRequest(version=api_version)
+        queryset = Example.objects.all()
+
+        fetched = get_object_or_list_for_api_version(
+            request=request,
+            queryset=queryset,
+            pk_or_pk_list=lookup,
+            uuid_field="example_id",
+        )
+
+        assert fetched.pk == obj.pk
+
+    def test_get_object_for_api_version_404(self):
+        obj = Example.objects.create()
+        request = MockRequest(version="2.0")
+        queryset = Example.objects.all()
+
+        with pytest.raises(Http404):
+            get_object_or_list_for_api_version(
+                request=request,
+                queryset=queryset,
+                pk_or_pk_list=str(obj.pk),
+                uuid_field="example_id",
+            )
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("create_example_table")
+class TestGetListForApiVersion:
+    @pytest.mark.parametrize(
+        "api_version,lookup_list",
+        [
+            ("2.0", lambda obj_list: [str(obj.example_id) for obj in obj_list]),
+            ("1.0", lambda obj_list: [str(obj.example_id) for obj in obj_list]),
+            ("1.0", lambda obj_list: [str(obj.pk) for obj in obj_list]),
+            ("27.0", lambda obj_list: [str(obj.example_id) for obj in obj_list]),
+        ],
+    )
+    def test_get_list_for_api_version(self, api_version, lookup_list):
+        obj1 = Example.objects.create()
+        obj2 = Example.objects.create()
+        obj_list = [obj1, obj2]
+
+        request = MockRequest(version=api_version)
+        queryset = Example.objects.all()
+
+        fetched = get_object_or_list_for_api_version(
+            request=request,
+            queryset=queryset,
+            pk_or_pk_list=lookup_list(obj_list),
+            uuid_field="example_id",
+        )
+        assert {obj.pk for obj in fetched} == {obj1.pk, obj2.pk}
 
 
 @pytest.mark.django_db

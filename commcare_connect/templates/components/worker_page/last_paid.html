@@ -37,7 +37,7 @@
          style="display: none">
 
         <div
-            hx-get="{% url 'opportunity:worker_payment_history' org_slug=org_slug opp_id=opp_id access_id=record.pk %}"
+            hx-get="{% url 'opportunity:worker_payment_history' org_slug=org_slug opp_id=opp_id access_id=record.opportunity_access_id %}"
             hx-trigger="load-payment-history from:closest div[x-data]" hx-swap="outerHTML">
             <p class="text-slate-500">Loading payment history...</p>
         </div>

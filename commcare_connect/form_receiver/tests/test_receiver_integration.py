@@ -127,13 +127,13 @@ def test_form_receiver_multiple_module_submissions(
     # First submissions for all modules
     for module in modules:
         form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
-        form_json["received_on"] = past_date
+        form_json["metadata"]["timeEnd"] = past_date
         make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     # Subsequent submissions
     for module in modules:
         form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
-        form_json["received_on"] = future_date
+        form_json["metadata"]["timeEnd"] = future_date
         form_json["id"] = str(uuid4())  # Change form ID to simulate a new submission
         make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
@@ -154,7 +154,7 @@ def test_form_receiver_multiple_module_submissions(
     # Test integrity error for duplicate submissions keeping the id same.
     with patch("commcare_connect.form_receiver.views.logger") as mock_logger:
         form_json = _get_form_json(opportunity.learn_app, modules[0].id, modules[0].json)
-        form_json["received_on"] = past_date
+        form_json["metadata"]["timeEnd"] = past_date
         make_request(
             api_client, form_json, mobile_user_with_connect_link, HTTPStatus.OK, oauth_application=oauth_application
         )

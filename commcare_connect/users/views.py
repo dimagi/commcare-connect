@@ -25,6 +25,7 @@ from waffle.models import Switch
 
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_otp
 from commcare_connect.connect_id_client.models import ConnectIdUser
+from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
@@ -232,7 +233,22 @@ class UserToggleView(ClientProtectedResourceMixin, View):
     # This takes a username or phone_number query parameter
     # but ignoring for now since all toggles are global switches
     def get(self, request, *args, **kwargs):
-        toggles = list(Switch.objects.all().values("name", "active", "created", "modified"))
+        user = None
+        username = request.GET.get("username")
+        number = request.GET.get("number")
+        active_flags = set()
+        users = []
+        if username is not None:
+            users = User.objects.filter(username=username)
+        elif number is not None:
+            users = User.objects.filter(phone_number=number)
+        for user in users:
+            active_flags.update(Flag.active_flags_for_user(user, True).values_list("name", flat=True))
+        all_flags = list(Flag.objects.all().values("name", "created", "modified"))
+        for flag in all_flags:
+            flag["active"] = flag["name"] in active_flags
+        switches = list(Switch.objects.all().values("name", "active", "created", "modified"))
+        toggles = all_flags + switches
         return JsonResponse({"toggles": toggles})
 
 

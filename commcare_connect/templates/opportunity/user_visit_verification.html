@@ -174,7 +174,7 @@
 
     <div class="w-full grid grid-cols-10 gap-2">
       <div class="col-span-6" hx-indicator="#loading-spinner">
-        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.id %}{% querystring %}"
+        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
               hx-trigger="load" hx-swap="outerHTML"></div>
       </div>
 
@@ -185,7 +185,7 @@
               <p class="text-sm font-normal text-brand-deep-purple">Details</p>
               {% if user_visit_filters_enabled %}
                 <div class="relative" x-data="{ showFilterModal: false }">
-                  <button type="button" @click="showFilterModal = true" class="relative button-icon">
+                  <button type="button" @click="showFilterModal = true" class="relative button-icon ga-open-visit-filter">
                     <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
                     {% if filters_applied_count %}
                       <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
@@ -209,10 +209,10 @@
                       </form>
 
                       <div class="footer flex justify-end gap-3">
-                        <button type="button" @click="showFilterModal = false" class="button button-md outline-style">
+                        <button type="button" @click="showFilterModal = false" class="button button-md outline-style ga-close-visit-filter">
                           Close
                         </button>
-                        <button type="submit" form="filterForm" @click="showFilterModal = false" class="button button-md primary-dark">
+                        <button type="submit" form="filterForm" @click="showFilterModal = false" class="button button-md primary-dark ga-apply-visit-filter">
                           Apply
                         </button>
                       </div>
