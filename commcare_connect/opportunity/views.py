@@ -1583,10 +1583,35 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         return _("Review Custom Invoice")
 
 
+INVOICE_STATUS_TRANSITIONS = {
+    InvoiceStatus.PENDING_NM_REVIEW: [
+        InvoiceStatus.PENDING_PM_REVIEW,
+        InvoiceStatus.CANCELLED_BY_NM,
+    ],
+    InvoiceStatus.PENDING_PM_REVIEW: [
+        InvoiceStatus.READY_TO_PAY,
+        InvoiceStatus.REJECTED_BY_PM,
+    ],
+    InvoiceStatus.READY_TO_PAY: [InvoiceStatus.REJECTED_BY_PM],
+}
+
+INVOICE_STATUS_MESSAGES = {
+    InvoiceStatus.PENDING_PM_REVIEW: _("Invoice %(invoice_number)s has been submitted for approval."),
+    InvoiceStatus.CANCELLED_BY_NM: _("Invoice %(invoice_number)s has been cancelled by Network Manager."),
+    InvoiceStatus.READY_TO_PAY: _("Invoice %(invoice_number)s has been approved and is ready to pay."),
+    InvoiceStatus.REJECTED_BY_PM: _("Invoice %(invoice_number)s has been rejected by Program Manager."),
+}
+
+
 @org_member_required
 @opportunity_required
 @require_POST
-def submit_invoice(request, org_slug, opp_id):
+def invoice_update_status(request, org_slug, opp_id):
+    """
+    Update invoice status. Handles multiple status transitions based on user role:
+    - Network Manager: PENDING_NM_REVIEW -> PENDING_PM_REVIEW (submit to PM) or CANCELLED_BY_NM (cancel)
+    - Program Manager: PENDING_PM_REVIEW -> READY_TO_PAY (approve for payment) or REJECTED_BY_PM (reject)
+    """
     if not (request.opportunity.managed and request.org_membership):
         return HttpResponse(
             status=302,
@@ -1595,19 +1620,26 @@ def submit_invoice(request, org_slug, opp_id):
 
     invoice_id = request.POST.get("invoice_id")
     notes = request.POST.get("notes")
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
-    if invoice.status != InvoiceStatus.PENDING_NM_REVIEW:
-        return HttpResponseBadRequest("Only invoices with status 'Pending' can be submitted for approval.")
+    new_status = request.POST.get("new_status")
 
-    invoice.status = InvoiceStatus.PENDING_PM_REVIEW
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+
+    allowed_statuses = INVOICE_STATUS_TRANSITIONS.get(invoice.status, [])
+    if new_status not in allowed_statuses:
+        return HttpResponseBadRequest(
+            _("Invalid status transition. Current status: '%(current)s'. Cannot change to: '%(new)s'.")
+            % {"current": invoice.get_status_display(), "new": InvoiceStatus.get_label(new_status)}
+        )
+
+    invoice.status = new_status
     if invoice.service_delivery:
         invoice.description = notes
         invoice.save(update_fields=["status", "description"])
     else:
         invoice.save(update_fields=["status"])
-    messages.success(
-        request, _("Invoice %(invoice_number)s submitted for approval.") % {"invoice_number": invoice.invoice_number}
-    )
+
+    message = INVOICE_STATUS_MESSAGES.get(new_status, _("Invoice %(invoice_number)s status has been updated."))
+    messages.success(request, message % {"invoice_number": invoice.invoice_number})
 
     return HttpResponse(
         status=204,
