@@ -108,10 +108,20 @@
       },
 
       cancelInvoice() {
+        this.showCancelModal = true;
+      },
+
+      confirmCancelInvoice() {
+        this.showCancelModal = false;
         this.submitInvoice('cancelled_by_nm');
       },
 
       rejectInvoice()  {
+        this.showRejectModal = true;
+      },
+
+      confirmRejectInvoice() {
+        this.showRejectModal = false;
         this.submitInvoice('rejected_by_pm');
       },
 

@@ -76,6 +76,14 @@
         {% endif %}
       {% endif %}
     </div>
+    {% trans "Cancel Invoice" as cancel_title %}
+    {% trans "Are you sure you want to cancel this invoice? This action cannot be undone." as cancel_message %}
+    {% include "components/invoice_confirm_modal.html" with modal_name="showCancelModal" modal_title=cancel_title modal_message=cancel_message confirm_action="confirmCancelInvoice()" btn_text=cancel_title %}
+
+    {% trans "Reject Invoice" as reject_title %}
+    {% trans "Are you sure you want to reject this invoice? This action cannot be undone." as reject_message %}
+    {% include "components/invoice_confirm_modal.html" with modal_name="showRejectModal" modal_title=reject_title modal_message=reject_message confirm_action="confirmRejectInvoice()" btn_text=reject_title %}
+
   </div>
 </div>
 

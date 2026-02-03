@@ -1,0 +1,40 @@
+{% load i18n %}
+
+<div x-show="{{ modal_name }}" x-cloak x-transition.opacity
+    class="modal-backdrop"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-title-{{ modal_name }}"
+    @keydown.escape.window="{{ modal_name }} = false">
+    <div @click.outside="{{ modal_name }} = false" class="modal">
+
+        <div class="flex justify-between items-center pb-2 mb-4">
+            <h2 id="modal-title-{{ modal_name }}" class="text-lg font-medium text-brand-deep-purple">
+                {{ modal_title }}
+            </h2>
+            <button @click="{{ modal_name }} = false" 
+                    class="text-gray-500 hover:text-gray-700"
+                    aria-label="{% trans 'Close dialog' %}">
+                <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+            </button>
+        </div>
+
+        <div class="mb-6">
+            <p class="text-gray-700 mb-2">
+                {{ modal_message }}
+            </p>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-4">
+            <button type="button" class="button button-md outline-style" @click="{{ modal_name }} = false">
+                {% trans 'Close' %}
+            </button>
+            <button type="button"
+                    class="button button-md negative-dark"
+                    @click="{{ confirm_action }}">
+                <i class="fa-solid fa-ban" aria-hidden="true"></i>
+                {{ btn_text }}
+            </button>
+        </div>
+    </div>
+</div>
