@@ -1631,6 +1631,13 @@ def invoice_update_status(request, org_slug, opp_id):
             % {"current": invoice.get_status_display(), "new": InvoiceStatus.get_label(new_status)}
         )
 
+    nm_statuses = {InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.CANCELLED_BY_NM}
+    pm_statuses = {InvoiceStatus.READY_TO_PAY, InvoiceStatus.REJECTED_BY_PM}
+    if request.is_opportunity_pm and new_status in nm_statuses:
+        return HttpResponseBadRequest(_("Program Managers cannot perform Network Manager actions."))
+    if not request.is_opportunity_pm and new_status in pm_statuses:
+        return HttpResponseBadRequest(_("Network Managers cannot perform Program Manager actions."))
+
     invoice.status = new_status
     if invoice.service_delivery:
         invoice.description = notes
