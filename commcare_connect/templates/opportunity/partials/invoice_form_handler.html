@@ -103,10 +103,6 @@
         });
       },
 
-      submitForApproval() {
-        this.submitInvoice('pending_pm_review');
-      },
-
       cancelInvoice() {
         this.showCancelModal = true;
       },
@@ -123,10 +119,6 @@
       confirmRejectInvoice() {
         this.showRejectModal = false;
         this.submitInvoice('rejected_by_pm');
-      },
-
-      approveForPaymentProcessing() {
-        this.submitInvoice('ready_to_pay');
       },
 
     }));

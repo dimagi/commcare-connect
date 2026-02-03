@@ -29,7 +29,7 @@
             <a @click="rejectInvoice()" class="button button-md outline-style">
               {% translate "Reject" %}
             </a>
-            <a @click="approveForPaymentProcessing()" class="button button-md primary-dark">
+            <a @click="submitInvoice('ready_to_pay')" class="button button-md primary-dark">
               {% translate "Approve for Payment Processing" %}
             </a>
           {% elif invoice_status == 'ready_to_pay' %}
@@ -49,7 +49,7 @@
           <a @click="cancelInvoice()" class="button button-md outline-style">
             {% translate "Cancel" %}
           </a>
-          <a @click="submitForApproval()" class="button button-md primary-dark">
+          <a @click="submitInvoice('pending_pm_review')" class="button button-md primary-dark">
             {% translate "Submit to Program Manager" %}
           </a>
         {% endif %}
@@ -68,7 +68,7 @@
           {% endif %}
         {% elif invoice_status == 'pending_nm_review' %}
           <a
-            @click="submitForApproval()"
+            @click="submitInvoice('pending_pm_review')"
             class="button button-md primary-dark"
           >
             {% translate "Submit for Approval" %}
