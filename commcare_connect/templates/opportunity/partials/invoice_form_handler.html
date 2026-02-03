@@ -97,7 +97,7 @@
         htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           values: {
               invoice_id: this.invoiceId,
-              notes: this.$refs.notes ? this.$refs.notes.value : "",
+              description: this.$refs.description ? this.$refs.description.value : "",
               new_status: newStatus
           },
         });

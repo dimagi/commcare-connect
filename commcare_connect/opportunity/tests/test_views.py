@@ -1130,7 +1130,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.PENDING_PM_REVIEW,
-                "notes": "Ready for PM review",
+                "description": "Ready for PM review",
             },
         )
 
@@ -1151,7 +1151,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.CANCELLED_BY_NM,
-                "notes": "Cancelled due to errors",
+                "description": "Cancelled due to errors",
             },
         )
 
@@ -1172,7 +1172,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.READY_TO_PAY,
-                "notes": "Approved for payment",
+                "description": "Approved for payment",
             },
         )
 
@@ -1193,7 +1193,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.REJECTED_BY_PM,
-                "notes": "Rejected due to discrepancies",
+                "description": "Rejected due to discrepancies",
             },
         )
 
@@ -1214,7 +1214,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.READY_TO_PAY,
-                "notes": "Invalid transition",
+                "description": "Invalid transition",
             },
         )
 
@@ -1235,7 +1235,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.READY_TO_PAY,
-                "notes": "Trying PM action as NM",
+                "description": "Trying PM action as NM",
             },
         )
 
@@ -1257,7 +1257,7 @@ class TestInvoiceUpdateStatus:
             data={
                 "invoice_id": invoice.payment_invoice_id,
                 "new_status": InvoiceStatus.PENDING_PM_REVIEW,
-                "notes": "Trying NM action as PM",
+                "description": "Trying NM action as PM",
             },
         )
 

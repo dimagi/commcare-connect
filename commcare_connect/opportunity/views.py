@@ -1619,7 +1619,7 @@ def invoice_update_status(request, org_slug, opp_id):
         )
 
     invoice_id = request.POST.get("invoice_id")
-    notes = request.POST.get("notes")
+    description = request.POST.get("description")
     new_status = request.POST.get("new_status")
 
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
@@ -1640,7 +1640,7 @@ def invoice_update_status(request, org_slug, opp_id):
 
     invoice.status = new_status
     if invoice.service_delivery:
-        invoice.description = notes
+        invoice.description = description
         invoice.save(update_fields=["status", "description"])
     else:
         invoice.save(update_fields=["status"])

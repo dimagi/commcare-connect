@@ -1691,7 +1691,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             self.line_items,
             Fieldset(
                 _("Service Delivery Notes"),
-                Field("description"),
+                Field("description", **{"x-ref": "description"}),
             ),
         ]
 
