@@ -1523,6 +1523,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 "form": self.get_form(),
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "updates_to_mark_as_paid_workflow_switch": switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW),
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {

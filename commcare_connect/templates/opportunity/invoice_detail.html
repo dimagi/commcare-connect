@@ -22,23 +22,58 @@
          class="button button-md outline-style">
         {% translate "Back to Invoices" %}
       </a>
-      {% if request.is_opportunity_pm %}
-        {% if invoice_status == 'pending_pm_review' %}
+      {% if updates_to_mark_as_paid_workflow_switch %}
+        <!--  I am a PM -->
+        {% if request.is_opportunity_pm %}
+          {% if invoice_status == 'pending_pm_review' %}
+            <a @click="rejectInvoice()" class="button button-md outline-style">
+              {% translate "Reject" %}
+            </a>
+            <a @click="approveForPaymentProcessing()" class="button button-md primary-dark">
+              {% translate "Approve for Payment Processing" %}
+            </a>
+          {% elif invoice_status == 'ready_to_pay' %}
+            <a @click="rejectInvoice()" class="button button-md outline-style">
+              {% translate "Reject" %}
+            </a>
           <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
-                  hx-vals='{"pk": "{{ form.instance.payment_invoice_id }}"}'
-                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                  class="button button-md primary-dark justify-center !inline-flex"
-                  {% if form.instance.payment %}disabled{% endif %}>
-            {% translate "Pay" %}
-          </button>
+                    hx-vals='{"pk": {{ form.instance.payment_invoice_id }}}'
+                    class="button button-md primary-dark justify-center !inline-flex"
+                    {% if form.instance.payment %}disabled{% endif %}>
+              {% translate "Pay" %}
+            </button>
+          {% endif %}
+
+        <!-- I am a NM -->
+        {% elif invoice_status == 'pending_nm_review' %}
+          <a @click="cancelInvoice()" class="button button-md outline-style">
+            {% translate "Cancel" %}
+          </a>
+          <a @click="submitForApproval()" class="button button-md primary-dark">
+            {% translate "Submit to Program Manager" %}
+          </a>
         {% endif %}
-      {% elif invoice_status == 'pending_nm_review' %}
-        <a
-          @click="submitForApproval()"
-          class="button button-md primary-dark"
-        >
-          {% translate "Submit for Approval" %}
-        </a>
+
+      <!-- Switch is not active -->
+      {% else %}
+        {% if request.is_opportunity_pm %}
+          {% if invoice_status == 'pending_pm_review' %}
+          <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
+                    hx-vals='{"pk": {{ form.instance.payment_invoice_id }}}'
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    class="button button-md primary-dark justify-center !inline-flex"
+                    {% if form.instance.payment %}disabled{% endif %}>
+              {% translate "Pay" %}
+            </button>
+          {% endif %}
+        {% elif invoice_status == 'pending_nm_review' %}
+          <a
+            @click="submitForApproval()"
+            class="button button-md primary-dark"
+          >
+            {% translate "Submit for Approval" %}
+          </a>
+        {% endif %}
       {% endif %}
     </div>
   </div>
