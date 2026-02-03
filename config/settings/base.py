@@ -89,6 +89,8 @@ THIRD_PARTY_APPS = [
     "oauth2_provider",
     "django_tables2",
     "waffle",
+    "pghistory",
+    "pgtrigger",  # added for pghistory
 ]
 
 LOCAL_APPS = [
