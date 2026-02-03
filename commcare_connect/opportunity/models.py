@@ -798,6 +798,14 @@ class UserVisit(XFormBaseModel):
             models.Index(fields=["opportunity", "status"]),
         ]
 
+    def save(self, *args, **kwargs):
+        if self.status == VisitValidationStatus.over_limit:
+            self.is_over_limit = True
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "is_over_limit" not in update_fields:
+                kwargs["update_fields"] = set(update_fields) | {"is_over_limit"}
+        super().save(*args, **kwargs)
+
 
 class OpportunityClaim(models.Model):
     opportunity_access = models.OneToOneField(OpportunityAccess, on_delete=models.CASCADE)

@@ -243,6 +243,7 @@ def test_receiver_deliver_form_daily_visits_reached(
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.is_over_limit is True
 
 
 @pytest.mark.django_db
@@ -289,6 +290,7 @@ def test_receiver_deliver_form_end_date_reached(
     assert CompletedWork.objects.count() == 1
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
+    assert visit.is_over_limit is True
 
 
 @pytest.mark.django_db
