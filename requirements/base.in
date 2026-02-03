@@ -36,6 +36,7 @@ django-filter
 django-autocomplete-light
 django-htmx
 django-waffle
+django-pghistory
 
 # Temporary
 # -------------------------------------------------------------------------------
