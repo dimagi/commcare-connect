@@ -12,6 +12,8 @@
       isReadOnly: "{{ is_read_only|yesno:'true,false'}}" == "true",
       invoiceId: "{{ form.instance.payment_invoice_id|default:'' }}",
       showDownloadButton: false,
+      showCancelModal: false,
+      showRejectModal: false,
 
       init() {
         if (this.isServiceDelivery) {
@@ -91,26 +93,30 @@
         return url.toString();
       },
 
-      submitForApproval() {
+      submitInvoice(newStatus) {
         htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           values: {
               invoice_id: this.invoiceId,
               notes: this.$refs.notes ? this.$refs.notes.value : "",
-              new_status: 'pending_pm_review',
+              new_status: newStatus
           },
         });
       },
 
+      submitForApproval() {
+        this.submitInvoice('pending_pm_review');
+      },
+
       cancelInvoice() {
-        // TODO
+        this.submitInvoice('cancelled_by_nm');
       },
 
       rejectInvoice()  {
-        // TODO
+        this.submitInvoice('rejected_by_pm');
       },
 
       approveForPaymentProcessing() {
-        // TODO
+        this.submitInvoice('ready_to_pay');
       },
 
     }));
