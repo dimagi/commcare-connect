@@ -157,6 +157,7 @@ MIDDLEWARE = [
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
     "waffle.middleware.WaffleMiddleware",
+    "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
 ]
 
 # STATIC

@@ -22,6 +22,7 @@ from commcare_connect.opportunity.forms import (
 )
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
+    InvoiceStatus,
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
@@ -1075,7 +1076,7 @@ def test_views_use_opportunity_decorator_or_mixin():
 
 
 @pytest.mark.django_db
-class TestInvoiceReviewView:
+class BaseTestInvoiceView:
     @pytest.fixture
     def setup_invoice(self, organization, org_user_member):
         program = ProgramFactory(organization=organization, budget=10000)
@@ -1101,6 +1102,8 @@ class TestInvoiceReviewView:
             "user": org_user_member,
         }
 
+
+class TestInvoiceReviewView(BaseTestInvoiceView):
     def test_switch_not_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1273,6 +1276,44 @@ class TestInvoiceReviewView:
             response = client.get(url)
             form = response.context["form"]
             assert isinstance(form, AutomatedPaymentInvoiceForm)
+
+
+class TestSubmitInvoiceView(BaseTestInvoiceView):
+    def test_status_update_tracking(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        assert len(invoice.status_events.all()), 1
+        assert invoice.status == InvoiceStatus.PENDING
+
+        client.force_login(user)
+        url = reverse(
+            "opportunity:submit_invoice",
+            args=(opportunity.organization.slug, opportunity.opportunity_id),
+        )
+        response = client.post(url, data={"invoice_id": invoice.payment_invoice_id})
+        invoice.refresh_from_db()
+
+        # assert successful update
+        assert response.status_code == 204
+        assert invoice.status == InvoiceStatus.SUBMITTED
+
+        invoice_status_events = invoice.status_events.all()
+
+        # assert event captured
+        assert len(invoice_status_events), 2
+        assert invoice_status_events[1].status == InvoiceStatus.SUBMITTED
+        assert invoice_status_events[1].pgh_context.metadata == {
+            "url": url,
+            "user": user.pk,
+            "username": user.username,
+            "user_email": user.email,
+        }
+
+        # assert values present
+        assert invoice_status_events[1].pgh_context.metadata["username"]
+        assert invoice_status_events[1].pgh_context.metadata["user_email"]
 
 
 @pytest.mark.django_db
