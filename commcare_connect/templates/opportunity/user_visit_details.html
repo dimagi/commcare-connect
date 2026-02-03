@@ -104,6 +104,37 @@
   </div>
   {% endif %}
 
+  <!-- Over Limit Warning -->
+  {% if user_visit.is_over_limit %}
+    <div class="bg-message-warning border-l-4 border-message-warning-border p-4 rounded text-message-warning-text" role="alert">
+      <div class="flex flex-col gap-1">
+        {% if request.is_opportunity_pm %}
+          <p class="text-sm">
+            {% blocktranslate %}
+              This visit was submitted after the worker reached their target and was flagged as over-limit.
+            {% endblocktranslate %}
+          </p>
+          <p class="text-sm">
+            {% blocktranslate %}
+              Approving it will keep the worker's verified visits above their target and may require a manual review of payments.
+            {% endblocktranslate %}
+          </p>
+        {% else %}
+          <p class="text-sm">
+            {% blocktranslate %}
+              This visit has been flagged as over-limit and should not be approved.
+            {% endblocktranslate %}
+          </p>
+          <p class="text-sm">
+            {% blocktranslate %}
+              Each FLW has a fixed visit target. Approving this visit will exceed that target and may result in incorrect payments and reporting.
+            {% endblocktranslate %}
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
   {% if user_visit.justification %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
