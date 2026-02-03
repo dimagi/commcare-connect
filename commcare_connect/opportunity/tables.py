@@ -460,7 +460,12 @@ class PaymentInvoiceTable(OpportunityContextTable):
                 f'{_("Review")}</a>'
             )
         pay_button = ""
-        if self.is_pm and record.status == InvoiceStatus.PENDING_PM_REVIEW:
+        required_status = (
+            InvoiceStatus.READY_TO_PAY
+            if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
+            else InvoiceStatus.PENDING_PM_REVIEW
+        )
+        if self.is_pm and record.status == required_status:
             invoice_approve_url = reverse(
                 "opportunity:invoice_approve", args=[self.org_slug, self.opportunity.opportunity_id]
             )

@@ -1670,9 +1670,15 @@ def invoice_approve(request, org_slug, opp_id):
 
     paid_invoice_ids = []
     payments = []
+    required_status = (
+        InvoiceStatus.READY_TO_PAY
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
+        else InvoiceStatus.PENDING_PM_REVIEW
+    )
     for inv in invoices:
-        if inv.status != InvoiceStatus.PENDING_PM_REVIEW:
-            return HttpResponseBadRequest(_("Only submitted invoice can be approved."))
+        if inv.status != required_status:
+            label = InvoiceStatus.get_label(required_status)
+            return HttpResponseBadRequest(_("Only {} invoice can be approved.").format(label))
         paid_invoice_ids.append(inv.id)
         payments.append(
             Payment(
