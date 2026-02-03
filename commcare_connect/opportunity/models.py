@@ -731,6 +731,7 @@ class UserVisit(XFormBaseModel):
     status = models.CharField(
         max_length=50, choices=VisitValidationStatus.choices, default=VisitValidationStatus.pending
     )
+    is_over_limit = models.BooleanField(default=False)
     form_json = models.JSONField()
     reason = models.CharField(max_length=300, null=True, blank=True)
     location = models.CharField(null=True)
