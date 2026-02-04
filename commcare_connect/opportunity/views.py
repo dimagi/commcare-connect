@@ -50,6 +50,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django.views.generic import CreateView, DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
+from django_weasyprint.views import WeasyTemplateResponse
 from geopy import distance
 from waffle import switch_is_active
 
@@ -1575,6 +1576,19 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         if self.object.service_delivery:
             return _("Review Service Delivery Invoice")
         return _("Review Custom Invoice")
+
+
+@org_member_required
+@opportunity_required
+def download_invoice(request, org_slug, opp_id, invoice_id):
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+    return WeasyTemplateResponse(
+        request=request,
+        template="opportunity/invoice_download.html",
+        context={"invoice": invoice},
+        content_type="application/pdf",
+        filename=f"invoice_{invoice_id}.pdf",
+    )
 
 
 @org_member_required

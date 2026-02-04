@@ -517,6 +517,15 @@ class PaymentInvoice(models.Model):
     class Meta:
         unique_together = ("opportunity", "invoice_number")
 
+    def invoice_type(self):
+        if self.service_delivery:
+            return PaymentInvoice.InvoiceType.service_delivery
+        return PaymentInvoice.InvoiceType.custom
+
+    @cached_property
+    def is_paid(self):
+        return bool(self.payment)
+
 
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
