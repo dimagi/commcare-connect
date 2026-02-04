@@ -15,7 +15,7 @@ class Program(BaseModel):
     description = models.CharField()
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT)
     budget = models.PositiveBigIntegerField()
-    currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     start_date = models.DateField()
     end_date = models.DateField()
@@ -31,8 +31,8 @@ class Program(BaseModel):
 
     @property
     def currency_code(self):
-        if self.currency_fk:
-            return self.currency_fk.code
+        if self.currency:
+            return self.currency.code
         else:
             return None
 
@@ -40,7 +40,6 @@ class Program(BaseModel):
 class ManagedOpportunity(Opportunity):
     program = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
     claimed = models.BooleanField(default=False)
-    org_pay_per_visit = models.IntegerField(null=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

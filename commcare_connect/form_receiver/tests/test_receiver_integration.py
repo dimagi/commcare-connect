@@ -10,9 +10,7 @@ from uuid import uuid4
 import pytest
 from django.utils.timezone import now
 from rest_framework.test import APIClient
-from waffle.testutils import override_switch
 
-from commcare_connect.flags.switch_names import CONCURRENT_SUBMISSIONS_LOCK
 from commcare_connect.form_receiver.processor import update_completed_learn_date
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
@@ -324,7 +322,6 @@ def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClien
 
 
 @pytest.mark.django_db(transaction=True)
-@override_switch(CONCURRENT_SUBMISSIONS_LOCK, active=True)
 def test_receiver_duplicate_concurrent_submissions(user_with_connectid_link: User, opportunity: Opportunity):
     oauth_application = opportunity.hq_server.oauth_application
     user = user_with_connectid_link
@@ -665,11 +662,11 @@ def test_receiver_verification_flags_catchment_areas(
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
     assert opportunity.managed
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_with_connect_link)
-    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity, org_amount=2)
     deliver_unit = DeliverUnitFactory(app=payment_unit.opportunity.deliver_app, payment_unit=payment_unit)
     completed_work = CompletedWorkFactory(
         opportunity_access=access, status=CompletedWorkStatus.pending, payment_unit=payment_unit
@@ -701,7 +698,7 @@ def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client:
     assert completed_work.status == CompletedWorkStatus.approved
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize(
     "visit_status, review_status",
     [
@@ -725,7 +722,7 @@ def test_receiver_visit_review_status(
     assert visit.review_status == review_status
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_receiver_duplicate_managed_opportunity(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):

@@ -504,7 +504,7 @@ def fetch_exchange_rates(date=None, currency=None):
     rates = request_rates(url)
 
     if currency is None:
-        currencies = Opportunity.objects.values_list("currency_fk__code", flat=True).distinct()
+        currencies = Opportunity.objects.values_list("currency__code", flat=True).distinct()
         for currency in currencies:
             rate = rates.get(currency)
             if rate is None:

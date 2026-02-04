@@ -111,7 +111,7 @@ class OpportunityUserInviteForm(forms.Form):
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
-    currency_fk = forms.ModelChoiceField(
+    currency = forms.ModelChoiceField(
         label=_("Currency"),
         queryset=Currency.objects.order_by("code"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
@@ -130,7 +130,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             "name",
             "description",
             "active",
-            "currency_fk",
+            "currency",
             "country",
             "short_description",
             "is_test",
@@ -190,7 +190,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 Column(
                     Field("end_date"),
                 ),
-                Column(Field("currency_fk")),
+                Column(Field("currency")),
                 Column(Field("country")),
                 css_class="grid grid-cols-2 gap-4 p-6 card_bg",
             ),
@@ -315,7 +315,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
 class OpportunityInitForm(forms.ModelForm):
     managed_opp = False
     app_hint_text = "Add required apps to the opportunity. All fields are mandatory."
-    currency_fk = forms.ModelChoiceField(
+    currency = forms.ModelChoiceField(
         label=_("Currency"),
         queryset=Currency.objects.order_by("code"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
@@ -334,7 +334,7 @@ class OpportunityInitForm(forms.ModelForm):
             "name",
             "description",
             "short_description",
-            "currency_fk",
+            "currency",
             "country",
             "hq_server",
         ]
@@ -368,7 +368,7 @@ class OpportunityInitForm(forms.ModelForm):
                     Field("description"),
                 ),
                 Column(
-                    Field("currency_fk"),
+                    Field("currency"),
                     Field("country"),
                     Field("hq_server"),
                     Column(
@@ -587,7 +587,7 @@ class OpportunityInitUpdateForm(OpportunityInitForm):
         if not getattr(opportunity, "pk", None):
             return
 
-        for field_name in ("name", "short_description", "description", "currency_fk", "country"):
+        for field_name in ("name", "short_description", "description", "currency", "country"):
             if field_name in self.fields:
                 self.fields[field_name].initial = getattr(opportunity, field_name)
 
@@ -706,10 +706,15 @@ class OpportunityFinalizeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.budget_per_user = kwargs.pop("budget_per_user")
         self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
+        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
+
+        payment_calculation_string = (
+            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
+        )
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
@@ -722,31 +727,13 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 Field("end_date", wrapper_class="flex-1"),
                 Field(
                     "max_users",
-                    oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                    f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
-                    f"* parseInt(this.value || 0)",
+                    oninput=payment_calculation_string,
                 ),
                 Field("total_budget", readonly=True, wrapper_class="form-group "),
                 css_class="grid grid-cols-2 gap-6",
             ),
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
-
-        if self.opportunity.managed:
-            self.helper.layout.fields.insert(
-                -2,
-                Row(
-                    Field(
-                        "org_pay_per_visit",
-                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                        f"* parseInt(this.value || 0)) "
-                        f"* parseInt(document.getElementById('id_max_users')?.value || 0)",
-                    )
-                ),
-            )
-            self.fields["org_pay_per_visit"] = forms.IntegerField(
-                required=True, widget=forms.NumberInput(), initial=self.instance.org_pay_per_visit
-            )
 
         self.fields["max_users"] = forms.IntegerField(
             label="Max Connect Workers", initial=int(self.instance.number_of_users)
@@ -964,9 +951,11 @@ class AddBudgetExistingUsersForm(forms.Form):
 
     def _validate_budget(self, selected_users, additional_visits):
         claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-        org_pay = self.opportunity.managedopportunity.org_pay_per_visit if self.opportunity.managed else 0
 
-        budget_increase = sum((ocl.payment_unit.amount + org_pay) * additional_visits for ocl in claims)
+        budget_increase = 0
+        for claim in claims:
+            org_amount = claim.payment_unit.org_amount if self.opportunity.managed else 0
+            budget_increase += (claim.payment_unit.amount + org_amount) * additional_visits
 
         if self.opportunity.managed:
             # NM cannot increase the opportunity budget they can only
@@ -1009,7 +998,7 @@ class AddBudgetNewUsersForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
-        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total"))
+        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total", "org_amount"))
 
         super().__init__(*args, **kwargs)
 
@@ -1029,7 +1018,7 @@ class AddBudgetNewUsersForm(forms.Form):
                 id_total_budget.value =
                 {self.opportunity.total_budget} +
                 {json.dumps(self.payments_units)}.reduce(
-                    (sum, u) => sum + (u.amount + {self.opportunity.org_pay_per_visit})
+                    (sum, u) => sum + (u.amount + u.org_amount)
                     * u.max_total * parseInt(this.value || 0),
                     0
                 );
@@ -1056,11 +1045,9 @@ class AddBudgetNewUsersForm(forms.Form):
         increased_budget = 0
         total_program_budget = 0
         claimed_program_budget = 0
-        org_pay = 0
 
         if self.opportunity.managed:
             manage_opp = self.opportunity.managedopportunity
-            org_pay = manage_opp.org_pay_per_visit
             program = manage_opp.program
             total_program_budget = program.budget
             claimed_program_budget = (
@@ -1072,7 +1059,8 @@ class AddBudgetNewUsersForm(forms.Form):
 
         if add_users:
             for payment_unit in self.payments_units:
-                increased_budget += (payment_unit["amount"] + org_pay) * payment_unit["max_total"] * add_users
+                org_amount = payment_unit["org_amount"] if self.opportunity.managed else 0
+                increased_budget += (payment_unit["amount"] + org_amount) * payment_unit["max_total"] * add_users
 
             # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
             if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
@@ -1104,7 +1092,7 @@ class AddBudgetNewUsersForm(forms.Form):
 class PaymentUnitForm(forms.ModelForm):
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
         help_texts = {
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
@@ -1113,14 +1101,23 @@ class PaymentUnitForm(forms.ModelForm):
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
+        labels = {
+            "amount": _("Worker pay per visit"),
+            "org_amount": _("Org pay per visit"),
+            "max_total": _("Maximum visits per user"),
+            "max_daily": _("Maximum visits per day"),
+        }
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+
         deliver_units = kwargs.pop("deliver_units", [])
         payment_units = kwargs.pop("payment_units", [])
         org_slug = kwargs.pop("org_slug")
-        opportunity_id = kwargs.pop("opportunity_id")
 
         super().__init__(*args, **kwargs)
+
+        self.fields["org_amount"].required = self.opportunity.managed if self.opportunity else False
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
@@ -1128,7 +1125,7 @@ class PaymentUnitForm(forms.ModelForm):
                 Row(
                     Column(Field("name"), Field("description")),
                     Column(
-                        Field("amount"),
+                        self.get_amounts_div(),
                         Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
                         Field("start_date"),
                         Field("end_date"),
@@ -1143,7 +1140,7 @@ class PaymentUnitForm(forms.ModelForm):
                         HTML(
                             f"""
                     <button type="button" class="button button-md outline-style" id="sync-button"
-                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
+                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, self.opportunity.pk))}"
                     hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
                     event.detail.successful && location.reload();
                     this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
@@ -1198,6 +1195,18 @@ class PaymentUnitForm(forms.ModelForm):
                 if payment_unit.parent_payment_unit_id and payment_unit.parent_payment_unit_id == self.instance.pk:
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
+
+    def get_amounts_div(self):
+        fields = [
+            Field("amount"),
+        ]
+        if self.opportunity.managed:
+            fields.append(Field("org_amount"))
+
+        return Div(
+            *fields,
+            css_class="grid grid-cols-2 gap-4",
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1449,7 +1458,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         if amount is None or date is None:
             return cleaned_data  # Let individual field errors handle missing values
 
-        currency = getattr(self.opportunity, "currency_fk", None)
+        currency = getattr(self.opportunity, "currency", None)
         exchange_rate = ExchangeRate.latest_exchange_rate(currency.code if currency else None, date)
         if not exchange_rate:
             raise ValidationError("Exchange rate not available for selected date.")

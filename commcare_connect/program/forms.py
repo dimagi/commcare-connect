@@ -11,7 +11,7 @@ DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
 
 
 class ProgramForm(forms.ModelForm):
-    currency_fk = forms.ModelChoiceField(
+    currency = forms.ModelChoiceField(
         label="Currency",
         queryset=Currency.objects.order_by("code"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
@@ -31,7 +31,7 @@ class ProgramForm(forms.ModelForm):
             "description",
             "delivery_type",
             "budget",
-            "currency_fk",
+            "currency",
             "country",
             "start_date",
             "end_date",
@@ -49,7 +49,7 @@ class ProgramForm(forms.ModelForm):
             Field("delivery_type"),
             Row(
                 Field("budget"),
-                Field("currency_fk"),
+                Field("currency"),
                 Field("country"),
                 css_class="grid grid-cols-2 gap-2",
             ),
@@ -95,7 +95,7 @@ class BaseManagedOpportunityInitForm:
         super().__init__(*args, **kwargs)
 
         # Managed opportunities should use the currency/country specified in the program.
-        for field_name in ["currency_fk", "country"]:
+        for field_name in ["currency", "country"]:
             form_field = self.fields[field_name]
             form_field.initial = getattr(self.program, field_name)
             form_field.widget.attrs.update({"readonly": "readonly", "disabled": True})
@@ -123,7 +123,7 @@ class BaseManagedOpportunityInitForm:
 
     def save(self, commit=True):
         self.instance.program = self.program
-        self.instance.currency_fk = self.program.currency_fk
+        self.instance.currency = self.program.currency
         self.instance.delivery_type = self.program.delivery_type
         return super().save(commit=commit)
 
