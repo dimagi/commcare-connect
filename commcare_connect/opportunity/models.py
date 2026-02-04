@@ -731,7 +731,6 @@ class UserVisit(XFormBaseModel):
     status = models.CharField(
         max_length=50, choices=VisitValidationStatus.choices, default=VisitValidationStatus.pending
     )
-    is_over_limit = models.BooleanField(default=False)
     form_json = models.JSONField()
     reason = models.CharField(max_length=300, null=True, blank=True)
     location = models.CharField(null=True)
@@ -788,6 +787,14 @@ class UserVisit(XFormBaseModel):
         domain = self.opportunity.deliver_app.cc_domain
         return f"{hq_url}/a/{domain}/reports/form_data/{self.xform_id}/"
 
+    @property
+    def has_over_limit_flag(self):
+        from commcare_connect.utils.flags import Flags
+
+        if self.flag_reason is not None:
+            return Flags.OVER_LIMIT.value in [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return False
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -797,14 +804,6 @@ class UserVisit(XFormBaseModel):
         indexes = [
             models.Index(fields=["opportunity", "status"]),
         ]
-
-    def save(self, *args, **kwargs):
-        if self.status == VisitValidationStatus.over_limit:
-            self.is_over_limit = True
-            update_fields = kwargs.get("update_fields")
-            if update_fields is not None and "is_over_limit" not in update_fields:
-                kwargs["update_fields"] = set(update_fields) | {"is_over_limit"}
-        super().save(*args, **kwargs)
 
 
 class OpportunityClaim(models.Model):
