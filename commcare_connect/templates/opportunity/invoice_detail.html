@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load i18n crispy_forms_tags %}
+{% load waffle_tags %}
 
 {% block content %}
 {% include 'components/breadcrumbs.html' with path=path %}
@@ -22,6 +23,12 @@
          class="button button-md outline-style">
         {% translate "Back to Invoices" %}
       </a>
+      {% switch 'updates_to_mark_as_paid_workflow' %}
+        <a href="{% url 'opportunity:download_invoice' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=form.instance.payment_invoice_id %}"
+           class="button button-md outline-style">
+          {% translate "Download" %}
+        </a>
+      {% endswitch %}
       {% if request.is_opportunity_pm %}
         {% if invoice_status == 'submitted' %}
           <button hx-post="{% url 'opportunity:invoice_approve' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
