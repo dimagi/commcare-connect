@@ -55,7 +55,12 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW, USER_VISIT_FILTERS
+from commcare_connect.flags.switch_names import (
+    AUTOMATED_INVOICES,
+    INVOICE_REVIEW,
+    UPDATES_TO_MARK_AS_PAID_WORKFLOW,
+    USER_VISIT_FILTERS,
+)
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -1581,6 +1586,8 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 @org_member_required
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
+    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        raise Http404(_("Invoice download feature is not available"))
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
     return WeasyTemplateResponse(
         request=request,
