@@ -255,6 +255,8 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
         ]
         if not matches:
             flags.append(["form_value_not_found", f"Form does not satisfy {form_json_rule.name} validation rule."])
+    if user_visit.status == VisitValidationStatus.over_limit:
+        flags.append(["over_limit", "User visit exceeds allowed limit."])
     return flags
 
 
