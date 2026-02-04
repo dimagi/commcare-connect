@@ -5,7 +5,7 @@
 
     {% if flags %}
         {% for flag in flags|slice:":2" %}
-            {% if flag == "duplicate" %}
+            {% if flag|lower == "duplicate" %}
                 <span class="badge badge-sm warning-light mx-1">
             {% else %}
                 <span class="badge badge-sm primary-light mx-1">
