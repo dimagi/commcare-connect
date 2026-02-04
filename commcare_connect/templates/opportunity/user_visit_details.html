@@ -80,31 +80,7 @@
   hx-on::after-settle="loadMap()">
   <!-- Message Section -->
 
-  {% if user_visit.reason %}
-  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
-    <div class="flex items-center gap-4">
-      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
-      <div class="flex items-center gap-1">
-        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
-        <span class="flex items-center text-xs text-brand-blue-light">
-          <span class="mr-1 text-2xl text-brand-indigo">•</span>
-          {{ user_visit.opportunity.organization.name }}
-        </span>
-      </div>
-    </div>
-    <div>
-      <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
-           @click="message.expanded = !message.expanded"></i>
-        <p class="text-xs text-brand-deep-purple">
-          {{ user_visit.reason }}
-        </p>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- Over Limit Warning -->
+    <!-- Over Limit Warning -->
   {% if user_visit.review_status != "agree" and user_visit.status != "rejected" %}
     {% if user_visit.status == "over_limit" or user_visit.has_over_limit_flag %}
       <div class="bg-message-warning border-l-4 border-message-warning-border p-4 rounded text-message-warning-text" role="alert">
@@ -135,6 +111,30 @@
         </div>
       </div>
     {% endif %}
+  {% endif %}
+
+  {% if user_visit.reason %}
+  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+    <div class="flex items-center gap-4">
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
+      <div class="flex items-center gap-1">
+        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+        <span class="flex items-center text-xs text-brand-blue-light">
+          <span class="mr-1 text-2xl text-brand-indigo">•</span>
+          {{ user_visit.opportunity.organization.name }}
+        </span>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center gap-4 mt-2">
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
+           @click="message.expanded = !message.expanded"></i>
+        <p class="text-xs text-brand-deep-purple">
+          {{ user_visit.reason }}
+        </p>
+      </div>
+    </div>
+  </div>
   {% endif %}
 
   {% if user_visit.justification %}
