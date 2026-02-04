@@ -165,9 +165,10 @@ const MapboxUtils = {
     return draw;
   },
 
-  createMarker(map, opts) {
+  createMarkerHtml(map, opts) {
     // Creating markers using HTML might present performance issues at scale, so better
     // to use layers instead for large datasets.
+    // See https://docs.mapbox.com/help/dive-deeper/markers-vs-layers/#dataset-size
     opts = opts || {};
     const markerOpts = {};
     if (opts.color) markerOpts.color = opts.color;
@@ -180,6 +181,43 @@ const MapboxUtils = {
       marker.setPopup(new mapboxgl.Popup().setHTML(opts.popupHtml));
     marker.addTo(map);
     return marker;
+  },
+
+  createMarkersLayer(map, pointsCoords) {
+    map.loadImage(
+      'https://docs.mapbox.com/mapbox-gl-js/assets/custom_marker.png',
+      (error, image) => {
+        if (error) throw error;
+
+        map.addImage('custom-marker', image);
+        const featureCollection = {
+          type: 'FeatureCollection',
+          features: [
+            ...pointsCoords.map((coord) => ({
+              type: 'Feature',
+              geometry: {
+                type: 'Point',
+                coordinates: [coord.lng, coord.lat],
+              },
+            })),
+          ],
+        };
+
+        map.addSource('points', {
+          type: 'geojson',
+          data: featureCollection,
+        });
+
+        map.addLayer({
+          id: 'points',
+          type: 'symbol',
+          source: 'points',
+          layout: {
+            'icon-image': 'custom-marker',
+          },
+        });
+      },
+    );
   },
 };
 
