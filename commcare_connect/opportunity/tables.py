@@ -948,6 +948,12 @@ class UserVisitVerificationTable(tables.Table):
         status = []
         if record.opportunity.managed and record.review_status and record.review_created_on:
             if (
+                record.review_status != VisitReviewStatus.agree.value
+                and record.status != VisitValidationStatus.over_limit
+                and record.has_over_limit_flag
+            ):
+                status.append(VisitValidationStatus.over_limit.name)
+            if (
                 record.review_status == VisitReviewStatus.pending.value
                 and record.status == VisitValidationStatus.approved
             ):  # Show "pending_review" only if NM approved first
