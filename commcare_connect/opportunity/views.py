@@ -1657,7 +1657,7 @@ def invoice_update_status(request, org_slug, opp_id):
 @org_member_required
 @opportunity_required
 @require_POST
-def invoice_approve(request, org_slug, opp_id):
+def invoice_pay(request, org_slug, opp_id):
     if not request.opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
         return HttpResponse(
             status=302,

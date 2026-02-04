@@ -467,7 +467,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         )
         if self.is_pm and record.status == required_status:
             invoice_approve_url = reverse(
-                "opportunity:invoice_approve", args=[self.org_slug, self.opportunity.opportunity_id]
+                "opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]
             )
             disabled = "disabled" if getattr(record, "payment", None) else ""
             pay_button = f"""
