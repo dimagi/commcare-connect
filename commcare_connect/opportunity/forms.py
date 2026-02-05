@@ -1481,6 +1481,7 @@ class PaymentInvoiceForm(forms.ModelForm):
         instance.exchange_rate = self.cleaned_data["exchange_rate"]
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
         instance.status = self.status
+        instance.status_updated_date = now()
 
         if commit:
             instance.save()
@@ -1822,6 +1823,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
         instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
         instance.date_of_expense = self.cleaned_data.get("date_of_expense")
         instance.status = self.status
+        instance.status_updated_date = now()
 
         if commit:
             instance.save()

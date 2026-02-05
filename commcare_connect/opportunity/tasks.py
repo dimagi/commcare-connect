@@ -612,6 +612,7 @@ def generate_automated_service_delivery_invoice():
             start_date=start_date,
             end_date=end_date_prev_month,
             status=InvoiceStatus.PENDING_NM_REVIEW,
+            status_updated_date=now(),
             invoice_number=invoice_number,
             service_delivery=True,
             exchange_rate=exchange_rate,

@@ -26,4 +26,4 @@ class Command(BaseCommand):
             print(f"Found {invoices.count()} Pending invoices.")
         else:
             print(f"Marking {invoices.count()} Pending invoices as Archived.")
-            invoices.update(status=InvoiceStatus.ARCHIVED, archived_date=now())
+            invoices.update(status=InvoiceStatus.ARCHIVED, archived_date=now(), status_updated_date=now())

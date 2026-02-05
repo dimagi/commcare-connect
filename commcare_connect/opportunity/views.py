@@ -1639,11 +1639,12 @@ def invoice_update_status(request, org_slug, opp_id):
         return HttpResponseBadRequest(_("Network Managers cannot perform Program Manager actions."))
 
     invoice.status = new_status
+    invoice.status_updated_date = now()
     if invoice.service_delivery:
         invoice.description = description
-        invoice.save(update_fields=["status", "description"])
+        invoice.save(update_fields=["status", "status_updated_date", "description"])
     else:
-        invoice.save(update_fields=["status"])
+        invoice.save(update_fields=["status", "status_updated_date"])
 
     message = INVOICE_STATUS_MESSAGES.get(new_status, _("Invoice %(invoice_number)s status has been updated."))
     messages.success(request, message % {"invoice_number": invoice.invoice_number})
@@ -1689,7 +1690,8 @@ def invoice_pay(request, org_slug, opp_id):
             )
         )
         inv.status = InvoiceStatus.PAID
-        inv.save(update_fields=["status"])
+        inv.status_updated_date = now()
+        inv.save(update_fields=["status", "status_updated_date"])
 
     Payment.objects.bulk_create(payments)
 

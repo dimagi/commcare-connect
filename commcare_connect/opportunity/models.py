@@ -534,6 +534,7 @@ class PaymentInvoice(models.Model):
     date_of_expense = models.DateField(null=True, blank=True)
     status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
     archived_date = models.DateTimeField(null=True, blank=True)
+    status_updated_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
