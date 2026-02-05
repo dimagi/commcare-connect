@@ -513,6 +513,19 @@ class InvoiceStatus(models.TextChoices):
             return cls.old_labels_map().get(status, gettext("Unknown"))
         return cls(status).label
 
+    @classmethod
+    def get_choices(cls):
+        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            old_labels = cls.old_labels_map()
+            allowed_statuses = [
+                cls.PENDING_NM_REVIEW,
+                cls.PENDING_PM_REVIEW,
+                cls.PAID,
+                cls.ARCHIVED,
+            ]
+            return [(status.value, old_labels.get(status.value, status.label)) for status in allowed_statuses]
+        return cls.choices
+
 
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
