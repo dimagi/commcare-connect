@@ -219,6 +219,38 @@ const MapboxUtils = {
       },
     );
   },
+
+  createPolygonsLayer(map, polygons) {
+    // polygons: Array of {coords: [[lng, lat], ...], properties: {fillColor: string}}.
+    const featureCollection = {
+      type: 'FeatureCollection',
+      features: [
+        ...polygons.map((polygon) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [polygon.coords],
+          },
+          properties: polygon.properties || {},
+        })),
+      ],
+    };
+
+    map.addSource('polygons', {
+      type: 'geojson',
+      data: featureCollection,
+    });
+
+    map.addLayer({
+      id: 'polygons-layer',
+      type: 'fill',
+      source: 'polygons',
+      paint: {
+        'fill-color': ['get', 'fillColor'],
+        'fill-opacity': 0.4,
+      },
+    });
+  },
 };
 
 window.MapboxUtils = MapboxUtils;
