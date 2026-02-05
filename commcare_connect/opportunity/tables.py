@@ -386,6 +386,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
     amount_usd = tables.Column(verbose_name="Amount (USD)")
     status = tables.Column(verbose_name="Invoice Status")
     invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery", empty_values=())
+    status_updated_date = tables.Column(verbose_name="Invoice Last Updated Date")
 
     class Meta:
         model = PaymentInvoice
@@ -399,6 +400,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
             "invoice_number",
             "status",
             "payment_status",
+            "status_updated_date",
             "payment_date",
             "invoice_type",
             "actions",
@@ -421,6 +423,8 @@ class PaymentInvoiceTable(OpportunityContextTable):
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
             self.columns["date"].column.verbose_name = "Invoice Generation Date"
             self.columns.hide("payment_status")
+        else:
+            self.columns.hide("status_updated_date")
 
     def render_exchange_rate(self, value):
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
