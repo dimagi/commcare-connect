@@ -11,7 +11,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django_tables2 import columns
 
-from commcare_connect.flags.switch_names import INVOICE_REVIEW
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
@@ -417,6 +417,15 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.is_pm = kwargs.pop("is_pm", False)
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
+        # These changes can be done at class level when this switch is fully rolled out and no longer needed.
+        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            self.columns["date"].column.verbose_name = "Invoice Generation Date"
+            self.columns.hide("payment_status")
+
+    def render_exchange_rate(self, value):
+        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            return f"{round(value, 2)} {self.opportunity.currency_code} per USD"
+        return value
 
     def render_payment_status(self, record, value):
         if record.status == InvoiceStatus.ARCHIVED:
