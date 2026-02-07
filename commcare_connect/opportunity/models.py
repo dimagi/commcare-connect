@@ -497,6 +497,8 @@ class InvoiceStatus(models.TextChoices):
 
     @staticmethod
     def old_labels_map():
+        # Uses the new statuses, but returns the relevant label:
+        # either the one used previously or else the new label for statuses added later.
         return {
             "pending_nm_review": gettext("Pending"),
             "pending_pm_review": gettext("Submitted"),
