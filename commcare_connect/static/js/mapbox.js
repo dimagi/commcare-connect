@@ -220,35 +220,64 @@ const MapboxUtils = {
     );
   },
 
-  createPolygonsLayer(map, polygons) {
+  createPolygonsLayer(map, polygons, id) {
     // polygons: Array of {coords: [[lng, lat], ...], properties: {fillColor: string}}.
-    const featureCollection = {
-      type: 'FeatureCollection',
-      features: [
-        ...polygons.map((polygon) => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [polygon.coords],
-          },
-          properties: polygon.properties || {},
-        })),
-      ],
-    };
+    map.on('load', () => {
+      const featureCollection = {
+        type: 'FeatureCollection',
+        features: [
+          ...polygons.map((polygon, index) => ({
+            type: 'Feature',
+            id: index,
+            geometry: {
+              type: 'Polygon',
+              coordinates: [polygon.coords],
+            },
+            properties: polygon.properties || {},
+          })),
+        ],
+      };
 
-    map.addSource('polygons', {
-      type: 'geojson',
-      data: featureCollection,
-    });
+      map.addSource(`source-${id}`, {
+        type: 'geojson',
+        data: featureCollection,
+      });
 
-    map.addLayer({
-      id: 'polygons-layer',
-      type: 'fill',
-      source: 'polygons',
-      paint: {
-        'fill-color': ['get', 'fillColor'],
-        'fill-opacity': 0.4,
-      },
+      map.addLayer({
+        id: `layer-${id}`,
+        type: 'fill',
+        source: `source-${id}`,
+        paint: {
+          'fill-color': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            '#888888', // Color when selected
+            ['get', 'fillColor'], // default color from properties
+          ],
+          'fill-opacity': 0.4,
+        },
+      });
+
+      // Add click event to toggle 'selected' state
+      map.on('click', `layer-${id}`, (e) => {
+        const featureId = e.features[0].id;
+        const state = map.getFeatureState({
+          source: `source-${id}`,
+          id: featureId,
+        });
+        map.setFeatureState(
+          { source: `source-${id}`, id: featureId },
+          { selected: !state.selected },
+        );
+      });
+
+      map.on('mouseenter', `layer-${id}`, () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+
+      map.on('mouseleave', `layer-${id}`, () => {
+        map.getCanvas().style.cursor = '';
+      });
     });
   },
 };
