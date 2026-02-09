@@ -14,7 +14,12 @@ from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
-from commcare_connect.opportunity.forms import AutomatedPaymentInvoiceForm, PaymentInvoiceForm, PaymentUnitForm
+from commcare_connect.opportunity.forms import (
+    AddBudgetExistingUsersForm,
+    AutomatedPaymentInvoiceForm,
+    PaymentInvoiceForm,
+    PaymentUnitForm,
+)
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     InvoiceStatus,
@@ -75,7 +80,15 @@ def test_add_budget_existing_users(
 
     url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
     client.force_login(org_user_member)
-    response = client.post(url, data=dict(selected_users=[claim.id], additional_visits=5, end_date=end_date))
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=5,
+            end_date=end_date,
+            adjustment_type=AddBudgetExistingUsersForm.AdjustmentType.INCREASE_VISITS,
+        ),
+    )
     assert response.status_code == 302
     opportunity = Opportunity.objects.get(pk=opportunity.pk)
     assert opportunity.total_budget == 205
@@ -117,13 +130,20 @@ def test_add_budget_existing_users_for_managed_opportunity(
     url = reverse("opportunity:add_budget_existing_users", args=(opportunity.organization.slug, opportunity.pk))
     client.force_login(org_user_admin)
 
-    additional_visits = 10
+    number_of_visits = 10
     # Budget calculation breakdown: opp_budget=120 Initial_claimed: 60 increase: 60 Final: 120 - Still under opp_budget
 
-    budget_increase = (payment_per_visit + org_pay_per_visit) * additional_visits
+    budget_increase = (payment_per_visit + org_pay_per_visit) * number_of_visits
     expected_claimed_budget = budget_per_user + budget_increase
 
-    response = client.post(url, data={"selected_users": [claim.id], "additional_visits": additional_visits})
+    response = client.post(
+        url,
+        data={
+            "selected_users": [claim.id],
+            "number_of_visits": number_of_visits,
+            "adjustment_type": AddBudgetExistingUsersForm.AdjustmentType.INCREASE_VISITS,
+        },
+    )
     assert response.status_code == HTTPStatus.FOUND
 
     opportunity.refresh_from_db()
@@ -131,16 +151,195 @@ def test_add_budget_existing_users_for_managed_opportunity(
 
     assert opportunity.total_budget == initial_total_budget
     assert opportunity.claimed_budget == expected_claimed_budget
-    assert claim_limit.max_visits == max_visits_per_user + additional_visits
+    assert claim_limit.max_visits == max_visits_per_user + number_of_visits
 
-    additional_visits = 1
+    number_of_visits = 1
     # Budget calculation breakdown: Previous: claimed 120 increase: 6 final: 126 - Exceeds opp_budget budget of 120
 
-    response = client.post(url, data={"selected_users": [claim.id], "additional_visits": additional_visits})
+    response = client.post(
+        url,
+        data={
+            "selected_users": [claim.id],
+            "number_of_visits": number_of_visits,
+            "adjustment_type": AddBudgetExistingUsersForm.AdjustmentType.INCREASE_VISITS,
+        },
+    )
     assert response.status_code == HTTPStatus.OK
     form = response.context["form"]
-    assert "additional_visits" in form.errors
-    assert form.errors["additional_visits"][0] == "Additional visits exceed the opportunity budget."
+    assert "number_of_visits" in form.errors
+    assert form.errors["number_of_visits"][0] == "The number of visits being increased exceeds the opportunity budget."
+
+
+@pytest.mark.django_db
+def test_decrease_budget_existing_users(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    opportunity.total_budget = budget_per_user
+
+    opportunity.organization = organization
+    opportunity.save()
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    ocl = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
+    assert opportunity.total_budget == 200
+    assert opportunity.claimed_budget == 10
+    end_date = now().date()
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=5,
+            adjustment_type=AddBudgetExistingUsersForm.AdjustmentType.DECREASE_VISITS,
+            end_date=end_date,
+        ),
+    )
+    assert response.status_code == 302
+    opportunity = Opportunity.objects.get(pk=opportunity.pk)
+    assert opportunity.total_budget == 195
+    assert opportunity.claimed_budget == 5
+    limit = OpportunityClaimLimit.objects.get(pk=ocl.pk)
+    assert limit.max_visits == 5
+    assert limit.opportunity_claim.end_date == end_date
+    assert limit.end_date == end_date
+
+
+@pytest.mark.django_db
+def test_decrease_budget_existing_users_for_managed_opportunity(
+    client, program_manager_org, org_user_admin, organization, mobile_user
+):
+    payment_per_visit = 5
+    org_pay_per_visit = 1
+    max_visits_per_user = 10
+
+    budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
+    initial_total_budget = budget_per_user * 2
+
+    program = ProgramFactory(organization=program_manager_org, budget=200)
+    opportunity = ManagedOpportunityFactory(
+        program=program,
+        organization=organization,
+        total_budget=initial_total_budget,
+    )
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    claim_limit = OpportunityClaimLimitFactory(
+        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+    )
+
+    assert opportunity.total_budget == initial_total_budget
+    assert opportunity.claimed_budget == budget_per_user
+
+    url = reverse("opportunity:add_budget_existing_users", args=(opportunity.organization.slug, opportunity.pk))
+    client.force_login(org_user_admin)
+
+    decrease_visits = 5
+    # Budget calculation: decrease by 5 visits = 5 * (5 + 1) = 30
+
+    budget_decrease = (payment_per_visit + org_pay_per_visit) * decrease_visits
+    expected_claimed_budget = budget_per_user - budget_decrease
+
+    response = client.post(
+        url,
+        data={
+            "selected_users": [claim.id],
+            "number_of_visits": decrease_visits,
+            "adjustment_type": AddBudgetExistingUsersForm.AdjustmentType.DECREASE_VISITS,
+        },
+    )
+    assert response.status_code == HTTPStatus.FOUND
+
+    opportunity.refresh_from_db()
+    claim_limit.refresh_from_db()
+
+    # Total budget should remain the same for managed opportunities
+    assert opportunity.total_budget == initial_total_budget
+    assert opportunity.claimed_budget == expected_claimed_budget
+    assert claim_limit.max_visits == max_visits_per_user - decrease_visits
+
+
+@pytest.mark.django_db
+def test_decrease_budget_validation_error_completed_visits(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    """Test validation error when trying to decrease visits below completed visits count."""
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    opportunity.total_budget = budget_per_user
+
+    opportunity.organization = organization
+    opportunity.save()
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
+
+    # Create deliver_unit for the payment_unit
+    deliver_unit = DeliverUnitFactory(payment_unit=payment_units[0])
+
+    # Create 6 completed visits
+    for _ in range(6):
+        UserVisitFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            deliver_unit=deliver_unit,
+            status=VisitValidationStatus.approved,
+        )
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+
+    # Try to decrease by 8 visits (which would bring max_visits to 2, below the 6 completed)
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=8,
+            adjustment_type=AddBudgetExistingUsersForm.AdjustmentType.DECREASE_VISITS,
+        ),
+    )
+    assert response.status_code == 200
+    form = response.context["form"]
+    assert "number_of_visits" in form.errors
+    error_message = form.errors["number_of_visits"][0]
+    assert "Cannot decrease the number of visits" in error_message
+    assert "The visit count cannot be reduced below the number of already completed visits" in error_message
+
+
+@pytest.mark.django_db
+def test_adjustment_type_required_validation(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    opportunity.total_budget = budget_per_user
+
+    opportunity.organization = organization
+    opportunity.save()
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=5,
+        ),
+    )
+    assert response.status_code == 200
+    form = response.context["form"]
+    assert "adjustment_type" in form.errors
+    assert form.errors["adjustment_type"][0] == "Please select an adjustment type for number of visits."
 
 
 @pytest.mark.parametrize(

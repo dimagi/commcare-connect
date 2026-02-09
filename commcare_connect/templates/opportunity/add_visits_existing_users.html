@@ -35,7 +35,8 @@
   function handleExistingBudgetComponent(budgetPerVisit) {
     return {
       modalOpen: false,
-      additionalVisits: 0,
+      numberOfVisits: null,
+      adjustmentType: null,
       budgetPerVisit: budgetPerVisit,
       selected_users: [],
       end_date: '',
@@ -59,10 +60,46 @@
       }
     },
       totalVisits() {
-        return this.selected_users.length * (parseInt(this.additionalVisits) || 0);;
+        return this.selected_users.length * (parseInt(this.numberOfVisits) || 0);
       },
       calculatedBudget() {
         return (this.totalVisits() * budgetPerVisit)
+      },
+      // Validation methods
+      hasnumberOfVisitsOrEndDate() {
+        return Boolean(this.numberOfVisits > 0 || this.end_date);
+      },
+      hasValidVisitsAndAdjustment() {
+        if (this.numberOfVisits > 0 && !this.adjustmentType) {
+          return false;
+        }
+        if (this.adjustmentType && !(this.numberOfVisits > 0)) {
+          return false;
+        }
+        return true;
+      },
+      isFormValid() {
+        return this.selected_users.length > 0 &&
+               this.hasnumberOfVisitsOrEndDate() &&
+               this.hasValidVisitsAndAdjustment();
+      },
+      getValidationErrors() {
+        const errors = [];
+        if (this.selected_users.length === 0) {
+          errors.push('Please select at least one worker');
+        }
+        if (!this.hasnumberOfVisitsOrEndDate()) {
+          errors.push('Please specify either number of visits (>0) or end date');
+        }
+        if (!this.hasValidVisitsAndAdjustment()) {
+          if (this.numberOfVisits > 0 && !this.adjustmentType) {
+            errors.push('Please select an adjustment type (Increase or Decrease)');
+          }
+          if (this.adjustmentType && !(this.numberOfVisits > 0)) {
+            errors.push('Please specify the number of visits (>0)');
+          }
+        }
+        return errors;
       }
     };
 }
@@ -99,12 +136,20 @@
           >
             {% csrf_token %}
 
+            {% if form.non_field_errors %}
+              <div class="text-sm text-red-600 mt-1">
+                {% for error in form.non_field_errors %}
+                  {{ error }}
+                {% endfor %}
+              </div>
+            {% endif %}
+
             {% if form.selected_users.errors %}
             <div class="flex rounded-lg border border-red-300 bg-red-50 text-red-800 px-4 py-3 mb-4" role="alert">
-              <span class="text-red-800 flex-1">Please select workers to update.</span>
+              <span class="text-red-800 flex-1">{% trans "Please select workers to update." %}</span>
               <button type="button"
                       class="text-red-500 hover:text-red-700"
-                      aria-label="Close"
+                      aria-label="{% trans 'Close' %}"
                       @click="event.target.closest('div[role=alert]').remove()">
                 &times;
               </button>
@@ -112,7 +157,7 @@
             {% endif %}
 
             {% if opportunity_claims %}
-            <h3 class="mb-2">Add Visits for Existing Connect Workers</h3>
+            <h3 class="mb-2">{% trans "Update Visits for Existing Connect Workers" %}</h3>
             <table class="base-table">
               <thead>
               <tr>
@@ -123,11 +168,11 @@
                          :checked="selected_users.length === {{ opportunity_claims|length }}"
                          class="simple-checkbox {% if form.selected_users.errors %}is-invalid{% endif %}"/>
                 </th>
-                <th>Name</th>
-                <th>Username</th>
-                <th>Max Visits</th>
-                <th>Used Visits</th>
-                <th>End date</th>
+                <th>{% trans "Name" %}</th>
+                <th>{% trans "Username" %}</th>
+                <th>{% trans "Max Visits" %}</th>
+                <th>{% trans "Used Visits" %}</th>
+                <th>{% trans "End date" %}</th>
               </tr>
               </thead>
               <tbody>
@@ -149,19 +194,32 @@
             </table>
             <div class="flex items-center gap-4 pt-6 border-t-2 border-gray-100">
               <div class="flex-1 flex justify-stretch gap-4 mt-4">
-                <div class="flex-1">{{ form.additional_visits|as_crispy_field }}</div>
+                <div class="flex-1">
+                  {{ form.number_of_visits|as_crispy_field }}
+                  <div class="inline-flex space-x-4">
+                    {% for radio in form.adjustment_type %}
+                      {{ radio }}
+                    {% endfor %}
+                  </div>
+                  {% if form.adjustment_type.errors %}
+                    <div class="text-sm text-red-600 mt-1">
+                      {% for error in form.adjustment_type.errors %}
+                        {{ error }}
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
                 <div class="flex-1">{{ form.end_date|as_crispy_field }}</div>
               </div>
             </div>
             <button type="button" class="button button-md primary-dark mt-4 float-end"
                     @click="openModal(); end_date = document.getElementById('id_end_date').value">
-              Save
+              {% trans "Save" %}
             </button>
             {% else %}
             <div class="text-center">
-              <b>No Opportunity Claims yet.</b> <br/>
-              <a class="button button-md primary-dark mt-2" href="{% url "opportunity:list" org_slug=request.org.slug %}">All
-              Opportunities</a>
+              <b>{% trans "No Opportunity Claims yet." %}</b> <br/>
+              <a class="button button-md primary-dark mt-2" href="{% url "opportunity:list" org_slug=request.org.slug %}">{% trans "All Opportunities" %}</a>
             </div>
             {% endif %}
 
@@ -170,26 +228,49 @@
             <div x-cloak x-show="modalOpen" x-transition.opacity class="modal-backdrop">
               <div @click.away="closeModal()" x-transition class="modal">
                 <div class="header flex justify-between items-center">
-                  <h2 class="title">Confirm</h2>
-                  <button type="button" @click="closeModal()" class="button-icon" aria-label="Close">
+                  <h2 class="title">{% trans "Confirm" %}</h2>
+                  <button type="button" @click="closeModal()" class="button-icon" aria-label="{% trans 'Close' %}">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
                 </div>
                 <div class="py-4">
-                  You are about to allocate an additional <b x-text="totalVisits()"></b> visits which will result in an
-                  additional budget allocation of
-                  <b x-text="calculatedBudget()"></b> to this Opportunity.
-                  <div x-show="!!end_date" class="mt-2">
-                    You are changing the end date for the selected workers to <b
-                    x-text="new Date(end_date).toLocaleDateString()"></b>.
+                  <!-- Validation Errors -->
+                  <div x-show="!isFormValid()" class="mb-4 p-3 bg-red-50 border border-red-300 rounded-lg">
+                    <div class="flex items-start">
+                      <i class="fa-solid fa-exclamation-circle text-red-600 mt-0.5 mr-2"></i>
+                      <div class="flex-1">
+                        <p class="text-sm font-semibold text-red-800 mb-1">{% trans "Please fix the following errors:" %}</p>
+                        <ul class="text-sm text-red-700">
+                          <template x-for="error in getValidationErrors()" :key="error">
+                            <li x-text="error"></li>
+                          </template>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Success Messages -->
+                  <div x-show="isFormValid()">
+                    <div x-show="numberOfVisits && adjustmentType">
+                      You are about to <span x-text="adjustmentType === 'increase_visits' ? 'increase' : 'decrease'"></span>
+                      by <b x-text="totalVisits()"></b> visit(s) which will result in a
+                      budget <span x-text="adjustmentType === 'increase_visits' ? 'increase' : 'decrease'"></span> of
+                      <b x-text="calculatedBudget()"></b> to this Opportunity.
+                    </div>
+                    <div x-show="!!end_date" class="mt-2">
+                      {% trans "You are changing the end date for the selected workers to" %} <b
+                      x-text="new Date(end_date).toLocaleDateString()"></b>.
+                    </div>
                   </div>
                 </div>
                 <div class="footer flex justify-end gap-4">
                   <button type="button" @click="closeModal()" type="button" class="button button-md outline-style">
-                    Close
+                    {% trans "Close" %}
                   </button>
-                  <button type="submit" class="button button-md primary-dark">
-                    Confirm
+                  <button type="submit"
+                          class="button button-md primary-dark"
+                          :disabled="!isFormValid()">
+                    {% trans "Confirm" %}
                   </button>
                 </div>
               </div>
@@ -201,13 +282,13 @@
         <div
           x-show="selectedTab === 'new_workers'"
         >
-          <h3 class="mb-2">Add Budget for New Connect Workers</h3>
+          <h3 class="mb-2">{% trans "Add Budget for New Connect Workers" %}</h3>
           <div
             id="new_user_container"
             hx-get="{% url 'opportunity:add_budget_new_users' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
             hx-swap="innerHTML"
             hx-trigger="loadNewUserForm from:body">
-            <h2 class="text-center text-gray-500 italic animate-pulse py-4">Loading...</h2>
+            <h2 class="text-center text-gray-500 italic animate-pulse py-4">{% trans "Loading..." %}</h2>
           </div>
         </div>
 

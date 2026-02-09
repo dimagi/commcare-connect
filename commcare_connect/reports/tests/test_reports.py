@@ -294,8 +294,9 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
         json={},
     )
     data = get_table_data_for_year_month(country_currency=filter_currency)
+    assert len(data)
+
     if opp_currency == filter_currency:
-        assert len(data)
         for row in data:
             if row["month_group"].month != now.month or row["month_group"].year != now.year:
                 continue
@@ -309,6 +310,20 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             assert row["intervention_funding_deployed"] == 5500
             assert row["organization_funding_deployed"] == 1000
             assert row["avg_top_earned_flws"] == 900
+    else:
+        for row in data:
+            if row["month_group"].month != now.month or row["month_group"].year != now.year:
+                continue
+
+            assert row["users"] == 0
+            assert row["services"] == 0
+            assert row["avg_time_to_payment"] == 0
+            assert row["max_time_to_payment"] == 0
+            assert row["flw_amount_earned"] == 0
+            assert row["flw_amount_paid"] == 0
+            assert row["intervention_funding_deployed"] == 0
+            assert row["organization_funding_deployed"] == 0
+            assert row["avg_top_earned_flws"] == 0
 
 
 class TestKPIReportPermission:

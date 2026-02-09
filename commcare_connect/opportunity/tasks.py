@@ -143,6 +143,7 @@ def invite_user(user_id, opportunity_access_id):
         data={
             "action": "ccc_opportunity_summary_page",
             "opportunity_id": str(opportunity_access.opportunity.id),
+            "opportunity_uuid": str(opportunity_access.opportunity.opportunity_id),
             "title": gettext(
                 f"You have been invited to a CommCare Connect opportunity - {opportunity_access.opportunity.name}"
             ),
@@ -275,6 +276,7 @@ def _get_learn_message(access: OpportunityAccess):
             data={
                 "action": "ccc_learn_progress",
                 "opportunity_id": str(access.opportunity.id),
+                "opportunity_uuid": str(access.opportunity.opportunity_id),
                 "title": gettext(f"Resume your learning journey for {access.opportunity.name}"),
                 "body": gettext(
                     f"You have not completed your learning for {access.opportunity.name}. "
@@ -296,6 +298,7 @@ def _get_deliver_message(access: OpportunityAccess):
         data={
             "action": "ccc_delivery_progress",
             "opportunity_id": str(access.opportunity.id),
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
             "title": gettext(f"Resume your job for {access.opportunity.name}"),
             "body": gettext(
                 f"You have not completed your delivery visits for {access.opportunity.name}. "
@@ -316,12 +319,14 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                 data={
                     "action": "ccc_payment",
                     "opportunity_id": str(opportunity.id),
+                    "opportunity_uuid": str(opportunity.opportunity_id),
                     "title": gettext("Payment received"),
                     "body": gettext(
                         "You have received a payment of "
                         f"{opportunity.currency_code} {payment.amount} for {opportunity.name}.",
                     ),
                     "payment_id": str(payment.id),
+                    "payment_uuid": str(payment.payment_id),
                 },
             )
         )
@@ -656,8 +661,8 @@ def _send_auto_invoice_created_notification(invoice_ids):
                         "opportunity:invoice_review",
                         kwargs={
                             "org_slug": org.slug,
-                            "opp_id": invoice.opportunity.id,
-                            "pk": invoice.pk,
+                            "opp_id": invoice.opportunity.opportunity_id,
+                            "pk": invoice.payment_invoice_id,
                         },
                     ),
                 ),
