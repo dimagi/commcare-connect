@@ -512,7 +512,7 @@ class InvoiceStatus(models.TextChoices):
     @classmethod
     def get_label(cls, status):
         if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            return cls.old_labels_map().get(status, gettext("Unknown"))
+            return cls.old_labels_map()[status]
         return cls(status).label
 
     @classmethod
