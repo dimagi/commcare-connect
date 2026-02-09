@@ -1362,7 +1362,7 @@ class TestInvoiceUpdateStatus:
         )
 
         assert response.status_code == 400
-        assert b"Network Managers cannot perform Program Manager actions" in response.content
+        assert b"You do not have permission to perform this action." in response.content
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
 
@@ -1384,6 +1384,6 @@ class TestInvoiceUpdateStatus:
         )
 
         assert response.status_code == 400
-        assert b"Program Managers cannot perform Network Manager actions" in response.content
+        assert b"You do not have permission to perform this action." in response.content
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW

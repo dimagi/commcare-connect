@@ -166,6 +166,7 @@ from commcare_connect.opportunity.utils.completed_work import (
     get_uninvoiced_completed_works_qs,
     get_uninvoiced_visit_items,
 )
+from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -1583,26 +1584,6 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         return _("Review Custom Invoice")
 
 
-INVOICE_STATUS_TRANSITIONS = {
-    InvoiceStatus.PENDING_NM_REVIEW: [
-        InvoiceStatus.PENDING_PM_REVIEW,
-        InvoiceStatus.CANCELLED_BY_NM,
-    ],
-    InvoiceStatus.PENDING_PM_REVIEW: [
-        InvoiceStatus.READY_TO_PAY,
-        InvoiceStatus.REJECTED_BY_PM,
-    ],
-    InvoiceStatus.READY_TO_PAY: [InvoiceStatus.REJECTED_BY_PM],
-}
-
-INVOICE_STATUS_MESSAGES = {
-    InvoiceStatus.PENDING_PM_REVIEW: _("Invoice %(invoice_number)s has been submitted for approval."),
-    InvoiceStatus.CANCELLED_BY_NM: _("Invoice %(invoice_number)s has been cancelled by Network Manager."),
-    InvoiceStatus.READY_TO_PAY: _("Invoice %(invoice_number)s has been approved and is ready to pay."),
-    InvoiceStatus.REJECTED_BY_PM: _("Invoice %(invoice_number)s has been rejected by Program Manager."),
-}
-
-
 @org_member_required
 @opportunity_required
 @require_POST
@@ -1624,19 +1605,9 @@ def invoice_update_status(request, org_slug, opp_id):
 
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
 
-    allowed_statuses = INVOICE_STATUS_TRANSITIONS.get(invoice.status, [])
-    if new_status not in allowed_statuses:
-        return HttpResponseBadRequest(
-            _("Invalid status transition. Current status: '%(current)s'. Cannot change to: '%(new)s'.")
-            % {"current": invoice.get_status_display(), "new": InvoiceStatus.get_label(new_status)}
-        )
-
-    nm_statuses = {InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.CANCELLED_BY_NM}
-    pm_statuses = {InvoiceStatus.READY_TO_PAY, InvoiceStatus.REJECTED_BY_PM}
-    if request.is_opportunity_pm and new_status in nm_statuses:
-        return HttpResponseBadRequest(_("Program Managers cannot perform Network Manager actions."))
-    if not request.is_opportunity_pm and new_status in pm_statuses:
-        return HttpResponseBadRequest(_("Network Managers cannot perform Program Manager actions."))
+    _, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, request.is_opportunity_pm)
+    if error:
+        return HttpResponseBadRequest(error)
 
     invoice.status = new_status
     if invoice.service_delivery:
@@ -1645,8 +1616,7 @@ def invoice_update_status(request, org_slug, opp_id):
     else:
         invoice.save(update_fields=["status"])
 
-    message = INVOICE_STATUS_MESSAGES.get(new_status, _("Invoice %(invoice_number)s status has been updated."))
-    messages.success(request, message % {"invoice_number": invoice.invoice_number})
+    messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
     return HttpResponse(
         status=204,
