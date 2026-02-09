@@ -1603,9 +1603,12 @@ def invoice_update_status(request, org_slug, opp_id):
     description = request.POST.get("description")
     new_status = request.POST.get("new_status")
 
+    if new_status not in InvoiceStatus.values:
+        return HttpResponseBadRequest(_("Invalid invoice status."))
+
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
 
-    _, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, request.is_opportunity_pm)
+    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, request.is_opportunity_pm)
     if error:
         return HttpResponseBadRequest(error)
 
