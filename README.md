@@ -56,7 +56,7 @@ GEOS_LIBRARY_PATH=...
 **For Ubuntu / Debian Linux:**
 
 ```bash
-sudo apt-get install -y binutils libproj-dev gdal-bin libgeos-dev
+sudo apt-get install -y binutils libproj-dev gdal-bin
 ```
 
     # start docker services
