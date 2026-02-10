@@ -37,7 +37,7 @@ DATABASES = {
 if env("RDS_HOSTNAME", default=None):
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql",
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
             "NAME": env("RDS_DB_NAME"),
             "USER": env("RDS_USERNAME"),
             "PASSWORD": env("RDS_PASSWORD"),
@@ -73,6 +73,7 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
+    "django.contrib.gis",
     "django.forms",
 ]
 THIRD_PARTY_APPS = [

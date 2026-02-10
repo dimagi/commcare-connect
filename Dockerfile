@@ -22,8 +22,8 @@ ENV PYTHONUNBUFFERED 1
 ENV DEBUG 0
 
 RUN apt-get update \
-  # psycopg2, gettext etc dependencies
-  && apt-get install -y libpq-dev gettext curl \
+  # psycopg2, gettext geodjango etc dependencies
+  && apt-get install -y libpq-dev gettext curl binutils libproj-dev gdal-bin \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/*
