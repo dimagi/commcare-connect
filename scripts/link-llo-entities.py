@@ -37,12 +37,12 @@ def link_orgs_to_llo_entities(llo_entity_by_name):
     if missing_ids:
         logger.warning("Missing Opportunity IDs (not found in DB): %s", missing_ids)
 
-    orgs_to_update = []
+    orgs_to_update = set()
     for opp in opps:
         org = opp.organization
         llo_name = INPUT_DATA[opp.id]
         org.llo_entity = llo_entity_by_name[llo_name]
-        orgs_to_update.append(org)
+        orgs_to_update.add(org)
 
     Organization.objects.bulk_update(orgs_to_update, ["llo_entity"])
 
