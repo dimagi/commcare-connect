@@ -58,6 +58,14 @@ class Flag(AbstractUserFlag):
 
         return cls.objects.filter(filters).distinct()
 
+    @classmethod
+    def is_flag_active_for_request(cls, request, flag_name: str):
+        user = getattr(request, "user", None)
+        if not (user and user.is_authenticated):
+            return False
+        active_flags_query = cls.active_flags_for_user(user, include_role_flags=True).filter(name=flag_name)
+        return active_flags_query.exists()
+
     def is_active_for(self, obj: Organization | Opportunity | Program):
         if isinstance(obj, Organization):
             organization_ids = self._get_ids_for_relation("organizations")

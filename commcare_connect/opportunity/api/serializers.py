@@ -60,7 +60,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
 class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
-        fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
+        fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
@@ -103,7 +103,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     learn_app = CommCareAppSerializer()
     deliver_app = CommCareAppSerializer()
-    currency = serializers.CharField(source="currency_fk_id", read_only=True)
+    currency = serializers.CharField(source="currency_id", read_only=True)
     claim = serializers.SerializerMethodField()
     learn_progress = serializers.SerializerMethodField()
     deliver_progress = serializers.SerializerMethodField()

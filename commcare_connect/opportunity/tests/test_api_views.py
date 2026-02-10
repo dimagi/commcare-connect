@@ -66,10 +66,10 @@ def test_claim_endpoint_success(mobile_user: User, api_client: APIClient):
 @pytest.mark.django_db
 @pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=["opportunity"])
 def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: APIClient):
-    PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
+    pu = PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
     opportunity.total_budget = 10 * 100
     if opportunity.managed:
-        opportunity.total_budget += 100 * opportunity.managedopportunity.org_pay_per_visit
+        opportunity.total_budget += 100 * pu.org_amount
     opportunity.end_date = datetime.date.today() + datetime.timedelta(days=100)
     opportunity.save()
 
@@ -219,7 +219,7 @@ def test_opportunity_list_endpoint(
     assert response.data[0]["verification_flags"]["form_submission_end"] == str(verification_flags.form_submission_end)
     payment_units = response.data[0]["payment_units"]
 
-    payment_unit_fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
+    payment_unit_fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
     assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
 
 

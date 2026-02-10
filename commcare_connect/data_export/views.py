@@ -77,7 +77,7 @@ class BaseStreamingCSVExportView(BaseDataExportView):
     def get_data_generator(self, *args, **kwargs):
         fieldnames = self.serializer_class().get_fields().keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
-        objects = self.get_queryset(*args, **kwargs)
+        objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=2000)
         yield writer.writeheader()
 
         for obj in objects:

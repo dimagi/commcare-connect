@@ -3,7 +3,7 @@ from datetime import datetime
 
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models
-from django.db.models.functions import Coalesce, ExtractDay, Least, TruncMonth
+from django.db.models.functions import Coalesce, ExtractDay, TruncMonth
 from django.utils.timezone import now
 
 from commcare_connect.connect_id_client import fetch_user_counts
@@ -37,8 +37,7 @@ def _get_cumulative_count(count_data: dict[str, int]):
 def get_connectid_user_counts_cumulative():
     user_counts = fetch_user_counts()
     total_user_counts = user_counts.get("total_users", {})
-    non_invited_user_counts = user_counts.get("non_invited_users", {})
-    return _get_cumulative_count(total_user_counts), _get_cumulative_count(non_invited_user_counts)
+    return _get_cumulative_count(total_user_counts)
 
 
 def get_activated_connect_user_counts_cumulative(delivery_type=None):
@@ -122,8 +121,8 @@ def get_table_data_for_year_month(
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})
     if country_currency:
-        filter_kwargs.update({"opportunity_access__opportunity__currency_fk": country_currency})
-        filter_kwargs_nm.update({"invoice__opportunity__currency_fk": country_currency})
+        filter_kwargs.update({"opportunity_access__opportunity__currency": country_currency})
+        filter_kwargs_nm.update({"invoice__opportunity__currency": country_currency})
 
     max_visit_date = (
         UserVisit.objects.filter(completed_work_id=models.OuterRef("id"), status=VisitValidationStatus.approved)
@@ -201,36 +200,30 @@ def get_table_data_for_year_month(
 
     _calculate_avg_top_earned_flws(base_visit_data_qs, start_date, end_date, visit_data_dict, delivery_type_name)
 
-    connectid_user_count, non_invited_user_counts = get_connectid_user_counts_cumulative()
+    connectid_user_count = get_connectid_user_counts_cumulative()
     total_activated_connect_user_counts = get_activated_connect_user_counts_cumulative(delivery_type)
 
     hq_sso_users = (
-        UserAnalyticsData.objects.annotate(month_group=TruncMonth("has_sso_on_hq_app"))
+        UserAnalyticsData.objects.filter(has_sso_on_hq_app__isnull=False)
+        .annotate(month_group=TruncMonth("has_sso_on_hq_app"))
         .values("month_group")
         .annotate(users=models.Count("username"))
+        .order_by("month_group")
     )
-    hq_sso_users_data = {item["month_group"]: item["users"] for item in hq_sso_users}
-    activated_personalid_accounts = (
-        UserAnalyticsData.objects.filter(
-            models.Q(has_ever_earned_payment__isnull=False) | models.Q(has_sso_on_hq_app__isnull=False)
-        )
-        .annotate(month_group=TruncMonth(Least("has_ever_earned_payment", "has_sso_on_hq_app")))
-        .values("month_group")
-        .annotate(users=models.Count("username"))
-    )
-    activated_personalid_accounts_data = {
-        item["month_group"].strftime("%Y-%m"): item["users"] for item in activated_personalid_accounts
-    }
+    hq_sso_user_months = {item["month_group"].strftime("%Y-%m"): item["users"] for item in hq_sso_users}
+    hq_sso_users_data = _get_cumulative_count(hq_sso_user_months)
 
     for group_key in visit_data_dict.keys():
         month_group = group_key[0]
+        connectid_users = connectid_user_count.get(month_group, 0)
+        activated_connect_users = total_activated_connect_user_counts.get(month_group, 0)
+        activated_commcare_users = hq_sso_users_data.get(month_group, 0)
         visit_data_dict[group_key].update(
             {
-                "connectid_users": connectid_user_count.get(month_group, 0),
-                "activated_connect_users": total_activated_connect_user_counts.get(month_group, 0),
-                "non_preregistered_users": non_invited_user_counts.get(month_group, 0),
-                "hq_sso_users": hq_sso_users_data.get(month_group, 0),
-                "activated_personalid_accounts": activated_personalid_accounts_data.get(month_group, 0),
+                "connectid_users": connectid_users,
+                "activated_connect_users": activated_connect_users,
+                "activated_commcare_users": activated_commcare_users,
+                "activated_personalid_accounts": activated_commcare_users + activated_connect_users,
             }
         )
     return list(visit_data_dict.values())

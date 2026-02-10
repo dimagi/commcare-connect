@@ -200,6 +200,20 @@
 }
 
 @layer components {
+  .chat-widget-container {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 100;
+  }
+
+  .chat-widget-container > open-chat-studio-widget {
+    position: static;
+    inset: auto;
+  }
+}
+
+@layer components {
   .button-text {
     @apply text-brand-deep-purple flex cursor-pointer items-center gap-2 rounded-full px-4 py-1;
   }

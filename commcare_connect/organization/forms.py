@@ -4,27 +4,32 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
 from commcare_connect.users.models import User
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS
+from commcare_connect.utils.forms import CreatableModelChoiceField
+from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 
 class OrganizationChangeForm(forms.ModelForm):
+    llo_entity = forms.ChoiceField(
+        choices=[(None, gettext("No LLO Entity linked."))], label=gettext("LLO Entity"), required=False, disabled=True
+    )
+
     class Meta:
         model = Organization
-        fields = ("name", "program_manager")
+        fields = ("name", "program_manager", "llo_entity")
         labels = {
             "name": gettext("Organization Name"),
             "program_manager": gettext("Enable Program Manager"),
         }
 
     def __init__(self, *args, **kwargs):
-        user = kwargs.pop("user")
+        self.user = kwargs.pop("user")
         super().__init__(*args, **kwargs)
 
         layout_fields = [layout.Field("name")]
 
-        if user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
+        if self.user.has_perm(ORG_MANAGEMENT_SETTINGS_ACCESS):
             layout_fields.append(
                 layout.Field(
                     "program_manager",
@@ -35,6 +40,21 @@ class OrganizationChangeForm(forms.ModelForm):
         else:
             del self.fields["program_manager"]
 
+        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            self.fields["llo_entity"] = CreatableModelChoiceField(
+                label=gettext("LLO Entity"),
+                queryset=LLOEntity.objects.order_by("name"),
+                widget=forms.Select(),
+                empty_label=gettext("Select a LLO Entity"),
+                required=False,
+                create_key_name="name",
+            )
+        else:
+            if self.instance and self.instance.llo_entity:
+                self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, self.instance.llo_entity.name)]
+
+        layout_fields.append(layout.Field("llo_entity"))
+
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
             *layout_fields,
@@ -43,6 +63,11 @@ class OrganizationChangeForm(forms.ModelForm):
                 css_class="flex justify-end",
             ),
         )
+
+    def clean_llo_entity(self):
+        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            return self.cleaned_data["llo_entity"]
+        return self.instance.llo_entity
 
 
 class MembershipForm(forms.ModelForm):

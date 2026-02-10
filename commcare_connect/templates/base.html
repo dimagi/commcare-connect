@@ -61,6 +61,20 @@
         {% endblock %}
       </main>
     </div>
+
+    {% if request.user.is_authenticated and chat_widget_enabled %}
+      <div class="chat-widget-container">
+        <open-chat-studio-widget
+          visible="false"
+          chatbot-id="{{ chatbot_id }}"
+          embed-key="{{ chatbot_embed_key }}"
+          button-text="{% translate 'Need help?' %}"
+          position="right"
+          expanded="false">
+        </open-chat-studio-widget>
+      </div>
+    {% endif %}
+
   {% block inline_javascript %}
     {% comment %}
       Script tags with only code, no src (defer by default). To run

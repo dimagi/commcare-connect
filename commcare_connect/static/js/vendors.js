@@ -3,3 +3,5 @@ import 'htmx.org/dist/ext/loading-states';
 
 import './alpine';
 import './flatpickr';
+
+import 'open-chat-studio-widget';
