@@ -34,7 +34,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # allow running the deid-scripts in development
 INSTALLED_APPS += ["commcare_connect.deid"]
 
-# 2. Set the paths to the GDAL and GEOS libraries if we're on a Mac
+# Set the paths to the GDAL and GEOS libraries if we're on a Mac
 if platform.system() == "Darwin":
     GDAL_LIBRARY_PATH = env("GDAL_LIBRARY_PATH")
     GEOS_LIBRARY_PATH = env("GEOS_LIBRARY_PATH")
