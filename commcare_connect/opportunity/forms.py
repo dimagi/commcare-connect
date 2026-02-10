@@ -7,6 +7,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
+from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Min, Q, Sum, TextChoices
 from django.urls import reverse
@@ -1579,6 +1580,55 @@ class PaymentInvoiceForm(forms.ModelForm):
 
         if commit:
             instance.save()
+        return instance
+
+
+class PMEditPaymentInvoiceForm(forms.ModelForm):
+    """
+    Form for invoice edit specifically for PM role only
+    """
+
+    invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
+
+    class Meta:
+        model = PaymentInvoice
+        fields = ("invoice_ticket_link",)
+
+    def __init__(self, *args, **kwargs):
+        self.request = kwargs.pop("request")
+        self.org_slug = kwargs.pop("org_slug")
+        self.opportunity = kwargs.pop("opportunity")
+
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+
+        self._prepare_fields()
+        self._add_form_submit()
+
+    def _prepare_fields(self):
+        self.fields["invoice_ticket_link"].initial = self.instance.invoice_ticket_link
+        self.fields["invoice_ticket_link"].widget.attrs.update(
+            {
+                "placeholder": _("Add link for invoice ticket for reference"),
+            }
+        )
+
+    def _add_form_submit(self):
+        self.helper.add_input(Submit("submit", _("Submit"), css_class="button button-md primary-dark"))
+        self.helper.form_action = reverse(
+            "opportunity:pm_payment_invoice_edit",
+            args=[self.org_slug, str(self.opportunity.opportunity_id), str(self.instance.payment_invoice_id)],
+        )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.invoice_ticket_link = self.cleaned_data["invoice_ticket_link"]
+
+        if commit:
+            try:
+                instance.save()
+            except Exception as e:
+                messages.error(self.request, _("Could not save invoice. {error_message}").format(error_message=e))
         return instance
 
 

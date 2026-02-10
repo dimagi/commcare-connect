@@ -112,6 +112,11 @@ urlpatterns = [
     path("<slug:opp_id>/user_invite/", view=opportunity_user_invite, name="user_invite"),
     path("<slug:opp_id>/invoice/", views.invoice_list, name="invoice_list"),
     path("<slug:opp_id>/invoice/create/", views.InvoiceCreateView.as_view(), name="invoice_create"),
+    path(
+        "<slug:opp_id>/invoice/<slug:invoice_id>/pm/edit/",
+        views.PMPaymentInvoiceEditView.as_view(),
+        name="pm_payment_invoice_edit",
+    ),
     path("<slug:opp_id>/invoice/<slug:pk>/review/", views.InvoiceReviewView.as_view(), name="invoice_review"),
     path("<slug:opp_id>/invoice/submit/", views.submit_invoice, name="submit_invoice"),
     path("<slug:opp_id>/invoice/approve/", views.invoice_approve, name="invoice_approve"),

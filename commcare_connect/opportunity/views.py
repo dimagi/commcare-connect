@@ -54,7 +54,12 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW, USER_VISIT_FILTERS
+from commcare_connect.flags.switch_names import (
+    AUTOMATED_INVOICES,
+    INVOICE_REVIEW,
+    UPDATES_TO_MARK_AS_PAID_WORKFLOW,
+    USER_VISIT_FILTERS,
+)
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -80,6 +85,7 @@ from commcare_connect.opportunity.forms import (
     PaymentExportForm,
     PaymentInvoiceForm,
     PaymentUnitForm,
+    PMEditPaymentInvoiceForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
 )
@@ -1493,6 +1499,19 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().opportunity_id))
 
 
+class PMPaymentInvoiceEditView(OrganizationProgramManagerMixin, OpportunityObjectMixin, UpdateView):
+    form_class = PMEditPaymentInvoiceForm
+
+    def dispatch(self, request, *args, **kwargs):
+        if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            raise Http404("Invoice edit feature is not available")
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        # ToDo: define post
+        pass
+
+
 class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_detail.html"
@@ -1538,6 +1557,13 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 ],
             }
         )
+        if self.request.is_opportunity_pm and switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            context["pm_edit_payment_invoice_form"] = PMEditPaymentInvoiceForm(
+                request=self.request,
+                org_slug=org_slug,
+                opportunity=opportunity,
+                instance=self.object,
+            )
         return context
 
     def get_form(self):
