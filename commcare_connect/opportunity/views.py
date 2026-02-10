@@ -1507,9 +1507,52 @@ class PMPaymentInvoiceEditView(OrganizationProgramManagerMixin, OpportunityObjec
             raise Http404("Invoice edit feature is not available")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_object(self, queryset=None):
+        return get_object_or_404(
+            PaymentInvoice,
+            payment_invoice_id=self.kwargs.get("invoice_id"),
+            opportunity_id=self.get_opportunity().id,
+        )
+
     def post(self, request, *args, **kwargs):
-        # ToDo: define post
-        pass
+        org_slug = kwargs["org_slug"]
+        payment_invoice = self.get_object()
+
+        opportunity = self.get_opportunity()
+        if not request.is_opportunity_pm:
+            messages.error(request, _("Missing permissions to perform this action"))
+            return redirect(
+                "opportunity:invoice_review",
+                org_slug,
+                opportunity.opportunity_id,
+                payment_invoice.payment_invoice_id,
+            )
+
+        form = self.get_form()
+        if not form.is_valid():
+            for error_field, error_messages in form.errors.items():
+                messages.error(request, f"{form.fields[error_field].label}: {','.join(error_messages)}")
+            return redirect(
+                "opportunity:invoice_review",
+                org_slug,
+                opportunity.opportunity_id,
+                payment_invoice.payment_invoice_id,
+            )
+
+        form.save()
+        return redirect(
+            "opportunity:invoice_review",
+            org_slug,
+            opportunity.opportunity_id,
+            payment_invoice.payment_invoice_id,
+        )
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["request"] = self.request
+        kwargs["org_slug"] = self.request.org.slug
+        kwargs["opportunity"] = self.get_opportunity()
+        return kwargs
 
 
 class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailView):
