@@ -572,9 +572,9 @@ class CompletedWork(models.Model):
     saved_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
-    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the organization")
+    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the workspace")
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
+        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the workspace in USD."
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
