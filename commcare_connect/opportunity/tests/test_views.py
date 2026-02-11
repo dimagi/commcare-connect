@@ -13,7 +13,7 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AutomatedPaymentInvoiceForm,
@@ -1314,6 +1314,55 @@ class TestSubmitInvoiceView(BaseTestInvoiceView):
         # assert values present
         assert invoice_status_events[1].pgh_context.metadata["username"]
         assert invoice_status_events[1].pgh_context.metadata["user_email"]
+
+
+class TestDownloadInvoiceView(BaseTestInvoiceView):
+    @staticmethod
+    def _url_(opportunity, invoice_id):
+        return reverse(
+            "opportunity:download_invoice",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice_id),
+        )
+
+    def test_switch_inactive(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        client.force_login(user)
+        url = self._url_(opportunity, invoice.payment_invoice_id)
+        response = client.get(url)
+
+        assert response.status_code == 404
+        assert "Invoice download feature is not available" in str(response.content)
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_successful_download(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        client.force_login(user)
+        url = self._url_(opportunity, invoice.payment_invoice_id)
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "application/pdf"
+        assert response.headers["Content-Disposition"] == 'attachment;filename="invoice_{}.pdf"'.format(
+            invoice.payment_invoice_id
+        )
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_missing_invoice(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        client.force_login(user)
+        url = self._url_(opportunity, uuid4())
+        response = client.get(url)
+
+        assert response.status_code == 404
+        assert "No PaymentInvoice matches the given query." in str(response.content)
 
 
 @pytest.mark.django_db
