@@ -31,6 +31,7 @@ DATABASES = {
         default="postgres:///commcare_connect",
     ),
 }
+DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 
 # DATABASES staging/production
 # ------------------------------------------------------------------------------
