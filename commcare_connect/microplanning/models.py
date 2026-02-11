@@ -4,43 +4,24 @@ from django.utils.translation import gettext_lazy as _
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 
 
-class WorkAreaStatus:
-    NOT_STARTED = "not_started"
-
-    # To Do
-    UNASSIGNED = "unassigned"
-    NOT_VISITED = "not_visited"
-
-    # In Progress
-    VISITED = "visited"
-    REQUEST_INACCESSIBLE = "request_inaccessible"
-
-    # Done (Terminal)
-    EXPECTED_VISIT_REACHED = "expected_visit_reached"
-    INACCESSIBLE = "inaccessible"
-    EXCLUDED = "excluded"
-
-    CHOICES = [
-        (NOT_STARTED, _("Not Started")),
-        (UNASSIGNED, _("Unassigned")),
-        (NOT_VISITED, _("Not Visited")),
-        (VISITED, _("Visited")),
-        (REQUEST_INACCESSIBLE, _("Request for Inaccessible")),
-        (EXPECTED_VISIT_REACHED, _("Expected Visit Count Reached")),
-        (INACCESSIBLE, _("Inaccessible")),
-        (EXCLUDED, _("Excluded")),
-    ]
-
-    TO_DO_STATES = {UNASSIGNED, NOT_VISITED}
-    IN_PROGRESS_STATES = {VISITED, REQUEST_INACCESSIBLE}
-    TERMINAL_STATES = {EXPECTED_VISIT_REACHED, INACCESSIBLE, EXCLUDED}
+class WorkAreaStatus(geo_models.TextChoices):
+    NOT_STARTED = "NOT_STARTED", _("Not Started")
+    UNASSIGNED = "UNASSIGNED", _("Unassigned")
+    NOT_VISITED = "NOT_VISITED", _("Not Visited")
+    VISITED = "VISITED", _("Visited")
+    REQUEST_FOR_INACCESSIBLE = "REQUEST_FOR_INACCESSIBLE", _("Request for Inaccessible")
+    EXPECTED_VISIT_REACHED = "EXPECTED_VISIT_REACHED", _("Expected Visit Count Reached")
+    INACCESSIBLE = "INACCESSIBLE", _("Inaccessible")
+    EXCLUDED = "EXCLUDED", _("Excluded")
 
 
 class WorkAreaGroup(geo_models.Model):
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
     assigned_user = geo_models.ForeignKey(OpportunityAccess, on_delete=geo_models.CASCADE)
     ward = geo_models.SlugField(max_length=255)
-    name = geo_models.CharField(max_length=255)
+    name = geo_models.CharField(
+        max_length=255,
+    )
 
 
 class WorkArea(geo_models.Model):
@@ -61,7 +42,7 @@ class WorkArea(geo_models.Model):
     building_count = geo_models.PositiveIntegerField(default=0)
     expected_visit_count = geo_models.PositiveIntegerField(default=0)
     status = geo_models.CharField(
-        choices=WorkAreaStatus.CHOICES,
+        choices=WorkAreaStatus.choices,
         default=WorkAreaStatus.NOT_STARTED,
     )
 
