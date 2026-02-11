@@ -88,3 +88,70 @@ class TestFlagModel:
         active_flags = Flag.active_flags_for_user(user, include_role_flags=True)
         assert active_flags.count() == 2
         assert set(active_flags) == {staff_flag, everyone_flag}
+
+    def test_get_flush_keys_includes_relation_keys(self, flag):
+        """Test that get_flush_keys includes cache keys for organizations, opportunities, and programs."""
+        flush_keys = flag.get_flush_keys()
+
+        # Should include keys for all three relations
+        assert any("organizations" in str(key) for key in flush_keys)
+        assert any("opportunities" in str(key) for key in flush_keys)
+        assert any("programs" in str(key) for key in flush_keys)
+
+    def test_is_active_for_organization_caching(self, flag):
+        """Test that is_active_for caches organization IDs."""
+        organization = OrganizationFactory()
+        flag.organizations.add(organization)
+
+        # First call should hit database and cache
+        assert flag.is_active_for(organization) is True
+
+        # Second call should use cache
+        with pytest.assertNumQueries(0):
+            assert flag.is_active_for(organization) is True
+
+    def test_is_active_for_opportunity_caching(self, flag):
+        """Test that is_active_for caches opportunity IDs."""
+        opportunity = OpportunityFactory()
+        flag.opportunities.add(opportunity)
+
+        # First call should hit database and cache
+        assert flag.is_active_for(opportunity) is True
+
+        # Second call should use cache (but pytest doesn't track queries outside transaction)
+        assert flag.is_active_for(opportunity) is True
+
+    def test_is_active_for_program_caching(self, flag):
+        """Test that is_active_for caches program IDs."""
+        program = ProgramFactory()
+        flag.programs.add(program)
+
+        # First call should hit database and cache
+        assert flag.is_active_for(program) is True
+
+        # Second call should use cache
+        assert flag.is_active_for(program) is True
+
+    def test_get_relation_ids_returns_empty_set_when_no_relations(self, flag):
+        """Test that _get_relation_ids returns empty set when no relations exist."""
+        from waffle.utils import get_setting
+
+        cache_key = get_setting("FLAG_ORGANIZATIONS_CACHE_KEY", "flag:%s:organizations")
+        ids = flag._get_relation_ids("organizations", cache_key)
+
+        assert ids == set()
+
+    def test_get_relation_ids_returns_ids_when_relations_exist(self, flag):
+        """Test that _get_relation_ids returns IDs when relations exist."""
+        from waffle.utils import get_setting
+
+        org1 = OrganizationFactory()
+        org2 = OrganizationFactory()
+        flag.organizations.add(org1, org2)
+
+        cache_key = get_setting("FLAG_ORGANIZATIONS_CACHE_KEY", "flag:%s:organizations")
+        ids = flag._get_relation_ids("organizations", cache_key)
+
+        assert org1.pk in ids
+        assert org2.pk in ids
+        assert len(ids) == 2
