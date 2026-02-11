@@ -1404,11 +1404,11 @@ class TestAddPaymentUnitView:
 @pytest.mark.django_db
 class TestInvoiceUpdateStatus:
     @pytest.fixture
-    def nm_organization(self, db):
+    def nm_organization(self):
         return OrgWithUsersFactory()
 
     @pytest.fixture
-    def pm_organization(self, db):
+    def pm_organization(self):
         return ProgramManagerOrgWithUsersFactory()
 
     @pytest.fixture
