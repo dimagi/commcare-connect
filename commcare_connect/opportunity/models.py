@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
+import pghistory
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Count, F, Q, Sum
@@ -491,6 +492,7 @@ class InvoiceStatus(models.TextChoices):
     ARCHIVED = "archived", gettext("Archived")
 
 
+@pghistory.track(fields=["status"])
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
         service_delivery = "service_delivery", gettext("Service Delivery")
