@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 
@@ -186,9 +187,9 @@ def invite_organization(request, org_slug, pk):
     )
 
     if created:
-        messages.success(request, "Workspace invited successfully!")
+        messages.success(request, _("Workspace invited successfully!"))
     else:
-        messages.info(request, "The invitation for this workspace has been updated.")
+        messages.info(request, _("The invitation for this workspace has been updated."))
 
     send_program_invite_email(obj.id)
 

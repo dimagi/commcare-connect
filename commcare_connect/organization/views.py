@@ -96,7 +96,9 @@ def remove_members(request, org_slug):
 @login_required
 def accept_invite(request, org_slug, invite_id):
     get_object_or_404(UserOrganizationMembership, invite_id=invite_id)
-    messages.success(request, message=f"Accepted invite for joining {org_slug} workspace.")
+    messages.success(
+        request, message=gettext("Accepted invite for joining {org_slug} workspace.").format(org_slug=org_slug)
+    )
     return redirect("organization:home", org_slug)
 
 
