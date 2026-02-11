@@ -17,6 +17,7 @@
                         <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
                           {{ request.org.name }}
                         </p>
+                        <p class="text-gray-500 text-sm font-medium">{{ request.org.llo_entity.name }}</p>
                         <p class="text-xs text-gray-400">{{ request.org.program_manager|yesno:"Program,Network"}} Manager</p>
                       {% else %}
                         <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
@@ -39,6 +40,7 @@
                               <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
                                 <a href="{% url 'opportunity:list' membership.organization.slug %}">
                                   <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
+                                  <p class="text-gray-500 text-sm font-medium">{{ membership.organization.llo_entity.name }}</p>
                                   <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
                                 </a>
                               </li>
