@@ -27,7 +27,7 @@ def reverse_migrate_new_status_to_old(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0109_paymentunit_org_amount"),
+        ("opportunity", "0110_paymentinvoicestatusevent_and_more"),
     ]
 
     operations = [

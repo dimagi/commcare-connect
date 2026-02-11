@@ -26,6 +26,9 @@ urlpatterns = [
     path("a/<slug:org_slug>/", include("commcare_connect.organization.urls")),
     path("a/<slug:org_slug>/opportunity/", include("commcare_connect.opportunity.urls", namespace="opportunity")),
     path("a/<slug:org_slug>/program/", include("commcare_connect.program.urls", namespace="program")),
+    path(
+        "a/<slug:org_slug>/microplanning/", include("commcare_connect.microplanning.urls", namespace="microplanning")
+    ),
     path("admin_reports/", include("commcare_connect.reports.urls")),
     path("hq/", include("commcare_connect.commcarehq.urls", namespace="commcarehq")),
     path("export/", include("commcare_connect.data_export.urls", namespace="data_export")),

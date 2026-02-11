@@ -89,6 +89,8 @@ THIRD_PARTY_APPS = [
     "oauth2_provider",
     "django_tables2",
     "waffle",
+    "pghistory",
+    "pgtrigger",  # added for pghistory
 ]
 
 LOCAL_APPS = [
@@ -104,6 +106,7 @@ LOCAL_APPS = [
     "commcare_connect.reports",
     "commcare_connect.users",
     "commcare_connect.web",
+    "commcare_connect.microplanning",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -154,6 +157,7 @@ MIDDLEWARE = [
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
     "waffle.middleware.WaffleMiddleware",
+    "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
 ]
 
 # STATIC

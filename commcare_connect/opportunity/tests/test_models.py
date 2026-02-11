@@ -1,6 +1,8 @@
+from unittest import TestCase
+
 import pytest
 
-from commcare_connect.opportunity.models import Opportunity, OpportunityClaimLimit, UserVisit
+from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, UserVisit
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -9,6 +11,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
+    PaymentInvoiceFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
@@ -16,6 +19,26 @@ from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
 from commcare_connect.utils.flags import Flags
+
+
+class TestPaymentInvoice(TestCase):
+    def test_pghistory_tracking(self):
+        payment_invoice = PaymentInvoiceFactory()
+
+        invoice_status_events = payment_invoice.status_events.all()
+        assert len(invoice_status_events) == 1
+        assert invoice_status_events[0].status == InvoiceStatus.PENDING
+        # no context since this was not done via django view/request but directly via model
+        assert invoice_status_events[0].pgh_context is None
+
+        payment_invoice.status = InvoiceStatus.SUBMITTED
+        payment_invoice.save()
+
+        invoice_status_events = payment_invoice.status_events.all()
+        assert len(invoice_status_events) == 2
+        assert invoice_status_events[1].status == InvoiceStatus.SUBMITTED
+        # no context since this was not done via django view/request but directly via model
+        assert invoice_status_events[0].pgh_context is None
 
 
 @pytest.mark.django_db

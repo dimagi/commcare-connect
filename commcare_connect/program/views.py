@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
-from django.db.models.functions import Concat
+from django.db.models.functions import Coalesce, Concat
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -261,7 +261,21 @@ def program_home(request, org_slug):
 
 
 def program_manager_home(request, org):
-    programs = (
+    program_applications_prefetch = Prefetch(
+        "programapplication_set",
+        queryset=ProgramApplication.objects.select_related("organization").annotate(
+            current_budget=Coalesce(
+                Sum(
+                    "program__managedopportunity__total_budget",
+                    filter=Q(program__managedopportunity__organization=F("organization")),
+                ),
+                Value(0),
+            )
+        ),
+        to_attr="applications_with_budget",
+    )
+
+    programs_qs = (
         Program.objects.filter(organization=org)
         .order_by("-start_date")
         .annotate(
@@ -280,14 +294,20 @@ def program_manager_home(request, org):
                 filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
             ),
         )
+        .prefetch_related(program_applications_prefetch)
     )
+
+    programs = list(programs_qs)
+    for program in programs:
+        applications = getattr(program, "applications_with_budget", [])
+        program.allocated_budget = sum(application.current_budget for application in applications)
 
     pending_review_data = (
         UserVisit.objects.filter(
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.pending,
             opportunity__managed=True,
-            opportunity__managedopportunity__program__in=programs,
+            opportunity__managedopportunity__program__in=programs_qs,
         )
         .values(
             "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
@@ -300,7 +320,7 @@ def program_manager_home(request, org):
     pending_payments_data = (
         PaymentInvoice.objects.filter(
             opportunity__managed=True,
-            opportunity__managedopportunity__program__in=programs,
+            opportunity__managedopportunity__program__in=programs_qs,
             payment__isnull=True,
         )
         .values(

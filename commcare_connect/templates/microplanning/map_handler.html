@@ -1,0 +1,45 @@
+<script>
+    document.addEventListener("alpine:init", () => {
+        Alpine.data("mapController", () => ({
+            panelOpen: true,
+            map: null,
+
+            init() {
+                this.$nextTick(() => {
+                    this.initializeMap();
+                });
+            },
+
+            initializeMap() {
+                const accessToken = '{{ mapbox_api_key|escapejs }}';
+                if (!MapboxUtils.setAccessToken(accessToken)) return;
+
+                this.map = MapboxUtils.createMap({
+                    container: 'map',
+                    style: 'mapbox://styles/mapbox/standard',
+                    projection: 'globe',
+                    zoom: 6,
+                    center: [8.675, 9.082]
+                });
+
+                MapboxUtils.addNavigation(this.map, 'top-left');
+
+                const draw = MapboxUtils.addDrawControls(this.map);
+
+                this.map.on('style.load', () => {
+                    this.map.setFog({});
+                });
+
+                const $mapContainer = document.getElementById('map');
+                const observer = new ResizeObserver(() => {
+                    this.map.resize();
+                });
+                observer.observe($mapContainer);
+            },
+
+            togglePanel() {
+                this.panelOpen = !this.panelOpen;
+            }
+        }));
+    });
+</script>

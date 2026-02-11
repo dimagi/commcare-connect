@@ -2,10 +2,37 @@
 {% load static %}
 {% load crispy_forms_tags %}
 {% load django_tables2 %}
-{% block content %}
 {% load i18n %}
 
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
 
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('[data-tomselect]').forEach((el) => {
+        el.removeAttribute('class');
+        let settings = {
+          plugins: ["remove_button"],
+          create: true,
+          render: {
+            option_create: function(data, escape) {
+              return "<div class='create'><i class='fa-solid fa-plus'></i> Create <strong>" + escape(data.input) + "</strong>&hellip;</div>";
+            },
+          }
+        };
+        new TomSelect(el, settings);
+      });
+    });
+  </script>
+{% endblock javascript %}
+
+
+{% block content %}
 <p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">{{request.org.name}}</p>
 
 <div
