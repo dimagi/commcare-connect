@@ -1,5 +1,3 @@
-from unittest import TestCase
-
 import pytest
 
 from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, UserVisit
@@ -21,7 +19,8 @@ from commcare_connect.users.tests.factories import MobileUserFactory
 from commcare_connect.utils.flags import Flags
 
 
-class TestPaymentInvoice(TestCase):
+@pytest.mark.django_db
+class TestPaymentInvoice:
     def test_pghistory_tracking(self):
         payment_invoice = PaymentInvoiceFactory()
 
@@ -34,11 +33,11 @@ class TestPaymentInvoice(TestCase):
         payment_invoice.status = InvoiceStatus.SUBMITTED
         payment_invoice.save()
 
-        invoice_status_events = payment_invoice.status_events.all()
-        assert len(invoice_status_events) == 2
-        assert invoice_status_events[1].status == InvoiceStatus.SUBMITTED
+        assert payment_invoice.status_events.count() == 2
+        recent_invoice_status_event = payment_invoice.status_events.last()
+        assert recent_invoice_status_event.status == InvoiceStatus.SUBMITTED
         # no context since this was not done via django view/request but directly via model
-        assert invoice_status_events[0].pgh_context is None
+        assert recent_invoice_status_event.pgh_context is None
 
 
 @pytest.mark.django_db
