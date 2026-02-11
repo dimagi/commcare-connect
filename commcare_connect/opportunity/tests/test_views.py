@@ -35,6 +35,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
+    CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -1465,6 +1466,11 @@ class TestInvoiceUpdateStatus:
             nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-002"
         )
 
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+
         client.force_login(nm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
         response = client.post(
@@ -1480,6 +1486,11 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.CANCELLED_BY_NM
         assert invoice.description == "Cancelled due to errors"
+
+        completed_work_1.refresh_from_db()
+        completed_work_2.refresh_from_db()
+        assert completed_work_1.invoice is None
+        assert completed_work_2.invoice is None
 
     def test_pm_approve_for_payment_success(self, client, nm_organization, pm_organization, pm_user_admin):
         opportunity, invoice = self._create_invoice(
@@ -1506,6 +1517,10 @@ class TestInvoiceUpdateStatus:
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-002"
         )
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
 
         client.force_login(pm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
@@ -1522,6 +1537,11 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.REJECTED_BY_PM
         assert invoice.description == "Rejected due to discrepancies"
+
+        completed_work_1.refresh_from_db()
+        completed_work_2.refresh_from_db()
+        assert completed_work_1.invoice is None
+        assert completed_work_2.invoice is None
 
     def test_invalid_status_transition(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(

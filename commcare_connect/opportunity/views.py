@@ -1618,6 +1618,8 @@ def invoice_update_status(request, org_slug, opp_id):
     if invoice.service_delivery:
         invoice.description = description
         invoice.save(update_fields=["status", "description"])
+        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+            CompletedWork.objects.filter(invoice=invoice).update(invoice=None)
     else:
         invoice.save(update_fields=["status"])
 
