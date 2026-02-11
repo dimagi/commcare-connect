@@ -12,7 +12,30 @@
 {% endblock javascript %}
 
 {% block content %}
-<h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
+<div class="flex items-center justify-center mb-2">
+    <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+        <p class="text-sm text-brand-deep-purple">
+            {% translate "Select Opportunity Area" %}
+        </p>
+        <div class="flex items-end space-x-2">
+            {% if task_id %}
+                <button hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}?task_id={{ task_id }}&status_check=1"
+                    hx-trigger="load, every 3s" hx-swap="outerHTML" class="button button-md" disabled>
+                    <i class="fa-solid fa-spinner animate-spin"></i> {% translate "Uploading Work Areas..." %}
+                </button>
+            {% endif %}
+            <button type="button"
+                hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+                hx-target="#modal-container" class="button button-md primary-dark">
+                    <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
+            </button>
+        </div>
+    </div>
+
+    {% block modals %}
+        <div id="modal-container" x-data="{ showImportWorkAreaModal: false }"></div>
+    {% endblock %}
+</div>
 <div x-ref="mapContainer" class="w-full grid grid-cols-12 gap-2 h-[max(calc(100vh-150px),200px)]"
     x-data="mapController()">
     <div id="map-wrapper" class="relative h-full shadow-md" :class="panelOpen ? 'col-span-9' : 'col-span-12'">
@@ -25,10 +48,9 @@
             <i x-show="!panelOpen" class="fa fa-chevron-left"></i>
         </button>
     </div>
-    <aside id="sidebar" class="col-span-3 h-full bg-white shadow-md p-4 overflow-auto" x-transition x-show="panelOpen">
-        <h2 class="text-lg font-semibold mb-2">{% translate "Settings" %}</h2>
-        <!-- Sidebar content goes here -->
-    </aside>
+<aside id="sidebar" class="col-span-3 h-full bg-white shadow-md p-4 overflow-auto" x-transition x-show="panelOpen">
+    <h2 class="text-lg font-semibold mb-4">{% translate "Settings" %}</h2>
+</aside>
 </div>
 {% include "microplanning/map_handler.html" %}
 {% endblock %}

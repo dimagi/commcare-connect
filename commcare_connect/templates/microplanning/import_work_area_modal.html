@@ -1,0 +1,103 @@
+{% load i18n static %}
+
+<div x-show="showImportWorkAreaModal" class="modal-backdrop" x-cloak x-init="showImportWorkAreaModal = true">
+    <div class="modal">
+        <div class="header text-lg font-semibold text-brand-deep-purple">
+            <h1>{{ title }}</h1>
+            <button @click="showImportWorkAreaModal = false">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        {% if result_ready %}
+        <div>
+            {% if result_data.errors %}
+            <div class="mt-4 border-t border-gray-100 pt-4">
+                <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                    <i class="fa-solid fa-circle-exclamation text-red-500"></i>
+                    {% translate "Issues Found in CSV" %}
+                </h3>
+
+                <div class="max-h-64 overflow-y-auto custom-scrollbar border border-gray-200 rounded-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                    {% translate "Error Description" %}</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">
+                                    {% translate "Row Numbers" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-100">
+                            {% for msg, lines in result_data.errors.items %}
+                            <tr class="hover:bg-red-50/30 transition-colors">
+                                <td class="px-3 py-2 text-sm text-gray-700 leading-snug">
+                                    {{ msg }}
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm text-red-600 font-mono font-medium">
+                                    {{ lines|join:", " }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-3 text-xs text-gray-500 text-center">
+                    {% translate "Please fix the rows listed above and re-upload." %}
+                </p>
+            </div>
+            {% elif result_data.created %}
+            <div class="mt-4 border-t border-gray-100 pt-4 text-green-600">
+                {% translate "Successfully created" %} {{ result_data.created }} {% translate "work area(s)" %}
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <form method="POST" enctype="multipart/form-data"
+            action="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+            class="content">
+            {% csrf_token %}
+
+            <div class="modal-body flex flex-col items-center text-center p-6">
+                <div class="mb-4 text-indigo-600">
+                    <i
+                        class="fa-solid {% if is_importing %}fa-spinner animate-spin text-amber-500{% else %}fa-cloud-arrow-up{% endif %} text-5xl"></i>
+                </div>
+
+                {% if is_importing %}
+                <h3 class="text-lg font-semibold text-amber-600">{% translate "Import in Progress" %}</h3>
+                <p class="text-sm text-gray-500 mb-6">
+                    {% translate "An upload is already going on for this opportunity." %}</p>
+                <div hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id  %}"
+                    hx-trigger="every 5s" hx-target="#modal-container"></div>
+                {% else %}
+                <div class="w-full text-left" x-data="{ fileName: '' }">
+                    <label class="block text-sm font-bold text-gray-700 mb-2">{% translate "Select File" %}</label>
+                    <div class="relative border-2 rounded-lg px-4 py-4 bg-gray-50 hover:border-brand-deep-purple">
+                        <input type="file" name="csv_file" accept=".csv" required
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            @change="fileName = $event.target.files[0].name">
+                        <span class="text-gray-500 text-sm"
+                            x-text="fileName || '{% translate 'No file chosen' %}'"></span>
+                    </div>
+                </div>
+                {% endif %}
+
+                <a href="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+                    class="mt-6 flex items-center px-4 py-1.5 border border-gray-800 rounded-md text-sm font-medium hover:bg-gray-50 transition">
+                    <i class="fa-solid fa-file-arrow-down mr-2"></i>
+                    {% translate "Download Template" %}
+                </a>
+            </div>
+
+            <div class="footer">
+                <button type="button" @click="showImportWorkAreaModal = false"
+                    class="button button-md outline-style">{% translate "Close" %}</button>
+                {% if not is_importing %}
+                <button type="submit" class="button button-md primary-dark">{% translate "Upload" %}</button>
+                {% endif %}
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
