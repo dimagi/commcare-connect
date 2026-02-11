@@ -186,9 +186,9 @@ def invite_organization(request, org_slug, pk):
     )
 
     if created:
-        messages.success(request, "Organization invited successfully!")
+        messages.success(request, "Workspace invited successfully!")
     else:
-        messages.info(request, "The invitation for this organization has been updated.")
+        messages.info(request, "The invitation for this workspace has been updated.")
 
     send_program_invite_email(obj.id)
 

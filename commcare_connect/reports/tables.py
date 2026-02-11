@@ -20,7 +20,7 @@ class AdminReportTable(tables.Table):
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
     avg_top_earned_flws = SumColumn(verbose_name="Average Earned by Top FLWs")
     intervention_funding_deployed = SumColumn(verbose_name="Intervention Funding Deployed")
-    organization_funding_deployed = SumColumn(verbose_name="Organization Funding Deployed")
+    organization_funding_deployed = SumColumn(verbose_name="Workspace Funding Deployed")
     services = SumColumn(verbose_name="Verified Services")
 
     class Meta:

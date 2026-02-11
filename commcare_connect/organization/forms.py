@@ -19,7 +19,7 @@ class OrganizationChangeForm(forms.ModelForm):
         model = Organization
         fields = ("name", "program_manager", "llo_entity")
         labels = {
-            "name": gettext("Organization Name"),
+            "name": gettext("Workspace Name"),
             "program_manager": gettext("Enable Program Manager"),
         }
 
@@ -148,11 +148,10 @@ class AddCredentialForm(forms.Form):
 OrganizationCreationForm = forms.modelform_factory(
     Organization,
     fields=("name",),
-    labels={"name": "Organization Name"},
+    labels={"name": "Workspace Name"},
     help_texts={
         "name": (
-            "This would be used to create the Organization URL,"
-            " and you will not be able to change the URL in future."
+            "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
         )
     },
 )

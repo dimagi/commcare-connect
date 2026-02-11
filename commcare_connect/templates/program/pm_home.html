@@ -35,7 +35,7 @@
               <div x-cloak x-show="showInviteModal" x-transition.opacity class="modal-backdrop" >
                 <div @click.away="showInviteModal = false" x-transition class="modal">
                   <div class="header">
-                    <h2 class="title">{% translate "Invite Organization" %}</h2>
+                    <h2 class="title">{% translate "Invite Workspace" %}</h2>
                     <button @click="showInviteModal = false" class="button-icon" aria-label="Close">
                       <i class="fa-solid fa-xmark text-xl"></i>
                     </button>
@@ -43,13 +43,13 @@
                   <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.program_id %}" method="post">
                     {% csrf_token %}
                     <div class="flex flex-col gap-2 py-4">
-                      <label for="organization" class="title-sm">{% translate "Organization" %}</label>
+                      <label for="organization" class="title-sm">{% translate "Workspace" %}</label>
                       <select id="organization" name="organization" required data-tomselect data-tomselect:no-remove-button>
                         {% for org in organizations %}
                           <option value="{{ org.slug }}">{{ org.name }}</option>
                         {% endfor %}
                       </select>
-                      <span class="hint">{% blocktrans %} Select the organization you want to invite.{% endblocktrans %}</span>
+                      <span class="hint">{% blocktrans %} Select the workspace you want to invite.{% endblocktrans %}</span>
                     </div>
                     <div class="footer">
                       <button type="button" @click="showInviteModal = false" class="button button-md outline-style">{% translate "Close" %}</button>
