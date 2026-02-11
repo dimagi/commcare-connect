@@ -165,9 +165,10 @@ const MapboxUtils = {
     return draw;
   },
 
-  createMarker(map, opts) {
+  createMarkerHtml(map, opts) {
     // Creating markers using HTML might present performance issues at scale, so better
     // to use layers instead for large datasets.
+    // See https://docs.mapbox.com/help/dive-deeper/markers-vs-layers/#dataset-size
     opts = opts || {};
     const markerOpts = {};
     if (opts.color) markerOpts.color = opts.color;
@@ -180,6 +181,104 @@ const MapboxUtils = {
       marker.setPopup(new mapboxgl.Popup().setHTML(opts.popupHtml));
     marker.addTo(map);
     return marker;
+  },
+
+  createMarkersLayer(map, pointsCoords) {
+    map.loadImage(
+      'https://docs.mapbox.com/mapbox-gl-js/assets/custom_marker.png',
+      (error, image) => {
+        if (error) throw error;
+
+        map.addImage('custom-marker', image);
+        const featureCollection = {
+          type: 'FeatureCollection',
+          features: [
+            ...pointsCoords.map((coord) => ({
+              type: 'Feature',
+              geometry: {
+                type: 'Point',
+                coordinates: [coord.lng, coord.lat],
+              },
+            })),
+          ],
+        };
+
+        map.addSource('points', {
+          type: 'geojson',
+          data: featureCollection,
+        });
+
+        map.addLayer({
+          id: 'points',
+          type: 'symbol',
+          source: 'points',
+          layout: {
+            'icon-image': 'custom-marker',
+          },
+        });
+      },
+    );
+  },
+
+  createPolygonsLayer(map, polygons, id) {
+    // polygons: Array of {coords: [[lng, lat], ...], properties: {fillColor: string}}.
+    map.on('load', () => {
+      const featureCollection = {
+        type: 'FeatureCollection',
+        features: [
+          ...polygons.map((polygon, index) => ({
+            type: 'Feature',
+            id: index,
+            geometry: {
+              type: 'Polygon',
+              coordinates: [polygon.coords],
+            },
+            properties: polygon.properties || {},
+          })),
+        ],
+      };
+
+      map.addSource(`source-${id}`, {
+        type: 'geojson',
+        data: featureCollection,
+      });
+
+      map.addLayer({
+        id: `layer-${id}`,
+        type: 'fill',
+        source: `source-${id}`,
+        paint: {
+          'fill-color': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            '#888888', // Color when selected
+            ['get', 'fillColor'], // default color from properties
+          ],
+          'fill-opacity': 0.4,
+        },
+      });
+
+      // Add click event to toggle 'selected' state
+      map.on('click', `layer-${id}`, (e) => {
+        const featureId = e.features[0].id;
+        const state = map.getFeatureState({
+          source: `source-${id}`,
+          id: featureId,
+        });
+        map.setFeatureState(
+          { source: `source-${id}`, id: featureId },
+          { selected: !state.selected },
+        );
+      });
+
+      map.on('mouseenter', `layer-${id}`, () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+
+      map.on('mouseleave', `layer-${id}`, () => {
+        map.getCanvas().style.cursor = '';
+      });
+    });
   },
 };
 

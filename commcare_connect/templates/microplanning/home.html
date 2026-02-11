@@ -25,9 +25,8 @@
             <i x-show="!panelOpen" class="fa fa-chevron-left"></i>
         </button>
     </div>
-    <aside id="sidebar" class="col-span-3 h-full bg-white shadow-md p-4 overflow-auto" x-transition x-show="panelOpen">
-        <h2 class="text-lg font-semibold mb-2">{% translate "Settings" %}</h2>
-        <!-- Sidebar content goes here -->
+    <aside id="sidebar" class="col-span-3 h-full p-4 bg-white border border-gray-100 rounded-lg shadow-md overflow-auto" x-transition x-show="panelOpen">
+        {% include "microplanning/settings_panel.html" %}
     </aside>
 </div>
 {% include "microplanning/map_handler.html" %}

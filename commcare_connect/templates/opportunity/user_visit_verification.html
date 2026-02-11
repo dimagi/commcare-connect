@@ -338,7 +338,7 @@
       zoom: 16,
     });
     circles = []
-    const marker = MapboxUtils.createMarker(map, {
+    const marker = MapboxUtils.createMarkerHtml(map, {
       lng: visit_data.lon,
       lat: visit_data.lat,
       color: 'green',
@@ -367,7 +367,7 @@
     };
     circles.push(circle([visit_data.lon, visit_data.lat], visit_data.precision, { units: 'meters' }))
     for (const user_form of user_forms) {
-      const marker = MapboxUtils.createMarker(map, {
+      const marker = MapboxUtils.createMarkerHtml(map, {
         lng: user_form[3],
         lat: user_form[2],
         scale: 0.75,
@@ -398,7 +398,7 @@
       circles.push(circle([user_form[3], user_form[2]], user_form[4], { units: 'meters' }))
     }
     for (const other_form of other_forms) {
-      const marker = MapboxUtils.createMarker(map, {
+      const marker = MapboxUtils.createMarkerHtml(map, {
         lng: other_form[3],
         lat: other_form[2],
         color: 'red',
