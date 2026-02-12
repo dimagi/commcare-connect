@@ -76,6 +76,7 @@ class ConnectIDUserLink(models.Model):
     commcare_username = models.TextField()
     domain = models.CharField(max_length=255, null=True, blank=True)
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
+    hq_case_id = models.CharField(max_length=50, null=True, blank=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "commcare_username"], name="connect_user")]
