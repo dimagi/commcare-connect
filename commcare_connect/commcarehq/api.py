@@ -1,3 +1,5 @@
+import dataclasses
+from typing import TypedDict
 from urllib.parse import urlencode
 
 import httpx
@@ -6,17 +8,52 @@ from commcare_connect.opportunity.models import HQApiKey
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
-def get_case_data(api_key: HQApiKey, domain: str, filters: dict[str, any]):
+class GetCaseDataAPIFilters(TypedDict):
+    case_type: str
+    case_name: str
+
+
+@dataclasses.dataclass
+class CommCareCase:
+    domain: str
+    case_id: str
+    case_type: str
+    case_name: str
+    external_id: str | None
+    owner_id: str
+    date_opened: str
+    last_modified: str
+    server_last_modified: str
+    indexed_on: str
+    closed: bool
+    date_closed: str | None
+    properties: dict[str, str]
+    indices: dict[str, any]
+
+
+def get_case_data(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters) -> list[CommCareCase]:
     params = urlencode(filters)
-    url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/?{params}"
-    response = httpx.get(url, headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"})
+    client = httpx.Client(
+        base_url=api_key.hq_server.url, headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
+    )
+    response = client.get(f"/a/{domain}/api/case/v2/?{params}")
 
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as e:
         raise CommCareHQAPIException(f"Failed to fetch case data for {domain}. HQ Error: {e}")
 
-    return response.json()
+    data = response.json()
+    cases = [CommCareCase(**case_data) for case_data in data.get("cases", [])]
+
+    while True:
+        next_url = data.get("next")
+        if next_url is None:
+            break
+        data = client.get(next_url)
+        for case_data in data.get("cases", []):
+            cases.append(CommCareCase(**case_data))
+    return cases
 
 
 def update_case_data_by_case_id(api_key: HQApiKey, domain: str, case_id: str, data: dict[str, any]) -> dict[str, any]:
