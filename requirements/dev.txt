@@ -40,7 +40,7 @@ click==8.1.6
     #   pip-tools
 contextlib2==21.6.0
     # via git-build-branch
-coverage==7.2.7
+coverage==7.11.0
     # via -r requirements/dev.in
 decorator==5.1.1
     # via
