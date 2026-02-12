@@ -1318,20 +1318,23 @@ class TestSubmitInvoiceView(BaseTestInvoiceView):
 
 class TestDownloadInvoiceView(BaseTestInvoiceView):
     @staticmethod
-    def _url_(opportunity, invoice_id):
+    def _url(opportunity, invoice_id):
         return reverse(
             "opportunity:download_invoice",
             args=(opportunity.organization.slug, opportunity.opportunity_id, invoice_id),
         )
+
+    def _send_request(self, client, user, opportunity, invoice_id):
+        client.force_login(user)
+        url = self._url(opportunity, invoice_id)
+        return client.get(url)
 
     def test_switch_inactive(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        client.force_login(user)
-        url = self._url_(opportunity, invoice.payment_invoice_id)
-        response = client.get(url)
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
 
         assert response.status_code == 404
         assert "Invoice download feature is not available" in str(response.content)
@@ -1342,9 +1345,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        client.force_login(user)
-        url = self._url_(opportunity, invoice.payment_invoice_id)
-        response = client.get(url)
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
 
         assert response.status_code == 200
         assert response.headers["Content-Type"] == "application/pdf"
@@ -1357,9 +1358,7 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        client.force_login(user)
-        url = self._url_(opportunity, uuid4())
-        response = client.get(url)
+        response = self._send_request(client, user, opportunity, uuid4())
 
         assert response.status_code == 404
         assert "No PaymentInvoice matches the given query." in str(response.content)
