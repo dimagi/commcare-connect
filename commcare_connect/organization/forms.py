@@ -19,8 +19,8 @@ class OrganizationChangeForm(forms.ModelForm):
         model = Organization
         fields = ("name", "program_manager", "llo_entity")
         labels = {
-            "name": gettext("Workspace Name"),
-            "program_manager": gettext("Enable Program Manager"),
+            "name": gettext_lazy("Workspace Name"),
+            "program_manager": gettext_lazy("Enable Program Manager"),
         }
 
     def __init__(self, *args, **kwargs):
