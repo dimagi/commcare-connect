@@ -4,7 +4,8 @@ from urllib.parse import urlencode
 
 import httpx
 
-from commcare_connect.opportunity.models import HQApiKey
+from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess
+from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
@@ -71,3 +72,30 @@ def update_case_data_by_case_id(api_key: HQApiKey, domain: str, case_id: str, da
 
     data = response.json()
     return CommCareCase(**data.get("case", {}))
+
+
+def get_usercase(api_key: HQApiKey, user: User, domain: str) -> CommCareCase:
+    case_data = get_case_data(
+        api_key,
+        domain,
+        filters={
+            "case_type": "commcare-user",
+            "case_name": user.username.lower(),
+        },
+    )
+    return next(iter(case_data), None)
+
+
+def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, any]) -> dict[str, any]:
+    domain = opportunity_access.opportunity.deliver_app.cc_domain
+    api_key = opportunity_access.opportunity.api_key
+    hq_server = api_key.hq_server
+
+    link = ConnectIDUserLink.objects.get(user=opportunity_access.user, domain=domain, hq_server=hq_server)
+    if not link.hq_case_id:
+        usercase = get_usercase(api_key, opportunity_access.user, domain)
+        if usercase is not None:
+            link.hq_case_id = usercase.case_id
+            link.save()
+
+    return update_case_data_by_case_id(api_key, domain, link.hq_case_id, data)
