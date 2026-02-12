@@ -34,26 +34,30 @@ class CommCareCase:
 
 def get_case_data(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters) -> list[CommCareCase]:
     params = urlencode(filters)
-    client = httpx.Client(
-        base_url=api_key.hq_server.url, headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
-    )
-    response = client.get(f"/a/{domain}/api/case/v2/?{params}")
+    url_queue = [f"/a/{domain}/api/case/v2/?{params}"]
 
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        raise CommCareHQAPIException(f"Failed to fetch case data for {domain}. HQ Error: {e}")
+    def get_page(page_url):
+        with httpx.Client(
+            base_url=api_key.hq_server.url,
+            headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+        ) as client:
+            response = client.get(page_url)
 
-    data = response.json()
-    cases = [CommCareCase(**case_data) for case_data in data.get("cases", [])]
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise CommCareHQAPIException(f"Failed to fetch case data for {domain}. HQ Error: {e}")
 
-    while True:
-        next_url = data.get("next")
-        if next_url is None:
-            break
-        data = client.get(next_url)
-        for case_data in data.get("cases", []):
-            cases.append(CommCareCase(**case_data))
+            data = response.json()
+            next_url = data.get("next")
+            if next_url is not None:
+                url_queue.append(next_url)
+            return [CommCareCase(**case_data) for case_data in data.get("cases", [])]
+
+    cases = []
+    while len(url_queue):
+        url = url_queue.pop()
+        cases.extend(get_page(url))
     return cases
 
 
