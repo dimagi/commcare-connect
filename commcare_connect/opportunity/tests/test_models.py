@@ -1,6 +1,15 @@
+import datetime
+
 import pytest
 
-from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, UserVisit
+from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
+from commcare_connect.opportunity.models import (
+    InvoiceStatus,
+    Opportunity,
+    OpportunityClaimLimit,
+    PaymentInvoice,
+    UserVisit,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -9,10 +18,12 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
+    OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
@@ -38,6 +49,56 @@ class TestPaymentInvoice:
         assert recent_invoice_status_event.status == InvoiceStatus.SUBMITTED
         # no context since this was not done via django view/request but directly via model
         assert recent_invoice_status_event.pgh_context is None
+
+    def test_pghistory_tracking_for_bulk_actions(self):
+        opportunity = OpportunityFactory()
+        payment_invoices = []
+
+        assert PaymentInvoiceStatusEvent.objects.count() == 0
+        assert PaymentInvoice.objects.count() == 0
+
+        for counter in range(1, 11):
+            payment_invoices.append(
+                PaymentInvoice(
+                    opportunity=opportunity,
+                    amount=10,
+                    date=datetime.date.today(),
+                    invoice_number=generate_invoice_number(),
+                )
+            )
+
+        # bulk create action
+        created_invoices = PaymentInvoice.objects.bulk_create(payment_invoices)
+        created_invoice_ids = {invoice.pk for invoice in created_invoices}
+
+        # assert events created for each created record
+        assert len(created_invoices) == 10
+        assert PaymentInvoiceStatusEvent.objects.count() == 10
+        assert PaymentInvoiceStatusEvent.objects.filter(status=InvoiceStatus.PENDING).count() == 10
+
+        create_invoice_events_invoice_obj_ids = {
+            invoice_event.pgh_obj_id for invoice_event in PaymentInvoiceStatusEvent.objects.all()
+        }
+        assert created_invoice_ids == create_invoice_events_invoice_obj_ids
+
+        # bulk update action
+        updated_invoices_count = PaymentInvoice.objects.filter(pk__in=created_invoice_ids).update(
+            status=InvoiceStatus.SUBMITTED
+        )
+
+        # assert successful update
+        assert updated_invoices_count == 10
+        assert PaymentInvoice.objects.filter(status=InvoiceStatus.PENDING).count() == 0
+        assert PaymentInvoice.objects.filter(status=InvoiceStatus.SUBMITTED).count() == 10
+
+        # assert new events created for each updated record
+        assert PaymentInvoiceStatusEvent.objects.count() == 20
+        assert PaymentInvoiceStatusEvent.objects.filter(status=InvoiceStatus.PENDING).count() == 10
+        assert PaymentInvoiceStatusEvent.objects.filter(status=InvoiceStatus.SUBMITTED).count() == 10
+
+        # assert expected status value for the recent event for each record
+        for invoice in created_invoices:
+            assert invoice.status_events.last().status == InvoiceStatus.SUBMITTED
 
 
 @pytest.mark.django_db
