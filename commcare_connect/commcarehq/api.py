@@ -61,12 +61,17 @@ def get_case_data(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
     return cases
 
 
-def update_case_data_by_case_id(api_key: HQApiKey, domain: str, case_id: str, data: dict[str, any]) -> CommCareCase:
+def update_case_data_by_case_id(
+    api_key: HQApiKey,
+    domain: str,
+    case_id: str,
+    update_fields: dict[str, any],
+) -> CommCareCase:
     url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/{case_id}/"
     response = httpx.put(
         url,
         headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
-        json=data,
+        json=update_fields,
     )
 
     try:
