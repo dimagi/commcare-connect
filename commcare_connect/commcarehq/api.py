@@ -83,7 +83,7 @@ def update_case_data_by_case_id(
     return CommCareCase(**data.get("case", {}))
 
 
-def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase | None:
+def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
     domain = opportunity_access.opportunity.deliver_app.cc_domain
     api_key = opportunity_access.opportunity.api_key
     user = opportunity_access.user
@@ -95,7 +95,10 @@ def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase | None:
             "case_name": user.username.lower(),
         },
     )
-    return next(iter(case_data), None)
+    usercase = next(iter(case_data), None)
+    if usercase is None:
+        raise CommCareHQAPIException(f"Failed to find usercase for {user.username.lower()} on {domain} HQ domain.")
+    return usercase
 
 
 def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, any]) -> CommCareCase:
@@ -104,10 +107,9 @@ def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, any])
     hq_server = api_key.hq_server
 
     link = ConnectIDUserLink.objects.get(user=opportunity_access.user, domain=domain, hq_server=hq_server)
-    if not link.hq_case_id:
+    if link.hq_case_id is None:
         usercase = get_usercase(opportunity_access)
-        if usercase is not None:
-            link.hq_case_id = usercase.case_id
-            link.save()
+        link.hq_case_id = usercase.case_id
+        link.save()
 
     return update_case_data_by_case_id(api_key, domain, link.hq_case_id, data)
