@@ -35,30 +35,12 @@
       </div>
       <div class="table-container">
         <table class="full-width-table">
-          <tr>
-            <td>{% trans "Invoice Number" %}</td>
-            <td>{{ invoice.invoice_number }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Amount" %}</td>
-            <td>{{ invoice.amount|default:"" }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Amount (USD)" %}</td>
-            <td>{{ invoice.amount_usd|default:"" }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Rate" %}</td>
-            <td>{{ invoice.exchange_rate.rate }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Date" %}</td>
-            <td>{{ invoice.date|default:"" }}</td>
-          </tr>
-          <tr>
-            <td>{% trans "Invoice Status" %}</td>
-            <td>{{ invoice.get_status_display }}</td>
-          </tr>
+          <tr><td>{% trans "Invoice Number" %}</td><td>{{ invoice.invoice_number }}</td></tr>
+          <tr><td>{% trans "Amount" %}</td><td>{{ invoice.amount|default:"" }}</td></tr>
+          <tr><td>{% trans "Amount (USD)" %}</td><td>{{ invoice.amount_usd|default:"" }}</td></tr>
+          <tr><td>{% trans "Rate" %}</td><td>{{ invoice.exchange_rate.rate }}</td></tr>
+          <tr><td>{% trans "Date" %}</td><td>{{ invoice.date|default:"" }}</td></tr>
+          <tr><td>{% trans "Invoice Status" %}</td><td>{{ invoice.get_status_display }}</td></tr>
           <tr>
             <td>{% trans "Paid" %}</td>
             <td>
@@ -70,15 +52,9 @@
             </td>
           </tr>
           {% if invoice.is_paid %}
-            <tr>
-              <td>{% trans "Payment Date" %}</td>
-              <td>{{ invoice.payment.date_paid }}</td>
-            </tr>
+            <tr><td>{% trans "Payment Date" %}</td><td>{{ invoice.payment.date_paid }}</td></tr>
           {% endif %}
-          <tr>
-            <td>{% trans "Invoice Type" %}</td>
-            <td>{{ invoice.invoice_type.label }}</td>
-          </tr>
+          <tr><td>{% trans "Invoice Type" %}</td><td>{{ invoice.invoice_type.label }}</td></tr>
         </table>
       </div>
     </div>
