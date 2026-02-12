@@ -23,6 +23,9 @@ class WorkAreaGroup(geo_models.Model):
         max_length=255,
     )
 
+    class Meta:
+        constraints = [geo_models.UniqueConstraint(fields=["name", "opportunity"], name="unique_name_per_opportunity")]
+
 
 class WorkArea(geo_models.Model):
     work_area_group = geo_models.ForeignKey(WorkAreaGroup, null=True, blank=True, on_delete=geo_models.SET_NULL)
@@ -42,6 +45,7 @@ class WorkArea(geo_models.Model):
     building_count = geo_models.PositiveIntegerField(default=0)
     expected_visit_count = geo_models.PositiveIntegerField(default=0)
     status = geo_models.CharField(
+        max_length=50,
         choices=WorkAreaStatus.choices,
         default=WorkAreaStatus.NOT_STARTED,
     )
