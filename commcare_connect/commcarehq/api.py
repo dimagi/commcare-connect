@@ -61,7 +61,7 @@ def get_case_data(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
     return cases
 
 
-def update_case_data_by_case_id(api_key: HQApiKey, domain: str, case_id: str, data: dict[str, any]) -> dict[str, any]:
+def update_case_data_by_case_id(api_key: HQApiKey, domain: str, case_id: str, data: dict[str, any]) -> CommCareCase:
     url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/{case_id}/"
     response = httpx.put(
         url,
@@ -93,7 +93,7 @@ def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase | None:
     return next(iter(case_data), None)
 
 
-def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, any]) -> dict[str, any]:
+def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, any]) -> CommCareCase:
     domain = opportunity_access.opportunity.deliver_app.cc_domain
     api_key = opportunity_access.opportunity.api_key
     hq_server = api_key.hq_server
