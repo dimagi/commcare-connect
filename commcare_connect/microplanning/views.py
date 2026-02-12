@@ -1,4 +1,5 @@
 import csv
+import uuid
 from io import BytesIO, StringIO
 
 from celery.result import AsyncResult
@@ -43,7 +44,7 @@ class WorkAreaImport(View):
     def get(self, request, *args, **kwargs):
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(sorted(WorkAreaCSVImporter.REQUIRED_HEADERS))
+        writer.writerow(WorkAreaCSVImporter.REQUIRED_HEADERS)
         writer.writerow(
             [
                 "Sample Work Area",
@@ -89,7 +90,7 @@ class WorkAreaImport(View):
             csv_content = csv_file.read().decode("utf-8")
             task = import_work_areas_task.delay(request.opportunity.id, csv_content)
             cache.set(lock_key, task.id, timeout=1200)
-            messages.success(request, "Import has been started.")
+            messages.success(request, "Work Area upload has been started.")
             redirect_url += f"?task_id={task.id}"
         except Exception:
             cache.delete(lock_key)
@@ -109,21 +110,23 @@ def import_status(request, org_slug, opp_id):
     result_data = None
 
     if task_id:
-        result = AsyncResult(task_id)
+        try:
+            task_id = uuid.UUID(task_id)
+            task_id = str(task_id)
+        except (ValueError, TypeError):
+            return HttpResponse(status=404)
+
+        result = AsyncResult(str(task_id))
         result_ready = result.ready()
         if result_ready:
             result_data = result.result
 
     if status_check:
-        if not result_ready:
-            return HttpResponse(status=204)  # Task is not ready yet.
-        button_html = f"""
-            <button hx-get="{reverse('microplanning:import_status', args=(org_slug, opp_id))}?task_id={task_id}"
-                    hx-target="#modal-container"class="button button-md">
-                <i class="fa-solid fa-eye"></i> {_('See Upload Results')}
-            </button>
-        """
-        return HttpResponse(button_html)
+        response = HttpResponse(status=204)  # Task is not ready
+        if result_ready:
+            response["status"] = 200
+            response["HX-Trigger"] = "task-completed"
+        return response
 
     context = {
         "is_importing": cache.get(get_import_area_cache_key(request.opportunity.id)) is not None,

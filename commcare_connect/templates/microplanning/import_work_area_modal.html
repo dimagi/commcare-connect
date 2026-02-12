@@ -76,7 +76,7 @@
                     <div class="relative border-2 rounded-lg px-4 py-4 bg-gray-50 hover:border-brand-deep-purple">
                         <input type="file" name="csv_file" accept=".csv" required
                             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            @change="fileName = $event.target.files[0].name">
+                            @change="fileName = $event.target.files[0]?.name || ''">
                         <span class="text-gray-500 text-sm"
                             x-text="fileName || '{% translate 'No file chosen' %}'"></span>
                     </div>

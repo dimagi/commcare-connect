@@ -87,8 +87,6 @@ class WorkAreaCSVImporter:
         if not invalid_row:
             self.work_areas_to_create.append(new_area)
 
-    from collections import defaultdict
-
     def group_errors_by_message(self, errors):
         """
         Convert {line_num: [msg1, msg2]} into {msg1: [line_nums], msg2: [line_nums]}
@@ -131,9 +129,9 @@ class WorkAreaCSVImporter:
                 if centroid.geom_type != "Point":
                     self._add_error(line_num, _("Centroid must be a POINT"))
                 elif boundary.geom_type != "Polygon":
-                    self._add_error(line_num, _("Boundry must be POLYGON"))
+                    self._add_error(line_num, _("Boundary must be POLYGON"))
                 elif not boundary.valid:
-                    self._add_error(line_num, _("Invalid Boundry polygon geometry"))
+                    self._add_error(line_num, _("Invalid Boundary polygon geometry"))
                 else:
                     # all checks passed
                     area.centroid = centroid
