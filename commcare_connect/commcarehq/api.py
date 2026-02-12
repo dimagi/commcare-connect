@@ -69,4 +69,5 @@ def update_case_data_by_case_id(api_key: HQApiKey, domain: str, case_id: str, da
     except httpx.HTTPStatusError as e:
         raise CommCareHQAPIException(f"Failed to update case data for {domain} with {case_id}. HQ Error: {e}")
 
-    return response.json()
+    data = response.json()
+    return CommCareCase(**data.get("case", {}))
