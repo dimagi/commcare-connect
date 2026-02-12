@@ -1289,7 +1289,7 @@ class TestSubmitInvoiceView(BaseTestInvoiceView):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        assert len(invoice.status_events.all()), 1
+        assert len(invoice.status_events.all()) == 1
         assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
 
         client.force_login(user)
@@ -1309,7 +1309,7 @@ class TestSubmitInvoiceView(BaseTestInvoiceView):
         invoice_status_events = invoice.status_events.all()
 
         # assert event captured
-        assert len(invoice_status_events), 2
+        assert len(invoice_status_events) == 2
         assert invoice_status_events[1].status == InvoiceStatus.PENDING_PM_REVIEW
         assert invoice_status_events[1].pgh_context.metadata == {
             "url": url,
