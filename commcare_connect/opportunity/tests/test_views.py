@@ -13,7 +13,7 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AutomatedPaymentInvoiceForm,
@@ -1101,6 +1101,53 @@ class BaseTestInvoiceView:
             "invoice": invoice,
             "user": org_user_member,
         }
+
+
+@pytest.mark.django_db
+class TestPMPaymentInvoiceEditView:
+    def _send_request(self, client, organization, opportunity, invoice_id, user):
+        url = reverse(
+            "opportunity:pm_payment_invoice_edit",
+            args=(organization.slug, opportunity.opportunity_id, invoice_id),
+        )
+
+        client.force_login(user)
+        return client.post(url)
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_access_for_non_pm_org(self, client, organization, opportunity, org_user_member, org_user_admin):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+
+        for user in [org_user_admin, org_user_member]:
+            response = self._send_request(client, organization, opportunity, invoice.payment_invoice_id, user)
+            assert response.status_code == 404
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_access_for_pm_org(
+        self, client, program_manager_org, program_manager_org_user_member, program_manager_org_user_admin
+    ):
+        opportunity = OpportunityFactory(organization=program_manager_org)
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+
+        response = self._send_request(
+            client, program_manager_org, opportunity, invoice.payment_invoice_id, program_manager_org_user_member
+        )
+        assert response.status_code == 404
+
+        response = self._send_request(
+            client, program_manager_org, opportunity, invoice.payment_invoice_id, program_manager_org_user_admin
+        )
+        assert response.status_code == 302
+
+    def test_switch_check(self, client, program_manager_org, program_manager_org_user_admin):
+        opportunity = OpportunityFactory(organization=program_manager_org)
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+
+        client.force_login(program_manager_org_user_admin)
+        response = self._send_request(
+            client, program_manager_org, opportunity, invoice.payment_invoice_id, program_manager_org_user_admin
+        )
+        assert response.status_code == 404
 
 
 class TestInvoiceReviewView(BaseTestInvoiceView):
