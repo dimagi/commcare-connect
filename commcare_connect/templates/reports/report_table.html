@@ -13,11 +13,21 @@
           hx-trigger="change"
           hx-push-url="true"
           hx-params="not csrfmiddlewaretoken"
+          hx-indicator="#table-loading-indicator"
           class="form-inline">
         {% crispy filter.form %}
     </form>
 
-    {% render_table table %}
+    <div class="table-report-wrapper">
+        <div id="table-loading-indicator"
+             class="table-loading-indicator"
+             aria-live="polite"
+             aria-hidden="true">
+            <span class="table-loading-spinner" aria-hidden="true"></span>
+            <span class="table-loading-text">{% trans "Loading…" %}</span>
+        </div>
+        {% render_table table %}
+    </div>
 {% endblock %}
 
 {% block javascript %}
@@ -52,6 +62,44 @@
 <style>
 .select2-selection__rendered {
     line-height: initial!important;
+}
+
+.table-report-wrapper {
+    position: relative;
+}
+
+.table-loading-indicator {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background: rgba(255, 255, 255, 0.85);
+    z-index: 10;
+    min-height: 12rem;
+}
+
+.table-loading-indicator.htmx-request {
+    display: flex;
+}
+
+.table-loading-spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 3px solid #e2e8f0;
+    border-top-color: #64748b;
+    border-radius: 50%;
+    animation: table-loading-spin 0.7s linear infinite;
+}
+
+@keyframes table-loading-spin {
+    to { transform: rotate(360deg); }
+}
+
+.table-loading-text {
+    font-size: 0.875rem;
+    color: #64748b;
 }
 </style>
 {% endblock %}
