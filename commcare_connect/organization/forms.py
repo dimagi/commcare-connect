@@ -172,6 +172,8 @@ class OrganizationCreationForm(forms.ModelForm):
         qs = LLOEntity.objects.prefetch_related("organization_set").only("id", "name").order_by("name")
         for entity in qs:
             data[str(entity.id)] = {
-                "organizations": [{"id": org.id, "name": org.name} for org in entity.organization_set.all()]
+                "organizations": [
+                    {"id": org.id, "name": org.name, "slug": org.slug} for org in entity.organization_set.all()
+                ]
             }
         return data
