@@ -1610,7 +1610,8 @@ def invoice_update_status(request, org_slug, opp_id):
 
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
 
-    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, request.is_opportunity_pm)
+    role = "program manager" if request.is_opportunity_pm else "network manager"
+    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, role)
     if error:
         return HttpResponseBadRequest(error)
 
@@ -1619,7 +1620,7 @@ def invoice_update_status(request, org_slug, opp_id):
         invoice.description = description
         invoice.save(update_fields=["status", "description"])
         if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
-            CompletedWork.objects.filter(invoice=invoice).update(invoice=None)
+            invoice.unlink_completed_works()
     else:
         invoice.save(update_fields=["status"])
 

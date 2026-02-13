@@ -556,6 +556,9 @@ class PaymentInvoice(models.Model):
     def get_status_display(self):
         return InvoiceStatus.get_label(self.status)
 
+    def unlink_completed_works(self):
+        CompletedWork.objects.filter(invoice=self).update(invoice=None)
+
 
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
