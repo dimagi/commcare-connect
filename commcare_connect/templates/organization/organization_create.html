@@ -11,6 +11,46 @@
 {% block javascript %}
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('createOrgHandler', (entityWiseOrgs) => ({
+        entityWiseOrgs: entityWiseOrgs,
+        nameSelect: null,
+        selectedEntity: '',
+
+        init() {
+          this.$nextTick(() => {
+            this.nameSelect = this.$refs.name.tomselect;
+            this.selectedEntity = this.$refs.llo_entity.tomselect.getValue();
+            if (this.selectedEntity) {
+              this.updateWorkspaceOptions(this.selectedEntity);
+            }
+
+            this.$refs.llo_entity.tomselect.on('change', (value) => {
+              this.selectedEntity = value;
+              this.updateWorkspaceOptions(value);
+            });
+          });
+        },
+
+        updateWorkspaceOptions(entityValue) {
+          this.nameSelect.clear();
+          this.nameSelect.clearOptions();
+
+          if (!entityValue || !this.entityWiseOrgs[entityValue])
+            return;
+
+          this.entityWiseOrgs[entityValue].organizations.forEach(org => {
+            this.nameSelect.addOption({
+              value: org.id,
+              text: org.name
+            });
+          });
+        },
+
+      }))
+    });
+  </script>
 {% endblock javascript %}
 
 {% block title %}
@@ -24,10 +64,18 @@
   </div>
   <form action="{% url 'organization_create' %}" method="post">
     {% csrf_token %}
-    {{ form|crispy }}
-    <button class="button button-md primary-dark float-end" type="submit">
-      {% trans "Create Workspace" %}
-    </button>
+    {{ form.get_entity_wise_orgs|json_script:"entity-wise-orgs" }}
+    <div x-data="createOrgHandler(JSON.parse(document.getElementById('entity-wise-orgs').textContent))">
+      <div class="mb-4" >
+        {{ form.llo_entity|as_crispy_field }}
+      </div>
+      <div class="mb-4" x-show="selectedEntity" x-transition>
+        {{ form.name|as_crispy_field }}
+      </div>
+      <button class="button button-md primary-dark float-end" type="submit">
+        {% trans "Create Workspace" %}
+      </button>
+    </div>
   </form>
 </div>
 {% endblock content %}
