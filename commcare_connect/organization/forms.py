@@ -145,16 +145,23 @@ class AddCredentialForm(forms.Form):
         return split_users
 
 
-OrganizationCreationForm = forms.modelform_factory(
-    Organization,
-    fields=("name",),
-    labels={"name": gettext_lazy("Workspace Name")},
-    help_texts={
-        "name": (
-            gettext_lazy(
-                "This would be used to create the Workspace URL,"
-                " and you will not be able to change the URL in future."
-            )
-        )
-    },
-)
+class OrganizationCreationForm(forms.ModelForm):
+    llo_entity = CreatableModelChoiceField(
+        label=gettext_lazy("LLO Entity"),
+        queryset=LLOEntity.objects.order_by("name"),
+        widget=forms.Select(),
+        empty_label=gettext_lazy("Select a LLO Entity"),
+        create_key_name="name",
+    )
+    # TODO populate choices for this field via javascript based on the selected LLO Entity
+    name = forms.CharField(
+        label=gettext_lazy("Workspace Name"),
+        widget=forms.Select(attrs={"data-tomselect": "1", "data-tomselect:settings": '{"create": true}'}),
+        help_text=gettext_lazy(
+            "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
+        ),
+    )
+
+    class Meta:
+        model = Organization
+        fields = ("llo_entity", "name",)

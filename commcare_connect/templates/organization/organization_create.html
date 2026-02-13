@@ -3,6 +3,16 @@
 {% load static %}
 {% load crispy_forms_tags %}
 
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+
 {% block title %}
   {% trans "Connect - New Workspace" %}
 {% endblock title %}
