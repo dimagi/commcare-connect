@@ -324,7 +324,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 or (today > claim.end_date or (claim_limit.end_date and today > claim_limit.end_date))
             ):
                 user_visit.status = VisitValidationStatus.over_limit
-                if not completed_work.status == CompletedWorkStatus.over_limit:
+                completed_work_already_approved = completed_work.status == CompletedWorkStatus.approved
+                if not completed_work_already_approved and not completed_work.status == CompletedWorkStatus.over_limit:
                     completed_work.status = CompletedWorkStatus.over_limit
                     completed_work_needs_save = True
             elif counts["entity"] > 0:

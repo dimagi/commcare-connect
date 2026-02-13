@@ -427,7 +427,7 @@ class TestProcessDeliverUnit:
         assert visit2.entity_id == entity_id
 
         completed_work.refresh_from_db()
-        assert completed_work.status == CompletedWorkStatus.over_limit
+        assert completed_work.status == CompletedWorkStatus.approved
 
         entity_visits = UserVisit.objects.filter(entity_id=entity_id)
         assert entity_visits.count() == 2
