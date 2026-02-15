@@ -419,7 +419,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
         # These changes can be done at class level when this switch is fully rolled out and no longer needed.
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            self.columns["date"].column.verbose_name = "Invoice Generation Date"
+            self.columns["date"].column.verbose_name = _("Invoice Generation Date")
             self.columns.hide("payment_status")
 
     def render_exchange_rate(self, value):
