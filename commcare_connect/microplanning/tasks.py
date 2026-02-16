@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
@@ -9,6 +10,8 @@ from django.utils.translation import gettext as _
 from config import celery_app
 
 from .models import WorkArea
+
+logger = logging.getLogger(__name__)
 
 
 def get_import_area_cache_key(opp_id: int):
@@ -159,7 +162,7 @@ class WorkAreaCSVImporter:
         with transaction.atomic():
             WorkArea.objects.bulk_create(
                 self.work_areas_to_create,
-                batch_size=500,
+                batch_size=1000,
             )
 
     def _add_error(self, line, message):
@@ -170,6 +173,7 @@ class WorkAreaCSVImporter:
 
 @celery_app.task()
 def import_work_areas_task(opp_id, csv_content):
+    logger.info(f"Importing work areas for the opportunity: {opp_id}")
     if WorkArea.objects.filter(opportunity_id=opp_id).exists():
         return {"errors": {[_("Work Areas already exist for this opportunity."), [0]]}}
 
