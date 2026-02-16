@@ -5,6 +5,7 @@ import logging
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.db import transaction
+from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
 from config import celery_app
@@ -80,6 +81,7 @@ class WorkAreaCSVImporter:
     def _process_slug(self, row, line_num, area):
         invalid = True
         slug = (row.get(self.HEADERS.get("slug")) or "").strip()
+        slug = strip_tags(slug)
         if not slug:
             self._add_error(line_num, _("Area slug is required and it should be unique."))
         elif slug in self.seen_slugs:
@@ -96,6 +98,7 @@ class WorkAreaCSVImporter:
     def _process_ward(self, row, line_num, area):
         invalid = True
         ward = (row.get(self.HEADERS.get("ward")) or "").strip()
+        ward = strip_tags(ward)
         if ward:
             area.ward = ward
             invalid = False
@@ -173,10 +176,10 @@ class WorkAreaCSVImporter:
 @celery_app.task()
 def import_work_areas_task(opp_id, csv_content):
     logger.info(f"Importing work areas for the opportunity: {opp_id}")
-    if WorkArea.objects.filter(opportunity_id=opp_id).exists():
-        return {"errors": {[_("Work Areas already exist for this opportunity."), [0]]}}
-
     try:
+        if WorkArea.objects.filter(opportunity_id=opp_id).exists():
+            return {"errors": {[_("Work Areas already exist for this opportunity."), [0]]}}
+
         importer = WorkAreaCSVImporter(opp_id, csv_content)
         return importer.run()
     finally:
