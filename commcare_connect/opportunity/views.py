@@ -1576,10 +1576,17 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
     if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
         raise Http404("Feature unavailable")
+
+    invoice = get_object_or_404(
+        PaymentInvoice,
+        payment_invoice_id=invoice_id,
+        opportunity=request.opportunity,
+    )
+
     form = PaymentInvoiceInvoiceTicketLinkForm(request.POST)
     if form.is_valid():
-        invoice_ticket_link = form.cleaned_data["invoice_ticket_link"]
-        PaymentInvoice.objects.filter(payment_invoice_id=invoice_id).update(invoice_ticket_link=invoice_ticket_link)
+        invoice.invoice_ticket_link = form.cleaned_data["invoice_ticket_link"]
+        invoice.save(update_fields=["invoice_ticket_link"])
         messages.success(request, _("Invoice ticket link saved!"))
     else:
         messages.error(request, _(f"Error: {form.errors.as_text()}"))
