@@ -59,7 +59,7 @@
           {% endif %}
           {% if request.user.show_internal_features %}
             {% url 'users:internal_features' as internal_features_url %}
-            {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url %}
+            {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url namespace='users' %}
           {% endif %}
         {% endif %}
     </div>
