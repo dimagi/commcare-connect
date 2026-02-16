@@ -43,6 +43,30 @@
     </div>
   </div>
 </div>
+{% if payment_invoice_invoice_ticket_link_form %}
+<br/>
+<div class="card_bg">
+  <div class="card_title mb-4">
+    <div>
+      <form
+        method="POST"
+        action="{% url 'opportunity:update_invoice_invoice_ticket_link' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=object.payment_invoice_id %}"
+      >
+        {% csrf_token %}
+        <!--
+        using the form tag to enforce url field validation provided by the browser itself which seems to not fire when
+        the form is passed as an argument to crispy method.
+        Though used crispy filter to get the nice rendering provided by crispy.
+        -->
+        {{ payment_invoice_invoice_ticket_link_form|crispy }}
+        <button class="button button-md primary-dark">
+          {% translate "Update" %}
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% include "opportunity/partials/invoice_form_handler.html" with is_read_only=True %}
 {% endblock content %}

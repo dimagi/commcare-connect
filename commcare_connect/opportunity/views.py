@@ -54,7 +54,11 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import INVOICE_REVIEW, USER_VISIT_FILTERS
+from commcare_connect.flags.switch_names import (
+    INVOICE_REVIEW,
+    UPDATES_TO_MARK_AS_PAID_WORKFLOW,
+    USER_VISIT_FILTERS,
+)
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -78,6 +82,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
+    PaymentInvoiceInvoiceTicketLinkForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -174,6 +179,7 @@ from commcare_connect.organization.decorators import (
     opportunity_required,
     org_admin_required,
     org_member_required,
+    org_program_manager_required,
     org_viewer_required,
 )
 from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
@@ -1531,6 +1537,12 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 ],
             }
         )
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW) and self.request.is_opportunity_pm:
+            context["payment_invoice_invoice_ticket_link_form"] = PaymentInvoiceInvoiceTicketLinkForm(
+                initial={
+                    "invoice_ticket_link": invoice.invoice_ticket_link,
+                }
+            )
         return context
 
     def get_form(self):
@@ -1560,6 +1572,14 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         if self.object.service_delivery:
             return _("Review Service Delivery Invoice")
         return _("Review Custom Invoice")
+
+
+@org_program_manager_required
+@opportunity_required
+@require_POST
+def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
+    # ToDo: add update
+    return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
 
 
 @org_member_required
