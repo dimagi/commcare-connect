@@ -34,7 +34,6 @@ class WorkAreaCSVImporter:
         self.errors = {}
         self.work_areas_to_create = []
         self.seen_slugs = set()
-        self.group_map = {}
 
     def run(self):
         reader = csv.DictReader(io.StringIO(self.csv_content))
