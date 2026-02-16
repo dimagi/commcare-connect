@@ -1,12 +1,11 @@
 import csv
 import uuid
-from io import BytesIO, StringIO
 
 from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -16,7 +15,7 @@ from django.views.decorators.http import require_GET
 
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkAreaStatus
+from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
 from commcare_connect.utils.file import get_file_extension
 
@@ -28,11 +27,15 @@ from .tasks import WorkAreaCSVImporter, get_import_area_cache_key, import_work_a
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
-    # cache.delete(get_import_area_cache_key(request.opportunity.id))
+    hide_import_area_button = (
+        cache.get(get_import_area_cache_key(request.opportunity.id)) is not None
+        or WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
+    )
     return render(
         request,
         template_name="microplanning/home.html",
         context={
+            "hide_import_area_button": hide_import_area_button,
             "mapbox_api_key": settings.MAPBOX_TOKEN,
             "task_id": request.GET.get("task_id"),
         },
@@ -42,60 +45,56 @@ def microplanning_home(request, *args, **kwargs):
 @method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")
 class WorkAreaImport(View):
     def get(self, request, *args, **kwargs):
-        output = StringIO()
-        writer = csv.writer(output)
-        writer.writerow(WorkAreaCSVImporter.REQUIRED_HEADERS)
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="work_area_template.csv"'
+        writer = csv.writer(response)
+        writer.writerow(WorkAreaCSVImporter.HEADERS.values())
         writer.writerow(
             [
-                "Sample Work Area",
-                "XI1",
+                "Work-Area-1",
                 "Demo Ward",
-                "POINT(1 1)",
-                "POLYGON((0 0,0 1,1 1,1 0,0 0))",
+                "77.1 28.6",
+                "POLYGON((1 0,0 1,1 1,1 0,0 1))",
                 10,
                 12,
-                WorkAreaStatus.NOT_STARTED,
             ]
         )
-
-        csv_bytes = output.getvalue().encode("utf-8")
-        bytes_io = BytesIO(csv_bytes)
-        bytes_io.seek(0)
-        return FileResponse(
-            bytes_io,
-            as_attachment=True,
-            filename="work_area_template.csv",
-            content_type="text/csv",
-        )
+        return response
 
     def post(self, request, org_slug, opp_id):
+        redirect_url = reverse(
+            "microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": request.opportunity.id}
+        )
+
+        if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
+            messages.error(request, _("Work Areas already exist for this opportunity."))
+            return redirect_url
+
         lock_key = get_import_area_cache_key(request.opportunity.id)
-        redirect_url = reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
 
         if cache.get(lock_key):
-            messages.error(request, "An import for this opportunity is already in progress. Please try again later.")
+            messages.error(request, _("An import for this opportunity is already in progress."))
             return redirect(redirect_url)
 
         csv_file = request.FILES.get("csv_file")
         if not csv_file:
-            messages.error(request, "No file provided.")
+            messages.error(request, _("No file provided."))
             return redirect(redirect_url)
 
         extension = get_file_extension(csv_file)
         if extension != "csv":
-            messages.error(request, f"Unsupported file format: .{extension}. Please upload a CSV file.")
+            messages.error(request, _(f"Unsupported file format: .{extension}. Please upload a CSV file."))
             return redirect(redirect_url)
 
         try:
             csv_content = csv_file.read().decode("utf-8")
             task = import_work_areas_task.delay(request.opportunity.id, csv_content)
             cache.set(lock_key, task.id, timeout=1200)
-            messages.success(request, "Work Area upload has been started.")
+            messages.success(request, _("Work Area upload has been started."))
             redirect_url += f"?task_id={task.id}"
         except Exception:
             cache.delete(lock_key)
-            messages.error(request, "Failed to start import")
-
+            messages.error(request, _("Failed to start import."))
         return redirect(redirect_url)
 
 
@@ -122,17 +121,19 @@ def import_status(request, org_slug, opp_id):
             result_data = result.result
 
     if status_check:
-        response = HttpResponse(status=204)  # Task is not ready
+        response = HttpResponse(status=204)  # default: not ready
         if result_ready:
-            response["status"] = 200
-            response["HX-Trigger"] = "task-completed"
+            triggers = ["task-completed"]
+            if result_data and result_data.get("created", 0) > 1:
+                triggers.append("remove-import-button")
+            response.status_code = 200
+            response["HX-Trigger"] = ",".join(triggers)
         return response
 
     context = {
-        "is_importing": cache.get(get_import_area_cache_key(request.opportunity.id)) is not None,
-        "result_data": result_data,
-        "title": _("Work Area Upload Results") if result_ready else _("Upload Work Areas"),
         "result_ready": result_ready,
+        "result_data": result_data,
+        "title": _("Work Area Upload Outcome") if result_ready else _("Upload Work Areas"),
     }
 
     return render(request, "microplanning/import_work_area_modal.html", context)

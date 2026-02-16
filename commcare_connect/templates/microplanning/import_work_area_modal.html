@@ -64,13 +64,6 @@
                         class="fa-solid {% if is_importing %}fa-spinner animate-spin text-amber-500{% else %}fa-cloud-arrow-up{% endif %} text-5xl"></i>
                 </div>
 
-                {% if is_importing %}
-                <h3 class="text-lg font-semibold text-amber-600">{% translate "Import in Progress" %}</h3>
-                <p class="text-sm text-gray-500 mb-6">
-                    {% translate "An upload is already going on for this opportunity." %}</p>
-                <div hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id  %}"
-                    hx-trigger="every 5s" hx-target="#modal-container"></div>
-                {% else %}
                 <div class="w-full text-left" x-data="{ fileName: '' }">
                     <label class="block text-sm font-bold text-gray-700 mb-2">{% translate "Select File" %}</label>
                     <div class="relative border-2 rounded-lg px-4 py-4 bg-gray-50 hover:border-brand-deep-purple">
@@ -81,7 +74,6 @@
                             x-text="fileName || '{% translate 'No file chosen' %}'"></span>
                     </div>
                 </div>
-                {% endif %}
 
                 <a href="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
                     class="mt-6 flex items-center px-4 py-1.5 border border-gray-800 rounded-md text-sm font-medium hover:bg-gray-50 transition">

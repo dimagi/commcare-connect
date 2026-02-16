@@ -21,21 +21,22 @@
             {% if task_id %}
                 <button id="uploading-button" class="button button-md" disabled
                     hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}?task_id={{ task_id|urlencode }}&status_check=1"
-                    hx-trigger="load, every 3s" hx-swap="none" hx-on:task-completed="this.remove(); document.getElementById('see-result-button').style.display='inline-block'">
+                    hx-trigger="load, every 3s" hx-swap="none" hx-on:task-completed="refresh_upload_buttons(this)">
                     <i class="fa-solid fa-spinner animate-spin"></i> {% translate "Uploading Work Areas..." %}
                 </button>
                 <button id="see-result-button" type="button"
                     hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}?task_id={{ task_id|urlencode }}"
-                    hx-target="#modal-container" class="button button-md" style="display: none;"
-                    hx-on:task-completed="this.style.display='inline'">
+                    hx-target="#modal-container" class="button button-md" style="display: none;">
                     <i class="fa-solid fa-eye"></i> {% translate "See Upload Results" %}
                 </button>
             {% endif %}
-            <button type="button"
-                hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
-                hx-target="#modal-container" class="button button-md primary-dark">
-                    <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
-            </button>
+            {% if not hide_import_area_button %}
+                <button type="button" id="upload-workareas-btn"
+                    hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+                    hx-target="#modal-container" class="button button-md primary-dark">
+                        <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
+                </button>
+            {% endif %}
         </div>
     </div>
 

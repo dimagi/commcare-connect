@@ -1,6 +1,5 @@
 import csv
 import io
-from collections import defaultdict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
@@ -9,7 +8,7 @@ from django.utils.translation import gettext as _
 
 from config import celery_app
 
-from .models import WorkArea, WorkAreaGroup, WorkAreaStatus
+from .models import WorkArea
 
 
 def get_import_area_cache_key(opp_id: int):
@@ -17,15 +16,13 @@ def get_import_area_cache_key(opp_id: int):
 
 
 class WorkAreaCSVImporter:
-    REQUIRED_HEADERS = {
-        "Work Area Group Name",
-        "Area Slug",
-        "Ward",
-        "Centroid",
-        "Boundary",
-        "Building Count",
-        "Expected Visit Count",
-        "Status",
+    HEADERS = {
+        "slug": "Area Slug",
+        "ward": "Ward",
+        "centroid": "Centroid",
+        "boundary": "Boundary",
+        "building_count": "Building Count",
+        "visit_count": "Expected Visit Count",
     }
 
     def __init__(self, opp_id, csv_content):
@@ -38,29 +35,23 @@ class WorkAreaCSVImporter:
 
     def run(self):
         reader = csv.DictReader(io.StringIO(self.csv_content))
-
         if not self._validate_headers(reader):
             return self._result()
-
         self.existing_slugs = set(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
-        self.group_map = dict(WorkAreaGroup.objects.filter(opportunity_id=self.opp_id).values_list("name", "id"))
-
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
 
         self._bulk_insert()
-
         return self._result()
 
     def _result(self):
         if self.errors:
-            return {"errors": self.group_errors_by_message(self.errors)}
+            return {"errors": self.errors}
         return {"created": len(self.work_areas_to_create)}
 
     def _validate_headers(self, reader):
         headers = set(reader.fieldnames or [])
-        missing = self.REQUIRED_HEADERS - headers
-
+        missing = set(self.HEADERS.values()) - headers
         if missing:
             self._add_error(
                 1,
@@ -72,37 +63,23 @@ class WorkAreaCSVImporter:
     def _process_row(self, line_num, row):
         new_area = WorkArea(opportunity_id=self.opp_id)
         invalid_row = False
-
         processors = [
             self._process_slug,
-            self._process_geometry,
+            self._process_ward,
+            self._parse_centroid,
+            self._parse_boundary,
             self._process_numbers,
-            self._process_status,
-            self._process_group,
         ]
-
         for processor in processors:
             invalid_row |= processor(row, line_num, new_area)
-
         if not invalid_row:
             self.work_areas_to_create.append(new_area)
 
-    def group_errors_by_message(self, errors):
-        """
-        Convert {line_num: [msg1, msg2]} into {msg1: [line_nums], msg2: [line_nums]}
-        """
-        grouped = defaultdict(list)
-        for line, msgs in errors.items():
-            for msg in msgs:
-                grouped[msg].append(line)
-        return dict(grouped)
-
     def _process_slug(self, row, line_num, area):
         invalid = True
-        slug = (row.get("Area Slug") or "").strip()
-
+        slug = (row.get(self.HEADERS.get("slug")) or "").strip()
         if not slug:
-            self._add_error(line_num, _("Area slug is required."))
+            self._add_error(line_num, _("Area slug is required and it should be unique."))
         elif slug in self.seen_slugs:
             self._add_error(line_num, _("Duplicate Area slug in file"))
         elif slug in self.existing_slugs:
@@ -114,82 +91,64 @@ class WorkAreaCSVImporter:
 
         return invalid
 
-    def _process_geometry(self, row, line_num, area):
+    def _process_ward(self, row, line_num, area):
         invalid = True
-        centroid_raw = row.get("Centroid")
-        boundary_raw = row.get("Boundary")
-
-        if not centroid_raw or not boundary_raw:
-            self._add_error(line_num, _("Centroid and Boundary are required."))
+        ward = (row.get(self.HEADERS.get("ward")) or "").strip()
+        if ward:
+            area.ward = ward
+            invalid = False
         else:
+            self._add_error(line_num, _("Ward is required."))
+        return invalid
+
+    def _parse_centroid(self, row, line_num, area):
+        invalid = True
+        if row:
             try:
-                centroid = GEOSGeometry(centroid_raw, srid=4326)
-                boundary = GEOSGeometry(boundary_raw, srid=4326)
+                lon, lat = row.get(self.HEADERS.get("centroid")).strip().split()
+                wkt = f"POINT({lon} {lat})"
+                point = GEOSGeometry(wkt, srid=4326)
+                area.centroid = point
+                invalid = False
+            except (ValueError, GEOSException, TypeError, AttributeError):
+                pass
 
-                if centroid.geom_type != "Point":
-                    self._add_error(line_num, _("Centroid must be a POINT"))
-                elif boundary.geom_type != "Polygon":
-                    self._add_error(line_num, _("Boundary must be POLYGON"))
-                elif not boundary.valid:
-                    self._add_error(line_num, _("Invalid Boundary polygon geometry"))
-                else:
-                    # all checks passed
-                    area.centroid = centroid
-                    area.boundary = boundary
+        if invalid:
+            self._add_error(line_num, _("Centroid must be in 'lon lat' format"))
+        return invalid
+
+    def _parse_boundary(self, row, line_num, area):
+        invalid = True
+        if row:
+            try:
+                geom = GEOSGeometry(row.get(self.HEADERS.get("boundary")), srid=4326)
+                if geom.geom_type == "Polygon":
                     invalid = False
-
-            except (ValueError, GEOSException, TypeError):
-                self._add_error(line_num, _("Invalid WKT format for Centroid or Boundary"))
+                    area.boundary = geom
+            except (GEOSException, ValueError, TypeError):
+                pass
+        if invalid:
+            self._add_error(line_num, _("Invalid WKT format for Boundary(Polygon)."))
 
         return invalid
 
     def _process_numbers(self, row, line_num, area):
         invalid = True
-        building_raw = row.get("Building Count")
-        visit_raw = row.get("Expected Visit Count")
-
+        building_raw = row.get(self.HEADERS.get("building_count"))
+        visit_raw = row.get(self.HEADERS.get("visit_count"))
         try:
             building = int(building_raw) if building_raw else 0
             visit = int(visit_raw) if visit_raw else 0
 
-            if building < 0 or visit < 0:
-                self._add_error(line_num, _("Building count and Expected visit cannot be negative"))
-            else:
+            if building >= 0 and visit >= 0:
                 area.building_count = building
                 area.expected_visit_count = visit
                 invalid = False
-
         except ValueError:
-            self._add_error(line_num, _("Building count and Expected visit count Must be integers"))
+            pass
 
-        return invalid
-
-    def _process_status(self, row, line_num, area):
-        invalid = True
-        raw_status = (row.get("Status") or "").strip()
-
-        if not raw_status:
-            area.status = WorkAreaStatus.NOT_STARTED
-            invalid = False
-        elif raw_status not in WorkAreaStatus.values:
-            self._add_error(line_num, _("Invalid status value"))
-        else:
-            area.status = raw_status
-            invalid = False
-
-        return invalid
-
-    def _process_group(self, row, line_num, area):
-        invalid = True
-        name = (row.get("Work Area Group Name") or "").strip()
-
-        if not name:
-            invalid = False  # empty group allowed
-        elif name not in self.group_map:
-            self._add_error(line_num, _("Group Area name not found"))
-        else:
-            area.work_area_group_id = self.group_map[name]
-            invalid = False
+        if invalid:
+            self._add_error(line_num, _("Building count and Expected visit count must be postive integers"))
 
         return invalid
 
@@ -204,16 +163,18 @@ class WorkAreaCSVImporter:
             )
 
     def _add_error(self, line, message):
-        if line not in self.errors:
-            self.errors[line] = []
-        self.errors[line].append(message)
+        if message not in self.errors:
+            self.errors[message] = []
+        self.errors[message].append(line)
 
 
 @celery_app.task()
 def import_work_areas_task(opp_id, csv_content):
-    lock_key = get_import_area_cache_key(opp_id)
+    if WorkArea.objects.filter(opportunity_id=opp_id).exists():
+        return {"errors": {[_("Work Areas already exist for this opportunity."), [0]]}}
+
     try:
         importer = WorkAreaCSVImporter(opp_id, csv_content)
         return importer.run()
     finally:
-        cache.delete(lock_key)
+        cache.delete(get_import_area_cache_key(opp_id))
