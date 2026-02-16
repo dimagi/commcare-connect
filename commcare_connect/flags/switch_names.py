@@ -1,5 +1,5 @@
 OPPORTUNITY_CREDENTIALS = "opportunity_credentials"
 USER_VISIT_FILTERS = "user_visit_filters"
-AUTOMATED_INVOICES = "automated_invoices"
 INVOICE_REVIEW = "invoice_review"
 AUTOMATED_INVOICES_MONTHLY = "automated_invoices_monthly"
+API_UUID = "api_uuid"
