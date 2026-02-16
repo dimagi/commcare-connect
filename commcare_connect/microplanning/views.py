@@ -86,15 +86,11 @@ class WorkAreaImport(View):
             messages.error(request, _(f"Unsupported file format: .{extension}. Please upload a CSV file."))
             return redirect(redirect_url)
 
-        try:
-            csv_content = csv_file.read().decode("utf-8")
-            task = import_work_areas_task.delay(request.opportunity.id, csv_content)
-            cache.set(lock_key, task.id, timeout=1200)
-            messages.success(request, _("Work Area upload has been started."))
-            redirect_url += f"?task_id={task.id}"
-        except Exception:
-            cache.delete(lock_key)
-            messages.error(request, _("Failed to start import."))
+        csv_content = csv_file.read().decode("utf-8")
+        task = import_work_areas_task.delay(request.opportunity.id, csv_content)
+        cache.set(lock_key, task.id, timeout=1200)
+        messages.success(request, _("Work Area upload has been started."))
+        redirect_url += f"?task_id={task.id}"
         return redirect(redirect_url)
 
 
