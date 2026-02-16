@@ -177,3 +177,35 @@ class OrganizationCreationForm(forms.ModelForm):
                 ]
             }
         return data
+
+    def clean_name(self):
+        value = self.cleaned_data["name"]
+        # Existing org selected (id)
+        if value.isdigit():
+            org = Organization.objects.filter(pk=value).first()
+            if org:
+                return org
+        return Organization(name=value)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        name = cleaned_data.get("name")
+        llo_entity = cleaned_data.get("llo_entity")
+        if name.pk:
+            if llo_entity and name.llo_entity != llo_entity:
+                raise ValidationError(
+                    {
+                        "llo_entity": gettext(
+                            "Selected LLO Entity does not match the existing organization's LLO Entity."
+                        )
+                    }
+                )
+        return cleaned_data
+
+    def save(self, commit=True):
+        org = self.cleaned_data["name"]
+        llo_entity = self.cleaned_data["llo_entity"]
+        org.llo_entity = llo_entity
+        if commit and not org.pk:
+            org.save()
+        return org
