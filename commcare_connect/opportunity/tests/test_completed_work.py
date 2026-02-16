@@ -4,15 +4,23 @@ from unittest.mock import patch
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from commcare_connect.opportunity.models import CompletedWorkStatus
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    CompletedWorkStatus,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
+    DeliverUnitFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    UserVisitFactory,
 )
-from commcare_connect.opportunity.utils.completed_work import get_uninvoiced_visit_items
+from commcare_connect.opportunity.utils.completed_work import get_uninvoiced_visit_items, update_status
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 
 
 @pytest.mark.django_db
@@ -214,3 +222,421 @@ class TestUninvoicedVisitItems:
             cw.saved_payment_accrued = cw.payment_unit.amount
             cw.saved_payment_accrued_usd = cw.saved_payment_accrued / exchange_rate
             cw.save()
+
+
+@pytest.mark.django_db
+class TestUpdateStatus:
+    def test_completed_work_updated_to_approved_with_all_visits_approved(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 100
+
+    def test_completed_work_updated_to_approved_with_all_required_visits_approved(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        optional_deliver_unit_1 = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+        optional_deliver_unit_2 = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=optional_deliver_unit_1,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=optional_deliver_unit_2,
+            completed_work=completed_work,
+            status=VisitValidationStatus.pending,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 100
+
+    def test_completed_work_not_updated_to_approved_with_not_all_required_visits_approved(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_deliver_unit_1 = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        required_deliver_unit_2 = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        optional_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit_1,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit_2,
+            completed_work=completed_work,
+            status=VisitValidationStatus.pending,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=optional_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.pending
+        assert completed_work.saved_approved_count == 0
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 0
+
+    def test_managed_opp_completed_work_not_updated_to_approved_without_agreement(self):
+        managed_opp = ManagedOpportunityFactory()
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity = managed_opp
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        optional_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.pending,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=optional_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.pending
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 0
+
+    def test_managed_opp_completed_work_updated_to_approved_with_agreement(self):
+        managed_opp = ManagedOpportunityFactory()
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity = managed_opp
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        optional_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=optional_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 100
+
+    def test_managed_opp_completed_work_updated_to_approved_with_same_unit_over_limit(self):
+        managed_opp = ManagedOpportunityFactory()
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity = managed_opp
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.over_limit,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_completed_count == 2
+        assert completed_work.saved_payment_accrued == 100
+
+    def test_completed_work_updated_to_rejected_when_any_visit_rejected(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.rejected,
+            reason="Invalid data",
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.rejected
+        assert completed_work.reason == "Invalid data"
+        assert completed_work.saved_approved_count == 0
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 0
+
+    def test_payment_calculations_when_completed_work_approved(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=150)
+        deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        for _ in range(3):
+            UserVisitFactory(
+                opportunity=opp_access.opportunity,
+                user=opp_access.user,
+                opportunity_access=opp_access,
+                deliver_unit=deliver_unit,
+                completed_work=completed_work,
+                status=VisitValidationStatus.approved,
+            )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 3
+        assert completed_work.saved_completed_count == 3
+        assert completed_work.saved_payment_accrued == 450
+        assert completed_work.saved_payment_accrued_usd > 0
+
+    def test_no_status_update_when_auto_approve_disabled(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = False
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.pending
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_completed_count == 1
+        assert completed_work.saved_payment_accrued == 0
