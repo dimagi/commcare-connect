@@ -16,7 +16,7 @@ from django.views.decorators.http import require_GET
 
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
 from commcare_connect.utils.file import get_file_extension
 
@@ -28,16 +28,18 @@ from .tasks import WorkAreaCSVImporter, get_import_area_cache_key, import_work_a
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
-    hide_import_area_button = (
-        cache.get(get_import_area_cache_key(request.opportunity.id)) is not None
-        or WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
+    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
+    show_area_btn = not (cache.get(get_import_area_cache_key(request.opportunity.id)) is not None or areas_present)
+    show_workarea_groups_btn = (
+        areas_present and not WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).exists()
     )
     opportunity = request.opportunity
     return render(
         request,
         template_name="microplanning/home.html",
         context={
-            "hide_import_area_button": hide_import_area_button,
+            "show_area_btn": show_area_btn,
+            "show_workarea_groups_btn": show_workarea_groups_btn,
             "mapbox_api_key": settings.MAPBOX_TOKEN,
             "task_id": request.GET.get("task_id"),
             "opportunity": opportunity,
@@ -133,8 +135,8 @@ def import_status(request, org_slug, opp_id):
         response = HttpResponse(status=204)  # default: not ready
         if result_ready:
             triggers = ["task-completed"]
-            if result_data and result_data.get("created", 0) > 1:
-                triggers.append("remove-import-button")
+            if result_data and result_data.get("created", 0) > 0:
+                triggers.append("added-new-areas")
             response.status_code = 200
             response["HX-Trigger"] = ",".join(triggers)
         return response
