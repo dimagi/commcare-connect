@@ -1391,7 +1391,7 @@ def test_update_invoice_invoice_ticket_link(
 
     url = reverse(
         "opportunity:update_invoice_invoice_ticket_link",
-        args=(program_manager_org.slug, opportunity.pk, invoice.payment_invoice_id),
+        args=(program_manager_org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
     )
 
     client.force_login(program_manager_org_user_member)
@@ -1405,7 +1405,8 @@ def test_update_invoice_invoice_ticket_link(
     response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
     assert response.status_code == HTTPStatus.FOUND
     assert response.url == reverse(
-        "opportunity:invoice_review", args=(program_manager_org.slug, opportunity.pk, invoice.payment_invoice_id)
+        "opportunity:invoice_review",
+        args=(program_manager_org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
     )
     messages = list(get_messages(response.wsgi_request))
     assert len(messages) == 1
@@ -1417,7 +1418,8 @@ def test_update_invoice_invoice_ticket_link(
     response = client.post(url, data={"invoice_ticket_link": "https://www."})
     assert response.status_code == HTTPStatus.FOUND
     assert response.url == reverse(
-        "opportunity:invoice_review", args=(program_manager_org.slug, opportunity.pk, invoice.payment_invoice_id)
+        "opportunity:invoice_review",
+        args=(program_manager_org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
     )
     messages = list(get_messages(response.wsgi_request))
     assert len(messages) == 2
