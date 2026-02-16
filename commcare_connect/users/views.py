@@ -6,7 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.html import format_html
@@ -30,7 +30,7 @@ from commcare_connect.opportunity.models import HQApiKey, Opportunity, Opportuni
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.error_codes import ErrorCodes
-from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, OTP_ACCESS
+from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
@@ -293,3 +293,50 @@ class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
         errors = ", ".join(form.errors["phone_number"])
         messages.error(self.request, f"{errors}")
         return super().form_invalid(form)
+
+
+@login_required
+@require_GET
+def internal_features(request):
+    has_otp_access = request.user.has_perm(OTP_ACCESS)
+    has_demo_user_access = request.user.has_perm(DEMO_USER_ACCESS)
+    has_kpi_report_access = request.user.has_perm(KPI_REPORT_ACCESS)
+
+    if not (has_otp_access or has_demo_user_access or has_kpi_report_access):
+        return redirect("home")
+
+    features = []
+
+    if has_otp_access:
+        features.append(
+            {
+                "name": "Connect OTPs",
+                "description": "Get OTPs for Connect Mobile Users.",
+                "url": reverse("users:connect_user_otp"),
+            }
+        )
+    if has_demo_user_access:
+        features.append(
+            {
+                "name": "Demo Users",
+                "description": "Get OTPs for Demo Users.",
+                "url": reverse("users:demo_users"),
+            }
+        )
+    if has_kpi_report_access:
+        features.append(
+            {
+                "name": "KPI Report",
+                "description": "Access the KPI reports dashboard.",
+                "url": reverse("reports:delivery_stats_report"),
+            }
+        )
+        features.append(
+            {
+                "name": "Invoice Report",
+                "description": "Access the Invoice reports dashboard.",
+                "url": reverse("reports:invoice_report"),
+            }
+        )
+
+    return render(request, "users/internal_features.html", context={"features": features})
