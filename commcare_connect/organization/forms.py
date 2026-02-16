@@ -69,6 +69,17 @@ class OrganizationChangeForm(forms.ModelForm):
             return self.cleaned_data["llo_entity"]
         return self.instance.llo_entity
 
+    def save(self, commit=True):
+        org = super().save(commit=False)
+        llo_entity = self.cleaned_data.get("llo_entity")
+
+        org.llo_entity = llo_entity
+        if commit:
+            if llo_entity and not llo_entity.pk:
+                llo_entity.save()
+            org.save()
+        return org
+
 
 class MembershipForm(forms.ModelForm):
     email = forms.CharField(
@@ -206,6 +217,9 @@ class OrganizationCreationForm(forms.ModelForm):
         org = self.cleaned_data["name"]
         llo_entity = self.cleaned_data["llo_entity"]
         org.llo_entity = llo_entity
-        if commit and not org.pk:
-            org.save()
+        if commit:
+            if llo_entity and not llo_entity.pk:
+                llo_entity.save()
+            if not org.pk:
+                org.save()
         return org

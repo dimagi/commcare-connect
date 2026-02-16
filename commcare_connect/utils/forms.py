@@ -30,8 +30,15 @@ class CreatableModelChoiceField(forms.ModelChoiceField):
 
     def clean(self, value):
         value = super().clean(value)
-        if isinstance(value, str) and value.strip():
-            # If the value is string, create the object and return it.
-            obj, _ = self.queryset.model.objects.get_or_create(**{self.create_key_name: value})
-            return obj
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                if self.required:
+                    raise forms.ValidationError(self.error_messages["required"], code="required")
+                return None
+            # If the value is string, return an unsaved instance or existing if present.
+            try:
+                return self.queryset.get(**{self.create_key_name: value})
+            except self.queryset.model.DoesNotExist:
+                return self.queryset.model(**{self.create_key_name: value})
         return value

@@ -22,8 +22,7 @@ def organization_create(request):
     form = OrganizationCreationForm(data=request.POST or None)
 
     if form.is_valid():
-        org = form.save(commit=False)
-        org.save()
+        org = form.save()
         org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
