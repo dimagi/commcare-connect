@@ -10,13 +10,15 @@
     <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">{% translate "Internal Features" %}</h2>
     <div class="grid gap-2 grid-cols-4">
     {% for feature in features %}
-      <div class="card_bg">
-        <h3 class="card_title mb-2">{{ feature.name }}</h3>
-        {% if feature.description %}
-          <p class="card_description mb-2">{{ feature.description }}</p>
-        {% endif %}
-      <a class="mt-2 button button-md primary-dark" href="{{feature.url}}">{% translate "Open" %} <i class="fa-solid fa-arrow-right"></i></a>
-      </div>
+      {% if feature.perm in perms %}
+        <div class="card_bg">
+          <h3 class="card_title mb-2">{{ feature.name }}</h3>
+          {% if feature.description %}
+            <p class="card_description mb-2">{{ feature.description }}</p>
+          {% endif %}
+        <a class="mt-2 button button-md primary-dark" href="{{feature.url}}">{% translate "Open" %} <i class="fa-solid fa-arrow-right"></i></a>
+        </div>
+      {% endif %}
     {% endfor %}
     </div>
 </div>

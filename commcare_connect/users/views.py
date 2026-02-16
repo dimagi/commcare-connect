@@ -301,39 +301,31 @@ def internal_features(request):
     if not request.user.show_internal_features:
         return redirect("home")
 
-    features = []
-
-    if request.user.has_perm(OTP_ACCESS):
-        features.append(
-            {
-                "name": "Connect OTPs",
-                "description": "Get OTPs for Connect Mobile Users.",
-                "url": reverse("users:connect_user_otp"),
-            }
-        )
-    if request.user.has_perm(DEMO_USER_ACCESS):
-        features.append(
-            {
-                "name": "Demo Users",
-                "description": "Get OTPs for Demo Users.",
-                "url": reverse("users:demo_users"),
-            }
-        )
-    if request.user.has_perm(KPI_REPORT_ACCESS):
-        features.append(
-            {
-                "name": "KPI Report",
-                "description": "Access the KPI reports dashboard.",
-                "url": reverse("reports:delivery_stats_report"),
-            }
-        )
-    if request.user.has_perm(ALL_ORG_ACCESS):
-        features.append(
-            {
-                "name": "Invoice Report",
-                "description": "Access the Invoice reports dashboard.",
-                "url": reverse("reports:invoice_report"),
-            }
-        )
+    features = [
+        {
+            "perm": OTP_ACCESS,
+            "name": "Connect OTPs",
+            "description": "Get OTPs for Connect Mobile Users.",
+            "url": reverse("users:connect_user_otp"),
+        },
+        {
+            "perm": DEMO_USER_ACCESS,
+            "name": "Demo Users",
+            "description": "Get OTPs for Demo Users.",
+            "url": reverse("users:demo_users"),
+        },
+        {
+            "perm": KPI_REPORT_ACCESS,
+            "name": "KPI Report",
+            "description": "Access the KPI reports dashboard.",
+            "url": reverse("reports:delivery_stats_report"),
+        },
+        {
+            "perm": ALL_ORG_ACCESS,
+            "name": "Invoice Report",
+            "description": "Access the Invoice reports dashboard.",
+            "url": reverse("reports:invoice_report"),
+        },
+    ]
 
     return render(request, "users/internal_features.html", context={"features": features})
