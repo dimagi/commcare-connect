@@ -17,7 +17,7 @@ class OrganizationChangeForm(forms.ModelForm):
 
     class Meta:
         model = Organization
-        fields = ("name", "program_manager", "llo_entity")
+        fields = ("name", "program_manager")
         labels = {
             "name": gettext_lazy("Workspace Name"),
             "program_manager": gettext_lazy("Enable Program Manager"),
@@ -40,6 +40,7 @@ class OrganizationChangeForm(forms.ModelForm):
         else:
             del self.fields["program_manager"]
 
+        instance_llo = getattr(self.instance, "llo_entity", None)
         if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             self.fields["llo_entity"] = CreatableModelChoiceField(
                 label=gettext("LLO Entity"),
@@ -49,8 +50,9 @@ class OrganizationChangeForm(forms.ModelForm):
                 required=False,
                 create_key_name="name",
             )
+            self.fields["llo_entity"].initial = instance_llo
         else:
-            if self.instance and self.instance.llo_entity:
+            if instance_llo:
                 self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
 
         layout_fields.append(layout.Field("llo_entity"))
@@ -156,7 +158,7 @@ class AddCredentialForm(forms.Form):
         return split_users
 
 
-class OrganizationCreationForm(forms.ModelForm):
+class OrganizationCreationForm(forms.Form):
     llo_entity = CreatableModelChoiceField(
         label=gettext_lazy("LLO Entity"),
         queryset=LLOEntity.objects.order_by("name"),
@@ -174,9 +176,6 @@ class OrganizationCreationForm(forms.ModelForm):
         ),
     )
 
-    class Meta:
-        model = Organization
-        fields = ("llo_entity", "name",)
 
     def get_entity_wise_orgs(self):
         data = {}
