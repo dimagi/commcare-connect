@@ -57,7 +57,7 @@
             </div>
             {% endif %}
           {% endif %}
-          {% if "users.otp_access" in perms or "users.demo_users_access" in perms or "users.kpi_report_access" in perms %}
+          {% if request.user.show_internal_features %}
             {% url 'users:internal_features' as internal_features_url %}
             {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url %}
           {% endif %}

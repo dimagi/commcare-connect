@@ -298,16 +298,12 @@ class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
 @login_required
 @require_GET
 def internal_features(request):
-    has_otp_access = request.user.has_perm(OTP_ACCESS)
-    has_demo_user_access = request.user.has_perm(DEMO_USER_ACCESS)
-    has_kpi_report_access = request.user.has_perm(KPI_REPORT_ACCESS)
-
-    if not (has_otp_access or has_demo_user_access or has_kpi_report_access):
+    if not request.user.show_internal_features:
         return redirect("home")
 
     features = []
 
-    if has_otp_access:
+    if request.user.has_perm(OTP_ACCESS):
         features.append(
             {
                 "name": "Connect OTPs",
@@ -315,7 +311,7 @@ def internal_features(request):
                 "url": reverse("users:connect_user_otp"),
             }
         )
-    if has_demo_user_access:
+    if request.user.has_perm(DEMO_USER_ACCESS):
         features.append(
             {
                 "name": "Demo Users",
@@ -323,7 +319,7 @@ def internal_features(request):
                 "url": reverse("users:demo_users"),
             }
         )
-    if has_kpi_report_access:
+    if request.user.has_perm(KPI_REPORT_ACCESS):
         features.append(
             {
                 "name": "KPI Report",
