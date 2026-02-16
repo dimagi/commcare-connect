@@ -1589,7 +1589,7 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
         invoice.save(update_fields=["invoice_ticket_link"])
         messages.success(request, _("Invoice ticket link saved!"))
     else:
-        messages.error(request, _(f"Error: {form.errors.as_text()}"))
+        messages.error(request, _("Error: {errors}").format(errors=form.errors.as_text()))
     return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
 
 
