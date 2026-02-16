@@ -1592,18 +1592,23 @@ class PMEditPaymentInvoiceForm(forms.ModelForm):
 
     class Meta:
         model = PaymentInvoice
-        fields = ("invoice_ticket_link",)
+        fields = (
+            "opportunity",
+            "invoice_ticket_link",
+        )
 
     def __init__(self, *args, **kwargs):
-        self.request = kwargs.pop("request")
-        self.org_slug = kwargs.pop("org_slug")
-        self.opportunity = kwargs.pop("opportunity")
+        # import ipdb;
+        # ipdb.sset_trace()
+        # self.request = kwargs.pop("request")
+        # self.org_slug = kwargs.pop("org_slug")
+        # self.opportunity = kwargs.pop("opportunity")
 
         super().__init__(*args, **kwargs)
-        self.helper = FormHelper(self)
-
-        self._prepare_fields()
-        self._add_form_submit()
+        # self.helper = FormHelper(self)
+        #
+        # self._prepare_fields()
+        # self._add_form_submit()
 
     def _prepare_fields(self):
         self.fields["invoice_ticket_link"].initial = self.instance.invoice_ticket_link
@@ -1615,20 +1620,12 @@ class PMEditPaymentInvoiceForm(forms.ModelForm):
 
     def _add_form_submit(self):
         self.helper.add_input(Submit("submit", _("Submit"), css_class="button button-md primary-dark"))
-        self.helper.form_action = reverse(
-            "opportunity:pm_payment_invoice_edit",
-            args=[self.org_slug, str(self.opportunity.opportunity_id), str(self.instance.payment_invoice_id)],
-        )
 
     def save(self, commit=True):
+        # import ipdb; ipdb.sset_trace()
         instance = super().save(commit=False)
-        instance.invoice_ticket_link = self.cleaned_data["invoice_ticket_link"]
-
-        if commit:
-            try:
-                instance.save()
-            except Exception as e:
-                messages.error(self.request, _("Could not save invoice. {error_message}").format(error_message=e))
+        # instance.invoice_ticket_link = self.cleaned_data["invoice_ticket_link"]
+        # instance.save()
         return instance
 
 

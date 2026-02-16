@@ -1105,7 +1105,8 @@ class BaseTestInvoiceView:
 
 @pytest.mark.django_db
 class TestPMPaymentInvoiceEditView:
-    def _send_request(self, client, organization, opportunity, invoice_id, user):
+    @staticmethod
+    def _send_request(client, organization, opportunity, invoice_id, user):
         url = reverse(
             "opportunity:pm_payment_invoice_edit",
             args=(organization.slug, opportunity.opportunity_id, invoice_id),
@@ -1115,7 +1116,9 @@ class TestPMPaymentInvoiceEditView:
         return client.post(url)
 
     @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
-    def test_access_for_non_pm_org(self, client, organization, opportunity, org_user_member, org_user_admin):
+    def test_access_restriction_for_non_pm_org(
+        self, client, organization, opportunity, org_user_member, org_user_admin
+    ):
         invoice = PaymentInvoiceFactory(opportunity=opportunity)
 
         for user in [org_user_admin, org_user_member]:

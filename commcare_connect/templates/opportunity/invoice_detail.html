@@ -43,21 +43,6 @@
       {% endif %}
     </div>
   </div>
-  {% if request.is_opportunity_pm %}
-    {% switch 'updates_to_mark_as_paid_workflow' %}
-      <hr class="mt-5">
-      <div class="card_title mt-5">
-        {% if is_service_delivery %}
-          {% translate "Edit Service Delivery Invoice" %}
-        {% else %}
-          {% translate "Edit Custom Invoice" %}
-        {% endif %}
-      </div>
-      <div>
-        {% crispy pm_edit_payment_invoice_form %}
-      </div>
-    {% endswitch %}
-  {% endif %}
 </div>
 
 {% include "opportunity/partials/invoice_form_handler.html" with is_read_only=True %}
