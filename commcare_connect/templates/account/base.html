@@ -33,7 +33,9 @@
       }(window, document, 'script', window['__ls_script_url'], window['__ls_namespace']);
 
       __ls("init", "01df8735.a23e48d9", { keystrokes: false });
-      __ls("newPageView");
+      __ls("identify", {
+          email: "{{ request.user.email|default:'Anonymous' }}"
+        })
     </script>
     <!-- END LiveSession.io code -->
   </head>
