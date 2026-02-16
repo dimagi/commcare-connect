@@ -13,7 +13,7 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import INVOICE_REVIEW
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -1365,3 +1365,60 @@ class TestAddPaymentUnitView:
         managed_amount_fields = managed_amounts_div.fields
 
         assert len(managed_amount_fields) == 2
+
+
+@pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link(
+    client, program_manager_org, program_manager_org_user_member, program_manager_org_user_admin
+):
+    def _setup_data():
+        program = ProgramFactory(organization=program_manager_org, budget=10000)
+        program_manager_org_opportunity = ManagedOpportunityFactory(
+            program=program,
+            organization=program_manager_org,
+            managed=True,
+        )
+        return (
+            PaymentInvoiceFactory(
+                opportunity=program_manager_org_opportunity,
+            ),
+            program_manager_org_opportunity,
+        )
+
+    invoice, opportunity = _setup_data()
+    assert invoice.invoice_ticket_link is None
+
+    url = reverse(
+        "opportunity:update_invoice_invoice_ticket_link",
+        args=(program_manager_org.slug, opportunity.pk, invoice.payment_invoice_id),
+    )
+
+    client.force_login(program_manager_org_user_member)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link is None
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == reverse(
+        "opportunity:invoice_review", args=(program_manager_org.slug, opportunity.pk, invoice.payment_invoice_id)
+    )
+    messages = list(get_messages(response.wsgi_request))
+    assert len(messages) == 1
+    assert str(messages[0]) == "Invoice ticket link saved!"
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link == "https://www.home.com"
+
+    response = client.post(url, data={"invoice_ticket_link": "https://www."})
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == reverse(
+        "opportunity:invoice_review", args=(program_manager_org.slug, opportunity.pk, invoice.payment_invoice_id)
+    )
+    messages = list(get_messages(response.wsgi_request))
+    assert len(messages) == 2
+    assert str(messages[1]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."

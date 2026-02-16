@@ -54,11 +54,7 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import (
-    INVOICE_REVIEW,
-    UPDATES_TO_MARK_AS_PAID_WORKFLOW,
-    USER_VISIT_FILTERS,
-)
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, USER_VISIT_FILTERS
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -1578,7 +1574,13 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 @opportunity_required
 @require_POST
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
-    # ToDo: add update
+    form = PaymentInvoiceInvoiceTicketLinkForm(request.POST)
+    if form.is_valid():
+        invoice_ticket_link = form.cleaned_data["invoice_ticket_link"]
+        PaymentInvoice.objects.filter(payment_invoice_id=invoice_id).update(invoice_ticket_link=invoice_ticket_link)
+        messages.success(request, _("Invoice ticket link saved!"))
+    else:
+        messages.error(request, _(f"Error: {form.errors.as_text()}"))
     return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
 
 
