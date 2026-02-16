@@ -97,41 +97,46 @@ class CompletedWorkUpdater:
     def _update_status(self, completed_work):
         updated = False
         if self.opportunity.auto_approve_payments:
-            visits = completed_work.uservisit_set.values_list("status", "reason", "review_status", "deliver_unit_id")
+            visits = completed_work.uservisit_set.annotate(
+                optional=F("deliver_unit__optional"),
+            ).values_list("status", "reason", "review_status", "deliver_unit_id", "optional")
+
             if any(status == VisitValidationStatus.rejected for status, *_ in visits):
                 completed_work.status = CompletedWorkStatus.rejected
-                completed_work.reason = "\n".join(reason for _, reason, _, _ in visits if reason)
-            else:
-                required_delivery_approval_mapping = self._get_required_delivery_approvals(visits, completed_work)
-                if all(required_delivery_approval_mapping.values()):
-                    completed_work.status = CompletedWorkStatus.approved
+                completed_work.reason = "\n".join(reason for _, reason, *_ in visits if reason)
+            elif self.is_completed_work_approved(visits):
+                completed_work.status = CompletedWorkStatus.approved
 
             updated = True
         return updated
 
-    def _get_required_delivery_approvals(self, visits, completed_work):
+    def is_completed_work_approved(self, visits):
         """
-        Returns a map of required deliver_unit_id to whether that deliver unit
-        has an approved visit for the completed work.
+        Check if all required deliver units have an approved visit and if there are optional deliver units,
+        at least one of them has an approved visit. If multiple visits exist for a given deliver unit, only
+        one needs to be approved for the deliver unit to be considered approved.
         """
-        required_deliver_unit_ids = [
-            du_id for du_id, optional in self.deliver_unit_map[completed_work.payment_unit_id] if not optional
-        ]
-        deliver_unit_has_approval_map = {}
-        for required_deliver_unit_id in required_deliver_unit_ids:
+        required_deliver_units_approvals = {}
+        optional_deliver_units_approvals = {}
+
+        for status, _, review_status, deliver_unit_id, optional in visits:
+            visit_is_approved = status == VisitValidationStatus.approved
             if self.opportunity.managed:
-                deliver_unit_approved_visit = visits.filter(
-                    deliver_unit_id=required_deliver_unit_id,
-                    status=VisitValidationStatus.approved,
-                    review_status=VisitReviewStatus.agree,
-                ).first()
+                visit_is_approved = visit_is_approved and review_status == VisitReviewStatus.agree
+
+            if not optional:
+                required_deliver_units_approvals[deliver_unit_id] = (
+                    required_deliver_units_approvals.get(deliver_unit_id, False) or visit_is_approved
+                )
             else:
-                deliver_unit_approved_visit = visits.filter(
-                    deliver_unit_id=required_deliver_unit_id,
-                    status=VisitValidationStatus.approved,
-                ).first()
-            deliver_unit_has_approval_map[required_deliver_unit_id] = True if deliver_unit_approved_visit else False
-        return deliver_unit_has_approval_map
+                optional_deliver_units_approvals[deliver_unit_id] = (
+                    optional_deliver_units_approvals.get(deliver_unit_id, False) or visit_is_approved
+                )
+
+        optional_visits_approved = (
+            any(optional_deliver_units_approvals.values()) if optional_deliver_units_approvals else True
+        )
+        return all(required_deliver_units_approvals.values()) and optional_visits_approved
 
     def _update_payment(self, completed_work):
         updated = False
