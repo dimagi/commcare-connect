@@ -1,3 +1,5 @@
+{% load i18n %}
+
 <div
   x-show="isOpen"
   x-cloak
@@ -14,13 +16,13 @@
      {% if not opportunity.managed or is_opportunity_pm %}
     <li>
        <a href="{% url 'opportunity:edit' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >Edit Opportunity</a
+        >{% translate "Edit Opportunity" %}</a
       >
     </li>
     <li>
        <a href="{% url 'opportunity:add_payment_unit' request.org.slug opportunity.opportunity_id %}"
         class="block px-4 py-2.5 text-sm text-brand-deep-purple">
-        Add Payment Unit
+        {% translate "Add Payment Unit" %}
       </a>
     </li>
     {% endif %}
@@ -28,41 +30,41 @@
     {% if opportunity.managed %}
     <li>
        <a href="{% url 'opportunity:invoice_list' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >View Invoices</a
+        >{% translate "View Invoices" %}</a
       >
     </li>
     {% endif %}
     <li x-data="{showMoreOptions: false}">
-      <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showMoreOptions = true">Catchment Areas</a>
+      <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showMoreOptions = true">{% translate "Catchment Areas" %}</a>
       <div x-show="showMoreOptions"
           x-cloak
           @click.away="showMoreOptions = false"
           class="ms-4"
         >
-        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentImportModal = true">Import</a>
-        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentExportModal = true">Export</a>
+        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentImportModal = true">{% translate "Import" %}</a>
+        <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentExportModal = true">{% translate "Export" %}</a>
       </div>
     </li>
     <li>
       <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >Add Connect Workers</a
+        >{% translate "Add Connect Workers" %}</a
       >
     </li>
     <li>
       <a href="{% url 'opportunity:add_budget_existing_users' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >Add Budget</a
+        >{% translate "Add Budget" %}</a
       >
     </li>
     {% if not opportunity.managed or is_opportunity_pm %}
     <li>
       <a  href="{% url 'opportunity:verification_flags_config' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >Verification Flags</a
+        >{% translate "Verification Flags" %}</a
       >
     </li>
     {% endif %}
     <li>
       <a href="{% url 'opportunity:send_message_mobile_users' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
-        >Send Message</a
+        >{% translate "Send Message" %}</a
       >
     </li>
   </ul>

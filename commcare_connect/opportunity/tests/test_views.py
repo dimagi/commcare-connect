@@ -13,13 +13,8 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
-from commcare_connect.opportunity.forms import (
-    AddBudgetExistingUsersForm,
-    AutomatedPaymentInvoiceForm,
-    PaymentInvoiceForm,
-    PaymentUnitForm,
-)
+from commcare_connect.flags.switch_names import INVOICE_REVIEW
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     Opportunity,
@@ -1195,13 +1190,8 @@ class TestInvoiceReviewView:
                 else:
                     assert field.widget.attrs.get("readonly") == "readonly", f"Field {field_name} should be readonly"
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            response = client.get(url)
-            assert_readonly_form(response)
-
-        with override_switch(AUTOMATED_INVOICES, active=False):
-            response = client.get(url)
-            assert_readonly_form(response)
+        response = client.get(url)
+        assert_readonly_form(response)
 
     @override_switch(INVOICE_REVIEW, active=True)
     def test_custom_invoice_no_line_items(self, client, setup_invoice):
@@ -1215,16 +1205,15 @@ class TestInvoiceReviewView:
             date=date(2025, 11, 1),
         )
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.opportunity_id, custom_invoice.payment_invoice_id),
-            )
-            response = client.get(url)
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, custom_invoice.payment_invoice_id),
+        )
+        response = client.get(url)
 
-            form = response.context["form"]
-            assert form.line_items_table is None
+        form = response.context["form"]
+        assert form.line_items_table is None
 
     @override_switch(INVOICE_REVIEW, active=True)
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
@@ -1243,36 +1232,19 @@ class TestInvoiceReviewView:
         assert response.status_code in [302, 403, 404]
 
     @override_switch(INVOICE_REVIEW, active=True)
-    def test_legacy_form_when_switch_inactive(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        with override_switch(AUTOMATED_INVOICES, active=False):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-            )
-            response = client.get(url)
-            form = response.context["form"]
-            assert isinstance(form, PaymentInvoiceForm)
-
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_automated_form_when_switch_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-            )
-            response = client.get(url)
-            form = response.context["form"]
-            assert isinstance(form, AutomatedPaymentInvoiceForm)
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+        )
+        response = client.get(url)
+        form = response.context["form"]
+        assert isinstance(form, AutomatedPaymentInvoiceForm)
 
 
 @pytest.mark.django_db

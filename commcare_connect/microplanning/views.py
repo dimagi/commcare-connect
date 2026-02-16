@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.http import require_GET
@@ -31,6 +32,7 @@ def microplanning_home(request, *args, **kwargs):
         cache.get(get_import_area_cache_key(request.opportunity.id)) is not None
         or WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
     )
+    opportunity = request.opportunity
     return render(
         request,
         template_name="microplanning/home.html",
@@ -38,8 +40,19 @@ def microplanning_home(request, *args, **kwargs):
             "hide_import_area_button": hide_import_area_button,
             "mapbox_api_key": settings.MAPBOX_TOKEN,
             "task_id": request.GET.get("task_id"),
+            "opportunity": opportunity,
+            "metrics": get_metrics_for_microplanning(opportunity),
         },
     )
+
+
+def get_metrics_for_microplanning(opportunity):
+    return [
+        {
+            "name": _("Days Remaining"),
+            "value": max((opportunity.end_date - localdate()).days, 0) if opportunity.end_date else "--",
+        },
+    ]
 
 
 @method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")

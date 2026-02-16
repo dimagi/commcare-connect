@@ -255,6 +255,20 @@ class LearnModule(models.Model):
         return self.name
 
 
+class Task(models.Model):
+    app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
+    slug = models.SlugField()
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    time_estimate = models.IntegerField(help_text="Estimated hours to complete the task")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app")]
+
+
 class XFormBaseModel(models.Model):
     xform_id = models.CharField(max_length=50)
     app_build_id = models.CharField(max_length=50, null=True, blank=True)
@@ -389,6 +403,31 @@ class CompletedModule(XFormBaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["xform_id", "module", "opportunity_access"], name="unique_xform_completed_module"
+            )
+        ]
+
+
+class CompletedTaskStatus(models.TextChoices):
+    ASSIGNED = "assigned", gettext("assigned")
+    COMPLETED = "completed", gettext("completed")
+
+
+class CompletedTask(XFormBaseModel):
+    task = models.ForeignKey(Task, on_delete=models.PROTECT)
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
+    date = models.DateTimeField()
+    duration = models.DurationField()
+    xform_id = models.CharField(max_length=50, null=True)
+    status = models.CharField(
+        choices=CompletedTaskStatus.choices,
+        default=CompletedTaskStatus.ASSIGNED,
+        max_length=50,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["xform_id", "task", "opportunity_access"], name="unique_xform_completed_task"
             )
         ]
 

@@ -64,9 +64,14 @@ class PaymentUnitSerializer(serializers.ModelSerializer):
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
+    payment_unit_id = serializers.UUIDField(
+        source="payment_unit.payment_unit_id",
+        read_only=True,
+    )
+
     class Meta:
         model = OpportunityClaimLimit
-        fields = ["max_visits", "payment_unit"]
+        fields = ["max_visits", "payment_unit", "payment_unit_id"]
 
 
 class OpportunityClaimSerializer(serializers.ModelSerializer):
@@ -247,6 +252,7 @@ class UserVisitSerializer(serializers.ModelSerializer):
 class CompletedWorkSerializer(serializers.ModelSerializer):
     deliver_unit_name = serializers.CharField(source="payment_unit.name")
     deliver_unit_slug = serializers.CharField(source="payment_unit.pk")
+    deliver_unit_slug_id = serializers.CharField(source="payment_unit.payment_unit_id")
     visit_date = serializers.SerializerMethodField()
     flags = serializers.SerializerMethodField()
 
@@ -258,6 +264,7 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
             "visit_date",
             "deliver_unit_name",
             "deliver_unit_slug",
+            "deliver_unit_slug_id",
             "entity_id",
             "entity_name",
             "reason",

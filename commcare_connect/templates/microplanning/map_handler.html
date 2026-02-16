@@ -1,7 +1,6 @@
 <script>
     document.addEventListener("alpine:init", () => {
         Alpine.data("mapController", () => ({
-            panelOpen: true,
             map: null,
             showImportWorkAreaModal: false,
 
@@ -36,10 +35,6 @@
                     this.map.resize();
                 });
                 observer.observe($mapContainer);
-            },
-
-            togglePanel() {
-                this.panelOpen = !this.panelOpen;
             }
         }));
     });
