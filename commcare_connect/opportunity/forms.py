@@ -1455,6 +1455,11 @@ class FormJsonValidationRulesForm(forms.ModelForm):
 
 
 class AutomatedPaymentInvoiceForm(forms.ModelForm):
+    """
+    Form used for creating new invoices or to show details by passing read_only=True.
+    Invoices are not allowed to be edited once created.
+    """
+
     amount = forms.DecimalField(
         label=_("Amount"),
         decimal_places=2,
