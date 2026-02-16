@@ -30,7 +30,7 @@ from commcare_connect.opportunity.models import HQApiKey, Opportunity, Opportuni
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.error_codes import ErrorCodes
-from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
@@ -327,6 +327,7 @@ def internal_features(request):
                 "url": reverse("reports:delivery_stats_report"),
             }
         )
+    if request.user.has_perm(ALL_ORG_ACCESS):
         features.append(
             {
                 "name": "Invoice Report",

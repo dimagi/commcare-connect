@@ -9,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.users.managers import UserManager
-from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
 
 
 class User(AbstractUser):
@@ -70,7 +70,7 @@ class User(AbstractUser):
 
     @property
     def show_internal_features(self):
-        internal_features = [OTP_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS]
+        internal_features = [OTP_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, ALL_ORG_ACCESS]
         return any([self.has_perm(perm) for perm in internal_features])
 
 
