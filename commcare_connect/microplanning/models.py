@@ -43,7 +43,7 @@ class WorkArea(geo_models.Model):
         srid=SRID, help_text="Centroid of the Work Area as a Point. Use (longitude, latitude) when assigning manually."
     )
     boundary = geo_models.PolygonField(srid=SRID)
-    ward = geo_models.CharField(max_length=255)
+    ward = geo_models.SlugField(max_length=255)
     building_count = geo_models.PositiveIntegerField(default=0)
     expected_visit_count = geo_models.PositiveIntegerField(default=0)
     status = geo_models.CharField(
