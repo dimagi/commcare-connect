@@ -9,8 +9,13 @@ from django.urls import reverse
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tests.factories import ProgramFactory
+from commcare_connect.program.tests.factories import (
+    ManagedOpportunityFactory,
+    ProgramApplicationFactory,
+    ProgramFactory,
+)
 from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import OrganizationFactory
 
 
 class BaseProgramTest:
@@ -125,3 +130,61 @@ class TestInviteOrganizationView(BaseProgramTest):
         }
         response = self.client.post(self.valid_url, data)
         assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.django_db
+class TestProgramHomeBudgetData(BaseProgramTest):
+    @pytest.fixture(autouse=True)
+    def setup_program(self):
+        self.program = ProgramFactory.create(organization=self.organization, budget=10000)
+        self.other_program = ProgramFactory.create(organization=self.organization, budget=15000)
+
+        application_orgs = OrganizationFactory.create_batch(2)
+        self.expected_application_budgets = {}
+        self.program_applications = []
+
+        budgets_per_org = {
+            application_orgs[0]: [250, 150],
+            application_orgs[1]: [400],
+        }
+        for org, budgets in budgets_per_org.items():
+            application = ProgramApplicationFactory.create(
+                program=self.program,
+                organization=org,
+                status=ProgramApplicationStatus.ACCEPTED,
+            )
+            self.program_applications.append(application)
+            self.expected_application_budgets[org.id] = sum(budgets)
+            for amount in budgets:
+                ManagedOpportunityFactory.create(program=self.program, organization=org, total_budget=amount)
+
+        # Application without any managed opportunities should show zero budget
+        empty_org = OrganizationFactory()
+        empty_application = ProgramApplicationFactory.create(program=self.program, organization=empty_org)
+        self.program_applications.append(empty_application)
+        self.expected_application_budgets[empty_org.id] = 0
+
+        # Managed opportunity for a different program should be ignored
+        ManagedOpportunityFactory.create(
+            program=self.other_program,
+            organization=application_orgs[0],
+            total_budget=999,
+        )
+        # Managed opportunity for an org without an application should be ignored
+        ManagedOpportunityFactory.create(program=self.program, organization=OrganizationFactory(), total_budget=777)
+
+        self.expected_allocated_budget = sum(self.expected_application_budgets.values())
+
+    def test_program_home_includes_budget_data(self):
+        response = self.client.get(self.list_url)
+        assert response.status_code == HTTPStatus.OK
+        programs = response.context["programs"]
+        program = next((p for p in programs if p.id == self.program.id), None)
+        assert program is not None
+        assert program.allocated_budget == self.expected_allocated_budget
+
+        applications = getattr(program, "applications_with_budget", [])
+        assert len(applications) == len(self.expected_application_budgets)
+        for application in applications:
+            expected_budget = self.expected_application_budgets[application.organization_id]
+            assert application.current_budget == expected_budget

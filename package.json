@@ -18,6 +18,7 @@
     "gulp-concat": "^2.6.1",
     "htmx.org": "^1.9.4",
     "mapbox-gl": "^3.13.0",
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "mini-css-extract-plugin": "^2.4.5",
     "open-chat-studio-widget": "^0.5.2",
     "node-sass-tilde-importer": "^1.0.2",

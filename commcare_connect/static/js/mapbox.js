@@ -1,6 +1,8 @@
 import 'mapbox-gl/dist/mapbox-gl.css';
 import mapboxgl from 'mapbox-gl';
 import circle from '@turf/circle';
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 
 window.mapboxgl = mapboxgl;
 window.circle = circle;
@@ -121,3 +123,64 @@ function addCatchmentAreas(map, catchments) {
 }
 
 window.addCatchmentAreas = addCatchmentAreas;
+
+const MapboxUtils = {
+  setAccessToken(token) {
+    if (!token) {
+      console.error('Mapbox access token is not provided.');
+      return false;
+    }
+    mapboxgl.accessToken = token;
+    return true;
+  },
+
+  createMap(options) {
+    options = options || {};
+    const container = options.container || 'map';
+    const style = options.style || 'mapbox://styles/mapbox/streets-v12';
+    const center = options.center || [0, 0];
+    const zoom = typeof options.zoom === 'number' ? options.zoom : 2;
+    const mapOpts = { container, style, center, zoom };
+    if (options.projection) mapOpts.projection = options.projection;
+    return new mapboxgl.Map(mapOpts);
+  },
+
+  addNavigation(map, position) {
+    position = position || 'top-left';
+    map.addControl(new mapboxgl.NavigationControl(), position);
+  },
+
+  addDrawControls(map, opts) {
+    opts = opts || {};
+    const draw = new MapboxDraw(
+      Object.assign(
+        {
+          displayControlsDefault: false,
+          controls: { polygon: true, trash: true },
+        },
+        opts,
+      ),
+    );
+    map.addControl(draw, 'top-left');
+    return draw;
+  },
+
+  createMarker(map, opts) {
+    // Creating markers using HTML might present performance issues at scale, so better
+    // to use layers instead for large datasets.
+    opts = opts || {};
+    const markerOpts = {};
+    if (opts.color) markerOpts.color = opts.color;
+    if (opts.scale) markerOpts.scale = opts.scale;
+    const marker = new mapboxgl.Marker(markerOpts).setLngLat([
+      opts.lng,
+      opts.lat,
+    ]);
+    if (opts.popupHtml)
+      marker.setPopup(new mapboxgl.Popup().setHTML(opts.popupHtml));
+    marker.addTo(map);
+    return marker;
+  },
+};
+
+window.MapboxUtils = MapboxUtils;

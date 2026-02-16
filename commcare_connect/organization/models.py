@@ -8,6 +8,13 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
+class LLOEntity(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+
+    def __str__(self):
+        return f"{self.name}"
+
+
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
@@ -15,6 +22,7 @@ class Organization(BaseModel):
         settings.AUTH_USER_MODEL, related_name="organizations", through="UserOrganizationMembership"
     )
     program_manager = models.BooleanField(default=False)
+    llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
 
     def save(self, *args, **kwargs):
         if not self.id:

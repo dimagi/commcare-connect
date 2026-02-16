@@ -61,6 +61,7 @@ class User(AbstractUser):
             ("all_org_access", "Allow admin access to all organizations"),
             ("view_commcarehq_form_link", "Can view CommCareHQ form link"),
             ("org_management_settings_access", "Can manage organizations settings"),
+            ("workspace_entity_management_access", "Can manage LLO Entities for organizations"),
         ]
 
     def __str__(self):
