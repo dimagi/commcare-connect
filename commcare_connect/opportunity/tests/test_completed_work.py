@@ -226,6 +226,43 @@ class TestUninvoicedVisitItems:
 
 @pytest.mark.django_db
 class TestUpdateStatus:
+    def test_completed_work_not_updated_to_approved_when_missing_required_visit(self):
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        optional_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=optional_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.pending
+
     def test_completed_work_updated_to_approved_with_all_visits_approved(self):
         opp_access = OpportunityAccessFactory()
         opp_access.opportunity.auto_approve_payments = True
@@ -388,6 +425,7 @@ class TestUpdateStatus:
         opp_access.opportunity = managed_opp
         opp_access.opportunity.auto_approve_payments = True
         opp_access.opportunity.save()
+        opp_access.save()
 
         payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
         required_deliver_unit = DeliverUnitFactory(

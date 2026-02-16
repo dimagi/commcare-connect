@@ -104,13 +104,13 @@ class CompletedWorkUpdater:
             if any(status == VisitValidationStatus.rejected for status, *_ in visits):
                 completed_work.status = CompletedWorkStatus.rejected
                 completed_work.reason = "\n".join(reason for _, reason, *_ in visits if reason)
-            elif self.is_completed_work_approved(visits):
+            elif self._is_completed_work_approved(visits):
                 completed_work.status = CompletedWorkStatus.approved
 
             updated = True
         return updated
 
-    def is_completed_work_approved(self, visits):
+    def _is_completed_work_approved(self, visits):
         """
         Check if all required deliver units have an approved visit and if there are optional deliver units,
         at least one of them has an approved visit. If multiple visits exist for a given deliver unit, only
