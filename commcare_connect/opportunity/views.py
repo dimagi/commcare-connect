@@ -1611,7 +1611,7 @@ def invoice_update_status(request, org_slug, opp_id):
 
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
 
-    role = "program manager" if request.is_opportunity_pm else "network manager"
+    role = "program_manager" if request.is_opportunity_pm else "network_manager"
     valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, role)
     if error:
         return HttpResponseBadRequest(error)
