@@ -1533,12 +1533,9 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 ],
             }
         )
-        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW) and self.request.is_opportunity_pm:
-            context["payment_invoice_invoice_ticket_link_form"] = PaymentInvoiceInvoiceTicketLinkForm(
-                initial={
-                    "invoice_ticket_link": invoice.invoice_ticket_link,
-                }
-            )
+        context["show_payment_invoice_invoice_ticket_link_form"] = (
+            switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW) and self.request.is_opportunity_pm
+        )
         return context
 
     def get_form(self):

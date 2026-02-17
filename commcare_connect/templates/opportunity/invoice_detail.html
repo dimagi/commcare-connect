@@ -43,26 +43,33 @@
     </div>
   </div>
 </div>
-{% if payment_invoice_invoice_ticket_link_form %}
+{% if show_payment_invoice_invoice_ticket_link_form %}
 <br/>
 <div class="card_bg">
-  <div>
-    <form
-      method="POST"
-      action="{% url 'opportunity:update_invoice_invoice_ticket_link' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=object.payment_invoice_id %}"
-    >
-      {% csrf_token %}
-      <!--
-      using the form tag to enforce url field validation provided by the browser itself which seems to not fire when
-      the form is passed as an argument to crispy method.
-      Though used crispy filter to get the nice rendering provided by crispy.
-      -->
-      {{ payment_invoice_invoice_ticket_link_form|crispy }}
-      <button class="button button-md primary-dark">
-        {% translate "Update" %}
-      </button>
-    </form>
-  </div>
+  <form
+    method="POST"
+    action="{% url 'opportunity:update_invoice_invoice_ticket_link' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=object.payment_invoice_id %}"
+  >
+    {% csrf_token %}
+    <div class="mb-4">
+      <div class="mb-2">
+        <label for="id_invoice_ticket_link" class="text-gray-700 text-sm font-bold">
+          Invoice Ticket
+        </label>
+        {% if object.invoice_ticket_link %}
+          <a class="fa fa-external-link" target="_blank" href="{{ object.invoice_ticket_link }}"></a>
+        {% endif %}
+      </div>
+      <input type="url" name="invoice_ticket_link"
+             class="border py-2 w-full border-gray-300 bg-white rounded-lg block focus:outline-none text-gray-700 px-4"
+             id="id_invoice_ticket_link"
+             value="{{ object.invoice_ticket_link }}"
+      >
+    </div>
+    <button class="button button-md primary-dark">
+      {% translate "Update" %}
+    </button>
+  </form>
 </div>
 {% endif %}
 
