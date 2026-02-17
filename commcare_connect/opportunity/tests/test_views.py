@@ -21,6 +21,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    Payment,
     PaymentUnit,
     UserInvite,
     UserInviteStatus,
@@ -1578,3 +1579,27 @@ class TestInvoiceUpdateStatus:
         assert b"You do not have permission to perform this action." in response.content
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
+
+
+def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_admin: User):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    payment = PaymentFactory(opportunity_access=access)
+
+    assert Payment.objects.filter(opportunity_access=access).exists()
+
+    client.force_login(org_user_admin)
+    url = reverse(
+        "opportunity:payment_delete",
+        args=(
+            opportunity.organization.slug,
+            opportunity.opportunity_id,
+            access.opportunity_access_id,
+            payment.payment_id,
+        ),
+    )
+    response = client.post(url)
+    assert response.status_code == 302
+    assert not Payment.objects.filter(opportunity_access=access).exists()
+
+    response = client.post(url)
+    assert response.status_code == 404
