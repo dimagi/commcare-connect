@@ -77,12 +77,12 @@ class InvoiceWorkflow:
     }
 
     @classmethod
-    def validate_transition(cls, current_status, new_status, is_program_manager):
+    def validate_transition(cls, current_status, new_status, role):
         if not cls.is_transition_allowed(current_status, new_status):
             return False, _(
                 "Invalid status transition. Current status: '%(current)s'. Cannot change to: '%(new)s'."
             ) % {"current": InvoiceStatus.get_label(current_status), "new": InvoiceStatus.get_label(new_status)}
-        if not cls.can_role_perform_action(is_program_manager, new_status):
+        if not cls.can_role_perform_action(role, new_status):
             return False, _("You do not have permission to perform this action.")
         return True, None
 
@@ -92,8 +92,7 @@ class InvoiceWorkflow:
         return new_status in allowed_statuses
 
     @classmethod
-    def can_role_perform_action(cls, is_program_manager, new_status):
-        role = "program_manager" if is_program_manager else "network_manager"
+    def can_role_perform_action(cls, role, new_status):
         allowed_for_role = cls.ROLE_ALLOWED_STATUSES.get(role, set())
         return new_status in allowed_for_role
 

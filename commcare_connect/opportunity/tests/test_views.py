@@ -13,13 +13,8 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
-from commcare_connect.opportunity.forms import (
-    AddBudgetExistingUsersForm,
-    AutomatedPaymentInvoiceForm,
-    PaymentInvoiceForm,
-    PaymentUnitForm,
-)
+from commcare_connect.flags.switch_names import INVOICE_REVIEW
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
     InvoiceStatus,
@@ -35,6 +30,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
+    CompletedWorkFactory,
     DeliverUnitFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -1203,13 +1199,8 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
                 else:
                     assert field.widget.attrs.get("readonly") == "readonly", f"Field {field_name} should be readonly"
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            response = client.get(url)
-            assert_readonly_form(response)
-
-        with override_switch(AUTOMATED_INVOICES, active=False):
-            response = client.get(url)
-            assert_readonly_form(response)
+        response = client.get(url)
+        assert_readonly_form(response)
 
     @override_switch(INVOICE_REVIEW, active=True)
     def test_custom_invoice_no_line_items(self, client, setup_invoice):
@@ -1223,16 +1214,15 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
             date=date(2025, 11, 1),
         )
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.opportunity_id, custom_invoice.payment_invoice_id),
-            )
-            response = client.get(url)
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, custom_invoice.payment_invoice_id),
+        )
+        response = client.get(url)
 
-            form = response.context["form"]
-            assert form.line_items_table is None
+        form = response.context["form"]
+        assert form.line_items_table is None
 
     @override_switch(INVOICE_REVIEW, active=True)
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
@@ -1251,36 +1241,19 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert response.status_code in [302, 403, 404]
 
     @override_switch(INVOICE_REVIEW, active=True)
-    def test_legacy_form_when_switch_inactive(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        with override_switch(AUTOMATED_INVOICES, active=False):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-            )
-            response = client.get(url)
-            form = response.context["form"]
-            assert isinstance(form, PaymentInvoiceForm)
-
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_automated_form_when_switch_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-            )
-            response = client.get(url)
-            form = response.context["form"]
-            assert isinstance(form, AutomatedPaymentInvoiceForm)
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+        )
+        response = client.get(url)
+        form = response.context["form"]
+        assert isinstance(form, AutomatedPaymentInvoiceForm)
 
 
 class TestSubmitInvoiceView(BaseTestInvoiceView):
@@ -1446,11 +1419,11 @@ class TestAddPaymentUnitView:
 @pytest.mark.django_db
 class TestInvoiceUpdateStatus:
     @pytest.fixture
-    def nm_organization(self, db):
+    def nm_organization(self):
         return OrgWithUsersFactory()
 
     @pytest.fixture
-    def pm_organization(self, db):
+    def pm_organization(self):
         return ProgramManagerOrgWithUsersFactory()
 
     @pytest.fixture
@@ -1508,6 +1481,11 @@ class TestInvoiceUpdateStatus:
             nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-002"
         )
 
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+
         client.force_login(nm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
         response = client.post(
@@ -1523,6 +1501,11 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.CANCELLED_BY_NM
         assert invoice.description == "Cancelled due to errors"
+
+        completed_work_1.refresh_from_db()
+        completed_work_2.refresh_from_db()
+        assert completed_work_1.invoice is None
+        assert completed_work_2.invoice is None
 
     def test_pm_approve_for_payment_success(self, client, nm_organization, pm_organization, pm_user_admin):
         opportunity, invoice = self._create_invoice(
@@ -1549,6 +1532,10 @@ class TestInvoiceUpdateStatus:
         opportunity, invoice = self._create_invoice(
             nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-002"
         )
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
 
         client.force_login(pm_user_admin)
         url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
@@ -1565,6 +1552,11 @@ class TestInvoiceUpdateStatus:
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.REJECTED_BY_PM
         assert invoice.description == "Rejected due to discrepancies"
+
+        completed_work_1.refresh_from_db()
+        completed_work_2.refresh_from_db()
+        assert completed_work_1.invoice is None
+        assert completed_work_2.invoice is None
 
     def test_invalid_status_transition(self, client, nm_organization, nm_user_admin, pm_organization):
         opportunity, invoice = self._create_invoice(

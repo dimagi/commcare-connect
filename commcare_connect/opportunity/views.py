@@ -54,12 +54,7 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import (
-    AUTOMATED_INVOICES,
-    INVOICE_REVIEW,
-    UPDATES_TO_MARK_AS_PAID_WORKFLOW,
-    USER_VISIT_FILTERS,
-)
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, USER_VISIT_FILTERS
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -83,7 +78,6 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
-    PaymentInvoiceForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -1431,6 +1425,7 @@ def invoice_list(request, org_slug, opp_id):
 class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
+    form_class = AutomatedPaymentInvoiceForm
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1462,12 +1457,6 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         return context
 
     @property
-    def form_class(self):
-        if waffle.switch_is_active(AUTOMATED_INVOICES):
-            return AutomatedPaymentInvoiceForm
-        return PaymentInvoiceForm
-
-    @property
     def breadcrumb_title(self):
         service_delivery = PaymentInvoice.InvoiceType.service_delivery
         if self.request.GET.get("invoice_type", service_delivery) == service_delivery:
@@ -1494,8 +1483,7 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
             kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
         else:
             kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
-        if waffle.switch_is_active(AUTOMATED_INVOICES):
-            kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
+        kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
 
     def get_success_url(self):
@@ -1559,14 +1547,6 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
             else PaymentInvoice.InvoiceType.custom
         )
 
-        if not waffle.switch_is_active(AUTOMATED_INVOICES):
-            return PaymentInvoiceForm(
-                instance=invoice,
-                opportunity=opportunity,
-                invoice_type=invoice_type,
-                read_only=True,
-            )
-
         line_items_table = None
         if invoice.service_delivery:
             completed_works = get_invoiced_visit_items(invoice)
@@ -1611,7 +1591,8 @@ def invoice_update_status(request, org_slug, opp_id):
 
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
 
-    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, request.is_opportunity_pm)
+    role = "program_manager" if request.is_opportunity_pm else "network_manager"
+    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, role)
     if error:
         return HttpResponseBadRequest(error)
 
@@ -1619,6 +1600,8 @@ def invoice_update_status(request, org_slug, opp_id):
     if invoice.service_delivery:
         invoice.description = description
         invoice.save(update_fields=["status", "description"])
+        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+            invoice.unlink_completed_works()
     else:
         invoice.save(update_fields=["status"])
 
