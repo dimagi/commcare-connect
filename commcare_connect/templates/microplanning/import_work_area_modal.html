@@ -59,12 +59,15 @@
             {% csrf_token %}
 
             <div class="modal-body flex flex-col items-center text-center p-6">
-                <div class="mb-4 text-indigo-600">
-                    <i
-                        class="fa-solid {% if is_importing %}fa-spinner animate-spin text-amber-500{% else %}fa-cloud-arrow-up{% endif %} text-5xl"></i>
+                <div class="mb-2 text-indigo-600">
+                    <i class="fa-solid {% if is_importing %}fa-spinner animate-spin text-amber-500{% else %}fa-cloud-arrow-up{% endif %} text-5xl"></i>
                 </div>
-
-                <div class="w-full text-left" x-data="{ fileName: '' }">
+                <a href="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+                    class="mt-6 flex items-center px-4 py-1.5 border border-gray-800 rounded-md text-sm font-medium hover:bg-gray-50 transition mb-4">
+                    <i class="fa-solid fa-file-arrow-down mr-2"></i>
+                    {% translate "Download Template" %}
+                </a>
+                <div class="w-full text-left mt-4" x-data="{ fileName: '' }">
                     <label class="block text-sm font-bold text-gray-700 mb-2">{% translate "Select CSV File" %}</label>
                     <div class="relative border-2 rounded-lg px-4 py-4 bg-gray-50 hover:border-brand-deep-purple">
                         <input type="file" name="csv_file" accept=".csv" required
@@ -85,12 +88,6 @@
                         </ul>
                     </div>
                 </div>
-
-                <a href="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
-                    class="mt-6 flex items-center px-4 py-1.5 border border-gray-800 rounded-md text-sm font-medium hover:bg-gray-50 transition">
-                    <i class="fa-solid fa-file-arrow-down mr-2"></i>
-                    {% translate "Download Template" %}
-                </a>
             </div>
 
             <div class="footer">
