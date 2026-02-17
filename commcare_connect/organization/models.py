@@ -10,8 +10,11 @@ from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 class LLOEntity(models.Model):
     name = models.CharField(max_length=255, unique=True)
+    short_name = models.CharField(max_length=40, null=True, blank=True)
 
     def __str__(self):
+        if self.short_name:
+            return f"{self.name} ({self.short_name})"
         return f"{self.name}"
 
 
