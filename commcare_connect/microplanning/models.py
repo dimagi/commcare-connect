@@ -49,7 +49,7 @@ class WorkArea(geo_models.Model):
     status = geo_models.CharField(
         max_length=50,
         choices=WorkAreaStatus.choices,
-        default=WorkAreaStatus.NOT_STARTED,
+        default=WorkAreaStatus.UNASSIGNED,
     )
 
     class Meta:
