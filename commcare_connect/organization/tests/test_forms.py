@@ -3,7 +3,7 @@ from django.contrib.auth.models import Permission
 from django.test import Client
 from django.urls import reverse
 
-from commcare_connect.organization.forms import OrganizationChangeForm
+from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationCreationForm
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import UserFactory
@@ -128,3 +128,95 @@ class TestOrganizationChangeForm:
             assert organization.llo_entity is not None
             assert organization.llo_entity.name == "New LLO Entity"
             assert LLOEntity.objects.count() == 1
+
+
+@pytest.mark.django_db
+class TestOrganizationCreationForm:
+    def test_both_llo_entity_and_org_exist(self):
+        existing_llo = LLOEntity.objects.create(name="Existing LLO")
+        existing_org = Organization.objects.create(name="Existing Org", llo_entity=existing_llo)
+
+        initial_llo_count = LLOEntity.objects.count()
+        initial_org_count = Organization.objects.count()
+
+        form = OrganizationCreationForm(
+            data={
+                "name": str(existing_org.pk),
+                "llo_entity": str(existing_llo.pk),
+            }
+        )
+
+        assert form.is_valid(), form.errors
+        org = form.save()
+
+        assert LLOEntity.objects.count() == initial_llo_count
+        assert Organization.objects.count() == initial_org_count
+
+        assert org.pk == existing_org.pk
+        assert org.name == "Existing Org"
+        assert org.llo_entity == existing_llo
+
+    def test_llo_entity_exists_new_org_created(self):
+        existing_llo = LLOEntity.objects.create(name="Existing LLO")
+
+        initial_llo_count = LLOEntity.objects.count()
+        initial_org_count = Organization.objects.count()
+
+        form = OrganizationCreationForm(
+            data={
+                "name": "New Organization",
+                "llo_entity": str(existing_llo.pk),
+            }
+        )
+
+        assert form.is_valid(), form.errors
+        org = form.save()
+
+        assert LLOEntity.objects.count() == initial_llo_count
+        assert Organization.objects.count() == initial_org_count + 1
+
+        assert org.pk is not None
+        assert org.name == "New Organization"
+        assert org.llo_entity == existing_llo
+
+    def test_both_new_llo_entity_and_new_org_created(self):
+        initial_llo_count = LLOEntity.objects.count()
+        initial_org_count = Organization.objects.count()
+
+        form = OrganizationCreationForm(
+            data={
+                "name": "Brand New Organization",
+                "llo_entity": "Brand New LLO",
+            }
+        )
+
+        assert form.is_valid(), form.errors
+        org = form.save()
+
+        assert LLOEntity.objects.count() == initial_llo_count + 1
+        assert Organization.objects.count() == initial_org_count + 1
+
+        assert org.pk is not None
+        assert org.name == "Brand New Organization"
+        assert org.llo_entity is not None
+        assert org.llo_entity.pk is not None
+        assert org.llo_entity.name == "Brand New LLO"
+
+    def test_validation_error_mismatched_llo_entity(self):
+        llo1 = LLOEntity.objects.create(name="LLO One")
+        llo2 = LLOEntity.objects.create(name="LLO Two")
+        existing_org = Organization.objects.create(name="Org With LLO One", llo_entity=llo1)
+
+        form = OrganizationCreationForm(
+            data={
+                "name": str(existing_org.pk),
+                "llo_entity": str(llo2.pk),  # Different LLO
+            }
+        )
+
+        assert not form.is_valid()
+        assert "llo_entity" in form.errors
+        assert form.errors["llo_entity"] == [
+            "Selected LLO Entity does not match the existing organization's LLO Entity."
+        ]
+
