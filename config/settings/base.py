@@ -195,6 +195,7 @@ TEMPLATES = [
                 "commcare_connect.web.context_processors.page_settings",
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",
+                "commcare_connect.web.context_processors.session_tracking_context",
             ],
         },
     }
@@ -405,3 +406,6 @@ GA_API_SECRET = env("GA_API_SECRET", default="")
 # Chatbot Widget Settings
 CHATBOT_ID = env("CHATBOT_ID", default="")
 CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
+
+# LiveSession Settings
+LIVESESSION_APP_ID = env("LIVESESSION_APP_ID", default="")
