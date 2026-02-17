@@ -11,7 +11,7 @@ import pgtrigger.migrations
 class Migration(migrations.Migration):
     dependencies = [
         ("pghistory", "0007_auto_20250421_0444"),
-        ("opportunity", "0110_task_completedtask_task_unique_task_per_app_and_more"),
+        ("opportunity", "0111_alter_paymentinvoice_status"),
     ]
 
     operations = [
