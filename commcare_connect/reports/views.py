@@ -252,6 +252,7 @@ class InvoiceReportView(
             PaymentInvoice.objects.select_related(
                 "opportunity__managedopportunity__program__organization",
                 "payment",
+                "exchange_rate",
             )
             .annotate(
                 date_paid=F("payment__date_paid"),
