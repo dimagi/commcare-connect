@@ -1575,7 +1575,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 @require_POST
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
     if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-        raise Http404("Feature unavailable")
+        raise Http404(_("Feature unavailable"))
 
     invoice = get_object_or_404(
         PaymentInvoice,
