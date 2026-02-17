@@ -550,7 +550,7 @@ class PaymentInvoice(models.Model):
     date_of_expense = models.DateField(null=True, blank=True)
     status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING, max_length=50)
     archived_date = models.DateTimeField(null=True, blank=True)
-    invoice_ticket_link = models.CharField(null=True, blank=True)
+    invoice_ticket_link = models.URLField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
