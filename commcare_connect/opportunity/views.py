@@ -161,6 +161,7 @@ from commcare_connect.opportunity.utils.completed_work import (
     get_uninvoiced_completed_works_qs,
     get_uninvoiced_visit_items,
 )
+from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -1480,7 +1481,10 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
-        kwargs["status"] = InvoiceStatus.SUBMITTED
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
+        else:
+            kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
 
@@ -1513,6 +1517,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 "form": self.get_form(),
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "updates_to_mark_as_paid_workflow_switch": switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW),
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -1593,7 +1598,12 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @org_member_required
 @opportunity_required
 @require_POST
-def submit_invoice(request, org_slug, opp_id):
+def invoice_update_status(request, org_slug, opp_id):
+    """
+    Update invoice status. Handles multiple status transitions based on user role:
+    - Network Manager: PENDING_NM_REVIEW -> PENDING_PM_REVIEW (submit to PM) or CANCELLED_BY_NM (cancel)
+    - Program Manager: PENDING_PM_REVIEW -> READY_TO_PAY (approve for payment) or REJECTED_BY_PM (reject)
+    """
     if not (request.opportunity.managed and request.org_membership):
         return HttpResponse(
             status=302,
@@ -1601,20 +1611,29 @@ def submit_invoice(request, org_slug, opp_id):
         )
 
     invoice_id = request.POST.get("invoice_id")
-    notes = request.POST.get("notes")
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
-    if invoice.status != InvoiceStatus.PENDING:
-        return HttpResponseBadRequest("Only invoices with status 'Pending' can be submitted for approval.")
+    description = request.POST.get("description")
+    new_status = request.POST.get("new_status")
 
-    invoice.status = InvoiceStatus.SUBMITTED
+    if new_status not in InvoiceStatus.values:
+        return HttpResponseBadRequest(_("Invalid invoice status."))
+
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+
+    role = "program_manager" if request.is_opportunity_pm else "network_manager"
+    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, role)
+    if error:
+        return HttpResponseBadRequest(error)
+
+    invoice.status = new_status
     if invoice.service_delivery:
-        invoice.description = notes
+        invoice.description = description
         invoice.save(update_fields=["status", "description"])
+        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+            invoice.unlink_completed_works()
     else:
         invoice.save(update_fields=["status"])
-    messages.success(
-        request, _("Invoice %(invoice_number)s submitted for approval.") % {"invoice_number": invoice.invoice_number}
-    )
+
+    messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
     return HttpResponse(
         status=204,
@@ -1625,7 +1644,7 @@ def submit_invoice(request, org_slug, opp_id):
 @org_member_required
 @opportunity_required
 @require_POST
-def invoice_approve(request, org_slug, opp_id):
+def invoice_pay(request, org_slug, opp_id):
     if not request.opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
         return HttpResponse(
             status=302,
@@ -1638,9 +1657,15 @@ def invoice_approve(request, org_slug, opp_id):
 
     paid_invoice_ids = []
     payments = []
+    required_status = (
+        InvoiceStatus.READY_TO_PAY
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
+        else InvoiceStatus.PENDING_PM_REVIEW
+    )
     for inv in invoices:
-        if inv.status != InvoiceStatus.SUBMITTED:
-            return HttpResponseBadRequest(_("Only submitted invoice can be approved."))
+        if inv.status != required_status:
+            label = InvoiceStatus.get_label(required_status)
+            return HttpResponseBadRequest(_("Only {} invoice can be approved.").format(label))
         paid_invoice_ids.append(inv.id)
         payments.append(
             Payment(
@@ -1650,7 +1675,7 @@ def invoice_approve(request, org_slug, opp_id):
                 invoice=inv,
             )
         )
-        inv.status = InvoiceStatus.APPROVED
+        inv.status = InvoiceStatus.PAID
         inv.save(update_fields=["status"])
 
     Payment.objects.bulk_create(payments)
