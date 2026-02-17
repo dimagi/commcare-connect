@@ -18,7 +18,8 @@ class Command(BaseCommand):
         dry_run = options.get("dry_run")
         cutoff_date = datetime(2025, 11, 1)
         invoices = PaymentInvoice.objects.filter(
-            opportunity__end_date__lt=cutoff_date, status__in=[InvoiceStatus.SUBMITTED, InvoiceStatus.PENDING]
+            opportunity__end_date__lt=cutoff_date,
+            status__in=[InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.PENDING_NM_REVIEW],
         )
 
         if dry_run:

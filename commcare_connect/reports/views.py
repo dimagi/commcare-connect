@@ -163,7 +163,7 @@ class InvoiceReportFilter(django_filters.FilterSet):
     )
 
     status = django_filters.MultipleChoiceFilter(
-        choices=InvoiceStatus.choices,
+        choices=lambda: InvoiceStatus.get_choices(),
         label=_("Status"),
         widget=forms.SelectMultiple(
             attrs={

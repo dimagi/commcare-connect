@@ -445,14 +445,16 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return _("Other")
 
     def render_status(self, record):
-        tooltips = {
-            "Pending": _("Under review by Program Manager."),
-            "Approved": _("Invoice Approved and Paid."),
-            "Submitted": _("Submitted to Program Manager for Approval."),
-            "Archived": _("Invoice Archived. No User Actions Allowed."),
-        }
-        status = record.get_status_display()
-        return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
+        if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            tooltips = {
+                "Pending": _("Under review by Program Manager."),
+                "Approved": _("Invoice Approved and Paid."),
+                "Submitted": _("Submitted to Program Manager for Approval."),
+                "Archived": _("Invoice Archived. No User Actions Allowed."),
+            }
+            status = record.get_status_display()
+            return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
+        return record.get_status_display()
 
     def render_actions(self, record):
         review_button = ""
@@ -467,21 +469,27 @@ class PaymentInvoiceTable(OpportunityContextTable):
                 f'{_("Review")}</a>'
             )
         pay_button = ""
-        if self.is_pm and record.status == InvoiceStatus.SUBMITTED:
-            invoice_approve_url = reverse(
-                "opportunity:invoice_approve", args=[self.org_slug, self.opportunity.opportunity_id]
+        if self.is_pm:
+            required_status_for_pay = (
+                InvoiceStatus.READY_TO_PAY
+                if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
+                else InvoiceStatus.PENDING_PM_REVIEW
             )
-            disabled = "disabled" if getattr(record, "payment", None) else ""
-            pay_button = f"""
-                <button
-                    hx-post="{invoice_approve_url}"
-                    hx-vals='{{"pk": "{record.payment_invoice_id}"}}'
-                    hx-headers='{{"X-CSRFToken": "{self.csrf_token}"}}'
-                    class="button button-md primary-dark"
-                    {disabled}>
-                    {_("Pay")}
-                </button>
-            """  # noqa: E501
+            if record.status == required_status_for_pay:
+                invoice_pay_url = reverse(
+                    "opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]
+                )
+                disabled = "disabled" if getattr(record, "payment", None) else ""
+                pay_button = f"""
+                    <button
+                        hx-post="{invoice_pay_url}"
+                        hx-vals='{{"pk": "{record.payment_invoice_id}"}}'
+                        hx-headers='{{"X-CSRFToken": "{self.csrf_token}"}}'
+                        class="button button-md primary-dark"
+                        {disabled}>
+                        {_("Pay")}
+                    </button>
+                """  # noqa: E501
         return mark_safe(f'<div class="flex gap-2">{review_button}{pay_button}</div>')
 
 
