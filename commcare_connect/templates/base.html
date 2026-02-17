@@ -14,10 +14,13 @@
     {% endblock %}
     {% block javascript %}
       {{ GTM_VARS_JSON|json_script:"gtm-data" }}
-       <script src="{% static 'js/gtx.js' %}" defer></script>
-       <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
-       <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
-       <script src="{% static 'js/livesession.js' %}" defer></script>
+      <script src="{% static 'js/gtx.js' %}" defer></script>
+      <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
+      <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
+      {% if session_tracking_enabled %}
+        {{ tracker_data|json_script:"tracker-data" }}
+        <script src="{% static 'js/livesession.js' %}" defer></script>
+      {% endif %}
     {% endblock javascript %}
   </head>
   <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">

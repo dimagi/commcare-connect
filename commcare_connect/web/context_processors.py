@@ -33,8 +33,10 @@ def chat_widget_context(request):
 
 
 def session_tracking_context(request):
+    tracking_enabled = bool(settings.LIVESESSION_APP_ID) and Flag.is_flag_active_for_request(request, SESSION_TRACKING)
     return {
-        "LIVESESSION_APP_ID": settings.LIVESESSION_APP_ID,
-        "session_tracking_enabled": bool(settings.LIVESESSION_APP_ID)
-        and Flag.is_flag_active_for_request(request, SESSION_TRACKING),
+        "session_tracking_enabled": tracking_enabled,
+        "tracker_data": {
+            "app_id": settings.LIVESESSION_APP_ID,
+        },
     }

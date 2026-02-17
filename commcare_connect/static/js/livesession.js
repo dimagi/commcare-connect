@@ -30,5 +30,9 @@ window['__ls_script_url'] = 'https://cdn.livesession.io/track.js';
   window['__ls_namespace'],
 );
 
-__ls('init', '01df8735.a23e48d9', { keystrokes: false });
-__ls('newPageView');
+const liveSessionAppId = document.getElementById('tracker-data');
+if (liveSessionAppId) {
+  const trackerData = JSON.parse(liveSessionAppId.textContent);
+  __ls('init', trackerData.app_id, { keystrokes: false });
+  __ls('newPageView');
+}
