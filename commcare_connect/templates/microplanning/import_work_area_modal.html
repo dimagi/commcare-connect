@@ -65,13 +65,24 @@
                 </div>
 
                 <div class="w-full text-left" x-data="{ fileName: '' }">
-                    <label class="block text-sm font-bold text-gray-700 mb-2">{% translate "Select File" %}</label>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">{% translate "Select CSV File" %}</label>
                     <div class="relative border-2 rounded-lg px-4 py-4 bg-gray-50 hover:border-brand-deep-purple">
                         <input type="file" name="csv_file" accept=".csv" required
                             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                             @change="fileName = $event.target.files[0]?.name || ''">
                         <span class="text-gray-500 text-sm"
                             x-text="fileName || '{% translate 'No file chosen' %}'"></span>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-600 space-y-1">
+                        <p class="font-semibold">{% translate "CSV Column Requirements:" %}</p>
+                        <ul class="list-disc ml-4">
+                            <li>{% translate "Area Slug – unique identifier for each work area should be unique in an opportunity" %}</li>
+                            <li>{% translate "Ward – name of the ward" %}</li>
+                            <li>{% translate "Centroid – longitude and latitude separated by space (e.g. 77.123 28.456)" %}</li>
+                            <li>{% translate "Boundary – Polygon in WKT format" %}</li>
+                            <li>{% translate "Building Count and  – positive integer" %}</li>
+                            <li>{% translate "Expected Visit Count – positive integer" %}</li>
+                        </ul>
                     </div>
                 </div>
 
@@ -85,9 +96,7 @@
             <div class="footer">
                 <button type="button" @click="showImportWorkAreaModal = false"
                     class="button button-md outline-style">{% translate "Close" %}</button>
-                {% if not is_importing %}
                 <button type="submit" class="button button-md primary-dark">{% translate "Upload" %}</button>
-                {% endif %}
             </div>
         </form>
         {% endif %}

@@ -28,12 +28,12 @@ from .tasks import WorkAreaCSVImporter, get_import_area_cache_key, import_work_a
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
-    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
-    show_area_btn = not (cache.get(get_import_area_cache_key(request.opportunity.id)) is not None or areas_present)
-    show_workarea_groups_btn = (
-        areas_present and not WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).exists()
-    )
     opportunity = request.opportunity
+    areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
+    show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
+    show_workarea_groups_btn = (
+        areas_present and not WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
+    )
     return render(
         request,
         template_name="microplanning/home.html",
@@ -83,7 +83,7 @@ class WorkAreaImport(View):
 
         if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
             messages.error(request, _("Work Areas already exist for this opportunity."))
-            return redirect_url
+            return redirect(redirect_url)
 
         lock_key = get_import_area_cache_key(request.opportunity.id)
 
@@ -92,13 +92,8 @@ class WorkAreaImport(View):
             return redirect(redirect_url)
 
         csv_file = request.FILES.get("csv_file")
-        if not csv_file:
-            messages.error(request, _("No file provided."))
-            return redirect(redirect_url)
-
-        extension = get_file_extension(csv_file)
-        if extension != "csv":
-            messages.error(request, _(f"Unsupported file format: .{extension}. Please upload a CSV file."))
+        if not csv_file or get_file_extension(csv_file).lower() != "csv":
+            messages.error(request, _("Unsupported file format. Please upload a CSV file."))
             return redirect(redirect_url)
 
         csv_content = csv_file.read().decode("utf-8")
@@ -122,7 +117,6 @@ def import_status(request, org_slug, opp_id):
     if task_id:
         try:
             task_id = uuid.UUID(task_id)
-            task_id = str(task_id)
         except (ValueError, TypeError):
             return HttpResponse(status=404)
 
@@ -144,7 +138,7 @@ def import_status(request, org_slug, opp_id):
     context = {
         "result_ready": result_ready,
         "result_data": result_data,
-        "title": _("Work Area Upload Outcome") if result_ready else _("Upload Work Areas"),
+        "title": _("Work Area Upload Result") if result_ready else _("Upload Work Areas"),
     }
 
     return render(request, "microplanning/import_work_area_modal.html", context)
