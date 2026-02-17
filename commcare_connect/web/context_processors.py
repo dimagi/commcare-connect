@@ -54,7 +54,9 @@ def _get_additional_tracking_context(request):
     if opportunity:
         org_slug = opportunity.organization.slug
     elif hasattr(request, "org"):
-        org_slug = request.org.slug
+        org = request.org
+        if org:
+            org_slug = org.slug
 
     return {
         "user_id": str(request.user.user_id) if request.user.is_authenticated else None,
