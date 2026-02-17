@@ -99,7 +99,7 @@ class WorkAreaImport(View):
         csv_content = csv_file.read().decode("utf-8")
         task = import_work_areas_task.delay(request.opportunity.id, csv_content)
         cache.set(lock_key, task.id, timeout=1200)
-        messages.success(request, _("Work Area upload has been started."))
+        messages.info(request, _("Work Area upload has been started."))
         redirect_url += f"?task_id={task.id}"
         return redirect(redirect_url)
 
