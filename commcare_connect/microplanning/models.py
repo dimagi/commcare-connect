@@ -3,6 +3,8 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
 
+# The most common SRID for geographic coordinates is 4326,
+# which corresponds to “longitude/latitude on the WGS84 spheroid
 SRID = 4326
 
 
