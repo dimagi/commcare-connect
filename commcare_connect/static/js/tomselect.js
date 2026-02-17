@@ -14,6 +14,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let settings = {
       plugins: plugins,
+      render: {
+        option_create: function (data, escape) {
+          return (
+            "<div class='create'><i class='fa-solid fa-plus'></i> Create <strong>" +
+            escape(data.input) +
+            '</strong>&hellip;</div>'
+          );
+        },
+      },
     };
     if (el.hasAttribute('data-tomselect:settings')) {
       let data = el.getAttribute('data-tomselect:settings');
