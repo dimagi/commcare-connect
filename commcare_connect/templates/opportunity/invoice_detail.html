@@ -99,7 +99,9 @@
           {% translate "Invoice Ticket" %}
         </label>
         {% if object.invoice_ticket_link %}
-          <a class="fa fa-external-link" target="_blank" href="{{ object.invoice_ticket_link }}"></a>
+          <a class="fa fa-external-link" target="_blank" href="{{ object.invoice_ticket_link }}"
+             aria-label="{% translate 'Open invoice ticket' %}"
+          ></a>
         {% endif %}
       </div>
       <input type="url" name="invoice_ticket_link"
