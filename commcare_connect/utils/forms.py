@@ -20,6 +20,10 @@ class CreatableModelChoiceField(forms.ModelChoiceField):
                 value = getattr(value, key)
             return self.queryset.get(**{key: value})
         except (ValueError, TypeError, self.queryset.model.DoesNotExist):
+            # TomSelect uses the same field for existing IDs and new text values.
+            # If lookup fails, we assume this is a newly created entry and return the raw value.
+            # Numeric-only names may conflict with existing PKs, but this is an accepted limitation for now.
+            # Frontend prefixing (e.g. "id:123") would fully resolve this if needed.
             return value
 
     def validate(self, value):
