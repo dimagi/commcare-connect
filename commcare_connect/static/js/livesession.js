@@ -31,6 +31,4 @@ window['__ls_script_url'] = 'https://cdn.livesession.io/track.js';
 );
 
 __ls('init', '01df8735.a23e48d9', { keystrokes: false });
-__ls('identify', {
-  email: "{{ request.user.email|default:'Anonymous' }}",
-});
+__ls('newPageView');
