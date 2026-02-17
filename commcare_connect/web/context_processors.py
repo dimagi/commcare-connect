@@ -38,5 +38,20 @@ def session_tracking_context(request):
         "session_tracking_enabled": tracking_enabled,
         "tracker_data": {
             "app_id": settings.LIVESESSION_APP_ID,
+            **_get_additional_tracking_context(request),
         },
+    }
+
+
+def _get_additional_tracking_context(request):
+    opportunity = getattr(request, "opportunity", None)
+    program_slug = None
+    if opportunity and opportunity.managed:
+        program_slug = opportunity.managedopportunity.program.slug
+
+    return {
+        "user_id": str(request.user.user_id) if request.user.is_authenticated else None,
+        "opportunity": opportunity.name if opportunity else None,
+        "program": program_slug,
+        "organization": request.org.slug if hasattr(request, "org") else None,
     }

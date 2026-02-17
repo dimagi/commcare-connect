@@ -35,4 +35,14 @@ if (liveSessionAppId) {
   const trackerData = JSON.parse(liveSessionAppId.textContent);
   __ls('init', trackerData.app_id, { keystrokes: false });
   __ls('newPageView');
+  __ls('identify', {
+    user_id: trackerData.user_id,
+  });
+  __ls('setCustomParams', {
+    params: {
+      opportunity: trackerData.opportunity,
+      program: trackerData.program,
+      organization: trackerData.organization,
+    },
+  });
 }
