@@ -14,4 +14,8 @@ class Migration(migrations.Migration):
             name="short_name",
             field=models.CharField(blank=True, max_length=40, null=True),
         ),
+        migrations.AlterModelOptions(
+            name="lloentity",
+            options={"verbose_name_plural": "LLO Entities"},
+        ),
     ]
