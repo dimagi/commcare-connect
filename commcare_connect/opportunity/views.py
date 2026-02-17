@@ -916,6 +916,11 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
     )
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, payment_id=pk)
     payment.delete()
+    send_push_notification_task.delay(
+        [opportunity_access.user_id],
+        _("Payment updated"),
+        _("There has been an adjustment to your earnings for {}.").format(opportunity_access.opportunity.name),
+    )
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
