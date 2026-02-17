@@ -45,13 +45,20 @@ def session_tracking_context(request):
 
 def _get_additional_tracking_context(request):
     opportunity = getattr(request, "opportunity", None)
+
     program_slug = None
     if opportunity and opportunity.managed:
         program_slug = opportunity.managedopportunity.program.slug
+
+    org_slug = None
+    if opportunity:
+        org_slug = opportunity.organization.slug
+    elif hasattr(request, "org"):
+        org_slug = request.org.slug
 
     return {
         "user_id": str(request.user.user_id) if request.user.is_authenticated else None,
         "opportunity": opportunity.name if opportunity else None,
         "program": program_slug,
-        "organization": request.org.slug if hasattr(request, "org") else None,
+        "organization": org_slug,
     }
