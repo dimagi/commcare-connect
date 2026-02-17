@@ -27,6 +27,8 @@ need to edit some settings.
 ### GeoDjango / PostGIS Setup
 
 Connect uses GeoDjango and PostGIS.
+To learn more about the required dependencies, please refer to the official Django documentation:
+https://docs.djangoproject.com/en/6.0/ref/contrib/gis/install/geolibs/#geolibs-list
 
 **For macOS (Intel / Apple Silicon)** – using Homebrew:
 
