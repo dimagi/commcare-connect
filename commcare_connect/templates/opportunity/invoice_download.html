@@ -38,7 +38,14 @@
           <tr><td>{% trans "Invoice Number" %}</td><td>{{ invoice.invoice_number }}</td></tr>
           <tr><td>{% trans "Amount" %}</td><td>{{ invoice.amount|default:"" }}</td></tr>
           <tr><td>{% trans "Amount (USD)" %}</td><td>{{ invoice.amount_usd|default:"" }}</td></tr>
-          <tr><td>{% trans "Rate" %}</td><td>{{ invoice.exchange_rate.rate }}</td></tr>
+          <tr>
+            <td>{% trans "Rate" %}</td>
+            <td>
+            {% if invoice.exchange_rate %}
+              {{ invoice.exchange_rate.rate }}
+            {% endif %}
+            </td>
+          </tr>
           <tr><td>{% trans "Date" %}</td><td>{{ invoice.date|default:"" }}</td></tr>
           <tr><td>{% trans "Invoice Status" %}</td><td>{{ invoice.get_status_display }}</td></tr>
           <tr>
