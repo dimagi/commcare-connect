@@ -915,11 +915,20 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
         OpportunityAccess, opportunity_access_id=access_id, opportunity=request.opportunity
     )
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, payment_id=pk)
+    payment_id = payment.payment_id
     payment.delete()
+
     send_push_notification_task.delay(
         [opportunity_access.user_id],
         _("Payment updated"),
         _("There has been an adjustment to your earnings for {}.").format(opportunity_access.opportunity.name),
+        extra_data={
+            "opportunity_status": "delivery",
+            "action": "ccc_generic_opportunity",
+            "key": "payment_rollback",
+            "opportunity_id": str(request.opportunity.opportunity_id),
+            "payment_id": str(payment_id),
+        },
     )
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
