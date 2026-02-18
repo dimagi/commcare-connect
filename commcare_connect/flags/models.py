@@ -63,8 +63,20 @@ class Flag(AbstractUserFlag):
         user = getattr(request, "user", None)
         if not (user and user.is_authenticated):
             return False
-        active_flags_query = cls.active_flags_for_user(user, include_role_flags=True).filter(name=flag_name)
-        return active_flags_query.exists()
+
+        opportunity = getattr(request, "opportunity", None)
+        program = opportunity.managedopportunity.program if opportunity and opportunity.managed else None
+        organization = getattr(request, "org", None)
+
+        filters = models.Q(users=user)
+        if organization:
+            filters |= models.Q(organizations__id=organization.id)
+        if opportunity:
+            filters |= models.Q(opportunities__id=opportunity.id)
+        if program:
+            filters |= models.Q(programs__id=program.id)
+
+        return cls.objects.filter(name=flag_name).filter(filters).exists()
 
     def is_active_for(self, obj: Organization | Opportunity | Program):
         if isinstance(obj, Organization):
