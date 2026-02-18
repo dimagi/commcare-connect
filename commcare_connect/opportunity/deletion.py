@@ -42,6 +42,7 @@ OPPORTUNITY_DELETIONS: Sequence[ModelDeletion] = (
     ModelDeletion("opportunity", "Assessment", "opportunity"),
     ModelDeletion("opportunity", "Payment", "opportunity_access__opportunity"),
     ModelDeletion("opportunity", "Payment", "payment_unit__opportunity"),
+    ModelDeletion("opportunity", "Payment", "invoice__opportunity"),
     ModelDeletion("opportunity", "CatchmentArea", "opportunity"),
     ModelDeletion("opportunity", "CatchmentArea", "opportunity_access__opportunity"),
     ModelDeletion("opportunity", "OpportunityAccess", "opportunity"),

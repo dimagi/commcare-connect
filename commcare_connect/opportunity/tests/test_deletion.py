@@ -2,7 +2,7 @@ import pytest
 from django.db import IntegrityError
 
 from commcare_connect.opportunity.deletion import OPPORTUNITY_DELETIONS, ModelDeletion, delete_opportunity
-from commcare_connect.opportunity.models import LabsRecord, Opportunity
+from commcare_connect.opportunity.models import LabsRecord, Opportunity, Payment
 from commcare_connect.opportunity.tests import factories
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 
@@ -49,6 +49,18 @@ def test_delete_opportunity_clears_registered_models(opportunity_factory):
     for deletion in OPPORTUNITY_DELETIONS:
         assert not deletion.model.objects.filter(**{deletion._opp_id_filter: opportunity_id}).exists()
     assert not Opportunity.objects.filter(pk=opportunity_id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_opportunity_with_nm_payment_linked_to_invoice():
+    opportunity = factories.OpportunityFactory()
+    invoice = factories.PaymentInvoiceFactory(opportunity=opportunity)
+    payment = factories.PaymentFactory(opportunity_access=None, payment_unit=None, invoice=invoice)
+
+    result = delete_opportunity(opportunity)
+
+    assert result is True
+    assert not Payment.objects.filter(pk=payment.pk).exists()
 
 
 @pytest.mark.django_db
