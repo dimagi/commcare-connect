@@ -1104,6 +1104,7 @@ class BaseTestInvoiceView:
         }
 
 
+@pytest.mark.django_db
 class TestInvoiceReviewView(BaseTestInvoiceView):
     def test_switch_not_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
