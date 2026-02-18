@@ -118,3 +118,27 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, csv).run()
         assert "errors" in result
         assert "exists" in " ".join(result["errors"].keys()).lower()
+
+    def test_random_column_order(self, opportunity):
+        headers = [
+            "Expected Visit Count",
+            "Boundary",
+            "Area Slug",
+            "Centroid",
+            "Ward",
+            "Building Count",
+        ]
+
+        row = [
+            "10",
+            self.POLYGON,
+            "area-random",
+            self.CENTROID,
+            "5",
+            "ward-1",
+        ]
+
+        csv_data = self.build_csv([row], headers=headers)
+        result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
+
+        assert result["created"] == 1
