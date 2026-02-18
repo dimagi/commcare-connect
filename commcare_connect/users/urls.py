@@ -29,4 +29,5 @@ urlpatterns = [
     path("resend_invites/", ResendInvitesView.as_view(), name="resend_invites"),
     path("connect_user_otp/", RetrieveUserOTPView.as_view(), name="connect_user_otp"),
     path("toggles/", UserToggleView.as_view(), name="user_toggle_view"),
+    path("internal_features/", views.internal_features, name="internal_features"),
 ]

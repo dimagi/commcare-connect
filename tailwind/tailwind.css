@@ -757,3 +757,12 @@ select:disabled,
 .textinput:disabled {
   @apply pointer-events-none opacity-50;
 }
+
+/* Multi-line truncation helper (2 lines). */
+.multi-line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
