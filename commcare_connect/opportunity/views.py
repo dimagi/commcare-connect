@@ -1131,7 +1131,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @opportunity_required
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
     form_json_rule = FormJsonValidationRules.objects.get(
-        opportunity=request.opportunity.pk, form_json_validation_rules_id=pk, opportunity__organization=request.org
+        opportunity=request.opportunity.pk, form_json_validation_rules_id=pk
     )
     form_json_rule.delete()
     return HttpResponse(status=200)
