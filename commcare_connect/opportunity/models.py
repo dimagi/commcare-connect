@@ -601,7 +601,7 @@ class PaymentInvoice(models.Model):
 
     @cached_property
     def is_paid(self):
-        return bool(self.payment)
+        return Payment.objects.filter(invoice=self).exists()
 
     def get_status_display(self):
         return InvoiceStatus.get_label(self.status)
