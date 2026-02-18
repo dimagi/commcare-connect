@@ -17,6 +17,7 @@ from commcare_connect.flags.switch_names import INVOICE_REVIEW
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
+    FormJsonValidationRules,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -36,6 +37,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     OpportunityFactory,
+    OpportunityVerificationFlagsFactory,
     OrganizationFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
@@ -1581,3 +1583,123 @@ class TestInvoiceUpdateStatus:
         assert b"You do not have permission to perform this action." in response.content
         invoice.refresh_from_db()
         assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
+
+
+@pytest.mark.django_db
+class TestVerificationFlagsConfig:
+    def url(self, org_slug, opp_id):
+        return reverse("opportunity:verification_flags_config", args=(org_slug, opp_id))
+
+    def base_post_data(self):
+        return {
+            "duplicate": True,
+            "gps": True,
+            "location": 100,
+            "deliver_unit-TOTAL_FORMS": 0,
+            "deliver_unit-INITIAL_FORMS": 0,
+            "deliver_unit-MIN_NUM_FORMS": 0,
+            "deliver_unit-MAX_NUM_FORMS": 0,
+            "form_json-TOTAL_FORMS": 1,
+            "form_json-INITIAL_FORMS": 0,
+            "form_json-MIN_NUM_FORMS": 0,
+            "form_json-MAX_NUM_FORMS": 1000,
+        }
+
+    def test_get_unmanaged_opportunity(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == HTTPStatus.OK
+
+    def test_post_unmanaged_opportunity_saves(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
+        assert response.status_code == HTTPStatus.OK
+        messages = [m.message for m in get_messages(response.wsgi_request)]
+        assert "Verification flags saved successfully." in messages
+
+    def test_get_managed_opportunity_as_non_pm_redirects(
+        self, client, organization, org_user_member, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        client.force_login(org_user_member)
+        response = client.get(self.url(organization.slug, managed_opp.opportunity_id))
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse("opportunity:detail", args=(organization.slug, managed_opp.opportunity_id))
+
+    def test_get_managed_opportunity_as_pm(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self.url(program_manager_org.slug, managed_opp.opportunity_id))
+        assert response.status_code == HTTPStatus.OK
+
+    def test_post_managed_opportunity_as_pm_saves(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        OpportunityVerificationFlagsFactory(opportunity=managed_opp)
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, managed_opp.opportunity_id), data=self.base_post_data()
+        )
+        assert response.status_code == HTTPStatus.OK
+        messages = [m.message for m in get_messages(response.wsgi_request)]
+        assert "Verification flags saved successfully." in messages
+
+    def test_post_creates_form_json_rule(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        data = self.base_post_data()
+        data.update(
+            {
+                "form_json-0-name": "Rule 1",
+                "form_json-0-question_path": "data/answer",
+                "form_json-0-question_value": "yes",
+                "form_json-0-deliver_unit": [deliver_unit.pk],
+            }
+        )
+        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=data)
+        assert response.status_code == HTTPStatus.OK
+        rule = FormJsonValidationRules.objects.get(opportunity=opportunity)
+        assert rule.name == "Rule 1"
+        assert rule.question_path == "data/answer"
+        assert rule.question_value == "yes"
+        assert list(rule.deliver_unit.all()) == [deliver_unit]
+
+    def test_post_creates_form_json_rule_for_managed_opp(
+        self, client, program_manager_org, program_manager_org_user_admin
+    ):
+        client.force_login(program_manager_org_user_admin)
+
+        program = ProgramFactory(organization=program_manager_org)
+        nm_org = OrganizationFactory()
+        opportunity = ManagedOpportunityFactory(organization=nm_org, program=program)
+
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        data = self.base_post_data()
+        data.update(
+            {
+                "form_json-0-name": "Rule 1",
+                "form_json-0-question_path": "data/answer",
+                "form_json-0-question_value": "yes",
+                "form_json-0-deliver_unit": [deliver_unit.pk],
+            }
+        )
+        response = client.post(self.url(program_manager_org.slug, opportunity.opportunity_id), data=data)
+        assert response.status_code == HTTPStatus.OK
+        rule = FormJsonValidationRules.objects.get(opportunity=opportunity)
+
+        assert rule.name == "Rule 1"
+        assert rule.question_path == "data/answer"
+        assert rule.question_value == "yes"
+        assert list(rule.deliver_unit.all()) == [deliver_unit]
+
+    def test_post_empty_form_json_does_not_create_rule(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
+        assert response.status_code == HTTPStatus.OK
+        assert not FormJsonValidationRules.objects.filter(opportunity=opportunity).exists()
