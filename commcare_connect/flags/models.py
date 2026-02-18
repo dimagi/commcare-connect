@@ -65,7 +65,11 @@ class Flag(AbstractUserFlag):
             return False
 
         opportunity = getattr(request, "opportunity", None)
-        program = opportunity.managedopportunity.program if opportunity and opportunity.managed else None
+        program = None
+        if opportunity and opportunity.managed:
+            managed_opp = getattr(opportunity, "managedopportunity", None)
+            if managed_opp:
+                program = managed_opp.program
         organization = getattr(request, "org", None)
 
         filters = models.Q(users=user) | models.Q(everyone=True)
