@@ -48,11 +48,13 @@
                           {% endfor %}
                         {% endif %}
                     </ul>
-                    <div class="p-2">
-                        <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
-                        {% translate "Add Workspace" %}
-                        </a>
-                    </div>
+                    {% if perms.users.workspace_entity_management_access %}
+                      <div class="p-2">
+                          <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
+                          {% translate "Create Workspace" %}
+                          </a>
+                      </div>
+                    {% endif %}
                 </div>
             </div>
 

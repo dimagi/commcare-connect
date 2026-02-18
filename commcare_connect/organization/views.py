@@ -1,7 +1,7 @@
 from urllib.parse import urlencode
 
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext
@@ -14,10 +14,12 @@ from commcare_connect.organization.forms import MembershipForm, OrganizationChan
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable
 from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
+@permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
     form = OrganizationCreationForm(data=request.POST or None)
 
