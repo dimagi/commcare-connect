@@ -10,6 +10,7 @@
         <!-- Right Section: Org, Profile Dropdown -->
         <div class="flex items-center gap-x-2">
             <!-- Organization selector -->
+            {% with memberships_count=request.memberships|length %}
             <div x-data="{ open: false }" @click.away="open = false" class="relative mx-8">
                 <button @click="open = !open" class="flex items-center gap-2 focus:outline-none">
                     <div class="text-left">
@@ -19,17 +20,19 @@
                         </p>
                         <p class="text-gray-500 text-sm font-medium">{{ request.org.llo_entity.name }}</p>
                         <p class="text-xs text-gray-400">{{ request.org.program_manager|yesno:"Program,Network"}} Manager</p>
-                      {% else %}
+                      {% elif perms.users.workspace_entity_management_access  %}
                         <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
-                          {% translate "Select Workspace" %}
+                          {% translate "Create Workspace" %}
                         </p>
                       {% endif %}
                     </div>
-
-                    <!-- Dropdown Toggle Icon -->
-                    <i :class="open ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all text-xs"></i>
+                    {% if memberships_count > 1 or perms.users.workspace_entity_management_access %}
+                      <!-- Dropdown Toggle Icon -->
+                      <i :class="open ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all text-xs"></i>
+                    {% endif %}
                 </button>
 
+                {% if memberships_count > 1 or perms.users.workspace_entity_management_access %}
                 <!-- Organization Selector -->
                 <div x-show="open" x-transition.opacity x-cloak
                      class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
@@ -56,7 +59,10 @@
                       </div>
                     {% endif %}
                 </div>
+                {% endif %}
+
             </div>
+            {% endwith %}
 
             <!-- User Profile -->
             <div x-data="{ open: false }" @click.away="open = false" class="relative">
