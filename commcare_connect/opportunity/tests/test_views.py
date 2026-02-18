@@ -1077,7 +1077,7 @@ def test_views_use_opportunity_decorator_or_mixin():
 
 
 @pytest.mark.django_db
-class TestInvoiceReviewView:
+class BaseTestInvoiceView:
     @pytest.fixture
     def setup_invoice(self, organization, org_user_member):
         program = ProgramFactory(organization=organization, budget=10000)
@@ -1103,6 +1103,9 @@ class TestInvoiceReviewView:
             "user": org_user_member,
         }
 
+
+@pytest.mark.django_db
+class TestInvoiceReviewView(BaseTestInvoiceView):
     def test_switch_not_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
