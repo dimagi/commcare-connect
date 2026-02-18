@@ -47,6 +47,7 @@ class Flag(AbstractUserFlag):
         filters = (
             models.Q(users=user)
             | models.Q(organizations__members=user)
+            | models.Q(opportunities__organization__members=user)
             | models.Q(opportunities__opportunityaccess__user=user)
             | models.Q(programs__organization__members=user)
         )

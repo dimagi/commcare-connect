@@ -321,10 +321,7 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                     "opportunity_id": str(opportunity.id),
                     "opportunity_uuid": str(opportunity.opportunity_id),
                     "title": gettext("Payment received"),
-                    "body": gettext(
-                        "You have received a payment of "
-                        f"{opportunity.currency_code} {payment.amount} for {opportunity.name}.",
-                    ),
+                    "body": gettext(f"A payment is now available for {opportunity.name} Opportunity."),
                     "payment_id": str(payment.id),
                     "payment_uuid": str(payment.payment_id),
                 },
@@ -616,7 +613,7 @@ def generate_automated_service_delivery_invoice():
             date=datetime.datetime.utcnow(),
             start_date=start_date,
             end_date=end_date_prev_month,
-            status=InvoiceStatus.PENDING,
+            status=InvoiceStatus.PENDING_NM_REVIEW,
             invoice_number=invoice_number,
             service_delivery=True,
             exchange_rate=exchange_rate,

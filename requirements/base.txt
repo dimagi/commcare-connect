@@ -90,6 +90,8 @@ django==4.2.5
     #   django-htmx
     #   django-model-utils
     #   django-oauth-toolkit
+    #   django-pghistory
+    #   django-pgtrigger
     #   django-redis
     #   django-tables2
     #   django-timezone-field
@@ -118,6 +120,10 @@ django-model-utils==4.3.1
     # via -r requirements/base.in
 django-oauth-toolkit==2.3.0
     # via -r requirements/base.in
+django-pghistory==3.9.1
+    # via -r requirements/base.in
+django-pgtrigger==4.17.0
+    # via django-pghistory
 django-redis==5.3.0
     # via -r requirements/base.in
 django-tables2==2.6.0

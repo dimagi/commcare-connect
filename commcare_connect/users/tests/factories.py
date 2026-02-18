@@ -8,6 +8,7 @@ from commcare_connect.users.models import ConnectIDUserLink
 
 
 class UserFactory(DjangoModelFactory):
+    username = Sequence(lambda n: "user_%d" % n)
     email = Faker("email")
     name = Faker("name")
     password = Password(
