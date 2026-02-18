@@ -33,6 +33,7 @@ from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
+    FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
@@ -1703,3 +1704,62 @@ class TestVerificationFlagsConfig:
         response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
         assert response.status_code == HTTPStatus.OK
         assert not FormJsonValidationRules.objects.filter(opportunity=opportunity).exists()
+
+
+@pytest.mark.django_db
+class TestDeleteFormJsonRule:
+    def url(self, org_slug, opp_id, pk):
+        return reverse("opportunity:delete_form_json_rule", args=(org_slug, opp_id, pk))
+
+    def test_delete_form_json_rule_success(self, client, organization, opportunity, org_user_member):
+        rule = FormJsonValidationRulesFactory(opportunity=opportunity)
+        client.force_login(org_user_member)
+        response = client.delete(
+            self.url(organization.slug, opportunity.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert not FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+    def test_delete_form_json_rule_managed_opp_as_non_pm(
+        self, client, organization, org_user_member, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        rule = FormJsonValidationRulesFactory(opportunity=managed_opp)
+        client.force_login(org_user_member)
+        response = client.delete(
+            self.url(organization.slug, managed_opp.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse("opportunity:detail", args=(organization.slug, managed_opp.opportunity_id))
+        assert FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+    def test_delete_form_json_rule_managed_opp_as_pm(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        rule = FormJsonValidationRulesFactory(opportunity=managed_opp)
+        client.force_login(program_manager_org_user_admin)
+        response = client.delete(
+            self.url(program_manager_org.slug, managed_opp.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert not FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+    def test_delete_form_json_rule_wrong_http_method(self, client, organization, opportunity, org_user_member):
+        rule = FormJsonValidationRulesFactory(opportunity=opportunity)
+        client.force_login(org_user_member)
+        response = client.post(
+            self.url(organization.slug, opportunity.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+        assert FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
