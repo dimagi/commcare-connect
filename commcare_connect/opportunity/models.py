@@ -594,6 +594,7 @@ class PaymentInvoice(models.Model):
     class Meta:
         unique_together = ("opportunity", "invoice_number")
 
+    @property
     def invoice_type(self):
         if self.service_delivery:
             return PaymentInvoice.InvoiceType.service_delivery
