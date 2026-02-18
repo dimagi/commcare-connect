@@ -68,7 +68,11 @@ class Flag(AbstractUserFlag):
         program = opportunity.managedopportunity.program if opportunity and opportunity.managed else None
         organization = getattr(request, "org", None)
 
-        filters = models.Q(users=user)
+        filters = models.Q(users=user) | models.Q(everyone=True)
+        if user.is_staff:
+            filters |= models.Q(staff=True)
+        if user.is_superuser:
+            filters |= models.Q(superusers=True)
         if organization:
             filters |= models.Q(organizations__id=organization.id)
         if opportunity:

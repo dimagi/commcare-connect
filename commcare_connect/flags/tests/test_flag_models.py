@@ -119,6 +119,42 @@ class TestIsFlagActiveForRequest:
         request = self._make_request(user=user)
         assert Flag.is_flag_active_for_request(request, "nonexistent_flag") is False
 
+    def test_everyone_flag_activates_for_any_authenticated_user(self):
+        user = UserFactory()
+        flag = FlagFactory(everyone=True)
+        request = self._make_request(user=user)
+        assert Flag.is_flag_active_for_request(request, flag.name) is True
+
+    def test_staff_flag_activates_for_staff_user(self):
+        user = UserFactory(is_staff=True)
+        flag = FlagFactory(staff=True)
+        request = self._make_request(user=user)
+        assert Flag.is_flag_active_for_request(request, flag.name) is True
+
+    def test_staff_flag_does_not_activate_for_non_staff_user(self):
+        user = UserFactory(is_staff=False)
+        flag = FlagFactory(staff=True)
+        request = self._make_request(user=user)
+        assert Flag.is_flag_active_for_request(request, flag.name) is False
+
+    def test_superuser_flag_activates_for_superuser(self):
+        user = UserFactory(is_superuser=True)
+        flag = FlagFactory(superusers=True)
+        request = self._make_request(user=user)
+        assert Flag.is_flag_active_for_request(request, flag.name) is True
+
+    def test_superuser_flag_does_not_activate_for_non_superuser(self):
+        user = UserFactory(is_superuser=False)
+        flag = FlagFactory(superusers=True)
+        request = self._make_request(user=user)
+        assert Flag.is_flag_active_for_request(request, flag.name) is False
+
+    def test_superuser_flag_does_not_activate_for_staff_only(self):
+        user = UserFactory(is_staff=True, is_superuser=False)
+        flag = FlagFactory(superusers=True)
+        request = self._make_request(user=user)
+        assert Flag.is_flag_active_for_request(request, flag.name) is False
+
     def test_flag_active_for_user(self):
         user = UserFactory()
         flag = FlagFactory()
