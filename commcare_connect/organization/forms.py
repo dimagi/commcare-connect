@@ -51,7 +51,7 @@ class OrganizationChangeForm(forms.ModelForm):
             )
         else:
             if self.instance and self.instance.llo_entity:
-                self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, self.instance.llo_entity.name)]
+                self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
 
         layout_fields.append(layout.Field("llo_entity"))
 
