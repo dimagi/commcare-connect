@@ -78,7 +78,8 @@ class WorkAreaImport(View):
 
     def post(self, request, org_slug, opp_id):
         redirect_url = reverse(
-            "microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": request.opportunity.id}
+            "microplanning:microplanning_home",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
         )
 
         if WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
@@ -109,7 +110,6 @@ class WorkAreaImport(View):
 @require_flag_for_opp(MICROPLANNING)
 def import_status(request, org_slug, opp_id):
     task_id = request.GET.get("task_id", None)
-    status_check = request.GET.get("status_check", None) == "1"
 
     result_ready = False
     result_data = None
@@ -118,27 +118,14 @@ def import_status(request, org_slug, opp_id):
         try:
             task_id = uuid.UUID(task_id)
         except (ValueError, TypeError):
-            return HttpResponse(status=404)
-
+            return redirect(
+                reverse("microplanning:microplanning_home", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+            )
         result = AsyncResult(str(task_id))
         result_ready = result.ready()
         if result_ready:
             result_data = result.result
 
-    if status_check:
-        response = HttpResponse(status=204)  # default: not ready
-        if result_ready:
-            triggers = ["task-completed"]
-            if result_data and result_data.get("created", 0) > 0:
-                triggers.append("added-new-areas")
-            response.status_code = 200
-            response["HX-Trigger"] = ",".join(triggers)
-        return response
-
-    context = {
-        "result_ready": result_ready,
-        "result_data": result_data,
-        "title": _("Work Area Upload Result") if result_ready else _("Upload Work Areas"),
-    }
+    context = {"result_ready": result_ready, "result_data": result_data, "task_id": task_id}
 
     return render(request, "microplanning/import_work_area_modal.html", context)
