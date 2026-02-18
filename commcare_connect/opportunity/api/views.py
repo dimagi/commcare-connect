@@ -1,6 +1,7 @@
 import datetime
 import logging
 
+import waffle
 from django.db import transaction
 from django.db.models import Q
 from django.http import Http404
@@ -11,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from commcare_connect.flags.switch_names import API_UUID
 from commcare_connect.opportunity.api.serializers import (
     CompletedWorkSerializer,
     DeliveryProgressSerializer,
@@ -27,7 +29,7 @@ from commcare_connect.opportunity.models import (
 )
 from commcare_connect.users.helpers import create_hq_user_and_link
 from commcare_connect.users.models import User
-from commcare_connect.utils.db import get_object_or_list_for_api_version
+from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 
 logger = logging.getLogger(__name__)
@@ -46,8 +48,7 @@ class UserLearnProgressView(RetrieveAPIView):
     serializer_class = UserLearnProgressSerializer
 
     def get_object(self):
-        opportunity_access = get_object_or_list_for_api_version(
-            request=self.request,
+        opportunity_access = get_object_or_list_by_uuid_or_int(
             queryset=OpportunityAccess.objects.filter(user=self.request.user),
             pk_or_pk_list=self.kwargs.get("pk"),
             uuid_field="opportunity__opportunity_id",
@@ -75,8 +76,7 @@ class DeliveryProgressView(RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        return get_object_or_list_for_api_version(
-            request=self.request,
+        return get_object_or_list_by_uuid_or_int(
             queryset=OpportunityAccess.objects.filter(user=self.request.user),
             pk_or_pk_list=self.kwargs.get("pk"),
             uuid_field="opportunity__opportunity_id",
@@ -88,8 +88,7 @@ class ClaimOpportunityView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, *args, **kwargs):
-        opportunity_access = get_object_or_list_for_api_version(
-            request=self.request,
+        opportunity_access = get_object_or_list_by_uuid_or_int(
             queryset=OpportunityAccess.objects.filter(user=self.request.user),
             pk_or_pk_list=kwargs.get("pk"),
             uuid_field="opportunity__opportunity_id",
@@ -146,8 +145,7 @@ def confirm_payments(request, user: User, payments_data: list):
 
         payment_map[str(payment_id)] = confirmed
 
-    payments = get_object_or_list_for_api_version(
-        request,
+    payments = get_object_or_list_by_uuid_or_int(
         queryset=Payment.objects.filter(
             Q(organization__memberships__user=user) | Q(opportunity_access__user=user),
         ),
@@ -159,7 +157,7 @@ def confirm_payments(request, user: User, payments_data: list):
         raise Http404
 
     lookup_keys = list(payment_map.keys())
-    use_int_pk = request.version == "1.0" and lookup_keys and all(val.isdigit() for val in lookup_keys)
+    use_int_pk = not waffle.switch_is_active(API_UUID) and all(val.isdigit() for val in lookup_keys)
 
     for payment in payments:
         payment_key = str(payment.pk) if use_int_pk else str(payment.payment_id)

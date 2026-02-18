@@ -243,7 +243,7 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
         invoice1 = PaymentInvoice.objects.get(opportunity=opportunity1)
         assert invoice1.amount == Decimal("100.00")
-        assert invoice1.status == InvoiceStatus.PENDING
+        assert invoice1.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice1.start_date == datetime.date(2024, 1, 1)
         assert invoice1.end_date == datetime.date(2024, 1, 31)
         assert invoice1.invoice_number == "INV001"
@@ -251,7 +251,7 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
         invoice2 = PaymentInvoice.objects.get(opportunity=opportunity2)
         assert invoice2.amount == Decimal("50.00")
-        assert invoice2.status == InvoiceStatus.PENDING
+        assert invoice2.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice2.start_date == datetime.date(2024, 1, 1)
         assert invoice2.end_date == datetime.date(2024, 1, 31)
         assert invoice2.invoice_number == "INV002"
