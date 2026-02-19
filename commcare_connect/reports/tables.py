@@ -57,6 +57,9 @@ class InvoiceReportTable(tables.Table):
     status = columns.Column(verbose_name=_("Status"))
     invoice_creation_date = DMYTColumn(verbose_name=_("Invoice Creation Date"), accessor="date")
     date = DMYTColumn(verbose_name=_("Date of Payment"), accessor="date_paid")
+    last_status_modified_at = DMYTColumn(
+        verbose_name=_("Invoice Last Updated Date"), accessor="last_status_modified_at"
+    )
 
     class Meta:
         model = PaymentInvoice
@@ -78,6 +81,7 @@ class InvoiceReportTable(tables.Table):
         if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
             self.columns.hide("exchange_rate")
             self.columns.hide("invoice_creation_date")
+            self.columns.hide("last_status_modified_at")
 
     def render_invoice_number(self, value, record):
         url = reverse(
