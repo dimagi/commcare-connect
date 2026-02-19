@@ -6,7 +6,7 @@ import pytest
 
 from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.microplanning.tasks import WorkAreaCSVImporter
-from commcare_connect.microplanning.tests.factoreis import WorkAreaFactory
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 
 
 @pytest.fixture
