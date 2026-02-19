@@ -22,6 +22,7 @@ class CompletedWorkUpdater:
         self.compute_payment = compute_payment
         self.completed_works = completed_works
 
+        self.completed_works_unit_approvals = {}
         self.counts = defaultdict(lambda: {"completed": 0, "approved": 0})
         self.parent_child_payment_unit_map = defaultdict(list)
         self.deliver_unit_map = defaultdict(list)
@@ -44,6 +45,12 @@ class CompletedWorkUpdater:
             optional = deliver_unit.get("optional", False)
             self.deliver_unit_map[pu_id].append((du_id, optional))
 
+    def _get_deliver_units_for_payment_unit(self, payment_unit_id):
+        deliver_units = self.deliver_unit_map[payment_unit_id]
+        required_deliver_units = [du_id for du_id, optional in deliver_units if not optional]
+        optional_deliver_units = [du_id for du_id, optional in deliver_units if optional]
+        return required_deliver_units, optional_deliver_units
+
     def _get_completed_work_counts(self):
         self._prepare_deliver_payment_unit_maps()
 
@@ -52,26 +59,30 @@ class CompletedWorkUpdater:
                 continue
 
             unit_counts = defaultdict(int)
-            approved_unit_counts = defaultdict(int)
+            approved_unit_counts = defaultdict(lambda: {"approved": 0, "agree": 0})
             for user_visit in completed_work.uservisit_set.all():
                 unit_counts[user_visit.deliver_unit_id] += 1
                 if user_visit.status == VisitValidationStatus.approved.value:
-                    approved_unit_counts[user_visit.deliver_unit_id] += 1
+                    approved_unit_counts[user_visit.deliver_unit_id]["approved"] += 1
+                    if user_visit.review_status == VisitReviewStatus.agree.value:
+                        approved_unit_counts[user_visit.deliver_unit_id]["agree"] += 1
 
+            self.completed_works_unit_approvals[completed_work.id] = approved_unit_counts
             payment_unit_id = completed_work.payment_unit_id
-            deliver_units = self.deliver_unit_map[payment_unit_id]
-            required_deliver_units = [du_id for du_id, optional in deliver_units if not optional]
-            optional_deliver_units = [du_id for du_id, optional in deliver_units if optional]
+            required_deliver_units, optional_deliver_units = self._get_deliver_units_for_payment_unit(payment_unit_id)
+
             number_completed = min([unit_counts[deliver_id] for deliver_id in required_deliver_units], default=0)
             number_approved = min(
-                [approved_unit_counts[deliver_id] for deliver_id in required_deliver_units], default=0
+                [approved_unit_counts[deliver_id]["approved"] for deliver_id in required_deliver_units], default=0
             )
 
             if optional_deliver_units:
                 optional_completed = sum(unit_counts[deliver_id] for deliver_id in optional_deliver_units)
                 number_completed = min(number_completed, optional_completed)
 
-                optional_approved = sum(approved_unit_counts[deliver_id] for deliver_id in optional_deliver_units)
+                optional_approved = sum(
+                    approved_unit_counts[deliver_id]["approved"] for deliver_id in optional_deliver_units
+                )
                 number_approved = min(number_approved, optional_approved)
 
             child_payment_units = self.parent_child_payment_unit_map[payment_unit_id]
@@ -97,46 +108,40 @@ class CompletedWorkUpdater:
     def _update_status(self, completed_work):
         updated = False
         if self.opportunity.auto_approve_payments:
-            visits = completed_work.uservisit_set.annotate(
-                optional=F("deliver_unit__optional"),
-            ).values_list("status", "reason", "review_status", "deliver_unit_id", "optional")
+            visits = completed_work.uservisit_set.values_list("status", "reason", "review_status")
 
             if any(status == VisitValidationStatus.rejected for status, *_ in visits):
                 completed_work.status = CompletedWorkStatus.rejected
                 completed_work.reason = "\n".join(reason for _, reason, *_ in visits if reason)
-            elif self._is_completed_work_approved(visits):
+            elif self._is_completed_work_approved(completed_work):
                 completed_work.status = CompletedWorkStatus.approved
 
             updated = True
         return updated
 
-    def _is_completed_work_approved(self, visits):
-        """
-        Check if all required deliver units have an approved visit and if there are optional deliver units,
-        at least one of them has an approved visit. If multiple visits exist for a given deliver unit, only
-        one needs to be approved for the deliver unit to be considered approved.
-        """
-        required_deliver_units_approvals = {}
-        optional_deliver_units_approvals = {}
+    def _is_delivery_approved(self, approved_unit_counts, delivery_id):
+        if self.opportunity.managed:
+            return approved_unit_counts[delivery_id]["approved"] > 0 and approved_unit_counts[delivery_id]["agree"] > 0
+        else:
+            return approved_unit_counts[delivery_id]["approved"] > 0
 
-        for status, _, review_status, deliver_unit_id, optional in visits:
-            visit_is_approved = status == VisitValidationStatus.approved
-            if self.opportunity.managed:
-                visit_is_approved = visit_is_approved and review_status == VisitReviewStatus.agree
-
-            if not optional:
-                required_deliver_units_approvals[deliver_unit_id] = (
-                    required_deliver_units_approvals.get(deliver_unit_id, False) or visit_is_approved
-                )
-            else:
-                optional_deliver_units_approvals[deliver_unit_id] = (
-                    optional_deliver_units_approvals.get(deliver_unit_id, False) or visit_is_approved
-                )
-
-        optional_visits_approved = (
-            any(optional_deliver_units_approvals.values()) if optional_deliver_units_approvals else True
+    def _is_completed_work_approved(self, completed_work):
+        approved_unit_counts = self.completed_works_unit_approvals[completed_work.id]
+        required_deliver_units, optional_deliver_units = self._get_deliver_units_for_payment_unit(
+            completed_work.payment_unit_id
         )
-        return all(required_deliver_units_approvals.values()) and optional_visits_approved
+        all_required_approved = all(
+            self._is_delivery_approved(approved_unit_counts, deliver_id) for deliver_id in required_deliver_units
+        )
+        any_optional_approved = any(
+            self._is_delivery_approved(approved_unit_counts, deliver_id) for deliver_id in optional_deliver_units
+        )
+
+        completed_work_approved = all_required_approved
+        if optional_deliver_units:
+            completed_work_approved = completed_work_approved and any_optional_approved
+
+        return completed_work_approved
 
     def _update_payment(self, completed_work):
         updated = False
