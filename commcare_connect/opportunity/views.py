@@ -1371,7 +1371,7 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+    queryset = PaymentInvoice.objects.filter(**filter_kwargs).select_related("exchange_rate").order_by("date")
     if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
         queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
 
