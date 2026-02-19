@@ -219,4 +219,3 @@ class TestOrganizationCreationForm:
         assert form.errors["llo_entity"] == [
             "Selected LLO Entity does not match the existing organization's LLO Entity."
         ]
-

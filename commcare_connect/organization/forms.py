@@ -176,7 +176,6 @@ class OrganizationCreationForm(forms.Form):
         ),
     )
 
-
     def get_entity_wise_orgs(self):
         data = {}
         qs = LLOEntity.objects.prefetch_related("organization_set").only("id", "name").order_by("name")
