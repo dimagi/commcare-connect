@@ -16,7 +16,7 @@
     <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
 
     <!-- Top header section -->
-    <header class="mb-4">
+    <header class="mb-2">
         <div class="w-full rounded-lg bg-brand-indigo p-5 shadow-sm sm:p-6">
             <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                 <div class="min-w-0 flex-1">
@@ -40,6 +40,36 @@
             </div>
         </div>
     </header>
+    <div x-data="{
+            showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }},
+            showUploadBtn: {{ show_area_btn|yesno:'true,false' }},
+            showUploading: {{ task_id|yesno:'true,false' }},
+            showSeeResult: false,
+            showImportWorkAreaModal: false
+        }" class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
+        <div class="flex items-end space-x-2 w-full">
+            {% if task_id %}
+                <div hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+                    hx-vals='{"task_id": "{{ task_id }}"}' hx-trigger="load" hx-target="#modal-container">
+                </div>
+            {% endif %}
+            {% if show_area_btn %}
+                <button x-show="showUploadBtn" type="button"
+                    hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+                    hx-target="#modal-container" class="button button-md primary-dark">
+                    <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
+                </button>
+            {% endif %}
+            {% if show_workarea_groups_btn %}
+                <button x-show="showCreateGroupBtn" type="button" id="create-work-area-groups" class="button button-md primary-dark ">
+                    <i class="fa-solid fa-play"></i> {% translate "Create Work Area Groups" %}
+                </button>
+            {% endif %}
+        </div>
+        {% block modals %}
+        <div x-show="showImportWorkAreaModal" id="modal-container"></div>
+        {% endblock %}
+    </div>
 
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]" x-data="mapController()">
         <!-- Map section -->
