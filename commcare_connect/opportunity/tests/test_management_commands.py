@@ -14,11 +14,11 @@ class ArchivePendingInvoicesTest:
         opp_on_cutoff = OpportunityFactory(end_date=fixed_cutoff_date)  # 2025-11-01
         opp_future = OpportunityFactory(end_date=fixed_cutoff_date + datetime.timedelta(days=1))  # 2025-11-02
 
-        invoice1 = PaymentInvoiceFactory(opportunity=opp_past, status=InvoiceStatus.PENDING)
-        invoice2 = PaymentInvoiceFactory(opportunity=opp_on_cutoff, status=InvoiceStatus.PENDING)
-        invoice3 = PaymentInvoiceFactory(opportunity=opp_future, status=InvoiceStatus.PENDING)
-        invoice4 = PaymentInvoiceFactory(opportunity=opp_past, status=InvoiceStatus.APPROVED)
-        invoice5 = PaymentInvoiceFactory(opportunity=opp_past, status=InvoiceStatus.PENDING)
+        invoice1 = PaymentInvoiceFactory(opportunity=opp_past, status=InvoiceStatus.PENDING_NM_REVIEW)
+        invoice2 = PaymentInvoiceFactory(opportunity=opp_on_cutoff, status=InvoiceStatus.PENDING_NM_REVIEW)
+        invoice3 = PaymentInvoiceFactory(opportunity=opp_future, status=InvoiceStatus.PENDING_NM_REVIEW)
+        invoice4 = PaymentInvoiceFactory(opportunity=opp_past, status=InvoiceStatus.PAID)
+        invoice5 = PaymentInvoiceFactory(opportunity=opp_past, status=InvoiceStatus.PENDING_NM_REVIEW)
 
         call_command("archive_pending_invoices")
 
@@ -34,10 +34,10 @@ class ArchivePendingInvoicesTest:
         assert invoice2.status == InvoiceStatus.ARCHIVED
         assert invoice2.archived_date is not None
 
-        assert invoice3.status == InvoiceStatus.PENDING
+        assert invoice3.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice3.archived_date is None
 
-        assert invoice4.status == InvoiceStatus.APPROVED
+        assert invoice4.status == InvoiceStatus.PAID
         assert invoice4.archived_date is None
 
         assert invoice5.status == InvoiceStatus.ARCHIVED

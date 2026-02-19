@@ -196,7 +196,7 @@ class InvoiceReportFilter(django_filters.FilterSet):
     )
 
     status = django_filters.MultipleChoiceFilter(
-        choices=InvoiceStatus.choices,
+        choices=lambda: InvoiceStatus.get_choices(),
         label=_("Status"),
         widget=forms.SelectMultiple(
             attrs={
@@ -285,6 +285,7 @@ class InvoiceReportView(
             PaymentInvoice.objects.select_related(
                 "opportunity__managedopportunity__program__organization",
                 "payment",
+                "exchange_rate",
             )
             .annotate(
                 date_paid=F("payment__date_paid"),

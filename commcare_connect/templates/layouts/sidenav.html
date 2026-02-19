@@ -40,20 +40,26 @@
         </div>
 
         <!-- Navigation Items -->
-        {% if request.user.is_authenticated and request.org %}
-          {% if request.org_membership or request.user.is_superuser %}
-          <div class="mt-5">
-              {% url 'opportunity:list' request.org.slug as opportunity_url %}
-              {% include "components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url namespace='opportunity' %}
+        {% if request.user.is_authenticated %}
+          {% if request.org %}
+            {% if request.org_membership or request.user.is_superuser %}
+            <div class="mt-5">
+                {% url 'opportunity:list' request.org.slug as opportunity_url %}
+                {% include "components/sidenav-items.html" with name='Opportunities' icon='table-cells-large'  target=opportunity_url namespace='opportunity' %}
 
-              {% if not request.org_membership.is_viewer %}
-                  {% url 'program:home' request.org.slug as program_home_url %}
-                  {% include "components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
+                {% if not request.org_membership.is_viewer %}
+                    {% url 'program:home' request.org.slug as program_home_url %}
+                    {% include "components/sidenav-items.html" with name='Programs' icon='table-columns'  target=program_home_url namespace='program' %}
 
-                  {% url 'organization:home' request.org.slug as organization_home_url %}
-                  {% include "components/sidenav-items.html" with name='My Organization' icon='building'  target=organization_home_url namespace='organization' %}
-              {% endif %}
-          </div>
+                    {% url 'organization:home' request.org.slug as organization_home_url %}
+                    {% include "components/sidenav-items.html" with name='My Organization' icon='building'  target=organization_home_url namespace='organization' %}
+                {% endif %}
+            </div>
+            {% endif %}
+          {% endif %}
+          {% if request.user.show_internal_features %}
+            {% url 'users:internal_features' as internal_features_url %}
+            {% include "components/sidenav-items.html" with name='Internal Features' icon='gear' target=internal_features_url namespace='users' %}
           {% endif %}
         {% endif %}
     </div>
