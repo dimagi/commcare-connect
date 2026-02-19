@@ -200,7 +200,7 @@ class OrganizationCreationForm(forms.Form):
         cleaned_data = super().clean()
         name = cleaned_data.get("name")
         llo_entity = cleaned_data.get("llo_entity")
-        if name.pk:
+        if name and name.pk:
             if llo_entity and name.llo_entity != llo_entity:
                 raise ValidationError(
                     {
