@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+from collections import defaultdict
 
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
@@ -32,7 +33,7 @@ class WorkAreaCSVImporter:
     def __init__(self, opp_id, csv_source):
         self.opp_id = opp_id
         self.csv_source = csv_source
-        self.errors = {}
+        self.errors = defaultdict(list)
         self.seen_slugs = set()
         self.created_count = 0
 
@@ -211,8 +212,6 @@ class WorkAreaCSVImporter:
         return invalid
 
     def _add_error(self, line, message):
-        if message not in self.errors:
-            self.errors[message] = []
         self.errors[message].append(line)
 
 
