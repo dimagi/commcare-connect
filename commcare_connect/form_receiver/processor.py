@@ -31,7 +31,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments
+from commcare_connect.opportunity.tasks import download_user_visit_attachments, notify_user_for_scored_assessment
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
 from commcare_connect.utils.lock import try_redis_lock
@@ -165,6 +165,8 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
                 "app_build_version": xform.metadata.app_build_version,
             },
         )
+
+        notify_user_for_scored_assessment.delay(assessment.pk)
 
         if not created:
             return ProcessingError("Learn Assessment is already completed")

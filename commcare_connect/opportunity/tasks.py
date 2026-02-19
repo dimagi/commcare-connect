@@ -36,6 +36,7 @@ from commcare_connect.opportunity.export import (
     export_work_status_table,
 )
 from commcare_connect.opportunity.models import (
+    Assessment,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
@@ -696,3 +697,22 @@ def _send_auto_invoice_created_notification(invoice_ids):
             )
         except Exception as e:
             logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def notify_user_for_scored_assessment(assessment_pk):
+    assessment = Assessment.objects.get(pk=assessment_pk)
+    user = assessment.user
+    opportunity = assessment.opportunity
+    message = Message(
+        usernames=[user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "key": "scored_assessment",
+            "opportunity_status": "learn",
+            "opportunity_uuid": str(opportunity.opportunity_id),
+            "title": "Update on your Assessment",
+            "body": f"Assessment for opportunity '{opportunity.name}' scored, check your status",
+        },
+    )
+    send_message(message)
