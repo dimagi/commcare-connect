@@ -570,6 +570,49 @@ class TestUpdateStatus:
         assert completed_work.saved_completed_count == 2
         assert completed_work.saved_payment_accrued == 100
 
+    def test_managed_opp_completed_work_not_updated_to_approved_with_no_optional_visit(self):
+        managed_opp = ManagedOpportunityFactory()
+        opp_access = OpportunityAccessFactory()
+        opp_access.opportunity = managed_opp
+        opp_access.opportunity.auto_approve_payments = True
+        opp_access.opportunity.save()
+
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+        DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+            optional=True,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        UserVisitFactory(
+            opportunity=opp_access.opportunity,
+            user=opp_access.user,
+            opportunity_access=opp_access,
+            deliver_unit=required_deliver_unit,
+            completed_work=completed_work,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+
+        completed_works = CompletedWork.objects.filter(id=completed_work.id).select_related("payment_unit")
+        update_status(completed_works, opp_access, compute_payment=True)
+        completed_work.refresh_from_db()
+
+        assert completed_work.status == CompletedWorkStatus.pending
+        assert completed_work.saved_approved_count == 0
+        assert completed_work.saved_completed_count == 0
+        assert completed_work.saved_payment_accrued == 0
+
     def test_completed_work_updated_to_rejected_when_any_visit_rejected(self):
         opp_access = OpportunityAccessFactory()
         opp_access.opportunity.auto_approve_payments = True
