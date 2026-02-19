@@ -176,6 +176,10 @@ class OrganizationCreationForm(forms.Form):
         ),
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_new_org = False
+
     def get_entity_wise_orgs(self):
         data = {}
         qs = LLOEntity.objects.prefetch_related("organization_set").only("id", "name").order_by("name")
@@ -194,6 +198,7 @@ class OrganizationCreationForm(forms.Form):
             org = Organization.objects.filter(pk=value).first()
             if org:
                 return org
+        self.is_new_org = True
         return Organization(name=value)
 
     def clean(self):
