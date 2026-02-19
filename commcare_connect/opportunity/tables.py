@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 from django_tables2 import columns
 
 from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
@@ -386,6 +387,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
     amount_usd = tables.Column(verbose_name="Amount (USD)")
     status = tables.Column(verbose_name="Invoice Status")
     invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery", empty_values=())
+    last_status_modified_at = tables.Column(
+        verbose_name=gettext_lazy("Invoice Last Updated Date"), accessor="last_status_modified_at"
+    )
 
     class Meta:
         model = PaymentInvoice
@@ -399,6 +403,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
             "invoice_number",
             "status",
             "payment_status",
+            "last_status_modified_at",
             "payment_date",
             "invoice_type",
             "actions",
@@ -421,6 +426,8 @@ class PaymentInvoiceTable(OpportunityContextTable):
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
             self.columns["date"].column.verbose_name = _("Invoice Generation Date")
             self.columns.hide("payment_status")
+        else:
+            self.columns.hide("last_status_modified_at")
 
     def render_exchange_rate(self, value):
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
