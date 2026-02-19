@@ -1587,19 +1587,28 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
 
     assert Payment.objects.filter(opportunity_access=access).exists()
 
-    client.force_login(org_user_admin)
-    url = reverse(
-        "opportunity:payment_delete",
-        args=(
-            opportunity.organization.slug,
-            opportunity.opportunity_id,
-            access.opportunity_access_id,
-            payment.payment_id,
-        ),
-    )
-    response = client.post(url)
-    assert response.status_code == 302
-    assert not Payment.objects.filter(opportunity_access=access).exists()
+    with mock.patch(
+        "commcare_connect.opportunity.tasks.send_push_notification_task.delay"
+    ) as mock_send_push_notification_task:
+        client.force_login(org_user_admin)
+        url = reverse(
+            "opportunity:payment_delete",
+            args=(
+                opportunity.organization.slug,
+                opportunity.opportunity_id,
+                access.opportunity_access_id,
+                payment.payment_id,
+            ),
+        )
+        response = client.post(url)
+        assert response.status_code == 302
+        assert not Payment.objects.filter(opportunity_access=access).exists()
+        mock_send_push_notification_task.assert_called_once()
+        call_args = mock_send_push_notification_task.call_args
+        assert call_args.kwargs["extra_data"]["opportunity_id"] == str(opportunity.id)
+        assert call_args.kwargs["extra_data"]["payment_id"] == str(payment.id)
+        assert call_args.kwargs["extra_data"]["opportunity_uuid"] == str(opportunity.opportunity_id)
+        assert call_args.kwargs["extra_data"]["payment_uuid"] == str(payment.payment_id)
 
     response = client.post(url)
     assert response.status_code == 404
