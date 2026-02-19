@@ -11,7 +11,7 @@ from django.utils.translation import gettext as _
 
 from config import celery_app
 
-from .models import WorkArea
+from .models import SRID, WorkArea
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +127,12 @@ class WorkAreaCSVImporter:
 
     def get_boundary(self, row):
         boundary_wkt = row.get(self.HEADERS.get("boundary"), "").strip()
-        return GEOSGeometry(boundary_wkt, srid=4326)
+        return GEOSGeometry(boundary_wkt, srid=SRID)
 
     def get_centroid(self, row):
         lon, lat = row.get(self.HEADERS.get("centroid")).strip().split()
         wkt = f"POINT({lon} {lat})"
-        return GEOSGeometry(wkt, srid=4326)
+        return GEOSGeometry(wkt, srid=SRID)
 
     def get_ward(self, row):
         ward = (row.get(self.HEADERS.get("ward")) or "").strip()
