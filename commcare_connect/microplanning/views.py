@@ -5,6 +5,8 @@ from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -97,8 +99,9 @@ class WorkAreaImport(View):
             messages.error(request, _("Unsupported file format. Please upload a CSV file."))
             return redirect(redirect_url)
 
-        csv_content = csv_file.read().decode("utf-8")
-        task = import_work_areas_task.delay(request.opportunity.id, csv_content)
+        file_name = f"work_area_upload-{request.opportunity.id}-{uuid.uuid4().hex}.csv"
+        default_storage.save(file_name, ContentFile(csv_file.read()))
+        task = import_work_areas_task.delay(request.opportunity.id, file_name)
         cache.set(lock_key, task.id, timeout=1200)
         messages.info(request, _("Work Area upload has been started."))
         redirect_url += f"?task_id={task.id}"

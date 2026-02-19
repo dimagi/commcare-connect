@@ -134,8 +134,8 @@ class TestWorkAreaCSVImporter:
             self.POLYGON,
             "area-random",
             self.CENTROID,
-            "5",
             "ward-1",
+            "5",
         ]
 
         csv_data = self.build_csv([row], headers=headers)
