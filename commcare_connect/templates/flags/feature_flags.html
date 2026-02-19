@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load i18n %}
+
+{% block title %}{% translate "Feature Flags & Switches" %}{% endblock %}
+
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+
+{% block content %}
+<div class="container">
+  <h2 class="text-xl font-semibold text-brand-deep-purple mb-6">{% translate "Feature Flags & Switches" %}</h2>
+
+  <!-- Switches Section -->
+  <section class="mb-8">
+    <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% translate "Switches" %}</h3>
+    {% if switches %}
+      <div class="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        {% for switch in switches %}
+          <div class="card_bg flex items-center justify-between gap-4">
+            <div>
+              <h4 class="card_title">{{ switch.name }}</h4>
+              {% if switch.note %}
+                <p class="card_description mt-1">{{ switch.note }}</p>
+              {% endif %}
+            </div>
+            <form method="post" action="{% url 'flags:toggle_switch' switch.name %}">
+              {% csrf_token %}
+              <button
+                type="submit"
+                class="button button-md {% if switch.active %}primary-dark{% else %}outline-style{% endif %} !inline-flex items-center gap-2 whitespace-nowrap"
+              >
+                <i class="fa-solid {% if switch.active %}fa-toggle-on{% else %}fa-toggle-off{% endif %}"></i>
+                {% if switch.active %}{% translate "On" %}{% else %}{% translate "Off" %}{% endif %}
+              </button>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-gray-500">{% translate "No switches found." %}</p>
+    {% endif %}
+  </section>
+
+  <!-- Feature Flags Section -->
+  <section>
+    <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% translate "Feature Flags" %}</h3>
+    {% if flag_forms %}
+      <div class="flex flex-col gap-4">
+        {% for flag, form in flag_forms %}
+          <div class="card_bg">
+            <h4 class="card_title mb-3">{{ flag.name }}</h4>
+            <form method="post" action="{% url 'flags:update_flag' flag.name %}">
+              {% csrf_token %}
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Users" %}</label>
+                  {{ form.users }}
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Workspaces" %}</label>
+                  {{ form.organizations }}
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Programs" %}</label>
+                  {{ form.programs }}
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Opportunities" %}</label>
+                  {{ form.opportunities }}
+                </div>
+              </div>
+              <div class="mt-3 flex justify-end">
+                <button type="submit" class="button button-md primary-dark !inline-flex items-center gap-2">
+                  <i class="fa-solid fa-floppy-disk"></i>
+                  {% translate "Save" %}
+                </button>
+              </div>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-gray-500">{% translate "No feature flags found." %}</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock content %}

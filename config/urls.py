@@ -29,6 +29,7 @@ urlpatterns = [
     path(
         "a/<slug:org_slug>/microplanning/", include("commcare_connect.microplanning.urls", namespace="microplanning")
     ),
+    path("flags/", include("commcare_connect.flags.urls", namespace="flags")),
     path("admin_reports/", include("commcare_connect.reports.urls")),
     path("hq/", include("commcare_connect.commcarehq.urls", namespace="commcarehq")),
     path("export/", include("commcare_connect.data_export.urls", namespace="data_export")),
