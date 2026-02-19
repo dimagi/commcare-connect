@@ -20,7 +20,7 @@
                         <p class="text-xs text-gray-400">{{ request.org.program_manager|yesno:"Program,Network"}} Manager</p>
                       {% else %}
                         <p class="text-sm font-medium text-brand-deep-purple cursor-pointer">
-                          {% translate "Select Organization" %}
+                          {% translate "Select Workspace" %}
                         </p>
                       {% endif %}
                     </div>
@@ -48,7 +48,7 @@
                     </ul>
                     <div class="p-2">
                         <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
-                        {% translate "Add Organization" %}
+                        {% translate "Add Workspace" %}
                         </a>
                     </div>
                 </div>

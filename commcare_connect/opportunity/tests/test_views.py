@@ -1077,7 +1077,7 @@ def test_views_use_opportunity_decorator_or_mixin():
 
 
 @pytest.mark.django_db
-class TestInvoiceReviewView:
+class BaseTestInvoiceView:
     @pytest.fixture
     def setup_invoice(self, organization, org_user_member):
         program = ProgramFactory(organization=organization, budget=10000)
@@ -1103,6 +1103,9 @@ class TestInvoiceReviewView:
             "user": org_user_member,
         }
 
+
+@pytest.mark.django_db
+class TestInvoiceReviewView(BaseTestInvoiceView):
     def test_switch_not_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1252,6 +1255,55 @@ class TestInvoiceReviewView:
         response = client.get(url)
         form = response.context["form"]
         assert isinstance(form, AutomatedPaymentInvoiceForm)
+
+
+@pytest.mark.django_db
+class TestDownloadInvoiceView(BaseTestInvoiceView):
+    @staticmethod
+    def _url(opportunity, invoice_id):
+        return reverse(
+            "opportunity:download_invoice",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice_id),
+        )
+
+    def _send_request(self, client, user, opportunity, invoice_id):
+        client.force_login(user)
+        url = self._url(opportunity, invoice_id)
+        return client.get(url)
+
+    def test_switch_inactive(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 404
+        assert "Invoice download feature is not available" in str(response.content)
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_successful_download(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "application/pdf"
+        assert response.headers["Content-Disposition"] == 'attachment;filename="invoice_{}.pdf"'.format(
+            invoice.payment_invoice_id
+        )
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_missing_invoice(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, uuid4())
+
+        assert response.status_code == 404
+        assert "No PaymentInvoice matches the given query." in str(response.content)
 
 
 class TestAddPaymentUnitView:
