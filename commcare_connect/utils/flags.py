@@ -13,6 +13,7 @@ class Flags(Enum):
     DURATION = "duration"
     FORM_VALUE_NOT_FOUND = "form_value_not_found"
     USER_SUSPENDED = "user_suspended"
+    OVER_LIMIT = "over_limit"
 
 
 class FlagDescription(Enum):
@@ -24,6 +25,7 @@ class FlagDescription(Enum):
     ATTACHMENT_MISSING = "Form was submitted without attachements."
     DURATION = "The form was completed too quickly."
     USER_SUSPENDED = "This user is suspended from the opportunity."
+    OVER_LIMIT = "Visit exceeds allowed limit."
 
     @staticmethod
     def FORM_VALUE_NOT_FOUND(form_json_rule: FormJsonValidationRules):
@@ -47,6 +49,7 @@ class FlagLabels(Enum):
     DURATION = "Duration"
     FORM_VALUE_NOT_FOUND = "Missing Form Value"
     USER_SUSPENDED = "User Suspended"
+    OVER_LIMIT = "Over Limit"
 
     @classmethod
     def get_label(cls, flag):
