@@ -23,7 +23,7 @@ ENV DEBUG 0
 
 RUN apt-get update \
   # psycopg2, gettext geodjango etc dependencies
-  && apt-get install -y libpq-dev gettext curl binutils libproj-dev gdal-bin \
+  && apt-get install -y libpq-dev gettext curl libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 binutils libproj-dev gdal-bin \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/*

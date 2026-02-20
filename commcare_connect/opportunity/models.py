@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
+import pghistory
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Count, F, Q, Sum
@@ -10,9 +11,11 @@ from django.db.models.expressions import RawSQL
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
-from django.utils.translation import gettext
+from django.utils.translation import gettext, gettext_lazy
+from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -524,12 +527,49 @@ class ExchangeRate(models.Model):
 
 
 class InvoiceStatus(models.TextChoices):
-    PENDING = "pending", gettext("Pending")
-    SUBMITTED = "submitted", gettext("Submitted")
-    APPROVED = "approved", gettext("Approved")
+    PENDING_NM_REVIEW = "pending_nm_review", gettext("Pending Network Manager Review")
+    PENDING_PM_REVIEW = "pending_pm_review", gettext("Pending Program Manager Review")
+    CANCELLED_BY_NM = "cancelled_by_nm", gettext("Cancelled by Network Manager")
+    READY_TO_PAY = "ready_to_pay", gettext("Ready to Pay")
+    REJECTED_BY_PM = "rejected_by_pm", gettext("Rejected by Program Manager")
+    PAID = "paid", gettext("Paid")
     ARCHIVED = "archived", gettext("Archived")
 
+    @staticmethod
+    def old_labels_map():
+        # Uses the new statuses, but returns the relevant label:
+        # either the one used previously or else the new label for statuses added later.
+        return {
+            "pending_nm_review": gettext("Pending"),
+            "pending_pm_review": gettext("Submitted"),
+            "ready_to_pay": gettext("Ready to Pay"),
+            "cancelled_by_nm": gettext("Cancelled by Network Manager"),
+            "rejected_by_pm": gettext("Rejected by Program Manager"),
+            "paid": gettext("Approved"),
+            "archived": gettext("Archived"),
+        }
 
+    @classmethod
+    def get_label(cls, status):
+        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            return cls.old_labels_map()[status]
+        return cls(status).label
+
+    @classmethod
+    def get_choices(cls):
+        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            old_labels = cls.old_labels_map()
+            allowed_statuses = [
+                cls.PENDING_NM_REVIEW,
+                cls.PENDING_PM_REVIEW,
+                cls.PAID,
+                cls.ARCHIVED,
+            ]
+            return [(status.value, old_labels.get(status.value, status.label)) for status in allowed_statuses]
+        return cls.choices
+
+
+@pghistory.track(fields=["status"])
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
         service_delivery = "service_delivery", gettext("Service Delivery")
@@ -548,11 +588,27 @@ class PaymentInvoice(models.Model):
     title = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     date_of_expense = models.DateField(null=True, blank=True)
-    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING, max_length=50)
+    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
     archived_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
+
+    @property
+    def invoice_type(self):
+        if self.service_delivery:
+            return PaymentInvoice.InvoiceType.service_delivery
+        return PaymentInvoice.InvoiceType.custom
+
+    @cached_property
+    def is_paid(self):
+        return Payment.objects.filter(invoice=self).exists()
+
+    def get_status_display(self):
+        return InvoiceStatus.get_label(self.status)
+
+    def unlink_completed_works(self):
+        CompletedWork.objects.filter(invoice=self).update(invoice=None)
 
 
 class Payment(models.Model):
@@ -611,9 +667,11 @@ class CompletedWork(models.Model):
     saved_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
-    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the organization")
+    saved_org_payment_accrued = models.IntegerField(
+        default=0, help_text=gettext_lazy("Payment accrued for the workspace")
+    )
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
+        max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
