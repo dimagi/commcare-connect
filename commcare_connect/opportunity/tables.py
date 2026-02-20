@@ -592,6 +592,7 @@ class BaseOpportunityList(OrgContextTable):
             "end_date",
         )
         order_by = ("status", "-start_date", "end_date")
+        empty_text = gettext_lazy("No Opportunities created yet.")
 
     def render_status(self, value):
         if value == 0:
