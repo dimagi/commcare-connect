@@ -23,7 +23,7 @@ ENV DEBUG 0
 
 RUN apt-get update \
   # psycopg2, gettext etc dependencies
-  && apt-get install -y libpq-dev gettext curl \
+  && apt-get install -y libpq-dev gettext curl libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/*

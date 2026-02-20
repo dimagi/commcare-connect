@@ -50,6 +50,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django.views.generic import CreateView, DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
+from django_weasyprint.views import WeasyTemplateResponse
 from geopy import distance
 from waffle import switch_is_active
 
@@ -915,7 +916,24 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
         OpportunityAccess, opportunity_access_id=access_id, opportunity=request.opportunity
     )
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, payment_id=pk)
+    payment_id = payment.id
+    payment_uuid = payment.payment_id
     payment.delete()
+
+    send_push_notification_task.delay(
+        [opportunity_access.user_id],
+        _("Payment updated"),
+        _("There has been an adjustment to your earnings for {}.").format(opportunity_access.opportunity.name),
+        extra_data={
+            "opportunity_status": "delivery",
+            "action": "ccc_generic_opportunity",
+            "key": "payment_rollback",
+            "opportunity_id": str(request.opportunity.id),
+            "payment_id": str(payment_id),
+            "opportunity_uuid": str(request.opportunity.opportunity_id),
+            "payment_uuid": str(payment_uuid),
+        },
+    )
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
@@ -1570,6 +1588,21 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         if self.object.service_delivery:
             return _("Review Service Delivery Invoice")
         return _("Review Custom Invoice")
+
+
+@org_member_required
+@opportunity_required
+def download_invoice(request, org_slug, opp_id, invoice_id):
+    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        raise Http404(_("Invoice download feature is not available"))
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+    return WeasyTemplateResponse(
+        request=request,
+        template="opportunity/invoice_download.html",
+        context={"invoice": invoice},
+        content_type="application/pdf",
+        filename=f"invoice_{invoice_id}.pdf",
+    )
 
 
 @org_member_required

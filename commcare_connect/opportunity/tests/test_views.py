@@ -13,7 +13,7 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import INVOICE_REVIEW
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -22,6 +22,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    Payment,
     PaymentUnit,
     UserInvite,
     UserInviteStatus,
@@ -1260,6 +1261,55 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert isinstance(form, AutomatedPaymentInvoiceForm)
 
 
+@pytest.mark.django_db
+class TestDownloadInvoiceView(BaseTestInvoiceView):
+    @staticmethod
+    def _url(opportunity, invoice_id):
+        return reverse(
+            "opportunity:download_invoice",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice_id),
+        )
+
+    def _send_request(self, client, user, opportunity, invoice_id):
+        client.force_login(user)
+        url = self._url(opportunity, invoice_id)
+        return client.get(url)
+
+    def test_switch_inactive(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 404
+        assert "Invoice download feature is not available" in str(response.content)
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_successful_download(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "application/pdf"
+        assert response.headers["Content-Disposition"] == 'attachment;filename="invoice_{}.pdf"'.format(
+            invoice.payment_invoice_id
+        )
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_missing_invoice(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, uuid4())
+
+        assert response.status_code == 404
+        assert "No PaymentInvoice matches the given query." in str(response.content)
+
+
 class TestAddPaymentUnitView:
     def test_org_amount_field_visible_for_managed_opportunity(self, client):
         managed_opportunity = ManagedOpportunityFactory()
@@ -1763,3 +1813,36 @@ class TestDeleteFormJsonRule:
         assert FormJsonValidationRules.objects.filter(
             form_json_validation_rules_id=rule.form_json_validation_rules_id
         ).exists()
+
+
+def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_admin: User):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    payment = PaymentFactory(opportunity_access=access)
+
+    assert Payment.objects.filter(opportunity_access=access).exists()
+
+    with mock.patch(
+        "commcare_connect.opportunity.tasks.send_push_notification_task.delay"
+    ) as mock_send_push_notification_task:
+        client.force_login(org_user_admin)
+        url = reverse(
+            "opportunity:payment_delete",
+            args=(
+                opportunity.organization.slug,
+                opportunity.opportunity_id,
+                access.opportunity_access_id,
+                payment.payment_id,
+            ),
+        )
+        response = client.post(url)
+        assert response.status_code == 302
+        assert not Payment.objects.filter(opportunity_access=access).exists()
+        mock_send_push_notification_task.assert_called_once()
+        call_args = mock_send_push_notification_task.call_args
+        assert call_args.kwargs["extra_data"]["opportunity_id"] == str(opportunity.id)
+        assert call_args.kwargs["extra_data"]["payment_id"] == str(payment.id)
+        assert call_args.kwargs["extra_data"]["opportunity_uuid"] == str(opportunity.opportunity_id)
+        assert call_args.kwargs["extra_data"]["payment_uuid"] == str(payment.payment_id)
+
+    response = client.post(url)
+    assert response.status_code == 404

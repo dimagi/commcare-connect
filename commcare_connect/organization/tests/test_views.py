@@ -31,7 +31,7 @@ class TestRemoveMembersView:
         assert response.status_code == 302
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the organization."
+        assert str(messages[0]) == "You cannot remove yourself from the workspace."
 
         assert UserOrganizationMembership.objects.filter(id=membership.id).exists()
 
@@ -47,7 +47,7 @@ class TestRemoveMembersView:
         assert response.status_code == 302
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
-        assert str(messages[0]) == "Selected members have been removed from the organization."
+        assert str(messages[0]) == "Selected members have been removed from the workspace."
 
         assert not UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 
@@ -64,7 +64,7 @@ class TestRemoveMembersView:
         assert response.status_code == 302
         messages = list(get_messages(response.wsgi_request))
         assert len(messages) == 1
-        assert str(messages[0]) == "You cannot remove yourself from the organization."
+        assert str(messages[0]) == "You cannot remove yourself from the workspace."
 
         assert UserOrganizationMembership.objects.filter(id=other_membership.id).exists()
 

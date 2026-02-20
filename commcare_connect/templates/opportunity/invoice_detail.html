@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load i18n crispy_forms_tags %}
+{% load waffle_tags %}
 
 {% block content %}
 {% include 'components/breadcrumbs.html' with path=path %}
@@ -74,6 +75,13 @@
           </a>
         {% endif %}
       {% endif %}
+      {% switch 'updates_to_mark_as_paid_workflow' %}
+        <a href="{% url 'opportunity:download_invoice' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=form.instance.payment_invoice_id %}"
+           class="button button-md outline-style">
+          {% translate "Download" %}
+          <i class="fa-solid fa-download text-brand-deep-purple"></i>
+        </a>
+      {% endswitch %}
     </div>
     {% trans "Cancel Invoice" as cancel_title %}
     {% trans "Are you sure you want to cancel this invoice? This action cannot be undone." as cancel_message %}

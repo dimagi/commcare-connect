@@ -1,7 +1,7 @@
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
-from django.utils.translation import gettext
+from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
@@ -19,8 +19,8 @@ class OrganizationChangeForm(forms.ModelForm):
         model = Organization
         fields = ("name", "program_manager", "llo_entity")
         labels = {
-            "name": gettext("Organization Name"),
-            "program_manager": gettext("Enable Program Manager"),
+            "name": gettext_lazy("Workspace Name"),
+            "program_manager": gettext_lazy("Enable Program Manager"),
         }
 
     def __init__(self, *args, **kwargs):
@@ -148,11 +148,13 @@ class AddCredentialForm(forms.Form):
 OrganizationCreationForm = forms.modelform_factory(
     Organization,
     fields=("name",),
-    labels={"name": "Organization Name"},
+    labels={"name": gettext_lazy("Workspace Name")},
     help_texts={
         "name": (
-            "This would be used to create the Organization URL,"
-            " and you will not be able to change the URL in future."
+            gettext_lazy(
+                "This would be used to create the Workspace URL,"
+                " and you will not be able to change the URL in future."
+            )
         )
     },
 )
