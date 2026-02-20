@@ -3,12 +3,12 @@
 
 {% block tab_options %}
   <div x-data="{showPaymentImportModal: false, showPaymentExportModal: false}">
-      <button type="button" class="button-icon" @click="showPaymentImportModal= true"
+      <button type="button" class="button-icon shadow-sm" @click="showPaymentImportModal= true"
               {% if request.org_membership.is_viewer %} disabled {% endif %}
       >
         <i class="fa-solid fa-upload text-brand-deep-purple"></i>
       </button>
-      <button type="button" class="button-icon" @click="showPaymentExportModal = true"
+      <button type="button" class="button-icon shadow-sm" @click="showPaymentExportModal = true"
               {% if request.org_membership.is_viewer %} disabled {% endif %}
       >
         <i class="fa-solid fa-download text-brand-deep-purple"></i>
