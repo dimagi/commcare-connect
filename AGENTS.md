@@ -150,3 +150,130 @@ Staff-only pages are listed on `/users/internal_features/`. To add a new interna
 - Factories in `<app>/tests/factories.py` using `factory_boy`.
 - `--reuse-db` is on by default; run `pytest --create-db` to force recreation.
 - Waffle: use `waffle.testutils.override_switch` / `override_flag` context managers in tests.
+
+## Core concepts
+
+### Domain Overview
+
+CommCare Connect connects **organizations** to **workers** (Connect users) via **opportunities** — structured programs where workers complete learning and delivery tasks using CommCare mobile apps, and receive payments for verified work.
+
+---
+
+### Key Models & Relationships
+
+#### Organization
+
+- Primary workspace/tenant. Has `slug` for URL routing.
+- `UserOrganizationMembership` maps users to orgs with roles: **Admin**, **Member** (write), **Viewer** (read-only).
+- Some organizations are "program managers" (`program_manager=True`) and oversee Programs.
+
+#### Opportunity
+
+- Central domain entity in `opportunity/models.py`. Belongs to one Organization.
+- Links two CommCare apps: `learn_app` (training) and `deliver_app` (fieldwork).
+- Key flags: `active`, `auto_approve_visits`, `auto_approve_payments`, `managed` (part of a Program), `is_test`.
+- Budget enforced via `total_budget`; per-visit rates defined in **PaymentUnit** children.
+
+#### PaymentUnit
+
+- Defines payment per visit: `amount` (local), `org_amount` (org portion, managed only), `max_total` per user, `max_daily` per user.
+- Multiple PaymentUnits per Opportunity for different work types. Supports `parent_payment_unit` for nested structures.
+
+#### OpportunityAccess
+
+- Links a user to an opportunity (`unique_together`). Created when a worker is invited.
+- Tracks: `accepted`, `suspended`, `date_learn_started`, `completed_learn_date`, `payment_accrued` (cached total).
+- **OpportunityClaim** (one-to-one) holds the user's claimed budget.
+- **OpportunityClaimLimit** enforces per-PaymentUnit quotas (`max_visits`, `end_date`).
+
+#### Program & ManagedOpportunity
+
+- **Program** (`program/models.py`) groups opportunities across organizations for coordinated management.
+- **ManagedOpportunity** is a proxy of Opportunity with `managed=True` and a `program` ForeignKey.
+- Managed opportunities require Program Manager (PM) review before payments finalize; they also track an `org_amount` component.
+
+---
+
+### Visit & Work Completion
+
+#### UserVisit
+
+- One record per form submission from a worker. Holds `xform_id`, `entity_id` (beneficiary), `visit_date`, `form_json`, `location` (GPS), and validation results.
+- `flagged` + `flag_reason` (JSON array) record which checks failed (GPS missing, duplicate, proximity, catchment, time window, attachment, duration, custom rules).
+- **VisitValidationStatus**: `pending` → `approved` | `rejected` | `over_limit` | `duplicate` | `trial`
+- **VisitReviewStatus** (managed opps only): `pending` → `agree` | `disagree` (PM override)
+
+#### CompletedWork
+
+- Aggregates UserVisits for one `(opportunity_access, entity_id, payment_unit)` triplet — the billable unit.
+- **CompletedWorkStatus**: `pending` → `approved` | `rejected` | `over_limit` | `incomplete`
+- Stores denormalized \_saved\_\_ fields (updated by batch tasks) for reporting without recalculation: `saved_approved_count`, `saved_payment_accrued`, `saved_payment_accrued_usd`, `saved_org_payment_accrued*`.
+- `payment_accrued = approved_count × payment_unit.amount`. Managed opps also track `org_payment_accrued`.
+- For managed opportunities: CompletedWork stays `pending` until all associated visits have `review_status=agree`.
+
+---
+
+### Form Processing Flow (`form_receiver/processor.py`)
+
+1. XForm arrives at `/api/receiver/form/`.
+2. `process_xform()` routes by `app_id` to **learn** or **deliver** processing.
+3. **Learn path**: creates `CompletedModule` + `Assessment` records; sets `OpportunityAccess.completed_learn_date` when 100% done.
+4. **Deliver path**:
+   - Creates/updates `UserVisit` records.
+   - Runs validation: duplicate check, GPS presence, location proximity, catchment area, time-window, attachment, duration, custom JSONPath rules.
+   - Auto-approves if `auto_approve_visits=True` and no flags.
+   - Creates/updates `CompletedWork`; detects `over_limit`, `trial`, `duplicate`.
+   - Redis locks (`visit_processor:{access_id}:{deliver_unit_id}:{entity_id}`) prevent race conditions.
+
+---
+
+### Payment & Invoicing Flow
+
+1. `CompletedWork` records reach `approved` status.
+2. Payments uploaded via CSV or created in batch (`bulk_update_payments`).
+3. `PaymentInvoice` groups payments for billing, tracked through a state machine:
+   - `pending_nm_review` → `pending_pm_review` → `ready_to_pay` → `paid` | `archived`
+   - NM can cancel (`cancelled_by_nm`); PM can reject (`rejected_by_pm`).
+4. Exchange rates fetched/cached by date; USD-converted amounts stored on CompletedWork.
+5. `OpportunityAccess.payment_accrued` is an aggregate cache updated after each batch.
+
+---
+
+### Important Computed Properties
+
+| Model             | Property            | Description                                            |
+| ----------------- | ------------------- | ------------------------------------------------------ |
+| Opportunity       | `remaining_budget`  | `total_budget` minus sum of all claimed budgets        |
+| Opportunity       | `is_setup_complete` | Has PaymentUnits, budget, dates, and limits set        |
+| Opportunity       | `budget_per_visit`  | Sum of `PaymentUnit.amount`                            |
+| OpportunityAccess | `learn_progress`    | `(completed_modules / total_modules) × 100`            |
+| OpportunityAccess | `visit_count`       | Sum of `saved_completed_count` (excludes `over_limit`) |
+| OpportunityAccess | `assessment_status` | `"Passed"` / `"Failed"` / `None`                       |
+| CompletedWork     | `completed_count`   | Min across required deliver_unit submission counts     |
+| CompletedWork     | `payment_accrued`   | `approved_count × payment_unit.amount`                 |
+
+---
+
+### Bulk Operations (`opportunity/visit_import.py`)
+
+CSV-driven batch updates power the admin workflow:
+
+- `bulk_update_visit_status()` — import visit statuses + rejection reasons
+- `bulk_update_payments()` — create Payment records from CSV
+- `bulk_update_completed_work_status()` — change CompletedWork statuses
+- `bulk_update_catchments()` — assign worker catchment areas
+
+---
+
+### ConnectID & External Integrations
+
+- **ConnectID** (`connect_id_client/`): External service managing mobile user identity, OTPs, and push messaging. Calls cached via `quickcache`.
+- **CommCare HQ** (`commcarehq/`): OAuth2 integration for app management and form routing. `ConnectIDUserLink` maps Connect users to HQ usernames.
+- **Form receiver** endpoint is the primary inbound data path from CommCare mobile.
+
+## Do's when making changes
+
+- Always lint, test, and typecheck updated files.
+- When adding new features: write or update unit tests first, then code to green
+- For regressions: add a failing test that reproduces the bug, then fix to green
+- Always use .github/pull_request_template.md as the template for pull request descriptions
