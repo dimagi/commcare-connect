@@ -32,7 +32,7 @@ class CommCareCase:
     indices: dict[str, any]
 
 
-def get_case_data(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters) -> list[CommCareCase]:
+def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters) -> list[CommCareCase]:
     params = urlencode(filters)
     url = f"/a/{domain}/api/case/v2/?{params}"
 
@@ -81,7 +81,7 @@ def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
     domain = opportunity_access.opportunity.deliver_app.cc_domain
     api_key = opportunity_access.opportunity.api_key
     user = opportunity_access.user
-    case_data = get_case_data(
+    case_data = get_case_list(
         api_key,
         domain,
         filters={
