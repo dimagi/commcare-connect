@@ -30,4 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     new TomSelect(el, settings);
   });
+
+  document.dispatchEvent(new CustomEvent('tomselect-elements:initialized'));
 });
