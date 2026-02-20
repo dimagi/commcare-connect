@@ -12,23 +12,6 @@
 {% block javascript %}
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      document.querySelectorAll('[data-tomselect]').forEach((el) => {
-        el.removeAttribute('class');
-        let settings = {
-          plugins: ["remove_button"],
-          create: true,
-          render: {
-            option_create: function(data, escape) {
-              return "<div class='create'><i class='fa-solid fa-plus'></i> Create <strong>" + escape(data.input) + "</strong>&hellip;</div>";
-            },
-          }
-        };
-        new TomSelect(el, settings);
-      });
-    });
-  </script>
 {% endblock javascript %}
 
 
