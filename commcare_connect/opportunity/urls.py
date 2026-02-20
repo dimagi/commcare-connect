@@ -113,6 +113,11 @@ urlpatterns = [
     path("<slug:opp_id>/invoice/", views.invoice_list, name="invoice_list"),
     path("<slug:opp_id>/invoice/create/", views.InvoiceCreateView.as_view(), name="invoice_create"),
     path("<slug:opp_id>/invoice/<slug:pk>/review/", views.InvoiceReviewView.as_view(), name="invoice_review"),
+    path(
+        "<slug:opp_id>/invoice/<slug:invoice_id>/update/",
+        views.update_invoice_invoice_ticket_link,
+        name="update_invoice_invoice_ticket_link",
+    ),
     path("<slug:opp_id>/invoice/<slug:invoice_id>/download/", views.download_invoice, name="download_invoice"),
     path("<slug:opp_id>/invoice/update_status/", views.invoice_update_status, name="invoice_update_status"),
     path("<slug:opp_id>/invoice/pay/", views.invoice_pay, name="invoice_pay"),

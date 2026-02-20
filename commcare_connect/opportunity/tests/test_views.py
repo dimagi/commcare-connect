@@ -1427,6 +1427,103 @@ class TestAddPaymentUnitView:
 
 
 @pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link_restricted_access(
+    client, program_manager_org, program_manager_org_user_member
+):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    assert invoice.invoice_ticket_link is None
+
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_member)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link is None
+
+
+@pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, program_manager_org_user_admin):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    assert invoice.invoice_ticket_link is None
+
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
+    messages = list(get_messages(response.wsgi_request))
+    assert len(messages) == 1
+    assert str(messages[0]) == "Invoice ticket link saved!"
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link == "https://www.home.com"
+
+
+@pytest.mark.django_db
+def test_update_invoice_invoice_ticket_link_switch_check(client, program_manager_org, program_manager_org_user_admin):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    assert invoice.invoice_ticket_link is None
+
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link is None
+
+
+@pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org, program_manager_org_user_admin):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www."})
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
+    messages = list(get_messages(response.wsgi_request))
+    assert len(messages) == 1
+    assert str(messages[0]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."
+
+
+def _setup_data_for_invoice_ticket_link_update(program_manager_org):
+    program = ProgramFactory(organization=program_manager_org, budget=10000)
+    program_manager_org_opportunity = ManagedOpportunityFactory(
+        program=program,
+        organization=program_manager_org,
+        managed=True,
+    )
+    return (
+        PaymentInvoiceFactory(
+            opportunity=program_manager_org_opportunity,
+        ),
+        program_manager_org_opportunity,
+    )
+
+
+def _update_invoice_invoice_ticket_link_url(org, opportunity, invoice):
+    return reverse(
+        "opportunity:update_invoice_invoice_ticket_link",
+        args=(org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+    )
+
+
+def _invoice_review_url(org, opportunity, invoice):
+    return reverse(
+        "opportunity:invoice_review",
+        args=(org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+    )
+
+
+@pytest.mark.django_db
 class TestInvoiceUpdateStatus:
     @pytest.fixture
     def nm_organization(self):

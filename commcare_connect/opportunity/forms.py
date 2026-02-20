@@ -1454,7 +1454,16 @@ class FormJsonValidationRulesForm(forms.ModelForm):
         )
 
 
+class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
+    invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
+
+
 class AutomatedPaymentInvoiceForm(forms.ModelForm):
+    """
+    Form used for creating new invoices or to show details by passing read_only=True.
+    Invoices are not allowed to be edited once created.
+    """
+
     amount = forms.DecimalField(
         label=_("Amount"),
         decimal_places=2,
