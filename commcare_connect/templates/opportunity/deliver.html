@@ -4,7 +4,7 @@
 
 {% block tab_options %}
   <div x-cloak x-data="{showVisitImportModal: false, showVisitExportModal: false, showFilterModal: false}">
-    <button type="button" @click="showFilterModal = true" class="relative button-icon">
+    <button type="button" @click="showFilterModal = true" class="relative button-icon shadow-sm">
       <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
       {% if filters_applied_count %}
       <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
@@ -12,11 +12,11 @@
       </span>
       {% endif %}
     </button>
-    <button type="button" @click="showVisitImportModal = true" class="button-icon"
+    <button type="button" @click="showVisitImportModal = true" class="button-icon shadow-sm"
             {% if request.org_membership.is_viewer %} disabled {% endif %}>
       <i class="fa-solid fa-upload text-brand-deep-purple"></i>
     </button>
-    <button type="button" class="button-icon" @click="showVisitExportModal = true"
+    <button type="button" class="button-icon shadow-sm" @click="showVisitExportModal = true"
             {% if request.org_membership.is_viewer %} disabled {% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>

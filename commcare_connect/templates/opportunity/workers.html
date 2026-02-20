@@ -3,7 +3,7 @@
 
 {% block tab_options %}
   <div id="worker-tab-options">
-    <button type="button" class="button-icon" @click="showWorkerExportModal = true"
+    <button type="button" class="button-icon shadow-sm" @click="showWorkerExportModal = true"
             {% if request.org_membership.is_viewer %} disabled {% endif %}
     >
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
@@ -14,11 +14,11 @@
         {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
     {% endblock %}
     {% if request.org_membership.is_viewer %}
-      <button disabled class="button-icon">
+      <button disabled class="button-icon shadow-sm">
         <i class="fa-solid fa-plus"></i>
       </button>
     {% else %}
-      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="button-icon" x-tooltip.raw="{% trans 'Add Worker' %}">
+      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="button-icon shadow-sm" x-tooltip.raw="{% trans 'Add Worker' %}">
         <i class="fa-solid fa-plus"></i>
       </a>
     {% endif %}
@@ -31,18 +31,18 @@
         <input type="hidden" name="user_invite_ids" :value="id">
       </template>
       <button type="submit"
-              class="button-icon"
+              class="button-icon shadow-sm"
               :disabled="{% if request.org_membership.is_viewer %}true{% else %}selected.length === 0{% endif %}"
               x-tooltip.raw="{% trans 'Resend Invite(s)' %}">
         <i class="fa-solid fa-rotate-right"></i>
       </button>
     </form>
     <button type="button"
-            class="button button-md bg-red-600 text-white"
+            class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
             @click="showConfirmDeleteInvitesModal = true"
-            :disabled="{% if request.org_membership.is_viewer %}true{% else %}selected.length === 0{% endif %}">
+            :disabled="{% if request.org_membership.is_viewer %}true{% else %}selected.length === 0{% endif %}"
+            x-tooltip.raw="{% trans 'Delete Worker(s)' %}">
       <i class="fa-solid fa-trash"></i>
-      <span x-text="selected.length > 0 ? `{% trans 'Delete Invite(s)' %} (${selected.length})` : `{% trans 'Delete Invite(s)' %}`"></span>
     </button>
   </div>
 {% endblock %}
