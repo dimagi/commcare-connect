@@ -85,14 +85,14 @@
       <div class="mb-4" >
         {{ form.llo_entity|as_crispy_field }}
       </div>
-      <div class="mb-4" x-show="selectedEntity" x-transition>
+      <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>
         {{ form.name|as_crispy_field }}
       </div>
       <button class="button button-md primary-dark float-end" x-show="!selectedWorkspaceSlug" type="submit">
         {% trans "Create Workspace" %}
       </button>
       <a :href="`{% url 'opportunity:list' 'SLUG_PLACEHOLDER' %}`.replace('SLUG_PLACEHOLDER', selectedWorkspaceSlug)"
-         class="button button-md primary-dark float-end" x-show="selectedWorkspaceSlug" >
+         class="button button-md primary-dark float-end" x-show="selectedWorkspaceSlug" x-cloak>
         {% trans "Switch to Selected Workspace" %}
       </a>
     </div>
