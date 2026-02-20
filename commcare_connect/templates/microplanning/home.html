@@ -66,9 +66,7 @@
                 </button>
             {% endif %}
         </div>
-        {% block modals %}
         <div x-show="showImportWorkAreaModal" id="modal-container"></div>
-        {% endblock %}
     </div>
 
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]" x-data="mapController()">

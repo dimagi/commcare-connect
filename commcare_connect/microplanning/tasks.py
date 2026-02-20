@@ -1,5 +1,4 @@
 import csv
-import io
 import logging
 from collections import defaultdict
 
@@ -36,6 +35,7 @@ class WorkAreaCSVImporter:
         self.errors = defaultdict(list)
         self.seen_slugs = set()
         self.created_count = 0
+        self.existing_slugs = set()
 
     def _validate_all_rows(self, f):
         f.seek(0)
@@ -80,18 +80,12 @@ class WorkAreaCSVImporter:
             self.created_count += len(batch)
 
     def run(self):
-        # Make sure csv_source is seekable
-        if isinstance(self.csv_source, str):
-            f = io.StringIO(self.csv_source)
-        else:
-            f = self.csv_source
-
         # --- First pass: validation only ---
-        if not self._validate_all_rows(f):
+        if not self._validate_all_rows(self.csv_source):
             return self._result()  # abort if any row is invalid
 
         # --- Second pass: streaming batch insert ---
-        self._stream_and_insert(f)
+        self._stream_and_insert(self.csv_source)
 
         return self._result()
 

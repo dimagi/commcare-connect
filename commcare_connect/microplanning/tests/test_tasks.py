@@ -34,7 +34,8 @@ class TestWorkAreaCSVImporter:
         writer.writerow(headers)
         for row in rows:
             writer.writerow(row)
-        return output.getvalue()
+        output.seek(0)
+        return output
 
     def test_successful_import(self, opportunity):
         csv = self.build_csv(
