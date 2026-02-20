@@ -29,6 +29,7 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
 
@@ -98,7 +99,11 @@ def start_learn_app(request):
     opportunity_id = request.POST.get("opportunity")
     if opportunity_id is None:
         return Response({"error_code": ErrorCodes.OPPORTUNITY_REQUIRED}, status=400)
-    opportunity = Opportunity.objects.get(pk=opportunity_id)
+    opportunity = get_object_or_list_by_uuid_or_int(
+        queryset=Opportunity.objects.all(),
+        pk_or_pk_list=opportunity_id,
+        uuid_field="opportunity_id",
+    )
     app = opportunity.learn_app
     domain = app.cc_domain
     user_created = create_hq_user_and_link(request.user, domain, opportunity)
