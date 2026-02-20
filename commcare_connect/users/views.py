@@ -334,7 +334,7 @@ def internal_features(request):
         },
         {
             "perm": PRODUCT_FEATURES_ACCESS,
-            "name": "Feature Flags & Switches",
+            "name": "Toggles & Switches",
             "description": "Manage feature flags and switches.",
             "url": reverse("flags:feature_flags"),
         },

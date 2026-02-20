@@ -3,7 +3,7 @@
 {% load crispy_forms_tags %}
 {% load i18n %}
 
-{% block title %}{% translate "Feature Flags & Switches" %}{% endblock %}
+{% block title %}{% translate "Toggles & Switches" %}{% endblock %}
 
 {% block css %}
   {{ block.super }}
@@ -17,7 +17,7 @@
 
 {% block content %}
 <div class="container">
-  <h2 class="text-xl font-semibold text-brand-deep-purple mb-6">{% translate "Feature Flags & Switches" %}</h2>
+  <h2 class="text-xl font-semibold text-brand-deep-purple mb-6">{% translate "Toggles & Switches" %}</h2>
 
   <!-- Switches Section -->
   <section class="mb-8">
@@ -52,7 +52,7 @@
 
   <!-- Feature Flags Section -->
   <section>
-    <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% translate "Feature Flags" %}</h3>
+    <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% translate "Toggles" %}</h3>
     {% if flag_forms %}
       <div class="flex flex-col gap-4">
         {% for flag, form in flag_forms %}
