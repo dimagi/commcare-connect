@@ -1,6 +1,7 @@
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db.models import Prefetch
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
@@ -182,7 +183,14 @@ class OrganizationCreationForm(forms.Form):
 
     def get_entity_wise_orgs(self):
         data = {}
-        qs = LLOEntity.objects.prefetch_related("organization_set").only("id", "name").order_by("name")
+        qs = (
+            LLOEntity.objects.prefetch_related(
+                Prefetch("organization_set", queryset=Organization.objects.only("id", "name", "slug"))
+            )
+            .only("id", "name")
+            .order_by("name")
+        )
+
         for entity in qs:
             data[str(entity.id)] = {
                 "organizations": [
