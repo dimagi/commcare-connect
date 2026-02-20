@@ -141,7 +141,7 @@ class TestOrganizationCreationForm:
 
         form = OrganizationCreationForm(
             data={
-                "name": str(existing_org.pk),
+                "org": str(existing_org.pk),
                 "llo_entity": str(existing_llo.pk),
             }
         )
@@ -164,7 +164,7 @@ class TestOrganizationCreationForm:
 
         form = OrganizationCreationForm(
             data={
-                "name": "New Organization",
+                "org": "New Organization",
                 "llo_entity": str(existing_llo.pk),
             }
         )
@@ -185,7 +185,7 @@ class TestOrganizationCreationForm:
 
         form = OrganizationCreationForm(
             data={
-                "name": "Brand New Organization",
+                "org": "Brand New Organization",
                 "llo_entity": "Brand New LLO",
             }
         )
@@ -209,7 +209,7 @@ class TestOrganizationCreationForm:
 
         form = OrganizationCreationForm(
             data={
-                "name": str(existing_org.pk),
+                "org": str(existing_org.pk),
                 "llo_entity": str(llo2.pk),  # Different LLO
             }
         )

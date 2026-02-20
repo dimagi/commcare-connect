@@ -166,10 +166,10 @@ class OrganizationCreationForm(forms.Form):
         empty_label=gettext_lazy("Select a LLO Entity"),
         create_key_name="name",
     )
-    name = forms.CharField(
+    org = forms.CharField(
         label=gettext_lazy("Workspace Name"),
         widget=forms.Select(
-            attrs={"x-ref": "name", "data-tomselect": "1", "data-tomselect:settings": '{"create": true}'}
+            attrs={"x-ref": "org", "data-tomselect": "1", "data-tomselect:settings": '{"create": true}'}
         ),
         help_text=gettext_lazy(
             "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
@@ -191,8 +191,8 @@ class OrganizationCreationForm(forms.Form):
             }
         return data
 
-    def clean_name(self):
-        value = self.cleaned_data["name"]
+    def clean_org(self):
+        value = self.cleaned_data["org"]
         # Existing org selected (id)
         if value.isdigit():
             org = Organization.objects.filter(pk=value).first()
@@ -203,10 +203,10 @@ class OrganizationCreationForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
-        name = cleaned_data.get("name")
+        org = cleaned_data.get("org")
         llo_entity = cleaned_data.get("llo_entity")
-        if name and name.pk:
-            if llo_entity and name.llo_entity != llo_entity:
+        if org and org.pk:
+            if llo_entity and org.llo_entity != llo_entity:
                 raise ValidationError(
                     {
                         "llo_entity": gettext(
@@ -217,7 +217,7 @@ class OrganizationCreationForm(forms.Form):
         return cleaned_data
 
     def save(self, commit=True):
-        org = self.cleaned_data["name"]
+        org = self.cleaned_data["org"]
         llo_entity = self.cleaned_data["llo_entity"]
         org.llo_entity = llo_entity
         if commit:

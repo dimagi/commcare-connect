@@ -123,7 +123,7 @@ class TestOrganizationCreateView:
         response = client.post(
             self.url(),
             data={
-                "name": str(organization.pk),
+                "org": str(organization.pk),
                 "llo_entity": str(existing_llo.pk),
             },
         )
@@ -142,7 +142,7 @@ class TestOrganizationCreateView:
         response = client.post(
             self.url(),
             data={
-                "name": org_name,
+                "org": org_name,
                 "llo_entity": str(existing_llo.pk),
             },
         )

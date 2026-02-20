@@ -15,7 +15,7 @@
     document.addEventListener('alpine:init', () => {
       Alpine.data('createOrgHandler', (entityWiseOrgs) => ({
         entityWiseOrgs: entityWiseOrgs,
-        nameSelect: null,
+        orgSelect: null,
         selectedEntity: '',
         selectedWorkspaceSlug: '',
 
@@ -24,7 +24,7 @@
 
           document.addEventListener('tomselect-elements:initialized', () => {
             this.$nextTick(() => {
-              this.nameSelect = this.$refs.name.tomselect;
+              this.orgSelect = this.$refs.org.tomselect;
               this.selectedEntity = this.$refs.llo_entity.tomselect.getValue();
               if (this.selectedEntity) {
                 this.updateWorkspaceOptions(this.selectedEntity);
@@ -36,7 +36,7 @@
                 this.updateWorkspaceOptions(value);
               });
 
-              this.nameSelect.on('change', (value) => {
+              this.orgSelect.on('change', (value) => {
                 this.selectedWorkspaceSlug = this.getSelectedWorkspaceSlug(value);
               });
 
@@ -45,14 +45,14 @@
         },
 
         updateWorkspaceOptions(entityValue) {
-          this.nameSelect.clear();
-          this.nameSelect.clearOptions();
+          this.orgSelect.clear();
+          this.orgSelect.clearOptions();
 
           if (!entityValue || !this.entityWiseOrgs[entityValue])
             return;
 
           this.entityWiseOrgs[entityValue].organizations.forEach(org => {
-            this.nameSelect.addOption({
+            this.orgSelect.addOption({
               value: org.id,
               text: org.name
             });
@@ -89,7 +89,7 @@
         {{ form.llo_entity|as_crispy_field }}
       </div>
       <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>
-        {{ form.name|as_crispy_field }}
+        {{ form.org|as_crispy_field }}
       </div>
       <button class="button button-md primary-dark float-end" x-show="!selectedWorkspaceSlug" type="submit">
         {% trans "Create Workspace" %}
