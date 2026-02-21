@@ -12,6 +12,7 @@
       <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/aquawolf04/font-awesome-pro@5cd1511/css/all.css" />
     {% endblock %}
+
     {% block javascript %}
       {{ GTM_VARS_JSON|json_script:"gtm-data" }}
       <script src="{% static 'js/gtx.js' %}" defer></script>
