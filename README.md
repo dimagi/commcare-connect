@@ -24,6 +24,43 @@ need to edit some settings.
     # create env file and edit the settings as needed (or export settings directly)
     $ cp .env_template .env
 
+### GeoDjango / PostGIS Setup
+
+Connect uses GeoDjango and PostGIS.
+To learn more about the required dependencies, please refer to the official Django documentation:
+https://docs.djangoproject.com/en/6.0/ref/contrib/gis/install/geolibs/#geolibs-list
+
+**For macOS (Intel / Apple Silicon)** – using Homebrew:
+
+```bash
+brew install gdal geos proj
+```
+
+Django may struggle to find the GDAL and GEOS libraries even after they are installed. Follow these steps to set your paths:
+
+1. Get your local library paths
+
+```bash
+# Get GDAL path
+ls $(brew --prefix gdal)/lib/libgdal.dylib
+
+# Get GEOS path
+ls $(brew --prefix geos)/lib/libgeos_c.dylib
+```
+
+2. Set it in your `.env` file
+
+```
+GDAL_LIBRARY_PATH=...
+GEOS_LIBRARY_PATH=...
+```
+
+**For Ubuntu / Debian Linux:**
+
+```bash
+sudo apt-get install -y binutils libproj-dev gdal-bin
+```
+
     # start docker services
     $ inv up
 

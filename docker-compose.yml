@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   db:
-    image: postgres
+    image: postgis/postgis
+    platform: linux/amd64
     # persist data beyond lifetime of container
     volumes:
       - postgres_data:/var/lib/postgresql/data/
