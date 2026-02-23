@@ -107,7 +107,7 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         with:
           environment: ${{ inputs.environment }}
-          version: ${{ env.APP_RELEASE }}
+          release: ${{ env.APP_RELEASE }}
           projects: ${{ env.SENTRY_PROJECT }}
           set_commits: manual
           repo: dimagi/commcare-connect
