@@ -5,7 +5,7 @@ from django.contrib.gis.geos import Point, Polygon
 from factory import Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import SRID, WorkArea
 from commcare_connect.opportunity.tests.factories import OpportunityFactory
 
 
@@ -19,7 +19,7 @@ class WorkAreaFactory(DjangoModelFactory):
         return Point(
             random.uniform(77, 78),
             random.uniform(28, 29),
-            srid=4326,
+            srid=SRID,
         )
 
     @factory.lazy_attribute
@@ -34,7 +34,7 @@ class WorkAreaFactory(DjangoModelFactory):
                 (x1, y2),
                 (x1, y1),
             ),
-            srid=4326,
+            srid=SRID,
         )
 
     building_count = Sequence(lambda n: n + 1)

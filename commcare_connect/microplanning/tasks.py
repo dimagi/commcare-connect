@@ -43,11 +43,11 @@ class WorkAreaCSVImporter:
         if not self._validate_headers(reader):
             return False
 
-        self.existing_slugs = set(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
+        self.existing_slugs.update(WorkArea.objects.filter(opportunity_id=self.opp_id).values_list("slug", flat=True))
         for line_num, row in enumerate(reader, start=2):
             self._process_row(line_num, row)
 
-        self.existing_slugs = None
+        self.existing_slugs.clear()
         return len(self.errors) == 0
 
     def _stream_and_insert(self, f):
