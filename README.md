@@ -58,7 +58,7 @@ GEOS_LIBRARY_PATH=...
 Install WeasyPrint on macOS (https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#macos)
 
 ```bash
-  brew install weasyprint
+brew install weasyprint
 ```
 
 **For Ubuntu / Debian Linux:**
