@@ -42,7 +42,7 @@ jobs:
           environment: ${{ inputs.environment }}
           version: ${{ env.APP_RELEASE }}
           projects: ${{ env.SENTRY_PROJECT }}
-          set_commits: true
+          set_commits: manual
           commit: ${{ github.sha }}
 
       - name: Set up Ruby
