@@ -1150,8 +1150,13 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @require_http_methods(["DELETE"])
 @opportunity_required
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
-    form_json_rule = FormJsonValidationRules.objects.get(
-        opportunity=request.opportunity.pk, form_json_validation_rules_id=pk, opportunity__organization=request.org
+    if request.opportunity.managed and not request.is_opportunity_pm:
+        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
+
+    form_json_rule = get_object_or_404(
+        FormJsonValidationRules,
+        opportunity=request.opportunity,
+        form_json_validation_rules_id=pk,
     )
     form_json_rule.delete()
     return HttpResponse(status=200)
