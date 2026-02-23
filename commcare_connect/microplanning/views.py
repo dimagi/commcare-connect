@@ -71,7 +71,7 @@ class WorkAreaImport(View):
                 "Work-Area-1",
                 "Demo Ward",
                 "77.1 28.6",
-                "POLYGON((1 0,0 1,1 1,1 0,0 1))",
+                "POLYGON((77 28,78 28,78 29,77 29,77 28))",
                 10,
                 12,
             ]
@@ -127,7 +127,10 @@ def import_status(request, org_slug, opp_id):
         result = AsyncResult(str(task_id))
         result_ready = result.ready()
         if result_ready:
-            result_data = result.result
+            if result.successful():
+                result_data = result.result
+            else:
+                result_data = {"errors": {_("Import failed due to an internal error. Please try again."): [0]}}
 
     context = {"result_ready": result_ready, "result_data": result_data, "task_id": task_id}
 

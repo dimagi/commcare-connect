@@ -1,6 +1,5 @@
 import csv
 import io
-from ctypes.wintypes import POINT
 
 import pytest
 
@@ -58,11 +57,12 @@ class TestWorkAreaCSVImporter:
         "row, expected_msg",
         [
             # empty slug
-            (["", CENTROID, POLYGON, "1", "1"], "slug"),
+            (["", "test-ward", CENTROID, POLYGON, "1", "1"], "slug"),
             # invalid boundry
             (
                 [
                     "test-slug",
+                    "test-ward",
                     CENTROID,
                     "BAD Boundry",
                     "1",
@@ -73,7 +73,9 @@ class TestWorkAreaCSVImporter:
             # invalid centroid
             (
                 [
-                    "test-slug" "1,2",
+                    "test-slug",
+                    "test-ward",
+                    "1,2",
                     POLYGON,
                     "1",
                     "1",
@@ -81,7 +83,7 @@ class TestWorkAreaCSVImporter:
                 "centroid",
             ),
             # invalid visit count and building count
-            (["slug", POINT, POLYGON, "abc", "-2", ""], "postive integers"),
+            (["slug", "test-ward", CENTROID, POLYGON, "abc", "-2", ""], "positive integers"),
         ],
     )
     def test_row_validations(self, opportunity, row, expected_msg):
@@ -97,6 +99,7 @@ class TestWorkAreaCSVImporter:
         rows = [
             [
                 "dup",
+                "test-ward",
                 self.CENTROID,
                 self.POLYGON,
                 "1",
@@ -104,6 +107,7 @@ class TestWorkAreaCSVImporter:
             ],
             [
                 "dup",
+                "test-ward",
                 self.CENTROID,
                 self.POLYGON,
                 "1",

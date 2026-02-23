@@ -101,7 +101,7 @@
                                 class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                 @change="fileName = $event.target.files[0]?.name || ''">
                             <span class="text-gray-500 text-sm"
-                                x-text="fileName || '{% translate 'No file chosen' %}'"></span>
+                                x-text="fileName || `{% translate 'No file chosen' %}`"></span>
                         </div>
 
                         <div class="mt-3 text-xs text-gray-600 space-y-1">

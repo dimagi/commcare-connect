@@ -202,7 +202,7 @@ class WorkAreaCSVImporter:
             pass
 
         if invalid:
-            self._add_error(line_num, _("Building count and Expected visit count must be postive integers"))
+            self._add_error(line_num, _("Building count and Expected visit count must be positive integers"))
         return invalid
 
     def _add_error(self, line, message):
