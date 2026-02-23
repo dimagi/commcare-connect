@@ -108,7 +108,7 @@ class TestMicroplanningHomeView:
 
     def test_success(self, client: Client, settings, organization, org_user_admin, opportunity):
         settings.MAPBOX_TOKEN = "test-mapbox-token"
-
+        cache.clear()
         flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
         flag.opportunities.add(opportunity)
 
