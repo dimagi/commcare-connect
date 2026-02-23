@@ -34,18 +34,6 @@ jobs:
       - name: Set release identifier
         run: echo "APP_RELEASE=${GITHUB_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
 
-      - name: Create Sentry release
-        uses: getsentry/action-release@v3
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        with:
-          environment: ${{ inputs.environment }}
-          version: ${{ env.APP_RELEASE }}
-          projects: ${{ env.SENTRY_PROJECT }}
-          set_commits: manual
-          repo: dimagi/commcare-connect
-          commit: ${{ github.sha }}
-
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
 
@@ -111,6 +99,19 @@ jobs:
       - id: deploy
         working-directory: ./deploy
         run: 'kamal deploy -d ${{ inputs.environment }}'
+
+      - name: Create Sentry release
+        if: ${{ success() }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        with:
+          environment: ${{ inputs.environment }}
+          version: ${{ env.APP_RELEASE }}
+          projects: ${{ env.SENTRY_PROJECT }}
+          set_commits: manual
+          repo: dimagi/commcare-connect
+          commit: ${{ github.sha }}
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
