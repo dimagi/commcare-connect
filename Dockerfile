@@ -18,8 +18,8 @@ RUN npm install
 RUN npm run build
 
 FROM python:3.11-slim-bookworm
-ENV PYTHONUNBUFFERED 1
-ENV DEBUG 0
+ENV PYTHONUNBUFFERED=1
+ENV DEBUG=0
 
 RUN apt-get update \
   # psycopg2, gettext geodjango etc dependencies
@@ -47,6 +47,9 @@ WORKDIR /app
 COPY ./docker/* /
 RUN chmod +x /entrypoint /start*
 RUN chown django /entrypoint /start*
+
+ARG APP_RELEASE="dev"
+ENV APP_RELEASE=${APP_RELEASE}
 
 COPY --chown=django:django . /app
 

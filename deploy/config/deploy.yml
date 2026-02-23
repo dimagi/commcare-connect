@@ -21,6 +21,8 @@ builder:
   multiarch: false
   dockerfile: '../Dockerfile'
   context: '../'
+  args:
+    APP_RELEASE: "<%= ENV['APP_RELEASE'] || `git rev-parse HEAD`.strip %>"
 
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com
