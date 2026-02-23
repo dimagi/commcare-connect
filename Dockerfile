@@ -18,8 +18,10 @@ RUN npm install
 RUN npm run build
 
 FROM python:3.11-slim-bookworm
-ENV PYTHONUNBUFFERED 1
-ENV DEBUG 0
+ARG APP_RELEASE="dev"
+ENV APP_RELEASE=${APP_RELEASE}
+ENV PYTHONUNBUFFERED=1
+ENV DEBUG=0
 
 RUN apt-get update \
   # psycopg2, gettext etc dependencies

@@ -29,6 +29,9 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      - name: Set release identifier
+        run: echo "APP_RELEASE=${GITHUB_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
+
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
 
