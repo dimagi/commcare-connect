@@ -43,6 +43,7 @@ jobs:
           version: ${{ env.APP_RELEASE }}
           projects: ${{ env.SENTRY_PROJECT }}
           set_commits: manual
+          repo: dimagi/commcare-connect
           commit: ${{ github.sha }}
 
       - name: Set up Ruby
