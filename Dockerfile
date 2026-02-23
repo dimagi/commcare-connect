@@ -18,8 +18,6 @@ RUN npm install
 RUN npm run build
 
 FROM python:3.11-slim-bookworm
-ARG APP_RELEASE="dev"
-ENV APP_RELEASE=${APP_RELEASE}
 ENV PYTHONUNBUFFERED=1
 ENV DEBUG=0
 
@@ -49,6 +47,9 @@ WORKDIR /app
 COPY ./docker/* /
 RUN chmod +x /entrypoint /start*
 RUN chown django /entrypoint /start*
+
+ARG APP_RELEASE="dev"
+ENV APP_RELEASE=${APP_RELEASE}
 
 COPY --chown=django:django . /app
 
