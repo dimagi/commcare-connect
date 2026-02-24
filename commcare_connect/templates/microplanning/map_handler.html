@@ -33,8 +33,6 @@
                 const observer = new ResizeObserver(() => this.map.resize());
                 observer.observe($mapContainer);
 
-                // Wait for Mapbox style to finish loading
-                // Layers can only be added after the style is ready
                 await new Promise((resolve) => {
                     this.map.once('style.load', resolve);
                 });
@@ -43,32 +41,33 @@
                 if (!response.ok) throw new Error("Failed to fetch GeoJSON");
                 const data = await response.json();
 
-
-                // Assign a color to each FLW
-                // Each unique assigned_user_id gets a color from the palette.
-                // The color is written directly into feature properties so
-                // Mapbox can read it without any extra API calls.
-                const flwColors = {};
-                const palette = ["#4A90D9" , "#D63B3B", "#9B6DC5", "#3DAA4E", "#E8820C"]
+                // Assign color by group_id, extend bounds — single pass
+                const palette = ["#4A90D9", "#D63B3B", "#9B6DC5", "#3DAA4E", "#E8820C"];
+                const groupColors = {};
                 let idx = 0;
+                const bounds = new mapboxgl.LngLatBounds();
+
                 data.features.forEach(f => {
-                    const userId = f.properties.assigned_user_id || 0;
-                    if (!flwColors[userId]) {
-                        flwColors[userId] = palette[idx % palette.length];
+                    // Color by group_id (falls back to assigned_user_id when groups have users)
+                    const gId = f.properties.group_id || f.properties.assigned_user_id || 0;
+                    if (!groupColors[gId]) {
+                        groupColors[gId] = palette[idx % palette.length];
                         idx++;
                     }
-                    f.properties.color = flwColors[userId];
+                    f.properties.color = groupColors[gId];
+
+                    // Extend bounds
+                    f.geometry.coordinates[0].forEach(([lng, lat]) => bounds.extend([lng, lat]));
                 });
 
-
-                // All layers below share this one source
+                // Work areas source
                 this.map.addSource('workareas', {
                     type: 'geojson',
                     data,
                     promoteId: 'id' // allows feature-state (selected) to work by id
                 });
 
-                // Opacity varies by visit status so darker = more complete
+                // Fill — color by group, opacity by status
                 this.map.addLayer({
                     id: 'workareas-fill',
                     type: 'fill',
@@ -95,7 +94,7 @@
                     }
                 });
 
-                // thin white grid lines between squares ─
+                // Thin white grid lines
                 this.map.addLayer({
                     id: 'workareas-outline',
                     type: 'line',
@@ -107,8 +106,7 @@
                     }
                 });
 
-                // Must be added AFTER outline so it renders on top.
-                // Hidden (opacity 0) by default, shown when feature-state selected=true
+                // Yellow selection outline — hidden until selected
                 this.map.addLayer({
                     id: 'workareas-selected',
                     type: 'line',
@@ -125,17 +123,31 @@
                     }
                 });
 
-                // Fit map view to data bounds
-                if (data.features.length) {
-                    const bounds = new mapboxgl.LngLatBounds();
-                    data.features.forEach(f => {
-                        f.geometry.coordinates[0].forEach(([lng, lat]) => bounds.extend([lng, lat]));
+                // Group boundary outlines — computed by PostGIS on backend
+                if (data.group_features?.length) {
+                    this.map.addSource('workarea-groups', {
+                        type: 'geojson',
+                        data: { type: "FeatureCollection", features: data.group_features }
                     });
+
+                    this.map.addLayer({
+                        id: 'workarea-groups-outline',
+                        type: 'line',
+                        source: 'workarea-groups',
+                        paint: {
+                            'line-color': '#000000',
+                            'line-width': 3,
+                            'line-opacity': 0.4
+                        }
+                    });
+                }
+
+                // Fit map to data
+                if (!bounds.isEmpty()) {
                     this.map.fitBounds(bounds, { padding: 40 });
                 }
 
-                // Adds/removes the area id from selectedAreas set and updates
-                // feature-state so the yellow selection outline appears/disappears
+                // Click to select/deselect
                 this.map.on('click', 'workareas-fill', (e) => {
                     const id = e.features[0].properties.id;
                     if (this.selectedAreas.has(id)) {
