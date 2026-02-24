@@ -781,7 +781,7 @@ class TestCreateTaskForm:
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
         data = {
             "task": task.pk,
-            "flw": access.user.pk,
+            "connect_worker": access.user.pk,
             "due_date": (datetime.date.today() - datetime.timedelta(days=1)).isoformat(),
         }
         form = CreateTaskForm(data, opportunity=opportunity)
@@ -793,7 +793,7 @@ class TestCreateTaskForm:
         unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False).user
         suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True).user
 
-        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["flw"].queryset
+        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["connect_worker"].queryset
 
         assert active in flw_queryset
         assert unaccepted not in flw_queryset
