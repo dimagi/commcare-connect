@@ -1,5 +1,5 @@
 import inspect
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 from unittest import mock
 from uuid import uuid4
@@ -1761,3 +1761,34 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
 
     response = client.post(url)
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_visit_export_count_boundary_dates(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    from_date = date.today() - timedelta(days=5)
+    to_date = date.today() - timedelta(days=1)
+
+    on_from_date = datetime.combine(from_date, time.min, tzinfo=UTC)
+    on_to_date = datetime.combine(to_date, time.max, tzinfo=UTC)
+    before_from_date = datetime.combine(from_date - timedelta(days=1), time.max, tzinfo=UTC)
+    after_to_date = datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC)
+
+    UserVisitFactory(opportunity=opportunity, visit_date=on_from_date)
+    UserVisitFactory(opportunity=opportunity, visit_date=on_to_date)
+    UserVisitFactory(opportunity=opportunity, visit_date=before_from_date)
+    UserVisitFactory(opportunity=opportunity, visit_date=after_to_date)
+
+    url = reverse("opportunity:visit_export_count", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.get(
+        url,
+        data={
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+        },
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert "2 visits match your filters." in response.content.decode()
