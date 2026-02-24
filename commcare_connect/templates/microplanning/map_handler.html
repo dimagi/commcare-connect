@@ -2,6 +2,7 @@
     document.addEventListener("alpine:init", () => {
         Alpine.data("mapController", () => ({
             map: null,
+            selectedAreas: new Set(),
 
             init() {
                 this.$nextTick(() => {
@@ -9,31 +10,165 @@
                 });
             },
 
-            initializeMap() {
+            async initializeMap() {
                 const accessToken = '{{ mapbox_api_key|escapejs }}';
+                const org_slug = '{{ request.org.slug|escapejs }}';
+                const opp_id = '{{ request.opportunity.opportunity_id|escapejs }}';
+                const url = `/a/${org_slug}/microplanning/${opp_id}/workareas_geojson/`;
+
                 if (!MapboxUtils.setAccessToken(accessToken)) return;
 
                 this.map = MapboxUtils.createMap({
                     container: 'map',
                     style: 'mapbox://styles/mapbox/standard',
                     projection: 'globe',
-                    zoom: 6,
+                    zoom: 5,
                     center: [8.675, 9.082]
                 });
 
                 MapboxUtils.addNavigation(this.map, 'top-left');
-
-                const draw = MapboxUtils.addDrawControls(this.map);
-
-                this.map.on('style.load', () => {
-                    this.map.setFog({});
-                });
+                MapboxUtils.addDrawControls(this.map);
 
                 const $mapContainer = document.getElementById('map');
-                const observer = new ResizeObserver(() => {
-                    this.map.resize();
-                });
+                const observer = new ResizeObserver(() => this.map.resize());
                 observer.observe($mapContainer);
+
+                // Wait for Mapbox style to finish loading
+                // Layers can only be added after the style is ready
+                await new Promise((resolve) => {
+                    this.map.once('style.load', resolve);
+                });
+
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Failed to fetch GeoJSON");
+                const data = await response.json();
+
+
+                // Assign a color to each FLW
+                // Each unique assigned_user_id gets a color from the palette.
+                // The color is written directly into feature properties so
+                // Mapbox can read it without any extra API calls.
+                const flwColors = {};
+                const palette = ["#4A90D9" , "#D63B3B", "#9B6DC5", "#3DAA4E", "#E8820C"]
+                let idx = 0;
+                data.features.forEach(f => {
+                    const userId = f.properties.assigned_user_id || 0;
+                    if (!flwColors[userId]) {
+                        flwColors[userId] = palette[idx % palette.length];
+                        idx++;
+                    }
+                    f.properties.color = flwColors[userId];
+                });
+
+
+                // All layers below share this one source
+                this.map.addSource('workareas', {
+                    type: 'geojson',
+                    data,
+                    promoteId: 'id' // allows feature-state (selected) to work by id
+                });
+
+                // Opacity varies by visit status so darker = more complete
+                this.map.addLayer({
+                    id: 'workareas-fill',
+                    type: 'fill',
+                    source: 'workareas',
+                    paint: {
+                        'fill-color': [
+                            'case',
+                            ['boolean', ['feature-state', 'hovered'], false],
+                            '#ffffff',        // briefly flash white on hover
+                            ['get', 'color']  // normal FLW color
+                        ],
+                        'fill-opacity': [
+                            'match', ['get', 'status'],
+                            'EXPECTED_VISIT_REACHED', 1.0,
+                            'VISITED', 0.85,
+                            'NOT_VISITED', 0.65,
+                            'UNASSIGNED', 0.55,
+                            'NOT_STARTED', 0.50,
+                            'EXCLUDED', 0.45,
+                            'INACCESSIBLE', 0.40,
+                            'REQUEST_FOR_INACCESSIBLE', 0.35,
+                            0.6
+                        ]
+                    }
+                });
+
+                // thin white grid lines between squares ─
+                this.map.addLayer({
+                    id: 'workareas-outline',
+                    type: 'line',
+                    source: 'workareas',
+                    paint: {
+                        'line-color': '#ffffff',
+                        'line-width': 0.5,
+                        'line-opacity': 0.4
+                    }
+                });
+
+                // Must be added AFTER outline so it renders on top.
+                // Hidden (opacity 0) by default, shown when feature-state selected=true
+                this.map.addLayer({
+                    id: 'workareas-selected',
+                    type: 'line',
+                    source: 'workareas',
+                    paint: {
+                        'line-color': '#ffff00',
+                        'line-width': 3,
+                        'line-opacity': [
+                            'case',
+                            ['boolean', ['feature-state', 'selected'], false],
+                            1,   // visible when selected
+                            0    // hidden when not selected
+                        ]
+                    }
+                });
+
+                // Fit map view to data bounds
+                if (data.features.length) {
+                    const bounds = new mapboxgl.LngLatBounds();
+                    data.features.forEach(f => {
+                        f.geometry.coordinates[0].forEach(([lng, lat]) => bounds.extend([lng, lat]));
+                    });
+                    this.map.fitBounds(bounds, { padding: 40 });
+                }
+
+                // Adds/removes the area id from selectedAreas set and updates
+                // feature-state so the yellow selection outline appears/disappears
+                this.map.on('click', 'workareas-fill', (e) => {
+                    const id = e.features[0].properties.id;
+                    if (this.selectedAreas.has(id)) {
+                        this.selectedAreas.delete(id);
+                    } else {
+                        this.selectedAreas.add(id);
+                    }
+                    this.map.setFeatureState(
+                        { source: 'workareas', id },
+                        { selected: this.selectedAreas.has(id) }
+                    );
+                });
+
+
+                let hoveredId = null;
+                this.map.on('mousemove', 'workareas-fill', (e) => {
+                    this.map.getCanvasContainer().style.cursor = 'pointer';
+                    const newId = e.features[0].properties.id;
+                    if (newId !== hoveredId) {
+                        if (hoveredId !== null) {
+                            this.map.setFeatureState({ source: 'workareas', id: hoveredId }, { hovered: false });
+                        }
+                        hoveredId = newId;
+                        this.map.setFeatureState({ source: 'workareas', id: hoveredId }, { hovered: true });
+                    }
+                });
+                this.map.on('mouseleave', 'workareas-fill', () => {
+                    this.map.getCanvasContainer().style.cursor = '';
+                    if (hoveredId !== null) {
+                        this.map.setFeatureState({ source: 'workareas', id: hoveredId }, { hovered: false });
+                        hoveredId = null;
+                    }
+                });
             }
         }));
     });
