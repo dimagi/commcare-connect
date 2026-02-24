@@ -37,6 +37,7 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
+    Task,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -1846,3 +1847,47 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
                 """
             ),
         )
+
+
+class CreateTaskForm(forms.Form):
+    task = forms.ModelChoiceField(
+        label=_("Task"),
+        queryset=Task.objects.none(),
+        empty_label=_("Select a task"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+    )
+    flw = forms.ModelChoiceField(
+        label=_("FLW"),
+        queryset=User.objects.none(),
+        empty_label=_("Select a FLW"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+    )
+    due_date = forms.DateField(
+        label=_("Due Date"),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+    )
+
+    def __init__(self, *args, opportunity=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if opportunity is not None:
+            self.fields["task"].queryset = Task.objects.filter(app=opportunity.deliver_app)
+            self.fields["flw"].queryset = User.objects.filter(
+                opportunityaccess__opportunity=opportunity,
+                opportunityaccess__accepted=True,
+                opportunityaccess__suspended=False,
+            )
+        self.fields["due_date"].widget.attrs["min"] = datetime.date.today().isoformat()
+
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Field("task"),
+            Field("flw"),
+            Field("due_date"),
+        )
+
+    def clean_due_date(self):
+        due_date = self.cleaned_data["due_date"]
+        if due_date < datetime.date.today():
+            raise ValidationError(_("Due date cannot be in the past."))
+        return due_date
