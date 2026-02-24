@@ -1,4 +1,5 @@
 import csv
+import json
 import uuid
 
 from celery.result import AsyncResult
@@ -7,7 +8,7 @@ from django.contrib import messages
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -135,3 +136,28 @@ def import_status(request, org_slug, opp_id):
     context = {"result_ready": result_ready, "result_data": result_data, "task_id": task_id}
 
     return render(request, "microplanning/import_work_area_modal.html", context)
+
+
+@org_admin_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def workareas_geojson(request, org_slug, opp_id):
+    workareas = WorkArea.objects.filter(opportunity_id=request.opportunity.id).select_related(
+        "work_area_group", "work_area_group__assigned_user"
+    )
+    features = []
+    for wa in workareas:
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": json.loads(wa.boundary.geojson),
+                "properties": {
+                    "id": wa.id,
+                    "slug": wa.slug,
+                    "status": wa.status,
+                    "group_id": wa.work_area_group.id if wa.work_area_group else None,
+                    "assigned_user_id": wa.work_area_group.assigned_user_id if wa.work_area_group else None,
+                },
+            }
+        )
+    return JsonResponse({"type": "FeatureCollection", "features": features})
