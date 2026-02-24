@@ -5,9 +5,12 @@ import uuid
 from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.gis.db.models import Union as GeoUnion
+from django.contrib.gis.db.models.functions import AsGeoJSON
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db.models import F
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -142,22 +145,46 @@ def import_status(request, org_slug, opp_id):
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def workareas_geojson(request, org_slug, opp_id):
-    workareas = WorkArea.objects.filter(opportunity_id=request.opportunity.id).select_related(
-        "work_area_group", "work_area_group__assigned_user"
-    )
-    features = []
-    for wa in workareas:
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": json.loads(wa.boundary.geojson),
-                "properties": {
-                    "id": wa.id,
-                    "slug": wa.slug,
-                    "status": wa.status,
-                    "group_id": wa.work_area_group.id if wa.work_area_group else None,
-                    "assigned_user_id": wa.work_area_group.assigned_user_id if wa.work_area_group else None,
-                },
-            }
+    opp_id = request.opportunity.id
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": json.loads(wa["geometry"]),
+            "properties": {
+                "id": wa["id"],
+                "status": wa["status"],
+                "group_id": wa["group_id"],
+                "assigned_user_id": wa["assigned_user_id"],
+            },
+        }
+        for wa in WorkArea.objects.filter(opportunity_id=opp_id)
+        .annotate(geometry=AsGeoJSON("boundary", precision=4))  # ← precision=4
+        .values(
+            "id",
+            "status",
+            "geometry",
+            group_id=F("work_area_group__id"),
+            assigned_user_id=F("work_area_group__assigned_user_id"),
         )
-    return JsonResponse({"type": "FeatureCollection", "features": features})
+        .iterator(chunk_size=2000)
+    ]
+
+    group_features = [
+        {
+            "type": "Feature",
+            "geometry": json.loads(g["boundary_union"]),
+            "properties": {"group_id": g["group_id"]},
+        }
+        for g in WorkArea.objects.filter(opportunity_id=opp_id, work_area_group__isnull=False)
+        .values(group_id=F("work_area_group__id"))
+        .annotate(boundary_union=AsGeoJSON(GeoUnion("boundary")))
+    ]
+
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+            "group_features": group_features,
+        }
+    )
