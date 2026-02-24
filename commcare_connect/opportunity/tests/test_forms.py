@@ -10,6 +10,7 @@ from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AutomatedPaymentInvoiceForm,
+    CreateTaskForm,
     OpportunityChangeForm,
     OpportunityInitUpdateForm,
 )
@@ -27,6 +28,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    TaskFactory,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
@@ -767,3 +769,32 @@ class TestAutomatedPaymentInvoiceForm:
         )
 
         assert form.line_items_table == mock_table
+
+
+@pytest.mark.django_db
+class TestCreateTaskForm:
+    @pytest.fixture
+    def task(self, opportunity):
+        return TaskFactory(app=opportunity.deliver_app)
+
+    def test_invalid_past_date(self, opportunity, task):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        data = {
+            "task": task.pk,
+            "flw": access.user.pk,
+            "due_date": (datetime.date.today() - datetime.timedelta(days=1)).isoformat(),
+        }
+        form = CreateTaskForm(data, opportunity=opportunity)
+        assert not form.is_valid()
+        assert "due_date" in form.errors
+
+    def test_flw_queryset_filtering(self, opportunity):
+        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False).user
+        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False).user
+        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True).user
+
+        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["flw"].queryset
+
+        assert active in flw_queryset
+        assert unaccepted not in flw_queryset
+        assert suspended not in flw_queryset
