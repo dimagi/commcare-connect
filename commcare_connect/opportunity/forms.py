@@ -68,7 +68,7 @@ class HQApiKeyCreateForm(forms.ModelForm):
         self.helper.layout = Layout(
             Field("hq_server"),
             Field("api_key"),
-            Submit("submit", "Save", css_class="button button-md primary-dark float-end"),
+            Div(Submit("submit", "Save", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
         self.helper.form_tag = False
 
