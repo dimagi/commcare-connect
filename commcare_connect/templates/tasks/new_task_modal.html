@@ -29,7 +29,12 @@
             </button>
         </div>
 
-        <form method="post" action="{{ create_task_url }}">
+        <form id="create-task-form"
+              method="post"
+              action="{{ create_task_url }}"
+              hx-post="{{ create_task_url }}"
+              hx-target="#create-task-form"
+              hx-swap="outerHTML">
             {% csrf_token %}
             {% crispy form %}
             <div class="flex justify-between gap-3 pt-2">
