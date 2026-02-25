@@ -185,6 +185,7 @@ from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
@@ -3047,15 +3048,18 @@ def download_invoice_line_items(request, org_slug, opp_id):
 @org_member_required
 @opportunity_required
 def visit_export_count(request, org_slug, opp_id):
-    from_date = request.GET.get("from_date")
-    if not from_date:
+    from_date_str = request.GET.get("from_date")
+    if not from_date_str:
         return HttpResponse({"error": "Please select a From Date first."}, status=400)
 
-    to_date = request.GET.get("to_date") or datetime.date.today()
+    to_date_str = request.GET.get("to_date")
     status = request.GET.get("status", None)
     review_export = request.GET.get("review_export") == "true"
     format = request.GET.get("format", "csv")
 
+    from_date = datetime.date.fromisoformat(from_date_str)
+    to_date = datetime.date.fromisoformat(to_date_str) if to_date_str else datetime.date.today()
+    from_date, to_date = get_start_end_date_range_with_time(from_date, to_date)
     visits = UserVisit.objects.filter(
         opportunity_id=request.opportunity.pk, visit_date__gte=from_date, visit_date__lte=to_date
     )
