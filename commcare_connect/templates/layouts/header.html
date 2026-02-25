@@ -58,21 +58,19 @@
                   <div x-show="open && showDropdown" x-transition.opacity x-cloak
                       class="absolute top-12 right-0 min-w-56 bg-white shadow rounded-lg z-50">
                       <ul class="p-2 w-full max-h-80 overflow-y-auto">
-                          {% if request.user.memberships.exists %}
-                            {% for membership in request.memberships %}
-                              {% if not membership.organization == request.org %}
-                                <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
-                                  <a href="{% url 'opportunity:list' membership.organization.slug %}">
-                                    <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
-                                    {% if membership.organization.llo_entity %}
-                                      <p class="text-gray-500 text-sm font-medium">{{ membership.organization.llo_entity }}</p>
-                                    {% endif %}
-                                    <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
-                                  </a>
-                                </li>
-                              {% endif %}
-                            {% endfor %}
+                        {% for membership in request.memberships %}
+                          {% if not membership.organization == request.org %}
+                            <li class="p-2 hover:bg-gray-100 rounded cursor-pointer text-left">
+                              <a href="{% url 'opportunity:list' membership.organization.slug %}">
+                                <p class="text-brand-deep-purple text-sm font-medium">{{ membership.organization.name }}</p>
+                                {% if membership.organization.llo_entity %}
+                                  <p class="text-gray-500 text-sm font-medium">{{ membership.organization.llo_entity }}</p>
+                                {% endif %}
+                                <p class="text-xs text-gray-400">{{ membership.organization.program_manager|yesno:"Program,Network" }} Manager</p>
+                              </a>
+                            </li>
                           {% endif %}
+                        {% endfor %}
                       </ul>
                         <div class="p-2" x-show="canCreateOrg" x-transition.opacity x-cloak>
                             <a class="button button-md primary-dark w-full text-center" href="{% url 'organization_create' %}">
