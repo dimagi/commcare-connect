@@ -1,6 +1,7 @@
 from django.urls import path
 
 from commcare_connect.opportunity import views
+from commcare_connect.opportunity.payment_number_report import PaymentNumberReport
 from commcare_connect.opportunity.views import (
     OpportunityCompletedWorkTable,
     OpportunityDashboard,
@@ -123,6 +124,7 @@ urlpatterns = [
     path("<slug:opp_id>/invoice/pay/", views.invoice_pay, name="invoice_pay"),
     path("<slug:opp_id>/delete_invites/", views.delete_user_invites, name="delete_user_invites"),
     path("<slug:opp_id>/resend_invites/", resend_user_invites, name="resend_user_invites"),
+    path("payment_numbers", view=PaymentNumberReport.as_view(), name="payment_number_report"),
     path("<slug:opp_id>/sync_deliver_units/", sync_deliver_units, name="sync_deliver_units"),
     # Worker List
     path("<slug:opp_id>/workers/", WorkerView.as_view(), name="worker_list"),

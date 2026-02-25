@@ -1,5 +1,6 @@
 import datetime
 import importlib
+import random
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import timedelta
@@ -253,6 +254,8 @@ def test_receiver_deliver_form_max_visits_reached(
     def submit_form_for_random_entity(form_json):
         duplicate_json = deepcopy(form_json)
         duplicate_json["form"]["deliver"]["entity_id"] = str(uuid4())
+        # generate random locations for form submissions
+        duplicate_json["metadata"]["location"] = " ".join([str(random.uniform(-90, 90)) for _ in range(4)])
         make_request(api_client, duplicate_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     payment_units = opportunity.paymentunit_set.all()
@@ -267,7 +270,7 @@ def test_receiver_deliver_form_max_visits_reached(
     user_visits = UserVisit.objects.filter(user=mobile_user_with_connect_link)
     assert user_visits.count() == 5
     # First four are not over-limit
-    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.pending, VisitValidationStatus.approved}
+    assert {u.status for u in user_visits[0:4]} == {VisitValidationStatus.approved}
     # Last one is over limit
     assert user_visits[4].status == VisitValidationStatus.over_limit
 
@@ -884,7 +887,7 @@ def test_update_completed_learn_date_migration(opportunity, mobile_user):
     )
 
     migration_module = importlib.import_module(
-        "commcare_connect.opportunity.migrations.0075_opportunityaccess_completed_learn_date_and_more"
+        "commcare_connect.opportunity.migrations.0074_opportunityaccess_completed_learn_date_and_more"
     )
     back_fill_completed_learn_date = migration_module._back_fill_completed_learn_date
 
