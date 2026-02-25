@@ -159,7 +159,7 @@ class AddCredentialForm(forms.Form):
         return split_users
 
 
-class OrganizationCreationForm(forms.Form):
+class OrganizationSelectOrCreateForm(forms.Form):
     llo_entity = CreatableModelChoiceField(
         label=gettext_lazy("LLO Entity"),
         queryset=LLOEntity.objects.order_by("name"),

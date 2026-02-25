@@ -10,7 +10,7 @@ from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
 from commcare_connect.organization.decorators import org_admin_required
-from commcare_connect.organization.forms import MembershipForm, OrganizationChangeForm, OrganizationCreationForm
+from commcare_connect.organization.forms import MembershipForm, OrganizationChangeForm, OrganizationSelectOrCreateForm
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
 from commcare_connect.organization.tables import OrgMemberTable
 from commcare_connect.organization.tasks import send_org_invite
@@ -21,7 +21,7 @@ from commcare_connect.utils.tables import get_validated_page_size
 @login_required
 @permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
-    form = OrganizationCreationForm(data=request.POST or None)
+    form = OrganizationSelectOrCreateForm(data=request.POST or None)
 
     if form.is_valid():
         org = form.save()

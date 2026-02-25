@@ -3,7 +3,7 @@ from django.contrib.auth.models import Permission
 from django.test import Client
 from django.urls import reverse
 
-from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationCreationForm
+from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationSelectOrCreateForm
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import UserFactory
@@ -131,7 +131,7 @@ class TestOrganizationChangeForm:
 
 
 @pytest.mark.django_db
-class TestOrganizationCreationForm:
+class TestOrganizationSelectOrCreateForm:
     def test_both_llo_entity_and_org_exist(self):
         existing_llo = LLOEntity.objects.create(name="Existing LLO")
         existing_org = Organization.objects.create(name="Existing Org", llo_entity=existing_llo)
@@ -139,7 +139,7 @@ class TestOrganizationCreationForm:
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
 
-        form = OrganizationCreationForm(
+        form = OrganizationSelectOrCreateForm(
             data={
                 "org": str(existing_org.pk),
                 "llo_entity": str(existing_llo.pk),
@@ -162,7 +162,7 @@ class TestOrganizationCreationForm:
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
 
-        form = OrganizationCreationForm(
+        form = OrganizationSelectOrCreateForm(
             data={
                 "org": "New Organization",
                 "llo_entity": str(existing_llo.pk),
@@ -183,7 +183,7 @@ class TestOrganizationCreationForm:
         initial_llo_count = LLOEntity.objects.count()
         initial_org_count = Organization.objects.count()
 
-        form = OrganizationCreationForm(
+        form = OrganizationSelectOrCreateForm(
             data={
                 "org": "Brand New Organization",
                 "llo_entity": "Brand New LLO",
@@ -207,7 +207,7 @@ class TestOrganizationCreationForm:
         llo2 = LLOEntity.objects.create(name="LLO Two")
         existing_org = Organization.objects.create(name="Org With LLO One", llo_entity=llo1)
 
-        form = OrganizationCreationForm(
+        form = OrganizationSelectOrCreateForm(
             data={
                 "org": str(existing_org.pk),
                 "llo_entity": str(llo2.pk),  # Different LLO
