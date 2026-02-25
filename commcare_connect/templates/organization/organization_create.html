@@ -3,6 +3,75 @@
 {% load static %}
 {% load crispy_forms_tags %}
 
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('createOrgHandler', (entityWiseOrgs) => ({
+        entityWiseOrgs: entityWiseOrgs,
+        orgSelect: null,
+        selectedEntity: '',
+        selectedWorkspaceSlug: '',
+
+
+        init() {
+
+          document.addEventListener('tomselect-elements:initialized', () => {
+            this.$nextTick(() => {
+              this.orgSelect = this.$refs.org.tomselect;
+              this.selectedEntity = this.$refs.llo_entity.tomselect.getValue();
+              if (this.selectedEntity) {
+                this.updateWorkspaceOptions(this.selectedEntity);
+              }
+
+              this.$refs.llo_entity.tomselect.on('change', (value) => {
+                this.selectedEntity = value;
+                this.selectedWorkspaceSlug = '';
+                this.updateWorkspaceOptions(value);
+              });
+
+              this.orgSelect.on('change', (value) => {
+                this.selectedWorkspaceSlug = this.getSelectedWorkspaceSlug(value);
+              });
+
+            });
+          });
+        },
+
+        updateWorkspaceOptions(entityValue) {
+          this.orgSelect.clear();
+          this.orgSelect.clearOptions();
+
+          if (!entityValue || !this.entityWiseOrgs[entityValue])
+            return;
+
+          this.entityWiseOrgs[entityValue].organizations.forEach(org => {
+            this.orgSelect.addOption({
+              value: org.id,
+              text: org.name
+            });
+          });
+        },
+
+        getSelectedWorkspaceSlug(value) {
+          if (!this.selectedEntity || !value)
+            return null;
+          const orgs = this.entityWiseOrgs[this.selectedEntity]?.organizations || [];
+          const org =  orgs.find(o => o.id == value);
+          return org ? org.slug : null;
+        }
+
+      }))
+    });
+  </script>
+{% endblock javascript %}
+
 {% block title %}
   {% trans "Connect - New Workspace" %}
 {% endblock title %}
@@ -14,10 +83,22 @@
   </div>
   <form action="{% url 'organization_create' %}" method="post">
     {% csrf_token %}
-    {{ form|crispy }}
-    <button class="button button-md primary-dark float-end" type="submit">
-      {% trans "Create Workspace" %}
-    </button>
+    {{ form.get_entity_wise_orgs|json_script:"entity-wise-orgs" }}
+    <div x-data="createOrgHandler(JSON.parse(document.getElementById('entity-wise-orgs').textContent))">
+      <div class="mb-4" >
+        {{ form.llo_entity|as_crispy_field }}
+      </div>
+      <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>
+        {{ form.org|as_crispy_field }}
+      </div>
+      <button class="button button-md primary-dark float-end" x-show="!selectedWorkspaceSlug" type="submit">
+        {% trans "Create Workspace" %}
+      </button>
+      <a :href="`{% url 'opportunity:list' 'SLUG_PLACEHOLDER' %}`.replace('SLUG_PLACEHOLDER', selectedWorkspaceSlug)"
+         class="button button-md primary-dark float-end" x-show="selectedWorkspaceSlug" x-cloak>
+        {% trans "Switch to Selected Workspace" %}
+      </a>
+    </div>
   </form>
 </div>
 {% endblock content %}
