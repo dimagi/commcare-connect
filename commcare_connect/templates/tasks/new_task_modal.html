@@ -9,23 +9,24 @@
     aria-labelledby="new-task-modal-title" @keydown.escape.window="{{ modal_name }} = false">
     <div @click.outside="{{ modal_name }} = false" class="modal">
 
-        <div class="flex justify-end mb-2">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <div class="flex items-center gap-3 mb-1">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100 shrink-0">
+                        <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+                    </div>
+                    <h2 id="new-task-modal-title" class="text-xl font-bold text-brand-deep-purple">
+                        {% trans "Create Task" %}
+                    </h2>
+                </div>
+                <p class="text-sm text-gray-500 mt-1">
+                    {% trans "Create a new task, and assign it to the relevant Connect Worker." %}
+                </p>
+            </div>
             <button type="button" class="button-icon" @click="{{ modal_name }} = false"
                     aria-label="{% trans 'Close dialog' %}">
                 <i class="fa-solid fa-xmark cursor-pointer" aria-hidden="true"></i>
             </button>
-        </div>
-
-        <div class="flex flex-col items-center mb-4">
-            <div class="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 mb-3">
-                <i class="fa-solid fa-list-check" aria-hidden="true"></i>
-            </div>
-            <h2 id="new-task-modal-title" class="text-xl font-bold text-brand-deep-purple">
-                {% trans "Create Task" %}
-            </h2>
-            <p class="text-sm text-gray-500 text-center mt-1">
-                {% trans "Create a new task, and assign it to the relevant Connect Worker." %}
-            </p>
         </div>
 
         <form method="post" action="{{ create_task_url }}">
