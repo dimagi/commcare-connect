@@ -12,9 +12,8 @@
 
             async initializeMap() {
                 const accessToken = '{{ mapbox_api_key|escapejs }}';
-                const org_slug = '{{ request.org.slug|escapejs }}';
-                const opp_id = '{{ request.opportunity.opportunity_id|escapejs }}';
-                const url = `/a/${org_slug}/microplanning/${opp_id}/workareas_geojson/`;
+                const tilesUrl = '{{ tiles_url|escapejs }}';
+                const groupsUrl = '{{ groups_url|escapejs }}';
 
                 if (!MapboxUtils.setAccessToken(accessToken)) return;
 
@@ -26,58 +25,40 @@
                     center: [8.675, 9.082]
                 });
 
+                // navigation ui on left of the map
                 MapboxUtils.addNavigation(this.map, 'top-left');
-                MapboxUtils.addDrawControls(this.map);
 
-                const $mapContainer = document.getElementById('map');
-                const observer = new ResizeObserver(() => this.map.resize());
-                observer.observe($mapContainer);
+                await new Promise(resolve => this.map.once('load', resolve));
 
-                await new Promise((resolve) => {
-                    this.map.once('style.load', resolve);
-                });
-
-                const response = await fetch(url);
-                if (!response.ok) throw new Error("Failed to fetch GeoJSON");
-                const data = await response.json();
-
-                // Assign color by group_id, extend bounds — single pass
-                const palette = ["#4A90D9", "#D63B3B", "#9B6DC5", "#3DAA4E", "#E8820C"];
-                const groupColors = {};
-                let idx = 0;
-                const bounds = new mapboxgl.LngLatBounds();
-
-                data.features.forEach(f => {
-                    // Color by group_id (falls back to assigned_user_id when groups have users)
-                    const gId = f.properties.group_id || f.properties.assigned_user_id || 0;
-                    if (!groupColors[gId]) {
-                        groupColors[gId] = palette[idx % palette.length];
-                        idx++;
-                    }
-                    f.properties.color = groupColors[gId];
-
-                    // Extend bounds
-                    f.geometry.coordinates[0].forEach(([lng, lat]) => bounds.extend([lng, lat]));
-                });
-
-                // Work areas source
+                // Workareas are served using django-vectortiles,
+                // promoteId maps the feature's 'id' property as the feature ID,
+                // which is required for setFeatureState (hover/select) to work correctly.
                 this.map.addSource('workareas', {
-                    type: 'geojson',
-                    data,
-                    promoteId: 'id' // allows feature-state (selected) to work by id
+                    type: 'vector',
+                    tiles: [tilesUrl],
+                    minzoom: 6,
+                    promoteId: { 'workareas': 'id' }
                 });
 
-                // Fill — color by group, opacity by status
+                // Colors each workarea by group using a golden angle HSL hash on group_id,
+                // so adjacent groups get visually distinct colors without a lookup table.
+                // Opacity varies by status to give a quick visual overview of progress.
                 this.map.addLayer({
                     id: 'workareas-fill',
                     type: 'fill',
                     source: 'workareas',
+                    'source-layer': 'workareas',
                     paint: {
                         'fill-color': [
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
-                            '#ffffff',        // briefly flash white on hover
-                            ['get', 'color']  // normal FLW color
+                            '#ffffff',
+                            [
+                                'hsl',
+                                ['%', ['*', ['to-number', ['get', 'group_id']], 137.508], 360], // visually distinct colors for sequential group IDs
+                                65,
+                                55
+                            ]
                         ],
                         'fill-opacity': [
                             'match', ['get', 'status'],
@@ -94,11 +75,13 @@
                     }
                 });
 
-                // Thin white grid lines
+                 // Thin white lines between workareas, only visible when zoomed in (z>=8)
                 this.map.addLayer({
                     id: 'workareas-outline',
                     type: 'line',
                     source: 'workareas',
+                    'source-layer': 'workareas',
+                    minzoom: 8,
                     paint: {
                         'line-color': '#ffffff',
                         'line-width': 0.5,
@@ -106,78 +89,123 @@
                     }
                 });
 
-                // Yellow selection outline — hidden until selected
+                // Yellow highlight shown on workareas the user has clicked to select.
                 this.map.addLayer({
                     id: 'workareas-selected',
                     type: 'line',
                     source: 'workareas',
+                    'source-layer': 'workareas',
+                    minzoom: 8,
                     paint: {
                         'line-color': '#ffff00',
                         'line-width': 3,
                         'line-opacity': [
                             'case',
                             ['boolean', ['feature-state', 'selected'], false],
-                            1,   // visible when selected
-                            0    // hidden when not selected
+                            1,
+                            0
                         ]
                     }
                 });
 
-                // Group boundary outlines — computed by PostGIS on backend
-                if (data.group_features?.length) {
-                    this.map.addSource('workarea-groups', {
-                        type: 'geojson',
-                        data: { type: "FeatureCollection", features: data.group_features }
-                    });
+                // Bold outlines showing the union boundary of each work area group.
+                this.map.addSource('workarea-groups', {
+                    type: 'geojson',
+                    data: {
+                        type: "FeatureCollection",
+                        features: []
+                    }
+                });
 
-                    this.map.addLayer({
-                        id: 'workarea-groups-outline',
-                        type: 'line',
-                        source: 'workarea-groups',
-                        paint: {
-                            'line-color': '#000000',
-                            'line-width': 3,
-                            'line-opacity': 0.4
+                this.map.addLayer({
+                    id: 'workarea-groups-outline',
+                    type: 'line',
+                    source: 'workarea-groups',
+                    minzoom: 4,
+                    paint: {
+                        'line-color': '#000000',
+                        'line-width': 3,
+                        'line-opacity': 0.2
+                    }
+                });
+
+
+                fetch(groupsUrl)
+                    .then(res => {
+                        if (!res.ok) throw new Error("Failed to fetch group boundaries");
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (!data.group_features?.length) return;
+
+                        this.map.getSource('workarea-groups').setData({
+                            type: "FeatureCollection",
+                            features: data.group_features
+                        });
+                        const bounds = new mapboxgl.LngLatBounds();
+                        const extendCoords = (coords) => {
+                            if (typeof coords[0] === 'number') {
+                                bounds.extend(coords);
+                            } else {
+                                coords.forEach(extendCoords);
+                            }
+                        };
+
+                        data.group_features.forEach(feature => {
+                            extendCoords(feature.geometry.coordinates);
+                        });
+
+                        if (!bounds.isEmpty()) {
+                            this.map.fitBounds(bounds, {
+                                padding: 40,
+                                duration: 0,
+                                zoom: 8
+                            });
                         }
-                    });
-                }
+                    })
+                    .catch(err => console.error(err));
 
-                // Fit map to data
-                if (!bounds.isEmpty()) {
-                    this.map.fitBounds(bounds, { padding: 40 });
-                }
 
-                // Click to select/deselect
+                // Toggles selection state on clicked workareas.
                 this.map.on('click', 'workareas-fill', (e) => {
-                    const id = e.features[0].properties.id;
+                    const id = e.features[0].id;
                     if (this.selectedAreas.has(id)) {
                         this.selectedAreas.delete(id);
                     } else {
                         this.selectedAreas.add(id);
                     }
                     this.map.setFeatureState(
-                        { source: 'workareas', id },
+                        { source: 'workareas', sourceLayer: 'workareas', id },
                         { selected: this.selectedAreas.has(id) }
                     );
                 });
 
-
+                // Tracks the currently hovered feature to apply white fill highlight
                 let hoveredId = null;
                 this.map.on('mousemove', 'workareas-fill', (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
-                    const newId = e.features[0].properties.id;
-                    if (newId !== hoveredId) {
-                        if (hoveredId !== null) {
-                            this.map.setFeatureState({ source: 'workareas', id: hoveredId }, { hovered: false });
-                        }
-                        hoveredId = newId;
-                        this.map.setFeatureState({ source: 'workareas', id: hoveredId }, { hovered: true });
+                    const newId = e.features[0].id;
+                    if (newId === hoveredId) return;
+                    if (hoveredId !== null) {
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id: hoveredId },
+                            { hovered: false }
+                        );
                     }
+                    hoveredId = newId;
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id: hoveredId },
+                        { hovered: true }
+                    );
                 });
+
                 this.map.on('mouseleave', 'workareas-fill', () => {
                     this.map.getCanvasContainer().style.cursor = '';
                     if (hoveredId !== null) {
-                        this.map.setFeatureState({ source: 'workareas', id: hoveredId }, { hovered: false });
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id: hoveredId },
+                            { hovered: false }
+                        );
                         hoveredId = null;
                     }
                 });

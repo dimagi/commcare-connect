@@ -5,7 +5,7 @@ import uuid
 from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.gis.db.models import Union as GeoUnion
+from django.contrib.gis.db.models import Union
 from django.contrib.gis.db.models.functions import AsGeoJSON
 from django.core.cache import cache
 from django.core.files.base import ContentFile
@@ -19,6 +19,8 @@ from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.http import require_GET
+from vectortiles import VectorLayer
+from vectortiles.views import MVTView
 
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
@@ -40,6 +42,20 @@ def microplanning_home(request, *args, **kwargs):
     show_workarea_groups_btn = (
         areas_present and not WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
     )
+    tiles_url = request.build_absolute_uri(
+        reverse(
+            "microplanning:workareas_tiles",
+            kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
+        )
+    ).replace("/0/0/0", "/{z}/{x}/{y}")
+
+    groups_url = reverse(
+        "microplanning:workareas_group_geojson",
+        kwargs={
+            "org_slug": request.org.slug,
+            "opp_id": opportunity.opportunity_id,
+        },
+    )
     return render(
         request,
         template_name="microplanning/home.html",
@@ -50,6 +66,8 @@ def microplanning_home(request, *args, **kwargs):
             "task_id": request.GET.get("task_id"),
             "opportunity": opportunity,
             "metrics": get_metrics_for_microplanning(opportunity),
+            "tiles_url": tiles_url,
+            "groups_url": groups_url,
         },
     )
 
@@ -141,50 +159,48 @@ def import_status(request, org_slug, opp_id):
     return render(request, "microplanning/import_work_area_modal.html", context)
 
 
+class WorkAreaVectorLayer(VectorLayer):
+    id = "workareas"
+    tile_fields = (
+        "id",
+        "status",
+        "group_id",
+    )
+    geom_field = "boundary"
+    min_zoom = 4
+
+    def __init__(self, *args, opp_id=None, **kwargs):
+        self.opp_id = opp_id
+        super().__init__(*args, **kwargs)
+
+    def get_queryset(self):
+        return WorkArea.objects.filter(opportunity_id=self.opp_id).annotate(
+            group_id=F("work_area_group__id"),
+        )
+
+
+@method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")
+class WorkAreaTileView(MVTView):
+    layer_classes = [WorkAreaVectorLayer]
+
+    def get_layers(self):
+        return [WorkAreaVectorLayer(opp_id=self.request.opportunity.id)]
+
+
 @org_admin_required
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
-def workareas_geojson(request, org_slug, opp_id):
-    opp_id = request.opportunity.id
-
-    features = [
-        {
-            "type": "Feature",
-            "geometry": json.loads(wa["geometry"]),
-            "properties": {
-                "id": wa["id"],
-                "status": wa["status"],
-                "group_id": wa["group_id"],
-                "assigned_user_id": wa["assigned_user_id"],
-            },
-        }
-        for wa in WorkArea.objects.filter(opportunity_id=opp_id)
-        .annotate(geometry=AsGeoJSON("boundary", precision=4))  # ← precision=4
-        .values(
-            "id",
-            "status",
-            "geometry",
-            group_id=F("work_area_group__id"),
-            assigned_user_id=F("work_area_group__assigned_user_id"),
-        )
-        .iterator(chunk_size=2000)
-    ]
-
+def workareas_group_geojson(request, org_slug, opp_id):
     group_features = [
         {
             "type": "Feature",
-            "geometry": json.loads(g["boundary_union"]),
+            "geometry": json.loads(g["geojson"]),
             "properties": {"group_id": g["group_id"]},
         }
-        for g in WorkArea.objects.filter(opportunity_id=opp_id, work_area_group__isnull=False)
-        .values(group_id=F("work_area_group__id"))
-        .annotate(boundary_union=AsGeoJSON(GeoUnion("boundary")))
+        for g in (
+            WorkArea.objects.filter(opportunity_id=request.opportunity.id, work_area_group__isnull=False)
+            .values(group_id=F("work_area_group__id"))
+            .annotate(geojson=AsGeoJSON(Union("boundary")))
+        )
     ]
-
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-            "group_features": group_features,
-        }
-    )
+    return JsonResponse({"group_features": group_features})
