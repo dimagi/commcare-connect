@@ -42,11 +42,9 @@ def microplanning_home(request, *args, **kwargs):
     show_workarea_groups_btn = (
         areas_present and not WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
     )
-    tiles_url = request.build_absolute_uri(
-        reverse(
-            "microplanning:workareas_tiles",
-            kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
-        )
+    tiles_url = reverse(
+        "microplanning:workareas_tiles",
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
     ).replace("/0/0/0", "/{z}/{x}/{y}")
 
     groups_url = reverse(

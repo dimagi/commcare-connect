@@ -12,7 +12,7 @@
 
             async initializeMap() {
                 const accessToken = '{{ mapbox_api_key|escapejs }}';
-                const tilesUrl = '{{ tiles_url|escapejs }}';
+                const tilesUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
                 const groupsUrl = '{{ groups_url|escapejs }}';
 
                 if (!MapboxUtils.setAccessToken(accessToken)) return;
