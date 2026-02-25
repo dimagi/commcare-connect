@@ -79,6 +79,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
+    PaymentInvoiceInvoiceTicketLinkForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -176,6 +177,7 @@ from commcare_connect.organization.decorators import (
     opportunity_required,
     org_admin_required,
     org_member_required,
+    org_program_manager_required,
     org_viewer_required,
 )
 from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
@@ -916,7 +918,24 @@ def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None)
         OpportunityAccess, opportunity_access_id=access_id, opportunity=request.opportunity
     )
     payment = get_object_or_404(Payment, opportunity_access=opportunity_access, payment_id=pk)
+    payment_id = payment.id
+    payment_uuid = payment.payment_id
     payment.delete()
+
+    send_push_notification_task.delay(
+        [opportunity_access.user_id],
+        _("Payment updated"),
+        _("There has been an adjustment to your earnings for {}.").format(opportunity_access.opportunity.name),
+        extra_data={
+            "opportunity_status": "delivery",
+            "action": "ccc_generic_opportunity",
+            "key": "payment_rollback",
+            "opportunity_id": str(request.opportunity.id),
+            "payment_id": str(payment_id),
+            "opportunity_uuid": str(request.opportunity.opportunity_id),
+            "payment_uuid": str(payment_uuid),
+        },
+    )
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
@@ -1131,8 +1150,13 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @require_http_methods(["DELETE"])
 @opportunity_required
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
-    form_json_rule = FormJsonValidationRules.objects.get(
-        opportunity=request.opportunity.pk, form_json_validation_rules_id=pk, opportunity__organization=request.org
+    if request.opportunity.managed and not request.is_opportunity_pm:
+        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
+
+    form_json_rule = get_object_or_404(
+        FormJsonValidationRules,
+        opportunity=request.opportunity,
+        form_json_validation_rules_id=pk,
     )
     form_json_rule.delete()
     return HttpResponse(status=200)
@@ -1371,7 +1395,9 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+    queryset = PaymentInvoice.objects.filter(**filter_kwargs).select_related("exchange_rate").order_by("date")
+    if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1537,6 +1563,9 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 ],
             }
         )
+        context["show_payment_invoice_invoice_ticket_link_form"] = (
+            switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW) and self.request.is_opportunity_pm
+        )
         return context
 
     def get_form(self):
@@ -1566,6 +1595,29 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         if self.object.service_delivery:
             return _("Review Service Delivery Invoice")
         return _("Review Custom Invoice")
+
+
+@org_program_manager_required
+@opportunity_required
+@require_POST
+def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
+    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        raise Http404(_("Feature unavailable"))
+
+    invoice = get_object_or_404(
+        PaymentInvoice,
+        payment_invoice_id=invoice_id,
+        opportunity=request.opportunity,
+    )
+
+    form = PaymentInvoiceInvoiceTicketLinkForm(request.POST)
+    if form.is_valid():
+        invoice.invoice_ticket_link = form.cleaned_data["invoice_ticket_link"]
+        invoice.save(update_fields=["invoice_ticket_link"])
+        messages.success(request, _("Invoice ticket link saved!"))
+    else:
+        messages.error(request, _("Error: {errors}").format(errors=form.errors.as_text()))
+    return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
 
 
 @org_member_required

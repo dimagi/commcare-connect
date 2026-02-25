@@ -31,13 +31,14 @@ DATABASES = {
         default="postgres:///commcare_connect",
     ),
 }
+DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 
 # DATABASES staging/production
 # ------------------------------------------------------------------------------
 if env("RDS_HOSTNAME", default=None):
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql",
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
             "NAME": env("RDS_DB_NAME"),
             "USER": env("RDS_USERNAME"),
             "PASSWORD": env("RDS_PASSWORD"),
@@ -50,6 +51,7 @@ SECONDARY_DB_ALIAS = None
 if env("SECONDARY_DATABASE_URL", default=None):
     SECONDARY_DB_ALIAS = "secondary"
     DATABASES[SECONDARY_DB_ALIAS] = env.db("SECONDARY_DATABASE_URL")
+    DATABASES[SECONDARY_DB_ALIAS]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
     DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
@@ -73,6 +75,7 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
+    "django.contrib.gis",
     "django.forms",
 ]
 THIRD_PARTY_APPS = [
