@@ -4,9 +4,21 @@
 
 <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+<script>
+    document.addEventListener('htmx:afterRequest', function (event) {
+        if (event.detail.successful && event.detail.elt.id === 'create-task-form') {
+            const form = document.getElementById('create-task-form');
+            form.reset();
+            form.querySelectorAll('[data-tomselect]').forEach(el => el.tomselect?.clear());
+            window.dispatchEvent(new CustomEvent('create-task-success'));
+        }
+    });
+</script>
 
 <div x-show="{{ modal_name }}" x-cloak x-transition.opacity class="modal-backdrop" role="dialog" aria-modal="true"
-    aria-labelledby="new-task-modal-title" @keydown.escape.window="{{ modal_name }} = false">
+    aria-labelledby="new-task-modal-title"
+    @keydown.escape.window="{{ modal_name }} = false"
+    @create-task-success.window="{{ modal_name }} = false">
     <div @click.outside="{{ modal_name }} = false" class="modal">
 
         <div class="flex justify-between items-start mb-4">
