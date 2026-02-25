@@ -21,26 +21,23 @@
 
 
         init() {
-
           document.addEventListener('tomselect-elements:initialized', () => {
-            this.$nextTick(() => {
-              this.orgSelect = this.$refs.org.tomselect;
-              this.selectedEntity = this.$refs.llo_entity.tomselect.getValue();
-              if (this.selectedEntity) {
-                this.updateWorkspaceOptions(this.selectedEntity);
-              }
+            this.orgSelect = this.$refs.org.tomselect;
+            this.selectedEntity = this.$refs.llo_entity.tomselect.getValue();
+            if (this.selectedEntity) {
+              this.updateWorkspaceOptions(this.selectedEntity);
+            }
 
-              this.$refs.llo_entity.tomselect.on('change', (value) => {
-                this.selectedEntity = value;
-                this.selectedWorkspaceSlug = '';
-                this.updateWorkspaceOptions(value);
-              });
-
-              this.orgSelect.on('change', (value) => {
-                this.selectedWorkspaceSlug = this.getSelectedWorkspaceSlug(value);
-              });
-
+            this.$refs.llo_entity.tomselect.on('change', (value) => {
+              this.selectedEntity = value;
+              this.selectedWorkspaceSlug = '';
+              this.updateWorkspaceOptions(value);
             });
+
+            this.orgSelect.on('change', (value) => {
+              this.selectedWorkspaceSlug = this.getSelectedWorkspaceSlug(value);
+            });
+
           });
         },
 
