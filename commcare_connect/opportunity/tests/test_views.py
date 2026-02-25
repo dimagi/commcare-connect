@@ -1765,7 +1765,7 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
 
 @pytest.mark.django_db
 def test_visit_export_count_boundary_dates(
-    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+    organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
 ):
     from_date = date.today() - timedelta(days=5)
     to_date = date.today() - timedelta(days=1)
