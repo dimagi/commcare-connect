@@ -31,7 +31,13 @@ from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, OTP_ACCESS
+from commcare_connect.utils.permission_const import (
+    ALL_ORG_ACCESS,
+    DEMO_USER_ACCESS,
+    KPI_REPORT_ACCESS,
+    OTP_ACCESS,
+    PRODUCT_FEATURES_ACCESS,
+)
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
@@ -330,6 +336,12 @@ def internal_features(request):
             "name": "Invoice Report",
             "description": "Access the Invoice reports dashboard.",
             "url": reverse("reports:invoice_report"),
+        },
+        {
+            "perm": PRODUCT_FEATURES_ACCESS,
+            "name": "Toggles & Switches",
+            "description": "Manage feature flags and switches.",
+            "url": reverse("flags:feature_flags"),
         },
     ]
 
