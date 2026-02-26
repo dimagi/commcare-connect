@@ -55,23 +55,29 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
     return cases
 
 
-def update_case_data_by_case_id(
+def create_or_update_case(
     api_key: HQApiKey,
     domain: str,
-    case_id: str,
-    update_fields: dict[str, any],
+    case_data: dict[str, any],
+    case_id: str | None = None,
 ) -> CommCareCase:
-    url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/{case_id}/"
-    response = httpx.put(
+    url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
+    if case_id:
+        url += f"{case_id}/"
+        method, error_msg = httpx.put, f"Failed to update case data for {domain} with {case_id}."
+    else:
+        method, error_msg = httpx.post, f"Failed to create case for {domain}."
+
+    response = method(
         url,
         headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
-        json=update_fields,
+        json=case_data,
     )
 
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as e:
-        raise CommCareHQAPIException(f"Failed to update case data for {domain} with {case_id}. HQ Error: {e}")
+        raise CommCareHQAPIException(f"{error_msg} HQ Error: {e}")
 
     data = response.json()
     return CommCareCase(**data.get("case", {}))
@@ -88,7 +94,7 @@ def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, any])
         link.hq_case_id = usercase.case_id
         link.save()
 
-    return update_case_data_by_case_id(api_key, domain, link.hq_case_id, data)
+    return create_or_update_case(api_key, domain, data, case_id=link.hq_case_id)
 
 
 def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
