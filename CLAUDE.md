@@ -77,7 +77,7 @@ config/
 - **Python**: black + isort (line length 119, target py311). flake8 for linting
 - **JS/CSS**: prettier (tab-width 2, single-quote). Templates excluded from prettier
 - **Pre-commit hooks enforce all of the above** plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
-- Models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
+- Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 
 ## Testing
