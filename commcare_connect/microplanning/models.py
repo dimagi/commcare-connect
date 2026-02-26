@@ -53,6 +53,7 @@ class WorkArea(geo_models.Model):
         choices=WorkAreaStatus.choices,
         default=WorkAreaStatus.UNASSIGNED,
     )
+    case_id = geo_models.UUIDField(null=True, blank=True)
 
     class Meta:
         constraints = [geo_models.UniqueConstraint(fields=["slug", "opportunity"], name="unique_slug_per_opportunity")]
