@@ -4,6 +4,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
 from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -53,6 +55,25 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
             cases.extend(CommCareCase(**case_data) for case_data in data.get("cases", []))
             url = data.get("next")
     return cases
+
+
+def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
+    if not (work_area.work_area_group and work_area.work_area_group.assigned_user):
+        raise ValueError("Work Area must have an assigned user through its Work Area Group")
+
+    opp_access = work_area.work_area_group.assigned_user
+    api_key = opp_access.opportunity.api_key
+    domain = opp_access.opportunity.deliver_app.cc_domain
+    user_case = get_usercase(opp_access)
+
+    case_data = WorkAreaCaseSerializer(work_area).data
+    case_data["owner_id"] = user_case.case_id
+
+    case = create_or_update_case(api_key, domain, case_data, case_id=work_area.case_id)
+    if work_area.case_id is None:
+        work_area.case_id = case.case_id
+        work_area.save()
+    return case
 
 
 def create_or_update_case(
