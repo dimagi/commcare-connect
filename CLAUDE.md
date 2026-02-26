@@ -83,7 +83,6 @@ config/
 ## Testing
 
 - **Framework**: pytest + pytest-django + factory-boy
-- **Config**: `--ds=config.settings.test --reuse-db` (in pyproject.toml)
 - **Test location**: `commcare_connect/<app>/tests/` with `factories.py`, `test_*.py`
 - **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `mobile_user_with_connect_link`, `org_user_member`, `org_user_admin`, `api_rf`, `api_client`
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
