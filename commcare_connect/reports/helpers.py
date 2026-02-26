@@ -72,7 +72,7 @@ def get_table_data_for_year_month(
     to_date=None,
     delivery_type=None,
     program=None,
-    network_manager=None,
+    llo=None,
     opportunity=None,
     country=None,
 ):
@@ -114,9 +114,9 @@ def get_table_data_for_year_month(
     if program:
         filter_kwargs.update({"opportunity_access__opportunity__managedopportunity__program": program})
         filter_kwargs_nm.update({"invoice__opportunity__managedopportunity__program": program})
-    if network_manager:
-        filter_kwargs.update({"opportunity_access__opportunity__organization": network_manager})
-        filter_kwargs_nm.update({"invoice__opportunity__organization": network_manager})
+    if llo:
+        filter_kwargs.update({"opportunity_access__opportunity__organization__llo_entity": llo})
+        filter_kwargs_nm.update({"invoice__opportunity__organization__llo_entity": llo})
     if opportunity:
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})

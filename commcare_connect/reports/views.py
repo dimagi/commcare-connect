@@ -27,7 +27,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     PaymentInvoice,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import LLOEntity
 from commcare_connect.program.models import ManagedOpportunity, Program
 from commcare_connect.reports.decorators import KPIReportMixin
 from commcare_connect.reports.helpers import get_table_data_for_year_month
@@ -47,9 +47,9 @@ class DeliveryReportFilters(django_filters.FilterSet):
         queryset=Program.objects.all(),
         label="Program",
     )
-    network_manager = django_filters.ModelChoiceFilter(
-        queryset=Organization.objects.filter(program_manager=False),
-        label="Network Manager",
+    llo = django_filters.ModelChoiceFilter(
+        queryset=LLOEntity.objects.all(),
+        label="LLO",
     )
     opportunity = django_filters.ModelChoiceFilter(
         queryset=Opportunity.objects.filter(is_test=False),
@@ -77,7 +77,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             Row(
                 Column("program", css_class="col-md-3"),
-                Column("network_manager", css_class="col-md-3"),
+                Column("llo", css_class="col-md-3"),
                 Column("opportunity", css_class="col-md-3"),
                 Column("country", css_class="col-md-3"),
             ),
@@ -104,7 +104,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
             "from_date",
             "to_date",
             "program",
-            "network_manager",
+            "llo",
             "opportunity",
         ]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
