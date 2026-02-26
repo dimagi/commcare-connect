@@ -3,7 +3,7 @@ from factory import Faker, RelatedFactory, Sequence, SubFactory
 from factory.django import DjangoModelFactory, Password
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
 from commcare_connect.users.models import ConnectIDUserLink
 
 
@@ -44,6 +44,13 @@ class MobileUserFactory(DjangoModelFactory):
     class Meta:
         model = get_user_model()
         django_get_or_create = ["username"]
+
+
+class LLOEntityFactory(DjangoModelFactory):
+    name = Faker("company")
+
+    class Meta:
+        model = LLOEntity
 
 
 class OrganizationFactory(DjangoModelFactory):

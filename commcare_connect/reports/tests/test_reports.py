@@ -25,7 +25,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.reports import urls as reports_urls
 from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.users.tests.factories import LLOEntityFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.datetime import get_month_series
 from commcare_connect.utils.test_utils import check_basic_permissions
 
@@ -38,6 +38,48 @@ def get_month_range_start_end(months=1):
     end = date(today.year, today.month, 1)
     start = end - relativedelta(months=months)
     return start, end
+
+
+def _create_kpi_test_data(users, timestamp, **access_kwargs):
+    """Create completed work, visits, payments, and invoices for KPI report tests."""
+    for i, user in enumerate(users):
+        access = OpportunityAccessFactory(
+            user=user,
+            opportunity__is_test=False,
+            opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
+            **access_kwargs,
+        )
+        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
+        cw = CompletedWorkFactory(
+            status_modified_date=timestamp,
+            opportunity_access=access,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+            saved_payment_accrued_usd=i * 100,
+            saved_org_payment_accrued_usd=100,
+            payment_date=timestamp + timedelta(minutes=30),
+            invoice=inv,
+        )
+        UserVisitFactory(
+            date_created=timestamp - timedelta(i * 10),
+            opportunity_access=access,
+            completed_work=cw,
+            status=VisitValidationStatus.approved,
+        )
+        PaymentFactory(opportunity_access=access, date_paid=timestamp, amount_usd=i * 50, confirmed=True)
+        PaymentFactory(invoice=inv, date_paid=timestamp, amount_usd=50)
+        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        CompletedWorkFactory(
+            status_modified_date=timestamp,
+            opportunity_access=access,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=0,
+            saved_payment_accrued_usd=0,
+            saved_org_payment_accrued_usd=100,
+            payment_date=timestamp + timedelta(minutes=30),
+            invoice=other_inv,
+        )
+        PaymentFactory(invoice=other_inv, date_paid=timestamp, amount_usd=100)
 
 
 @pytest.mark.django_db
@@ -60,43 +102,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
         today = datetime.combine(month, datetime.min.time(), tzinfo=UTC)
         connectid_user_counts[today.strftime("%Y-%m")] = i
         with mock.patch.object(timezone, "now", return_value=today):
-            for i, user in enumerate(users):
-                access = OpportunityAccessFactory(
-                    user=user,
-                    opportunity__is_test=False,
-                    opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-                )
-                inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-                cw = CompletedWorkFactory(
-                    status_modified_date=today,
-                    opportunity_access=access,
-                    status=CompletedWorkStatus.approved,
-                    saved_approved_count=1,
-                    saved_payment_accrued_usd=i * 100,
-                    saved_org_payment_accrued_usd=100,
-                    payment_date=today + timedelta(minutes=30),
-                    invoice=inv,
-                )
-                UserVisitFactory(
-                    date_created=today - timedelta(i * 10),
-                    opportunity_access=access,
-                    completed_work=cw,
-                    status=VisitValidationStatus.approved,
-                )
-                PaymentFactory(opportunity_access=access, date_paid=today, amount_usd=i * 50, confirmed=True)
-                PaymentFactory(invoice=inv, date_paid=today, amount_usd=50)
-                other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
-                CompletedWorkFactory(
-                    status_modified_date=today,
-                    opportunity_access=access,
-                    status=CompletedWorkStatus.approved,
-                    saved_approved_count=0,
-                    saved_payment_accrued_usd=0,
-                    saved_org_payment_accrued_usd=100,
-                    payment_date=today + timedelta(minutes=30),
-                    invoice=other_inv,
-                )
-                PaymentFactory(invoice=other_inv, date_paid=today, amount_usd=100)
+            _create_kpi_test_data(users, today)
 
     fetch_user_counts.clear()
     httpx_mock.add_response(
@@ -250,44 +256,7 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
 def test_get_table_data_for_year_month_by_country(opp_country, filter_country, httpx_mock):
     now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
-    for i, user in enumerate(users):
-        access = OpportunityAccessFactory(
-            user=user,
-            opportunity__is_test=False,
-            opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-            opportunity__country_id=opp_country,
-        )
-        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-        cw = CompletedWorkFactory(
-            status_modified_date=now,
-            opportunity_access=access,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-            saved_payment_accrued_usd=i * 100,
-            saved_org_payment_accrued_usd=100,
-            payment_date=now + timedelta(minutes=1),
-            invoice=inv,
-        )
-        UserVisitFactory(
-            date_created=now - timedelta(i * 10),
-            opportunity_access=access,
-            completed_work=cw,
-            status=VisitValidationStatus.approved,
-        )
-        PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 50, confirmed=True)
-        PaymentFactory(invoice=inv, date_paid=now, amount_usd=50)
-        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
-        CompletedWorkFactory(
-            status_modified_date=now,
-            opportunity_access=access,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=0,
-            saved_payment_accrued_usd=0,
-            saved_org_payment_accrued_usd=100,
-            payment_date=now + timedelta(minutes=1),
-            invoice=other_inv,
-        )
-        PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
+    _create_kpi_test_data(users, now, opportunity__country_id=opp_country)
     fetch_user_counts.clear()
     httpx_mock.add_response(
         method="GET",
@@ -324,6 +293,43 @@ def test_get_table_data_for_year_month_by_country(opp_country, filter_country, h
             assert row["intervention_funding_deployed"] == 0
             assert row["organization_funding_deployed"] == 0
             assert row["avg_top_earned_flws"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("filter_same_llo", [True, False])
+def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
+    now = datetime.now(UTC)
+    llo_entity = LLOEntityFactory()
+    other_llo_entity = LLOEntityFactory()
+    org = OrganizationFactory(llo_entity=llo_entity)
+
+    users = MobileUserFactory.create_batch(10)
+    _create_kpi_test_data(users, now, opportunity__organization=org)
+    fetch_user_counts.clear()
+    httpx_mock.add_response(
+        method="GET",
+        json={},
+    )
+
+    filter_llo = llo_entity if filter_same_llo else other_llo_entity
+    data = get_table_data_for_year_month(llo=filter_llo)
+    assert len(data)
+
+    for row in data:
+        if filter_same_llo:
+            assert row["users"] == 10
+            assert row["services"] == 10
+            assert row["flw_amount_earned"] == 4500
+            assert row["flw_amount_paid"] == 2250
+            assert row["intervention_funding_deployed"] == 5500
+            assert row["organization_funding_deployed"] == 1000
+        else:
+            assert row["users"] == 0
+            assert row["services"] == 0
+            assert row["flw_amount_earned"] == 0
+            assert row["flw_amount_paid"] == 0
+            assert row["intervention_funding_deployed"] == 0
+            assert row["organization_funding_deployed"] == 0
 
 
 class TestKPIReportPermission:
