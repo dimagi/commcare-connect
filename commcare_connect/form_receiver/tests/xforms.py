@@ -52,6 +52,17 @@ MODULE_XML_TEMPLATE = (
     % CCC_LEARN_XMLNS
 )
 
+TASK_XML_TEMPLATE = (
+    """<data>
+<task xmlns="%s" id="{id}">
+    <name>{name}</name>
+    <description>{description}</description>
+</task>
+</data>
+"""
+    % CCC_LEARN_XMLNS
+)
+
 ASSESSMENT_XML_TEMPLATE = (
     """<data>
 <assessment xmlns="%s" id="{id}">
@@ -102,6 +113,18 @@ class LearnModuleJsonFactory(factory.StubFactory):
         )
         _, module = xml2json(xml)
         return module
+
+
+class TaskJsonFactory(factory.StubFactory):
+    id = factory.Faker("slug")
+    name = factory.Faker("name")
+    description = factory.Faker("text")
+
+    @factory.lazy_attribute
+    def json(self):
+        xml = TASK_XML_TEMPLATE.format(id=self.id, name=self.name, description=self.description)
+        _, task = xml2json(xml)
+        return task
 
 
 class AssessmentStubFactory(factory.StubFactory):
