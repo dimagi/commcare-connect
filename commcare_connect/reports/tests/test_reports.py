@@ -246,8 +246,8 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opp_currency, filter_currency", [("ETB", "KES"), ("ETB", "ETB")])
-def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_currency, httpx_mock):
+@pytest.mark.parametrize("opp_country, filter_country", [("ETH", "KEN"), ("ETH", "ETH")])
+def test_get_table_data_for_year_month_by_country(opp_country, filter_country, httpx_mock):
     now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
     for i, user in enumerate(users):
@@ -255,7 +255,7 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             user=user,
             opportunity__is_test=False,
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-            opportunity__currency_id=opp_currency,
+            opportunity__country_id=opp_country,
         )
         inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
         cw = CompletedWorkFactory(
@@ -293,10 +293,10 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
         method="GET",
         json={},
     )
-    data = get_table_data_for_year_month(country_currency=filter_currency)
+    data = get_table_data_for_year_month(country=filter_country)
     assert len(data)
 
-    if opp_currency == filter_currency:
+    if opp_country == filter_country:
         for row in data:
             if row["month_group"].month != now.month or row["month_group"].year != now.year:
                 continue

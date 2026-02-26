@@ -19,7 +19,14 @@ from django_filters.views import FilterView
 from django_tables2.views import SingleTableMixin
 
 from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
-from commcare_connect.opportunity.models import CompletedWork, DeliveryType, InvoiceStatus, Opportunity, PaymentInvoice
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    Country,
+    DeliveryType,
+    InvoiceStatus,
+    Opportunity,
+    PaymentInvoice,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program
 from commcare_connect.reports.decorators import KPIReportMixin
@@ -29,14 +36,6 @@ from commcare_connect.reports.tasks import export_invoice_report_task
 from commcare_connect.utils.celery import download_export_file, render_export_status
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
-
-COUNTRY_CURRENCY_CHOICES = [
-    ("ETB", "Ethiopia"),
-    ("KES", "Kenya"),
-    ("MWK", "Malawi"),
-    ("MZN", "Mozambique"),
-    ("NGN", "Nigeria"),
-]
 
 
 class DeliveryReportFilters(django_filters.FilterSet):
@@ -56,7 +55,10 @@ class DeliveryReportFilters(django_filters.FilterSet):
         queryset=Opportunity.objects.filter(is_test=False),
         label="Opportunity",
     )
-    country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
+    country = django_filters.ModelChoiceFilter(
+        queryset=Country.objects.filter(opportunity__isnull=False).distinct(),
+        label="Country",
+    )
     from_date = django_filters.DateFilter(
         label="From Date",
         required=False,
@@ -77,7 +79,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
                 Column("program", css_class="col-md-3"),
                 Column("network_manager", css_class="col-md-3"),
                 Column("opportunity", css_class="col-md-3"),
-                Column("country_currency", css_class="col-md-3"),
+                Column("country", css_class="col-md-3"),
             ),
             Row(
                 Column("delivery_type", css_class="col-md-4"),

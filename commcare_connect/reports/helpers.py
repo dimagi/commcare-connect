@@ -74,7 +74,7 @@ def get_table_data_for_year_month(
     program=None,
     network_manager=None,
     opportunity=None,
-    country_currency=None,
+    country=None,
 ):
     from_date = from_date or now().date()
     to_date = to_date if to_date and to_date <= now().date() else now().date()
@@ -120,9 +120,9 @@ def get_table_data_for_year_month(
     if opportunity:
         filter_kwargs.update({"opportunity_access__opportunity": opportunity})
         filter_kwargs_nm.update({"invoice__opportunity": opportunity})
-    if country_currency:
-        filter_kwargs.update({"opportunity_access__opportunity__currency": country_currency})
-        filter_kwargs_nm.update({"invoice__opportunity__currency": country_currency})
+    if country:
+        filter_kwargs.update({"opportunity_access__opportunity__country": country})
+        filter_kwargs_nm.update({"invoice__opportunity__country": country})
 
     max_visit_date = (
         UserVisit.objects.filter(completed_work_id=models.OuterRef("id"), status=VisitValidationStatus.approved)
