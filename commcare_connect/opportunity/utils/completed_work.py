@@ -46,9 +46,14 @@ class CompletedWorkUpdater:
             self.deliver_unit_map[pu_id].append((du_id, optional))
 
     def _get_deliver_units_for_payment_unit(self, payment_unit_id):
-        deliver_units = self.deliver_unit_map[payment_unit_id]
-        required_deliver_units = [du_id for du_id, optional in deliver_units if not optional]
-        optional_deliver_units = [du_id for du_id, optional in deliver_units if optional]
+        optional_deliver_units = []
+        required_deliver_units = []
+
+        for du_id, optional in self.deliver_unit_map[payment_unit_id]:
+            if optional:
+                optional_deliver_units.append(du_id)
+            else:
+                required_deliver_units.append(du_id)
         return required_deliver_units, optional_deliver_units
 
     def _get_completed_work_counts(self):
@@ -133,15 +138,13 @@ class CompletedWorkUpdater:
         all_required_approved = all(
             self._is_delivery_approved(approved_unit_counts, deliver_id) for deliver_id in required_deliver_units
         )
+        if not optional_deliver_units:
+            return all_required_approved
+
         any_optional_approved = any(
             self._is_delivery_approved(approved_unit_counts, deliver_id) for deliver_id in optional_deliver_units
         )
-
-        completed_work_approved = all_required_approved
-        if optional_deliver_units:
-            completed_work_approved = completed_work_approved and any_optional_approved
-
-        return completed_work_approved
+        return all_required_approved and any_optional_approved
 
     def _update_payment(self, completed_work):
         updated = False
