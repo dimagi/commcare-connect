@@ -16,6 +16,8 @@ from commcare_connect.opportunity.models import (
     Assessment,
     CommCareApp,
     CompletedModule,
+    CompletedTask,
+    CompletedTaskStatus,
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
@@ -27,6 +29,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
+    Task,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -37,6 +40,7 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.lock import try_redis_lock
 
 LEARN_MODULE_JSONPATH = parse("$..module")
+TASK_MODULE_JSONPATH = parse("$..task")
 ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
 
@@ -83,6 +87,18 @@ def get_or_create_learn_module(app, module_data):
     return module
 
 
+def get_or_create_task(app, task_data):
+    task, _ = Task.objects.get_or_create(
+        app=app,
+        slug=task_data["@id"],
+        defaults=dict(
+            name=task_data["name"],
+            description=task_data["description"],
+        ),
+    )
+    return task
+
+
 def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
     """Process learn modules from a form received from CommCare HQ.
 
@@ -116,6 +132,36 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
         if completed_modules:
             CompletedModule.objects.bulk_create(completed_modules)
             update_completed_learn_date(access, save_access)
+
+
+def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
+    """Process task modules from a form received from CommCare HQ."""
+    with transaction.atomic():
+        access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
+        completed_tasks = []
+        save_access = False
+
+        for task_data in blocks:
+            task = get_or_create_task(app, task_data)
+            completed_task = CompletedTask(
+                task=task,
+                opportunity_access=access,
+                xform_id=xform.id,
+                date=xform.metadata.timeEnd,
+                duration=xform.metadata.duration,
+                app_build_id=xform.build_id,
+                app_build_version=xform.metadata.app_build_version,
+                status=CompletedTaskStatus.COMPLETED,
+            )
+            completed_tasks.append(completed_task)
+            if not access.last_active or access.last_active < completed_task.date:
+                access.last_active = completed_task.date
+                save_access = True
+
+        if completed_tasks:
+            CompletedTask.objects.bulk_create(completed_tasks)
+            if save_access:
+                access.save(update_fields=["last_active"])
 
 
 def update_completed_learn_date(access, save_access=False):
@@ -171,12 +217,17 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
-    matches = [
+    deliver_matches = [
         match.value for match in DELIVER_UNIT_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
     ]
-    if matches:
-        for deliver_unit_block in matches:
-            process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
+    for deliver_unit_block in deliver_matches:
+        process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
+
+    task_matches = [
+        match.value for match in TASK_MODULE_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
+    ]
+    if task_matches:
+        process_task_modules(user, xform, app, opportunity, task_matches)
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:

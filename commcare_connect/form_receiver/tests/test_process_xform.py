@@ -6,6 +6,7 @@ from commcare_connect.form_receiver.tests.xforms import (
     AssessmentStubFactory,
     DeliverUnitStubFactory,
     LearnModuleJsonFactory,
+    TaskJsonFactory,
     get_form_model,
 )
 
@@ -14,11 +15,21 @@ LEARN_PROCESSOR_PATCHES = [
     "commcare_connect.form_receiver.processor.process_assessments",
 ]
 
+DELIVER_PROCESSOR_PATCHES = [
+    "commcare_connect.form_receiver.processor.process_deliver_unit",
+    "commcare_connect.form_receiver.processor.process_task_modules",
+]
+
 
 def test_process_learn_form_no_matching_blocks():
-    with mock.patch("commcare_connect.form_receiver.processor.process_learn_modules") as process_learn_modules:
+    with mock.patch(
+        "commcare_connect.form_receiver.processor.process_learn_modules"
+    ) as process_learn_modules, mock.patch(
+        "commcare_connect.form_receiver.processor.process_assessments"
+    ) as process_assessments:
         process_learn_form(None, get_form_model(), None, None)
     assert process_learn_modules.call_count == 0
+    assert process_assessments.call_count == 0
 
 
 def test_process_learn_module():
@@ -39,19 +50,30 @@ def test_process_assessment():
     assert process_assessment.call_count == 1
 
 
+def test_process_task_module():
+    task_block = TaskJsonFactory().json
+    xform = get_form_model(form_block=task_block)
+    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
+        process_deliver_form(None, xform, None, None)
+    assert process_deliver_unit.call_count == 0
+    assert process_task_module.call_count == 1
+
+
 def test_process_deliver_form():
     deliver_block = DeliverUnitStubFactory().json
     xform = get_form_model(form_block=deliver_block)
-    with mock.patch("commcare_connect.form_receiver.processor.process_deliver_unit") as process_deliver_unit:
+    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
         process_deliver_form(None, xform, None, None)
     assert process_deliver_unit.call_count == 1
+    assert process_task_module.call_count == 0
 
 
 def test_process_deliver_form_no_matches():
     xform = get_form_model()
-    with mock.patch("commcare_connect.form_receiver.processor.process_deliver_unit") as process_deliver_unit:
+    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
         process_deliver_form(None, xform, None, None)
     assert process_deliver_unit.call_count == 0
+    assert process_task_module.call_count == 0
 
 
 @contextmanager
