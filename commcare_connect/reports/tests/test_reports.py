@@ -332,6 +332,108 @@ def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
             assert row["organization_funding_deployed"] == 0
 
 
+@pytest.mark.django_db
+def test_get_table_data_for_year_month_quarterly(httpx_mock):
+    """Test quarterly aggregation produces true DB-level averages, not average of monthly averages."""
+    # Use Q3 of last year so all 3 months are fully in the past — avoids to_date
+    # clamping that would cause monthly and quarterly to cover different date ranges.
+    year = now().year - 1
+    month1 = datetime(year, 7, 15, tzinfo=UTC)  # July     (Q3)
+    month2 = datetime(year, 8, 15, tzinfo=UTC)  # August   (Q3)
+    month3 = datetime(year, 9, 15, tzinfo=UTC)  # September (Q3)
+
+    # Create different numbers of users per month so that the true average
+    # (weighted by record count) differs from the average of monthly averages.
+    # _create_kpi_test_data assigns time_to_payment ≈ i*10 days for user index i,
+    # and excludes user 0 (saved_payment_accrued_usd=0) from the avg calculation.
+    #   5 users → qualifying i=1-4, avg=25 days
+    #  10 users → qualifying i=1-9, avg=50 days
+    #  15 users → qualifying i=1-14, avg=75 days
+    # Average-of-averages = (25+50+75)/3 = 50
+    # True weighted average = (100+450+1050)/(4+9+14) = 1600/27 ≈ 59.26
+    users_m1 = MobileUserFactory.create_batch(5)
+    users_m2 = MobileUserFactory.create_batch(10)
+    users_m3 = MobileUserFactory.create_batch(15)
+
+    with mock.patch.object(timezone, "now", return_value=month1):
+        _create_kpi_test_data(users_m1, month1)
+    with mock.patch.object(timezone, "now", return_value=month2):
+        _create_kpi_test_data(users_m2, month2)
+    with mock.patch.object(timezone, "now", return_value=month3):
+        _create_kpi_test_data(users_m3, month3)
+
+    fetch_user_counts.clear()
+    httpx_mock.add_response(method="GET", json={})
+
+    from_date = date(month1.year, month1.month, 1)
+    to_date = date(month3.year, month3.month, 1)
+
+    # Get monthly data for comparison
+    monthly_data = get_table_data_for_year_month(from_date=from_date, to_date=to_date, period="monthly")
+    assert len(monthly_data) == 3
+
+    # Get quarterly data
+    quarterly_data = get_table_data_for_year_month(from_date=from_date, to_date=to_date, period="quarterly")
+    assert len(quarterly_data) == 1
+
+    quarter_row = quarterly_data[0]
+    assert quarter_row["quarter_label"] == f"Q3 {year}"
+
+    # Sum fields should be aggregated across 3 months
+    assert quarter_row["users"] == sum(r["users"] for r in monthly_data)
+    assert quarter_row["services"] == sum(r["services"] for r in monthly_data)
+    assert quarter_row["flw_amount_earned"] == sum(r["flw_amount_earned"] for r in monthly_data)
+    assert quarter_row["flw_amount_paid"] == sum(r["flw_amount_paid"] for r in monthly_data)
+    assert quarter_row["intervention_funding_deployed"] == sum(
+        r["intervention_funding_deployed"] for r in monthly_data
+    )
+    assert quarter_row["organization_funding_deployed"] == sum(
+        r["organization_funding_deployed"] for r in monthly_data
+    )
+
+    # Verify avg_time_to_payment is a true DB-level average, not average-of-monthly-averages.
+    # With different user counts per month, these two values diverge.
+    monthly_avgs = [r["avg_time_to_payment"] for r in monthly_data if r["avg_time_to_payment"]]
+    avg_of_monthly_avgs = sum(monthly_avgs) / len(monthly_avgs)
+    assert quarter_row["avg_time_to_payment"] != pytest.approx(avg_of_monthly_avgs, abs=0.01)
+    assert quarter_row["avg_time_to_payment"] > 0
+
+    # Monthly rows must not carry a quarter_label
+    assert "quarter_label" not in monthly_data[0]
+
+
+@pytest.mark.django_db
+def test_get_table_data_for_year_month_quarterly_cross_quarter(httpx_mock):
+    """Test quarterly mode returns one row per quarter when data spans two quarters."""
+    # Use Q2 and Q3 of last year so both are fully in the past.
+    year = now().year - 1
+    month_q2 = datetime(year, 5, 15, tzinfo=UTC)  # May → Q2
+    month_q3 = datetime(year, 8, 15, tzinfo=UTC)  # August → Q3
+
+    users_q2 = MobileUserFactory.create_batch(5)
+    users_q3 = MobileUserFactory.create_batch(10)
+
+    with mock.patch.object(timezone, "now", return_value=month_q2):
+        _create_kpi_test_data(users_q2, month_q2)
+    with mock.patch.object(timezone, "now", return_value=month_q3):
+        _create_kpi_test_data(users_q3, month_q3)
+
+    fetch_user_counts.clear()
+    httpx_mock.add_response(method="GET", json={})
+
+    from_date = date(year, 5, 1)
+    to_date = date(year, 8, 1)
+
+    quarterly_data = get_table_data_for_year_month(from_date=from_date, to_date=to_date, period="quarterly")
+    quarterly_data = sorted(quarterly_data, key=lambda r: r["month_group"])
+
+    assert len(quarterly_data) == 2
+    assert quarterly_data[0]["quarter_label"] == f"Q2 {year}"
+    assert quarterly_data[1]["quarter_label"] == f"Q3 {year}"
+    assert quarterly_data[0]["users"] == len(users_q2)
+    assert quarterly_data[1]["users"] == len(users_q3)
+
+
 class TestKPIReportPermission:
     @pytest.fixture(autouse=True)
     def setup(self, db):
