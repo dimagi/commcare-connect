@@ -90,7 +90,6 @@ class OpportunityUserDataSerializer(serializers.Serializer):
 
 class UserVisitDataSerialier(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
-    images = serializers.SerializerMethodField()
 
     class Meta:
         model = UserVisit
@@ -116,14 +115,23 @@ class UserVisitDataSerialier(serializers.ModelSerializer):
             "date_created",
             "completed_work_id",
             "deliver_unit_id",
-            "images",
         ]
 
     def get_username(self, obj) -> str:
         return obj.username
 
+
+class UserVisitDataWithImagesSerialier(UserVisitDataSerialier):
+    images = serializers.SerializerMethodField()
+
+    class Meta(UserVisitDataSerialier.Meta):
+        fields = UserVisitDataSerialier.Meta.fields + ["images"]
+
     def get_images(self, obj):
-        return [{"blob_id": blob.blob_id, "name": blob.name, "parent_id": blob.parent_id} for blob in obj.images]
+        prefetched = getattr(obj, "_prefetched_images", None)
+        if prefetched is not None:
+            return [{"blob_id": b.blob_id, "name": b.name, "parent_id": b.parent_id} for b in prefetched]
+        return [{"blob_id": b.blob_id, "name": b.name, "parent_id": b.parent_id} for b in obj.images]
 
 
 class CompletedWorkDataSerializer(serializers.ModelSerializer):
