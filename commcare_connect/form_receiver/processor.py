@@ -329,6 +329,12 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                     completed_work_needs_save = True
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
+        case_id = xform.form.get("case", {}).get("@case_id")
+        if case_id:
+            from commcare_connect.microplanning.models import WorkArea
+
+            user_visit.work_area = WorkArea.objects.filter(case_id=case_id, opportunity=opportunity).first()
+
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])

@@ -826,6 +826,12 @@ class UserVisit(XFormBaseModel):
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
+    work_area = models.ForeignKey(
+        "microplanning.WorkArea",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
     status_modified_date = models.DateTimeField(null=True)
     review_status = models.CharField(
         max_length=50, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
