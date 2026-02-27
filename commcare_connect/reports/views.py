@@ -37,11 +37,24 @@ from commcare_connect.utils.celery import download_export_file, render_export_st
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
 
+PERIOD_CHOICES = [
+    ("monthly", "Monthly"),
+    ("quarterly", "Quarterly"),
+]
+
 
 class DeliveryReportFilters(django_filters.FilterSet):
     delivery_type = django_filters.ChoiceFilter(
         choices=DeliveryType.objects.values_list("slug", "name"),
         label="Delivery Type",
+    )
+    period = django_filters.ChoiceFilter(
+        choices=PERIOD_CHOICES,
+        label="Period",
+        empty_label=None,
+        # No-op: period is read from filter_values in the view and passed directly
+        # to get_table_data_for_year_month — it doesn't filter a queryset.
+        method=lambda qs, name, value: qs,
     )
     program = django_filters.ModelChoiceFilter(
         queryset=Program.objects.all(),
@@ -82,9 +95,10 @@ class DeliveryReportFilters(django_filters.FilterSet):
                 Column("country", css_class="col-md-3"),
             ),
             Row(
-                Column("delivery_type", css_class="col-md-4"),
-                Column("from_date", css_class="col-md-4"),
-                Column("to_date", css_class="col-md-4"),
+                Column("delivery_type", css_class="col-md-3"),
+                Column("period", css_class="col-md-3"),
+                Column("from_date", css_class="col-md-3"),
+                Column("to_date", css_class="col-md-3"),
             ),
         )
 
@@ -94,6 +108,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
             default_from = today - timedelta(days=30)
             self.data["to_date"] = today.strftime("%Y-%m")
             self.data["from_date"] = default_from.strftime("%Y-%m")
+            self.data["period"] = "monthly"
             self.form.is_bound = True
             self.form.data = self.data
 
@@ -101,6 +116,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
         model = None
         fields = [
             "delivery_type",
+            "period",
             "from_date",
             "to_date",
             "program",
@@ -147,6 +163,11 @@ class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelF
         if self.filterset.form.is_valid():
             filters.update(self.filterset.form.cleaned_data)
         return filters
+
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["period"] = self.filter_values.get("period", "monthly")
+        return kwargs
 
     @property
     def object_list(self):

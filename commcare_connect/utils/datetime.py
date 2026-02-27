@@ -27,5 +27,20 @@ def get_start_end_dates_from_month_range(from_date: datetime.date, to_date: date
     return start_time, end_time
 
 
+def get_quarter_series(from_date: datetime.date, to_date: datetime.date):
+    """Return list of first-day-of-quarter dates covering from_date to to_date.
+
+    from_date is snapped back to the start of its containing quarter, so passing
+    a mid-quarter date (e.g. 2025-02-15) will include the full quarter (2025-01-01).
+    """
+    q_start_month = ((from_date.month - 1) // 3) * 3 + 1
+    current = datetime.date(from_date.year, q_start_month, 1)
+    series = []
+    while current <= to_date:
+        series.append(current)
+        current += relativedelta(months=3)
+    return series
+
+
 def get_end_date_previous_month():
     return datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
