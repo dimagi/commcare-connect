@@ -24,7 +24,7 @@ from vectortiles.views import MVTView
 
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
 from commcare_connect.utils.file import get_file_extension
 
@@ -66,6 +66,7 @@ def microplanning_home(request, *args, **kwargs):
             "metrics": get_metrics_for_microplanning(opportunity),
             "tiles_url": tiles_url,
             "groups_url": groups_url,
+            "status_labels": {s.value: s.label for s in WorkAreaStatus},
         },
     )
 
@@ -159,11 +160,7 @@ def import_status(request, org_slug, opp_id):
 
 class WorkAreaVectorLayer(VectorLayer):
     id = "workareas"
-    tile_fields = (
-        "id",
-        "status",
-        "group_id",
-    )
+    tile_fields = ("id", "status", "building_count", "expected_visit_count", "group_id", "group_name", "assignee")
     geom_field = "boundary"
     min_zoom = 4
 
@@ -174,6 +171,8 @@ class WorkAreaVectorLayer(VectorLayer):
     def get_queryset(self):
         return WorkArea.objects.filter(opportunity_id=self.opp_id).annotate(
             group_id=F("work_area_group__id"),
+            group_name=F("work_area_group__name"),
+            assignee=F("work_area_group__assigned_user__user__name"),
         )
 
 
