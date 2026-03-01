@@ -25,8 +25,8 @@ from commcare_connect.data_export.serializer import (
     OrganizationDataExportSerializer,
     PaymentDataSerializer,
     ProgramDataExportSerializer,
-    UserVisitDataSerialier,
-    UserVisitDataWithImagesSerialier,
+    UserVisitDataSerializer,
+    UserVisitDataWithImagesSerializer,
 )
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -77,13 +77,14 @@ class BaseStreamingCSVExportView(BaseDataExportView):
         raise NotImplementedError
 
     def get_data_generator(self, *args, **kwargs):
-        fieldnames = self.serializer_class().get_fields().keys()
+        serializer_class = self.get_serializer_class()
+        fieldnames = serializer_class().get_fields().keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
         objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=2000)
         yield writer.writeheader()
 
         for obj in objects:
-            serialized_data = self.serializer_class(obj).data
+            serialized_data = serializer_class(obj).data
             yield writer.writerow(serialized_data)
 
     @extend_schema(
@@ -192,15 +193,15 @@ class OpportunityUserDataView(OpportunityScopedDataView):
 
 
 class UserVisitDataView(OpportunityScopedDataView):
-    serializer_class = UserVisitDataSerialier
+    serializer_class = UserVisitDataSerializer
 
     def _include_images(self):
         return self.request.query_params.get("images", "").lower() == "true"
 
     def get_serializer_class(self, *args, **kwargs):
         if self._include_images():
-            return UserVisitDataWithImagesSerialier
-        return UserVisitDataSerialier
+            return UserVisitDataWithImagesSerializer
+        return UserVisitDataSerializer
 
     def get_queryset(self, request, opp_id):
         return (
