@@ -162,7 +162,7 @@ class WorkAreaVectorLayer(VectorLayer):
     id = "workareas"
     tile_fields = ("id", "status", "building_count", "expected_visit_count", "group_id", "group_name", "assignee")
     geom_field = "boundary"
-    min_zoom = 4
+    min_zoom = 6
 
     def __init__(self, *args, opp_id=None, **kwargs):
         self.opp_id = opp_id
