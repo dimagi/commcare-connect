@@ -1,4 +1,5 @@
-Hi,
+{% extends "email/base.txt" %}
+{% block content %}Hi,
 
 The following invoices have been auto-created for your organization {{ organization.name }}.
 
@@ -11,7 +12,4 @@ Invoices Details:
     View Invoice: {{ invoice_item.invoice_url }}
 {% endfor %}
 
-If you have any questions, please contact your Program Manager.
-
-Thank you,
-Connect
+If you have any questions, please contact your Program Manager.{% endblock %}

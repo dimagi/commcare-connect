@@ -1,0 +1,23 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 20px; background-color: #f4f4f4; font-family: Arial, sans-serif; font-size: 14px; color: #333333;">
+<div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 24px; border-radius: 6px;">
+
+{% block content %}{% endblock %}
+
+<p>
+    {% trans "Thank you," %}<br>
+    Connect
+</p>
+
+<p style="color: #666666; font-size: 12px;">
+    {% trans "This inbox is not monitored. Please do not respond to this email." %}
+</p>
+
+</div>
+</body>
+</html>

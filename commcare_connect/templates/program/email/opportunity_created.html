@@ -1,3 +1,6 @@
+{% extends "email/base.html" %}
+
+{% block content %}
 <p>Hi,</p>
 
 <p>A new opportunity has been created for your workspace!</p>
@@ -11,8 +14,4 @@
 <p>
     <a href="{{ opportunity_url }}">Click here to view the opportunity</a>
 </p>
-
-<p>
-    Thank you,<br>
-    Connect
-</p>
+{% endblock %}
