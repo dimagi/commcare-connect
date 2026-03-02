@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from pyproj import Transformer
 from shapely import shared_paths, wkb
+from shapely.ops import transform
 from shapely.strtree import STRtree
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
@@ -77,7 +78,7 @@ class WorkAreaGrouper:
 
         transformed_geoms = {}
         for wa_id, wa in ward_data.items():
-            transformed_geoms[wa_id] = self._transform_geometry(wa["geometry"], transformer)
+            transformed_geoms[wa_id] = transform(transformer.transform, wa["geometry"])
 
         wa_ids_list = list(transformed_geoms.keys())
         geometries = [transformed_geoms[wa_id] for wa_id in wa_ids_list]
@@ -152,8 +153,3 @@ class WorkAreaGrouper:
                 "building_count": wa.building_count,
             }
         return work_areas
-
-    def _transform_geometry(self, geom, transformer):
-        from shapely.ops import transform
-
-        return transform(transformer.transform, geom)
