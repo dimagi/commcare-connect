@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from commcare_connect.flags.flag_names import OPEN_CHAT_STUDIO_WIDGET
+from commcare_connect.flags.flag_names import OPEN_CHAT_STUDIO_WIDGET, SESSION_TRACKING
 from commcare_connect.flags.models import Flag
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS
 
@@ -29,4 +29,39 @@ def chat_widget_context(request):
         "chat_widget_enabled": creds_configured and Flag.is_flag_active_for_request(request, OPEN_CHAT_STUDIO_WIDGET),
         "chatbot_id": settings.CHATBOT_ID,
         "chatbot_embed_key": settings.CHATBOT_EMBED_KEY,
+    }
+
+
+def session_tracking_context(request):
+    tracking_enabled = bool(settings.LIVESESSION_APP_ID) and Flag.is_flag_active_for_request(request, SESSION_TRACKING)
+    additional_tracker_data = _get_additional_tracking_context(request) if tracking_enabled else {}
+    return {
+        "session_tracking_enabled": tracking_enabled,
+        "tracker_data": {
+            "app_id": settings.LIVESESSION_APP_ID,
+            **additional_tracker_data,
+        },
+    }
+
+
+def _get_additional_tracking_context(request):
+    opportunity = getattr(request, "opportunity", None)
+
+    program_slug = None
+    if opportunity and opportunity.managed:
+        program_slug = opportunity.managedopportunity.program.slug
+
+    org_slug = None
+    if opportunity:
+        org_slug = opportunity.organization.slug
+    elif hasattr(request, "org"):
+        org = request.org
+        if org:
+            org_slug = org.slug
+
+    return {
+        "user_id": str(request.user.user_id) if request.user.is_authenticated else None,
+        "opportunity": opportunity.name if opportunity else None,
+        "program": program_slug,
+        "organization": org_slug,
     }
