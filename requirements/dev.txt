@@ -132,7 +132,7 @@ mypy-extensions==1.0.0
     # via black
 nodeenv==1.8.0
     # via pre-commit
-packaging==26.0
+packaging==23.1
     # via
     #   -c requirements/base.txt
     #   black

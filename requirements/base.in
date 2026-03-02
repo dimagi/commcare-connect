@@ -15,8 +15,8 @@ twilio
 geopy
 gevent
 sentry-sdk
-geopandas
 shapely
+pyproj
 
 # Django
 # ------------------------------------------------------------------------------
