@@ -60,6 +60,7 @@ click==8.1.6
     #   click-didyoumean
     #   click-plugins
     #   click-repl
+    #   mercantile
 click-didyoumean==0.3.0
     # via celery
 click-plugins==1.1.1
@@ -100,6 +101,7 @@ django==4.2.5
     #   django-redis
     #   django-tables2
     #   django-timezone-field
+    #   django-vectortiles
     #   django-waffle
     #   django-weasyprint
     #   djangorestframework
@@ -136,6 +138,8 @@ django-tables2==2.6.0
     # via -r requirements/base.in
 django-timezone-field==5.1
     # via django-celery-beat
+django-vectortiles==1.0.2
+    # via -r requirements/base.in
 django-waffle==5.0.0
     # via -r requirements/base.in
 django-weasyprint==2.4.0
@@ -198,6 +202,8 @@ jwcrypto==1.5.0
     # via django-oauth-toolkit
 kombu==5.3.2
     # via celery
+mercantile==1.2.1
+    # via django-vectortiles
 multidict==6.0.4
     # via
     #   aiohttp
