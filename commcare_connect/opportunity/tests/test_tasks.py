@@ -15,11 +15,13 @@ from commcare_connect.opportunity.models import (
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
+    OpportunityActiveEvent,
     PaymentInvoice,
 )
 from commcare_connect.opportunity.tasks import (
     _get_inactive_message,
     add_connect_users,
+    auto_deactivate_ended_opportunities,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
 )
@@ -324,3 +326,36 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
         invoice = PaymentInvoice.objects.filter(opportunity=opportunity)
         assert len(invoice) == 0
+
+
+@pytest.mark.django_db
+class TestAutoDeactivateEndedOpportunities:
+    def test_deactivates_opportunities_30_days_after_end(self):
+        cutoff = datetime.date.today() - datetime.timedelta(days=30)
+        opp_to_deactivate = OpportunityFactory(active=True, end_date=cutoff)
+        opp_still_active = OpportunityFactory(active=True, end_date=datetime.date.today())
+        opp_already_inactive = OpportunityFactory(active=False, end_date=cutoff)
+
+        auto_deactivate_ended_opportunities()
+
+        opp_to_deactivate.refresh_from_db()
+        opp_still_active.refresh_from_db()
+        opp_already_inactive.refresh_from_db()
+
+        assert opp_to_deactivate.active is False
+        assert opp_still_active.active is True
+        assert opp_already_inactive.active is False  # unchanged
+
+    def test_records_pghistory_event_with_system_context(self):
+        cutoff = datetime.date.today() - datetime.timedelta(days=30)
+        opp = OpportunityFactory(active=True, end_date=cutoff)
+
+        auto_deactivate_ended_opportunities()
+
+        # Should have 2 events: initial create + the deactivation
+        events = OpportunityActiveEvent.objects.filter(pgh_obj=opp).order_by("pgh_id")
+        assert events.count() == 2
+        deactivation_event = events.last()
+        assert deactivation_event.active is False
+        assert deactivation_event.pgh_context is not None
+        assert deactivation_event.pgh_context.metadata["username"] == "system"
