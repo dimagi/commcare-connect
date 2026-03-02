@@ -1,8 +1,9 @@
 from collections import defaultdict, deque
 from uuid import uuid4
 
-import geopandas as gpd
+from pyproj import Transformer
 from shapely import shared_paths, wkb
+from shapely.strtree import STRtree
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 
@@ -19,32 +20,41 @@ class WorkAreaGrouper:
         self.buffer_distance = buffer_distance
 
     def cluster_work_areas(self):
-        gdf = self._prepare_data()
+        work_areas = self._prepare_data()
         work_area_groups = defaultdict(set)
 
-        for ward, ward_gdf in gdf.groupby("ward"):
-            adjacency = self._build_adjacency(ward_gdf)
+        wards = defaultdict(list)
+        for wa_id, wa_data in work_areas.items():
+            wards[wa_data["ward"]].append(wa_id)
 
-            ward_gdf = ward_gdf.copy()
-            ward_gdf["_cx"] = ward_gdf.centroid.x
-            ward_gdf["_cy"] = ward_gdf.centroid.y
-            sorted_idx = ward_gdf.sort_values(["_cx", "_cy"], ascending=[True, False]).index
-            unvisited = set(ward_gdf.index)
+        for ward, ward_ids in wards.items():
+            ward_data = {wa_id: work_areas[wa_id] for wa_id in ward_ids}
+            adjacency = self._build_adjacency(ward_data)
 
-            for idx in sorted_idx:
-                if idx not in unvisited:
+            # Sort by centroid coordinates (x ascending, y descending)
+            sorted_ids = sorted(
+                ward_ids,
+                key=lambda wa_id: (
+                    ward_data[wa_id]["centroid"].x,
+                    -ward_data[wa_id]["centroid"].y,
+                ),
+            )
+            unvisited = set(ward_ids)
+
+            for wa_id in sorted_ids:
+                if wa_id not in unvisited:
                     continue
 
                 cluster = self._bfs_cluster(
-                    seed_idx=idx,
+                    seed_idx=wa_id,
                     unvisited=unvisited,
                     adjacency=adjacency,
-                    ward_gdf=gdf,
+                    work_areas=work_areas,
                 )
 
                 if not cluster:
-                    cluster = [idx]
-                    unvisited.discard(idx)
+                    cluster = [wa_id]
+                    unvisited.discard(wa_id)
 
                 group_id = str(uuid4())
                 work_area_groups[(ward, group_id)].update(cluster)
@@ -60,27 +70,37 @@ class WorkAreaGrouper:
                 work_area_group__isnull=True,
             ).update(work_area_group=work_area_group)
 
-    def _build_adjacency(self, ward_gdf: gpd.GeoDataFrame, tolerance: float = 1e-6) -> dict:
-        adjacency = {idx: [] for idx in ward_gdf.index}
-        ward_gdf = ward_gdf.to_crs(3857)
+    def _build_adjacency(self, ward_data: dict, tolerance: float = 1e-6) -> dict:
+        adjacency = {wa_id: [] for wa_id in ward_data.keys()}
 
-        for work_area_id, row in ward_gdf.iterrows():
-            geom = row.geometry
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 
-            query_geom = ward_gdf.loc[work_area_id, "geometry"].buffer(self.buffer_distance / 2)
-            candidate_idxs = ward_gdf.sindex.query(query_geom, predicate="intersects")
+        transformed_geoms = {}
+        for wa_id, wa in ward_data.items():
+            transformed_geoms[wa_id] = self._transform_geometry(wa["geometry"], transformer)
 
-            for i in candidate_idxs:
-                neighbour_id = ward_gdf.index[i]
+        wa_ids_list = list(transformed_geoms.keys())
+        geometries = [transformed_geoms[wa_id] for wa_id in wa_ids_list]
+
+        spatial_index = STRtree(geometries)
+
+        for work_area_id, geom in transformed_geoms.items():
+            query_geom = geom.buffer(self.buffer_distance / 2)
+            candidate_indices = spatial_index.query(query_geom, predicate="intersects")
+
+            for idx in candidate_indices:
+                neighbour_id = wa_ids_list[idx]
                 if neighbour_id == work_area_id:
                     continue
 
-                shared = shared_paths(geom.boundary, ward_gdf.geometry.iloc[i].boundary)
+                candidate_geom = transformed_geoms[neighbour_id]
+
+                shared = shared_paths(geom.boundary, candidate_geom.boundary)
                 if shared.length > tolerance:
                     adjacency[work_area_id].append(neighbour_id)
                     continue
 
-                dist = ward_gdf.loc[work_area_id, "geometry"].distance(ward_gdf.geometry.iloc[i])
+                dist = geom.distance(candidate_geom)
                 if dist <= self.buffer_distance:
                     adjacency[work_area_id].append(neighbour_id)
 
@@ -91,7 +111,7 @@ class WorkAreaGrouper:
         seed_idx,
         unvisited: set,
         adjacency: dict,
-        ward_gdf: gpd.GeoDataFrame,
+        work_areas: dict,
     ) -> list:
         cluster = []
         total_buildings = 0
@@ -104,7 +124,7 @@ class WorkAreaGrouper:
             if current not in unvisited:
                 continue
 
-            building_count = ward_gdf.loc[current, "building_count"]
+            building_count = work_areas[current]["building_count"]
 
             if total_buildings + building_count > self.max_buildings:
                 seen.discard(current)
@@ -122,24 +142,18 @@ class WorkAreaGrouper:
         return cluster
 
     def _prepare_data(self):
-        data = []
+        work_areas = {}
         for wa in WorkArea.objects.filter(opportunity_id=self.opportunity_id, work_area_group__isnull=True):
-            data.append(
-                {
-                    "id": wa.id,
-                    "ward": wa.ward,
-                    "centroid": wkb.loads(bytes(wa.centroid.wkb)),
-                    "boundary": wkb.loads(bytes(wa.boundary.wkb)),
-                    "building_count": wa.building_count,
-                }
-            )
-        work_area_df = gpd.GeoDataFrame(
-            columns=["id", "ward", "centroid", "boundary", "building_count"],
-            data=data,
-            geometry="boundary",
-            crs="EPSG:4326",
-        )
-        work_area_df = work_area_df.rename_geometry("geometry")
-        work_area_df["boundary"] = work_area_df.geometry
-        work_area_df = work_area_df.set_index("id")
-        return work_area_df
+            work_areas[wa.id] = {
+                "id": wa.id,
+                "ward": wa.ward,
+                "centroid": wkb.loads(bytes(wa.centroid.wkb)),
+                "geometry": wkb.loads(bytes(wa.boundary.wkb)),
+                "building_count": wa.building_count,
+            }
+        return work_areas
+
+    def _transform_geometry(self, geom, transformer):
+        from shapely.ops import transform
+
+        return transform(transformer.transform, geom)
