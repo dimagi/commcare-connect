@@ -22,10 +22,10 @@ def test_work_area_case_serializer():
         "external_id": str(work_area.id),
         "properties": {
             "bounding_box": str(work_area.boundary),
-            "buildings": "5",
+            "building_count": "5",
             "centroid": str(work_area.centroid),
             "expected_visit_count": "10",
-            "du_status": work_area.status,
+            "wa_status": work_area.status,
             "ward": "ward-x",
             "work_area_group": "group-a",
         },

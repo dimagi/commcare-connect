@@ -26,10 +26,10 @@ class WorkAreaCaseSerializer(serializers.ModelSerializer):
     def get_properties(self, obj) -> dict:
         return {
             "bounding_box": str(obj.boundary) if obj.boundary else "",
-            "buildings": str(obj.building_count),
+            "building_count": str(obj.building_count),
             "centroid": str(obj.centroid) if obj.centroid else "",
             "expected_visit_count": str(obj.expected_visit_count),
-            "du_status": obj.status,
+            "wa_status": obj.status,
             "ward": str(obj.ward),
             "work_area_group": obj.work_area_group.name if obj.work_area_group else "",
         }
