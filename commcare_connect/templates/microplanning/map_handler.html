@@ -53,6 +53,7 @@
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
                             '#ffffff',
+                            ['!', ['has', 'group_id']], '#cccccc',  // gray for no group
                             [
                                 'hsl',
                                 ['%', ['*', ['to-number', ['get', 'group_id']], 137.508], 360], // visually distinct colors for sequential group IDs
@@ -136,32 +137,23 @@
                         return res.json();
                     })
                     .then(data => {
-                        if (!data.group_features?.length) return;
 
-                        this.map.getSource('workarea-groups').setData({
-                            type: "FeatureCollection",
-                            features: data.group_features
-                        });
-                        const bounds = new mapboxgl.LngLatBounds();
-                        const extendCoords = (coords) => {
-                            if (typeof coords[0] === 'number') {
-                                bounds.extend(coords);
-                            } else {
-                                coords.forEach(extendCoords);
-                            }
-                        };
-
-                        data.group_features.forEach(feature => {
-                            extendCoords(feature.geometry.coordinates);
-                        });
-
-                        if (!bounds.isEmpty()) {
-                            this.map.fitBounds(bounds, {
-                                padding: 40,
-                                duration: 0,
-                                zoom: 9
+                        // Render group outlines if they exist
+                        if (data.group_features?.length) {
+                            this.map.getSource('workarea-groups').setData({
+                                type: "FeatureCollection",
+                                features: data.group_features
                             });
                         }
+
+                        // Zoom using precomputed bounds
+                        if (data.workarea_bounds) {
+                            this.map.fitBounds(data.workarea_bounds, {
+                                padding: 40,
+                                duration: 0
+                            });
+                        }
+
                     })
                     .catch(err => console.error(err));
 
