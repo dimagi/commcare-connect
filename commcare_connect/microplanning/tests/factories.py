@@ -5,8 +5,18 @@ from django.contrib.gis.geos import Point, Polygon
 from factory import Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
-from commcare_connect.microplanning.models import SRID, WorkArea
-from commcare_connect.opportunity.tests.factories import OpportunityFactory
+from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
+
+
+class WorkAreaGroupFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+    assigned_user = SubFactory(OpportunityAccessFactory)
+    ward = Sequence(lambda n: f"ward-{n}")
+    name = Sequence(lambda n: f"group-{n}")
+
+    class Meta:
+        model = WorkAreaGroup
 
 
 class WorkAreaFactory(DjangoModelFactory):
