@@ -62,8 +62,9 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-packaging==23.1
+packaging==26.0
     # via
+    #   -c requirements/base.txt
     #   django-allow-cidr
     #   gunicorn
 psycopg2==2.9.6

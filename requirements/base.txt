@@ -43,6 +43,8 @@ certifi==2023.7.22
     # via
     #   httpcore
     #   httpx
+    #   pyogrio
+    #   pyproj
     #   requests
     #   sentry-sdk
 cffi==1.15.1
@@ -151,15 +153,15 @@ et-xmlfile==1.1.0
 flatten-dict==0.4.2
     # via -r requirements/base.in
 fonttools[woff]==4.61.1
-    # via
-    #   fonttools
-    #   weasyprint
+    # via weasyprint
 frozenlist==1.4.0
     # via
     #   aiohttp
     #   aiosignal
 geographiclib==2.0
     # via geopy
+geopandas==1.1.2
+    # via -r requirements/base.in
 geopy==2.4.1
     # via -r requirements/base.in
 gevent==24.11.1
@@ -202,12 +204,24 @@ multidict==6.0.4
     # via
     #   aiohttp
     #   yarl
+numpy==2.4.2
+    # via
+    #   geopandas
+    #   pandas
+    #   pyogrio
+    #   shapely
 oauthlib==3.2.2
     # via
     #   django-oauth-toolkit
     #   requests-oauthlib
 openpyxl==3.1.2
     # via tablib
+packaging==26.0
+    # via
+    #   geopandas
+    #   pyogrio
+pandas==3.0.1
+    # via geopandas
 pillow==10.0.0
     # via
     #   -r requirements/base.in
@@ -224,13 +238,18 @@ pyjwt[crypto]==2.8.0
     # via
     #   django-allauth
     #   twilio
+pyogrio==0.12.1
+    # via geopandas
 pyphen==0.17.2
     # via weasyprint
+pyproj==3.7.2
+    # via geopandas
 python-crontab==3.0.0
     # via django-celery-beat
 python-dateutil==2.8.2
     # via
     #   celery
+    #   pandas
     #   python-crontab
 python-slugify==8.0.1
     # via -r requirements/base.in
@@ -267,6 +286,10 @@ rpds-py==0.9.2
     #   referencing
 sentry-sdk==1.29.2
     # via -r requirements/base.in
+shapely==2.1.2
+    # via
+    #   -r requirements/base.in
+    #   geopandas
 six==1.16.0
     # via
     #   flatten-dict
