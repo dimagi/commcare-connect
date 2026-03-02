@@ -134,6 +134,7 @@ nodeenv==1.8.0
     # via pre-commit
 packaging==23.1
     # via
+    #   -c requirements/base.txt
     #   black
     #   build
     #   pytest
