@@ -19,28 +19,7 @@ class WorkAreaGrouper:
         self.buffer_distance = buffer_distance
 
     def cluster_work_areas(self):
-        data = []
-        for wa in WorkArea.objects.filter(opportunity_id=self.opportunity_id, work_area_group__isnull=True):
-            data.append(
-                {
-                    "id": wa.id,
-                    "ward": wa.ward,
-                    "centroid": wkb.loads(bytes(wa.centroid.wkb)),
-                    "boundary": wkb.loads(bytes(wa.boundary.wkb)),
-                    "building_count": wa.building_count,
-                }
-            )
-        work_area_df = gpd.GeoDataFrame(
-            columns=["id", "ward", "centroid", "boundary", "building_count"],
-            data=data,
-            geometry="boundary",
-            crs="EPSG:4326",
-        )
-        work_area_df = work_area_df.rename_geometry("geometry")
-        work_area_df["boundary"] = work_area_df.geometry
-        work_area_df = work_area_df.set_index("id")
-
-        gdf = work_area_df.copy()
+        gdf = self._prepare_data()
         work_area_groups = defaultdict(set)
 
         for ward, ward_gdf in gdf.groupby("ward"):
@@ -141,3 +120,26 @@ class WorkAreaGrouper:
                     seen.add(neighbour)
 
         return cluster
+
+    def _prepare_data(self):
+        data = []
+        for wa in WorkArea.objects.filter(opportunity_id=self.opportunity_id, work_area_group__isnull=True):
+            data.append(
+                {
+                    "id": wa.id,
+                    "ward": wa.ward,
+                    "centroid": wkb.loads(bytes(wa.centroid.wkb)),
+                    "boundary": wkb.loads(bytes(wa.boundary.wkb)),
+                    "building_count": wa.building_count,
+                }
+            )
+        work_area_df = gpd.GeoDataFrame(
+            columns=["id", "ward", "centroid", "boundary", "building_count"],
+            data=data,
+            geometry="boundary",
+            crs="EPSG:4326",
+        )
+        work_area_df = work_area_df.rename_geometry("geometry")
+        work_area_df["boundary"] = work_area_df.geometry
+        work_area_df = work_area_df.set_index("id")
+        return work_area_df
