@@ -41,6 +41,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
+from commcare_connect.utils.itertools import batched
 
 
 class BaseDataExportView(APIView):
@@ -74,15 +75,20 @@ class BaseStreamingCSVExportView(BaseDataExportView):
     def get_queryset(self, *args, **kwargs):
         raise NotImplementedError
 
+    def get_serializer_context(self, chunk):
+        return {}
+
     def get_data_generator(self, *args, **kwargs):
+        CHUNK_SIZE = 2000
         fieldnames = self.serializer_class().get_fields().keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
-        objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=2000)
         yield writer.writeheader()
 
-        for obj in objects:
-            serialized_data = self.serializer_class(obj).data
-            yield writer.writerow(serialized_data)
+        objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=CHUNK_SIZE)
+        for chunk in batched(objects, CHUNK_SIZE):
+            context = self.get_serializer_context(chunk)
+            for serialized_data in self.serializer_class(chunk, many=True, context=context).data:
+                yield writer.writerow(serialized_data)
 
     @extend_schema(
         description=(
@@ -198,6 +204,18 @@ class UserVisitDataView(OpportunityScopedDataView):
             .annotate(username=F("user__username"))
             .select_related("user")
         )
+
+    def get_serializer_context(self, chunk):
+        xform_ids = [visit.xform_id for visit in chunk]
+        images_by_xform_id = {}
+        for blob in BlobMeta.objects.filter(
+            parent_id__in=xform_ids,
+            content_type__startswith="image/",
+        ).values("parent_id", "blob_id", "name"):
+            images_by_xform_id.setdefault(blob["parent_id"], []).append(
+                {"blob_id": blob["blob_id"], "name": blob["name"], "parent_id": blob["parent_id"]}
+            )
+        return {"images_by_xform_id": images_by_xform_id}
 
 
 class CompletedWorkDataView(OpportunityScopedDataView):

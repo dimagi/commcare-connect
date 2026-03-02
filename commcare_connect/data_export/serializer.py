@@ -123,7 +123,8 @@ class UserVisitDataSerialier(serializers.ModelSerializer):
         return obj.username
 
     def get_images(self, obj):
-        return [{"blob_id": blob.blob_id, "name": blob.name, "parent_id": blob.parent_id} for blob in obj.images]
+        images_by_xform_id = self.context.get("images_by_xform_id", {})
+        return images_by_xform_id.get(obj.xform_id, [])
 
 
 class CompletedWorkDataSerializer(serializers.ModelSerializer):
