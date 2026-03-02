@@ -5,7 +5,7 @@ import uuid
 from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.gis.db.models import Union
+from django.contrib.gis.db.models import Extent, Union
 from django.contrib.gis.db.models.functions import AsGeoJSON
 from django.core.cache import cache
 from django.core.files.base import ContentFile
@@ -189,6 +189,8 @@ class WorkAreaTileView(MVTView):
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def workareas_group_geojson(request, org_slug, opp_id):
+    qs = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
+
     group_features = [
         {
             "type": "Feature",
@@ -196,9 +198,10 @@ def workareas_group_geojson(request, org_slug, opp_id):
             "properties": {"group_id": g["group_id"]},
         }
         for g in (
-            WorkArea.objects.filter(opportunity_id=request.opportunity.id, work_area_group__isnull=False)
+            qs.filter(work_area_group__isnull=False)
             .values(group_id=F("work_area_group__id"))
             .annotate(geojson=AsGeoJSON(Union("boundary")))
         )
     ]
-    return JsonResponse({"group_features": group_features})
+    extent = qs.aggregate(extent=Extent("boundary"))["extent"]
+    return JsonResponse({"group_features": group_features, "workarea_bounds": extent})
