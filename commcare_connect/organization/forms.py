@@ -1,6 +1,7 @@
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db.models import Prefetch
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
@@ -17,7 +18,7 @@ class OrganizationChangeForm(forms.ModelForm):
 
     class Meta:
         model = Organization
-        fields = ("name", "program_manager", "llo_entity")
+        fields = ("name", "program_manager")
         labels = {
             "name": gettext_lazy("Workspace Name"),
             "program_manager": gettext_lazy("Enable Program Manager"),
@@ -40,6 +41,7 @@ class OrganizationChangeForm(forms.ModelForm):
         else:
             del self.fields["program_manager"]
 
+        instance_llo = getattr(self.instance, "llo_entity", None)
         if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             self.fields["llo_entity"] = CreatableModelChoiceField(
                 label=gettext("LLO Entity"),
@@ -49,8 +51,9 @@ class OrganizationChangeForm(forms.ModelForm):
                 required=False,
                 create_key_name="name",
             )
+            self.fields["llo_entity"].initial = instance_llo
         else:
-            if self.instance and self.instance.llo_entity:
+            if instance_llo:
                 self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
 
         layout_fields.append(layout.Field("llo_entity"))
@@ -68,6 +71,17 @@ class OrganizationChangeForm(forms.ModelForm):
         if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             return self.cleaned_data["llo_entity"]
         return self.instance.llo_entity
+
+    def save(self, commit=True):
+        org = super().save(commit=False)
+        llo_entity = self.cleaned_data.get("llo_entity")
+
+        org.llo_entity = llo_entity
+        if commit:
+            if llo_entity and not llo_entity.pk:
+                llo_entity.save()
+            org.save()
+        return org
 
 
 class MembershipForm(forms.ModelForm):
@@ -145,16 +159,78 @@ class AddCredentialForm(forms.Form):
         return split_users
 
 
-OrganizationCreationForm = forms.modelform_factory(
-    Organization,
-    fields=("name",),
-    labels={"name": gettext_lazy("Workspace Name")},
-    help_texts={
-        "name": (
-            gettext_lazy(
-                "This would be used to create the Workspace URL,"
-                " and you will not be able to change the URL in future."
+class OrganizationSelectOrCreateForm(forms.Form):
+    llo_entity = CreatableModelChoiceField(
+        label=gettext_lazy("LLO Entity"),
+        queryset=LLOEntity.objects.order_by("name"),
+        widget=forms.Select(attrs={"x-ref": "llo_entity"}),
+        empty_label=gettext_lazy("Select a LLO Entity"),
+        create_key_name="name",
+    )
+    org = forms.CharField(
+        label=gettext_lazy("Workspace Name"),
+        widget=forms.Select(
+            attrs={"x-ref": "org", "data-tomselect": "1", "data-tomselect:settings": '{"create": true}'}
+        ),
+        help_text=gettext_lazy(
+            "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_new_org = False
+
+    def get_entity_wise_orgs(self):
+        data = {}
+        qs = (
+            LLOEntity.objects.prefetch_related(
+                Prefetch("organization_set", queryset=Organization.objects.only("id", "name", "slug"))
             )
+            .only("id", "name")
+            .order_by("name")
         )
-    },
-)
+
+        for entity in qs:
+            data[str(entity.id)] = {
+                "organizations": [
+                    {"id": org.id, "name": org.name, "slug": org.slug} for org in entity.organization_set.all()
+                ]
+            }
+        return data
+
+    def clean_org(self):
+        value = self.cleaned_data["org"]
+        # Existing org selected (id)
+        if value.isdigit():
+            org = Organization.objects.filter(pk=value).first()
+            if org:
+                return org
+        self.is_new_org = True
+        return Organization(name=value)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        org = cleaned_data.get("org")
+        llo_entity = cleaned_data.get("llo_entity")
+        if org and org.pk:
+            if llo_entity and org.llo_entity != llo_entity:
+                raise ValidationError(
+                    {
+                        "llo_entity": gettext(
+                            "Selected LLO Entity does not match the existing organization's LLO Entity."
+                        )
+                    }
+                )
+        return cleaned_data
+
+    def save(self, commit=True):
+        org = self.cleaned_data["org"]
+        llo_entity = self.cleaned_data["llo_entity"]
+        org.llo_entity = llo_entity
+        if commit:
+            if llo_entity and not llo_entity.pk:
+                llo_entity.save()
+            if not org.pk:
+                org.save()
+        return org
