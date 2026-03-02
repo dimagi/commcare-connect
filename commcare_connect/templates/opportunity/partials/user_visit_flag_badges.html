@@ -1,0 +1,21 @@
+<div class="flex relative justify-start text-sm text-brand-deep-purple font-normal">
+    {% if show_over_limit %}
+        <span class="badge badge-sm negative-light mx-1">{{ over_limit_label|lower }}</span>
+    {% endif %}
+
+    {% if flags %}
+        {% for flag in flags|slice:":2" %}
+            {% if flag|lower == "duplicate" %}
+                <span class="badge badge-sm warning-light mx-1">
+            {% else %}
+                <span class="badge badge-sm primary-light mx-1">
+            {% endif %}
+                {{ flag }}
+            </span>
+        {% endfor %}
+
+        {% if flags|length > 2 %}
+            {% include "components/badges/badge_sm_dropdown.html" with title='All Flags' list=flags %}
+        {% endif %}
+    {% endif %}
+</div>
