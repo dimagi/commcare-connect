@@ -160,7 +160,9 @@
 
                 // Toggles selection state on clicked workareas.
                 this.map.on('click', 'workareas-fill', (e) => {
-                    const id = e.features[0].id;
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    const id = feature.id;
                     if (this.selectedAreas.has(id)) {
                         this.selectedAreas.delete(id);
                     } else {
@@ -176,7 +178,9 @@
                 let hoveredId = null;
                 this.map.on('mousemove', 'workareas-fill', (e) => {
                     this.map.getCanvasContainer().style.cursor = 'pointer';
-                    const newId = e.features[0].id;
+                    const feature = e.features?.[0];
+                    if (!feature || feature.id == null) return;
+                    const newId = feature.id;
                     if (newId === hoveredId) return;
                     if (hoveredId !== null) {
                         this.map.setFeatureState(

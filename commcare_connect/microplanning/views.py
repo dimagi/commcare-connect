@@ -165,7 +165,7 @@ class WorkAreaVectorLayer(VectorLayer):
         "group_id",
     )
     geom_field = "boundary"
-    min_zoom = 4
+    min_zoom = 6
 
     def __init__(self, *args, opp_id=None, **kwargs):
         self.opp_id = opp_id
