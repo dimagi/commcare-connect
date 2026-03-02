@@ -12,4 +12,4 @@ Commcare Connect uses [django waffle](https://waffle.readthedocs.io/en/stable/) 
 
 - Connect uses the django admin to manage the backend models and enable or disable switches and flags.
 - Connect uses the `WAFFLE_CREATE_MISSING_SWITCHES` so that switches are automatically added to the database when they are encountered in the codebase (specifically when using `switch_is_active()`). However, manually adding them prior to deploy is preferred.
-- For flags however, these will not automatically be added to the database (as the standard `flag_is_active()` waffle function will generally not be used). Rather, the custom `is_active_for()` method on the custom `Flag` model will be used, and flags should be created prior to deploy.
+- Flags will only be auto-added to the database if you use the `flag_is_active` from `commcare_connect.flags.utils` method, but similarly, manually adding them prior to deploy is preferred.

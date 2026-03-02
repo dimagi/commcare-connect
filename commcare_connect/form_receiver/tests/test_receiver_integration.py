@@ -8,9 +8,12 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from django.core.cache import cache
 from django.utils.timezone import now
 from rest_framework.test import APIClient
 
+from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.flags.models import Flag
 from commcare_connect.form_receiver.processor import update_completed_learn_date
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
@@ -19,6 +22,7 @@ from commcare_connect.form_receiver.tests.xforms import (
     LearnModuleJsonFactory,
     get_form_json,
 )
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.models import (
     Assessment,
     CompletedModule,
@@ -897,3 +901,67 @@ def test_update_completed_learn_date_migration(opportunity, mobile_user):
     assert access.completed_learn_date == dates["tomorrow"]
     assert access2.completed_learn_date is None
     assert access2.last_active is None
+
+
+@pytest.mark.django_db
+def test_receiver_deliver_form_without_work_area_when_flag_disabled(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    work_area = WorkAreaFactory(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug)
+    form_json = get_form_json(
+        form_block={**stub.json, "case": {"@case_id": work_area.case_id}},
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    assert visit.work_area is None
+
+
+@pytest.mark.django_db
+def test_receiver_deliver_form_with_work_area_and_flag_enabled(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+    flag.opportunities.add(opportunity)
+    flag.save()
+    cache.clear()
+
+    work_area = WorkAreaFactory(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug)
+    form_json = get_form_json(
+        form_block={**stub.json, "case": {"@case_id": work_area.case_id}},
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    assert visit.work_area == work_area
+
+
+@pytest.mark.django_db
+def test_receiver_deliver_form_without_work_area(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug)
+    form_json = get_form_json(
+        form_block=stub.json,
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    visit = UserVisit.objects.get(user=mobile_user_with_connect_link)
+    assert visit.work_area is None

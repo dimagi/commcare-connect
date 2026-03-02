@@ -1,6 +1,6 @@
 from django.http import Http404
 
-from commcare_connect.flags.models import Flag
+from commcare_connect.flags.utils import is_flag_active
 
 
 def require_flag_for_opp(flag_name: str):
@@ -8,8 +8,7 @@ def require_flag_for_opp(flag_name: str):
 
     def decorator(func):
         def wrapper(request, *args, **kwargs):
-            flag, _ = Flag.objects.get_or_create(name=flag_name)
-            if not flag.is_active_for(request.opportunity):
+            if not is_flag_active(flag_name, request.opportunity):
                 raise Http404(f"Flag '{flag_name}' is not active for this organization.")
             return func(request, *args, **kwargs)
 
