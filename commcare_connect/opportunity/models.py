@@ -79,6 +79,7 @@ class Country(models.Model):
         return self.name
 
 
+@pghistory.track(fields=["active"])
 class Opportunity(BaseModel):
     opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     organization = models.ForeignKey(
