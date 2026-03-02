@@ -1974,3 +1974,23 @@ def test_visit_export_count_boundary_dates(
 
     assert response.status_code == HTTPStatus.OK
     assert "2 visits match your filters." in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestOpportunityEditActiveHistory:
+    def test_edit_context_includes_active_events(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        opportunity.active = False
+        opportunity.save()
+
+        url = reverse(
+            "opportunity:edit",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert "active_latest_event" in response.context
+        assert "active_events" in response.context
+        assert response.context["active_latest_event"].active is False
+        assert response.context["active_events"].count() == 2

@@ -12,11 +12,70 @@
     <li class="breadcrumb-item active" aria-current="page">Edit Opportunity</li>
 {% endblock %}
 {% block content %}
-    <div class="md:max-w-screen-lg mx-auto">
+    <div class="md:max-w-screen-lg mx-auto" x-data="{ showActiveHistory: false }">
         <h2 class="title my-8">Edit Opportunity</h2>
         <form method="post" class="flex flex-col gap-4">
             {% csrf_token %}
             {% crispy form %}
         </form>
+        {% if active_events %}
+        <div x-show="showActiveHistory" x-cloak x-transition.opacity class="modal-backdrop"
+            @keydown.escape.window="showActiveHistory = false">
+            <div @click.outside="showActiveHistory = false" class="modal" role="dialog" aria-modal="true"
+                aria-labelledby="active-history-modal-title">
+                <div class="header text-lg font-semibold text-brand-deep-purple">
+                    <h1 id="active-history-modal-title">Active Status History</h1>
+                    <button @click="showActiveHistory = false" aria-label="Close dialog">
+                        <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="content">
+                    <div class="modal-body overflow-y-auto max-h-96">
+                        <table class="w-full text-sm text-left text-brand-deep-purple">
+                            <thead class="text-xs uppercase bg-slate-100">
+                                <tr>
+                                    <th class="px-4 py-2">Changed at</th>
+                                    <th class="px-4 py-2">Changed to</th>
+                                    <th class="px-4 py-2">By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for event in active_events %}
+                                <tr class="border-b border-slate-200">
+                                    <td class="px-4 py-2">{{ event.pgh_created_at|date:"d M Y H:i" }}</td>
+                                    <td class="px-4 py-2">
+                                        {% if event.active %}
+                                        <span class="badge badge-sm bg-green-600/20 text-green-600">Active</span>
+                                        {% else %}
+                                        <span class="badge badge-sm bg-slate-100 text-slate-400">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-4 py-2">
+                                        {% with ctx=event.pgh_context %}
+                                        {% if not ctx or ctx.metadata.username == "system" %}
+                                        System
+                                        {% else %}
+                                        {{ ctx.metadata.username }}
+                                        {% endif %}
+                                        {% endwith %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="3" class="px-4 py-4 text-center text-slate-400">No history available.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="footer">
+                        <button type="button" @click="showActiveHistory = false" class="button button-md outline-style">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 {% endblock content %}

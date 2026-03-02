@@ -107,6 +107,7 @@ from commcare_connect.opportunity.models import (
     LearnModule,
     Opportunity,
     OpportunityAccess,
+    OpportunityActiveEvent,
     OpportunityClaim,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
@@ -337,6 +338,17 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
             opportunity.end_date = end_date
         response = super().form_valid(form)
         return response
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        active_events = (
+            OpportunityActiveEvent.objects.filter(pgh_obj=self.object)
+            .select_related("pgh_context")
+            .order_by("-pgh_id")
+        )
+        context["active_events"] = active_events
+        context["active_latest_event"] = active_events.first()
+        return context
 
 
 class OpportunityFinalize(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
