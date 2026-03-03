@@ -204,11 +204,11 @@ class UserVisitDataView(OpportunityScopedDataView):
         return UserVisitDataSerializer
 
     def get_queryset(self, request, opp_id):
-        return (
-            UserVisit.objects.filter(opportunity=self.opportunity)
-            .annotate(username=F("user__username"))
-            .select_related("user")
-        )
+        queryset = UserVisit.objects.filter(opportunity=self.opportunity)
+        username = request.query_params.get("username")
+        if username:
+            queryset = queryset.filter(user__username=username)
+        return queryset.annotate(username=F("user__username")).select_related("user")
 
     def get_data_generator(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
