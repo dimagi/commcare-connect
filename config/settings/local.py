@@ -41,11 +41,9 @@ if platform.system() == "Darwin":
     GDAL_LIBRARY_PATH = env("GDAL_LIBRARY_PATH")
     GEOS_LIBRARY_PATH = env("GEOS_LIBRARY_PATH")
 
-MAILDEV_ENABLED = env.bool("MAILDEV_ENABLED", default=False)
 
-if MAILDEV_ENABLED:
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-    EMAIL_HOST = "localhost"
-    EMAIL_PORT = 1025
-    EMAIL_USE_TLS = False
-    EMAIL_USE_SSL = False
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "localhost"
+EMAIL_PORT = 1025
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = False
