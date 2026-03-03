@@ -2,6 +2,7 @@ import datetime
 
 import pytest
 
+from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
 from commcare_connect.opportunity.models import (
     InvoiceStatus,
@@ -203,6 +204,26 @@ def test_access_visit_count(opportunity: Opportunity):
     )
     update_payment_accrued(opportunity, [access.user])
     assert access.visit_count == 1
+
+
+@pytest.mark.django_db
+class TestOpportunityActiveTracking:
+    def test_pghistory_records_initial_active_state(self):
+        opp = OpportunityFactory()
+        events = OpportunityActiveEvent.objects.filter(pgh_obj=opp).order_by("pgh_id")
+        assert events.count() == 1
+        assert events.first().active is True
+
+    def test_pghistory_records_manual_deactivation(self):
+        opp = OpportunityFactory()
+        opp.active = False
+        opp.save()
+        events = OpportunityActiveEvent.objects.filter(pgh_obj=opp).order_by("pgh_id")
+        assert events.count() == 2
+        assert events.last().active is False
+        # No request context in tests — both events should have no context
+        assert events.first().pgh_context is None
+        assert events.last().pgh_context is None
 
 
 @pytest.mark.django_db

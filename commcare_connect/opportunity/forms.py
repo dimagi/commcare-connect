@@ -168,6 +168,7 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                         css_class=CHECKBOX_CLASS,
                         wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
                     ),
+                    self.active_toggle_history_html(),
                     Field(
                         "is_test",
                         css_class=CHECKBOX_CLASS,
@@ -261,6 +262,36 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
+
+    def active_toggle_history_html(self):
+        return HTML(
+            """
+            {% if active_latest_event %}
+            <div class="flex items-center justify-between px-4 ps-0 pb-3 -mt-3">
+                <p class="text-xs text-slate-500">
+                    Last changed by
+                    {% with ctx=active_latest_event.pgh_context %}
+                    {% if not ctx or ctx.metadata.username == "system" %}
+                        <span class="font-medium">System</span>
+                    {% else %}
+                        <span class="font-medium">{{ ctx.metadata.username }}</span>
+                    {% endif %}
+                    {% endwith %}
+                    on {{ active_latest_event.pgh_created_at|date:"d M Y" }}
+                </p>
+                <button
+                    type="button"
+                    @click="showActiveHistory = true"
+                    aria-label="View active status history"
+                    :aria-expanded="showActiveHistory"
+                    class="text-xs text-brand-cornflower-blue underline underline-offset-2 whitespace-nowrap"
+                >
+                    View history
+                </button>
+            </div>
+            {% endif %}
+            """
+        )
 
     def add_credential_fields(self):
         credential_issuer = None
