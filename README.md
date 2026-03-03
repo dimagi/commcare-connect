@@ -171,6 +171,14 @@ or you can embed the beat service inside a worker with the `-B` option (not reco
 celery -A config.celery_app worker -B -l info
 ```
 
+### Maildev
+
+[Maildev](https://github.com/maildev/maildev) is a very simple-to-use tool for testing locally generated emails. You can inspect emails sent from the local webserver by accessing the following address in the browser:
+
+```
+http://localhost:1080
+```
+
 ## Deployment
 
 The following details how to deploy this application.
