@@ -3,6 +3,8 @@ from commcare_connect.opportunity.models import (
     CommCareApp,
     CompletedModule,
     CompletedWork,
+    Country,
+    Currency,
     DeliverUnit,
     DeliveryType,
     LearnModule,
@@ -18,7 +20,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program
 from commcare_connect.reports.models import UserAnalyticsData
-from commcare_connect.users.models import ConnectIDUserLink, User
+from commcare_connect.users.models import ConnectIDUserLink, User, UserCredential
 
 PUBLICATION_NAME = "tables_for_superset_pub"
 SUBSCRIPTION_NAME = "tables_for_superset_sub"
@@ -30,6 +32,8 @@ REPLICATION_ALLOWED_MODELS = [
     CompletedModule,
     CompletedWork,
     ConnectIDUserLink,
+    Country,
+    Currency,
     DeliverUnit,
     DeliveryType,
     LearnModule,
@@ -45,5 +49,6 @@ REPLICATION_ALLOWED_MODELS = [
     User,
     UserVisit,
     UserAnalyticsData,
+    UserCredential,
     PaymentInvoice,
 ]

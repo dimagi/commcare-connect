@@ -10,8 +10,10 @@
       usdAmount: "{{ form.amount_usd.value|default:'null' }}",
       isServiceDelivery: "{{ is_service_delivery|yesno:'true,false' }}" == 'true',
       isReadOnly: "{{ is_read_only|yesno:'true,false'}}" == "true",
-      invoiceId: "{{ form.instance.id|default:'' }}",
+      invoiceId: "{{ form.instance.payment_invoice_id|default:'' }}",
       showDownloadButton: false,
+      showCancelModal: false,
+      showRejectModal: false,
 
       init() {
         if (this.isServiceDelivery) {
@@ -27,7 +29,7 @@
         // date and amount should be present before making http call
         if (!this.$refs.amount?.value || !this.$refs.date?.value) return;
 
-        htmx.ajax('POST', '{% url "opportunity:exchange_rate" org_slug=request.org.slug opp_id=opportunity.id %}', {
+        htmx.ajax('POST', '{% url "opportunity:exchange_rate" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           target: '#converted-amount-wrapper',
           swap: 'innerHTML',
           values: {
@@ -49,7 +51,7 @@
       fetchInvoiceLineItems() {
         if (!this.startDate || !this.endDate) return;
 
-        fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.id %}', {
+        fetch('{% url "opportunity:invoice_items" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           method: 'POST',
           headers: {
             'X-CSRFToken': '{{ csrf_token }}',
@@ -80,7 +82,7 @@
           return;
         }
 
-        const url = new URL('{% url "opportunity:download_invoice_line_items" org_slug=request.org.slug opp_id=opportunity.id %}', window.location.origin);
+        const url = new URL('{% url "opportunity:download_invoice_line_items" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', window.location.origin);
         url.searchParams.set('start_date', this.startDate);
         url.searchParams.set('end_date', this.endDate);
 
@@ -91,14 +93,33 @@
         return url.toString();
       },
 
-      submitForApproval() {
-        htmx.ajax('POST', '{% url "opportunity:submit_invoice" org_slug=request.org.slug opp_id=opportunity.id %}', {
+      submitInvoice(newStatus) {
+        htmx.ajax('POST', '{% url "opportunity:invoice_update_status" org_slug=request.org.slug opp_id=opportunity.opportunity_id %}', {
           values: {
               invoice_id: this.invoiceId,
-              notes: this.$refs.notes ? this.$refs.notes.value : ""
+              description: this.$refs.description ? this.$refs.description.value : "",
+              new_status: newStatus
           },
         });
-      }
+      },
+
+      cancelInvoice() {
+        this.showCancelModal = true;
+      },
+
+      confirmCancelInvoice() {
+        this.showCancelModal = false;
+        this.submitInvoice('cancelled_by_nm');
+      },
+
+      rejectInvoice()  {
+        this.showRejectModal = true;
+      },
+
+      confirmRejectInvoice() {
+        this.showRejectModal = false;
+        this.submitInvoice('rejected_by_pm');
+      },
 
     }));
   });

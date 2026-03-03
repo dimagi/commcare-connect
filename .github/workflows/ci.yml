@@ -42,7 +42,7 @@ jobs:
         ports:
           - 6379:6379
       postgres:
-        image: postgres:15
+        image: postgis/postgis:15-3.5
         ports:
           - 5432:5432
         env:
@@ -57,6 +57,14 @@ jobs:
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v4
+
+      - name: Install Geo Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            gdal-bin \
+            libproj-dev
 
       - name: Set up Python
         uses: actions/setup-python@v4

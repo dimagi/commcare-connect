@@ -6,7 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.html import format_html
@@ -25,11 +25,19 @@ from waffle.models import Switch
 
 from commcare_connect.connect_id_client.main import fetch_demo_user_tokens, get_user_otp
 from commcare_connect.connect_id_client.models import ConnectIdUser
+from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
-from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, OTP_ACCESS
+from commcare_connect.utils.permission_const import (
+    ALL_ORG_ACCESS,
+    DEMO_USER_ACCESS,
+    KPI_REPORT_ACCESS,
+    OTP_ACCESS,
+    PRODUCT_FEATURES_ACCESS,
+)
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
@@ -97,7 +105,11 @@ def start_learn_app(request):
     opportunity_id = request.POST.get("opportunity")
     if opportunity_id is None:
         return Response({"error_code": ErrorCodes.OPPORTUNITY_REQUIRED}, status=400)
-    opportunity = Opportunity.objects.get(pk=opportunity_id)
+    opportunity = get_object_or_list_by_uuid_or_int(
+        queryset=Opportunity.objects.all(),
+        pk_or_pk_list=opportunity_id,
+        uuid_field="opportunity_id",
+    )
     app = opportunity.learn_app
     domain = app.cc_domain
     user_created = create_hq_user_and_link(request.user, domain, opportunity)
@@ -232,7 +244,22 @@ class UserToggleView(ClientProtectedResourceMixin, View):
     # This takes a username or phone_number query parameter
     # but ignoring for now since all toggles are global switches
     def get(self, request, *args, **kwargs):
-        toggles = list(Switch.objects.all().values("name", "active", "created", "modified"))
+        user = None
+        username = request.GET.get("username")
+        number = request.GET.get("number")
+        active_flags = set()
+        users = []
+        if username is not None:
+            users = User.objects.filter(username=username)
+        elif number is not None:
+            users = User.objects.filter(phone_number=number)
+        for user in users:
+            active_flags.update(Flag.active_flags_for_user(user, True).values_list("name", flat=True))
+        all_flags = list(Flag.objects.all().values("name", "created", "modified"))
+        for flag in all_flags:
+            flag["active"] = flag["name"] in active_flags
+        switches = list(Switch.objects.all().values("name", "active", "created", "modified"))
+        toggles = all_flags + switches
         return JsonResponse({"toggles": toggles})
 
 
@@ -277,3 +304,45 @@ class RetrieveUserOTPView(LoginRequiredMixin, PermissionRequiredMixin, FormView)
         errors = ", ".join(form.errors["phone_number"])
         messages.error(self.request, f"{errors}")
         return super().form_invalid(form)
+
+
+@login_required
+@require_GET
+def internal_features(request):
+    if not request.user.show_internal_features:
+        return redirect("home")
+
+    features = [
+        {
+            "perm": OTP_ACCESS,
+            "name": "Connect OTPs",
+            "description": "Get OTPs for Connect Mobile Users.",
+            "url": reverse("users:connect_user_otp"),
+        },
+        {
+            "perm": DEMO_USER_ACCESS,
+            "name": "Demo Users",
+            "description": "Get OTPs for Demo Users.",
+            "url": reverse("users:demo_users"),
+        },
+        {
+            "perm": KPI_REPORT_ACCESS,
+            "name": "KPI Report",
+            "description": "Access the KPI reports dashboard.",
+            "url": reverse("reports:delivery_stats_report"),
+        },
+        {
+            "perm": ALL_ORG_ACCESS,
+            "name": "Invoice Report",
+            "description": "Access the Invoice reports dashboard.",
+            "url": reverse("reports:invoice_report"),
+        },
+        {
+            "perm": PRODUCT_FEATURES_ACCESS,
+            "name": "Toggles & Switches",
+            "description": "Manage feature flags and switches.",
+            "url": reverse("flags:feature_flags"),
+        },
+    ]
+
+    return render(request, "users/internal_features.html", context={"features": features})

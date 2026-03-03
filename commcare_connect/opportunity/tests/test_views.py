@@ -1,7 +1,8 @@
 import inspect
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 from unittest import mock
+from uuid import uuid4
 
 import pytest
 from django.contrib.messages import get_messages
@@ -12,13 +13,17 @@ from django.utils.timezone import now
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW
-from commcare_connect.opportunity.forms import AutomatedPaymentInvoiceForm, PaymentInvoiceForm
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
+    FormJsonValidationRules,
+    InvoiceStatus,
     Opportunity,
     OpportunityAccess,
     OpportunityClaimLimit,
+    Payment,
+    PaymentUnit,
     UserInvite,
     UserInviteStatus,
     VisitReviewStatus,
@@ -27,10 +32,14 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     BlobMetaFactory,
+    CompletedWorkFactory,
+    DeliverUnitFactory,
+    FormJsonValidationRulesFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     OpportunityFactory,
+    OpportunityVerificationFlagsFactory,
     OrganizationFactory,
     PaymentFactory,
     PaymentInvoiceFactory,
@@ -42,7 +51,12 @@ from commcare_connect.opportunity.views import WorkerPaymentsView
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
-from commcare_connect.users.tests.factories import MembershipFactory, UserFactory
+from commcare_connect.users.tests.factories import (
+    MembershipFactory,
+    OrgWithUsersFactory,
+    ProgramManagerOrgWithUsersFactory,
+    UserFactory,
+)
 
 
 @pytest.mark.django_db
@@ -66,7 +80,15 @@ def test_add_budget_existing_users(
 
     url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
     client.force_login(org_user_member)
-    response = client.post(url, data=dict(selected_users=[claim.id], additional_visits=5, end_date=end_date))
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=5,
+            end_date=end_date,
+            adjustment_type=AddBudgetExistingUsersForm.AdjustmentType.INCREASE_VISITS,
+        ),
+    )
     assert response.status_code == 302
     opportunity = Opportunity.objects.get(pk=opportunity.pk)
     assert opportunity.total_budget == 205
@@ -92,9 +114,10 @@ def test_add_budget_existing_users_for_managed_opportunity(
         program=program,
         organization=organization,
         total_budget=initial_total_budget,
-        org_pay_per_visit=org_pay_per_visit,
     )
-    payment_unit = PaymentUnitFactory(opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit)
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
     claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
     claim_limit = OpportunityClaimLimitFactory(
@@ -107,13 +130,20 @@ def test_add_budget_existing_users_for_managed_opportunity(
     url = reverse("opportunity:add_budget_existing_users", args=(opportunity.organization.slug, opportunity.pk))
     client.force_login(org_user_admin)
 
-    additional_visits = 10
+    number_of_visits = 10
     # Budget calculation breakdown: opp_budget=120 Initial_claimed: 60 increase: 60 Final: 120 - Still under opp_budget
 
-    budget_increase = (payment_per_visit + org_pay_per_visit) * additional_visits
+    budget_increase = (payment_per_visit + org_pay_per_visit) * number_of_visits
     expected_claimed_budget = budget_per_user + budget_increase
 
-    response = client.post(url, data={"selected_users": [claim.id], "additional_visits": additional_visits})
+    response = client.post(
+        url,
+        data={
+            "selected_users": [claim.id],
+            "number_of_visits": number_of_visits,
+            "adjustment_type": AddBudgetExistingUsersForm.AdjustmentType.INCREASE_VISITS,
+        },
+    )
     assert response.status_code == HTTPStatus.FOUND
 
     opportunity.refresh_from_db()
@@ -121,16 +151,195 @@ def test_add_budget_existing_users_for_managed_opportunity(
 
     assert opportunity.total_budget == initial_total_budget
     assert opportunity.claimed_budget == expected_claimed_budget
-    assert claim_limit.max_visits == max_visits_per_user + additional_visits
+    assert claim_limit.max_visits == max_visits_per_user + number_of_visits
 
-    additional_visits = 1
+    number_of_visits = 1
     # Budget calculation breakdown: Previous: claimed 120 increase: 6 final: 126 - Exceeds opp_budget budget of 120
 
-    response = client.post(url, data={"selected_users": [claim.id], "additional_visits": additional_visits})
+    response = client.post(
+        url,
+        data={
+            "selected_users": [claim.id],
+            "number_of_visits": number_of_visits,
+            "adjustment_type": AddBudgetExistingUsersForm.AdjustmentType.INCREASE_VISITS,
+        },
+    )
     assert response.status_code == HTTPStatus.OK
     form = response.context["form"]
-    assert "additional_visits" in form.errors
-    assert form.errors["additional_visits"][0] == "Additional visits exceed the opportunity budget."
+    assert "number_of_visits" in form.errors
+    assert form.errors["number_of_visits"][0] == "The number of visits being increased exceeds the opportunity budget."
+
+
+@pytest.mark.django_db
+def test_decrease_budget_existing_users(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    opportunity.total_budget = budget_per_user
+
+    opportunity.organization = organization
+    opportunity.save()
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    ocl = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
+    assert opportunity.total_budget == 200
+    assert opportunity.claimed_budget == 10
+    end_date = now().date()
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=5,
+            adjustment_type=AddBudgetExistingUsersForm.AdjustmentType.DECREASE_VISITS,
+            end_date=end_date,
+        ),
+    )
+    assert response.status_code == 302
+    opportunity = Opportunity.objects.get(pk=opportunity.pk)
+    assert opportunity.total_budget == 195
+    assert opportunity.claimed_budget == 5
+    limit = OpportunityClaimLimit.objects.get(pk=ocl.pk)
+    assert limit.max_visits == 5
+    assert limit.opportunity_claim.end_date == end_date
+    assert limit.end_date == end_date
+
+
+@pytest.mark.django_db
+def test_decrease_budget_existing_users_for_managed_opportunity(
+    client, program_manager_org, org_user_admin, organization, mobile_user
+):
+    payment_per_visit = 5
+    org_pay_per_visit = 1
+    max_visits_per_user = 10
+
+    budget_per_user = max_visits_per_user * (payment_per_visit + org_pay_per_visit)
+    initial_total_budget = budget_per_user * 2
+
+    program = ProgramFactory(organization=program_manager_org, budget=200)
+    opportunity = ManagedOpportunityFactory(
+        program=program,
+        organization=organization,
+        total_budget=initial_total_budget,
+    )
+    payment_unit = PaymentUnitFactory(
+        opportunity=opportunity, max_total=max_visits_per_user, amount=payment_per_visit, org_amount=org_pay_per_visit
+    )
+    access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    claim_limit = OpportunityClaimLimitFactory(
+        opportunity_claim=claim, payment_unit=payment_unit, max_visits=max_visits_per_user
+    )
+
+    assert opportunity.total_budget == initial_total_budget
+    assert opportunity.claimed_budget == budget_per_user
+
+    url = reverse("opportunity:add_budget_existing_users", args=(opportunity.organization.slug, opportunity.pk))
+    client.force_login(org_user_admin)
+
+    decrease_visits = 5
+    # Budget calculation: decrease by 5 visits = 5 * (5 + 1) = 30
+
+    budget_decrease = (payment_per_visit + org_pay_per_visit) * decrease_visits
+    expected_claimed_budget = budget_per_user - budget_decrease
+
+    response = client.post(
+        url,
+        data={
+            "selected_users": [claim.id],
+            "number_of_visits": decrease_visits,
+            "adjustment_type": AddBudgetExistingUsersForm.AdjustmentType.DECREASE_VISITS,
+        },
+    )
+    assert response.status_code == HTTPStatus.FOUND
+
+    opportunity.refresh_from_db()
+    claim_limit.refresh_from_db()
+
+    # Total budget should remain the same for managed opportunities
+    assert opportunity.total_budget == initial_total_budget
+    assert opportunity.claimed_budget == expected_claimed_budget
+    assert claim_limit.max_visits == max_visits_per_user - decrease_visits
+
+
+@pytest.mark.django_db
+def test_decrease_budget_validation_error_completed_visits(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    """Test validation error when trying to decrease visits below completed visits count."""
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    opportunity.total_budget = budget_per_user
+
+    opportunity.organization = organization
+    opportunity.save()
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
+
+    # Create deliver_unit for the payment_unit
+    deliver_unit = DeliverUnitFactory(payment_unit=payment_units[0])
+
+    # Create 6 completed visits
+    for _ in range(6):
+        UserVisitFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            deliver_unit=deliver_unit,
+            status=VisitValidationStatus.approved,
+        )
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+
+    # Try to decrease by 8 visits (which would bring max_visits to 2, below the 6 completed)
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=8,
+            adjustment_type=AddBudgetExistingUsersForm.AdjustmentType.DECREASE_VISITS,
+        ),
+    )
+    assert response.status_code == 200
+    form = response.context["form"]
+    assert "number_of_visits" in form.errors
+    error_message = form.errors["number_of_visits"][0]
+    assert "Cannot decrease the number of visits" in error_message
+    assert "The visit count cannot be reduced below the number of already completed visits" in error_message
+
+
+@pytest.mark.django_db
+def test_adjustment_type_required_validation(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_units = PaymentUnitFactory.create_batch(2, opportunity=opportunity, amount=1, max_total=100)
+    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    opportunity.total_budget = budget_per_user
+
+    opportunity.organization = organization
+    opportunity.save()
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_units[0], max_visits=10)
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+
+    response = client.post(
+        url,
+        data=dict(
+            selected_users=[claim.id],
+            number_of_visits=5,
+        ),
+    )
+    assert response.status_code == 200
+    form = response.context["form"]
+    assert "adjustment_type" in form.errors
+    assert form.errors["adjustment_type"][0] == "Please select an adjustment type for number of visits."
 
 
 @pytest.mark.parametrize(
@@ -425,8 +634,8 @@ def test_tiered_queryset_basic():
     ],
 )
 def test_tab_param_persistence(rf, opportunity, organization, referring_url, should_persist):
-    tab_a_url = reverse("opportunity:worker_deliver", args=(organization.slug, opportunity.id))
-    tab_b_url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+    tab_a_url = reverse("opportunity:worker_deliver", args=(organization.slug, opportunity.opportunity_id))
+    tab_b_url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.opportunity_id))
 
     # Step 1: Visit tab A with GET params from any non-tab page
     request_a = rf.get(tab_a_url, {"status": "active"}, HTTP_REFERER="/anywhere-else")
@@ -872,7 +1081,7 @@ def test_views_use_opportunity_decorator_or_mixin():
 
 
 @pytest.mark.django_db
-class TestInvoiceReviewView:
+class BaseTestInvoiceView:
     @pytest.fixture
     def setup_invoice(self, organization, org_user_member):
         program = ProgramFactory(organization=organization, budget=10000)
@@ -898,6 +1107,9 @@ class TestInvoiceReviewView:
             "user": org_user_member,
         }
 
+
+@pytest.mark.django_db
+class TestInvoiceReviewView(BaseTestInvoiceView):
     def test_switch_not_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -906,7 +1118,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         with override_switch(INVOICE_REVIEW, active=False):
             response = client.get(url)
@@ -922,7 +1134,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         response = client.get(url)
 
@@ -946,7 +1158,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, 99999),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, uuid4()),
         )
         response = client.get(url)
         assert response.status_code == 404
@@ -966,7 +1178,7 @@ class TestInvoiceReviewView:
         client.force_login(user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(organization.slug, other_opportunity.id, invoice.pk),
+            args=(organization.slug, other_opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         response = client.get(url)
 
@@ -979,7 +1191,7 @@ class TestInvoiceReviewView:
         user = setup_invoice["user"]
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         client.force_login(user)
 
@@ -992,13 +1204,8 @@ class TestInvoiceReviewView:
                 else:
                     assert field.widget.attrs.get("readonly") == "readonly", f"Field {field_name} should be readonly"
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            response = client.get(url)
-            assert_readonly_form(response)
-
-        with override_switch(AUTOMATED_INVOICES, active=False):
-            response = client.get(url)
-            assert_readonly_form(response)
+        response = client.get(url)
+        assert_readonly_form(response)
 
     @override_switch(INVOICE_REVIEW, active=True)
     def test_custom_invoice_no_line_items(self, client, setup_invoice):
@@ -1012,16 +1219,15 @@ class TestInvoiceReviewView:
             date=date(2025, 11, 1),
         )
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.id, custom_invoice.pk),
-            )
-            response = client.get(url)
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, custom_invoice.payment_invoice_id),
+        )
+        response = client.get(url)
 
-            form = response.context["form"]
-            assert form.line_items_table is None
+        form = response.context["form"]
+        assert form.line_items_table is None
 
     @override_switch(INVOICE_REVIEW, active=True)
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
@@ -1032,7 +1238,7 @@ class TestInvoiceReviewView:
         client.force_login(unauthorized_user)
         url = reverse(
             "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.id, invoice.pk),
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
         )
         response = client.get(url)
 
@@ -1040,33 +1246,731 @@ class TestInvoiceReviewView:
         assert response.status_code in [302, 403, 404]
 
     @override_switch(INVOICE_REVIEW, active=True)
-    def test_legacy_form_when_switch_inactive(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        with override_switch(AUTOMATED_INVOICES, active=False):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
-            )
-            response = client.get(url)
-            form = response.context["form"]
-            assert isinstance(form, PaymentInvoiceForm)
-
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_automated_form_when_switch_active(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
 
-        with override_switch(AUTOMATED_INVOICES, active=True):
-            client.force_login(user)
-            url = reverse(
-                "opportunity:invoice_review",
-                args=(opportunity.organization.slug, opportunity.id, invoice.pk),
-            )
-            response = client.get(url)
-            form = response.context["form"]
-            assert isinstance(form, AutomatedPaymentInvoiceForm)
+        client.force_login(user)
+        url = reverse(
+            "opportunity:invoice_review",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+        )
+        response = client.get(url)
+        form = response.context["form"]
+        assert isinstance(form, AutomatedPaymentInvoiceForm)
+
+
+@pytest.mark.django_db
+class TestDownloadInvoiceView(BaseTestInvoiceView):
+    @staticmethod
+    def _url(opportunity, invoice_id):
+        return reverse(
+            "opportunity:download_invoice",
+            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice_id),
+        )
+
+    def _send_request(self, client, user, opportunity, invoice_id):
+        client.force_login(user)
+        url = self._url(opportunity, invoice_id)
+        return client.get(url)
+
+    def test_switch_inactive(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 404
+        assert "Invoice download feature is not available" in str(response.content)
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_successful_download(self, client, setup_invoice):
+        invoice = setup_invoice["invoice"]
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
+
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "application/pdf"
+        assert response.headers["Content-Disposition"] == 'attachment;filename="invoice_{}.pdf"'.format(
+            invoice.payment_invoice_id
+        )
+
+    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+    def test_missing_invoice(self, client, setup_invoice):
+        opportunity = setup_invoice["opportunity"]
+        user = setup_invoice["user"]
+
+        response = self._send_request(client, user, opportunity, uuid4())
+
+        assert response.status_code == 404
+        assert "No PaymentInvoice matches the given query." in str(response.content)
+
+
+class TestAddPaymentUnitView:
+    def test_org_amount_field_visible_for_managed_opportunity(self, client):
+        managed_opportunity = ManagedOpportunityFactory()
+        organization = managed_opportunity.organization
+        organization.program_manager = True
+        organization.save()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        client.force_login(user)
+
+        url = reverse("opportunity:add_payment_unit", args=(organization.slug, managed_opportunity.id))
+        response = client.get(url)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "org_amount" in content
+        assert 'name="org_amount"' in content
+
+    def test_org_amount_field_hidden_for_regular_opportunity(self, client):
+        opportunity = OpportunityFactory()
+        organization = opportunity.organization
+        organization.program_manager = False
+        organization.save()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        client.force_login(user)
+        url = reverse("opportunity:add_payment_unit", args=(organization.slug, opportunity.id))
+        response = client.get(url)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert 'name="org_amount"' not in content
+
+    def test_add_payment_unit_form_with_managed_opportunity(self, client):
+        managed_opportunity = ManagedOpportunityFactory()
+        organization = managed_opportunity.organization
+        organization.program_manager = True
+        organization.save()
+
+        deliver_unit = DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=None)
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        client.force_login(user)
+        url = reverse("opportunity:add_payment_units", args=(organization.slug, managed_opportunity.id))
+
+        form_data = {
+            "name": "Test Payment Unit",
+            "description": "Test Description",
+            "amount": 100,
+            "org_amount": 50,
+            "max_total": 10,
+            "max_daily": 2,
+            "required_deliver_units": [deliver_unit.id],
+            "optional_deliver_units": [],
+            "payment_units": [],
+        }
+        client.post(url, data=form_data)
+
+        payment_unit = PaymentUnit.objects.get(opportunity=managed_opportunity, name="Test Payment Unit")
+        assert payment_unit.org_amount == 50
+
+    def test_add_payment_unit_form_with_regular_opportunity(self, client):
+        opportunity = OpportunityFactory()
+        opportunity.managed = False
+        opportunity.save()
+
+        organization = opportunity.organization
+        organization.program_manager = False
+        organization.save()
+
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+
+        deliver_units = [deliver_unit]
+        payment_units = []
+        org_slug = organization.slug
+
+        form = PaymentUnitForm(
+            deliver_units=deliver_units, payment_units=payment_units, org_slug=org_slug, opportunity=opportunity
+        )
+
+        amounts_div = form.get_amounts_div()
+        amount_fields = amounts_div.fields
+        assert len(amount_fields) == 1
+        first_field = amount_fields[0]
+        assert hasattr(first_field, "fields") and first_field.fields[0] == "amount"
+
+        payment_unit = PaymentUnit(
+            opportunity=opportunity,
+            name="Test Payment Unit",
+            description="Test Description",
+            amount=100,
+            max_total=10,
+            max_daily=2,
+        )
+        assert payment_unit.org_amount == 0
+
+        managed_opportunity = opportunity
+        managed_opportunity.managed = True
+        managed_opportunity.save()
+
+        managed_form = PaymentUnitForm(
+            deliver_units=deliver_units,
+            payment_units=payment_units,
+            org_slug=org_slug,
+            opportunity=managed_opportunity,
+        )
+
+        managed_amounts_div = managed_form.get_amounts_div()
+        managed_amount_fields = managed_amounts_div.fields
+
+        assert len(managed_amount_fields) == 2
+
+
+@pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link_restricted_access(
+    client, program_manager_org, program_manager_org_user_member
+):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    assert invoice.invoice_ticket_link is None
+
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_member)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link is None
+
+
+@pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, program_manager_org_user_admin):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    assert invoice.invoice_ticket_link is None
+
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
+    messages = list(get_messages(response.wsgi_request))
+    assert len(messages) == 1
+    assert str(messages[0]) == "Invoice ticket link saved!"
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link == "https://www.home.com"
+
+
+@pytest.mark.django_db
+def test_update_invoice_invoice_ticket_link_switch_check(client, program_manager_org, program_manager_org_user_admin):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    assert invoice.invoice_ticket_link is None
+
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+    invoice.refresh_from_db()
+    assert invoice.invoice_ticket_link is None
+
+
+@pytest.mark.django_db
+@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
+def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org, program_manager_org_user_admin):
+    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
+    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
+
+    client.force_login(program_manager_org_user_admin)
+    response = client.post(url, data={"invoice_ticket_link": "https://www."})
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == _invoice_review_url(program_manager_org, opportunity, invoice)
+    messages = list(get_messages(response.wsgi_request))
+    assert len(messages) == 1
+    assert str(messages[0]) == "Error: * invoice_ticket_link\n  * Enter a valid URL."
+
+
+def _setup_data_for_invoice_ticket_link_update(program_manager_org):
+    program = ProgramFactory(organization=program_manager_org, budget=10000)
+    program_manager_org_opportunity = ManagedOpportunityFactory(
+        program=program,
+        organization=program_manager_org,
+        managed=True,
+    )
+    return (
+        PaymentInvoiceFactory(
+            opportunity=program_manager_org_opportunity,
+        ),
+        program_manager_org_opportunity,
+    )
+
+
+def _update_invoice_invoice_ticket_link_url(org, opportunity, invoice):
+    return reverse(
+        "opportunity:update_invoice_invoice_ticket_link",
+        args=(org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+    )
+
+
+def _invoice_review_url(org, opportunity, invoice):
+    return reverse(
+        "opportunity:invoice_review",
+        args=(org.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+    )
+
+
+@pytest.mark.django_db
+class TestInvoiceUpdateStatus:
+    @pytest.fixture
+    def nm_organization(self):
+        return OrgWithUsersFactory()
+
+    @pytest.fixture
+    def pm_organization(self):
+        return ProgramManagerOrgWithUsersFactory()
+
+    @pytest.fixture
+    def nm_user_admin(self, nm_organization):
+        return nm_organization.memberships.filter(role="admin").first().user
+
+    @pytest.fixture
+    def pm_user_admin(self, pm_organization):
+        return pm_organization.memberships.filter(role="admin").first().user
+
+    def _create_invoice(self, nm_organization, pm_organization, status, invoice_number):
+        """
+        Helper method to create an invoice for a managed opportunity.
+        Creates a Program (by PM org) with an Opportunity managed by NM org.
+        """
+        program = ProgramFactory(organization=pm_organization, budget=10000)
+        opportunity = ManagedOpportunityFactory(
+            program=program,
+            organization=nm_organization,
+            managed=True,
+        )
+        invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            status=status,
+            service_delivery=True,
+            amount=100.00,
+            invoice_number=invoice_number,
+            date=date(2025, 11, 1),
+        )
+        return opportunity, invoice
+
+    def test_nm_submit_to_pm_success(self, client, nm_organization, nm_user_admin, pm_organization):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-001"
+        )
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.PENDING_PM_REVIEW,
+                "description": "Ready for PM review",
+            },
+        )
+
+        assert response.status_code == 204
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
+        assert invoice.description == "Ready for PM review"
+
+    def test_nm_cancel_invoice_success(self, client, nm_organization, nm_user_admin, pm_organization):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-002"
+        )
+
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.CANCELLED_BY_NM,
+                "description": "Cancelled due to errors",
+            },
+        )
+
+        assert response.status_code == 204
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.CANCELLED_BY_NM
+        assert invoice.description == "Cancelled due to errors"
+
+        completed_work_1.refresh_from_db()
+        completed_work_2.refresh_from_db()
+        assert completed_work_1.invoice is None
+        assert completed_work_2.invoice is None
+
+    def test_pm_approve_for_payment_success(self, client, nm_organization, pm_organization, pm_user_admin):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-001"
+        )
+
+        client.force_login(pm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.READY_TO_PAY,
+                "description": "Approved for payment",
+            },
+        )
+
+        assert response.status_code == 204
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.READY_TO_PAY
+        assert invoice.description == "Approved for payment"
+
+    def test_pm_reject_invoice_success(self, client, nm_organization, pm_organization, pm_user_admin):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-002"
+        )
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        completed_work_1 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+        completed_work_2 = CompletedWorkFactory(opportunity_access=access, payment_unit=payment_unit, invoice=invoice)
+
+        client.force_login(pm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.REJECTED_BY_PM,
+                "description": "Rejected due to discrepancies",
+            },
+        )
+
+        assert response.status_code == 204
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.REJECTED_BY_PM
+        assert invoice.description == "Rejected due to discrepancies"
+
+        completed_work_1.refresh_from_db()
+        completed_work_2.refresh_from_db()
+        assert completed_work_1.invoice is None
+        assert completed_work_2.invoice is None
+
+    def test_invalid_status_transition(self, client, nm_organization, nm_user_admin, pm_organization):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-003"
+        )
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.READY_TO_PAY,
+                "description": "Invalid transition",
+            },
+        )
+
+        assert response.status_code == 400
+        assert b"Invalid status transition" in response.content
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
+
+    def test_nm_cannot_perform_pm_actions(self, client, nm_organization, nm_user_admin, pm_organization):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_PM_REVIEW, "INV-PM-003"
+        )
+
+        client.force_login(nm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(nm_organization.slug, opportunity.id))
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.READY_TO_PAY,
+                "description": "Trying PM action as NM",
+            },
+        )
+
+        assert response.status_code == 400
+        assert b"You do not have permission to perform this action." in response.content
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_PM_REVIEW
+
+    def test_pm_cannot_perform_nm_actions(self, client, nm_organization, pm_organization, pm_user_admin):
+        opportunity, invoice = self._create_invoice(
+            nm_organization, pm_organization, InvoiceStatus.PENDING_NM_REVIEW, "INV-NM-004"
+        )
+
+        client.force_login(pm_user_admin)
+        url = reverse("opportunity:invoice_update_status", args=(pm_organization.slug, opportunity.id))
+        # Try to submit to PM (NM action)
+        response = client.post(
+            url,
+            data={
+                "invoice_id": invoice.payment_invoice_id,
+                "new_status": InvoiceStatus.PENDING_PM_REVIEW,
+                "description": "Trying NM action as PM",
+            },
+        )
+
+        assert response.status_code == 400
+        assert b"You do not have permission to perform this action." in response.content
+        invoice.refresh_from_db()
+        assert invoice.status == InvoiceStatus.PENDING_NM_REVIEW
+
+
+@pytest.mark.django_db
+class TestVerificationFlagsConfig:
+    def url(self, org_slug, opp_id):
+        return reverse("opportunity:verification_flags_config", args=(org_slug, opp_id))
+
+    def base_post_data(self):
+        return {
+            "duplicate": True,
+            "gps": True,
+            "location": 100,
+            "deliver_unit-TOTAL_FORMS": 0,
+            "deliver_unit-INITIAL_FORMS": 0,
+            "deliver_unit-MIN_NUM_FORMS": 0,
+            "deliver_unit-MAX_NUM_FORMS": 0,
+            "form_json-TOTAL_FORMS": 1,
+            "form_json-INITIAL_FORMS": 0,
+            "form_json-MIN_NUM_FORMS": 0,
+            "form_json-MAX_NUM_FORMS": 1000,
+        }
+
+    def test_get_unmanaged_opportunity(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.get(self.url(organization.slug, opportunity.opportunity_id))
+        assert response.status_code == HTTPStatus.OK
+
+    def test_post_unmanaged_opportunity_saves(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
+        assert response.status_code == HTTPStatus.OK
+        messages = [m.message for m in get_messages(response.wsgi_request)]
+        assert "Verification flags saved successfully." in messages
+
+    def test_get_managed_opportunity_as_non_pm_redirects(
+        self, client, organization, org_user_member, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        client.force_login(org_user_member)
+        response = client.get(self.url(organization.slug, managed_opp.opportunity_id))
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse("opportunity:detail", args=(organization.slug, managed_opp.opportunity_id))
+
+    def test_get_managed_opportunity_as_pm(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self.url(program_manager_org.slug, managed_opp.opportunity_id))
+        assert response.status_code == HTTPStatus.OK
+
+    def test_post_managed_opportunity_as_pm_saves(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        OpportunityVerificationFlagsFactory(opportunity=managed_opp)
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, managed_opp.opportunity_id), data=self.base_post_data()
+        )
+        assert response.status_code == HTTPStatus.OK
+        messages = [m.message for m in get_messages(response.wsgi_request)]
+        assert "Verification flags saved successfully." in messages
+
+    def test_post_creates_form_json_rule(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        data = self.base_post_data()
+        data.update(
+            {
+                "form_json-0-name": "Rule 1",
+                "form_json-0-question_path": "data/answer",
+                "form_json-0-question_value": "yes",
+                "form_json-0-deliver_unit": [deliver_unit.pk],
+            }
+        )
+        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=data)
+        assert response.status_code == HTTPStatus.OK
+        rule = FormJsonValidationRules.objects.get(opportunity=opportunity)
+        assert rule.name == "Rule 1"
+        assert rule.question_path == "data/answer"
+        assert rule.question_value == "yes"
+        assert list(rule.deliver_unit.all()) == [deliver_unit]
+
+    def test_post_creates_form_json_rule_for_managed_opp(
+        self, client, program_manager_org, program_manager_org_user_admin
+    ):
+        client.force_login(program_manager_org_user_admin)
+
+        program = ProgramFactory(organization=program_manager_org)
+        nm_org = OrganizationFactory()
+        opportunity = ManagedOpportunityFactory(organization=nm_org, program=program)
+
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=None)
+        data = self.base_post_data()
+        data.update(
+            {
+                "form_json-0-name": "Rule 1",
+                "form_json-0-question_path": "data/answer",
+                "form_json-0-question_value": "yes",
+                "form_json-0-deliver_unit": [deliver_unit.pk],
+            }
+        )
+        response = client.post(self.url(program_manager_org.slug, opportunity.opportunity_id), data=data)
+        assert response.status_code == HTTPStatus.OK
+        rule = FormJsonValidationRules.objects.get(opportunity=opportunity)
+
+        assert rule.name == "Rule 1"
+        assert rule.question_path == "data/answer"
+        assert rule.question_value == "yes"
+        assert list(rule.deliver_unit.all()) == [deliver_unit]
+
+    def test_post_empty_form_json_does_not_create_rule(self, client, organization, opportunity, org_user_member):
+        client.force_login(org_user_member)
+        response = client.post(self.url(organization.slug, opportunity.opportunity_id), data=self.base_post_data())
+        assert response.status_code == HTTPStatus.OK
+        assert not FormJsonValidationRules.objects.filter(opportunity=opportunity).exists()
+
+
+@pytest.mark.django_db
+class TestDeleteFormJsonRule:
+    def url(self, org_slug, opp_id, pk):
+        return reverse("opportunity:delete_form_json_rule", args=(org_slug, opp_id, pk))
+
+    def test_delete_form_json_rule_success(self, client, organization, opportunity, org_user_member):
+        rule = FormJsonValidationRulesFactory(opportunity=opportunity)
+        client.force_login(org_user_member)
+        response = client.delete(
+            self.url(organization.slug, opportunity.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert not FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+    def test_delete_form_json_rule_managed_opp_as_non_pm(
+        self, client, organization, org_user_member, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        rule = FormJsonValidationRulesFactory(opportunity=managed_opp)
+        client.force_login(org_user_member)
+        response = client.delete(
+            self.url(organization.slug, managed_opp.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        assert response.url == reverse("opportunity:detail", args=(organization.slug, managed_opp.opportunity_id))
+        assert FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+    def test_delete_form_json_rule_managed_opp_as_pm(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        rule = FormJsonValidationRulesFactory(opportunity=managed_opp)
+        client.force_login(program_manager_org_user_admin)
+        response = client.delete(
+            self.url(program_manager_org.slug, managed_opp.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert not FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+    def test_delete_form_json_rule_wrong_http_method(self, client, organization, opportunity, org_user_member):
+        rule = FormJsonValidationRulesFactory(opportunity=opportunity)
+        client.force_login(org_user_member)
+        response = client.post(
+            self.url(organization.slug, opportunity.opportunity_id, rule.form_json_validation_rules_id)
+        )
+        assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+        assert FormJsonValidationRules.objects.filter(
+            form_json_validation_rules_id=rule.form_json_validation_rules_id
+        ).exists()
+
+
+def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_admin: User):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    payment = PaymentFactory(opportunity_access=access)
+
+    assert Payment.objects.filter(opportunity_access=access).exists()
+
+    with mock.patch(
+        "commcare_connect.opportunity.tasks.send_push_notification_task.delay"
+    ) as mock_send_push_notification_task:
+        client.force_login(org_user_admin)
+        url = reverse(
+            "opportunity:payment_delete",
+            args=(
+                opportunity.organization.slug,
+                opportunity.opportunity_id,
+                access.opportunity_access_id,
+                payment.payment_id,
+            ),
+        )
+        response = client.post(url)
+        assert response.status_code == 302
+        assert not Payment.objects.filter(opportunity_access=access).exists()
+        mock_send_push_notification_task.assert_called_once()
+        call_args = mock_send_push_notification_task.call_args
+        assert call_args.kwargs["extra_data"]["opportunity_id"] == str(opportunity.id)
+        assert call_args.kwargs["extra_data"]["payment_id"] == str(payment.id)
+        assert call_args.kwargs["extra_data"]["opportunity_uuid"] == str(opportunity.opportunity_id)
+        assert call_args.kwargs["extra_data"]["payment_uuid"] == str(payment.payment_id)
+
+    response = client.post(url)
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_visit_export_count_boundary_dates(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
+):
+    from_date = date.today() - timedelta(days=5)
+    to_date = date.today() - timedelta(days=1)
+
+    on_from_date = datetime.combine(from_date, time.min, tzinfo=UTC)
+    on_to_date = datetime.combine(to_date, time.max, tzinfo=UTC)
+    before_from_date = datetime.combine(from_date - timedelta(days=1), time.max, tzinfo=UTC)
+    after_to_date = datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC)
+
+    UserVisitFactory(opportunity=opportunity, visit_date=on_from_date)
+    UserVisitFactory(opportunity=opportunity, visit_date=on_to_date)
+    UserVisitFactory(opportunity=opportunity, visit_date=before_from_date)
+    UserVisitFactory(opportunity=opportunity, visit_date=after_to_date)
+
+    url = reverse("opportunity:visit_export_count", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.get(
+        url,
+        data={
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+        },
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert "2 visits match your filters." in response.content.decode()

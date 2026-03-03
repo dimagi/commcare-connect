@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% load i18n static %}
+
+{% block css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'bundles/css/mapbox.css' %}">
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script src="{% static 'bundles/js/mapbox-bundle.js' %}"></script>
+{% endblock javascript %}
+
+{% block content %}
+<div class="min-w-0">
+    <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
+
+    <!-- Top header section -->
+    <header class="mb-2">
+        <div class="w-full rounded-lg bg-brand-indigo p-5 shadow-sm sm:p-6">
+            <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                <div class="min-w-0 flex-1">
+                    <h1 class="multi-line-clamp-2 text-2xl font-semibold text-white break-words hyphens-auto leading-snug">
+                        {{ opportunity.name }}
+                    </h1>
+                </div>
+
+                <div class="w-full border-t border-white/20 pt-4 lg:w-auto lg:border-t-0 lg:border-l lg:border-white/20 lg:pl-8 lg:pt-0">
+                    <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-3xl xl:grid-cols-6">
+                        {% for metric in metrics %}
+                            <div class="rounded-md border border-brand-sky/30 bg-brand-cornflower-blue/25 p-3 text-center">
+                                <div class="text-xl font-semibold text-white">
+                                    {{ metric.value|default:"--" }}
+                                </div>
+                                <div class="mt-0.5 text-xs text-white/80">{{ metric.name }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    <div x-data="{
+            showCreateGroupBtn: {{ show_workarea_groups_btn|yesno:'true,false' }},
+            showUploadBtn: {{ show_area_btn|yesno:'true,false' }},
+            showUploading: {{ task_id|yesno:'true,false' }},
+            showSeeResult: false,
+            showImportWorkAreaModal: false
+        }" class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
+        <div class="flex items-end space-x-2 w-full">
+            {% if task_id %}
+                <div hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+                    hx-vals='{"task_id": "{{ task_id }}"}' hx-trigger="load" hx-target="#modal-container">
+                </div>
+            {% endif %}
+            {% if show_area_btn %}
+                <button x-show="showUploadBtn" type="button"
+                    hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+                    hx-target="#modal-container" class="button button-md primary-dark">
+                    <i class="fa-solid fa-upload"></i>{% translate "Upload Work Areas" %}
+                </button>
+            {% endif %}
+            {% if show_workarea_groups_btn %}
+                <button x-show="showCreateGroupBtn" type="button" id="create-work-area-groups" class="button button-md primary-dark ">
+                    <i class="fa-solid fa-play"></i> {% translate "Create Work Area Groups" %}
+                </button>
+            {% endif %}
+        </div>
+        <div x-show="showImportWorkAreaModal" id="modal-container"></div>
+    </div>
+
+    <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]" x-data="mapController()">
+        <!-- Map section -->
+        <div id="map-wrapper" x-ref="mapContainer" class="relative min-w-0 flex-1 shadow-md h-[max(calc(100vh-300px),200px)] xl:h-full">
+            <div id="map" class="w-full h-full"></div>
+        </div>
+
+        <!-- Sidebars (stacked) -->
+        <div class="w-full xl:w-96 shrink-0 flex flex-col gap-2 min-h-0 xl:h-full">
+            <aside id="sidebar" class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0">
+                <h2 class="text-lg font-semibold mb-2">{% translate "Settings" %}</h2>
+                <!-- Sidebar content goes here -->
+            </aside>
+
+            <aside id="right-sidebar" class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0">
+                <h2 class="text-lg font-semibold mb-2">{% translate "Modify Work Area" %}</h2>
+                <!-- Outer sidebar content goes here -->
+            </aside>
+        </div>
+    </div>
+</div>
+{% include "microplanning/map_handler.html" %}
+{% endblock %}

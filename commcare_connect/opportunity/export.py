@@ -28,6 +28,7 @@ from commcare_connect.opportunity.tables import (
     UserVisitReviewTable,
     UserVisitTable,
 )
+from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 
 
 class UserVisitExporter:
@@ -95,6 +96,7 @@ class UserVisitExporter:
 
     def get_dataset(self, from_date, to_date, status: list[VisitValidationStatus]) -> Dataset:
         """Get dataset of all user visits for an opportunity."""
+        from_date, to_date = get_start_end_date_range_with_time(from_date, to_date)
         user_visits = UserVisit.objects.filter(
             opportunity=self.opportunity, visit_date__gte=from_date, visit_date__lte=to_date
         )
@@ -120,6 +122,7 @@ class UserVisitExporter:
 def export_user_visit_review_data(
     opportunity: Opportunity, from_date, to_date, status: list[VisitReviewStatus]
 ) -> Dataset:
+    from_date, to_date = get_start_end_date_range_with_time(from_date, to_date)
     user_visits = UserVisit.objects.filter(
         opportunity=opportunity,
         review_created_on__isnull=False,

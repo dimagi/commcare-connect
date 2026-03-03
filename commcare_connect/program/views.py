@@ -3,11 +3,12 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
-from django.db.models.functions import Concat
+from django.db.models.functions import Coalesce, Concat
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.timezone import now
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, UpdateView
 
@@ -61,6 +62,10 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
     form_class = ProgramForm
     template_name = "program/program_form.html"
 
+    slug_field = "program_id"
+    slug_url_kwarg = "pk"
+    pk_url_kwarg = None
+
     def get_object(self, queryset=None):
         pk = self.kwargs.get("pk")
         if pk:
@@ -95,7 +100,7 @@ class ProgramCreateOrUpdate(ProgramManagerMixin, UpdateView):
         context = super().get_context_data(**kwargs)
 
         if self.object:
-            context["hx_post_url"] = reverse("program:edit", args=[self.request.org.slug, self.object.pk])
+            context["hx_post_url"] = reverse("program:edit", args=[self.request.org.slug, self.object.program_id])
             context["hx_target"] = "#program-edit-form"
         else:
             context["hx_post_url"] = reverse("program:init", args=[self.request.org.slug])
@@ -117,11 +122,11 @@ class ManagedOpportunityList(ProgramManagerMixin, ListView):
         ordering = self.request.GET.get("sort", self.default_ordering)
         ordering = ALLOWED_ORDERINGS.get(ordering, self.default_ordering)
         program_id = self.kwargs.get("pk")
-        return ManagedOpportunity.objects.filter(program_id=program_id).order_by(ordering)
+        return ManagedOpportunity.objects.filter(program__program_id=program_id).order_by(ordering)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["program"] = get_object_or_404(Program, id=self.kwargs.get("pk"))
+        context["program"] = get_object_or_404(Program, program_id=self.kwargs.get("pk"))
         context["opportunity_init_url"] = reverse(
             "program:opportunity_init", kwargs={"org_slug": self.request.org.slug, "pk": self.kwargs.get("pk")}
         )
@@ -134,7 +139,7 @@ class ManagedOpportunityViewMixin:
 
     def dispatch(self, request, *args, **kwargs):
         try:
-            self.program = Program.objects.get(pk=self.kwargs.get("pk"))
+            self.program = Program.objects.get(program_id=self.kwargs.get("pk"))
         except Program.DoesNotExist:
             messages.error(request, "Program not found.")
             return redirect(reverse("program:home", kwargs={"org_slug": request.org.slug}))
@@ -169,7 +174,7 @@ def invite_organization(request, org_slug, pk):
     if organization == request.org:
         messages.error(request, f"Cannot invite organization {organization.name} to program.")
         return redirect(reverse("program:applications", kwargs={"org_slug": org_slug, "pk": pk}))
-    program = get_object_or_404(Program, id=pk)
+    program = get_object_or_404(Program, program_id=pk)
 
     obj, created = ProgramApplication.objects.update_or_create(
         program=program,
@@ -182,9 +187,9 @@ def invite_organization(request, org_slug, pk):
     )
 
     if created:
-        messages.success(request, "Organization invited successfully!")
+        messages.success(request, _("Workspace invited successfully!"))
     else:
-        messages.info(request, "The invitation for this organization has been updated.")
+        messages.info(request, _("The invitation for this workspace has been updated."))
 
     send_program_invite_email(obj.id)
 
@@ -216,7 +221,9 @@ def manage_application(request, org_slug, application_id, action):
 @require_POST
 @org_admin_required
 def apply_or_decline_application(request, application_id, action, org_slug=None, pk=None):
-    application = get_object_or_404(ProgramApplication, id=application_id, status=ProgramApplicationStatus.INVITED)
+    application = get_object_or_404(
+        ProgramApplication, program_application_id=application_id, status=ProgramApplicationStatus.INVITED
+    )
 
     redirect_url = reverse("program:home", kwargs={"org_slug": org_slug})
 
@@ -234,7 +241,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     }
 
     if action not in action_map:
-        return redirect(redirect_url)
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
 
     application.status = action_map[action]["status"]
     application.modified_by = request.user.email
@@ -243,7 +250,7 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     if action == "apply":
         send_program_invite_applied_email(application.id)
 
-    return redirect(redirect_url)
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 @org_viewer_required
@@ -255,7 +262,21 @@ def program_home(request, org_slug):
 
 
 def program_manager_home(request, org):
-    programs = (
+    program_applications_prefetch = Prefetch(
+        "programapplication_set",
+        queryset=ProgramApplication.objects.select_related("organization").annotate(
+            current_budget=Coalesce(
+                Sum(
+                    "program__managedopportunity__total_budget",
+                    filter=Q(program__managedopportunity__organization=F("organization")),
+                ),
+                Value(0),
+            )
+        ),
+        to_attr="applications_with_budget",
+    )
+
+    programs_qs = (
         Program.objects.filter(organization=org)
         .order_by("-start_date")
         .annotate(
@@ -274,16 +295,24 @@ def program_manager_home(request, org):
                 filter=Q(programapplication__status=ProgramApplicationStatus.ACCEPTED),
             ),
         )
+        .prefetch_related(program_applications_prefetch)
     )
+
+    programs = list(programs_qs)
+    for program in programs:
+        applications = getattr(program, "applications_with_budget", [])
+        program.allocated_budget = sum(application.current_budget for application in applications)
 
     pending_review_data = (
         UserVisit.objects.filter(
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.pending,
             opportunity__managed=True,
-            opportunity__managedopportunity__program__in=programs,
+            opportunity__managedopportunity__program__in=programs_qs,
         )
-        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .values(
+            "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
+        )
         .annotate(count=Count("id"))
     )
 
@@ -292,11 +321,20 @@ def program_manager_home(request, org):
     pending_payments_data = (
         PaymentInvoice.objects.filter(
             opportunity__managed=True,
-            opportunity__managedopportunity__program__in=programs,
+            opportunity__managedopportunity__program__in=programs_qs,
             payment__isnull=True,
         )
-        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
-        .annotate(count=Concat(F("opportunity__currency"), Value(" "), Sum("amount"), output_field=CharField()))
+        .values(
+            "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
+        )
+        .annotate(
+            count=Concat(
+                F("opportunity__currency__code"),
+                Value(" "),
+                Sum("amount"),
+                output_field=CharField(),
+            )
+        )
     )
 
     pending_payments = _make_recent_activity_data(
@@ -325,6 +363,7 @@ def network_manager_home(request, org):
             status=F("programapplication__status"),
             invite_date=F("programapplication__date_created"),
             application_id=F("programapplication__id"),
+            application_program_application_id=F("programapplication__program_application_id"),
         )
         .prefetch_related(
             Prefetch(
@@ -343,7 +382,9 @@ def network_manager_home(request, org):
             opportunity__managed=True,
             opportunity__organization=org,
         )
-        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .values(
+            "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
+        )
         .annotate(count=Count("id", distinct=True))
     )
     pending_review = _make_recent_activity_data(pending_review_data, org.slug, "opportunity:worker_deliver")
@@ -359,6 +400,7 @@ def network_manager_home(request, org):
     pending_payments_data = [
         {
             "opportunity__id": data.id,
+            "opportunity__opportunity_id": data.opportunity_id,
             "opportunity__name": data.name,
             "opportunity__organization__name": data.organization.name,
             "count": f"{data.currency_code} {data.pending_payment}",
@@ -376,7 +418,9 @@ def network_manager_home(request, org):
             user_visit_date=Max("uservisit__visit_date"),
         )
         .filter(Q(user_visit_date__lte=three_days_before) | Q(learn_module_date__lte=three_days_before))
-        .values("opportunity__id", "opportunity__name", "opportunity__organization__name")
+        .values(
+            "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
+        )
         .annotate(count=Count("id", distinct=True))
     )
     inactive_workers = _make_recent_activity_data(inactive_workers_data, org.slug, "opportunity:worker_list")
@@ -405,7 +449,9 @@ def _make_recent_activity_data(
             "opportunity__name": row["opportunity__name"],
             "opportunity__organization__name": row["opportunity__organization__name"],
             "count": row.get("count", 0),
-            "url": reverse(url_slug, kwargs={"org_slug": org_slug, opportunity_slug: row["opportunity__id"]}),
+            "url": reverse(
+                url_slug, kwargs={"org_slug": org_slug, opportunity_slug: row["opportunity__opportunity_id"]}
+            ),
             "small_text": small_text,
         }
         for row in data

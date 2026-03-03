@@ -50,11 +50,12 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django.views.generic import CreateView, DetailView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
+from django_weasyprint.views import WeasyTemplateResponse
 from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import AUTOMATED_INVOICES, INVOICE_REVIEW, USER_VISIT_FILTERS
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, USER_VISIT_FILTERS
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -78,7 +79,7 @@ from commcare_connect.opportunity.forms import (
     OpportunityUserInviteForm,
     OpportunityVerificationFlagsConfigForm,
     PaymentExportForm,
-    PaymentInvoiceForm,
+    PaymentInvoiceInvoiceTicketLinkForm,
     PaymentUnitForm,
     SendMessageMobileUsersForm,
     VisitExportForm,
@@ -161,6 +162,7 @@ from commcare_connect.opportunity.utils.completed_work import (
     get_uninvoiced_completed_works_qs,
     get_uninvoiced_visit_items,
 )
+from commcare_connect.opportunity.utils.invoice import InvoiceWorkflow
 from commcare_connect.opportunity.visit_import import (
     ImportException,
     bulk_update_catchments,
@@ -169,19 +171,22 @@ from commcare_connect.opportunity.visit_import import (
     update_payment_accrued,
 )
 from commcare_connect.organization.decorators import (
+    OrganizationProgramManagerMixin,
     OrganizationUserMemberRoleMixin,
     OrganizationUserMixin,
     opportunity_required,
     org_admin_required,
     org_member_required,
+    org_program_manager_required,
     org_viewer_required,
 )
 from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
-from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
-from commcare_connect.utils.celery import CELERY_TASK_SUCCESS, get_task_progress_message
+from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.datetime import get_start_end_date_range_with_time
+from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import PAGE_SIZE_OPTIONS, get_duration_min, get_validated_page_size
@@ -190,7 +195,7 @@ EXPORT_ROW_LIMIT = 10_000
 
 
 def get_opportunity_or_404(pk, org_slug):
-    opp = get_object_or_404(Opportunity, id=pk)
+    opp = get_object_by_uuid_or_int(Opportunity.objects.all(), str(pk), uuid_field="opportunity_id")
 
     if (opp.organization and opp.organization.slug == org_slug) or (
         opp.managed and opp.managedopportunity.program.organization.slug == org_slug
@@ -250,12 +255,12 @@ class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
         return OpportunityData(org, is_program_manager, self.get_filter_values()).get_data()
 
 
-class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
+class OpportunityInit(OrganizationProgramManagerMixin, CreateView):
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitForm
 
     def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -275,7 +280,7 @@ class OpportunityInit(OrganizationUserMemberRoleMixin, CreateView):
         return response
 
 
-class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_init.html"
     form_class = OpportunityInitUpdateForm
@@ -291,7 +296,7 @@ class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationUserMemberRoleMi
         return super().get_form_class()
 
     def get_success_url(self):
-        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.id))
+        return reverse("opportunity:add_payment_units", args=(self.request.org.slug, self.object.opportunity_id))
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -318,7 +323,7 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
     form_class = OpportunityChangeForm
 
     def get_success_url(self):
-        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.id))
+        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.opportunity_id))
 
     def form_valid(self, form):
         opportunity = form.instance
@@ -334,7 +339,7 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
         return response
 
 
-class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, UpdateView):
+class OpportunityFinalize(OpportunityObjectMixin, OrganizationProgramManagerMixin, UpdateView):
     model = Opportunity
     template_name = "opportunity/opportunity_finalize.html"
     form_class = OpportunityFinalizeForm
@@ -343,11 +348,13 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         self.object = self.get_object()
         if self.object.paymentunit_set.count() == 0:
             messages.warning(request, "Please configure payment units before setting budget")
-            return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.id)
+            return redirect(
+                "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.opportunity_id
+            )
         return super().dispatch(request, *args, **kwargs)
 
     def get_success_url(self):
-        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.id))
+        return reverse("opportunity:detail", args=(self.request.org.slug, self.object.opportunity_id))
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -355,13 +362,18 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         payment_units = opportunity.paymentunit_set.all()
         budget_per_user = 0
         payment_units_max_total = 0
+        cumulative_pu_budget_per_user = 0
+
         for pu in payment_units:
             budget_per_user += pu.amount * pu.max_total
             payment_units_max_total += pu.max_total
+            cumulative_pu_budget_per_user += (pu.amount + pu.org_amount) * pu.max_total
+
         kwargs["budget_per_user"] = budget_per_user
         kwargs["current_start_date"] = opportunity.start_date
         kwargs["opportunity"] = opportunity
         kwargs["payment_units_max_total"] = payment_units_max_total
+        kwargs["cumulative_pu_budget_per_user"] = cumulative_pu_budget_per_user
         return kwargs
 
     def form_valid(self, form):
@@ -374,10 +386,6 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationUserMemberRoleMixi
         if start_date:
             opportunity.start_date = start_date
 
-        if opportunity.managed:
-            ManagedOpportunity.objects.filter(id=opportunity.id).update(
-                org_pay_per_visit=form.cleaned_data["org_pay_per_visit"]
-            )
         response = super().form_valid(form)
         return response
 
@@ -390,7 +398,9 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
         self.object = self.get_object()
         if not self.object.is_setup_complete:
             messages.warning(request, "Please complete the opportunity setup to view it")
-            return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.id)
+            return redirect(
+                "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.opportunity_id
+            )
         context = self.get_context_data(object=self.object, request=request)
         return self.render_to_response(context)
 
@@ -410,7 +420,10 @@ class OpportunityDashboard(OpportunityObjectMixin, OrganizationUserMixin, Detail
 
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
-            {"title": object.name, "url": reverse("opportunity:detail", args=(request.org.slug, object.id))},
+            {
+                "title": object.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, object.opportunity_id)),
+            },
         ]
 
         context["resources"] = [
@@ -477,7 +490,7 @@ def export_user_visits(request, org_slug, opp_id):
     to_date = form.cleaned_data["to_date"]
     status = form.cleaned_data["status"]
     flatten = form.cleaned_data["flatten_form_data"]
-    result = generate_visit_export.delay(opp_id, from_date, to_date, status, export_format, flatten)
+    result = generate_visit_export.delay(request.opportunity.pk, from_date, to_date, status, export_format, flatten)
     redirect_url = reverse("opportunity:worker_deliver", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -496,30 +509,23 @@ def review_visit_export(request, org_slug, opp_id):
     to_date = form.cleaned_data["to_date"]
     status = form.cleaned_data["status"]
 
-    result = generate_review_visit_export.delay(opp_id, from_date, to_date, status, export_format)
+    result = generate_review_visit_export.delay(request.opportunity.pk, from_date, to_date, status, export_format)
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
 
 @org_member_required
 @require_GET
 def export_status(request, org_slug, task_id):
-    task = AsyncResult(task_id)
-    task_meta = task._get_task_meta()
-    opportunity_id = task_meta.get("args")[0]
-    # Make sure opportunity exists for the given org_slug
-    get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
-    status = task_meta.get("status")
-    progress = {"complete": status == CELERY_TASK_SUCCESS, "message": get_task_progress_message(task)}
-    if status == "FAILURE":
-        progress["error"] = task_meta.get("result")
-    return render(
+    def ownership_check(request, task_meta):
+        opportunity_id = task_meta.get("args")[0]
+        get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
+
+    return render_export_status(
         request,
-        "components/upload_progress_bar.html",
-        {
-            "task_id": task_id,
-            "current_time": now().microsecond,
-            "progress": progress,
-        },
+        task_id=task_id,
+        download_url=reverse("opportunity:download_export", args=(org_slug, task_id)),
+        export_status_url=reverse("opportunity:export_status", args=(org_slug, task_id)),
+        ownership_check=ownership_check,
     )
 
 
@@ -527,16 +533,12 @@ def export_status(request, org_slug, task_id):
 @require_GET
 def download_export(request, org_slug, task_id):
     task_meta = AsyncResult(task_id)._get_task_meta()
-    saved_filename = task_meta.get("result")
     opportunity_id = task_meta.get("args")[0]
     opportunity = get_opportunity_or_404(org_slug=org_slug, pk=opportunity_id)
     op_slug = slugify(opportunity.name)
-    export_format = saved_filename.split(".")[-1]
-    filename = f"{org_slug}_{op_slug}_export.{export_format}"
-
-    export_file = storages["default"].open(saved_filename)
-    return FileResponse(
-        export_file, as_attachment=True, filename=filename, content_type=TableExport.FORMATS[export_format]
+    return download_export_file(
+        task_id=task_id,
+        filename_without_ext=f"{org_slug}_{op_slug}_export",
     )
 
 
@@ -595,17 +597,19 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
     if form.is_valid():
         form.save()
 
-        additional_visits = form.cleaned_data.get("additional_visits")
+        number_of_visits = form.cleaned_data.get("number_of_visits")
         selected_users = form.cleaned_data.get("selected_users")
         end_date = form.cleaned_data.get("end_date")
+        adjustment_type = form.cleaned_data.get("adjustment_type")
         message_parts = []
 
-        if additional_visits and selected_users:
-            visit_text = f"{additional_visits} visit{'s' if additional_visits != 1 else ''}"
+        if number_of_visits and selected_users:
+            visit_text = f"visits by {number_of_visits}"
             user_text = f"{len(selected_users)} worker{'s' if len(selected_users) != 1 else ''}"
-            message_parts.append(f"Added {visit_text} to {user_text}.")
+            change_type = "Increased" if adjustment_type == form.AdjustmentType.INCREASE_VISITS else "Decreased"
+            message_parts.append(f"{change_type} {visit_text} for {user_text}.")
             if not request.opportunity.managed:
-                message_parts.append(f"Budget increased by {form.budget_increase:.2f}.")
+                message_parts.append(f"Budget {change_type.lower()} by {abs(form.budget_change):.2f}.")
 
         if end_date:
             message_parts.append(f"Extended opportunity end date to {end_date} for selected workers.")
@@ -632,7 +636,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
         {
             "title": request.opportunity.name,
-            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.pk)),
+            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
         },
         {
             "title": "Add budget",
@@ -702,7 +706,7 @@ def export_users_for_payment(request, org_slug, opp_id):
         return redirect("opportunity:worker_payments", org_slug, opp_id)
 
     export_format = form.cleaned_data["format"]
-    result = generate_payment_export.delay(opp_id, export_format)
+    result = generate_payment_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:worker_payments", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -755,7 +759,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         data=request.POST or None,
         payment_units=request.opportunity.paymentunit_set.filter(parent_payment_unit__isnull=True).all(),
         org_slug=org_slug,
-        opportunity_id=request.opportunity.pk,
+        opportunity=request.opportunity,
     )
     if form.is_valid():
         form.instance.opportunity = request.opportunity
@@ -776,16 +780,20 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
         claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=request.opportunity)
         for claim in claims:
             OpportunityClaimLimit.create_claim_limits(request.opportunity, claim)
-        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.id)
+        return redirect(
+            "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+        )
     elif request.POST:
         messages.error(request, "Invalid Data")
-        return redirect("opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.id)
+        return redirect(
+            "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+        )
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
         {
             "title": request.opportunity.name,
-            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.pk)),
+            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
         },
         {
             "title": "Payment unit",
@@ -806,7 +814,7 @@ def add_payment_unit(request, org_slug=None, opp_id=None):
 @org_member_required
 @opportunity_required
 def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
-    payment_unit = get_object_or_404(PaymentUnit, id=pk, opportunity=request.opportunity)
+    payment_unit = get_object_or_404(PaymentUnit, payment_unit_id=pk, opportunity=request.opportunity)
     deliver_units = DeliverUnit.objects.filter(
         Q(payment_unit__isnull=True) | Q(payment_unit=payment_unit) | Q(payment_unit__opportunity__active=False),
         app=request.opportunity.deliver_app,
@@ -828,7 +836,7 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
         data=request.POST or None,
         payment_units=opportunity_payment_units,
         org_slug=org_slug,
-        opportunity_id=request.opportunity.pk,
+        opportunity=request.opportunity,
     )
     if form.is_valid():
         form.save()
@@ -851,13 +859,13 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
             parent_payment_unit=None
         )
         messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
-        return redirect("opportunity:finalize", org_slug=request.org.slug, opp_id=request.opportunity.id)
+        return redirect("opportunity:finalize", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id)
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
         {
             "title": request.opportunity.name,
-            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.pk)),
+            "url": reverse("opportunity:detail", args=(request.org.slug, request.opportunity.opportunity_id)),
         },
         {
             "title": "Payment unit",
@@ -884,7 +892,7 @@ def export_user_status(request, org_slug, opp_id):
         return redirect("opportunity:worker_list", request.org.slug, opp_id)
 
     export_format = form.cleaned_data["format"]
-    result = generate_user_status_export.delay(opp_id, export_format)
+    result = generate_user_status_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:worker_list", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -898,7 +906,7 @@ def export_deliver_status(request, org_slug, opp_id):
         return redirect("opportunity:detail", request.org.slug, opp_id)
 
     export_format = form.cleaned_data["format"]
-    result = generate_deliver_status_export.delay(opp_id, export_format)
+    result = generate_deliver_status_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -907,9 +915,28 @@ def export_deliver_status(request, org_slug, opp_id):
 @opportunity_required
 @require_POST
 def payment_delete(request, org_slug=None, opp_id=None, access_id=None, pk=None):
-    opportunity_access = get_object_or_404(OpportunityAccess, pk=access_id, opportunity=request.opportunity)
-    payment = get_object_or_404(Payment, opportunity_access=opportunity_access, pk=pk)
+    opportunity_access = get_object_or_404(
+        OpportunityAccess, opportunity_access_id=access_id, opportunity=request.opportunity
+    )
+    payment = get_object_or_404(Payment, opportunity_access=opportunity_access, payment_id=pk)
+    payment_id = payment.id
+    payment_uuid = payment.payment_id
     payment.delete()
+
+    send_push_notification_task.delay(
+        [opportunity_access.user_id],
+        _("Payment updated"),
+        _("There has been an adjustment to your earnings for {}.").format(opportunity_access.opportunity.name),
+        extra_data={
+            "opportunity_status": "delivery",
+            "action": "ccc_generic_opportunity",
+            "key": "payment_rollback",
+            "opportunity_id": str(request.opportunity.id),
+            "payment_id": str(payment_id),
+            "opportunity_uuid": str(request.opportunity.opportunity_id),
+            "payment_uuid": str(payment_uuid),
+        },
+    )
     return redirect("opportunity:worker_payments", org_slug, opp_id)
 
 
@@ -934,7 +961,7 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
         {
             "title": request.opportunity.name,
-            "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.id)),
+            "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
         },
         {"title": "Send Message", "url": request.path},
     ]
@@ -1101,7 +1128,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
         {
             "title": request.opportunity.name,
-            "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.id)),
+            "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
         },
         {"title": "Verification Flags Config", "url": request.path},
     ]
@@ -1124,8 +1151,13 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
 @require_http_methods(["DELETE"])
 @opportunity_required
 def delete_form_json_rule(request, org_slug=None, opp_id=None, pk=None):
-    form_json_rule = FormJsonValidationRules.objects.get(
-        opportunity=opp_id, pk=pk, opportunity__organization=request.org
+    if request.opportunity.managed and not request.is_opportunity_pm:
+        return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
+
+    form_json_rule = get_object_or_404(
+        FormJsonValidationRules,
+        opportunity=request.opportunity,
+        form_json_validation_rules_id=pk,
     )
     form_json_rule.delete()
     return HttpResponse(status=200)
@@ -1153,7 +1185,7 @@ def export_completed_work(request, org_slug, opp_id):
         return redirect("opportunity:detail", request.org.slug, opp_id)
 
     export_format = form.cleaned_data["format"]
-    result = generate_work_status_export.delay(opp_id, export_format)
+    result = generate_work_status_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -1179,7 +1211,7 @@ def update_completed_work_status_import(request, org_slug=None, opp_id=None):
 @opportunity_required
 @require_POST
 def suspend_user(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, id=pk)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=pk)
     access.suspended = True
     access.suspension_date = now()
     access.suspension_reason = request.POST.get("reason", "")
@@ -1189,14 +1221,14 @@ def suspend_user(request, org_slug=None, opp_id=None, pk=None):
     remove_opportunity_access_cache(access.user, access.opportunity)
 
     url = reverse("opportunity:user_visits_list", args=(org_slug, opp_id))
-    return redirect(f"{url}?user={access.user_id}")
+    return redirect(f"{url}?user={access.user.user_id}")
 
 
 @require_POST
 @org_member_required
 @opportunity_required
 def revoke_user_suspension(request, org_slug=None, opp_id=None, pk=None):
-    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, id=pk)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=pk)
     access.suspended = False
     access.save()
     remove_opportunity_access_cache(access.user, access.opportunity)
@@ -1238,7 +1270,7 @@ def export_catchment_area(request, org_slug, opp_id):
         return redirect("opportunity:detail", request.org.slug, opp_id)
 
     export_format = form.cleaned_data["format"]
-    result = generate_catchment_area_export.delay(opp_id, export_format)
+    result = generate_catchment_area_export.delay(request.opportunity.pk, export_format)
     redirect_url = reverse("opportunity:detail", args=(request.org.slug, opp_id))
     return redirect(f"{redirect_url}?export_task_id={result.id}")
 
@@ -1265,7 +1297,7 @@ def opportunity_user_invite(request, org_slug=None, opp_id=None):
     if form.is_valid():
         users = form.cleaned_data["users"]
         if users:
-            add_connect_users.delay(users, request.opportunity.id)
+            add_connect_users.delay(users, request.opportunity.pk)
         return redirect("opportunity:detail", request.org.slug, opp_id)
     return render(
         request,
@@ -1364,7 +1396,9 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = PaymentInvoice.objects.filter(**filter_kwargs).order_by("date")
+    queryset = PaymentInvoice.objects.filter(**filter_kwargs).select_related("exchange_rate").order_by("date")
+    if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1397,11 +1431,20 @@ def invoice_list(request, org_slug, opp_id):
         {
             "opportunity": request.opportunity,
             "table": table,
-            "new_invoice_url": reverse("opportunity:invoice_create", args=(org_slug, opp_id)),
+            "new_invoice_url": reverse(
+                "opportunity:invoice_create",
+                args=(org_slug, request.opportunity.opportunity_id),
+            ),
             "path": [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-                {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opp_id))},
+                {
+                    "title": request.opportunity.name,
+                    "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
+                },
+                {
+                    "title": "Invoices",
+                    "url": reverse("opportunity:invoice_list", args=(org_slug, request.opportunity.opportunity_id)),
+                },
             ],
         },
     )
@@ -1410,6 +1453,7 @@ def invoice_list(request, org_slug, opp_id):
 class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateView):
     model = PaymentInvoice
     template_name = "opportunity/invoice_create.html"
+    form_class = AutomatedPaymentInvoiceForm
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1423,22 +1467,22 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
                 == PaymentInvoice.InvoiceType.service_delivery,
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                    {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
-                    {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.id))},
+                    {
+                        "title": opportunity.name,
+                        "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
+                    },
+                    {
+                        "title": "Invoices",
+                        "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)),
+                    },
                     {
                         "title": self.breadcrumb_title,
-                        "url": reverse("opportunity:invoice_create", args=(org_slug, opportunity.id)),
+                        "url": reverse("opportunity:invoice_create", args=(org_slug, opportunity.opportunity_id)),
                     },
                 ],
             }
         )
         return context
-
-    @property
-    def form_class(self):
-        if waffle.switch_is_active(AUTOMATED_INVOICES):
-            return AutomatedPaymentInvoiceForm
-        return PaymentInvoiceForm
 
     @property
     def breadcrumb_title(self):
@@ -1463,13 +1507,15 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
-        kwargs["status"] = InvoiceStatus.SUBMITTED
-        if waffle.switch_is_active(AUTOMATED_INVOICES):
-            kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
+        else:
+            kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
+        kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
 
     def get_success_url(self):
-        return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().id))
+        return reverse("opportunity:invoice_list", args=(self.request.org.slug, self.get_opportunity().opportunity_id))
 
 
 class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailView):
@@ -1482,7 +1528,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         opportunity = self.get_opportunity()
         return get_object_or_404(
             PaymentInvoice,
-            id=self.kwargs.get("pk"),
+            payment_invoice_id=self.kwargs.get("pk"),
             opportunity_id=opportunity.id,
         )
 
@@ -1497,16 +1543,29 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 "form": self.get_form(),
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
+                "updates_to_mark_as_paid_workflow_switch": switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW),
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                    {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
-                    {"title": "Invoices", "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.id))},
+                    {
+                        "title": opportunity.name,
+                        "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
+                    },
+                    {
+                        "title": "Invoices",
+                        "url": reverse("opportunity:invoice_list", args=(org_slug, opportunity.opportunity_id)),
+                    },
                     {
                         "title": self.breadcrumb_title,
-                        "url": reverse("opportunity:invoice_review", args=(org_slug, opportunity.id, invoice.pk)),
+                        "url": reverse(
+                            "opportunity:invoice_review",
+                            args=(org_slug, opportunity.opportunity_id, invoice.payment_invoice_id),
+                        ),
                     },
                 ],
             }
+        )
+        context["show_payment_invoice_invoice_ticket_link_form"] = (
+            switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW) and self.request.is_opportunity_pm
         )
         return context
 
@@ -1518,14 +1577,6 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
             if invoice.service_delivery
             else PaymentInvoice.InvoiceType.custom
         )
-
-        if not waffle.switch_is_active(AUTOMATED_INVOICES):
-            return PaymentInvoiceForm(
-                instance=invoice,
-                opportunity=opportunity,
-                invoice_type=invoice_type,
-                read_only=True,
-            )
 
         line_items_table = None
         if invoice.service_delivery:
@@ -1547,10 +1598,53 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         return _("Review Custom Invoice")
 
 
+@org_program_manager_required
+@opportunity_required
+@require_POST
+def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
+    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        raise Http404(_("Feature unavailable"))
+
+    invoice = get_object_or_404(
+        PaymentInvoice,
+        payment_invoice_id=invoice_id,
+        opportunity=request.opportunity,
+    )
+
+    form = PaymentInvoiceInvoiceTicketLinkForm(request.POST)
+    if form.is_valid():
+        invoice.invoice_ticket_link = form.cleaned_data["invoice_ticket_link"]
+        invoice.save(update_fields=["invoice_ticket_link"])
+        messages.success(request, _("Invoice ticket link saved!"))
+    else:
+        messages.error(request, _("Error: {errors}").format(errors=form.errors.as_text()))
+    return redirect("opportunity:invoice_review", org_slug, opp_id, invoice_id)
+
+
+@org_member_required
+@opportunity_required
+def download_invoice(request, org_slug, opp_id, invoice_id):
+    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        raise Http404(_("Invoice download feature is not available"))
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+    return WeasyTemplateResponse(
+        request=request,
+        template="opportunity/invoice_download.html",
+        context={"invoice": invoice},
+        content_type="application/pdf",
+        filename=f"invoice_{invoice_id}.pdf",
+    )
+
+
 @org_member_required
 @opportunity_required
 @require_POST
-def submit_invoice(request, org_slug, opp_id):
+def invoice_update_status(request, org_slug, opp_id):
+    """
+    Update invoice status. Handles multiple status transitions based on user role:
+    - Network Manager: PENDING_NM_REVIEW -> PENDING_PM_REVIEW (submit to PM) or CANCELLED_BY_NM (cancel)
+    - Program Manager: PENDING_PM_REVIEW -> READY_TO_PAY (approve for payment) or REJECTED_BY_PM (reject)
+    """
     if not (request.opportunity.managed and request.org_membership):
         return HttpResponse(
             status=302,
@@ -1558,20 +1652,29 @@ def submit_invoice(request, org_slug, opp_id):
         )
 
     invoice_id = request.POST.get("invoice_id")
-    notes = request.POST.get("notes")
-    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, pk=invoice_id)
-    if invoice.status != InvoiceStatus.PENDING:
-        return HttpResponseBadRequest("Only invoices with status 'Pending' can be submitted for approval.")
+    description = request.POST.get("description")
+    new_status = request.POST.get("new_status")
 
-    invoice.status = InvoiceStatus.SUBMITTED
+    if new_status not in InvoiceStatus.values:
+        return HttpResponseBadRequest(_("Invalid invoice status."))
+
+    invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
+
+    role = "program_manager" if request.is_opportunity_pm else "network_manager"
+    valid, error = InvoiceWorkflow.validate_transition(invoice.status, new_status, role)
+    if error:
+        return HttpResponseBadRequest(error)
+
+    invoice.status = new_status
     if invoice.service_delivery:
-        invoice.notes = notes
-        invoice.save(update_fields=["status", "notes"])
+        invoice.description = description
+        invoice.save(update_fields=["status", "description"])
+        if new_status in [InvoiceStatus.CANCELLED_BY_NM, InvoiceStatus.REJECTED_BY_PM]:
+            invoice.unlink_completed_works()
     else:
         invoice.save(update_fields=["status"])
-    messages.success(
-        request, _("Invoice %(invoice_number)s submitted for approval.") % {"invoice_number": invoice.invoice_number}
-    )
+
+    messages.success(request, InvoiceWorkflow.get_status_update_message(new_status, invoice.invoice_number))
 
     return HttpResponse(
         status=204,
@@ -1582,20 +1685,28 @@ def submit_invoice(request, org_slug, opp_id):
 @org_member_required
 @opportunity_required
 @require_POST
-def invoice_approve(request, org_slug, opp_id):
+def invoice_pay(request, org_slug, opp_id):
     if not request.opportunity.managed or not (request.org_membership and request.org_membership.is_program_manager):
         return HttpResponse(
             status=302,
             headers={"HX-Redirect": reverse("opportunity:detail", args=[org_slug, opp_id])},
         )
     invoice_ids = request.POST.getlist("pk")
-    invoices = PaymentInvoice.objects.filter(opportunity=request.opportunity, pk__in=invoice_ids, payment__isnull=True)
+    invoices = PaymentInvoice.objects.filter(
+        opportunity=request.opportunity, payment_invoice_id__in=invoice_ids, payment__isnull=True
+    )
 
     paid_invoice_ids = []
     payments = []
+    required_status = (
+        InvoiceStatus.READY_TO_PAY
+        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
+        else InvoiceStatus.PENDING_PM_REVIEW
+    )
     for inv in invoices:
-        if inv.status != InvoiceStatus.SUBMITTED:
-            return HttpResponseBadRequest(_("Only submitted invoice can be approved."))
+        if inv.status != required_status:
+            label = InvoiceStatus.get_label(required_status)
+            return HttpResponseBadRequest(_("Only {} invoice can be approved.").format(label))
         paid_invoice_ids.append(inv.id)
         payments.append(
             Payment(
@@ -1605,12 +1716,12 @@ def invoice_approve(request, org_slug, opp_id):
                 invoice=inv,
             )
         )
-        inv.status = InvoiceStatus.APPROVED
+        inv.status = InvoiceStatus.PAID
         inv.save(update_fields=["status"])
 
     Payment.objects.bulk_create(payments)
 
-    transaction.on_commit(partial(send_invoice_paid_mail.delay, request.opportunity.id, paid_invoice_ids))
+    transaction.on_commit(partial(send_invoice_paid_mail.delay, request.opportunity.pk, paid_invoice_ids))
     if paid_invoice_ids:
         messages.success(request, _("Invoice(s) successfully marked as paid."))
     redirect_url = reverse("opportunity:invoice_list", args=(org_slug, opp_id))
@@ -1699,7 +1810,7 @@ def resend_user_invites(request, org_slug, opp_id):
         found_user_list = fetch_users(not_found_phone_numbers)
         for found_user in found_user_list:
             not_found_phone_numbers.remove(found_user.phone_number)
-            update_user_and_send_invite(found_user, opp_id)
+            update_user_and_send_invite(found_user, request.opportunity.pk)
             resent_count += 1
 
     event = Event(
@@ -1747,7 +1858,7 @@ def sync_deliver_units(request, org_slug, opp_id):
     status = HTTPStatus.OK
     message = "Delivery unit sync completed."
     try:
-        create_learn_modules_and_deliver_units(opp_id)
+        create_learn_modules_and_deliver_units(request.opportunity.pk)
     except AppNoBuildException:
         status = HTTPStatus.BAD_REQUEST
         message = "Failed to retrieve updates. No available build at the moment."
@@ -1779,7 +1890,7 @@ def user_visit_verification(request, org_slug, opp_id):
         )
         filtered_queryset = filter_set.qs
         selected_user_id_raw = cleaned_data.get("user")
-        selected_user_id = int(selected_user_id_raw) if selected_user_id_raw else None
+        selected_user_id = str(selected_user_id_raw) if selected_user_id_raw else None
         selected_flags = set(cleaned_data.get("flags") or [])
     else:
         filters_applied_count = 0
@@ -1790,7 +1901,7 @@ def user_visit_verification(request, org_slug, opp_id):
     selected_opportunity_access = None
     if selected_user_id:
         selected_opportunity_access = (
-            OpportunityAccess.objects.filter(opportunity=opportunity, user_id=selected_user_id)
+            OpportunityAccess.objects.filter(opportunity=opportunity, user__user_id=selected_user_id)
             .select_related("user")
             .first()
         )
@@ -2099,7 +2210,7 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
 @org_viewer_required
 @opportunity_required
 def user_visit_details(request, org_slug, opp_id, pk):
-    user_visit = get_object_or_404(UserVisit, pk=pk, opportunity=request.opportunity)
+    user_visit = get_object_or_404(UserVisit, user_visit_id=pk, opportunity=request.opportunity)
     verification_flags_config = request.opportunity.opportunityverificationflags
 
     serializer = XFormSerializer(data=user_visit.form_json)
@@ -2141,7 +2252,7 @@ def user_visit_details(request, org_slug, opp_id, pk):
                 lat_val__range=(lat - lat_delta, lat + lat_delta),
                 lon_val__range=(lon - lon_delta, lon + lon_delta),
             )
-            .select_related("user")
+            .select_related("user", "opportunity")
         )
 
         for loc in qs:
@@ -2158,7 +2269,11 @@ def user_visit_details(request, org_slug, opp_id, pk):
                         "visit_date": loc.visit_date,
                         "url": reverse(
                             "opportunity:user_visit_details",
-                            kwargs={"org_slug": request.org.slug, "opp_id": loc.opportunity_id, "pk": loc.pk},
+                            kwargs={
+                                "org_slug": request.org.slug,
+                                "opp_id": loc.opportunity.opportunity_id,
+                                "pk": loc.user_visit_id,
+                            },
                         ),
                     }
                     form = (visit_info, dist, other_lat, other_lon, precision)
@@ -2218,7 +2333,7 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
         if referer:
             path = urlparse(referer).path
             for tab in self.tabs:
-                if path.endswith(reverse(tab["url_name"], args=(org_slug, opportunity.id))):
+                if path.endswith(reverse(tab["url_name"], args=(org_slug, opportunity.opportunity_id))):
                     is_tab_navigation = True
                     break
         return is_tab_navigation
@@ -2244,7 +2359,7 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
 
         # build urls with params
         for tab in self.tabs:
-            url = reverse(tab["url_name"], args=(org_slug, opportunity.id))
+            url = reverse(tab["url_name"], args=(org_slug, opportunity.opportunity_id))
             if tab["key"] == self.active_tab:
                 tab_params = params
             else:
@@ -2283,10 +2398,13 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
         path.extend(
             [
                 {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-                {"title": opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opportunity.id))},
+                {
+                    "title": opportunity.name,
+                    "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
+                },
                 {
                     "title": "Connect Workers",
-                    "url": reverse("opportunity:worker_list", args=(org_slug, opportunity.id)),
+                    "url": reverse("opportunity:worker_list", args=(org_slug, opportunity.opportunity_id)),
                 },
             ]
         )
@@ -2329,7 +2447,7 @@ class WorkerLearnView(BaseWorkerListView):
 
     def get_table(self, opportunity, org_slug):
         data = get_worker_learn_table_data(opportunity)
-        table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opportunity.id)
+        table = WorkerLearnTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
 
@@ -2348,17 +2466,17 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
             "import_export_delivery_urls": {
                 "export_url_for_pm": reverse(
                     "opportunity:review_visit_export",
-                    args=(org_slug, opportunity.id),
+                    args=(org_slug, opportunity.opportunity_id),
                 ),
                 "export_url_for_nm": reverse(
                     "opportunity:visit_export",
-                    args=(org_slug, opportunity.id),
+                    args=(org_slug, opportunity.opportunity_id),
                 ),
                 "import_url": reverse(
                     "opportunity:review_visit_import"
                     if (opportunity.managed and self.request.is_opportunity_pm)
                     else "opportunity:visit_import",
-                    args=(org_slug, opportunity.id),
+                    args=(org_slug, opportunity.opportunity_id),
                 ),
             },
             "import_visit_helper_text": _(
@@ -2375,7 +2493,7 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
 
     def get_table(self, opportunity, org_slug):
         data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values())
-        table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opportunity.id)
+        table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
 
@@ -2403,7 +2521,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             total_paid_d=get_payment_subquery(),
             confirmed_paid_d=get_payment_subquery(True),
         )
-        table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opportunity.id)
+        table = WorkerPaymentsTable(query_set, org_slug=org_slug, opp_id=opportunity.opportunity_id)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
 
@@ -2411,7 +2529,7 @@ class WorkerPaymentsView(BaseWorkerListView):
 @org_viewer_required
 @opportunity_required
 def worker_learn_status_view(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=access_id)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=access_id)
     completed_modules = CompletedModule.objects.filter(opportunity_access=access)
     total_duration = datetime.timedelta(0)
     for cm in completed_modules:
@@ -2440,7 +2558,7 @@ def worker_learn_status_view(request, org_slug, opp_id, access_id):
 @org_viewer_required
 @opportunity_required
 def worker_payment_history(request, org_slug, opp_id, access_id):
-    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=access_id)
+    access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=access_id)
     queryset = Payment.objects.filter(opportunity_access=access).order_by("-date_paid")
     payments = queryset.values("date_paid", "amount")
 
@@ -2457,7 +2575,7 @@ def worker_flag_counts(request, org_slug, opp_id):
     access_id = request.GET.get("access_id", None)
     filters = {}
     if access_id:
-        access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, pk=access_id)
+        access = get_object_or_404(OpportunityAccess, opportunity=request.opportunity, opportunity_access_id=access_id)
         filters["completed_work__opportunity_access"] = access
     else:
         filters["completed_work__opportunity_access__opportunity"] = request.opportunity
@@ -2466,7 +2584,7 @@ def worker_flag_counts(request, org_slug, opp_id):
     payment_unit_id = request.GET.get("payment_unit_id")
     filters["completed_work__status"] = status
     if payment_unit_id:
-        filters["completed_work__payment_unit__id"] = payment_unit_id
+        filters["completed_work__payment_unit__payment_unit_id"] = payment_unit_id
 
     visits = UserVisit.objects.filter(**filters)
     all_flags = [flag for visit in visits.all() for flag in visit.flags]
@@ -2525,15 +2643,14 @@ class OpportunityPaymentUnitTableView(OrganizationUserMixin, OpportunityObjectMi
             and self.request.org_membership
             and not self.request.org_membership.is_viewer
         ) or program_manager
-        if self.get_opportunity().managed:
-            kwargs["org_pay_per_visit"] = self.get_opportunity().org_pay_per_visit
+        kwargs["is_program_manager"] = program_manager
         return kwargs
 
 
 @org_viewer_required
 @opportunity_required
 def opportunity_funnel_progress(request, org_slug, opp_id):
-    result = get_opportunity_funnel_progress(opp_id)
+    result = get_opportunity_funnel_progress(request.opportunity.pk)
 
     accepted = result.workers_invited - result.pending_invites
 
@@ -2597,7 +2714,7 @@ def opportunity_funnel_progress(request, org_slug, opp_id):
 @org_viewer_required
 @opportunity_required
 def opportunity_worker_progress(request, org_slug, opp_id):
-    result = get_opportunity_worker_progress(opp_id)
+    result = get_opportunity_worker_progress(request.opportunity.pk)
 
     def safe_percent(numerator, denominator):
         percent = (numerator / denominator) * 100 if denominator else 0
@@ -2682,7 +2799,7 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
         "text_color": "!text-orange-500",
     }
 
-    stats = get_opportunity_delivery_progress(request.opportunity.id)
+    stats = get_opportunity_delivery_progress(request.opportunity.pk)
 
     worker_list_url = reverse("opportunity:worker_list", args=(org_slug, opp_id))
     status_url = f"{worker_list_url}?{urlencode({'sort': '-last_active'})}"
@@ -2912,7 +3029,7 @@ def download_invoice_line_items(request, org_slug, opp_id):
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
     if invoice_id:
         deliveries = CompletedWork.objects.filter(
-            invoice_id=invoice_id,
+            invoice__payment_invoice_id=invoice_id,
             opportunity_access__opportunity=request.opportunity,
         )
     else:
@@ -2931,16 +3048,21 @@ def download_invoice_line_items(request, org_slug, opp_id):
 @org_member_required
 @opportunity_required
 def visit_export_count(request, org_slug, opp_id):
-    from_date = request.GET.get("from_date")
-    if not from_date:
+    from_date_str = request.GET.get("from_date")
+    if not from_date_str:
         return HttpResponse({"error": "Please select a From Date first."}, status=400)
 
-    to_date = request.GET.get("to_date") or datetime.date.today()
+    to_date_str = request.GET.get("to_date")
     status = request.GET.get("status", None)
     review_export = request.GET.get("review_export") == "true"
     format = request.GET.get("format", "csv")
 
-    visits = UserVisit.objects.filter(opportunity_id=opp_id, visit_date__gte=from_date, visit_date__lte=to_date)
+    from_date = datetime.date.fromisoformat(from_date_str)
+    to_date = datetime.date.fromisoformat(to_date_str) if to_date_str else datetime.date.today()
+    from_date, to_date = get_start_end_date_range_with_time(from_date, to_date)
+    visits = UserVisit.objects.filter(
+        opportunity_id=request.opportunity.pk, visit_date__gte=from_date, visit_date__lte=to_date
+    )
 
     if review_export:
         visits = visits.filter(review_created_on__isnull=False)

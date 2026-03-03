@@ -19,6 +19,7 @@ from django.db.models import (
     Q,
     Subquery,
     Sum,
+    UUIDField,
     Value,
     When,
 )
@@ -287,7 +288,8 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
         queryset = queryset.annotate(
-            payment_unit_id=Value(payment_unit.pk),
+            payment_unit_id=Value(payment_unit.pk, output_field=IntegerField()),
+            payment_unit_payment_unit_id=Value(payment_unit.payment_unit_id, output_field=UUIDField()),
             payment_unit=Value(payment_unit.name, output_field=CharField()),
             total_visits=Coalesce(total_visits_sq, Value(None, output_field=IntegerField())),  # Optional
             _last_visit_val=Coalesce(last_visit_sq, Value(None, output_field=DateTimeField())),
@@ -668,6 +670,7 @@ def get_opportunity_delivery_progress(opp_id):
             CompletedWork.objects.filter(
                 opportunity_access__opportunity_id=OuterRef("pk"),
                 uservisit__review_status=VisitReviewStatus.pending,
+                uservisit__status=VisitValidationStatus.approved,
                 uservisit__review_created_on__isnull=False,
             )
             .values("opportunity_access__opportunity_id")
@@ -684,6 +687,7 @@ def get_opportunity_delivery_progress(opp_id):
                 opportunity_access__opportunity_id=OuterRef("pk"),
                 uservisit__review_status=VisitReviewStatus.pending,
                 uservisit__review_created_on__isnull=False,
+                uservisit__status=VisitValidationStatus.approved,
                 uservisit__review_created_on__gte=yesterday,
             )
             .values("opportunity_access__opportunity_id")

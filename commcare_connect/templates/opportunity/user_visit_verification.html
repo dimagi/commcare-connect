@@ -7,245 +7,236 @@
 {% load crispy_forms_tags %}
 
 {% block css %}
-  {{ block.super }}
-  <link rel="stylesheet" href="{% static 'bundles/css/mapbox.css' %}">
-  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'bundles/css/mapbox.css' %}">
+<link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 {% endblock %}
 
 {% block javascript %}
-  {{ block.super }}
-  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-  <script src="{% static 'bundles/js/mapbox-bundle.js' %}" defer></script>
+{{ block.super }}
+<script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+<script src="{% static 'bundles/js/mapbox-bundle.js' %}" defer></script>
 {% endblock javascript %}
 
 {% block content %}
-  {% include 'components/breadcrumbs.html' with path=path %}
-  <div class="w-full space-y-4">
-    <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
-      {% if selected_opportunity_access %}
-        {% include "components/worker_page/profile.html" with opportunity_access=selected_opportunity_access %}
+{% include 'components/breadcrumbs.html' with path=path %}
+<div class="w-full space-y-4">
+  <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl">
+    {% if selected_opportunity_access %}
+    {% include "components/worker_page/profile.html" with opportunity_access=selected_opportunity_access %}
+    {% else %}
+    <div class="profile-card w-1/5 h-full flex flex-col justify-center text-white gap-2">
+      <p class="text-sm font-bold text-white/70">{{ opportunity.name }}</p>
+      {% if not selected_opportunity_access %}
+      <p class="text-xs text-white/70">
+        Viewing visits for all workers.
+      </p>
       {% else %}
-        <div class="profile-card w-1/5 h-full flex flex-col justify-center text-white gap-2">
-          <p class="text-sm font-bold text-white/70">{{ opportunity.name }}</p>
-          {% if not selected_opportunity_access %}
-              <p class="text-xs text-white/70">
-                Viewing visits for all workers.
-              </p>
-          {% else %}
-            <p class="text-xs text-white/70">No workers have been added yet.</p>
-          {% endif %}
-        </div>
+      <p class="text-xs text-white/70">No workers have been added yet.</p>
       {% endif %}
-      <div class="grid grid-cols-5 gap-4 w-full">
-        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
-          <div class="flex justify-between items-center">
-            <div class="text-2xl"
-             x-data
-             x-tooltip.raw="Includes all Deliver app forms submitted by this worker across all payment units including duplicates"
-             >{{ counts.total }}</div>
-            <div class="hidden lg:block">
-              <i class="fa-solid fa-file-invoice text-xl"></i>
-            </div>
-          </div>
-          <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Total Deliver Units</span>
+    </div>
+    {% endif %}
+    <div class="grid grid-cols-5 gap-4 w-full">
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl" x-data
+            x-tooltip.raw="Includes all Deliver app forms submitted by this worker across all payment units including duplicates">
+            {{ counts.total }}</div>
+          <div class="hidden lg:block">
+            <i class="fa-solid fa-file-invoice text-xl"></i>
           </div>
         </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Total Deliver Units</span>
+        </div>
+      </div>
 
-        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
-             x-data="{ isOpen: false }">
-          <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ counts.flagged }}</div>
-            <div class="hidden lg:block">
-              <i class="fa-solid fa-flag text-xl"></i>
-            </div>
-          </div>
-          <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Flagged Deliver Units</span>
-            <i class="fa-solid ml-2 cursor-pointer"
-               :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-               @click="isOpen = !isOpen"></i>
-          </div>
-          <div x-show="isOpen"
-               x-cloak
-               @click.outside="isOpen = false"
-               x-transition
-               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-            <span class="text-sm font-medium text-brand-deep-purple">Flagged Info</span>
-            <div class="py-2">
-              <div class="flex justify-between items-center py-3">
-                <span class="text-xs w-27">Name</span>
-                <i class="fa-solid fa-circle-check text-green-600"></i>
-                <i class="fa-solid fa-clock text-gray-300"></i>
-              </div>
-              {% for flag in flagged_info %}
-                <div class="flex justify-between items-center py-3 pr-1">
-                  <span class="text-xs w-25">{{ flag.name }}</span>
-                  <span class="text-xs">{{ flag.approved }}</span>
-                  <span class="text-xs">{{ flag.pending }}</span>
-                </div>
-              {% endfor %}
-            </div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+        x-data="{ isOpen: false }">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ counts.flagged }}</div>
+          <div class="hidden lg:block">
+            <i class="fa-solid fa-flag text-xl"></i>
           </div>
         </div>
-
-        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
-             x-data="{ isOpen: false }">
-          <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ counts.rejected }}</div>
-            <div class="hidden lg:block">
-              <i class="fa-solid fa-thumbs-down text-xl"></i>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Flagged Deliver Units</span>
+          <i class="fa-solid ml-2 cursor-pointer" :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+            @click="isOpen = !isOpen"></i>
+        </div>
+        <div x-show="isOpen" x-cloak @click.outside="isOpen = false" x-transition
+          class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+          <span class="text-sm font-medium text-brand-deep-purple">Flagged Info</span>
+          <div class="py-2">
+            <div class="flex justify-between items-center py-3">
+              <span class="text-xs w-27">Name</span>
+              <i class="fa-solid fa-circle-check text-green-600"></i>
+              <i class="fa-solid fa-clock text-gray-300"></i>
             </div>
-          </div>
-          <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Rejected Deliver Units</span>
-            <i class="fa-solid ml-2 cursor-pointer"
-               :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-               @click="isOpen = !isOpen"></i>
-          </div>
-          <div x-show="isOpen"
-               x-cloak
-               @click.outside="isOpen = false"
-               x-transition
-               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-            <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
-            <!-- Details -->
-            <div class="py-2">
-              {% for flag in flagged_info %}
-                {% if flag.rejected > 0 %}
-                  <div class="flex justify-between items-center py-3">
-                    <span class="text-xs w-27">{{ flag.name }}</span>
-                    <span class="text-xs">{{ flag.rejected }}</span>
-                  </div>
-                {% endif %}
-              {% endfor %}
+            {% for flag in flagged_info %}
+            <div class="flex justify-between items-center py-3 pr-1">
+              <span class="text-xs w-25">{{ flag.name }}</span>
+              <span class="text-xs">{{ flag.approved }}</span>
+              <span class="text-xs">{{ flag.pending }}</span>
             </div>
+            {% endfor %}
           </div>
         </div>
+      </div>
 
-        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
-          <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ payment_accrued_total|intcomma }}</div>
-            <div class="hidden lg:block">
-              <i class="fa-solid fa-money-bill-wave text-xl"></i>
-            </div>
-          </div>
-          <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Accrued Amount ({{ opportunity.currency_code }})</span>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+        x-data="{ isOpen: false }">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ counts.rejected }}</div>
+          <div class="hidden lg:block">
+            <i class="fa-solid fa-thumbs-down text-xl"></i>
           </div>
         </div>
-
-        <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
-             x-data="{ isOpen: false }">
-          <div class="flex justify-between items-center">
-            <div class="text-2xl">{{ total_paid|intcomma }}</div>
-            <div class="hidden lg:block">
-              <i class="fa-solid fa-hand-holding-dollar text-xl"></i>
-            </div>
-          </div>
-          <div class="pt-4 text-sm flex items-center justify-between">
-            <span>Paid Amount ({{ opportunity.currency_code }})</span>
-          {% if last_payment_details %}
-            <i class="fa-solid ml-2 cursor-pointer"
-               :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-               @click="isOpen = !isOpen"></i>
-          </div>
-          <div x-show="isOpen"
-               x-cloak
-               @click.outside="isOpen = false"
-               x-transition
-               class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-            <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
-            <div class="flex flex-col py-5 gap-1.5">
-              <span class="text-xs text-brand-blue-light">Last Paid</span>
-              <span class="text-xs text-brand-deep-purple">{{ last_payment_details.date_paid|date }}</span>
-              <span class="text-xl text-green-600">{{ last_payment_details.amount }}</span>
-              {% if last_payment_details.opportunity_access %}
-                <span class="text-xs text-brand-deep-purple">
-                  {{ last_payment_details.opportunity_access.user.name }}
-                </span>
-              {% endif %}
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Rejected Deliver Units</span>
+          <i class="fa-solid ml-2 cursor-pointer" :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+            @click="isOpen = !isOpen"></i>
+        </div>
+        <div x-show="isOpen" x-cloak @click.outside="isOpen = false" x-transition
+          class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+          <span class="text-sm font-medium text-brand-deep-purple">Rejection Details</span>
+          <!-- Details -->
+          <div class="py-2">
+            {% for flag in flagged_info %}
+            {% if flag.rejected > 0 %}
+            <div class="flex justify-between items-center py-3">
+              <span class="text-xs w-27">{{ flag.name }}</span>
+              <span class="text-xs">{{ flag.rejected }}</span>
             </div>
             {% endif %}
+            {% endfor %}
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="w-full grid grid-cols-10 gap-2">
-      <div class="col-span-6" hx-indicator="#loading-spinner">
-        <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.id %}{% querystring %}"
-              hx-trigger="load" hx-swap="outerHTML"></div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ payment_accrued_total|intcomma }}</div>
+          <div class="hidden lg:block">
+            <i class="fa-solid fa-money-bill-wave text-xl"></i>
+          </div>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Accrued Amount ({{ opportunity.currency_code }})</span>
+        </div>
       </div>
 
-      <div class="col-span-4 relative" hx-indicator="#visit-loading-indicator">
-        <div class="absolute inset-0">
-          <div class="flex flex-col gap-2 h-full">
-            <div class="flex items-center justify-between px-4 bg-white rounded-lg shadow-sm h-14">
-              <p class="text-sm font-normal text-brand-deep-purple">Details</p>
-              {% if user_visit_filters_enabled %}
-                <div class="relative" x-data="{ showFilterModal: false }">
-                  <button type="button" @click="showFilterModal = true" class="relative button-icon">
-                    <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
-                    {% if filters_applied_count %}
-                      <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
-                        {{ filters_applied_count }}
-                      </span>
-                    {% endif %}
-                  </button>
-                  <div x-show="showFilterModal" class="modal-backdrop" style="display: none;">
-                    <div class="modal">
-                      <div class="header text-lg font-semibold text-brand-deep-purple flex justify-between items-center">
-                        <h1>Filters</h1>
-                        <button @click="showFilterModal = false">
-                          <i class="fa-solid fa-xmark text-xl"></i>
-                        </button>
-                      </div>
-
-                      <form class="content space-y-4" method="get" id="filterForm">
-                        <div class="modal-body space-y-4">
-                          {% crispy filter_form %}
-                        </div>
-                      </form>
-
-                      <div class="footer flex justify-end gap-3">
-                        <button type="button" @click="showFilterModal = false" class="button button-md outline-style">
-                          Close
-                        </button>
-                        <button type="submit" form="filterForm" @click="showFilterModal = false" class="button button-md primary-dark">
-                          Apply
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              {% endif %}
-            </div>
-            <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
-              <div id="visit-details" hx-on:before-swap="removeMap()" hx-on::after-settle="loadMap()">
-                <div class="flex justify-items-center align-items-center">
-                  <span>Please select a visit to load details.</span>
-                </div>
-              </div>
-              <div id="visit-loading-indicator" role="status"
-                   class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
-                <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
-                <span class="sr-only">Loading...</span>
-              </div>
-            </div>
-            <div id="visit-actions"></div>
+      <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg"
+        x-data="{ isOpen: false }">
+        <div class="flex justify-between items-center">
+          <div class="text-2xl">{{ total_paid|intcomma }}</div>
+          <div class="hidden lg:block">
+            <i class="fa-solid fa-hand-holding-dollar text-xl"></i>
           </div>
+        </div>
+        <div class="pt-4 text-sm flex items-center justify-between">
+          <span>Paid Amount ({{ opportunity.currency_code }})</span>
+          {% if last_payment_details %}
+          <i class="fa-solid ml-2 cursor-pointer" :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
+            @click="isOpen = !isOpen"></i>
+        </div>
+        <div x-show="isOpen" x-cloak @click.outside="isOpen = false" x-transition
+          class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
+          <span class="text-sm font-medium text-brand-deep-purple">Payment Details</span>
+          <div class="flex flex-col py-5 gap-1.5">
+            <span class="text-xs text-brand-blue-light">Last Paid</span>
+            <span class="text-xs text-brand-deep-purple">{{ last_payment_details.date_paid|date }}</span>
+            <span class="text-xl text-green-600">{{ last_payment_details.amount }}</span>
+            {% if last_payment_details.opportunity_access %}
+            <span class="text-xs text-brand-deep-purple">
+              {{ last_payment_details.opportunity_access.user.name }}
+            </span>
+            {% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
-  {% endblock %}
 
-  {% block inline_javascript %}
-  {{ block.super }}
-  <script type="text/javascript">
-    document.addEventListener('alpine:init', () => {
-      Alpine.data('visitVerification', (initialTab, defaultPage) => ({
+  <div class="w-full grid grid-cols-10 gap-2">
+    <div class="col-span-6" hx-indicator="#loading-spinner">
+      <div
+        hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
+        hx-trigger="load" hx-swap="outerHTML"></div>
+    </div>
+
+    <div class="col-span-4 relative" hx-indicator="#visit-loading-indicator">
+      <div class="absolute inset-0">
+        <div class="flex flex-col gap-2 h-full">
+          <div class="flex items-center justify-between px-4 bg-white rounded-lg shadow-sm h-14">
+            <p class="text-sm font-normal text-brand-deep-purple">Details</p>
+            {% if user_visit_filters_enabled %}
+            <div class="relative" x-data="{ showFilterModal: false }">
+              <button type="button" @click="showFilterModal = true" class="relative button-icon ga-open-visit-filter">
+                <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+                {% if filters_applied_count %}
+                <span
+                  class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+                  {{ filters_applied_count }}
+                </span>
+                {% endif %}
+              </button>
+              <div x-show="showFilterModal" class="modal-backdrop" style="display: none;">
+                <div class="modal">
+                  <div class="header text-lg font-semibold text-brand-deep-purple flex justify-between items-center">
+                    <h1>Filters</h1>
+                    <button @click="showFilterModal = false">
+                      <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                  </div>
+
+                  <form class="content space-y-4" method="get" id="filterForm">
+                    <div class="modal-body space-y-4">
+                      {% crispy filter_form %}
+                    </div>
+                  </form>
+
+                  <div class="footer flex justify-end gap-3">
+                    <button type="button" @click="showFilterModal = false"
+                      class="button button-md outline-style ga-close-visit-filter">
+                      Close
+                    </button>
+                    <button type="submit" form="filterForm" @click="showFilterModal = false"
+                      class="button button-md primary-dark ga-apply-visit-filter">
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
+            <div id="visit-details" hx-on:before-swap="removeMap()" hx-on::after-settle="loadMap()">
+              <div class="flex justify-items-center align-items-center">
+                <span>Please select a visit to load details.</span>
+              </div>
+            </div>
+            <div id="visit-loading-indicator" role="status"
+              class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+              <span class="sr-only">Loading...</span>
+            </div>
+          </div>
+          <div id="visit-actions"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script type="text/javascript">
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('visitVerification', (initialTab, defaultPage) => ({
       activeTab: initialTab,
       page: defaultPage,
       showBulkApproveModal: false,
@@ -288,7 +279,7 @@
         this.updateVisitStatusMap();
       },
 
-       get selectedStatusCounts() {
+      get selectedStatusCounts() {
         const counts = {
           pending: 0,
           approved: 0,
@@ -327,150 +318,151 @@
           checkboxes.length > 0 && this.selected.length === checkboxes.length;
       },
     }))
+  });
+
+
+
+  let map;
+  function removeMap() { if (map) map?.remove(); }
+  function loadMap() {
+    if (!MapboxUtils.setAccessToken("{{ MAPBOX_TOKEN }}")) return;
+
+    const visit_data = JSON.parse(document.getElementById('visit_data').textContent);
+    const user_forms = JSON.parse(document.getElementById('user_forms').textContent);
+    const other_forms = JSON.parse(document.getElementById('other_forms').textContent);
+
+    map = MapboxUtils.createMap({
+      container: 'user-visit-map',
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [visit_data.lon, visit_data.lat],
+      zoom: 16,
     });
-
-
-
-    let map;
-    function removeMap() { if(map) map?.remove(); }
-    function loadMap() {
-      mapboxgl.accessToken = "{{ MAPBOX_TOKEN }}";
-
-      const visit_data = JSON.parse(document.getElementById('visit_data').textContent);
-      const user_forms = JSON.parse(document.getElementById('user_forms').textContent);
-      const other_forms = JSON.parse(document.getElementById('other_forms').textContent);
-
-      map = new mapboxgl.Map({
-          container: 'user-visit-map',
-          style: 'mapbox://styles/mapbox/streets-v12',
-          center: [visit_data.lon, visit_data.lat],
-          zoom: 16,
+    circles = []
+    const marker = MapboxUtils.createMarker(map, {
+      lng: visit_data.lon,
+      lat: visit_data.lat,
+      color: 'green',
+      popupHtml: `
+          <table><tbody>
+          <tr><th>Name</th><td>${visit_data.entity_name}</td></tr>
+          <tr><th>User</th><td>${visit_data.user__name}</td></tr>
+          <tr><th>Date</th><td>${visit_data.visit_date}</td></tr>
+          <tr><th>Status</th><td>${visit_data.status}</td></tr>
+          </tbody></table>
+          `
+    });
+    marker.getElement().onmouseenter = (event) => {
+      map.setLayoutProperty(
+        'circles',
+        'visibility',
+        'visible'
+      );
+    };
+    marker.getElement().onmouseleave = (event) => {
+      map.setLayoutProperty(
+        'circles',
+        'visibility',
+        'none'
+      );
+    };
+    circles.push(circle([visit_data.lon, visit_data.lat], visit_data.precision, { units: 'meters' }))
+    for (const user_form of user_forms) {
+      const marker = MapboxUtils.createMarker(map, {
+        lng: user_form[3],
+        lat: user_form[2],
+        scale: 0.75,
+        popupHtml: `
+            <table><tbody>
+            <tr><th>Name</th><td>${user_form[0].entity_name}</td></tr>
+            <tr><th>User</th><td>${user_form[0].user__name}</td></tr>
+            <tr><th>Date</th><td>${user_form[0].visit_date}</td></tr>
+            <tr><th>Status</th><td>${user_form[0].status}</td></tr>
+            </tbody></table>
+            <a hx-get="${user_form[0].url}" hx-trigger="click" hx-target="#visit-details>View Form</a>
+            `
       });
-      circles = []
-      const marker = new mapboxgl.Marker({"color": "green"})
-          .setLngLat([visit_data.lon, visit_data.lat])
-          .setPopup(new mapboxgl.Popup().setHTML(
-              `
-              <table><tbody>
-              <tr><th>Name</th><td>${visit_data.entity_name}</td></tr>
-              <tr><th>User</th><td>${visit_data.user__name}</td></tr>
-              <tr><th>Date</th><td>${visit_data.visit_date}</td></tr>
-              <tr><th>Status</th><td>${visit_data.status}</td></tr>
-              </tbody></table>
-              `
-          ))
-          .addTo(map);
       marker.getElement().onmouseenter = (event) => {
-          map.setLayoutProperty(
-              'circles',
-              'visibility',
-              'visible'
-          );
+        map.setLayoutProperty(
+          'circles',
+          'visibility',
+          'visible'
+        );
       };
       marker.getElement().onmouseleave = (event) => {
-          map.setLayoutProperty(
-              'circles',
-              'visibility',
-              'none'
-          );
+        map.setLayoutProperty(
+          'circles',
+          'visibility',
+          'none'
+        );
       };
-      circles.push(circle([visit_data.lon, visit_data.lat], visit_data.precision, {units: 'meters'}))
-      for (const user_form of user_forms) {
-        const marker = new mapboxgl.Marker({"scale": 0.75})
-            .setLngLat([user_form[3], user_form[2]])
-            .setPopup(new mapboxgl.Popup().setHTML(
-                `
-                    <table><tbody>
-                    <tr><th>Name</th><td>${user_form[0].entity_name}</td></tr>
-                    <tr><th>User</th><td>${user_form[0].user__name}</td></tr>
-                    <tr><th>Date</th><td>${user_form[0].visit_date}</td></tr>
-                    <tr><th>Status</th><td>${user_form[0].status}</td></tr>
-                    </tbody></table>
-                    <a hx-get="${user_form[0].url}" hx-trigger="click" hx-target="#visit-details>View Form</a>
-                    `
-            ))
-            .addTo(map);
-       marker.getElement().onmouseenter = (event) => {
-           map.setLayoutProperty(
-               'circles',
-               'visibility',
-               'visible'
-           );
-        };
-        marker.getElement().onmouseleave = (event) => {
-            map.setLayoutProperty(
-                'circles',
-                'visibility',
-                'none'
-            );
-        };
-        circles.push(circle([user_form[3], user_form[2]], user_form[4], {units: 'meters'}))
-      }
-      for (const other_form of other_forms) {
-        const marker = new mapboxgl.Marker({"color": "red", "scale": 0.75})
-            .setLngLat([other_form[3], other_form[2]])
-            .setPopup(new mapboxgl.Popup().setHTML(
-                `
-                    <table><tbody>
-                    <tr><th>Name</th><td>${other_form[0].entity_name}</td></tr>
-                    <tr><th>User</th><td>${other_form[0].user__name}</td></tr>
-                    <tr><th>Date</th><td>${other_form[0].visit_date}</td></tr>
-                    <tr><th>Status</th><td>${other_form[0].status}</td></tr>
-                    </tbody></table>
-                    <a hx-get="${other_form[0].url}" hx-trigger="click" hx-target="#visit-details">View Form</a>
-                    `
-            ))
-            .addTo(map);
-       marker.getElement().onmouseenter = (event) => {
-           map.setLayoutProperty(
-               'circles',
-               'visibility',
-               'visible'
-           );
-        };
-        marker.getElement().onmouseleave = (event) => {
-            map.setLayoutProperty(
-                'circles',
-                'visibility',
-                'none'
-            );
-        };
-        circles.push(circle([other_form[3], other_form[2]], other_form[4], {units: 'meters'}))
-      }
+      circles.push(circle([user_form[3], user_form[2]], user_form[4], { units: 'meters' }))
+    }
+    for (const other_form of other_forms) {
+      const marker = MapboxUtils.createMarker(map, {
+        lng: other_form[3],
+        lat: other_form[2],
+        color: 'red',
+        scale: 0.75,
+        popupHtml: `
+            <table><tbody>
+            <tr><th>Name</th><td>${other_form[0].entity_name}</td></tr>
+            <tr><th>User</th><td>${other_form[0].user__name}</td></tr>
+            <tr><th>Date</th><td>${other_form[0].visit_date}</td></tr>
+            <tr><th>Status</th><td>${other_form[0].status}</td></tr>
+            </tbody></table>
+            <a hx-get="${other_form[0].url}" hx-trigger="click" hx-target="#visit-details">View Form</a>
+            `
+      });
+      marker.getElement().onmouseenter = (event) => {
+        map.setLayoutProperty(
+          'circles',
+          'visibility',
+          'visible'
+        );
+      };
+      marker.getElement().onmouseleave = (event) => {
+        map.setLayoutProperty(
+          'circles',
+          'visibility',
+          'none'
+        );
+      };
+      circles.push(circle([other_form[3], other_form[2]], other_form[4], { units: 'meters' }))
+    }
 
-      map.on('style.load', () => {
-          map.addLayer({
-              "id": "circles",
-              "type": "fill",
-              "source": {
-                  "type": "geojson",
-                  "data": {
-                      "type": "FeatureCollection",
-                      "features": circles,
-                  }
-              },
-              "layout": {
-                  "visibility": "none"
-              },
-              "paint": {
-                  "fill-antialias": true,
-                  "fill-opacity": 0.3,
-                  "fill-color": "yellow",
-                  "fill-outline-color": "#000",
-              }
-          });
-      })
+    map.on('style.load', () => {
+      map.addLayer({
+        "id": "circles",
+        "type": "fill",
+        "source": {
+          "type": "geojson",
+          "data": {
+            "type": "FeatureCollection",
+            "features": circles,
+          }
+        },
+        "layout": {
+          "visibility": "none"
+        },
+        "paint": {
+          "fill-antialias": true,
+          "fill-opacity": 0.3,
+          "fill-color": "yellow",
+          "fill-outline-color": "#000",
+        }
+      });
+    })
 
-      const styleList = document.getElementById('mapbox-menu');
-      const inputs = styleList.getElementsByTagName('input');
+    const styleList = document.getElementById('mapbox-menu');
+    const inputs = styleList.getElementsByTagName('input');
 
-      for (const input of inputs) {
-          input.onclick = (click) => {
-              const styleId = click.target.id;
-              map.setStyle('mapbox://styles/mapbox/' + styleId);
-              input.checked = true;
-          };
-      }
+    for (const input of inputs) {
+      input.onclick = (click) => {
+        const styleId = click.target.id;
+        map.setStyle('mapbox://styles/mapbox/' + styleId);
+        input.checked = true;
+      };
+    }
   }
-  </script>
+</script>
 {% endblock inline_javascript %}

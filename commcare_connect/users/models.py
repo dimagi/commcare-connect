@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.db import models
@@ -7,6 +9,13 @@ from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.users.managers import UserManager
+from commcare_connect.utils.permission_const import (
+    ALL_ORG_ACCESS,
+    DEMO_USER_ACCESS,
+    KPI_REPORT_ACCESS,
+    OTP_ACCESS,
+    PRODUCT_FEATURES_ACCESS,
+)
 
 
 class User(AbstractUser):
@@ -18,6 +27,7 @@ class User(AbstractUser):
 
     username_validator = UnicodeUsernameValidator()
 
+    user_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     # First and last name do not cover name patterns around the globe
     name = models.CharField(_("Name of User"), blank=True, max_length=255)
     first_name = None  # type: ignore
@@ -58,10 +68,17 @@ class User(AbstractUser):
             ("all_org_access", "Allow admin access to all organizations"),
             ("view_commcarehq_form_link", "Can view CommCareHQ form link"),
             ("org_management_settings_access", "Can manage organizations settings"),
+            ("workspace_entity_management_access", "Can manage LLO Entities for organizations"),
+            ("product_features_access", "Can access and manage product features (flags and switches)"),
         ]
 
     def __str__(self):
         return self.email or self.username
+
+    @property
+    def show_internal_features(self):
+        internal_features = [OTP_ACCESS, DEMO_USER_ACCESS, KPI_REPORT_ACCESS, ALL_ORG_ACCESS, PRODUCT_FEATURES_ACCESS]
+        return any([self.has_perm(perm) for perm in internal_features])
 
 
 class ConnectIDUserLink(models.Model):
@@ -72,6 +89,7 @@ class ConnectIDUserLink(models.Model):
     commcare_username = models.TextField()
     domain = models.CharField(max_length=255, null=True, blank=True)
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
+    hq_case_id = models.CharField(max_length=50, null=True, blank=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "commcare_username"], name="connect_user")]

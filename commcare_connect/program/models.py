@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -7,14 +9,13 @@ from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
 class Program(BaseModel):
-    program_id = models.UUIDField(editable=False, null=True)
+    program_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     description = models.CharField()
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT)
     budget = models.PositiveBigIntegerField()
-    currency = models.CharField(max_length=3)
-    currency_fk = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     start_date = models.DateField()
     end_date = models.DateField()
@@ -30,8 +31,8 @@ class Program(BaseModel):
 
     @property
     def currency_code(self):
-        if self.currency_fk:
-            return self.currency_fk.code
+        if self.currency:
+            return self.currency.code
         else:
             return None
 
@@ -39,7 +40,6 @@ class Program(BaseModel):
 class ManagedOpportunity(Opportunity):
     program = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
     claimed = models.BooleanField(default=False)
-    org_pay_per_visit = models.IntegerField(null=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -55,7 +55,7 @@ class ProgramApplicationStatus(models.TextChoices):
 
 
 class ProgramApplication(BaseModel):
-    program_application_id = models.UUIDField(editable=False, null=True)
+    program_application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     program = models.ForeignKey(Program, on_delete=models.CASCADE)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     status = models.CharField(

@@ -1,5 +1,6 @@
 import datetime
 import importlib
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import timedelta
 from http import HTTPStatus
@@ -123,13 +124,13 @@ def test_form_receiver_multiple_module_submissions(
     # First submissions for all modules
     for module in modules:
         form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
-        form_json["received_on"] = past_date
+        form_json["metadata"]["timeEnd"] = past_date
         make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
     # Subsequent submissions
     for module in modules:
         form_json = _get_form_json(opportunity.learn_app, module.id, module.json)
-        form_json["received_on"] = future_date
+        form_json["metadata"]["timeEnd"] = future_date
         form_json["id"] = str(uuid4())  # Change form ID to simulate a new submission
         make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
 
@@ -150,7 +151,7 @@ def test_form_receiver_multiple_module_submissions(
     # Test integrity error for duplicate submissions keeping the id same.
     with patch("commcare_connect.form_receiver.views.logger") as mock_logger:
         form_json = _get_form_json(opportunity.learn_app, modules[0].id, modules[0].json)
-        form_json["received_on"] = past_date
+        form_json["metadata"]["timeEnd"] = past_date
         make_request(
             api_client, form_json, mobile_user_with_connect_link, HTTPStatus.OK, oauth_application=oauth_application
         )
@@ -318,6 +319,32 @@ def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClien
     visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
     assert visit.status == VisitValidationStatus.duplicate
     assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit.flag_reason.get("flags", [])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_receiver_duplicate_concurrent_submissions(user_with_connectid_link: User, opportunity: Opportunity):
+    oauth_application = opportunity.hq_server.oauth_application
+    user = user_with_connectid_link
+    form_json = _create_opp_and_form_json(opportunity, user=user)
+    entity_id = form_json["form"]["deliver"]["entity_id"]
+
+    def submit_form():
+        client = APIClient()
+        payload = deepcopy(form_json)
+        payload["id"] = str(uuid4())
+        add_credentials(client, user, oauth_application=oauth_application)
+        response = client.post("/api/receiver/", data=payload, format="json")
+        assert response.status_code == HTTPStatus.OK, response.data
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(submit_form) for _ in range(2)]
+        for future in futures:
+            future.result()
+
+    visits = UserVisit.objects.filter(entity_id=entity_id)
+    assert visits.count() == 2
+    statuses = {visit.status for visit in visits}
+    assert VisitValidationStatus.duplicate in statuses
 
 
 def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
@@ -635,11 +662,11 @@ def test_receiver_verification_flags_catchment_areas(
     assert ["catchment", "Visit outside worker catchment areas"] in visit.flag_reason.get("flags", [])
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
     assert opportunity.managed
     access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user_with_connect_link)
-    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity, org_amount=2)
     deliver_unit = DeliverUnitFactory(app=payment_unit.opportunity.deliver_app, payment_unit=payment_unit)
     completed_work = CompletedWorkFactory(
         opportunity_access=access, status=CompletedWorkStatus.pending, payment_unit=payment_unit
@@ -671,7 +698,7 @@ def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client:
     assert completed_work.status == CompletedWorkStatus.approved
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 @pytest.mark.parametrize(
     "visit_status, review_status",
     [
@@ -695,7 +722,7 @@ def test_receiver_visit_review_status(
     assert visit.review_status == review_status
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True, "org_pay_per_visit": 2}}], indirect=True)
+@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
 def test_receiver_duplicate_managed_opportunity(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):

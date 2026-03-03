@@ -1,9 +1,15 @@
-import importlib
+import datetime
 
 import pytest
-from django.apps import apps as django_apps
 
-from commcare_connect.opportunity.models import Opportunity, OpportunityClaimLimit, UserVisit
+from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
+from commcare_connect.opportunity.models import (
+    InvoiceStatus,
+    Opportunity,
+    OpportunityClaimLimit,
+    PaymentInvoice,
+    UserVisit,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -13,13 +19,86 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     OpportunityClaimLimitFactory,
     OpportunityFactory,
+    PaymentInvoiceFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
 from commcare_connect.utils.flags import Flags
+
+
+@pytest.mark.django_db
+class TestPaymentInvoice:
+    def test_pghistory_tracking(self):
+        payment_invoice = PaymentInvoiceFactory()
+
+        invoice_status_events = payment_invoice.status_events.all()
+        assert len(invoice_status_events) == 1
+        assert invoice_status_events[0].status == InvoiceStatus.PENDING_NM_REVIEW
+        # no context since this was not done via django view/request but directly via model
+        assert invoice_status_events[0].pgh_context is None
+
+        payment_invoice.status = InvoiceStatus.PENDING_PM_REVIEW
+        payment_invoice.save()
+
+        assert payment_invoice.status_events.count() == 2
+        recent_invoice_status_event = payment_invoice.status_events.last()
+        assert recent_invoice_status_event.status == InvoiceStatus.PENDING_PM_REVIEW
+        # no context since this was not done via django view/request but directly via model
+        assert recent_invoice_status_event.pgh_context is None
+
+    def test_pghistory_tracking_for_bulk_actions(self):
+        opportunity = OpportunityFactory()
+        payment_invoices = []
+
+        assert PaymentInvoiceStatusEvent.objects.count() == 0
+        assert PaymentInvoice.objects.count() == 0
+
+        for counter in range(1, 11):
+            payment_invoices.append(
+                PaymentInvoice(
+                    opportunity=opportunity,
+                    amount=10,
+                    date=datetime.date.today(),
+                    invoice_number=generate_invoice_number(),
+                )
+            )
+
+        # bulk create action
+        created_invoices = PaymentInvoice.objects.bulk_create(payment_invoices)
+        created_invoice_ids = {invoice.pk for invoice in created_invoices}
+
+        # assert events created for each created record
+        assert len(created_invoices) == 10
+        assert PaymentInvoiceStatusEvent.objects.count() == 10
+        assert PaymentInvoiceStatusEvent.objects.filter(status=InvoiceStatus.PENDING_NM_REVIEW).count() == 10
+
+        create_invoice_events_invoice_obj_ids = {
+            invoice_event.pgh_obj_id for invoice_event in PaymentInvoiceStatusEvent.objects.all()
+        }
+        assert created_invoice_ids == create_invoice_events_invoice_obj_ids
+
+        # bulk update action
+        updated_invoices_count = PaymentInvoice.objects.filter(pk__in=created_invoice_ids).update(
+            status=InvoiceStatus.PENDING_PM_REVIEW
+        )
+
+        # assert successful update
+        assert updated_invoices_count == 10
+        assert PaymentInvoice.objects.filter(status=InvoiceStatus.PENDING_NM_REVIEW).count() == 0
+        assert PaymentInvoice.objects.filter(status=InvoiceStatus.PENDING_PM_REVIEW).count() == 10
+
+        # assert new events created for each updated record
+        assert PaymentInvoiceStatusEvent.objects.count() == 20
+        assert PaymentInvoiceStatusEvent.objects.filter(status=InvoiceStatus.PENDING_NM_REVIEW).count() == 10
+        assert PaymentInvoiceStatusEvent.objects.filter(status=InvoiceStatus.PENDING_PM_REVIEW).count() == 10
+
+        # assert expected status value for the recent event for each record
+        for invoice in created_invoices:
+            assert invoice.status_events.last().status == InvoiceStatus.PENDING_PM_REVIEW
 
 
 @pytest.mark.django_db
@@ -55,10 +134,9 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     }
     payment_units = [payment_unit_sub, payment_unit1, payment_unit2]
     budget_per_user = sum(pu.max_total * pu.amount for pu in payment_units)
-    org_pay = 0
+
     if opportunity.managed:
-        org_pay = opportunity.managedopportunity.org_pay_per_visit
-        budget_per_user += sum(pu.max_total * org_pay for pu in payment_units)
+        budget_per_user += sum(pu.max_total * pu.org_amount for pu in payment_units)
     opportunity.total_budget = budget_per_user * 3
 
     payment_units = [payment_unit1, payment_unit2, payment_unit_sub]
@@ -75,9 +153,9 @@ def test_opportunity_stats(opportunity: Opportunity, user: User):
     ocl1 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit1)
     ocl2 = OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit2)
 
-    assert opportunity.claimed_budget == (ocl1.max_visits * (payment_unit1.amount + org_pay)) + (
-        ocl2.max_visits * (payment_unit2.amount + org_pay)
-    )
+    assert opportunity.claimed_budget == (
+        ocl1.max_visits * (payment_unit1.amount + (payment_unit1.org_amount if opportunity.managed else 0))
+    ) + (ocl2.max_visits * (payment_unit2.amount + (payment_unit2.org_amount if opportunity.managed else 0)))
     assert opportunity.remaining_budget == opportunity.total_budget - opportunity.claimed_budget
 
 
@@ -125,64 +203,6 @@ def test_access_visit_count(opportunity: Opportunity):
     )
     update_payment_accrued(opportunity, [access.user])
     assert access.visit_count == 1
-
-
-@pytest.mark.django_db
-def test_populate_currency_and_country_fk():
-    migration_module = importlib.import_module(
-        "commcare_connect.opportunity.migrations.0092_currency_country_opportunity_currency_fk"
-    )
-    populate_currency_and_country_fk = migration_module.populate_currency_and_country_fk
-
-    OpportunityModel = django_apps.get_model("opportunity", "Opportunity")
-    CurrencyModel = django_apps.get_model("opportunity", "Currency")
-    CountryModel = django_apps.get_model("opportunity", "Country")
-
-    # Ensure currency / country rows exist (loaded via migration)
-    single_country_currency = "KES"  # Kenya only
-    multi_country_currency = "USD"  # Multiple ISO countries share USD
-    valid_currency_only = "INR"
-
-    assert CurrencyModel.objects.filter(code=valid_currency_only).exists()
-    assert CountryModel.objects.filter(code="KEN", currency_id=single_country_currency).exists()
-    assert CurrencyModel.objects.filter(code=multi_country_currency).exists()
-
-    invalid_currency_code = "ZZZ"
-    # Create opportunities that fall in various categories
-    opp_valid = OpportunityFactory(currency=valid_currency_only, currency_fk=None, country=None)
-    opp_single = OpportunityFactory(currency=single_country_currency, currency_fk=None, country=None)
-    opp_multi = OpportunityFactory(currency=multi_country_currency, currency_fk=None, country=None)
-    opp_invalid = OpportunityFactory(currency=invalid_currency_code, currency_fk=None, country=None)
-
-    OpportunityModel.objects.filter(id__in=[opp_valid.id, opp_single.id, opp_multi.id, opp_invalid.id]).update(
-        currency_fk=None, country=None
-    )
-
-    initial_country_count = CountryModel.objects.count()
-    initial_currency_count = CurrencyModel.objects.count()
-
-    populate_currency_and_country_fk(django_apps, schema_editor=None)
-
-    for opp in [opp_valid, opp_single, opp_multi, opp_invalid]:
-        opp.refresh_from_db()
-
-    # valid currency should map to fk
-    assert opp_valid.currency_fk.code == valid_currency_only
-
-    # single-country currency auto-sets the country fk
-    assert opp_single.currency_fk.code == single_country_currency
-    assert opp_single.country_id == CountryModel.objects.get(code="KEN").pk
-
-    # multi-country currencies should stay NULL for country
-    assert opp_multi.currency_fk.code == multi_country_currency
-    assert opp_multi.country_id is None
-
-    # invalid currencies fall back to USD without creating new currency rows
-    assert not CurrencyModel.objects.filter(code=invalid_currency_code).exists()
-    assert opp_invalid.currency_fk_id == multi_country_currency
-    assert opp_invalid.country_id is None
-    assert CountryModel.objects.count() == initial_country_count
-    assert CurrencyModel.objects.count() == initial_currency_count
 
 
 @pytest.mark.django_db

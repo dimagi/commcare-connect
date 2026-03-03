@@ -31,13 +31,14 @@ DATABASES = {
         default="postgres:///commcare_connect",
     ),
 }
+DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 
 # DATABASES staging/production
 # ------------------------------------------------------------------------------
 if env("RDS_HOSTNAME", default=None):
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql",
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
             "NAME": env("RDS_DB_NAME"),
             "USER": env("RDS_USERNAME"),
             "PASSWORD": env("RDS_PASSWORD"),
@@ -50,6 +51,7 @@ SECONDARY_DB_ALIAS = None
 if env("SECONDARY_DATABASE_URL", default=None):
     SECONDARY_DB_ALIAS = "secondary"
     DATABASES[SECONDARY_DB_ALIAS] = env.db("SECONDARY_DATABASE_URL")
+    DATABASES[SECONDARY_DB_ALIAS]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
     DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
@@ -73,6 +75,7 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
+    "django.contrib.gis",
     "django.forms",
 ]
 THIRD_PARTY_APPS = [
@@ -89,6 +92,8 @@ THIRD_PARTY_APPS = [
     "oauth2_provider",
     "django_tables2",
     "waffle",
+    "pghistory",
+    "pgtrigger",  # added for pghistory
 ]
 
 LOCAL_APPS = [
@@ -104,6 +109,7 @@ LOCAL_APPS = [
     "commcare_connect.reports",
     "commcare_connect.users",
     "commcare_connect.web",
+    "commcare_connect.microplanning",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -154,6 +160,7 @@ MIDDLEWARE = [
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
     "waffle.middleware.WaffleMiddleware",
+    "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
 ]
 
 # STATIC
@@ -193,6 +200,7 @@ TEMPLATES = [
                 "commcare_connect.users.context_processors.allauth_settings",
                 "commcare_connect.web.context_processors.page_settings",
                 "commcare_connect.web.context_processors.gtm_context",
+                "commcare_connect.web.context_processors.chat_widget_context",
             ],
         },
     }
@@ -399,3 +407,7 @@ WAFFLE_CREATE_MISSING_SWITCHES = True
 GTM_ID = env("GTM_ID", default="")
 GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
 GA_API_SECRET = env("GA_API_SECRET", default="")
+
+# Chatbot Widget Settings
+CHATBOT_ID = env("CHATBOT_ID", default="")
+CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")

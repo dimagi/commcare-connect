@@ -53,7 +53,7 @@ class UserSocialSignupForm(SocialSignupForm):
 class OrganizationCreationForm(forms.ModelForm):
     class Meta:
         model = Organization
-        fields = ["name", "program_manager"]
+        fields = ["name", "program_manager", "llo_entity"]
 
 
 class ManualUserOTPForm(forms.Form):

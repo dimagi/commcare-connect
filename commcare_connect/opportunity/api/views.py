@@ -1,15 +1,18 @@
 import datetime
 import logging
 
+import waffle
 from django.db import transaction
 from django.db.models import Q
+from django.http import Http404
 from django.utils.timezone import now
 from rest_framework import viewsets
-from rest_framework.generics import RetrieveAPIView, get_object_or_404
+from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from commcare_connect.flags.switch_names import API_UUID
 from commcare_connect.opportunity.api.serializers import (
     CompletedWorkSerializer,
     DeliveryProgressSerializer,
@@ -25,6 +28,8 @@ from commcare_connect.opportunity.models import (
     Payment,
 )
 from commcare_connect.users.helpers import create_hq_user_and_link
+from commcare_connect.users.models import User
+from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 
 logger = logging.getLogger(__name__)
@@ -43,8 +48,11 @@ class UserLearnProgressView(RetrieveAPIView):
     serializer_class = UserLearnProgressSerializer
 
     def get_object(self):
-        opportunity_access = get_object_or_404(
-            OpportunityAccess, user=self.request.user, opportunity=self.kwargs.get("pk")
+        opportunity_access = get_object_or_list_by_uuid_or_int(
+            queryset=OpportunityAccess.objects.filter(user=self.request.user),
+            pk_or_pk_list=self.kwargs.get("pk"),
+            uuid_field="opportunity__opportunity_id",
+            int_field="opportunity_id",
         )
         return dict(
             completed_modules=opportunity_access.unique_completed_modules,
@@ -68,14 +76,24 @@ class DeliveryProgressView(RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        return OpportunityAccess.objects.get(user=self.request.user, opportunity=self.kwargs.get("pk"))
+        return get_object_or_list_by_uuid_or_int(
+            queryset=OpportunityAccess.objects.filter(user=self.request.user),
+            pk_or_pk_list=self.kwargs.get("pk"),
+            uuid_field="opportunity__opportunity_id",
+            int_field="opportunity_id",
+        )
 
 
 class ClaimOpportunityView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, *args, **kwargs):
-        opportunity_access = get_object_or_404(OpportunityAccess, user=self.request.user, opportunity=kwargs.get("pk"))
+        opportunity_access = get_object_or_list_by_uuid_or_int(
+            queryset=OpportunityAccess.objects.filter(user=self.request.user),
+            pk_or_pk_list=kwargs.get("pk"),
+            uuid_field="opportunity__opportunity_id",
+            int_field="opportunity_id",
+        )
         opportunity = opportunity_access.opportunity
 
         if OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists():
@@ -105,25 +123,62 @@ class ClaimOpportunityView(APIView):
         return Response(status=201)
 
 
+def confirm_payments(request, user: User, payments_data: list):
+    if not payments_data or not isinstance(payments_data, list):
+        return Response(status=400)
+
+    payment_map = {}
+
+    for item in payments_data:
+        payment_id = item.get("id")
+        confirmed = item.get("confirmed")
+
+        if payment_id is None:
+            return Response(status=400)
+
+        if confirmed and confirmed == "true":
+            confirmed = True
+        elif confirmed and confirmed == "false":
+            confirmed = False
+        else:
+            return Response({"error_code": ErrorCodes.INVALID_FLAG}, status=400)
+
+        payment_map[str(payment_id)] = confirmed
+
+    payments = get_object_or_list_by_uuid_or_int(
+        queryset=Payment.objects.filter(
+            Q(organization__memberships__user=user) | Q(opportunity_access__user=user),
+        ),
+        pk_or_pk_list=list(payment_map.keys()),
+        uuid_field="payment_id",
+    )
+
+    if len(payments) != len(payment_map):
+        raise Http404
+
+    lookup_keys = list(payment_map.keys())
+    use_int_pk = not waffle.switch_is_active(API_UUID) and all(val.isdigit() for val in lookup_keys)
+
+    for payment in payments:
+        payment_key = str(payment.pk) if use_int_pk else str(payment.payment_id)
+        payment.confirmed = payment_map[payment_key]
+        payment.confirmation_date = now()
+
+    Payment.objects.bulk_update(payments, ["confirmed", "confirmation_date"])
+
+    return Response(status=200)
+
+
 class ConfirmPaymentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, *args, **kwargs):
-        payment_query = Payment.objects.filter(
-            pk=kwargs.get("pk"),
-        ).filter(
-            Q(organization__memberships__user=self.request.user) | Q(opportunity_access__user=self.request.user),
-        )
-        payment = get_object_or_404(payment_query)
+        payment_data = [{"id": kwargs.get("pk"), "confirmed": self.request.data.get("confirmed")}]
+        return confirm_payments(self.request, self.request.user, payment_data)
 
-        confirmed_value = self.request.data["confirmed"]
-        if confirmed_value == "false":
-            confirmed = False
-        elif confirmed_value == "true":
-            confirmed = True
-        else:
-            return Response({"error_code": ErrorCodes.INVALID_FLAG}, status=400)
-        payment.confirmed = confirmed
-        payment.confirmation_date = now()
-        payment.save()
-        return Response(status=200)
+
+class ConfirmPaymentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        return confirm_payments(request, request.user, request.data.get("payments", []))
