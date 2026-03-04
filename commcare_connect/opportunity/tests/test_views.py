@@ -24,6 +24,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
     PaymentUnit,
+    Task,
     UserInvite,
     UserInviteStatus,
     VisitReviewStatus,
@@ -1974,3 +1975,83 @@ def test_visit_export_count_boundary_dates(
 
     assert response.status_code == HTTPStatus.OK
     assert "2 visits match your filters." in response.content.decode()
+
+
+@pytest.mark.django_db
+class TestTaskTypesConfig:
+    @pytest.fixture
+    def opp(self, program_manager_org):
+        return OpportunityFactory(organization=program_manager_org)
+
+    @pytest.fixture
+    def deliver_unit(self, opp):
+        return DeliverUnitFactory(app=opp.deliver_app)
+
+    def _url(self, opp):
+        return reverse("opportunity:task_types_config", args=(opp.organization.slug, opp.opportunity_id))
+
+    def test_unauthenticated_redirects(self, client, opportunity):
+        url = self._url(opportunity)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.FOUND
+        assert "/accounts/login/" in response["Location"] or "login" in response["Location"]
+
+    def test_non_managed_opp_org_member_success(self, client, organization, org_user_admin):
+        opp = OpportunityFactory(organization=organization)
+        url = reverse("opportunity:task_types_config", args=(organization.slug, opp.opportunity_id))
+        client.force_login(org_user_admin)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
+
+    def test_managed_opp_non_pm_redirects(self, client, organization, org_user_admin, program_manager_org):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        url = reverse("opportunity:task_types_config", args=(organization.slug, managed_opp.opportunity_id))
+        client.force_login(org_user_admin)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.FOUND
+        assert response["Location"] == reverse(
+            "opportunity:detail", args=(organization.slug, managed_opp.opportunity_id)
+        )
+
+    def test_managed_opp_pm_success(self, client, organization, program_manager_org, program_manager_org_user_admin):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = ManagedOpportunityFactory(program=program, organization=organization)
+        url = reverse("opportunity:task_types_config", args=(program_manager_org.slug, managed_opp.opportunity_id))
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(url)
+        assert response.status_code == HTTPStatus.OK
+
+    def test_post_valid_data_creates_task_and_redirects(
+        self, client, program_manager_org_user_admin, opp, deliver_unit
+    ):
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self._url(opp),
+            data={
+                "name": "My Task",
+                "description": "A useful task description.",
+                "linked_task_unit": deliver_unit.pk,
+                "case_property": "",
+            },
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        assert response["Location"] == self._url(opp)
+        task = Task.objects.get(app=opp.deliver_app, name="My Task")
+        assert task.linked_task_unit == deliver_unit
+        assert task.slug == "my-task"
+
+    def test_post_missing_data_rerenders_form_with_errors(self, client, program_manager_org_user_admin, opp):
+        other_deliver_unit = DeliverUnitFactory()  # linked to an unrelated app
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self._url(opp),
+            data={
+                "name": "",
+                "description": "A useful task description.",
+                "linked_task_unit": other_deliver_unit.pk,
+            },
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert not Task.objects.filter(app=opp.deliver_app).exists()
+        assert response.context["form"].errors
