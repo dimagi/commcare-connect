@@ -10,6 +10,7 @@ from commcare_connect.opportunity.views import (
     OpportunityInitUpdate,
     OpportunityList,
     OpportunityPaymentUnitTableView,
+    TaskTypesConfig,
     WorkerDeliverView,
     WorkerLearnView,
     WorkerPaymentsView,
@@ -99,6 +100,7 @@ urlpatterns = [
         "<slug:opp_id>/completed_work_import/", view=update_completed_work_status_import, name="completed_work_import"
     ),
     path("<slug:opp_id>/verification_flags_config/", view=verification_flags_config, name="verification_flags_config"),
+    path("<slug:opp_id>/task_types/", view=TaskTypesConfig.as_view(), name="task_types_config"),
     path("<slug:opp_id>/suspended_users/", view=suspended_users_list, name="suspended_users_list"),
     path("<slug:opp_id>/suspend_user/<slug:pk>/", view=suspend_user, name="suspend_user"),
     path(

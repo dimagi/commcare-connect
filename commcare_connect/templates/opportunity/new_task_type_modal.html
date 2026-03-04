@@ -1,0 +1,34 @@
+{% load i18n %}
+{% load crispy_forms_tags %}
+
+<div x-show="showCreateTaskTypeModal" x-cloak x-transition.opacity class="modal-backdrop" role="dialog" aria-modal="true"
+    @keydown.escape.window="showCreateTaskTypeModal = false">
+    <div @click.outside="showCreateTaskTypeModal = false" class="modal w-full !max-w-2xl">
+
+        <div class="header flex justify-between items-center">
+            <h2 class="title">{% translate "New Task Type" %}</h2>
+            <button @click="showCreateTaskTypeModal = false" class="button-icon" aria-label="{% translate 'Close' %}">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        <form method="post"
+            action="{% url 'opportunity:task_types_config' request.org.slug opportunity.opportunity_id %}">
+            {% csrf_token %}
+            <div class="modal-body">
+                {% crispy form %}
+            </div>
+            <div class="footer flex justify-end gap-3">
+                <button type="button" @click="showCreateTaskTypeModal = false" class="button button-md outline-style">
+                    {% translate "Cancel" %}
+                </button>
+                <button type="submit" class="button button-md primary-dark">
+                    {% translate "Save" %}
+                </button>
+            </div>
+        </form>
+
+    </div>
+</div>
+
+</div>
