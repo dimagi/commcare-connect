@@ -67,5 +67,12 @@
         >{% translate "Send Message" %}</a
       >
     </li>
+    {% if not opportunity.managed or is_opportunity_pm %}
+      <li>
+        <a href="{% url 'opportunity:task_types_config' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple">
+          {% translate "Configure Task Types" %}
+        </a>
+      </li>
+    {% endif %}
   </ul>
 </div>
