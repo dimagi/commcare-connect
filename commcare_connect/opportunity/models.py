@@ -276,6 +276,7 @@ class Task(models.Model):
         ]
 
 
+
 class XFormBaseModel(models.Model):
     xform_id = models.CharField(max_length=50)
     app_build_id = models.CharField(max_length=50, null=True, blank=True)
@@ -414,31 +415,6 @@ class CompletedModule(XFormBaseModel):
         ]
 
 
-class CompletedTaskStatus(models.TextChoices):
-    ASSIGNED = "assigned", gettext("assigned")
-    COMPLETED = "completed", gettext("completed")
-
-
-class CompletedTask(XFormBaseModel):
-    task = models.ForeignKey(Task, on_delete=models.PROTECT)
-    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
-    date = models.DateTimeField()
-    duration = models.DurationField()
-    xform_id = models.CharField(max_length=50, null=True)
-    status = models.CharField(
-        choices=CompletedTaskStatus.choices,
-        default=CompletedTaskStatus.ASSIGNED,
-        max_length=50,
-    )
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["xform_id", "task", "opportunity_access"], name="unique_xform_completed_task"
-            )
-        ]
-
-
 class Assessment(XFormBaseModel):
     user = models.ForeignKey(
         User,
@@ -498,6 +474,25 @@ class DeliverUnit(models.Model):
         return self.name
 
 
+class Task(models.Model):
+    app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
+    linked_task_unit = models.ForeignKey(DeliverUnit, on_delete=models.CASCADE, related_name="tasks", null=True)
+    slug = models.SlugField()
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    time_estimate = models.IntegerField(help_text="Estimated hours to complete the task")
+    case_property = models.CharField(max_length=255, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app"),
+            models.UniqueConstraint(fields=["app_id", "linked_task_unit"], name="unique_task_unit_per_app"),
+        ]
+
+
 class VisitValidationStatus(models.TextChoices):
     pending = "pending", gettext("Pending")
     approved = "approved", gettext("Approved")
@@ -505,6 +500,31 @@ class VisitValidationStatus(models.TextChoices):
     over_limit = "over_limit", gettext("Over Limit")
     duplicate = "duplicate", gettext("Duplicate")
     trial = "trial", gettext("Trial")
+
+
+class CompletedTaskStatus(models.TextChoices):
+    ASSIGNED = "assigned", gettext("assigned")
+    COMPLETED = "completed", gettext("completed")
+
+
+class CompletedTask(XFormBaseModel):
+    task = models.ForeignKey(Task, on_delete=models.PROTECT)
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
+    date = models.DateTimeField()
+    duration = models.DurationField()
+    xform_id = models.CharField(max_length=50, null=True)
+    status = models.CharField(
+        choices=CompletedTaskStatus.choices,
+        default=CompletedTaskStatus.ASSIGNED,
+        max_length=50,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["xform_id", "task", "opportunity_access"], name="unique_xform_completed_task"
+            )
+        ]
 
 
 class ExchangeRate(models.Model):
