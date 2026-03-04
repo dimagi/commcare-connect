@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Min, Q, Sum, TextChoices
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.text import slugify
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
@@ -1891,3 +1892,52 @@ class CreateTaskForm(forms.Form):
         if due_date < datetime.date.today():
             raise ValidationError(_("Due date cannot be in the past."))
         return due_date
+
+
+class AddTaskTypeForm(forms.ModelForm):
+    linked_task_unit = forms.ModelChoiceField(
+        label=_("Linked task unit"),
+        queryset=DeliverUnit.objects.none(),
+        empty_label=_("Select a task unit"),
+        widget=forms.Select(attrs={"@change": "onTaskUnitSelectChange($event.target.value)"}),
+    )
+
+    class Meta:
+        model = Task
+        fields = ["name", "description", "case_property", "linked_task_unit"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
+
+    def __init__(self, *args, opportunity, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.opportunity = opportunity
+        self._create_task_unit_qs()
+        self.task_units_data = json.dumps({str(m.id): m.name for m in self.fields["linked_task_unit"].queryset})
+
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Div(
+                Field("linked_task_unit"),
+                Field("name"),
+                css_class="grid grid-cols-2 gap-6",
+            ),
+            Field("case_property"),
+            Field("description"),
+        )
+
+    def save(self, commit=True):
+        task = super().save(commit=False)
+        linked_task_unit = self.cleaned_data["linked_task_unit"]
+        task.app = linked_task_unit.app
+        task.slug = slugify(task.name)
+        if commit:
+            task.save()
+        return task
+
+    def _create_task_unit_qs(self):
+        already_linked_ids = Task.objects.filter(
+            app=self.opportunity.deliver_app, linked_task_unit__isnull=False
+        ).values_list("linked_task_unit_id", flat=True)
+        self.fields["linked_task_unit"].queryset = DeliverUnit.objects.filter(
+            app=self.opportunity.deliver_app
+        ).exclude(id__in=already_linked_ids)
