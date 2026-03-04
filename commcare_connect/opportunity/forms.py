@@ -1941,3 +1941,14 @@ class AddTaskTypeForm(forms.ModelForm):
         self.fields["linked_task_unit"].queryset = DeliverUnit.objects.filter(
             app=self.opportunity.deliver_app
         ).exclude(id__in=already_linked_ids)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        name = cleaned_data.get("name")
+        if not name:
+            return cleaned_data
+
+        generated_slug = slugify(name)
+        if Task.objects.filter(app=self.opportunity.deliver_app, slug=generated_slug).exists():
+            self.add_error("name", _("A task with this name already exists. Please choose a different name."))
+        return cleaned_data

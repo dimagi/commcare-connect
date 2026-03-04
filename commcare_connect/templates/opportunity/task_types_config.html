@@ -10,7 +10,7 @@
 
 <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6"
      x-data="{
-       showCreateTaskTypeModal: false,
+       showCreateTaskTypeModal: {% if form.errors %}true{% else %}false{% endif %},
        task_units: {{ form.task_units_data }},
        onTaskUnitSelectChange(taskUnitId) {
          const name = this.task_units[taskUnitId];
