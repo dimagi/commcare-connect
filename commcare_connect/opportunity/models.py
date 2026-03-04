@@ -260,15 +260,20 @@ class LearnModule(models.Model):
 
 class Task(models.Model):
     app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
+    linked_task_unit = models.ForeignKey(DeliverUnit, on_delete=models.CASCADE, related_name="tasks", null=True)
     slug = models.SlugField()
     name = models.CharField(max_length=255)
     description = models.TextField()
+    case_property = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return self.name
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app")]
+        constraints = [
+            models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app"),
+            models.UniqueConstraint(fields=["app_id", "linked_task_unit"], name="unique_task_unit_per_app"),
+        ]
 
 
 class XFormBaseModel(models.Model):
