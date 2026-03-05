@@ -108,15 +108,43 @@ class DeliveryReportFilters(django_filters.FilterSet):
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
 
 
-class NonModelFilterView(FilterView):
+class NonModelTableBaseView(FilterView):
+    # Inherit this for a tabular report
+    page_template = "reports/report_table.html"
+    htmx_table_template = "reports/htmx_table.html"
+    # Override this
+    report_title = None
+
     def get_queryset(self):
         # Doesn't matter which model it is here
         return CompletedWork.objects.none()
 
+    @cached_property
+    def filter_values(self):
+        if not self.filterset.form.is_valid():
+            return None
+        else:
+            return self.filterset.form.cleaned_data
+
+    def get_template_names(self):
+        if self.request.htmx:
+            return self.htmx_table_template
+        else:
+            return self.page_template
+
     @property
     def object_list(self):
-        # Override this
-        return []
+        raise NotImplementedError()
+
+    @property
+    def report_url(self):
+        raise NotImplementedError()
+
+    def get_context_data(self, *args, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["report_url"] = self.report_url
+        context["report_title"] = self.report_title
+        return context
 
     def get(self, request, *args, **kwargs):
         filterset_class = self.get_filterset_class()
@@ -125,9 +153,14 @@ class NonModelFilterView(FilterView):
         return self.render_to_response(context)
 
 
-class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelFilterView):
+class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelTableBaseView):
     table_class = AdminReportTable
     filterset_class = DeliveryReportFilters
+    report_title = "Delivery Stats Report"
+
+    @property
+    def report_url(self):
+        return reverse("reports:delivery_stats_report")
 
     def get_template_names(self):
         if self.request.htmx:
