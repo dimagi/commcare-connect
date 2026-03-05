@@ -31,7 +31,7 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments
+from commcare_connect.opportunity.tasks import download_user_visit_attachments, notify_user_for_scored_assessment
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
 from commcare_connect.utils.lock import try_redis_lock
@@ -63,11 +63,15 @@ def process_learn_form(user, xform: XForm, app: CommCareApp, opportunity: Opport
     ]
     for jsonpath, processor in processors:
         try:
-            matches = [match.value for match in jsonpath.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS]
+            matches = _get_matching_blocks(jsonpath, xform)
             if matches:
                 processor(user, xform, app, opportunity, matches)
         except JSONPathError as e:
             raise ProcessingError from e
+
+
+def _get_matching_blocks(jsonpath, xform):
+    return [match.value for match in jsonpath.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS]
 
 
 def get_or_create_learn_module(app, module_data):
@@ -168,6 +172,8 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
         if not created:
             return ProcessingError("Learn Assessment is already completed")
+
+        notify_user_for_scored_assessment.delay(assessment.pk)
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
