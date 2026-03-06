@@ -876,6 +876,14 @@ class UserVisit(XFormBaseModel):
         domain = self.opportunity.deliver_app.cc_domain
         return f"{hq_url}/a/{domain}/reports/form_data/{self.xform_id}/"
 
+    @property
+    def has_over_limit_flag(self):
+        from commcare_connect.utils.flags import Flags
+
+        if self.flag_reason is not None:
+            return Flags.OVER_LIMIT.value in [flag for flag, _ in self.flag_reason.get("flags", [])]
+        return False
+
     class Meta:
         constraints = [
             models.UniqueConstraint(

@@ -857,33 +857,7 @@ class UserVisitVerificationTable(tables.Table):
     entity_name = columns.Column(verbose_name="Entity Name")
     deliver_unit = columns.Column(verbose_name="Deliver Unit", accessor="deliver_unit__name")
     payment_unit = columns.Column(verbose_name="Payment Unit", accessor="completed_work__payment_unit__name")
-    flags = columns.TemplateColumn(
-        verbose_name="Flags",
-        orderable=False,
-        template_code="""
-            <div class="flex relative justify-start text-sm text-brand-deep-purple font-normal">
-                {% if record %}
-                    {% if record.status == 'over_limit' %}
-                    <span class="badge badge-sm negative-light mx-1">{{ record.get_status_display|lower }}</span>
-                    {% endif %}
-                {% endif %}
-                {% if value %}
-                    {% for flag in value|slice:":2" %}
-                        {% if flag == "duplicate"%}
-                        <span class="badge badge-sm warning-light mx-1">
-                        {% else %}
-                        <span class="badge badge-sm primary-light mx-1">
-                        {% endif %}
-                            {{ flag }}
-                        </span>
-                    {% endfor %}
-                    {% if value|length > 2 %}
-                    {% include "components/badges/badge_sm_dropdown.html" with title='All Flags' list=value %}
-                    {% endif %}
-                {% endif %}
-            </div>
-            """,
-    )
+    flags = columns.Column(verbose_name="Flags", orderable=False, empty_values=())
     last_activity = columns.DateColumn(verbose_name="Last Activity", accessor="status_modified_date", format="d M, Y")
     icons = columns.Column(verbose_name="", empty_values=("",), orderable=False)
 
@@ -931,6 +905,27 @@ class UserVisitVerificationTable(tables.Table):
         self.columns["select"].column.visible = not self.is_opportunity_pm
         self.use_view_url = True
 
+    def render_flags(self, record, value):
+        def _normalize_flag(flag):
+            text = str(flag).strip().lower()
+            return text.replace(" ", "_")
+
+        has_over_limit_flag = record.has_over_limit_flag
+        flags = list(value or [])
+        if has_over_limit_flag:
+            flags = [flag for flag in flags if _normalize_flag(flag) != VisitValidationStatus.over_limit.name]
+        show_over_limit = record.status == VisitValidationStatus.over_limit or has_over_limit_flag
+        html = render_to_string(
+            "opportunity/partials/user_visit_flag_badges.html",
+            context={
+                "record": record,
+                "flags": flags,
+                "show_over_limit": show_over_limit,
+                "over_limit_label": VisitValidationStatus.over_limit.label,
+            },
+        )
+        return mark_safe(html)
+
     def get_icons(self, statuses):
         status_meta = {
             # Review Status Pending, Visit Status Approved
@@ -977,6 +972,12 @@ class UserVisitVerificationTable(tables.Table):
 
         status = []
         if record.opportunity.managed and record.review_status and record.review_created_on:
+            if (
+                record.review_status != VisitReviewStatus.agree.value
+                and record.status != VisitValidationStatus.over_limit
+                and record.has_over_limit_flag
+            ):
+                status.append(VisitValidationStatus.over_limit.name)
             if (
                 record.review_status == VisitReviewStatus.pending.value
                 and record.status == VisitValidationStatus.approved
