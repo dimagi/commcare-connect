@@ -1,6 +1,7 @@
 import pytest
 from django.db import IntegrityError
 
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.deletion import OPPORTUNITY_DELETIONS, ModelDeletion, delete_opportunity
 from commcare_connect.opportunity.models import LabsRecord, Opportunity, Payment
 from commcare_connect.opportunity.tests import factories
@@ -34,7 +35,9 @@ def test_delete_opportunity_clears_registered_models(opportunity_factory):
         opportunity_access=access,
         deliver_unit=deliver_unit,
         completed_work=completed_work,
+        work_area=WorkAreaFactory(opportunity=opportunity),
     )
+
     LabsRecord.objects.create(
         opportunity=opportunity,
         organization=opportunity.organization,
