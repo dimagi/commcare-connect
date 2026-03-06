@@ -9,6 +9,7 @@ from waffle.testutils import override_switch
 from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
+    AddTaskTypeForm,
     AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     OpportunityChangeForm,
@@ -23,6 +24,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tests.factories import (
     CommCareAppFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     ExchangeRateFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
@@ -798,3 +800,53 @@ class TestCreateTaskForm:
         assert active in flw_queryset
         assert unaccepted not in flw_queryset
         assert suspended not in flw_queryset
+
+
+@pytest.mark.django_db
+class TestAddTaskTypeForm:
+    @pytest.fixture
+    def deliver_units(self, opportunity):
+        return [DeliverUnitFactory(app=opportunity.deliver_app) for _ in range(3)]
+
+    def test_task_unit_queryset_contains_deliver_app_units(self, opportunity, deliver_units):
+        other_deliver_unit = DeliverUnitFactory()
+        form = AddTaskTypeForm(opportunity=opportunity)
+        qs = form.fields["linked_task_unit"].queryset
+        assert all(du in qs for du in deliver_units)
+        assert other_deliver_unit not in qs
+
+    def test_already_linked_units_excluded(self, opportunity, deliver_units):
+        linked_unit = deliver_units[0]
+        TaskFactory(app=opportunity.deliver_app, linked_task_unit=linked_unit)
+        form = AddTaskTypeForm(opportunity=opportunity)
+        qs = form.fields["linked_task_unit"].queryset
+        assert linked_unit not in qs
+        assert all(du in qs for du in deliver_units[1:])
+
+    def test_valid_form(self, opportunity, deliver_units):
+        form = AddTaskTypeForm(
+            data={
+                "linked_task_unit": deliver_units[0].id,
+                "name": "My Task",
+                "description": "A description",
+                "case_property": "some_property",
+            },
+            opportunity=opportunity,
+        )
+        assert form.is_valid(), form.errors
+
+    def test_missing_required_fields(self, opportunity):
+        form = AddTaskTypeForm(data={}, opportunity=opportunity)
+        assert not form.is_valid()
+        assert "linked_task_unit" in form.errors
+        assert "name" in form.errors
+        assert "description" in form.errors
+
+    def test_task_unit_from_other_app_rejected(self, opportunity):
+        other_unit = DeliverUnitFactory()
+        form = AddTaskTypeForm(
+            data={"linked_task_unit": other_unit.id, "name": "My Task"},
+            opportunity=opportunity,
+        )
+        assert not form.is_valid()
+        assert "linked_task_unit" in form.errors
