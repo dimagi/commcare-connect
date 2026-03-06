@@ -108,6 +108,10 @@ class WorkAreaImport(View):
                 "POLYGON((77 28,78 28,78 29,77 29,77 28))",
                 10,
                 12,
+                7,
+                2,
+                "LGA1",
+                "State1",
             ]
         )
         return response

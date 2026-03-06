@@ -10,3 +10,4 @@ WORK_AREA_STATUS_COLORS = {
     WorkAreaStatus.INACCESSIBLE: "bg-gray-500 text-white",
     WorkAreaStatus.EXCLUDED: "bg-gray-500 text-white",
 }
+WORK_AREA_CASE_TYPE = "work-area"

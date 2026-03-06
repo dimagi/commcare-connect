@@ -27,6 +27,10 @@ class WorkAreaCSVImporter:
         "boundary": "Boundary",
         "building_count": "Building Count",
         "visit_count": "Expected Visit Count",
+        "max_wag": "Max WAG",
+        "wag_serial_number": "WAG Serial Number",
+        "lga": "LGA",
+        "state": "State",
     }
 
     def __init__(self, opp_id, csv_source):
@@ -58,6 +62,7 @@ class WorkAreaCSVImporter:
 
         for row in reader:
             buildings, visits = self.get_building_and_visit(row)
+            extra_props = self.get_extra_properties(row)
             batch.append(
                 WorkArea(
                     opportunity_id=self.opp_id,
@@ -67,6 +72,12 @@ class WorkAreaCSVImporter:
                     boundary=self.get_boundary(row),
                     building_count=buildings,
                     expected_visit_count=visits,
+                    extra_case_properties={
+                        "max_wag": extra_props.get("max_wag"),
+                        "wag_serial_number": extra_props.get("wag_serial_number"),
+                        "lga": extra_props.get("lga"),
+                        "state": extra_props.get("state"),
+                    },
                 )
             )
 
@@ -112,6 +123,7 @@ class WorkAreaCSVImporter:
             self._validate_centroid,
             self._validate_boundary,
             self._validate_numbers,
+            self._validate_extra_properties,
         ]
         for processor in processors:
             processor(
@@ -142,6 +154,18 @@ class WorkAreaCSVImporter:
         building = int(building_raw) if building_raw else 0
         visit = int(visit_raw) if visit_raw else 0
         return building, visit
+
+    def get_extra_properties(self, row):
+        max_wag = row.get(self.HEADERS.get("max_wag"))
+        wag_serial_number = row.get(self.HEADERS.get("wag_serial_number"))
+        lga = row.get(self.HEADERS.get("lga"))
+        state = row.get(self.HEADERS.get("state"))
+        return {
+            "max_wag": max_wag,
+            "wag_serial_number": wag_serial_number,
+            "lga": lga,
+            "state": state,
+        }
 
     def _validate_slug(self, row, line_num):
         invalid = True
@@ -204,6 +228,13 @@ class WorkAreaCSVImporter:
         if invalid:
             self._add_error(line_num, _("Building count and Expected visit count must be positive integers"))
         return invalid
+
+    def _validate_extra_properties(self, row, line_num):
+        extra_properties = self.get_extra_properties(row)
+        missing_values = [key for key, value in extra_properties.items() if not value]
+        if missing_values:
+            self._add_error(line_num, _("Missing values for properties: ") + ", ".join(missing_values))
+        return bool(missing_values)
 
     def _add_error(self, line, message):
         self.errors[message].append(line)
