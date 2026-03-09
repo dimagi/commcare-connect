@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 from django.utils.timezone import now
+from tablib import Dataset
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
@@ -12,6 +13,7 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
     ExchangeRate,
+    ExportFile,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -23,6 +25,7 @@ from commcare_connect.opportunity.tasks import (
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
     notify_user_for_scored_assessment,
+    save_export,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
@@ -348,3 +351,42 @@ def test_notify_user_for_scored_assessment(send_message_patch):
             },
         )
     )
+
+
+@pytest.mark.django_db
+def test_save_export_creates_export_file_record(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    opportunity = OpportunityFactory()
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "exports/2026-03-09T10:00:00_test_visit_export.csv"
+
+    save_export(dataset, filename, "csv", "visit_export", opportunity)
+
+    export_file = ExportFile.objects.get(filename=filename)
+    assert export_file.export_type == "visit_export"
+    assert export_file.opportunity == opportunity
+
+
+@pytest.mark.django_db
+def test_save_export_without_opportunity(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "exports/2026-03-09T10:00:00_test_export.csv"
+
+    save_export(dataset, filename, "csv", "invoice_report")
+
+    export_file = ExportFile.objects.get(filename=filename)
+    assert export_file.opportunity is None
+
+
+@pytest.mark.django_db
+def test_save_export_stores_file_with_exports_prefix(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "exports/2026-03-09T10:00:00_test_visit_export.csv"
+
+    save_export(dataset, filename, "csv", "visit_export")
+
+    from django.core.files.storage import default_storage
+
+    assert default_storage.exists(filename)
