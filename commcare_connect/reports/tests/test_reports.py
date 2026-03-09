@@ -12,7 +12,7 @@ from django.views import View
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.helpers import get_payment_report_data
-from commcare_connect.opportunity.models import CompletedWorkStatus, VisitValidationStatus
+from commcare_connect.opportunity.models import CompletedWorkStatus, ExportFile, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
@@ -465,3 +465,35 @@ class TestKPIReportPermission:
             url,
             "kpi_report_access",
         )
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.reports.tasks.default_storage")
+def test_export_invoice_report_task_creates_export_file(mock_storage):
+    from commcare_connect.reports.tasks import export_invoice_report_task
+
+    mock_view = mock.MagicMock()
+    mock_view.get_invoice_queryset.return_value = []
+    mock_filter = mock.MagicMock()
+    mock_filter.return_value.qs = []
+    mock_table = mock.MagicMock()
+
+    with mock.patch("commcare_connect.reports.views.InvoiceReportView", mock_view), mock.patch(
+        "commcare_connect.reports.views.InvoiceReportFilter", mock_filter
+    ), mock.patch("commcare_connect.reports.views.InvoiceReportTable", mock_table), mock.patch(
+        "commcare_connect.reports.tasks.TableExport"
+    ) as mock_table_export:
+        mock_table_export.return_value.export.return_value = "col1,col2\nval1,val2"
+        result = export_invoice_report_task({})
+
+    assert result.startswith("exports/")
+    assert result.endswith(".csv")
+    assert "invoice-report-" in result
+
+    mock_storage.save.assert_called_once()
+    save_args = mock_storage.save.call_args[0]
+    assert save_args[0] == result
+
+    export_file = ExportFile.objects.get(filename=result)
+    assert export_file.export_type == "invoice_report"
+    assert export_file.opportunity is None

@@ -27,6 +27,13 @@ from commcare_connect.opportunity.tasks import (
     cleanup_expired_exports,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
+    generate_catchment_area_export,
+    generate_deliver_status_export,
+    generate_payment_export,
+    generate_review_visit_export,
+    generate_user_status_export,
+    generate_visit_export,
+    generate_work_status_export,
     notify_user_for_scored_assessment,
     save_export,
 )
@@ -432,3 +439,97 @@ def test_cleanup_expired_exports_keeps_record_on_s3_failure(settings, tmpdir):
         cleanup_expired_exports()
 
     assert ExportFile.objects.filter(id=old_export.id).exists()
+
+
+@pytest.mark.django_db
+class TestExportTasksCreateExportFile:
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.UserVisitExporter")
+    def test_generate_visit_export(self, mock_exporter_cls, mock_save, opportunity):
+        mock_exporter_cls.return_value.get_dataset.return_value = Dataset()
+        generate_visit_export(opportunity.id, None, None, [], "csv", False)
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_visit_export.csv")
+        assert args[2] == "csv"
+        assert args[3] == "visit_export"
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_user_visit_review_data")
+    def test_generate_review_visit_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_review_visit_export(opportunity.id, None, None, [], "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_review_visit_export.csv")
+        assert args[2] == "csv"
+        assert args[3] == "review_visit_export"
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_empty_payment_table")
+    def test_generate_payment_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_payment_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_payment_export.csv")
+        assert args[2] == "csv"
+        assert args[3] == "payment_export"
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_user_status_table")
+    def test_generate_user_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_user_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_user_status.csv")
+        assert args[2] == "csv"
+        assert args[3] == "user_status"
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_deliver_status_table")
+    def test_generate_deliver_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_deliver_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_deliver_status.csv")
+        assert args[2] == "csv"
+        assert args[3] == "deliver_status"
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_work_status_table")
+    def test_generate_work_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_work_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_payment_verification.csv")
+        assert args[2] == "csv"
+        assert args[3] == "work_status"
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_catchment_area_table")
+    def test_generate_catchment_area_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_catchment_area_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_catchment_area.csv")
+        assert args[2] == "csv"
+        assert args[3] == "catchment_area"
+        assert args[4] == opportunity
