@@ -1034,6 +1034,15 @@ class CredentialConfiguration(models.Model):
     )
 
 
+class ExportFile(BaseModel):
+    filename = models.CharField(max_length=512, unique=True)
+    export_type = models.CharField(max_length=50)
+    opportunity = models.ForeignKey("Opportunity", on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.filename
+
+
 class LabsRecord(models.Model):
     # inline import to avoid circular import
     from commcare_connect.program.models import Program
