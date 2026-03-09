@@ -1161,12 +1161,12 @@ class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, V
         opportunity = self.get_opportunity()
         tasks = Task.objects.filter(app=opportunity.deliver_app).select_related("linked_task_unit")
         path = [
-            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
             {
                 "title": opportunity.name,
                 "url": reverse("opportunity:detail", args=(org_slug, opportunity.opportunity_id)),
             },
-            {"title": "Configure Task Types", "url": request.path},
+            {"title": _("Configure Task Types"), "url": self.request.path},
         ]
         table = TaskTable(tasks)
         RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
@@ -1186,7 +1186,7 @@ class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, V
         form = AddTaskTypeForm(data=request.POST, opportunity=opportunity)
         if form.is_valid():
             form.save()
-            messages.success(request, "Task type added successfully.")
+            messages.success(request, _("Task type added successfully."))
             return redirect("opportunity:task_types_config", org_slug=org_slug, opp_id=opp_id)
         return render(request, self.template_name, self._get_context(request, org_slug, form))
 

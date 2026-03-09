@@ -1693,10 +1693,10 @@ class InvoiceDeliveriesTable(tables.Table):
 
 class TaskTable(tables.Table):
     index = IndexColumn()
-    name = tables.Column(verbose_name=_("Task Type Name"))
-    description = tables.Column(verbose_name=_("Description"))
+    name = tables.Column(verbose_name=gettext_lazy("Task Type Name"))
+    description = tables.Column(verbose_name=gettext_lazy("Description"))
     linked_task_unit = tables.Column(
-        verbose_name=_("Linked Task Unit"), empty_values=(), order_by="linked_task_unit__name"
+        verbose_name=gettext_lazy("Linked Task Unit"), empty_values=(), order_by="linked_task_unit__name"
     )
 
     class Meta:
