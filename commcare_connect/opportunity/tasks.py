@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.text import slugify
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from tablib import Dataset
@@ -42,6 +43,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     ExchangeRate,
     ExportFile,
+    ExportType,
     InvoiceStatus,
     LearnModule,
     Opportunity,
@@ -191,8 +193,8 @@ def generate_visit_export(
     )
     exporter = UserVisitExporter(opportunity, flatten)
     dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "visit_export", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_visit_export.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.VISIT_EXPORT, opportunity)
     return export_tmp_name
 
 
@@ -204,8 +206,8 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
         from {from_date} to {to_date} and status {','.join(status)}"""
     )
     dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "review_visit_export", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_review_visit_export.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.REVIEW_VISIT_EXPORT, opportunity)
     return export_tmp_name
 
 
@@ -213,8 +215,8 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
 def generate_payment_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_empty_payment_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_payment_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "payment_export", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_payment_export.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.PAYMENT_EXPORT, opportunity)
     return export_tmp_name
 
 
@@ -222,8 +224,8 @@ def generate_payment_export(opportunity_id: int, export_format: str):
 def generate_user_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_user_status_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_user_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "user_status", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_user_status.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.USER_STATUS, opportunity)
     return export_tmp_name
 
 
@@ -231,8 +233,8 @@ def generate_user_status_export(opportunity_id: int, export_format: str):
 def generate_deliver_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_deliver_status_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_deliver_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "deliver_status", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_deliver_status.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.DELIVER_STATUS, opportunity)
     return export_tmp_name
 
 
@@ -241,13 +243,7 @@ def save_export(dataset: Dataset, file_name: str, export_format: str, export_typ
     if isinstance(content, str):
         content = content.encode()
     default_storage.save(file_name, ContentFile(content))
-    ExportFile.objects.create(
-        filename=file_name,
-        export_type=export_type,
-        opportunity=opportunity,
-        created_by="system",
-        modified_by="system",
-    )
+    ExportFile.track(file_name, export_type, opportunity)
 
 
 @celery_app.task()
@@ -394,8 +390,8 @@ def download_user_visit_attachments(self, user_visit_id: int):
 def generate_work_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_payment_verification.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "work_status", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.WORK_STATUS, opportunity)
     return export_tmp_name
 
 
@@ -416,8 +412,8 @@ def bulk_approve_completed_work():
 def generate_catchment_area_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_catchment_area_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{opportunity.name}_catchment_area.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, "catchment_area", opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_catchment_area.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, ExportType.CATCHMENT_AREA, opportunity)
     return export_tmp_name
 
 
@@ -724,9 +720,9 @@ def cleanup_expired_exports():
             default_storage.delete(export.filename)
             deleted_ids.append(export.id)
         except Exception:
-            logger.exception(f"Failed to delete export file: {export.filename}")
+            logger.exception("Failed to delete export file: %s", export.filename)
     ExportFile.objects.filter(id__in=deleted_ids).delete()
-    logger.info(f"Cleaned up {len(deleted_ids)} expired export files")
+    logger.info("Cleaned up %s expired export files", len(deleted_ids))
 
 
 @celery_app.task()

@@ -1,16 +1,23 @@
 import re
 from datetime import timedelta
 
+try:
+    import boto3
+except ImportError:
+    boto3 = None
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils.timezone import now
 
 EXPORT_FILENAME_PATTERNS = [
-    r"\d{4}-\d{2}-\d{2}T.*_("
-    r"visit_export|review_visit_export|payment_export|"
-    r"user_status|deliver_status|payment_verification|catchment_area"
-    r")\.\w+",
-    r"invoice-report-[\w-]+\.csv",
+    re.compile(
+        r"\d{4}-\d{2}-\d{2}T.*_("
+        r"visit_export|review_visit_export|payment_export|"
+        r"user_status|deliver_status|work_status|catchment_area"
+        r")\.\w+"
+    ),
+    re.compile(r"invoice-report-[\w-]+\.csv"),
 ]
 
 
@@ -21,8 +28,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--retention-days",
             type=int,
-            default=30,
-            help="Delete export files older than this many days. Defaults to 30.",
+            default=settings.EXPORT_RETENTION_DAYS,
+            help=f"Delete export files older than this many days. Defaults to {settings.EXPORT_RETENTION_DAYS}.",
         )
         parser.add_argument(
             "--dry-run",
@@ -31,8 +38,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, **options):
-        import boto3
-
         retention_days = options["retention_days"]
         dry_run = options["dry_run"]
         cutoff = now() - timedelta(days=retention_days)
@@ -49,7 +54,7 @@ class Command(BaseCommand):
             # Strip the media/ prefix for pattern matching
             filename = obj.key.removeprefix("media/")
 
-            if not any(re.match(p, filename) for p in EXPORT_FILENAME_PATTERNS):
+            if not any(p.match(filename) for p in EXPORT_FILENAME_PATTERNS):
                 continue
 
             if obj.last_modified >= cutoff:
@@ -74,7 +79,11 @@ class Command(BaseCommand):
         for i in range(0, len(to_delete), 1000):
             end = i + 1000
             batch = to_delete[i:end]
-            bucket.delete_objects(Delete={"Objects": [{"Key": k} for k in batch]})
-            deleted_count += len(batch)
+            response = bucket.delete_objects(Delete={"Objects": [{"Key": k} for k in batch]})
+            errors = response.get("Errors", [])
+            if errors:
+                for err in errors:
+                    self.stderr.write(f"Failed to delete {err['Key']}: {err['Code']} {err['Message']}")
+            deleted_count += len(batch) - len(errors)
 
         self.stdout.write(self.style.SUCCESS(f"Deleted {deleted_count} expired export files."))

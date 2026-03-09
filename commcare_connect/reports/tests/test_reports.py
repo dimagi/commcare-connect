@@ -12,7 +12,7 @@ from django.views import View
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.helpers import get_payment_report_data
-from commcare_connect.opportunity.models import CompletedWorkStatus, ExportFile, VisitValidationStatus
+from commcare_connect.opportunity.models import CompletedWorkStatus, ExportFile, ExportType, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
@@ -495,5 +495,5 @@ def test_export_invoice_report_task_creates_export_file(mock_storage):
     assert save_args[0] == result
 
     export_file = ExportFile.objects.get(filename=result)
-    assert export_file.export_type == "invoice_report"
+    assert export_file.export_type == ExportType.INVOICE_REPORT
     assert export_file.opportunity is None

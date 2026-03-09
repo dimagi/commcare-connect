@@ -10,7 +10,7 @@ from django.db.models.lookups import GreaterThanOrEqual
 from django_tables2.export.export import TableExport
 
 from commcare_connect.connect_id_client.main import fetch_user_analytics
-from commcare_connect.opportunity.models import CompletedWorkStatus, ExportFile, OpportunityAccess
+from commcare_connect.opportunity.models import CompletedWorkStatus, ExportFile, ExportType, OpportunityAccess
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.models import User
 from config import celery_app
@@ -148,10 +148,5 @@ def export_invoice_report_task(filters_data):
     filename = f"exports/invoice-report-{uuid.uuid4()}.csv"
     content = exporter.export()
     default_storage.save(filename, ContentFile(content.encode("utf-8")))
-    ExportFile.objects.create(
-        filename=filename,
-        export_type="invoice_report",
-        created_by="system",
-        modified_by="system",
-    )
+    ExportFile.track(filename, ExportType.INVOICE_REPORT)
     return filename

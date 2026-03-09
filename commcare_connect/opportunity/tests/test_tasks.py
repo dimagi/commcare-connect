@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     ExchangeRate,
     ExportFile,
+    ExportType,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -371,10 +372,10 @@ def test_save_export_creates_export_file_record(settings, tmpdir):
     dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
     filename = "exports/2026-03-09T10:00:00_test_visit_export.csv"
 
-    save_export(dataset, filename, "csv", "visit_export", opportunity)
+    save_export(dataset, filename, "csv", ExportType.VISIT_EXPORT, opportunity)
 
     export_file = ExportFile.objects.get(filename=filename)
-    assert export_file.export_type == "visit_export"
+    assert export_file.export_type == ExportType.VISIT_EXPORT
     assert export_file.opportunity == opportunity
 
 
@@ -384,7 +385,7 @@ def test_save_export_without_opportunity(settings, tmpdir):
     dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
     filename = "exports/2026-03-09T10:00:00_test_export.csv"
 
-    save_export(dataset, filename, "csv", "invoice_report")
+    save_export(dataset, filename, "csv", ExportType.INVOICE_REPORT)
 
     export_file = ExportFile.objects.get(filename=filename)
     assert export_file.opportunity is None
@@ -396,7 +397,7 @@ def test_save_export_stores_file_with_exports_prefix(settings, tmpdir):
     dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
     filename = "exports/2026-03-09T10:00:00_test_visit_export.csv"
 
-    save_export(dataset, filename, "csv", "visit_export")
+    save_export(dataset, filename, "csv", ExportType.VISIT_EXPORT)
 
     from django.core.files.storage import default_storage
 
@@ -453,7 +454,7 @@ class TestExportTasksCreateExportFile:
         assert args[1].startswith("exports/")
         assert args[1].endswith("_visit_export.csv")
         assert args[2] == "csv"
-        assert args[3] == "visit_export"
+        assert args[3] == ExportType.VISIT_EXPORT
         assert args[4] == opportunity
 
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
@@ -466,7 +467,7 @@ class TestExportTasksCreateExportFile:
         assert args[1].startswith("exports/")
         assert args[1].endswith("_review_visit_export.csv")
         assert args[2] == "csv"
-        assert args[3] == "review_visit_export"
+        assert args[3] == ExportType.REVIEW_VISIT_EXPORT
         assert args[4] == opportunity
 
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
@@ -479,7 +480,7 @@ class TestExportTasksCreateExportFile:
         assert args[1].startswith("exports/")
         assert args[1].endswith("_payment_export.csv")
         assert args[2] == "csv"
-        assert args[3] == "payment_export"
+        assert args[3] == ExportType.PAYMENT_EXPORT
         assert args[4] == opportunity
 
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
@@ -492,7 +493,7 @@ class TestExportTasksCreateExportFile:
         assert args[1].startswith("exports/")
         assert args[1].endswith("_user_status.csv")
         assert args[2] == "csv"
-        assert args[3] == "user_status"
+        assert args[3] == ExportType.USER_STATUS
         assert args[4] == opportunity
 
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
@@ -505,7 +506,7 @@ class TestExportTasksCreateExportFile:
         assert args[1].startswith("exports/")
         assert args[1].endswith("_deliver_status.csv")
         assert args[2] == "csv"
-        assert args[3] == "deliver_status"
+        assert args[3] == ExportType.DELIVER_STATUS
         assert args[4] == opportunity
 
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
@@ -516,9 +517,9 @@ class TestExportTasksCreateExportFile:
         mock_save.assert_called_once()
         args = mock_save.call_args[0]
         assert args[1].startswith("exports/")
-        assert args[1].endswith("_payment_verification.csv")
+        assert args[1].endswith("_work_status.csv")
         assert args[2] == "csv"
-        assert args[3] == "work_status"
+        assert args[3] == ExportType.WORK_STATUS
         assert args[4] == opportunity
 
     @mock.patch("commcare_connect.opportunity.tasks.save_export")
@@ -531,5 +532,5 @@ class TestExportTasksCreateExportFile:
         assert args[1].startswith("exports/")
         assert args[1].endswith("_catchment_area.csv")
         assert args[2] == "csv"
-        assert args[3] == "catchment_area"
+        assert args[3] == ExportType.CATCHMENT_AREA
         assert args[4] == opportunity
