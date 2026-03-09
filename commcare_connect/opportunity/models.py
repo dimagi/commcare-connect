@@ -11,7 +11,7 @@ from django.db.models.expressions import RawSQL
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
-from django.utils.translation import gettext
+from django.utils.translation import gettext, gettext_lazy
 from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
@@ -592,9 +592,20 @@ class PaymentInvoice(models.Model):
     date_of_expense = models.DateField(null=True, blank=True)
     status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
     archived_date = models.DateTimeField(null=True, blank=True)
+    invoice_ticket_link = models.URLField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
+
+    @property
+    def invoice_type(self):
+        if self.service_delivery:
+            return PaymentInvoice.InvoiceType.service_delivery
+        return PaymentInvoice.InvoiceType.custom
+
+    @cached_property
+    def is_paid(self):
+        return Payment.objects.filter(invoice=self).exists()
 
     def get_status_display(self):
         return InvoiceStatus.get_label(self.status)
@@ -659,9 +670,11 @@ class CompletedWork(models.Model):
     saved_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
-    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the organization")
+    saved_org_payment_accrued = models.IntegerField(
+        default=0, help_text=gettext_lazy("Payment accrued for the workspace")
+    )
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
+        max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -815,6 +828,12 @@ class UserVisit(XFormBaseModel):
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
+    work_area = models.ForeignKey(
+        "microplanning.WorkArea",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
     status_modified_date = models.DateTimeField(null=True)
     review_status = models.CharField(
         max_length=50, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending

@@ -1,4 +1,5 @@
 import csv
+from collections import defaultdict
 
 from django.core.files.storage import storages
 from django.db.models import Count, F, Q
@@ -24,7 +25,8 @@ from commcare_connect.data_export.serializer import (
     OrganizationDataExportSerializer,
     PaymentDataSerializer,
     ProgramDataExportSerializer,
-    UserVisitDataSerialier,
+    UserVisitDataSerializer,
+    UserVisitDataWithImagesSerializer,
 )
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -75,13 +77,14 @@ class BaseStreamingCSVExportView(BaseDataExportView):
         raise NotImplementedError
 
     def get_data_generator(self, *args, **kwargs):
-        fieldnames = self.serializer_class().get_fields().keys()
+        serializer_class = self.get_serializer_class()
+        fieldnames = serializer_class().get_fields().keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
         objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=2000)
         yield writer.writeheader()
 
         for obj in objects:
-            serialized_data = self.serializer_class(obj).data
+            serialized_data = serializer_class(obj).data
             yield writer.writerow(serialized_data)
 
     @extend_schema(
@@ -190,7 +193,15 @@ class OpportunityUserDataView(OpportunityScopedDataView):
 
 
 class UserVisitDataView(OpportunityScopedDataView):
-    serializer_class = UserVisitDataSerialier
+    serializer_class = UserVisitDataSerializer
+
+    def _include_images(self):
+        return self.request.query_params.get("images", "").lower() == "true"
+
+    def get_serializer_class(self, *args, **kwargs):
+        if self._include_images():
+            return UserVisitDataWithImagesSerializer
+        return UserVisitDataSerializer
 
     def get_queryset(self, request, opp_id):
         return (
@@ -198,6 +209,40 @@ class UserVisitDataView(OpportunityScopedDataView):
             .annotate(username=F("user__username"))
             .select_related("user")
         )
+
+    def get_data_generator(self, *args, **kwargs):
+        serializer_class = self.get_serializer_class()
+        fieldnames = serializer_class().get_fields().keys()
+        writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
+        yield writer.writeheader()
+
+        queryset = self.get_queryset(*args, **kwargs)
+        include_images = self._include_images()
+
+        if not include_images:
+            for obj in queryset.iterator(chunk_size=2000):
+                yield writer.writerow(serializer_class(obj).data)
+        else:
+            batch = []
+            for obj in queryset.iterator(chunk_size=2000):
+                batch.append(obj)
+                if len(batch) >= 2000:
+                    self._prefetch_images(batch)
+                    for visit in batch:
+                        yield writer.writerow(serializer_class(visit).data)
+                    batch = []
+            if batch:
+                self._prefetch_images(batch)
+                for visit in batch:
+                    yield writer.writerow(serializer_class(visit).data)
+
+    def _prefetch_images(self, visits):
+        xform_ids = [v.xform_id for v in visits]
+        blobs_by_parent = defaultdict(list)
+        for blob in BlobMeta.objects.filter(parent_id__in=xform_ids, content_type__startswith="image/"):
+            blobs_by_parent[blob.parent_id].append(blob)
+        for visit in visits:
+            visit._prefetched_images = blobs_by_parent.get(visit.xform_id, [])
 
 
 class CompletedWorkDataView(OpportunityScopedDataView):

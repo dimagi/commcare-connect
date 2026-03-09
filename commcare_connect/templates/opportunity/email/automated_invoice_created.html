@@ -1,9 +1,11 @@
+{% extends "email/base.html" %}
 {% load i18n %}
 
+{% block content %}
 <p>{% trans "Hi," %}</p>
 
 <p>
-    {% trans "The following invoices have been auto-created for your organization %} <strong>{{ organization.name }}</strong>.
+    {% trans "The following invoices have been auto-created for your workspace" %} <strong>{{ organization.name }}</strong>.
 </p>
 
 <p><strong>{% trans "Invoices Details" %}</strong></p>
@@ -35,8 +37,4 @@
 <p>
     {% trans "If you have any questions, please contact your Program Manager." %}
 </p>
-
-<p>
-    {% blocktrans %}Thank you,{% endblocktrans %}<br>
-    Connect
-</p>
+{% endblock %}

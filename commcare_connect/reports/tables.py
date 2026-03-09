@@ -11,26 +11,34 @@ from commcare_connect.utils.tables import DMYTColumn
 
 
 class AdminReportTable(tables.Table):
-    month = columns.Column(verbose_name="Month", footer="Total", empty_values=())
+    month = columns.Column(verbose_name="Period", footer="Total", empty_values=())
     delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=("All"))
     connectid_users = columns.Column(verbose_name="PersonalID Accounts")
     activated_personalid_accounts = columns.Column(verbose_name="Activated PersonalID Accounts")
     activated_connect_users = columns.Column(verbose_name="Activated Connect Users")
-    users = SumColumn(verbose_name="Monthly Activated Connect Users")
+    users = SumColumn(verbose_name="Activated Connect Users (Period)")
     activated_commcare_users = columns.Column("Activated CommCare Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
     avg_top_earned_flws = SumColumn(verbose_name="Average Earned by Top FLWs")
     intervention_funding_deployed = SumColumn(verbose_name="Intervention Funding Deployed")
-    organization_funding_deployed = SumColumn(verbose_name="Organization Funding Deployed")
+    organization_funding_deployed = SumColumn(verbose_name="Workspace Funding Deployed")
     services = SumColumn(verbose_name="Verified Services")
 
     class Meta:
-        empty_text = "No data for this month."
+        empty_text = "No data for this period."
         orderable = False
-        row_attrs = {"id": lambda record: f"row{record['month_group'].strftime('%Y-%m')}"}
+        row_attrs = {"id": lambda record: f"row{record.get('quarter_label', record['month_group'].strftime('%Y-%m'))}"}
+
+    def __init__(self, *args, **kwargs):
+        period = kwargs.pop("period", "monthly")
+        super().__init__(*args, **kwargs)
+        period_label = "Monthly" if period == "monthly" else "Quarterly"
+        self.columns["users"].column.verbose_name = f"{period_label} Activated Connect Users"
 
     def render_month(self, record):
+        if "quarter_label" in record:
+            return record["quarter_label"]
         return record["month_group"].strftime("%B %Y")
 
     def render_avg_time_to_payment(self, record, value):
@@ -57,6 +65,9 @@ class InvoiceReportTable(tables.Table):
     status = columns.Column(verbose_name=_("Status"))
     invoice_creation_date = DMYTColumn(verbose_name=_("Invoice Creation Date"), accessor="date")
     date = DMYTColumn(verbose_name=_("Date of Payment"), accessor="date_paid")
+    last_status_modified_at = DMYTColumn(
+        verbose_name=_("Invoice Last Updated Date"), accessor="last_status_modified_at"
+    )
 
     class Meta:
         model = PaymentInvoice
@@ -78,6 +89,7 @@ class InvoiceReportTable(tables.Table):
         if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
             self.columns.hide("exchange_rate")
             self.columns.hide("invoice_creation_date")
+            self.columns.hide("last_status_modified_at")
 
     def render_invoice_number(self, value, record):
         url = reverse(

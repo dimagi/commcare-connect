@@ -120,7 +120,7 @@ class TestInviteOrganizationView(BaseProgramTest):
             organization=self.invite_organization,
             status=ProgramApplicationStatus.INVITED,
         ).exists()
-        assert "Organization invited successfully!" in [
+        assert "Workspace invited successfully!" in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
 

@@ -85,7 +85,7 @@ def opportunity_required(view_func):
             opp.managed and opp.managedopportunity.program.organization.slug == org_slug
         ):
             request.opportunity = opp
-            return view_func(request, org_slug, opp_id, *args, **kwargs)
+            return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
 
         raise Http404("Opportunity not found.")
 

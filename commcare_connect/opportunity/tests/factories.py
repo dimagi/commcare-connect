@@ -267,6 +267,17 @@ class PaymentInvoiceFactory(DjangoModelFactory):
         model = "opportunity.PaymentInvoice"
 
 
+class TaskFactory(DjangoModelFactory):
+    app = SubFactory(CommCareAppFactory)
+    slug = Faker("slug")
+    name = Faker("name")
+    description = Faker("text")
+    time_estimate = Faker("pyint", min_value=1, max_value=8)
+
+    class Meta:
+        model = "opportunity.Task"
+
+
 class ExchangeRateFactory(DjangoModelFactory):
     currency_code = "USD"
     rate = 1.0

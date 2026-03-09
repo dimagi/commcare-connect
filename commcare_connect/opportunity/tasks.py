@@ -36,6 +36,7 @@ from commcare_connect.opportunity.export import (
     export_work_status_table,
 )
 from commcare_connect.opportunity.models import (
+    Assessment,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
@@ -331,9 +332,16 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
 
 
 @celery_app.task()
-def send_push_notification_task(user_ids: list[int], title: str, body: str):
+def send_push_notification_task(
+    user_ids: list[int],
+    title: str,
+    body: str,
+    extra_data: dict[str, str] = None,
+):
     usernames = list(User.objects.filter(id__in=user_ids).values_list("username", flat=True))
     data = {"title": title, "body": body}
+    if extra_data is not None:
+        data.update(extra_data)
     message = Message(usernames, data=data)
     send_message(message)
 
@@ -696,3 +704,23 @@ def _send_auto_invoice_created_notification(invoice_ids):
             )
         except Exception as e:
             logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def notify_user_for_scored_assessment(assessment_pk):
+    assessment = Assessment.objects.get(pk=assessment_pk)
+    user = assessment.user
+    opportunity = assessment.opportunity
+    message = Message(
+        usernames=[user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "key": "scored_assessment",
+            "opportunity_status": "learn",
+            "opportunity_id": str(opportunity.id),  # added for backward compatibility
+            "opportunity_uuid": str(opportunity.opportunity_id),
+            "title": "Update on your Assessment",
+            "body": f"Assessment for opportunity '{opportunity.name}' scored, check your status",
+        },
+    )
+    send_message(message)

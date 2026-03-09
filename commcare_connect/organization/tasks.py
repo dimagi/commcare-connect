@@ -21,7 +21,9 @@ The invite can be accepted by visiting the link.
 {invite_url}
 
 Thank You,
-Connect"""
+Connect
+
+This inbox is not monitored. Please do not respond to this email."""
 
     send_mail_async.delay(
         subject=f"{host_user.name} has invited you to join '{membership.organization.name}' on Connect",

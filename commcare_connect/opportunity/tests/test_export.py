@@ -1,3 +1,4 @@
+import datetime
 import random
 from datetime import timedelta
 
@@ -359,3 +360,93 @@ def test_export_user_visit_review_data(organization, from_date, to_date, expecte
         assert row["Program Manager Review"] in [
             status.label for status in VisitReviewStatus if status.value in review_status
         ]
+
+
+@pytest.mark.django_db
+def test_export_user_visit_review_data_boundary_dates(organization):
+    opp = ManagedOpportunityFactory(organization=organization)
+
+    from_date = datetime.date.today() - datetime.timedelta(days=4)
+    to_date = datetime.date.today() - datetime.timedelta(days=1)
+
+    on_from_date = datetime.datetime.combine(from_date, datetime.time.min, tzinfo=datetime.UTC)
+    on_to_date = datetime.datetime.combine(to_date, datetime.time.max, tzinfo=datetime.UTC)
+    before_from_date = datetime.datetime.combine(
+        from_date - datetime.timedelta(days=1), datetime.time.max, tzinfo=datetime.UTC
+    )
+    after_to_date = datetime.datetime.combine(
+        to_date + datetime.timedelta(days=1), datetime.time.min, tzinfo=datetime.UTC
+    )
+
+    UserVisitFactory.create_batch(
+        3,
+        opportunity=opp,
+        visit_date=on_from_date,
+        review_created_on=on_from_date,
+        review_status=VisitReviewStatus.pending,
+    )
+    UserVisitFactory.create_batch(
+        2,
+        opportunity=opp,
+        visit_date=on_to_date,
+        review_created_on=on_to_date,
+        review_status=VisitReviewStatus.pending,
+    )
+    UserVisitFactory(
+        opportunity=opp,
+        visit_date=before_from_date,
+        review_created_on=before_from_date,
+        review_status=VisitReviewStatus.pending,
+    )
+    UserVisitFactory(
+        opportunity=opp,
+        visit_date=after_to_date,
+        review_created_on=after_to_date,
+        review_status=VisitReviewStatus.pending,
+    )
+
+    dataset = export_user_visit_review_data(opp, from_date, to_date, [VisitReviewStatus.pending.value])
+
+    assert isinstance(dataset, Dataset)
+    assert len(dataset) == 5, f"Expected 5 visits (3 on from_date + 2 on to_date), got {len(dataset)}"
+
+
+@pytest.mark.django_db
+def test_user_visit_exporter_get_dataset_boundary_dates(opportunity, mobile_user_with_connect_link):
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+
+    from_date = datetime.date.today() - datetime.timedelta(days=5)
+    to_date = datetime.date.today() - datetime.timedelta(days=1)
+
+    on_from_date = datetime.datetime.combine(from_date, datetime.time.min, tzinfo=datetime.UTC)
+    on_to_date = datetime.datetime.combine(to_date, datetime.time.max, tzinfo=datetime.UTC)
+    before_from_date = datetime.datetime.combine(
+        from_date - datetime.timedelta(days=1), datetime.time.max, tzinfo=datetime.UTC
+    )
+    after_to_date = datetime.datetime.combine(
+        to_date + datetime.timedelta(days=1), datetime.time.min, tzinfo=datetime.UTC
+    )
+
+    UserVisitFactory(
+        opportunity=opportunity, user=mobile_user_with_connect_link, deliver_unit=deliver_unit, visit_date=on_from_date
+    )
+    UserVisitFactory(
+        opportunity=opportunity, user=mobile_user_with_connect_link, deliver_unit=deliver_unit, visit_date=on_to_date
+    )
+    UserVisitFactory(
+        opportunity=opportunity,
+        user=mobile_user_with_connect_link,
+        deliver_unit=deliver_unit,
+        visit_date=before_from_date,
+    )
+    UserVisitFactory(
+        opportunity=opportunity,
+        user=mobile_user_with_connect_link,
+        deliver_unit=deliver_unit,
+        visit_date=after_to_date,
+    )
+
+    exporter = UserVisitExporter(opportunity, False)
+    dataset = exporter.get_dataset(from_date, to_date, [])
+
+    assert len(dataset) == 2, f"Expected 2 visits (boundary dates), got {len(dataset)}"

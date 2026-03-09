@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.translation import gettext_lazy
 from waffle.models import CACHE_EMPTY, AbstractUserFlag
 from waffle.utils import get_cache, get_setting, keyfmt
 
@@ -19,7 +20,8 @@ class Flag(AbstractUserFlag):
     organizations = models.ManyToManyField(
         Organization,
         blank=True,
-        help_text="Activate this flag for these organizations.",
+        verbose_name=gettext_lazy("Workspaces"),
+        help_text=gettext_lazy("Activate this flag for these workspaces."),
     )
     opportunities = models.ManyToManyField(
         Opportunity,
