@@ -24,6 +24,10 @@ class TestWorkAreaCSVImporter:
         "Boundary",
         "Building Count",
         "Expected Visit Count",
+        "Max WAG",
+        "WAG Serial Number",
+        "LGA",
+        "State",
     ]
 
     def build_csv(self, rows, headers=None):
@@ -46,6 +50,10 @@ class TestWorkAreaCSVImporter:
                     self.POLYGON,
                     5,
                     "6",
+                    "3",
+                    "WAG123",
+                    "LGA1",
+                    "State1",
                 ]
             ]
         )
@@ -132,6 +140,10 @@ class TestWorkAreaCSVImporter:
             "Centroid",
             "Ward",
             "Building Count",
+            "Max WAG",
+            "WAG Serial Number",
+            "State",
+            "LGA",
         ]
 
         row = [
@@ -141,9 +153,29 @@ class TestWorkAreaCSVImporter:
             self.CENTROID,
             "ward-1",
             "5",
+            "7",
+            "WAG456",
+            "State2",
+            "LGA2",
         ]
 
         csv_data = self.build_csv([row], headers=headers)
         result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
 
         assert result["created"] == 1
+
+    def test_missing_extra_properties(self, opportunity):
+        row = [
+            "area-1",
+            "ward",
+            self.CENTROID,
+            self.POLYGON,
+            5,
+            "6",
+        ]
+        csv = self.build_csv([row])
+        result = WorkAreaCSVImporter(opportunity.id, csv).run()
+        assert "errors" in result
+        error_keys = " ".join(result["errors"].keys()).lower()
+        expected_error = "Missing values for properties: max_wag, wag_serial_number, lga, state"
+        assert expected_error.lower() in error_keys

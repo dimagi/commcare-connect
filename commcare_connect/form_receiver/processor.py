@@ -1,5 +1,7 @@
 import datetime
+import logging
 from functools import partial
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Count, Min, Q
@@ -12,6 +14,7 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
+from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.opportunity.models import (
     Assessment,
     CommCareApp,
@@ -31,14 +34,24 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments
+from commcare_connect.opportunity.tasks import download_user_visit_attachments, notify_user_for_scored_assessment
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
 from commcare_connect.utils.lock import try_redis_lock
 
+logger = logging.getLogger(__name__)
+
 LEARN_MODULE_JSONPATH = parse("$..module")
 ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
+
+
+def is_a_uuid(value):
+    try:
+        UUID(str(value))
+        return True
+    except ValueError:
+        return False
 
 
 def process_xform(xform: XForm, hq_server: HQServer):
@@ -63,11 +76,15 @@ def process_learn_form(user, xform: XForm, app: CommCareApp, opportunity: Opport
     ]
     for jsonpath, processor in processors:
         try:
-            matches = [match.value for match in jsonpath.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS]
+            matches = _get_matching_blocks(jsonpath, xform)
             if matches:
                 processor(user, xform, app, opportunity, matches)
         except JSONPathError as e:
             raise ProcessingError from e
+
+
+def _get_matching_blocks(jsonpath, xform):
+    return [match.value for match in jsonpath.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS]
 
 
 def get_or_create_learn_module(app, module_data):
@@ -168,6 +185,8 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
         if not created:
             return ProcessingError("Learn Assessment is already completed")
+
+        notify_user_for_scored_assessment.delay(assessment.pk)
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -329,6 +348,18 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                     completed_work_needs_save = True
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
+
+        if work_area_case_id := deliver_unit_block.get("work_area_id"):
+            if is_a_uuid(work_area_case_id):
+                try:
+                    user_visit.work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+                except WorkArea.DoesNotExist:
+                    logger.error(
+                        f"No work area found for opportunity ({opportunity.id}) with case_id: {work_area_case_id}"
+                    )
+            else:
+                logger.error(f"Invalid work area case id specified: {work_area_case_id}")
+
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])

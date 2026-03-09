@@ -1,3 +1,6 @@
+{% extends "email/base.html" %}
+
+{% block content %}
 <p>Hi,</p>
 
 <p>This is a reminder to review pending deliveries before the end of the month so they can be included in invoices.</p>
@@ -10,8 +13,4 @@
     <li><a href="{{ opportunity.url }}">{{ opportunity.name }}</a></li>
 {% endfor %}
 </ul>
-
-<p>
-    Thank you,<br>
-    Connect
-</p>
+{% endblock %}

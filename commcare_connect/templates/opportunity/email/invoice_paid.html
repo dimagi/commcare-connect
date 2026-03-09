@@ -1,5 +1,7 @@
+{% extends "email/base.html" %}
 {% load i18n %}
 
+{% block content %}
 <p>{% trans "Hi," %}</p>
 
 <p>
@@ -33,8 +35,4 @@
 <p>
     {% trans "If you have any questions, please contact your Program Manager." %}
 </p>
-
-<p>
-    {% blocktrans %}Thank you,{% endblocktrans %}<br>
-    Connect
-</p>
+{% endblock %}

@@ -1,13 +1,17 @@
 import csv
+import json
 import uuid
 
 from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.gis.db.models import Extent, Union
+from django.contrib.gis.db.models.functions import AsGeoJSON
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.http import HttpResponse
+from django.db.models import F
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -15,14 +19,19 @@ from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.http import require_GET
+from vectortiles import VectorLayer
+from vectortiles.views import MVTView
 
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
 from commcare_connect.utils.file import get_file_extension
 
 from .tasks import WorkAreaCSVImporter, get_import_area_cache_key, import_work_areas_task
+
+WORKAREA_MIN_ZOOM = 6
 
 
 @require_GET
@@ -36,6 +45,27 @@ def microplanning_home(request, *args, **kwargs):
     show_workarea_groups_btn = (
         areas_present and not WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
     )
+    tiles_url = reverse(
+        "microplanning:workareas_tiles",
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
+    ).replace("/0/0/0", "/{z}/{x}/{y}")
+
+    groups_url = reverse(
+        "microplanning:workareas_group_geojson",
+        kwargs={
+            "org_slug": request.org.slug,
+            "opp_id": opportunity.opportunity_id,
+        },
+    )
+
+    status_meta = {
+        status.value: {
+            "label": status.label,
+            "class": WORK_AREA_STATUS_COLORS.get(status),
+        }
+        for status in WorkAreaStatus
+    }
+
     return render(
         request,
         template_name="microplanning/home.html",
@@ -46,6 +76,10 @@ def microplanning_home(request, *args, **kwargs):
             "task_id": request.GET.get("task_id"),
             "opportunity": opportunity,
             "metrics": get_metrics_for_microplanning(opportunity),
+            "tiles_url": tiles_url,
+            "groups_url": groups_url,
+            "status_meta": status_meta,
+            "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         },
     )
 
@@ -74,6 +108,10 @@ class WorkAreaImport(View):
                 "POLYGON((77 28,78 28,78 29,77 29,77 28))",
                 10,
                 12,
+                7,
+                2,
+                "LGA1",
+                "State1",
             ]
         )
         return response
@@ -135,3 +173,54 @@ def import_status(request, org_slug, opp_id):
     context = {"result_ready": result_ready, "result_data": result_data, "task_id": task_id}
 
     return render(request, "microplanning/import_work_area_modal.html", context)
+
+
+class WorkAreaVectorLayer(VectorLayer):
+    id = "workareas"
+    tile_fields = ("id", "status", "building_count", "expected_visit_count", "group_id", "group_name", "assignee_name")
+    geom_field = "boundary"
+    min_zoom = WORKAREA_MIN_ZOOM
+
+    def __init__(self, *args, opp_id=None, **kwargs):
+        self.opp_id = opp_id
+        super().__init__(*args, **kwargs)
+
+    def get_queryset(self):
+        return WorkArea.objects.filter(opportunity_id=self.opp_id).annotate(
+            group_id=F("work_area_group__id"),
+            group_name=F("work_area_group__name"),
+            assignee_name=F("work_area_group__assigned_user__user__name"),
+        )
+
+
+@method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")
+class WorkAreaTileView(MVTView):
+    layer_classes = [WorkAreaVectorLayer]
+
+    def get_layers(self):
+        return [WorkAreaVectorLayer(opp_id=self.request.opportunity.id)]
+
+
+@org_admin_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def workareas_group_geojson(request, org_slug, opp_id):
+    # This view aggregates group boundaries for map display.
+    # To be removed in https://dimagi.atlassian.net/browse/CCCT-2213 for a better performant alternative
+
+    qs = WorkArea.objects.filter(opportunity_id=request.opportunity.id)
+
+    group_features = [
+        {
+            "type": "Feature",
+            "geometry": json.loads(g["geojson"]),
+            "properties": {"group_id": g["group_id"]},
+        }
+        for g in (
+            qs.filter(work_area_group__isnull=False)
+            .values(group_id=F("work_area_group__id"))
+            .annotate(geojson=AsGeoJSON(Union("boundary")))
+        )
+    ]
+    extent = qs.aggregate(extent=Extent("boundary"))["extent"]
+    return JsonResponse({"group_features": group_features, "workarea_bounds": extent})

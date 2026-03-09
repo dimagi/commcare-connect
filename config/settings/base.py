@@ -94,6 +94,7 @@ THIRD_PARTY_APPS = [
     "waffle",
     "pghistory",
     "pgtrigger",  # added for pghistory
+    "vectortiles",
 ]
 
 LOCAL_APPS = [

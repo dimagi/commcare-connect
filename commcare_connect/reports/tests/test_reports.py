@@ -25,7 +25,7 @@ from commcare_connect.opportunity.tests.factories import (
 from commcare_connect.reports import urls as reports_urls
 from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.users.tests.factories import LLOEntityFactory, OrganizationFactory, UserFactory
 from commcare_connect.utils.datetime import get_month_series
 from commcare_connect.utils.test_utils import check_basic_permissions
 
@@ -38,6 +38,48 @@ def get_month_range_start_end(months=1):
     end = date(today.year, today.month, 1)
     start = end - relativedelta(months=months)
     return start, end
+
+
+def _create_kpi_test_data(users, timestamp, **access_kwargs):
+    """Create completed work, visits, payments, and invoices for KPI report tests."""
+    for i, user in enumerate(users):
+        access = OpportunityAccessFactory(
+            user=user,
+            opportunity__is_test=False,
+            opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
+            **access_kwargs,
+        )
+        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
+        cw = CompletedWorkFactory(
+            status_modified_date=timestamp,
+            opportunity_access=access,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=1,
+            saved_payment_accrued_usd=i * 100,
+            saved_org_payment_accrued_usd=100,
+            payment_date=timestamp + timedelta(minutes=30),
+            invoice=inv,
+        )
+        UserVisitFactory(
+            date_created=timestamp - timedelta(i * 10),
+            opportunity_access=access,
+            completed_work=cw,
+            status=VisitValidationStatus.approved,
+        )
+        PaymentFactory(opportunity_access=access, date_paid=timestamp, amount_usd=i * 50, confirmed=True)
+        PaymentFactory(invoice=inv, date_paid=timestamp, amount_usd=50)
+        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
+        CompletedWorkFactory(
+            status_modified_date=timestamp,
+            opportunity_access=access,
+            status=CompletedWorkStatus.approved,
+            saved_approved_count=0,
+            saved_payment_accrued_usd=0,
+            saved_org_payment_accrued_usd=100,
+            payment_date=timestamp + timedelta(minutes=30),
+            invoice=other_inv,
+        )
+        PaymentFactory(invoice=other_inv, date_paid=timestamp, amount_usd=100)
 
 
 @pytest.mark.django_db
@@ -60,43 +102,7 @@ def test_get_table_data_for_year_month(from_date, to_date, httpx_mock):
         today = datetime.combine(month, datetime.min.time(), tzinfo=UTC)
         connectid_user_counts[today.strftime("%Y-%m")] = i
         with mock.patch.object(timezone, "now", return_value=today):
-            for i, user in enumerate(users):
-                access = OpportunityAccessFactory(
-                    user=user,
-                    opportunity__is_test=False,
-                    opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-                )
-                inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-                cw = CompletedWorkFactory(
-                    status_modified_date=today,
-                    opportunity_access=access,
-                    status=CompletedWorkStatus.approved,
-                    saved_approved_count=1,
-                    saved_payment_accrued_usd=i * 100,
-                    saved_org_payment_accrued_usd=100,
-                    payment_date=today + timedelta(minutes=30),
-                    invoice=inv,
-                )
-                UserVisitFactory(
-                    date_created=today - timedelta(i * 10),
-                    opportunity_access=access,
-                    completed_work=cw,
-                    status=VisitValidationStatus.approved,
-                )
-                PaymentFactory(opportunity_access=access, date_paid=today, amount_usd=i * 50, confirmed=True)
-                PaymentFactory(invoice=inv, date_paid=today, amount_usd=50)
-                other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
-                CompletedWorkFactory(
-                    status_modified_date=today,
-                    opportunity_access=access,
-                    status=CompletedWorkStatus.approved,
-                    saved_approved_count=0,
-                    saved_payment_accrued_usd=0,
-                    saved_org_payment_accrued_usd=100,
-                    payment_date=today + timedelta(minutes=30),
-                    invoice=other_inv,
-                )
-                PaymentFactory(invoice=other_inv, date_paid=today, amount_usd=100)
+            _create_kpi_test_data(users, today)
 
     fetch_user_counts.clear()
     httpx_mock.add_response(
@@ -246,57 +252,20 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opp_currency, filter_currency", [("ETB", "KES"), ("ETB", "ETB")])
-def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_currency, httpx_mock):
+@pytest.mark.parametrize("opp_country, filter_country", [("ETH", "KEN"), ("ETH", "ETH")])
+def test_get_table_data_for_year_month_by_country(opp_country, filter_country, httpx_mock):
     now = datetime.now(UTC)
     users = MobileUserFactory.create_batch(10)
-    for i, user in enumerate(users):
-        access = OpportunityAccessFactory(
-            user=user,
-            opportunity__is_test=False,
-            opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
-            opportunity__currency_id=opp_currency,
-        )
-        inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
-        cw = CompletedWorkFactory(
-            status_modified_date=now,
-            opportunity_access=access,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=1,
-            saved_payment_accrued_usd=i * 100,
-            saved_org_payment_accrued_usd=100,
-            payment_date=now + timedelta(minutes=1),
-            invoice=inv,
-        )
-        UserVisitFactory(
-            date_created=now - timedelta(i * 10),
-            opportunity_access=access,
-            completed_work=cw,
-            status=VisitValidationStatus.approved,
-        )
-        PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 50, confirmed=True)
-        PaymentFactory(invoice=inv, date_paid=now, amount_usd=50)
-        other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
-        CompletedWorkFactory(
-            status_modified_date=now,
-            opportunity_access=access,
-            status=CompletedWorkStatus.approved,
-            saved_approved_count=0,
-            saved_payment_accrued_usd=0,
-            saved_org_payment_accrued_usd=100,
-            payment_date=now + timedelta(minutes=1),
-            invoice=other_inv,
-        )
-        PaymentFactory(invoice=other_inv, date_paid=now, amount_usd=100)
+    _create_kpi_test_data(users, now, opportunity__country_id=opp_country)
     fetch_user_counts.clear()
     httpx_mock.add_response(
         method="GET",
         json={},
     )
-    data = get_table_data_for_year_month(country_currency=filter_currency)
+    data = get_table_data_for_year_month(country=filter_country)
     assert len(data)
 
-    if opp_currency == filter_currency:
+    if opp_country == filter_country:
         for row in data:
             if row["month_group"].month != now.month or row["month_group"].year != now.year:
                 continue
@@ -324,6 +293,145 @@ def test_get_table_data_for_year_month_by_country_currency(opp_currency, filter_
             assert row["intervention_funding_deployed"] == 0
             assert row["organization_funding_deployed"] == 0
             assert row["avg_top_earned_flws"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("filter_same_llo", [True, False])
+def test_get_table_data_for_year_month_by_llo(filter_same_llo, httpx_mock):
+    now = datetime.now(UTC)
+    llo_entity = LLOEntityFactory()
+    other_llo_entity = LLOEntityFactory()
+    org = OrganizationFactory(llo_entity=llo_entity)
+
+    users = MobileUserFactory.create_batch(10)
+    _create_kpi_test_data(users, now, opportunity__organization=org)
+    fetch_user_counts.clear()
+    httpx_mock.add_response(
+        method="GET",
+        json={},
+    )
+
+    filter_llo = llo_entity if filter_same_llo else other_llo_entity
+    data = get_table_data_for_year_month(llo=filter_llo)
+    assert len(data)
+
+    for row in data:
+        if filter_same_llo:
+            assert row["users"] == 10
+            assert row["services"] == 10
+            assert row["flw_amount_earned"] == 4500
+            assert row["flw_amount_paid"] == 2250
+            assert row["intervention_funding_deployed"] == 5500
+            assert row["organization_funding_deployed"] == 1000
+        else:
+            assert row["users"] == 0
+            assert row["services"] == 0
+            assert row["flw_amount_earned"] == 0
+            assert row["flw_amount_paid"] == 0
+            assert row["intervention_funding_deployed"] == 0
+            assert row["organization_funding_deployed"] == 0
+
+
+@pytest.mark.django_db
+def test_get_table_data_for_year_month_quarterly(httpx_mock):
+    """Test quarterly aggregation produces true DB-level averages, not average of monthly averages."""
+    # Use Q3 of last year so all 3 months are fully in the past — avoids to_date
+    # clamping that would cause monthly and quarterly to cover different date ranges.
+    year = now().year - 1
+    month1 = datetime(year, 7, 15, tzinfo=UTC)  # July     (Q3)
+    month2 = datetime(year, 8, 15, tzinfo=UTC)  # August   (Q3)
+    month3 = datetime(year, 9, 15, tzinfo=UTC)  # September (Q3)
+
+    # Create different numbers of users per month so that the true average
+    # (weighted by record count) differs from the average of monthly averages.
+    # _create_kpi_test_data assigns time_to_payment ≈ i*10 days for user index i,
+    # and excludes user 0 (saved_payment_accrued_usd=0) from the avg calculation.
+    #   5 users → qualifying i=1-4, avg=25 days
+    #  10 users → qualifying i=1-9, avg=50 days
+    #  15 users → qualifying i=1-14, avg=75 days
+    # Average-of-averages = (25+50+75)/3 = 50
+    # True weighted average = (100+450+1050)/(4+9+14) = 1600/27 ≈ 59.26
+    users_m1 = MobileUserFactory.create_batch(5)
+    users_m2 = MobileUserFactory.create_batch(10)
+    users_m3 = MobileUserFactory.create_batch(15)
+
+    with mock.patch.object(timezone, "now", return_value=month1):
+        _create_kpi_test_data(users_m1, month1)
+    with mock.patch.object(timezone, "now", return_value=month2):
+        _create_kpi_test_data(users_m2, month2)
+    with mock.patch.object(timezone, "now", return_value=month3):
+        _create_kpi_test_data(users_m3, month3)
+
+    fetch_user_counts.clear()
+    httpx_mock.add_response(method="GET", json={})
+
+    from_date = date(month1.year, month1.month, 1)
+    to_date = date(month3.year, month3.month, 1)
+
+    # Get monthly data for comparison
+    monthly_data = get_table_data_for_year_month(from_date=from_date, to_date=to_date, period="monthly")
+    assert len(monthly_data) == 3
+
+    # Get quarterly data
+    quarterly_data = get_table_data_for_year_month(from_date=from_date, to_date=to_date, period="quarterly")
+    assert len(quarterly_data) == 1
+
+    quarter_row = quarterly_data[0]
+    assert quarter_row["quarter_label"] == f"Q3 {year}"
+
+    # Sum fields should be aggregated across 3 months
+    assert quarter_row["users"] == sum(r["users"] for r in monthly_data)
+    assert quarter_row["services"] == sum(r["services"] for r in monthly_data)
+    assert quarter_row["flw_amount_earned"] == sum(r["flw_amount_earned"] for r in monthly_data)
+    assert quarter_row["flw_amount_paid"] == sum(r["flw_amount_paid"] for r in monthly_data)
+    assert quarter_row["intervention_funding_deployed"] == sum(
+        r["intervention_funding_deployed"] for r in monthly_data
+    )
+    assert quarter_row["organization_funding_deployed"] == sum(
+        r["organization_funding_deployed"] for r in monthly_data
+    )
+
+    # Verify avg_time_to_payment is a true DB-level average, not average-of-monthly-averages.
+    # With different user counts per month, these two values diverge.
+    monthly_avgs = [r["avg_time_to_payment"] for r in monthly_data if r["avg_time_to_payment"]]
+    avg_of_monthly_avgs = sum(monthly_avgs) / len(monthly_avgs)
+    assert quarter_row["avg_time_to_payment"] != pytest.approx(avg_of_monthly_avgs, abs=0.01)
+    assert quarter_row["avg_time_to_payment"] > 0
+
+    # Monthly rows must not carry a quarter_label
+    assert "quarter_label" not in monthly_data[0]
+
+
+@pytest.mark.django_db
+def test_get_table_data_for_year_month_quarterly_cross_quarter(httpx_mock):
+    """Test quarterly mode returns one row per quarter when data spans two quarters."""
+    # Use Q2 and Q3 of last year so both are fully in the past.
+    year = now().year - 1
+    month_q2 = datetime(year, 5, 15, tzinfo=UTC)  # May → Q2
+    month_q3 = datetime(year, 8, 15, tzinfo=UTC)  # August → Q3
+
+    users_q2 = MobileUserFactory.create_batch(5)
+    users_q3 = MobileUserFactory.create_batch(10)
+
+    with mock.patch.object(timezone, "now", return_value=month_q2):
+        _create_kpi_test_data(users_q2, month_q2)
+    with mock.patch.object(timezone, "now", return_value=month_q3):
+        _create_kpi_test_data(users_q3, month_q3)
+
+    fetch_user_counts.clear()
+    httpx_mock.add_response(method="GET", json={})
+
+    from_date = date(year, 5, 1)
+    to_date = date(year, 8, 1)
+
+    quarterly_data = get_table_data_for_year_month(from_date=from_date, to_date=to_date, period="quarterly")
+    quarterly_data = sorted(quarterly_data, key=lambda r: r["month_group"])
+
+    assert len(quarterly_data) == 2
+    assert quarterly_data[0]["quarter_label"] == f"Q2 {year}"
+    assert quarterly_data[1]["quarter_label"] == f"Q3 {year}"
+    assert quarterly_data[0]["users"] == len(users_q2)
+    assert quarterly_data[1]["users"] == len(users_q3)
 
 
 class TestKPIReportPermission:

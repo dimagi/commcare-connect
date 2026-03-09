@@ -38,6 +38,7 @@ django-htmx
 django-waffle
 django-pghistory
 django-weasyprint
+django-vectortiles
 
 # Temporary
 # -------------------------------------------------------------------------------

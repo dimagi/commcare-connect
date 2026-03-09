@@ -82,12 +82,59 @@
                 <!-- Sidebar content goes here -->
             </aside>
 
-            <aside id="right-sidebar" class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0">
-                <h2 class="text-lg font-semibold mb-2">{% translate "Modify Work Area" %}</h2>
-                <!-- Outer sidebar content goes here -->
-            </aside>
-        </div>
-    </div>
+        <aside id="lower-sidebar" class="bg-white shadow-md p-4 xl:flex-1 min-h-0">
+            {{ status_meta|json_script:"status-meta-data" }}
+            <h2 class="text-lg font-semibold mb-2">{% translate "Select Work Area" %}</h2>
+            <template x-if="!selectedFeature">
+                <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 gap-2 py-8">
+                    <i class="fa-regular fa-map text-3xl"></i>
+                    <p class="text-sm">{% translate "Click a work area on the map to view details." %}</p>
+                </div>
+            </template>
+
+            <!-- Selected work area detail panel -->
+            <template x-if="selectedFeature">
+                <div>
+                    <dl class="space-y-2">
+                        <div class="grid grid-cols-2 items-center gap-2">
+                            <dt class="text-sm text-gray-500">{% translate "Assignee" %}</dt>
+                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                                x-text="selectedFeature.assignee_name ?? '—'"></dd>
+
+                            <dt class="text-sm text-gray-500">{% translate "Work Area Group" %}</dt>
+                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                                x-text="selectedFeature.group_name ?? '—'"></dd>
+
+                            <dt class="text-sm text-gray-500">{% translate "Expected Visit Count" %}</dt>
+                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                x-text="selectedFeature.expected_visit_count ?? '—'"></dd>
+
+                            <dt class="text-sm text-gray-500">{% translate "Number of Buildings" %}</dt>
+                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                x-text="selectedFeature.building_count ?? '—'"></dd>
+                        </div>
+                        <div class="flex items-center gap-4"
+                            x-data="{statusMeta: JSON.parse(document.getElementById('status-meta-data').textContent)}">
+                            <dt class="text-sm text-gray-500 shrink-0">{% translate "Status" %}</dt>
+                            <dd class="flex-1 min-w-0">
+                                <span class="block w-full text-center text-sm font-semibold rounded-lg px-3 py-2"
+                                    :class="statusMeta[selectedFeature.status]?.class"
+                                    x-text="statusMeta[selectedFeature.status]?.label">
+                                </span>
+                            </dd>
+                        </div>
+                    </dl>
+                    <div class="mt-4 flex justify-end">
+                        <button class="button button-md button-outline-rounded">
+                            <i class="fa-regular fa-pen-to-square"></i>
+                            {% translate "Modify Work Area" %}
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </aside>
+</div>
+</div>
 </div>
 {% include "microplanning/map_handler.html" %}
 {% endblock %}

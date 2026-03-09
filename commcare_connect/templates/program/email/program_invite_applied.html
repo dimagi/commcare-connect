@@ -1,3 +1,6 @@
+{% extends "email/base.html" %}
+
+{% block content %}
 <p>Hi,</p>
 
 <p>A new Network Manager has applied for a program.</p>
@@ -10,8 +13,4 @@
 <p>
     <a href="{{ program_url }}">Click here</a> to review the program for which the Network Manager has applied.
 </p>
-
-<p>
-    Thank you,<br>
-    Connect
-</p>
+{% endblock %}

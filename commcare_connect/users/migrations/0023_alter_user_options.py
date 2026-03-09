@@ -5,7 +5,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("users", "0021_alter_user_options"),
+        ("users", "0022_connectiduserlink_hq_case_id"),
     ]
 
     operations = [
