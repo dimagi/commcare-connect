@@ -47,7 +47,7 @@ from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
-from django.views.generic import CreateView, DetailView, UpdateView
+from django.views.generic import CreateView, DetailView, TemplateView, UpdateView
 from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
 from django_weasyprint.views import WeasyTemplateResponse
@@ -1149,7 +1149,7 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     )
 
 
-class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, View):
+class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, TemplateView):
     template_name = "opportunity/task_types_config.html"
 
     def dispatch(self, request, *args, **kwargs):
@@ -1157,8 +1157,11 @@ class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, V
             return redirect("opportunity:detail", org_slug=kwargs["org_slug"], opp_id=kwargs["opp_id"])
         return super().dispatch(request, *args, **kwargs)
 
-    def _get_context(self, request, org_slug, form):
+    def get_context_data(self, form, **kwargs):
+        context = super().get_context_data(**kwargs)
         opportunity = self.get_opportunity()
+        org_slug = self.request.org.slug
+
         tasks = Task.objects.filter(app=opportunity.deliver_app).select_related("linked_task_unit")
         path = [
             {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
@@ -1169,17 +1172,20 @@ class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, V
             {"title": _("Configure Task Types"), "url": self.request.path},
         ]
         table = TaskTable(tasks)
-        RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
-        return dict(
-            opportunity=opportunity,
-            table=table,
-            form=form,
-            path=path,
+        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        context.update(
+            {
+                "opportunity": opportunity,
+                "table": table,
+                "form": form,
+                "path": path,
+            }
         )
+        return context
 
     def get(self, request, org_slug, opp_id):
         form = AddTaskTypeForm(opportunity=self.get_opportunity())
-        return render(request, self.template_name, self._get_context(request, org_slug, form))
+        return self.render_to_response(self.get_context_data(form=form))
 
     def post(self, request, org_slug, opp_id):
         opportunity = self.get_opportunity()
@@ -1188,7 +1194,7 @@ class TaskTypesConfig(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, V
             form.save()
             messages.success(request, _("Task type added successfully."))
             return redirect("opportunity:task_types_config", org_slug=org_slug, opp_id=opp_id)
-        return render(request, self.template_name, self._get_context(request, org_slug, form))
+        return self.render_to_response(self.get_context_data(form=form))
 
 
 @org_member_required
