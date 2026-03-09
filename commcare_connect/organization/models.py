@@ -8,6 +8,19 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
+class LLOEntity(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    short_name = models.CharField(max_length=40, null=True, blank=True)
+
+    class Meta:
+        verbose_name_plural = "LLO Entities"
+
+    def __str__(self):
+        if self.short_name:
+            return f"{self.name} ({self.short_name})"
+        return f"{self.name}"
+
+
 class Organization(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
@@ -15,6 +28,7 @@ class Organization(BaseModel):
         settings.AUTH_USER_MODEL, related_name="organizations", through="UserOrganizationMembership"
     )
     program_manager = models.BooleanField(default=False)
+    llo_entity = models.ForeignKey(LLOEntity, on_delete=models.SET_NULL, null=True)
 
     def save(self, *args, **kwargs):
         if not self.id:
@@ -23,6 +37,9 @@ class Organization(BaseModel):
 
     def __str__(self):
         return self.slug
+
+    def get_member_emails(self):
+        return list(self.memberships.values_list("user__email", flat=True))
 
 
 class UserOrganizationMembership(models.Model):
@@ -43,7 +60,6 @@ class UserOrganizationMembership(models.Model):
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.MEMBER)
     invite_id = models.CharField(max_length=50, default=uuid4)
-    accepted = models.BooleanField(default=False)
 
     @property
     def is_admin(self):

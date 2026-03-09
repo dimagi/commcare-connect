@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+{% load render_table from django_tables2 %}
+{% load crispy_forms_tags %}
+
+{% block css %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock css %}
+{% block javascript %}
+{{ block.super }}
+<script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+
+{% block inline_javascript %}
+{{ block.super }}
+{% if filter_usage_data %}
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const data = {{ filter_usage_data|safe }};
+    window.gtmSendEvent('filters_applied', data);
+  });
+</script>
+{% endif %}
+{% endblock inline_javascript %}
+
+
+{% block content %}
+{% load i18n %}
+<div class="flex items-center justify-center">
+  <div class="flex flex-col gap-2 w-full">
+  <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+      <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
+    <div class="flex gap-x-6 items-center" x-cloak x-data="{showFilterModal: false}">
+      <button type="button" @click="showFilterModal = true" class="relative button-icon">
+        <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+        {% if filters_applied_count %}
+        <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+          {{ filters_applied_count }}
+        </span>
+        {% endif %}
+      </button>
+      {% if request.org.program_manager and request.org_membership.is_admin %}
+      <a class="button button-md primary-dark" href="{% url 'opportunity:init' request.org.slug %}">
+        Add Opportunity
+      </a>
+      {% else %}
+      <button disabled class="button button-md primary-dark">Add Opportunity</button>
+      {% endif %}
+      <div x-show="showFilterModal" class="modal-backdrop">
+        <div class="modal">
+          <div class="header text-lg font-semibold text-brand-deep-purple">
+            <h1>Filters</h1>
+            <button @click="showFilterModal = false">
+              <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+          </div>
+          <form
+            id="filterForm"
+            class="content"
+          >
+            <div class="modal-body">
+              {% crispy filter_form %}
+            </div>
+            <div class="footer">
+              <button type="button" @click="showFilterModal = false" class="button button-md outline-style">Close</button>
+              <button
+                form="filterForm" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">
+                Apply
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- Table Header -->
+    <div class="flex flex-col w-full gap-2">
+
+      <div class="w-full overflow-y-auto  rounded-lg shadow-xs">
+        {% render_table table %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi,
+
+A new opportunity has been created for your organization!
+
+Opportunity: {{ opportunity.name }}
+Program: {{ opportunity.program.name }}
+Organization: {{ opportunity.organization.name }}
+
+Click here ({{ opportunity_url }}) to view the opportunity{% endblock %}

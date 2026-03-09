@@ -8,6 +8,7 @@ import environ
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 # commcare_connect/
 APPS_DIR = BASE_DIR / "commcare_connect"
+
 env = environ.Env()
 
 env.read_env(str(BASE_DIR / ".env"))
@@ -30,13 +31,14 @@ DATABASES = {
         default="postgres:///commcare_connect",
     ),
 }
+DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 
 # DATABASES staging/production
 # ------------------------------------------------------------------------------
 if env("RDS_HOSTNAME", default=None):
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql",
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
             "NAME": env("RDS_DB_NAME"),
             "USER": env("RDS_USERNAME"),
             "PASSWORD": env("RDS_PASSWORD"),
@@ -49,6 +51,7 @@ SECONDARY_DB_ALIAS = None
 if env("SECONDARY_DATABASE_URL", default=None):
     SECONDARY_DB_ALIAS = "secondary"
     DATABASES[SECONDARY_DB_ALIAS] = env.db("SECONDARY_DATABASE_URL")
+    DATABASES[SECONDARY_DB_ALIAS]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
     DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
@@ -70,13 +73,14 @@ DJANGO_APPS = [
     "django.contrib.messages",
     "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
-    # "django.contrib.humanize", # Handy template tags
+    "django.contrib.humanize",  # Handy template tags
     "django.contrib.admin",
+    "django.contrib.gis",
     "django.forms",
 ]
 THIRD_PARTY_APPS = [
     "crispy_forms",
-    "crispy_bootstrap5",
+    "crispy_tailwind",
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
@@ -87,10 +91,17 @@ THIRD_PARTY_APPS = [
     "drf_spectacular",
     "oauth2_provider",
     "django_tables2",
+    "waffle",
+    "pghistory",
+    "pgtrigger",  # added for pghistory
+    "vectortiles",
 ]
 
 LOCAL_APPS = [
     "commcare_connect.commcarehq_provider",
+    "commcare_connect.commcarehq",
+    "commcare_connect.data_export",
+    "commcare_connect.flags",
     "commcare_connect.form_receiver",
     "commcare_connect.multidb",
     "commcare_connect.opportunity",
@@ -99,6 +110,7 @@ LOCAL_APPS = [
     "commcare_connect.reports",
     "commcare_connect.users",
     "commcare_connect.web",
+    "commcare_connect.microplanning",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -148,6 +160,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
+    "waffle.middleware.WaffleMiddleware",
+    "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
 ]
 
 # STATIC
@@ -185,14 +199,17 @@ TEMPLATES = [
                 "django.template.context_processors.tz",
                 "django.contrib.messages.context_processors.messages",
                 "commcare_connect.users.context_processors.allauth_settings",
+                "commcare_connect.web.context_processors.page_settings",
+                "commcare_connect.web.context_processors.gtm_context",
+                "commcare_connect.web.context_processors.chat_widget_context",
             ],
         },
     }
 ]
 
 FORM_RENDERER = "django.forms.renderers.TemplatesSetting"
-CRISPY_TEMPLATE_PACK = "bootstrap5"
-CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = "tailwind"
+CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
 
 # FIXTURES
 # ------------------------------------------------------------------------------
@@ -202,6 +219,7 @@ FIXTURE_DIRS = (str(APPS_DIR / "fixtures"),)
 # ------------------------------------------------------------------------------
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
+CSRF_USE_SESSIONS = True
 X_FRAME_OPTIONS = "DENY"
 
 # EMAIL
@@ -278,6 +296,7 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
+CELERY_TASK_TRACK_STARTED = True
 
 # django-allauth
 # ------------------------------------------------------------------------------
@@ -299,15 +318,15 @@ SOCIALACCOUNT_STORE_TOKENS = True
 # -------------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
         "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
+        "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
-    "ALLOWED_VERSIONS": ["1.0"],
+    "ALLOWED_VERSIONS": ["1.0", "2.0"],
+    "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",
 }
 
 CORS_URLS_REGEX = r"^/api/.*$"
@@ -330,7 +349,7 @@ CACHES = {
     }
 }
 
-DJANGO_TABLES2_TEMPLATE = "tailwind/base_table.html"
+DJANGO_TABLES2_TEMPLATE = "base_table.html"
 DJANGO_TABLES2_TABLE_ATTRS = {
     "class": "table table-bordered mb-0",
     "thead": {
@@ -344,13 +363,18 @@ DJANGO_TABLES2_TABLE_ATTRS = {
 # ------------------------------------------------------------------------------
 # CommCare Connect Settings...
 # ------------------------------------------------------------------------------
+# HQ integration settings
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org")
 
+# ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 
 CONNECTID_CLIENT_ID = env("cid_client_id", default="")
 CONNECTID_CLIENT_SECRET = env("cid_client_secret", default="")
 
+# OAuth Settings
+CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
+CONNECTID_CREDENTIALS_CLIENT_SECRET = env("CONNECTID_CREDENTIALS_CLIENT_SECRET", default="")
 OAUTH2_PROVIDER = {
     "ACCESS_TOKEN_EXPIRE_SECONDS": 1209600,  # seconds in two weeks
     "RESOURCE_SERVER_INTROSPECTION_URL": f"{CONNECTID_URL}/o/introspect/",
@@ -358,11 +382,33 @@ OAUTH2_PROVIDER = {
         CONNECTID_CLIENT_ID,
         CONNECTID_CLIENT_SECRET,
     ),
+    "SCOPES": {
+        "read": "Read scope",
+        "write": "Write scope",
+        "export": "Allow exporting data to other platforms using export API's.",
+    },
 }
+OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
+
+# Twilio settings
 TWILIO_ACCOUNT_SID = env("TWILIO_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_TOKEN", default=None)
 TWILIO_MESSAGING_SERVICE = env("TWILIO_MESSAGING_SERVICE", default=None)
 MAPBOX_TOKEN = env("MAPBOX_TOKEN", default=None)
 
 OPEN_EXCHANGE_RATES_API_ID = env("OPEN_EXCHANGE_RATES_API_ID", default=None)
+
+# Waffle Settings
+WAFFLE_FLAG_MODEL = "flags.Flag"
+WAFFLE_CREATE_MISSING_FLAGS = True
+
+WAFFLE_CREATE_MISSING_SWITCHES = True
+
+GTM_ID = env("GTM_ID", default="")
+GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
+GA_API_SECRET = env("GA_API_SECRET", default="")
+
+# Chatbot Widget Settings
+CHATBOT_ID = env("CHATBOT_ID", default="")
+CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")

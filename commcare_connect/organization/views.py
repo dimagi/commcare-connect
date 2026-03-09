@@ -1,32 +1,32 @@
+from urllib.parse import urlencode
+
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import get_object_or_404, redirect, render
-from django.utils.text import slugify
+from django.urls import reverse
 from django.utils.translation import gettext
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET
+from django_tables2 import RequestConfig
 from rest_framework.decorators import api_view
 
-from commcare_connect import connect_id_client
-from commcare_connect.connect_id_client.models import Credential
 from commcare_connect.organization.decorators import org_admin_required
-from commcare_connect.organization.forms import (
-    AddCredentialForm,
-    MembershipForm,
-    OrganizationChangeForm,
-    OrganizationCreationForm,
-)
+from commcare_connect.organization.forms import MembershipForm, OrganizationChangeForm, OrganizationSelectOrCreateForm
 from commcare_connect.organization.models import Organization, UserOrganizationMembership
-from commcare_connect.organization.tasks import add_credential_task, send_org_invite
+from commcare_connect.organization.tables import OrgMemberTable
+from commcare_connect.organization.tasks import send_org_invite
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.utils.tables import get_validated_page_size
 
 
 @login_required
+@permission_required(WORKSPACE_ENTITY_MANAGEMENT_ACCESS, raise_exception=True)
 def organization_create(request):
-    form = OrganizationCreationForm(data=request.POST or None)
+    form = OrganizationSelectOrCreateForm(data=request.POST or None)
 
     if form.is_valid():
-        org = form.save(commit=False)
-        org.save()
-        org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
+        org, is_new_org = form.save()
+        if is_new_org:
+            org.members.add(request.user, through_defaults={"role": UserOrganizationMembership.Role.ADMIN})
         return redirect("opportunity:list", org.slug)
 
     return render(request, "organization/organization_create.html", context={"form": form})
@@ -39,18 +39,17 @@ def organization_home(request, org_slug):
     form = None
     membership_form = MembershipForm(organization=org)
     if request.method == "POST":
-        form = OrganizationChangeForm(request.POST, instance=org)
+        form = OrganizationChangeForm(request.POST, instance=org, user=request.user)
         if form.is_valid():
-            messages.success(request, gettext("Organization details saved!"))
+            messages.success(request, gettext("Workspace details saved!"))
             form.save()
+            # This form needs to be repopulated with the cleaned_data due to the
+            # newly created choice, since the form data field is not updated when
+            # creating new instances of objects in ModelChoiceFields.
+            form = OrganizationChangeForm(form.cleaned_data, instance=org, user=request.user)
 
     if not form:
-        form = OrganizationChangeForm(instance=org)
-
-    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
-    credential_name = f"Worked for {org.name}"
-    if not any(c.name == credential_name for c in credentials):
-        credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))
+        form = OrganizationChangeForm(instance=org, user=request.user)
 
     return render(
         request,
@@ -59,13 +58,12 @@ def organization_home(request, org_slug):
             "organization": org,
             "form": form,
             "membership_form": membership_form,
-            "add_credential_form": AddCredentialForm(credentials=credentials),
         },
     )
 
 
 @api_view(["POST"])
-@login_required
+@org_admin_required
 def add_members_form(request, org_slug):
     org = get_object_or_404(Organization, slug=org_slug)
     form = MembershipForm(request.POST or None, organization=org)
@@ -73,37 +71,43 @@ def add_members_form(request, org_slug):
     if form.is_valid():
         form.instance.organization = org
         form.save()
-        send_org_invite.delay(membership_id=form.instance.pk, host_user_id=request.user.pk)
+        send_org_invite(membership_id=form.instance.pk, host_user_id=request.user.pk)
+    url = reverse("organization:home", args=(org_slug,)) + "?active_tab=members"
+    return redirect(url)
 
-    return redirect("organization:home", org_slug)
+
+@api_view(["POST"])
+@org_admin_required
+def remove_members(request, org_slug):
+    membership_ids = request.POST.getlist("membership_ids")
+    base_url = reverse("organization:home", args=(org_slug,))
+    query_params = urlencode({"active_tab": "members"})
+    redirect_url = f"{base_url}?{query_params}"
+
+    if str(request.org_membership.id) in membership_ids:
+        messages.error(request, message=gettext("You cannot remove yourself from the workspace."))
+        return redirect(redirect_url)
+
+    if membership_ids:
+        UserOrganizationMembership.objects.filter(pk__in=membership_ids, organization__slug=org_slug).delete()
+        messages.success(request, message=gettext("Selected members have been removed from the workspace."))
+
+    return redirect(redirect_url)
 
 
 @login_required
 def accept_invite(request, org_slug, invite_id):
-    membership = get_object_or_404(UserOrganizationMembership, invite_id=invite_id)
-    organization = membership.organization
-
-    if membership.accepted:
-        return redirect("organization:home", org_slug)
-
-    membership.accepted = True
-    membership.save()
-    messages.success(request, message=f"Accepted invite for joining {organization.slug} organization.")
+    get_object_or_404(UserOrganizationMembership, invite_id=invite_id)
+    messages.success(
+        request, message=gettext("Accepted invite for joining {org_slug} workspace.").format(org_slug=org_slug)
+    )
     return redirect("organization:home", org_slug)
 
 
+@require_GET
 @org_admin_required
-@require_POST
-def add_credential_view(request, org_slug):
-    org = get_object_or_404(Organization, slug=org_slug)
-    credentials = connect_id_client.fetch_credentials(org_slug=request.org.slug)
-    credential_name = f"Worked for {org.name}"
-    if not any(c.name == credential_name for c in credentials):
-        credentials.append(Credential(name=credential_name, slug=slugify(credential_name)))
-    form = AddCredentialForm(data=request.POST, credentials=credentials)
-
-    if form.is_valid():
-        users = form.cleaned_data["users"]
-        credential = form.cleaned_data["credential"]
-        add_credential_task.delay(org.pk, credential, users)
-    return redirect("organization:home", org_slug)
+def org_member_table(request, org_slug=None):
+    members = UserOrganizationMembership.objects.filter(organization=request.org)
+    table = OrgMemberTable(members)
+    RequestConfig(request, paginate={"per_page": get_validated_page_size(request)}).configure(table)
+    return render(request, "components/tables/table.html", {"table": table})

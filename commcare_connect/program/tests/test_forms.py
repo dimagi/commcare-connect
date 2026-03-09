@@ -5,9 +5,15 @@ import pytest
 from django.utils import timezone
 from factory.fuzzy import FuzzyText
 
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.forms import OpportunityFinalizeForm
 from commcare_connect.opportunity.models import Opportunity
-from commcare_connect.opportunity.tests.factories import ApplicationFactory, DeliveryTypeFactory, PaymentUnitFactory
+from commcare_connect.opportunity.tests.factories import (
+    ApplicationFactory,
+    DeliveryTypeFactory,
+    HQApiKeyFactory,
+    PaymentUnitFactory,
+)
 from commcare_connect.program.forms import ManagedOpportunityInitForm, ProgramForm
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import (
@@ -32,6 +38,7 @@ class TestProgramForm:
             "delivery_type": delivery_type.id,
             "budget": 10000,
             "currency": "USD",
+            "country": "USA",
             "start_date": timezone.now().date(),
             "end_date": timezone.now().date() + timezone.timedelta(days=30),
         }
@@ -58,7 +65,7 @@ class TestProgramForm:
     def test_program_form_currency_length(self, program_manager_org_user_admin, program_manager_org, delivery_type):
         program_data = self._get_program_data(delivery_type)
         program_data.update(
-            currency="USDA",
+            currency="INVALID",
         )
 
         form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org, data=program_data)
@@ -80,12 +87,11 @@ class TestProgramForm:
         assert program.organization == program_manager_org
         assert program.created_by == program_manager_org_user_admin.email
         assert program.modified_by == program_manager_org_user_admin.email
+        assert program.currency.code == program_data["currency"]
 
 
 @pytest.mark.django_db
 class TestManagedOpportunityInitForm:
-    domains = ["test_domain", "test_domain2"]
-
     @pytest.fixture(autouse=True)
     def setup(self, program_manager_org, program_manager_org_user_admin):
         self.user = program_manager_org_user_admin
@@ -95,6 +101,8 @@ class TestManagedOpportunityInitForm:
         self.program_application = ProgramApplicationFactory.create(
             program=self.program, organization=self.invited_org, status=ProgramApplicationStatus.ACCEPTED
         )
+        self.hq_server = HQServerFactory()
+        self.api_key = HQApiKeyFactory(hq_server=self.hq_server)
         self.learn_app = ApplicationFactory()
         self.deliver_app = ApplicationFactory()
 
@@ -109,28 +117,25 @@ class TestManagedOpportunityInitForm:
             "learn_app_passing_score": random.randint(30, 100),
             "deliver_app_domain": "test_domain2",
             "deliver_app": json.dumps(self.deliver_app),
-            "api_key": FuzzyText(length=36).fuzz(),
+            "api_key": self.api_key.id,
+            "hq_server": self.hq_server.id,
         }
 
     def test_form_initialization(self):
-        form = ManagedOpportunityInitForm(program=self.program, domains=self.domains, org_slug=self.organization.slug)
+        form = ManagedOpportunityInitForm(program=self.program, org_slug=self.organization.slug)
         assert form.fields["currency"].initial == self.program.currency
         assert form.fields["currency"].widget.attrs.get("readonly") == "readonly"
         assert form.fields["currency"].widget.attrs.get("disabled") is True
         assert "organization" in form.fields
 
     def test_form_validation_valid_data(self):
-        form = ManagedOpportunityInitForm(
-            data=self.form_data, program=self.program, domains=self.domains, org_slug=self.organization.slug
-        )
+        form = ManagedOpportunityInitForm(data=self.form_data, program=self.program, org_slug=self.organization.slug)
         assert form.is_valid()
 
     def test_form_validation_invalid_data(self):
         invalid_data = self.form_data.copy()
         invalid_data["learn_app"] = invalid_data["deliver_app"]
-        form = ManagedOpportunityInitForm(
-            data=invalid_data, program=self.program, domains=self.domains, org_slug=self.organization.slug
-        )
+        form = ManagedOpportunityInitForm(data=invalid_data, program=self.program, org_slug=self.organization.slug)
         assert not form.is_valid()
         assert form.errors["learn_app"] == ["Learn app and Deliver app cannot be same"]
         assert form.errors["deliver_app"] == ["Learn app and Deliver app cannot be same"]
@@ -138,17 +143,13 @@ class TestManagedOpportunityInitForm:
     def test_form_validation_missing_data(self):
         invalid_data = self.form_data.copy()
         invalid_data["learn_app"] = None
-        form = ManagedOpportunityInitForm(
-            data=invalid_data, program=self.program, domains=self.domains, org_slug=self.organization.slug
-        )
+        form = ManagedOpportunityInitForm(data=invalid_data, program=self.program, org_slug=self.organization.slug)
         assert not form.is_valid()
 
     def test_form_save(self):
-        print(self.invited_org)
         form = ManagedOpportunityInitForm(
             data=self.form_data,
             program=self.program,
-            domains=self.domains,
             org_slug=self.organization.slug,
             user=self.user,
         )
@@ -160,6 +161,7 @@ class TestManagedOpportunityInitForm:
         assert managed_opportunity.currency == self.program.currency
         assert managed_opportunity.program == self.program
         assert managed_opportunity.created_by == self.user.email
+        assert managed_opportunity.delivery_type == self.program.delivery_type
 
 
 @pytest.mark.django_db
@@ -193,7 +195,6 @@ class TestOpportunityFinalizeForm:
             "end_date": timezone.now().date() + timezone.timedelta(days=20),
             "total_budget": 5000,
             "max_users": 3,
-            "org_pay_per_visit": 7,
         }
         form = self.get_form(**form_data)
         assert form.is_valid()
@@ -237,19 +238,6 @@ class TestOpportunityFinalizeForm:
         form = self.get_form(**form_data)
         assert not form.is_valid()
         assert form.errors["total_budget"] == ["Budget exceeds the program budget."]
-
-    def test_form_invalid_org_pay_per_visit(self):
-        self.opportunity.managed = True
-        self.opportunity.save()
-        form_data = {
-            "start_date": timezone.now().date() + timezone.timedelta(days=2),
-            "end_date": timezone.now().date() + timezone.timedelta(days=20),
-            "total_budget": 5000,
-            "org_pay_per_visit": "invalid",  # Invalid value
-        }
-        form = self.get_form(**form_data)
-        assert not form.is_valid()
-        assert "org_pay_per_visit" in form.errors
 
     def test_form_no_org_pay_per_visit_field(self):
         self.opportunity.managed = False

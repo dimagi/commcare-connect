@@ -10,17 +10,19 @@ healthcheck:
 
 ssh:
   user: connect
+  proxy_command: "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
 
 logging:
   driver: awslogs
   options:
     awslogs-region: 'us-east-1'
-    awslogs-group: 'commcare-connect'
 
 builder:
   multiarch: false
   dockerfile: '../Dockerfile'
   context: '../'
+  args:
+    APP_RELEASE: "<%= ENV['APP_RELEASE'] || `git rev-parse HEAD`.strip %>"
 
 registry:
   server: 037129986032.dkr.ecr.us-east-1.amazonaws.com

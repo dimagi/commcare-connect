@@ -105,6 +105,7 @@ ANYMAIL = {}
 # ------------------------------------------------------------------------------
 SENTRY_DSN = env("SENTRY_DSN")
 SENTRY_LOG_LEVEL = env.int("DJANGO_SENTRY_LOG_LEVEL", logging.INFO)
+APP_RELEASE = env("APP_RELEASE", default=None)
 
 ignore_logger("django.security.DisallowedHost")
 sentry_logging = LoggingIntegration(
@@ -120,7 +121,8 @@ integrations = [
 sentry_sdk.init(
     dsn=SENTRY_DSN,
     integrations=integrations,
-    environment=env("SENTRY_ENVIRONMENT", default="production"),
+    environment=env("DEPLOY_ENVIRONMENT", default="production"),
+    release=APP_RELEASE,
     traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
 )
 

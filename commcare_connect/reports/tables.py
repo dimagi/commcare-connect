@@ -1,30 +1,44 @@
+import waffle
+from django.urls import reverse
+from django.utils.html import format_html
+from django.utils.translation import gettext as _
 from django_tables2 import columns, tables
 
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.models import PaymentInvoice
 from commcare_connect.opportunity.tables import SumColumn
+from commcare_connect.utils.tables import DMYTColumn
 
 
 class AdminReportTable(tables.Table):
-    month = columns.Column(verbose_name="Month", footer="Total", empty_values=())
+    month = columns.Column(verbose_name="Period", footer="Total", empty_values=())
     delivery_type_name = columns.Column(verbose_name="Delivery Type", empty_values=("All"))
-    connectid_users = columns.Column(verbose_name="ConnectID Accounts")
-    total_eligible_users = columns.Column(verbose_name="Total Eligible Users")
-    users = SumColumn(verbose_name="Eligible Users")
+    connectid_users = columns.Column(verbose_name="PersonalID Accounts")
+    activated_personalid_accounts = columns.Column(verbose_name="Activated PersonalID Accounts")
+    activated_connect_users = columns.Column(verbose_name="Activated Connect Users")
+    users = SumColumn(verbose_name="Activated Connect Users (Period)")
+    activated_commcare_users = columns.Column("Activated CommCare Users")
     avg_time_to_payment = columns.Column(verbose_name="Average Time to Payment")
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
-    flw_amount_earned = SumColumn(verbose_name="FLW Amount Earned")
-    flw_amount_paid = SumColumn(verbose_name="FLW Amount Paid")
-    nm_amount_earned = SumColumn(verbose_name="NM Amount Earned")
-    nm_amount_paid = SumColumn(verbose_name="NM Amount Paid")
-    nm_other_amount_paid = SumColumn(verbose_name="NM Other Amount Paid")
+    avg_top_earned_flws = SumColumn(verbose_name="Average Earned by Top FLWs")
+    intervention_funding_deployed = SumColumn(verbose_name="Intervention Funding Deployed")
+    organization_funding_deployed = SumColumn(verbose_name="Workspace Funding Deployed")
     services = SumColumn(verbose_name="Verified Services")
-    avg_top_paid_flws = SumColumn(verbose_name="Average paid to Top FLWs")
 
     class Meta:
-        empty_text = "No data for this month."
+        empty_text = "No data for this period."
         orderable = False
-        row_attrs = {"id": lambda record: f"row{record['month_group'].strftime('%Y-%m')}"}
+        row_attrs = {"id": lambda record: f"row{record.get('quarter_label', record['month_group'].strftime('%Y-%m'))}"}
+
+    def __init__(self, *args, **kwargs):
+        period = kwargs.pop("period", "monthly")
+        super().__init__(*args, **kwargs)
+        period_label = "Monthly" if period == "monthly" else "Quarterly"
+        self.columns["users"].column.verbose_name = f"{period_label} Activated Connect Users"
 
     def render_month(self, record):
+        if "quarter_label" in record:
+            return record["quarter_label"]
         return record["month_group"].strftime("%B %Y")
 
     def render_avg_time_to_payment(self, record, value):
@@ -32,3 +46,74 @@ class AdminReportTable(tables.Table):
 
     def render_max_time_to_payment(self, record, value):
         return f"{value} days"
+
+
+class InvoiceReportTable(tables.Table):
+    opportunity_id = columns.Column(
+        accessor="opportunity__id",
+        verbose_name=_("Opportunity ID"),
+    )
+    opportunity_name = columns.Column(
+        accessor="opportunity__name",
+        verbose_name=_("Opportunity Name"),
+    )
+    invoice_number = columns.Column(orderable=False, verbose_name=_("Invoice Number"))
+    amount = columns.Column(verbose_name=_("Amount"))
+    amount_usd = columns.Column(verbose_name=_("Amount (USD)"))
+    exchange_rate = columns.Column(empty_values=(None,), accessor="exchange_rate__rate", verbose_name=_("Rate"))
+    invoice_type = columns.Column(verbose_name=_("Type"), accessor="service_delivery")
+    status = columns.Column(verbose_name=_("Status"))
+    invoice_creation_date = DMYTColumn(verbose_name=_("Invoice Creation Date"), accessor="date")
+    date = DMYTColumn(verbose_name=_("Date of Payment"), accessor="date_paid")
+    last_status_modified_at = DMYTColumn(
+        verbose_name=_("Invoice Last Updated Date"), accessor="last_status_modified_at"
+    )
+
+    class Meta:
+        model = PaymentInvoice
+        fields = (
+            "opportunity_id",
+            "opportunity_name",
+            "invoice_number",
+            "amount",
+            "amount_usd",
+            "exchange_rate",
+            "invoice_type",
+            "status",
+            "invoice_creation_date",
+            "date",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            self.columns.hide("exchange_rate")
+            self.columns.hide("invoice_creation_date")
+            self.columns.hide("last_status_modified_at")
+
+    def render_invoice_number(self, value, record):
+        url = reverse(
+            "opportunity:invoice_review",
+            args=[record.org_slug, record.opportunity_id, record.payment_invoice_id],
+        )
+        return format_html(
+            '<a href="{}" class="underline text-brand-deep-purple">{}</a>',
+            url,
+            value,
+        )
+
+    def value_invoice_number(self, value, record):
+        return value
+
+    def render_amount(self, record):
+        return f"{record.opportunity.currency_code} {record.amount}"
+
+    def render_exchange_rate(self, value, record):
+        return f"{round(value, 2)} {record.opportunity.currency_code} per USD"
+
+    def render_invoice_type(self, record):
+        return (
+            PaymentInvoice.InvoiceType.service_delivery.label
+            if record.service_delivery
+            else PaymentInvoice.InvoiceType.custom.label
+        )

@@ -1,20 +1,17 @@
 import codecs
 import datetime
-import json
 import textwrap
-import urllib
 from collections import defaultdict
 from dataclasses import astuple, dataclass
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
 from tablib import Dataset
 
-from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     CatchmentArea,
     CompletedWork,
@@ -71,14 +68,37 @@ class InvalidValueError(RowDataError):
 class VisitImportStatus:
     seen_visits: set[str]
     missing_visits: set[str]
+    locked_visits: set[str]
+    approved_count: int = 0
+    rejected_count: int = 0
 
     def __len__(self):
         return len(self.seen_visits)
 
     def get_missing_message(self):
-        joined = ", ".join(self.missing_visits)
-        missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_visits)} visits were not found:<br>{'<br>'.join(missing)}"
+        return self._create_message(
+            self.missing_visits,
+            "{} visits were not found:<br>{}",
+        )
+
+    def get_locked_message(self):
+        return self._create_message(
+            self.locked_visits,
+            "{} visits could not be updated as they have already been marked as accepted:<br>{}",
+        )
+
+    def _create_message(self, visits, message):
+        joined = ", ".join(visits)
+        wrapped = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
+        return format_html(
+            message,
+            len(visits),
+            format_html_join(
+                "<br>",
+                "{}",
+                ((w,) for w in wrapped),
+            ),
+        )
 
 
 @dataclass
@@ -92,7 +112,15 @@ class PaymentImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_users)} usernames were not found:<br>{'<br>'.join(missing)}"
+        return format_html(
+            "<br>{} usernames were not found:<br>{}",
+            len(self.missing_users),
+            format_html_join(
+                "<br>",
+                "{}",
+                ((u,) for u in missing),
+            ),
+        )
 
 
 @dataclass
@@ -106,7 +134,15 @@ class CompletedWorkImportStatus:
     def get_missing_message(self):
         joined = ", ".join(self.missing_completed_works)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
-        return f"<br>{len(self.missing_completed_works)} completed works were not found:<br>{'<br>'.join(missing)}"
+        return format_html(
+            "<br>{} completed works were not found:<br>{}",
+            len(self.missing_completed_works),
+            format_html_join(
+                "<br>",
+                "{}",
+                ((u,) for u in missing),
+            ),
+        )
 
 
 @dataclass
@@ -128,20 +164,17 @@ class VisitData:
         return iter(astuple(self))
 
 
-def bulk_update_visit_status(opportunity: Opportunity, file: UploadedFile) -> VisitImportStatus:
-    file_format = get_file_extension(file)
-    if file_format not in ("csv", "xlsx"):
-        raise ImportException(f"Invalid file format. Only 'CSV' and 'XLSX' are supported. Got {file_format}")
-    imported_data = get_imported_dataset(file, file_format)
-    return _bulk_update_visit_status(opportunity, imported_data)
-
-
-def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
-    data_by_visit_id = get_data_by_visit_id(dataset)
+def bulk_update_visit_status(opportunity_id: int, headers: list[str], rows: list[list]):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    headers = [header.lower() for header in headers]
+    data_by_visit_id = get_data_by_visit_id(headers, rows)
     visit_ids = list(data_by_visit_id.keys())
     missing_visits = set()
+    locked_visits = set()
     seen_visits = set()
     user_ids = set()
+    approved_count = 0
+    rejected_count = 0
     with transaction.atomic():
         missing_justifications = []
         for visit_batch in batched(visit_ids, 100):
@@ -152,6 +185,9 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                 visit_data = data_by_visit_id[visit.xform_id]
                 status, reason, justification = visit_data
                 changed = False
+                if visit.review_status == VisitReviewStatus.agree:
+                    locked_visits.add(visit.xform_id)
+                    continue
                 if visit.status != status:
                     visit.status = status
                     if opportunity.managed and status == VisitValidationStatus.approved:
@@ -159,10 +195,12 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
                         if visit.flagged and not justification:
                             missing_justifications.append(visit.xform_id)
                             continue
+                        approved_count += 1
                     changed = True
                 if status == VisitValidationStatus.rejected and reason and reason != visit.reason:
                     visit.reason = reason
                     changed = True
+                    rejected_count += 1
                 if justification and justification != visit.justification:
                     visit.justification = justification
                     changed = True
@@ -179,7 +217,7 @@ def _bulk_update_visit_status(opportunity: Opportunity, dataset: Dataset):
             )
             missing_visits |= set(visit_batch) - seen_visits
     bulk_update_payment_accrued.delay(opportunity.id, list(user_ids))
-    return VisitImportStatus(seen_visits, missing_visits)
+    return VisitImportStatus(seen_visits, missing_visits, locked_visits, approved_count, rejected_count)
 
 
 def get_missing_justification_message(visits_ids):
@@ -187,19 +225,33 @@ def get_missing_justification_message(visits_ids):
     return f"Justification is required for flagged visits: {id_list}"
 
 
-def update_payment_accrued(opportunity: Opportunity, users):
-    """Updates payment accrued for completed and approved CompletedWork instances."""
+def update_payment_accrued(opportunity: Opportunity, users: list, incremental=False):
+    """Updates payment accrued for completed and approved CompletedWork instances.
+    Skips already processed completed works when incremental is true."""
+
     access_objects = OpportunityAccess.objects.filter(user__in=users, opportunity=opportunity, suspended=False)
+
     for access in access_objects:
-        with cache.lock(f"update_payment_accrued_lock_{access.id}", timeout=900):
-            completed_works = access.completedwork_set.exclude(status=CompletedWorkStatus.rejected).select_related(
-                "payment_unit"
-            )
-            update_status(completed_works, access, compute_payment=True)
+        update_payment_accrued_for_user(access, incremental)
 
 
-def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
-    headers = [header.lower() for header in dataset.headers or []]
+def update_payment_accrued_for_user(opportunity_access, incremental):
+    filter_kwargs = {}
+    exclude_status = []
+    if incremental:
+        exclude_status.append(CompletedWorkStatus.approved)
+        filter_kwargs["saved_approved_count"] = 0
+
+    with cache.lock(f"update_payment_accrued_lock_{opportunity_access.id}", timeout=900):
+        completed_works = (
+            opportunity_access.completedwork_set.filter(**filter_kwargs)
+            .exclude(status__in=exclude_status)
+            .select_related("payment_unit")
+        )
+        update_status(completed_works, opportunity_access, compute_payment=True)
+
+
+def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:
     if not headers:
         raise ImportException("The uploaded file did not contain any headers")
 
@@ -209,7 +261,7 @@ def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
     justification_col_index = _get_header_index(headers, JUSTIFICATION_COL, required=False)
     data_by_visit_id = {}
     invalid_rows = []
-    for row in dataset:
+    for row in rows:
         row = list(row)
         visit_id = str(row[visit_col_index])
         status_raw = row[status_col_index].lower().strip().replace(" ", "_")
@@ -217,11 +269,13 @@ def get_data_by_visit_id(dataset) -> dict[int, VisitData]:
         try:
             visit_data.status = VisitValidationStatus[status_raw]
         except KeyError:
-            invalid_rows.append((row, f"status must be one of {VisitValidationStatus.values}"))
+            invalid_rows.append(([escape(r) for r in row], f"status must be one of {VisitValidationStatus.values}"))
         if status_raw == VisitValidationStatus.rejected.value:
-            visit_data.reason = str(row[reason_col_index])
+            visit_data.reason = str(row[reason_col_index]) if row[reason_col_index] is not None else None
         if justification_col_index > 0:
-            visit_data.justification = str(row[justification_col_index])
+            visit_data.justification = (
+                str(row[justification_col_index]) if row[justification_col_index] is not None else None
+            )
         data_by_visit_id[visit_id] = visit_data
 
     if invalid_rows:
@@ -259,9 +313,9 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     invalid_rows = []
     payments_by_user = defaultdict(list)
-    exchange_rate_today = get_exchange_rate(opportunity.currency)
+    exchange_rate_today = get_exchange_rate(opportunity.currency_code)
     if not exchange_rate_today:
-        raise ImportException(f"Currency code {opportunity.currency} is invalid")
+        raise ImportException(f"Currency code {opportunity.currency_code} is invalid")
 
     for row in rows:
         row = list(row)
@@ -275,25 +329,25 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             continue
 
         if not username:
-            invalid_rows.append((row, "username required"))
+            invalid_rows.append(([escape(r) for r in row], "username required"))
             continue
 
         try:
-            amount = int(amount_raw)
-        except ValueError:
-            invalid_rows.append((row, "amount must be an integer"))
+            amount = Decimal(amount_raw)
+        except InvalidOperation:
+            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
             continue
 
         try:
             if payment_date_raw:
                 if isinstance(payment_date_raw, datetime.datetime):
-                    payment_date = payment_date_raw
+                    payment_date = payment_date_raw.date()
                 else:
                     payment_date = datetime.datetime.strptime(payment_date_raw, "%Y-%m-%d").date()
             else:
                 payment_date = None
         except ValueError:
-            invalid_rows.append((row, "Payment Date must be in YYYY-MM-DD format"))
+            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
             continue
 
         payment_row = {
@@ -302,6 +356,26 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             "payment_method": payment_method,
             "payment_operator": payment_operator,
         }
+        user_last_payment = (
+            Payment.objects.filter(
+                opportunity_access__user__username=username,
+                opportunity_access__opportunity=opportunity,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        date_paid = payment_date if payment_date else datetime.date.today()
+        if (
+            user_last_payment
+            and user_last_payment.amount == amount
+            and user_last_payment.date_paid.date() == date_paid
+        ):
+            invalid_rows.append(
+                (
+                    [escape(r) for r in row],
+                    "A payment for this user with the same amount and date already exists.",
+                )
+            )
         payments_by_user[username].append(payment_row)
 
     if invalid_rows:
@@ -309,62 +383,41 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
 
     seen_users = set()
     payment_ids = []
-    lock_key = f"bulk_update_payments_opportunity_{opportunity.id}"
-    with cache.lock(lock_key, timeout=600):
-        with transaction.atomic():
-            usernames = payments_by_user.keys()
-            users = OpportunityAccess.objects.filter(
-                user__username__in=usernames, opportunity=opportunity, suspended=False
-            ).select_related("user")
+    with transaction.atomic():
+        usernames = payments_by_user.keys()
+        users = OpportunityAccess.objects.filter(
+            user__username__in=usernames, opportunity=opportunity, suspended=False
+        ).select_related("user")
 
-            for access in users:
-                username = access.user.username
-                if username not in payments_by_user:
-                    continue
-                for payment_row in payments_by_user[username]:
-                    amount = payment_row["amount"]
-                    payment_date = payment_row["payment_date"]
-                    if payment_date:
-                        exchange_rate = get_exchange_rate(opportunity.currency, payment_date)
-                    else:
-                        exchange_rate = exchange_rate_today
+        for access in users:
+            username = access.user.username
+            if username not in payments_by_user:
+                continue
+            for payment_row in payments_by_user[username]:
+                amount = payment_row["amount"]
+                payment_date = payment_row["payment_date"]
+                if payment_date:
+                    exchange_rate = get_exchange_rate(opportunity.currency_code, payment_date)
+                else:
+                    exchange_rate = exchange_rate_today
 
-                    payment_data = {
-                        "opportunity_access": access,
-                        "amount": amount,
-                        "amount_usd": amount / exchange_rate,
-                        "payment_method": payment_row["payment_method"],
-                        "payment_operator": payment_row["payment_operator"],
-                    }
-                    if payment_date:
-                        payment_data["date_paid"] = payment_date
-                    payment = Payment.objects.create(**payment_data)
-                    payment_ids.append(payment.pk)
-                seen_users.add(username)
-                update_work_payment_date(access)
+                payment_data = {
+                    "opportunity_access": access,
+                    "amount": amount,
+                    "amount_usd": amount / exchange_rate,
+                    "payment_method": payment_row["payment_method"],
+                    "payment_operator": payment_row["payment_operator"],
+                }
+                if payment_date:
+                    payment_data["date_paid"] = payment_date
+                payment = Payment.objects.create(**payment_data)
+                payment_ids.append(payment.pk)
+            seen_users.add(username)
+            update_work_payment_date(access)
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
 
     return PaymentImportStatus(seen_users, missing_users)
-
-
-def _cache_key(date=None):
-    date_key = date or now().date()
-    return [date_key.toordinal()]
-
-
-@quickcache(vary_on=_cache_key, timeout=12 * 60 * 60)
-def fetch_exchange_rates(date=None):
-    base_url = "https://openexchangerates.org/api"
-
-    if date:
-        url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
-    else:
-        url = f"{base_url}/latest.json"
-
-    url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
-    rates = json.load(urllib.request.urlopen(url))
-    return rates["rates"]
 
 
 def get_exchange_rate(currency_code, date=None):
@@ -381,14 +434,9 @@ def get_exchange_rate(currency_code, date=None):
     rate_date = date or now().date()
     rate = None
 
-    try:
-        rate = ExchangeRate.objects.get(currency_code=currency_code, rate_date=rate_date).rate
-    except ExchangeRate.DoesNotExist:
-        rates = fetch_exchange_rates(rate_date)
-        rate = rates.get(currency_code)
-        if not rate:
-            raise ImportException("Rate not found for opportunity currency")
-        ExchangeRate.objects.create(currency_code=currency_code, rate=rate, rate_date=rate_date)
+    rate = ExchangeRate.latest_exchange_rate(currency_code=currency_code, date=rate_date).rate
+    if not rate:
+        raise ImportException("Rate not found for opportunity currency")
 
     return rate
 
@@ -454,9 +502,9 @@ def get_status_by_completed_work_id(dataset):
         try:
             status_by_work_id[work_id] = CompletedWorkStatus[status_raw]
         except KeyError:
-            invalid_rows.append((row, f"status must be one of {CompletedWorkStatus.values}"))
+            invalid_rows.append(([escape(r) for r in row], f"status must be one of {CompletedWorkStatus.values}"))
         if status_raw == CompletedWorkStatus.rejected.value:
-            reason_by_work_id[work_id] = str(row[reason_col_index])
+            reason_by_work_id[work_id] = str(row[reason_col_index]) if row[reason_col_index] is not None else None
 
     if invalid_rows:
         raise ImportException(f"{len(invalid_rows)} have errors", invalid_rows)
@@ -518,7 +566,7 @@ class RowData:
         error_message = "Active status must be 'yes' or 'no'"
         index = _get_header_index(self.headers, ACTIVE_COL)
         active = self.row[index]
-        if not active:
+        if not active or not isinstance(active, str):
             raise InvalidValueError(error_message)
         active = active.lower().strip()
         if active not in ["yes", "no"]:
@@ -614,7 +662,7 @@ def _bulk_update_catchments(opportunity: Opportunity, dataset: Dataset):
                     seen_catchments.add(str(catchment.id))
 
             except InvalidValueError as e:
-                invalid_rows.append((row, f"Error in row {row}: {e}"))
+                invalid_rows.append(([escape(r) for r in row], f"Error in row: {e}"))
 
         if to_create:
             CatchmentArea.objects.bulk_create(to_create)
@@ -695,7 +743,7 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
     }
 
     if not visit_data:
-        return VisitImportStatus(set(), set())
+        return VisitImportStatus(set(), set(), set())
 
     visit_ids = set(visit_data.keys())
     existing_visits = UserVisit.objects.filter(xform_id__in=visit_ids, review_created_on__isnull=False).only(
@@ -705,10 +753,14 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
     to_update = []
     user_ids = set()
     updated_visit_ids = set()
-
+    locked_visit_ids = set()
     with transaction.atomic():
         for visit in existing_visits:
             new_status = visit_data.get(visit.xform_id)
+            if visit.review_status == VisitReviewStatus.agree.value:
+                locked_visit_ids.add(visit.xform_id)
+                continue
+
             if new_status and visit.review_status != new_status:
                 visit.review_status = new_status
                 to_update.append(visit)
@@ -723,4 +775,4 @@ def _bulk_update_visit_review_status(opportunity: Opportunity, dataset: Dataset)
 
     missing_visits = visit_ids - {visit.xform_id for visit in existing_visits}
 
-    return VisitImportStatus(updated_visit_ids, missing_visits)
+    return VisitImportStatus(updated_visit_ids, missing_visits, locked_visit_ids)

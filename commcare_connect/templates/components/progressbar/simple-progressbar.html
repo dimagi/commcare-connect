@@ -1,0 +1,24 @@
+<div class="flex items-center gap-2 w-full">
+  <!-- Percentage style -->
+  {% if not number_style %}
+    <!-- Progress bar container -->
+    <div class="relative w-full h-2.5 bg-brand-indigo/10 rounded-full overflow-hidden">
+      <!-- Progress fill with percentage width -->
+      <div class="absolute top-0 left-0 h-full bg-brand-indigo max-w-full" style="width: {{ percentage }}%;"></div>
+    </div>
+    <!-- Percentage text -->
+    <span class="w-[74px] text-sm text-gray-700">{{ percentage }}%</span>
+
+  {% else %}
+    <div class="relative w-full h-2.5 bg-brand-indigo/10 rounded-full overflow-hidden">
+      <div class="absolute top-0 left-0 h-full bg-brand-indigo max-w-full"
+           style="width: {{ percentage }}%;">
+      </div>
+     <div class="absolute top-0 left-1/2 -translate-x-1/2 h-full flex items-center justify-center text-xs font-medium
+                  {% if percentage > 50 %}text-white{% else %}text-gray-600{% endif %}">
+        {{ current }}
+      </div>
+    </div>
+    <span class="w-[40px] text-sm text-gray-700">{{ total }}</span>
+  {% endif %}
+</div>

@@ -4,6 +4,7 @@ CommCare Connect
 
 [![Built with Cookiecutter Django](https://img.shields.io/badge/built%20with-Cookiecutter%20Django-ff69b4.svg?logo=cookiecutter)](https://github.com/cookiecutter/cookiecutter-django/)
 [![Black code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dimagi/commcare-connect)
 
 ## Local setup
 
@@ -22,6 +23,49 @@ need to edit some settings.
 
     # create env file and edit the settings as needed (or export settings directly)
     $ cp .env_template .env
+
+### GeoDjango / PostGIS Setup
+
+Connect uses GeoDjango and PostGIS.
+To learn more about the required dependencies, please refer to the official Django documentation:
+https://docs.djangoproject.com/en/6.0/ref/contrib/gis/install/geolibs/#geolibs-list
+
+**For macOS (Intel / Apple Silicon)** – using Homebrew:
+
+```bash
+brew install gdal geos proj
+```
+
+Django may struggle to find the GDAL and GEOS libraries even after they are installed. Follow these steps to set your paths:
+
+1. Get your local library paths
+
+```bash
+# Get GDAL path
+ls $(brew --prefix gdal)/lib/libgdal.dylib
+
+# Get GEOS path
+ls $(brew --prefix geos)/lib/libgeos_c.dylib
+```
+
+2. Set it in your `.env` file
+
+```
+GDAL_LIBRARY_PATH=...
+GEOS_LIBRARY_PATH=...
+```
+
+Install WeasyPrint on macOS (https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#macos)
+
+```bash
+brew install weasyprint
+```
+
+**For Ubuntu / Debian Linux:**
+
+```bash
+sudo apt-get install -y binutils libproj-dev gdal-bin
+```
 
     # start docker services
     $ inv up
@@ -149,21 +193,21 @@ The project has a staging environment at [https://connect-staging.dimagi.com/](h
 which is connected to the staging environment of CommCare HQ at
 [https://staging.commcarehq.org/](https://staging.commcarehq.org/).
 
-By convention, the `pkv/staging` branch is used for changes that are on the staging environment.
-To put your own changes on the staging environment, you can create merge your own branch into
-`pkv/staging` and then push it to GitHub.
+- Update [commcare-connect-staging.yml](https://github.com/dimagi/staging-branches/blob/main/commcare-connect-staging.yml) with the branches you need to include.
+- Run `.deploy/rebuildstaging` to build the `autostaging` branch
+- After this, you can deploy to the staging environment by manually running the `deploy`
+  [workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
 
-After that, you can deploy to the staging environment by manually running the `deploy`
-[workflow from here](https://github.com/dimagi/commcare-connect/actions/workflows/deploy.yml).
+### Remote Access to machines
 
-### Custom Bootstrap Compilation
+Machines can be accessed via SSH using AWS SSM. In order for that to work, you will need to add the following lines to your ssh config (typically located at `~/.ssh/config`)
 
-The generated CSS is set up with automatic Bootstrap recompilation with variables of your choice.
-Bootstrap v5 is installed using npm and customised by tweaking your variables in `static/sass/custom_bootstrap_vars`.
+```
+Host i-*
+     ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p' --region us-east-1 --profile commcare-connect"
+```
 
-You can find a list of available variables [in the bootstrap source](https://github.com/twbs/bootstrap/blob/v5.1.3/scss/_variables.scss), or get explanations on them in the [Bootstrap docs](https://getbootstrap.com/docs/5.1/customize/sass/).
-
-Bootstrap's javascript as well as its dependencies are concatenated into a single file: `static/js/vendors.js`.
+This remote access is required for the ansible commands in the `tasks.py` file.
 
 ### Setting up logical replication
 

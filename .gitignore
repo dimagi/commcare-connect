@@ -9,6 +9,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+artifacts/
 build/
 develop-eggs/
 dist/
@@ -322,3 +323,5 @@ webpack-stats.json
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+.claude

@@ -1,0 +1,228 @@
+{% extends 'program/program_base.html' %}
+{% load humanize %}
+{% load i18n %}
+{% load static %}
+
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+
+{% block inner %}
+<div x-data="{showProgramEditModal: false}">
+  <div class="flex flex-col gap-4">
+    {% for program in programs %}
+      <div class="flex flex-col p-6 rounded-xl shadow-sm bg-white gap-5 relative" x-data="{showOpp: false, showInviteModal: false}">
+        <div class="absolute w-8 bg-brand-mango h-2 top-0 -translate-y-1/2 left-6 rounded-full"></div>
+          <div class="flex w-full justify-between">
+            <div class="w-full">
+              <p class="card_title">{{ program.name }}</p>
+              <p class="card_description w-full max-w-1/2">{{ program.description }}</p>
+            </div>
+            <div class="flex items-start justify-end gap-6">
+              <button class="button-icon"
+                hx-get="{% url "program:edit" request.org.slug program.program_id %}"
+                hx-target="#program-edit-form"
+                @htmx:after-request="showProgramEditModal = true">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="button button-sm outline-style" @click="showInviteModal = true">{% translate "Invite" %}</button>
+              <div x-cloak x-show="showInviteModal" x-transition.opacity class="modal-backdrop" >
+                <div @click.away="showInviteModal = false" x-transition class="modal">
+                  <div class="header">
+                    <h2 class="title">{% translate "Invite Workspace" %}</h2>
+                    <button @click="showInviteModal = false" class="button-icon" aria-label="Close">
+                      <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                  </div>
+                  <form action="{% url "program:invite_organization" org_slug=request.org.slug pk=program.program_id %}" method="post">
+                    {% csrf_token %}
+                    <div class="flex flex-col gap-2 py-4">
+                      <label for="organization" class="title-sm">{% translate "Workspace" %}</label>
+                      <select id="organization" name="organization" required data-tomselect data-tomselect:no-remove-button>
+                        {% for org in organizations %}
+                          <option value="{{ org.slug }}">{{ org.name }}</option>
+                        {% endfor %}
+                      </select>
+                      <span class="hint">{% blocktrans %}Select the workspace you want to invite.{% endblocktrans %}</span>
+                    </div>
+                    <div class="footer">
+                      <button type="button" @click="showInviteModal = false" class="button button-md outline-style">{% translate "Close" %}</button>
+                      <button type="submit" class="button button-md primary-dark">{% translate "Invite" %}</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% with applications=program.applications_with_budget|default:program.programapplication_set.all %}
+
+          <div class="infocard-dark">
+              <i class="fa-solid fa-file-circle-check"></i>
+              <div>
+                  <h6>{% translate "Delivery Type" %}</h6>
+                  <p>{{program.delivery_type.name}}</p>
+              </div>
+          </div>
+
+          <div class="flex xl:items-center items-start xl:flex-row flex-col lg:gap-6 gap-3">
+            <div class="flex flex-row items-center lg:gap-6 gap-3">
+              <div class="infocard-dark">
+                  <i class="fa-solid fa-calendar-check"></i>
+                  <div>
+                      <h6>{% translate "Start Date" %}</h6>
+                      <p>{{program.start_date}}</p>
+                  </div>
+              </div>
+              <i class="fa-solid fa-arrow-right text-brand-mango"></i>
+              <div class="infocard-dark">
+                  <div>
+                      <h6>{% translate "End Date" %}</h6>
+                      <p>{{program.end_date}}</p>
+                  </div>
+              </div>
+            </div>
+            <div class="line my-2 h-8 w-0.5 bg-gray-200 lg:block hidden"></div>
+            <div class="flex flex-row gap-8">
+              <div class="infocard-dark">
+                  <i class="fa-solid fa-money-bill-wave"></i>
+                  <div>
+                      <h6>{% translate "Budget" %}</h6>
+                      <p>{{program.budget|intcomma}} {{program.currency_code|default:''}}</p>
+                  </div>
+              </div>
+              <div class="infocard-dark">
+                  <i class="fa-solid fa-hand-holding-dollar"></i>
+                  <div>
+                      <h6 class="whitespace-nowrap">{% translate "Allocated Budget" %}</h6>
+                      <p>{{program.allocated_budget|default:0|intcomma}} {{program.currency_code|default:''}}</p>
+                  </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- progress -->
+          <div class="bg-neutral-100 rounded-lg w-full h-20 flex items-center px-5 justify-evenly gap-6">
+            <div class="infocard-dark !w-fit">
+                <i class="fa-solid fa-envelope"></i>
+                <div>
+                    <h6>{% translate "Invited" %}</h6>
+                    <p>{{program.invited}}</p>
+                </div>
+            </div>
+            <i class="fa-solid fa-arrow-right text-brand-mango"></i>
+            <div class="infocard-dark !w-fit">
+                <i class="fa-solid fa-file-lines"></i>
+                <div>
+                    <h6>{% translate "Applied" %}</h6>
+                    <p>{{program.applied}}</p>
+                </div>
+            </div>
+            <i class="fa-solid fa-arrow-right text-brand-mango"></i>
+            <div class="infocard-dark !w-fit">
+                <i class="fa-solid fa-circle-check"></i>
+                <div>
+                    <h6>{% translate "Accepted" %}</h6>
+                    <p>{{program.accepted}}</p>
+                </div>
+            </div>
+          </div>
+
+          {% if applications %}
+            <button class="button button-sm outline-style" @click="showOpp = !showOpp">
+              <span class="relative z-20" x-text="showOpp ? 'Hide Status' : 'View Status'"></span>
+              <i class="fa-solid text-xs" :class="showOpp ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </button>
+          {% endif %}
+
+          <div class="flex flex-col gap-y-4" x-cloak x-show="showOpp">
+          {% for application in applications %}
+            <div class="relative flex flex-col gap-5 p-6 bg-white rounded-xl border border-gray-200">
+              <div class="flex justify-between w-full">
+                <div class="flex justify-between w-full">
+                  <div class="flex flex-col font-normal">
+                    <p class="hint">{{ application.date_created|date }}</p>
+
+                    <div class="flex flex-col gap-2">
+                      <p class="card_title">{{ application.organization.name }}</p>
+                      <p class="hint">
+                        {% translate "Current Budget" %}:
+                        {{ application.current_budget|default:0|intcomma }} {{ program.currency_code|default:'' }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex items-start">
+                    {% if application.status == 'rejected' %}
+                      <span class="badge badge-md negative-dark">{% translate "Rejected" %}</span>
+                    {% elif application.status == 'declined' %}
+                      <span class="badge badge-md negative-dark">{% translate "Declined" %}</span>
+                    {% elif application.status == 'invited' %}
+                      <span class="badge badge-md warning-dark">{% translate "Invited" %}</span>
+                    {% elif application.status == 'applied' %}
+                      <span class="badge badge-md primary-dark">{% translate "Applied" %}</span>
+                    {% elif application.status == 'accepted' %}
+                      <span class="badge badge-md positive-dark">{% translate "Accepted" %}</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-end">
+                {% if application.status == 'applied' %}
+                <div class="flex gap-2">
+                  <button class="button button-md outline-style" value="reject"
+                    hx-post="{% url 'program:manage_application' request.org.slug application.id 'reject' %}"
+                    hx-swap="outerHTML"
+                    hx-target="body">
+                    {% translate "Reject" %}
+                  </button>
+                  <button class="button button-md primary-dark" value="accept"
+                    hx-post="{% url 'program:manage_application' request.org.slug application.id 'accept' %}"
+                    hx-swap="outerHTML"
+                    hx-target="body">
+                    {% translate "Accept" %}
+                  </button>
+                </div>
+                {% elif application.status == 'accepted' %}
+                <a class="button button-md button-outline-rounded me-1"
+                  href="{% url "program:opportunity_init" request.org.slug program.program_id %}">
+                  <div class="flex items-center justify-between gap-4">
+                    <p class="text-sm">{% translate "Create Opportunity" %}</p>
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </div>
+                </a>
+                <a class="button button-md button-outline-rounded"
+                  href="{% url "opportunity:list" request.org.slug %}?program={{program.slug}}">
+                  <div class="flex items-center justify-between gap-4">
+                    <p class="text-sm">{% translate "View Opportunities" %}</p>
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </div>
+                </a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+          </div>
+          {% endwith %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div x-cloak x-show="showProgramEditModal" x-transition.opacity class="modal-backdrop">
+    <div @click.away="showProgramEditModal = false" x-transition class="modal">
+      <div class="header flex justify-between items-center mb-2">
+        <h2 class="title">{% translate "Edit Program" %}</h2>
+        <button @click="showProgramEditModal = false" class="button-icon" aria-label="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div id="program-edit-form"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

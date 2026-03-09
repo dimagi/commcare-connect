@@ -1,5 +1,4 @@
-from django.conf import settings
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from rest_framework import serializers
 
 from commcare_connect.cache import quickcache
@@ -50,7 +49,7 @@ class CommCareAppSerializer(serializers.ModelSerializer):
         ]
 
     def get_install_url(self, obj):
-        return f"{settings.COMMCARE_HQ_URL}/a/{obj.cc_domain}/apps/download/{obj.cc_app_id}/media_profile.ccpr"
+        return f"{obj.hq_server.url}/a/{obj.cc_domain}/apps/download/{obj.cc_app_id}/media_profile.ccpr"
 
     def get_passing_score(self, obj):
         if obj.passing_score is None:
@@ -61,13 +60,18 @@ class CommCareAppSerializer(serializers.ModelSerializer):
 class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
-        fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
+        fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
+    payment_unit_id = serializers.UUIDField(
+        source="payment_unit.payment_unit_id",
+        read_only=True,
+    )
+
     class Meta:
         model = OpportunityClaimLimit
-        fields = ["max_visits", "payment_unit"]
+        fields = ["max_visits", "payment_unit", "payment_unit_id"]
 
 
 class OpportunityClaimSerializer(serializers.ModelSerializer):
@@ -104,6 +108,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     learn_app = CommCareAppSerializer()
     deliver_app = CommCareAppSerializer()
+    currency = serializers.CharField(source="currency_id", read_only=True)
     claim = serializers.SerializerMethodField()
     learn_progress = serializers.SerializerMethodField()
     deliver_progress = serializers.SerializerMethodField()
@@ -120,6 +125,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
         model = Opportunity
         fields = [
             "id",
+            "opportunity_id",
             "name",
             "description",
             "short_description",
@@ -165,13 +171,13 @@ class OpportunitySerializer(serializers.ModelSerializer):
 
     def get_max_visits_per_user(self, obj):
         # return 1 for older opportunities
-        return obj.max_visits_per_user_new or -1
+        return obj.max_visits_per_user or -1
 
     def get_daily_max_visits_per_user(self, obj):
-        return obj.daily_max_visits_per_user_new or -1
+        return obj.daily_max_visits_per_user or -1
 
     def get_budget_per_visit(self, obj):
-        return obj.budget_per_visit_new or -1
+        return obj.budget_per_visit or -1
 
     def get_budget_per_user(self, obj):
         return obj.budget_per_user
@@ -230,6 +236,7 @@ class UserVisitSerializer(serializers.ModelSerializer):
         model = UserVisit
         fields = [
             "id",
+            "user_visit_id",
             "status",
             "visit_date",
             "deliver_unit_name",
@@ -245,7 +252,8 @@ class UserVisitSerializer(serializers.ModelSerializer):
 class CompletedWorkSerializer(serializers.ModelSerializer):
     deliver_unit_name = serializers.CharField(source="payment_unit.name")
     deliver_unit_slug = serializers.CharField(source="payment_unit.pk")
-    visit_date = serializers.DateTimeField(source="completion_date")
+    deliver_unit_slug_id = serializers.CharField(source="payment_unit.payment_unit_id")
+    visit_date = serializers.SerializerMethodField()
     flags = serializers.SerializerMethodField()
 
     class Meta:
@@ -256,10 +264,12 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
             "visit_date",
             "deliver_unit_name",
             "deliver_unit_slug",
+            "deliver_unit_slug_id",
             "entity_id",
             "entity_name",
             "reason",
             "flags",
+            "last_modified",
         ]
 
     def get_flags(self, obj):
@@ -268,16 +278,21 @@ class CompletedWorkSerializer(serializers.ModelSerializer):
         for visit in visits:
             if not visit:
                 continue
-
             for slug, reason in visit.get("flags", []):
                 flags[slug] = reason
         return flags
+
+    def get_visit_date(self, obj):
+        try:
+            return obj.last_visit_date
+        except AttributeError:
+            return obj.completion_date
 
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ["id", "amount", "date_paid", "confirmed", "confirmation_date"]
+        fields = ["id", "payment_id", "amount", "date_paid", "confirmed", "confirmation_date"]
 
 
 class DeliveryProgressSerializer(serializers.Serializer):
@@ -301,5 +316,6 @@ class DeliveryProgressSerializer(serializers.Serializer):
             CompletedWork.objects.filter(opportunity_access=obj)
             .exclude(status=CompletedWorkStatus.over_limit)
             .exclude(status=CompletedWorkStatus.incomplete)
+            .annotate(last_visit_date=Max("uservisit__visit_date"))
         )
         return CompletedWorkSerializer(completed_works, many=True).data

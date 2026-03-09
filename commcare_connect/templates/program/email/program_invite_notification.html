@@ -1,0 +1,11 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<p>Hi,</p>
+
+<p>You have been invited to join the Program "{{ application.program.name }}".</p>
+
+<p>
+    <a href="{{ program_url }}">Click here</a> to review and apply for the Program.
+</p>
+{% endblock %}

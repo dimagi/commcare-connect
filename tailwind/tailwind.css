@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @tailwind utilities;
+@import '@fortawesome/fontawesome-free/css/all.min.css';
 
 @source "./safelist.txt";
 
@@ -24,8 +25,43 @@
   --color-brand-blue-light: #94a3b8;
   --color-brand-sunset-light: #fc5f3633;
   --color-brand-border-light: #e2e8f0;
+  --color-message-success: #e6f5e5;
+  --color-message-success-text: #218079;
+  --color-message-warning-text: #bc950f;
+  --color-message-warning: #fff4cd;
+  --color-message-error: #fad4d4;
+  --color-message-error-text: #900000;
+  --color-message-info: #eef0ff;
+  --color-message-info-text: #3a42c7;
+  --color-message-success-border: #7abfb4;
+  --color-message-warning-border: #dbb646;
+  --color-message-info-border: #3a42c7;
+  --color-message-error-border: #900000;
   --width-screen-sm: var(--breakpoint-sm);
 }
+
+/* ------ Tippy.js tooltip ------ */
+.tippy-box {
+  background-color: var(--color-brand-indigo);
+  color: white;
+}
+
+.tippy-box[data-placement^='top'] > .tippy-arrow::before {
+  border-top-color: var(--color-brand-indigo);
+}
+
+.tippy-box[data-placement^='bottom'] > .tippy-arrow::before {
+  border-bottom-color: var(--color-brand-indigo);
+}
+
+.tippy-box[data-placement^='left'] > .tippy-arrow::before {
+  border-left-color: var(--color-brand-indigo);
+}
+
+.tippy-box[data-placement^='right'] > .tippy-arrow::before {
+  border-right-color: var(--color-brand-indigo);
+}
+
 /* ----- background -------*/
 .card_bg {
   @apply rounded-lg bg-white p-6 shadow-sm;
@@ -117,13 +153,17 @@
   @apply relative inline-block cursor-pointer space-x-2 text-nowrap rounded-lg text-sm font-medium transition-all duration-300;
 }
 
-.button:hover::after {
+.button:not(:disabled):hover::after {
   content: '';
   @apply bg-brand-deep-purple/10 absolute left-0 top-0 z-0 h-full w-full rounded-lg;
 }
 
+.button:disabled {
+  @apply pointer-events-none opacity-50;
+}
+
 .button-outline-rounded {
-  @apply text-brand-deep-purple rounded-full border border-gray-200;
+  @apply text-brand-deep-purple rounded-full border border-gray-400;
 }
 
 .button-outline-rounded:not(:disabled):hover::after {
@@ -143,6 +183,10 @@
   .button-icon:focus {
     @apply bg-brand-mango/10;
   }
+
+  .button-icon:disabled {
+    @apply pointer-events-none bg-transparent text-slate-400 opacity-50;
+  }
 }
 
 @layer components {
@@ -152,6 +196,20 @@
 
   .button-icon-activatable:focus {
     @apply bg-brand-mango/10;
+  }
+}
+
+@layer components {
+  .chat-widget-container {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 100;
+  }
+
+  .chat-widget-container > open-chat-studio-widget {
+    position: static;
+    inset: auto;
   }
 }
 
@@ -222,7 +280,7 @@
 }
 
 .outline-style {
-  @apply text-brand-deep-purple rounded-lg border border-gray-200 bg-gray-50;
+  @apply text-brand-deep-purple rounded-lg border border-gray-400 bg-gray-50;
 }
 
 /*-- chips ---------------------------------------*/
@@ -237,7 +295,7 @@
 /*-- tooltips ---------------------------------------*/
 @layer components {
   .tooltip {
-    @apply text-brand-deep-purple relative rounded-sm bg-white px-2 py-2 text-sm shadow-sm;
+    @apply text-brand-deep-purple relative rounded-sm bg-blue-500 px-2 py-2 text-sm shadow-sm;
   }
 
   .tooltip::before {
@@ -489,6 +547,34 @@
   }
 }
 
+/*---- loading indicator -----------*/
+
+@layer components {
+  .loading-indicator {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40;
+    @apply pointer-events-none opacity-0 transition-opacity duration-300;
+  }
+
+  .loading-content {
+    @apply flex flex-col items-center justify-center rounded-lg bg-white p-8 shadow-xl;
+  }
+
+  .loading-spinner {
+    @apply h-12 w-12 animate-spin;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3e%3ccircle cx='12' cy='12' r='10' stroke='%233843d0' stroke-width='4' opacity='0.25'%3e%3c/circle%3e%3cpath fill='%233843d0' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'%3e%3c/path%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-size: contain;
+  }
+
+  .loading-text {
+    @apply text-brand-deep-purple mt-4 text-lg font-medium;
+  }
+
+  .htmx-request .loading-indicator {
+    @apply pointer-events-auto opacity-100;
+  }
+}
+
 /*---- table class -----------*/
 
 @layer components {
@@ -602,11 +688,11 @@
 
 @layer {
   .modal {
-    @apply relative z-50 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
+    @apply relative z-50 mx-auto my-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
   }
 
   .modal-backdrop {
-    @apply fixed inset-0 z-40 flex items-center justify-center bg-black/40;
+    @apply fixed inset-0 z-40 overflow-y-auto bg-black/40 p-4;
   }
 
   .modal .dialog-box {
@@ -639,11 +725,11 @@
 
 .better-tabs {
   .tabs {
-    @apply flex h-full flex-wrap gap-x-8 px-2;
+    @apply flex h-full gap-x-8 overflow-x-scroll px-2;
   }
 
   .tab {
-    @apply relative flex h-full cursor-pointer items-center gap-1 text-sm text-gray-500;
+    @apply relative flex h-full cursor-pointer items-center gap-1 text-nowrap text-sm text-gray-500;
 
     /* Active Tabs */
     &:is(.tab-active, [aria-selected='true']):not(.tab-disabled, [disabled]),
@@ -661,4 +747,22 @@
   .tab-active {
     @apply text-brand-deep-purple font-medium;
   }
+}
+
+.relative > .pointer-events-none > svg {
+  display: none; /* https://github.com/django-crispy-forms/crispy-tailwind/issues/124 */
+}
+
+select:disabled,
+.textinput:disabled {
+  @apply pointer-events-none opacity-50;
+}
+
+/* Multi-line truncation helper (2 lines). */
+.multi-line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }

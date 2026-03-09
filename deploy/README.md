@@ -32,7 +32,7 @@ Deploying commcare-connect uses the following tools:
 (requires Ruby)
 
 ```bash
-gem install kamal -v '~> 1.0.0'
+gem install kamal -v '~> 1.9.2'
 ```
 
 ### Ansible
@@ -56,7 +56,7 @@ _~/.config/1Password/ssh/agent.toml_
 
 ```toml
 [[ssh-keys]]
-vault = "Commcare Connect"
+vault = "Connect Tech"
 ```
 
 See https://developer.1password.com/docs/ssh/agent for more details.

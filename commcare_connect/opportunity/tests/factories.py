@@ -1,9 +1,10 @@
 from datetime import timezone
 
-from factory import DictFactory, Faker, LazyAttribute, SelfAttribute, SubFactory
+from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
-from commcare_connect.opportunity.models import VisitValidationStatus
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
+from commcare_connect.opportunity.models import Country, Currency, VisitValidationStatus
 from commcare_connect.users.tests.factories import OrganizationFactory
 
 
@@ -20,6 +21,7 @@ class CommCareAppFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     passing_score = Faker("pyint", min_value=50, max_value=100, step=5)
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.CommCareApp"
@@ -28,6 +30,7 @@ class CommCareAppFactory(DjangoModelFactory):
 class HQApiKeyFactory(DjangoModelFactory):
     api_key = Faker("uuid4")
     user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.HQApiKey"
@@ -42,6 +45,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 
 
 class OpportunityFactory(DjangoModelFactory):
+    opportunity_id = Faker("uuid4")
     organization = SubFactory(OrganizationFactory)
     name = Faker("name")
     description = Faker("text")
@@ -51,12 +55,12 @@ class OpportunityFactory(DjangoModelFactory):
     deliver_app = SubFactory(CommCareAppFactory, organization=SelfAttribute("..organization"))
     start_date = Faker("past_date")
     end_date = Faker("future_date")
-    # to be removed
-    budget_per_visit = Faker("pyint", min_value=1, max_value=10)
     total_budget = Faker("pyint", min_value=1000, max_value=10000)
     api_key = SubFactory(HQApiKeyFactory)
     delivery_type = SubFactory(DeliveryTypeFactory)
-    currency = "USD"
+    currency = LazyFunction(lambda: Currency.objects.get(code="USD"))
+    country = LazyFunction(lambda: Country.objects.get(code="USA"))
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = "opportunity.Opportunity"
@@ -96,6 +100,7 @@ class PaymentUnitFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     amount = Faker("pyint", min_value=1, max_value=10)
+    org_amount = Faker("pyint", min_value=0, max_value=10)
     max_daily = Faker("pyint", min_value=1, max_value=10)
     max_total = LazyAttribute(lambda o: o.max_daily * 2)
 
@@ -132,12 +137,23 @@ class UserVisitFactory(DjangoModelFactory):
     deliver_unit = SubFactory(DeliverUnitFactory)
     status = Faker("enum", enum_cls=VisitValidationStatus)
     visit_date = Faker("date_time", tzinfo=timezone.utc)
+    date_created = Faker("date_time", tzinfo=timezone.utc)
     form_json = Faker("pydict", value_types=[str, int, float, bool])
     xform_id = Faker("uuid4")
     completed_work = SubFactory(CompletedWorkFactory)
 
     class Meta:
         model = "opportunity.UserVisit"
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        # allow overriding auto_now_add
+        date_created = kwargs.pop("date_created", None)
+        visit = super()._create(model_class, *args, **kwargs)
+        if date_created is not None:
+            model_class.objects.filter(pk=visit.pk).update(date_created=date_created)
+            visit.date_created = date_created
+        return visit
 
 
 class OpportunityClaimFactory(DjangoModelFactory):
@@ -234,7 +250,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 
 class PaymentFactory(DjangoModelFactory):
     opportunity_access = SubFactory(OpportunityAccessFactory)
-    amount = Faker("pyint", min_value=1, max_value=10000)
+    amount = Faker("pydecimal", min_value=1, max_value=10000)
     date_paid = Faker("date_time", tzinfo=timezone.utc)
 
     class Meta:
@@ -243,9 +259,55 @@ class PaymentFactory(DjangoModelFactory):
 
 class PaymentInvoiceFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
-    amount = Faker("pyint", min_value=0, max_value=1000)
+    amount = Faker("pydecimal", min_value=0, max_value=1000)
     date = Faker("date_time", tzinfo=timezone.utc)
     invoice_number = Faker("pystr")
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class TaskFactory(DjangoModelFactory):
+    app = SubFactory(CommCareAppFactory)
+    slug = Faker("slug")
+    name = Faker("name")
+    description = Faker("text")
+    time_estimate = Faker("pyint", min_value=1, max_value=8)
+
+    class Meta:
+        model = "opportunity.Task"
+
+
+class ExchangeRateFactory(DjangoModelFactory):
+    currency_code = "USD"
+    rate = 1.0
+    rate_date = Faker("date_time", tzinfo=timezone.utc)
+
+    class Meta:
+        model = "opportunity.ExchangeRate"
+
+
+class CredentialConfigurationFactory(DjangoModelFactory):
+    opportunity = SubFactory(OpportunityFactory)
+
+    class Meta:
+        model = "opportunity.CredentialConfiguration"
+
+
+class UserCredentialFactory(DjangoModelFactory):
+    user = SubFactory("commcare_connect.users.tests.factories.UserFactory")
+    opportunity = SubFactory(OpportunityFactory)
+    delivery_type = SubFactory(DeliveryTypeFactory)
+
+    class Meta:
+        model = "users.UserCredential"
+
+
+class BlobMetaFactory(DjangoModelFactory):
+    blob_id = Faker("uuid4")
+    parent_id = Faker("uuid4")
+    content_type = Faker("mime_type")
+    content_length = Faker("pyint", min_value=100, max_value=10000)
+
+    class Meta:
+        model = "opportunity.BlobMeta"

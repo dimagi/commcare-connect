@@ -9,7 +9,11 @@ from django.urls import reverse
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
-from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
+from commcare_connect.program.tests.factories import (
+    ManagedOpportunityFactory,
+    ProgramApplicationFactory,
+    ProgramFactory,
+)
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import OrganizationFactory
 
@@ -21,47 +25,7 @@ class BaseProgramTest:
         self.user = program_manager_org_user_admin
         self.client = client
         client.force_login(self.user)
-        self.list_url = reverse("program:list", kwargs={"org_slug": self.organization.slug})
-
-
-@pytest.mark.django_db
-class TestProgramListView(BaseProgramTest):
-    @pytest.fixture(autouse=True)
-    def test_setup(self):
-        self.list_url = reverse("program:list", kwargs={"org_slug": self.organization.slug})
-        self.programs = ProgramFactory.create_batch(15, organization=self.organization)
-
-    def test_view_url_exists_at_desired_location(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-
-    def test_pagination_is_ten(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        programs = response.context["page_obj"].object_list
-        assert len(programs) == 10
-
-    def test_pagination_next_page(self):
-        response = self.client.get(f"{self.list_url}?page=2")
-        assert response.status_code == HTTPStatus.OK
-        programs = response.context["page_obj"].object_list
-        assert len(programs) == 5
-
-    def test_default_ordering(self, client):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        table = response.context["table"]
-        programs = table.data
-        expected_programs = sorted(self.programs, key=lambda p: p.start_date)
-        self.check_order(programs, expected_programs)
-
-    @staticmethod
-    def check_order(actual, expected):
-        assert len(actual) == len(expected)
-        for i, (program, expected_program) in enumerate(zip(actual, expected)):
-            assert (
-                program.name == expected_program.name
-            ), f"Order mismatch at index {i}: got '{program.name}', expected '{expected_program.name}'"
+        self.list_url = reverse("program:home", kwargs={"org_slug": self.organization.slug})
 
 
 @pytest.mark.django_db
@@ -71,12 +35,14 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         self.program = ProgramFactory.create(organization=self.organization)
         self.delivery_type = DeliveryTypeFactory.create()
         self.init_url = reverse("program:init", kwargs={"org_slug": self.organization.slug})
-        self.edit_url = reverse("program:edit", kwargs={"org_slug": self.organization.slug, "pk": self.program.pk})
+        self.edit_url = reverse(
+            "program:edit", kwargs={"org_slug": self.organization.slug, "pk": self.program.program_id}
+        )
 
     def test_create_view(self):
         response = self.client.get(self.init_url)
         assert response.status_code == HTTPStatus.OK
-        assert "program/program_add.html" in response.templates[0].name
+        assert "program/program_form.html" in response.templates[0].name
 
     def test_create_program(self):
         data = {
@@ -85,6 +51,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "delivery_type": self.delivery_type.id,
             "budget": 10000,
             "currency": "USD",
+            "country": "USA",
             "start_date": "2024-01-01",
             "end_date": "2024-12-31",
         }
@@ -101,7 +68,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
     def test_update_view(self):
         response = self.client.get(self.edit_url)
         assert response.status_code == HTTPStatus.OK
-        assert "program/program_edit.html" in response.templates[0].name
+        assert "program/program_form.html" in response.templates[0].name
 
     def test_update_program(self):
         data = {
@@ -110,7 +77,8 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
             "delivery_type": self.delivery_type.id,
             "organization": self.organization.id,
             "budget": 15000,
-            "currency": "EUR",
+            "currency": "INR",
+            "country": "IND",
             "start_date": "2024-02-01",
             "end_date": "2024-11-30",
         }
@@ -120,6 +88,7 @@ class TestProgramCreateOrUpdateView(BaseProgramTest):
         self.program.refresh_from_db()
         assert self.program.name == "Updated Program Name"
         assert self.program.organization.slug == old_org
+        assert self.program.currency_id == data["currency"]
         assert "Program 'Updated Program Name' updated successfully." in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
@@ -136,7 +105,7 @@ class TestInviteOrganizationView(BaseProgramTest):
             "program:invite_organization",
             kwargs={
                 "org_slug": self.organization.slug,
-                "pk": self.program.pk,
+                "pk": self.program.program_id,
             },
         )
 
@@ -151,7 +120,7 @@ class TestInviteOrganizationView(BaseProgramTest):
             organization=self.invite_organization,
             status=ProgramApplicationStatus.INVITED,
         ).exists()
-        assert "Organization invited successfully!" in [
+        assert "Workspace invited successfully!" in [
             msg.message for msg in messages.get_messages(response.wsgi_request)
         ]
 
@@ -164,104 +133,58 @@ class TestInviteOrganizationView(BaseProgramTest):
 
 
 @pytest.mark.django_db
-class TestManagedOpportunityApplicationListView(BaseProgramTest):
+class TestProgramHomeBudgetData(BaseProgramTest):
     @pytest.fixture(autouse=True)
-    def test_setup(self, organization: Organization):
-        self.program = ProgramFactory.create(organization=self.organization)
-        self.applications = ProgramApplicationFactory.create_batch(20, program=self.program)
-        self.list_url = reverse(
-            "program:applications",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "pk": self.program.pk,
-            },
-        )
+    def setup_program(self):
+        self.program = ProgramFactory.create(organization=self.organization, budget=10000)
+        self.other_program = ProgramFactory.create(organization=self.organization, budget=15000)
 
-    def test_view_url_exists_at_desired_location(self):
+        application_orgs = OrganizationFactory.create_batch(2)
+        self.expected_application_budgets = {}
+        self.program_applications = []
+
+        budgets_per_org = {
+            application_orgs[0]: [250, 150],
+            application_orgs[1]: [400],
+        }
+        for org, budgets in budgets_per_org.items():
+            application = ProgramApplicationFactory.create(
+                program=self.program,
+                organization=org,
+                status=ProgramApplicationStatus.ACCEPTED,
+            )
+            self.program_applications.append(application)
+            self.expected_application_budgets[org.id] = sum(budgets)
+            for amount in budgets:
+                ManagedOpportunityFactory.create(program=self.program, organization=org, total_budget=amount)
+
+        # Application without any managed opportunities should show zero budget
+        empty_org = OrganizationFactory()
+        empty_application = ProgramApplicationFactory.create(program=self.program, organization=empty_org)
+        self.program_applications.append(empty_application)
+        self.expected_application_budgets[empty_org.id] = 0
+
+        # Managed opportunity for a different program should be ignored
+        ManagedOpportunityFactory.create(
+            program=self.other_program,
+            organization=application_orgs[0],
+            total_budget=999,
+        )
+        # Managed opportunity for an org without an application should be ignored
+        ManagedOpportunityFactory.create(program=self.program, organization=OrganizationFactory(), total_budget=777)
+
+        self.expected_allocated_budget = sum(self.expected_application_budgets.values())
+
+    def test_program_home_includes_budget_data(self):
         response = self.client.get(self.list_url)
         assert response.status_code == HTTPStatus.OK
-        assert "program/application_list.html" in response.templates[0].name
-        context = response.context_data
-        assert "object_list" in context
-        assert "pk" in context
-        assert "program" in context
-        assert "organizations" in context
-        assert context["pk"] == self.program.pk
+        programs = response.context["programs"]
+        program = next((p for p in programs if p.id == self.program.id), None)
+        assert program is not None
+        assert program.allocated_budget == self.expected_allocated_budget
 
-    def test_list_applications(self):
-        response = self.client.get(self.list_url)
-        assert response.status_code == HTTPStatus.OK
-        applications = response.context_data["object_list"]
-        assert len(applications) == 10
-
-    def test_pagination(self):
-        response = self.client.get(f"{self.list_url}?page=2")
-        assert response.status_code == HTTPStatus.OK
-        assert len(response.context_data["object_list"]) == 10
-
-
-@pytest.mark.django_db
-class TestManageApplicationView(BaseProgramTest):
-    @pytest.fixture(autouse=True)
-    def test_setup(self):
-        self.invited_org = OrganizationFactory()
-        self.program = ProgramFactory.create(organization=self.organization)
-        self.application = ProgramApplicationFactory.create(
-            organization=self.invited_org, program=self.program, status=ProgramApplicationStatus.APPLIED
-        )
-        self.application_list_url = reverse(
-            "program:applications",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "pk": self.program.id,
-            },
-        )
-
-    def test_accept_application(self):
-        url = reverse(
-            "program:manage_application",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "application_id": self.application.id,
-                "action": "accept",
-            },
-        )
-        response = self.client.post(url)
-        assert response.status_code == HTTPStatus.FOUND
-        self.application.refresh_from_db()
-        assert self.application.status == ProgramApplicationStatus.ACCEPTED
-        assert "Application has been accepted successfully." in [
-            msg.message for msg in messages.get_messages(response.wsgi_request)
-        ]
-
-    def test_reject_application(self):
-        url = reverse(
-            "program:manage_application",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "application_id": self.application.id,
-                "action": "reject",
-            },
-        )
-        response = self.client.post(url)
-        assert response.status_code == HTTPStatus.FOUND
-        assert response.url == self.application_list_url
-        self.application.refresh_from_db()
-        assert self.application.status == ProgramApplicationStatus.REJECTED
-        assert "Application has been rejected successfully." in [
-            msg.message for msg in messages.get_messages(response.wsgi_request)
-        ]
-
-    def test_invalid_action(self):
-        url = reverse(
-            "program:manage_application",
-            kwargs={
-                "org_slug": self.organization.slug,
-                "application_id": self.application.id,
-                "action": "invite",
-            },
-        )
-        response = self.client.post(url)
-        assert response.status_code == HTTPStatus.FOUND
-        assert self.application.status == ProgramApplicationStatus.APPLIED
-        assert "Action not allowed." in [msg.message for msg in messages.get_messages(response.wsgi_request)]
+        applications = getattr(program, "applications_with_budget", [])
+        assert len(applications) == len(self.expected_application_budgets)
+        for application in applications:
+            expected_budget = self.expected_application_budgets[application.organization_id]
+            assert application.current_budget == expected_budget

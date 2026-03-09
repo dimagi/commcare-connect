@@ -1,0 +1,11 @@
+{% load crispy_forms_tags %}
+
+<form
+    hx-post="{{ hx_post_url }}"
+    hx-target="{{ hx_target }}"
+    hx-swap="innerHTML"
+    method="post"
+>
+    {% csrf_token %}
+    {% crispy form %}
+</form>

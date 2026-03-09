@@ -9,7 +9,11 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 ALLOWED_CIDR_NETS = env.list("DJANGO_ALLOWED_CIDR_NETS", default=[])
-MIDDLEWARE.insert(0, "allow_cidr.middleware.AllowCIDRMiddleware")  # noqa: F405
+# AllowCIDRMiddleware may raise an error view that renders a template requiring a CSRF token.
+# With CSRF_USE_SESSIONS = True, the token is stored in the session,
+# so this middleware must run after SessionMiddleware to ensure access.
+session_middleware_index = MIDDLEWARE.index("django.contrib.sessions.middleware.SessionMiddleware")  # noqa: F405
+MIDDLEWARE.insert(session_middleware_index + 1, "allow_cidr.middleware.AllowCIDRMiddleware")  # noqa: F405
 
 
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=60)  # noqa: F405
@@ -62,6 +66,7 @@ ANYMAIL = {}
 # Sentry
 # ------------------------------------------------------------------------------
 SENTRY_DSN = env("SENTRY_DSN", default="")
+APP_RELEASE = env("APP_RELEASE", default=None)
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.celery import CeleryIntegration
@@ -83,7 +88,8 @@ if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=integrations,
-        environment=env("SENTRY_ENVIRONMENT", default="production"),
+        environment=env("DEPLOY_ENVIRONMENT", default="production"),
+        release=APP_RELEASE,
         traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
     )
 

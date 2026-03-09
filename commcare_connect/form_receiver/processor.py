@@ -1,16 +1,20 @@
 import datetime
+import logging
 from functools import partial
+from uuid import UUID
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Min, Q
 from django.utils.timezone import now
 from geopy.distance import distance
 from jsonpath_ng import JSONPathError
 from jsonpath_ng.ext import parse
 
+from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
+from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.opportunity.models import (
     Assessment,
     CommCareApp,
@@ -30,26 +34,38 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments
-from commcare_connect.opportunity.visit_import import update_payment_accrued
+from commcare_connect.opportunity.tasks import download_user_visit_attachments, notify_user_for_scored_assessment
+from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
+from commcare_connect.utils.lock import try_redis_lock
+
+logger = logging.getLogger(__name__)
 
 LEARN_MODULE_JSONPATH = parse("$..module")
 ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
 
 
-def process_xform(xform: XForm):
+def is_a_uuid(value):
+    try:
+        UUID(str(value))
+        return True
+    except ValueError:
+        return False
+
+
+def process_xform(xform: XForm, hq_server: HQServer):
     """Process a form received from CommCare HQ."""
-    app = get_app(xform.domain, xform.app_id)
     user = get_user(xform)
 
-    opportunity = get_opportunity(deliver_app=app)
+    opportunity = get_opportunity(xform.domain, hq_server, deliver_app_id=xform.app_id)
     if opportunity:
+        app = opportunity.deliver_app
         process_deliver_form(user, xform, app, opportunity)
 
-    opportunity = get_opportunity(learn_app=app)
+    opportunity = get_opportunity(xform.domain, hq_server, learn_app_id=xform.app_id)
     if opportunity:
+        app = opportunity.learn_app
         process_learn_form(user, xform, app, opportunity)
 
 
@@ -60,11 +76,15 @@ def process_learn_form(user, xform: XForm, app: CommCareApp, opportunity: Opport
     ]
     for jsonpath, processor in processors:
         try:
-            matches = [match.value for match in jsonpath.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS]
+            matches = _get_matching_blocks(jsonpath, xform)
             if matches:
                 processor(user, xform, app, opportunity, matches)
         except JSONPathError as e:
             raise ProcessingError from e
+
+
+def _get_matching_blocks(jsonpath, xform):
+    return [match.value for match in jsonpath.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS]
 
 
 def get_or_create_learn_module(app, module_data):
@@ -91,6 +111,7 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
     with transaction.atomic():
         access = OpportunityAccess.objects.get(user=user, opportunity=opportunity)
         completed_modules = []
+        save_access = False
         for module_data in blocks:
             module = get_or_create_learn_module(app, module_data)
             completed_module = CompletedModule(
@@ -99,15 +120,35 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
                 opportunity=opportunity,
                 opportunity_access=access,
                 xform_id=xform.id,
-                date=xform.received_on,
+                date=xform.metadata.timeEnd,
                 duration=xform.metadata.duration,
                 app_build_id=xform.build_id,
                 app_build_version=xform.metadata.app_build_version,
             )
             completed_modules.append(completed_module)
+            if not access.last_active or access.last_active < completed_module.date:
+                access.last_active = completed_module.date
+                save_access = True
 
         if completed_modules:
             CompletedModule.objects.bulk_create(completed_modules)
+            update_completed_learn_date(access, save_access)
+
+
+def update_completed_learn_date(access, save_access=False):
+    if not access.completed_learn_date and access.learn_progress == 100.0:
+        # Get the earliest completion date for each unique module
+        earliest_dates = (
+            CompletedModule.objects.filter(opportunity_access=access)
+            .values("module")
+            .annotate(earliest_date=Min("date"))
+        )
+        completed_learn_date = max(entry["earliest_date"] for entry in earliest_dates)
+        access.completed_learn_date = completed_learn_date
+        save_access = True
+
+    if save_access:
+        access.save()
 
 
 def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
@@ -133,7 +174,7 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
             opportunity_access=access,
             xform_id=xform.id,
             defaults={
-                "date": xform.received_on,
+                "date": xform.metadata.timeEnd,
                 "score": score,
                 "passing_score": passing_score,
                 "passed": score >= passing_score,
@@ -144,6 +185,8 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
         if not created:
             return ProcessingError("Learn Assessment is already completed")
+
+        notify_user_for_scored_assessment.delay(assessment.pk)
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -178,7 +221,7 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
             lat, lon, *_ = visit["location"].split(" ")
             dist = distance((lat, lon), (cur_lat, cur_lon))
             if dist.m <= opportunity_flags.location:
-                flags.append(["location", "Visit location is too close to another visit"])
+                flags.append(["location", f"Visit location is {dist.m}m from another visit"])
                 break
     if opportunity_flags.catchment_areas:
         areas = access.catchmentarea_set.filter(active=True)
@@ -236,7 +279,10 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
-    access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
     payment_unit = deliver_unit.payment_unit
     if not payment_unit:
         raise ProcessingError(
@@ -244,21 +290,25 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             f"{deliver_unit.name} in opportunity: {opportunity.name}"
         )
 
-    counts = (
-        UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
-        .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
-        .aggregate(
-            daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
-            total=Count("*"),
-            entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
-        )
-    )
     claim = OpportunityClaim.objects.get(opportunity_access=access)
     claim_limit = OpportunityClaimLimit.objects.get(opportunity_claim=claim, payment_unit=payment_unit)
     entity_id = deliver_unit_block.get("entity_id")
     entity_name = deliver_unit_block.get("entity_name")
 
-    with transaction.atomic():
+    # handle concurrent form submissions for same entity id
+    lock_key = f"visit_processor:{access.id}:{deliver_unit.id}:{entity_id}"
+    with try_redis_lock(lock_key, timeout=30, blocking_timeout=5) as acquired, transaction.atomic():
+        if not acquired:
+            raise ProcessingError("Error processing form, please retry again.")
+        counts = (
+            UserVisit.objects.filter(opportunity_access=access, deliver_unit=deliver_unit)
+            .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
+            .aggregate(
+                daily=Count("pk", filter=Q(visit_date__date=xform.metadata.timeStart)),
+                total=Count("*"),
+                entity=Count("pk", filter=Q(entity_id=deliver_unit_block.get("entity_id"), deliver_unit=deliver_unit)),
+            )
+        )
         user_visit = UserVisit(
             opportunity=opportunity,
             user=user,
@@ -298,10 +348,23 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                     completed_work_needs_save = True
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
+
+        if work_area_case_id := deliver_unit_block.get("work_area_id"):
+            if is_a_uuid(work_area_case_id):
+                try:
+                    user_visit.work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+                except WorkArea.DoesNotExist:
+                    logger.error(
+                        f"No work area found for opportunity ({opportunity.id}) with case_id: {work_area_case_id}"
+                    )
+            else:
+                logger.error(f"Invalid work area case id specified: {work_area_case_id}")
+
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
             user_visit.status = VisitValidationStatus.rejected
+            completed_work.status = CompletedWorkStatus.rejected
         if flags:
             user_visit.flagged = True
             user_visit.flag_reason = {"flags": flags}
@@ -316,6 +379,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
         user_visit.save()
 
+        if not access.last_active or access.last_active < user_visit.visit_date:
+            access.last_active = user_visit.visit_date
+
         if completed_work is not None:
             if completed_work.completed_count > 0 and completed_work.status == CompletedWorkStatus.incomplete:
                 completed_work.status = CompletedWorkStatus.pending
@@ -323,7 +389,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued(opportunity, [user.id])
+    update_payment_accrued_for_user(access, incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 
@@ -338,30 +404,34 @@ def get_or_create_deliver_unit(app, unit_data):
     return unit
 
 
-def get_opportunity(*, learn_app=None, deliver_app=None):
-    if not learn_app and not deliver_app:
-        raise ValueError("One of learn_app or deliver_app must be provided")
-
-    kwargs = {}
-    if learn_app:
-        kwargs = {"learn_app": learn_app}
-    if deliver_app:
-        kwargs = {"deliver_app": deliver_app}
+def get_opportunity(domain, hq_server, deliver_app_id=None, learn_app_id=None):
+    if not (learn_app_id or deliver_app_id):
+        raise ValueError("One of learn_app_id or deliver_app_id along with domain must be provided")
+    if learn_app_id:
+        kwargs = {
+            "learn_app__cc_domain": domain,
+            "learn_app__cc_app_id": learn_app_id,
+        }
+    if deliver_app_id:
+        kwargs = {
+            "deliver_app__cc_domain": domain,
+            "deliver_app__cc_app_id": deliver_app_id,
+        }
 
     try:
-        return Opportunity.objects.get(active=True, end_date__gte=now().date(), **kwargs)
+        opportunity = Opportunity.objects.get(active=True, end_date__gte=now().date(), **kwargs)
+        if learn_app_id:
+            app = opportunity.learn_app
+        elif deliver_app_id:
+            app = opportunity.deliver_app
+        if app.hq_server != hq_server:
+            raise ProcessingError(f"CommCare App {app.id} not found on {hq_server}")
+        return opportunity
     except Opportunity.DoesNotExist:
         pass
     except Opportunity.MultipleObjectsReturned:
-        app = learn_app or deliver_app
-        raise ProcessingError(f"Multiple active opportunities found for CommCare app {app.cc_app_id}.")
-
-
-def get_app(domain, app_id):
-    app = CommCareApp.objects.filter(cc_domain=domain, cc_app_id=app_id).first()
-    if not app:
-        raise ProcessingError(f"CommCare app {app_id} not found.")
-    return app
+        app_id = learn_app_id or deliver_app_id
+        raise ProcessingError(f"Multiple active opportunities found for CommCare app {app_id}.")
 
 
 def get_user(xform: XForm):

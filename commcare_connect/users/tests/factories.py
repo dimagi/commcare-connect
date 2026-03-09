@@ -1,12 +1,14 @@
 from django.contrib.auth import get_user_model
-from factory import Faker, RelatedFactory, SubFactory
+from factory import Faker, RelatedFactory, Sequence, SubFactory
 from factory.django import DjangoModelFactory, Password
 
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
+from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
 from commcare_connect.users.models import ConnectIDUserLink
 
 
 class UserFactory(DjangoModelFactory):
+    username = Sequence(lambda n: "user_%d" % n)
     email = Faker("email")
     name = Faker("name")
     password = Password(
@@ -27,7 +29,8 @@ class UserFactory(DjangoModelFactory):
 
 class ConnectIdUserLinkFactory(DjangoModelFactory):
     user = SubFactory(UserFactory)
-    commcare_username = Faker("word")
+    commcare_username = Sequence(lambda n: "commcare_user_%d" % n)
+    hq_server = SubFactory(HQServerFactory)
 
     class Meta:
         model = ConnectIDUserLink
@@ -35,12 +38,19 @@ class ConnectIdUserLinkFactory(DjangoModelFactory):
 
 
 class MobileUserFactory(DjangoModelFactory):
-    username = Faker("word")
+    username = Sequence(lambda n: "mobile_user_%d" % n)
     name = Faker("name")
 
     class Meta:
         model = get_user_model()
         django_get_or_create = ["username"]
+
+
+class LLOEntityFactory(DjangoModelFactory):
+    name = Faker("company")
+
+    class Meta:
+        model = LLOEntity
 
 
 class OrganizationFactory(DjangoModelFactory):

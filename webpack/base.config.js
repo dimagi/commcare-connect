@@ -7,7 +7,6 @@ module.exports = {
   target: 'web',
   context: path.join(__dirname, '../'),
   entry: {
-    project: path.resolve(__dirname, '../commcare_connect/static/js/project'),
     dashboard: path.resolve(
       __dirname,
       '../commcare_connect/static/js/dashboard',
@@ -15,6 +14,10 @@ module.exports = {
     vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
     tailwind: path.resolve(__dirname, '../tailwind/tailwind.css'),
     mapbox: path.resolve(__dirname, '../commcare_connect/static/js/mapbox'),
+    tomselect: path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/tomselect.js',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),

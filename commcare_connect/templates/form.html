@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% load static %}
-{% load crispy_forms_tags %}
-
-
-{% if title %}{% block title %}{{ title }}{% endblock %} {% endif %}
-{% block content %}
-  {% include "partial_form.html" %}
-{% endblock content %}

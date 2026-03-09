@@ -1,50 +1,70 @@
 import datetime
 import logging
+from decimal import Decimal
 
 import httpx
+import sentry_sdk
+import waffle
 from allauth.utils import build_absolute_uri
+from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Exists, OuterRef
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from tablib import Dataset
 
-from commcare_connect.connect_id_client import fetch_users, filter_users, send_message, send_message_bulk
+from commcare_connect.cache import quickcache
+from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
+from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
+    UserVisitExporter,
     export_catchment_area_table,
     export_deliver_status_table,
     export_empty_payment_table,
     export_user_status_table,
-    export_user_visit_data,
     export_user_visit_review_data,
     export_work_status_table,
 )
-from commcare_connect.opportunity.forms import DateRanges
 from commcare_connect.opportunity.models import (
+    Assessment,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
+    ExchangeRate,
+    InvoiceStatus,
     LearnModule,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     Payment,
+    PaymentInvoice,
     UserInvite,
     UserInviteStatus,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import update_status
+from commcare_connect.opportunity.utils.completed_work import (
+    get_uninvoiced_visit_items,
+    link_invoice_to_completed_works,
+    update_status,
+)
+from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
 from commcare_connect.users.models import User
+from commcare_connect.users.user_credentials import UserCredentialIssuer
+from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
-from commcare_connect.utils.datetime import is_date_before
+from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
@@ -56,8 +76,8 @@ def create_learn_modules_and_deliver_units(opportunity_id):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     learn_app = opportunity.learn_app
     deliver_app = opportunity.deliver_app
-    learn_app_connect_blocks = get_connect_blocks_for_app(learn_app.cc_domain, learn_app.cc_app_id)
-    deliver_app_connect_blocks = get_deliver_units_for_app(deliver_app.cc_domain, deliver_app.cc_app_id)
+    learn_app_connect_blocks = get_connect_blocks_for_app(learn_app)
+    deliver_app_connect_blocks = get_deliver_units_for_app(deliver_app)
 
     for block in learn_app_connect_blocks:
         LearnModule.objects.update_or_create(
@@ -75,12 +95,8 @@ def create_learn_modules_and_deliver_units(opportunity_id):
 
 
 @celery_app.task()
-def add_connect_users(
-    user_list: list[str], opportunity_id: str, filter_country: str = "", filter_credential: list[str] = ""
-):
+def add_connect_users(user_list: list[str], opportunity_id: str):
     found_users = fetch_users(user_list)
-    if filter_country or filter_credential:
-        found_users += filter_users(country_code=filter_country, credential=filter_credential)
     not_found_users = set(user_list) - {user.phone_number for user in found_users}
     for u in not_found_users:
         UserInvite.objects.get_or_create(
@@ -112,10 +128,7 @@ def invite_user(user_id, opportunity_access_id):
     invite_id = opportunity_access.invite_id
     location = reverse("users:accept_invite", args=(invite_id,))
     url = build_absolute_uri(None, location)
-    body = (
-        "You have been invited to a new job in Commcare Connect. Click the following "
-        f"link to share your information with the project and find out more {url}"
-    )
+    body = f"You have been invited to a job in Connect. Click the link to accept {url}"
     if not user.phone_number:
         return
     sms_status = send_sms(user.phone_number, body)
@@ -131,6 +144,7 @@ def invite_user(user_id, opportunity_access_id):
         data={
             "action": "ccc_opportunity_summary_page",
             "opportunity_id": str(opportunity_access.opportunity.id),
+            "opportunity_uuid": str(opportunity_access.opportunity.opportunity_id),
             "title": gettext(
                 f"You have been invited to a CommCare Connect opportunity - {opportunity_access.opportunity.name}"
             ),
@@ -143,26 +157,52 @@ def invite_user(user_id, opportunity_access_id):
 
 
 @celery_app.task()
-def generate_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str, flatten: bool):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
-    logger.info(f"Export for {opportunity.name} with date range {date_range} and status {','.join(status)}")
-    dataset = export_user_visit_data(
-        opportunity, DateRanges(date_range), [VisitValidationStatus(s) for s in status], flatten
+def delete_stale_opportunities():
+    cutoff = now() - relativedelta(months=6)
+    visit_exists = UserVisit.objects.filter(opportunity=OuterRef("pk"))
+    stale_opportunities = (
+        Opportunity.objects.filter(date_created__lt=cutoff)
+        .annotate(has_visits=Exists(visit_exists))
+        .filter(has_visits=False)
+        .order_by("id")
     )
+    count = 0
+    for opportunity in stale_opportunities:
+        logger.info(
+            "Deleting stale opportunity %s (%s) created on %s",
+            opportunity.id,
+            opportunity.name,
+            opportunity.date_created,
+        )
+        deleted = delete_opportunity(opportunity)
+        if deleted:
+            count += 1
+    logger.info("Deleted %s stale opportunities created before %s", count, cutoff)
+
+
+@celery_app.task()
+def generate_visit_export(
+    opportunity_id: int, from_date, to_date, status: list[str], export_format: str, flatten: bool
+):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    logger.info(
+        f"Export for {opportunity.name} with date range from {from_date} to {to_date} and status {','.join(status)}"
+    )
+    exporter = UserVisitExporter(opportunity, flatten)
+    dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
 
 
 @celery_app.task()
-def generate_review_visit_export(opportunity_id: int, date_range: str, status: list[str], export_format: str):
+def generate_review_visit_export(opportunity_id: int, from_date, to_date, status: list[str], export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     logger.info(
-        f"Export review visit for {opportunity.name} with date range {date_range} and status {','.join(status)}"
+        f"""Export review visit for {opportunity.name} with date
+        from {from_date} to {to_date} and status {','.join(status)}"""
     )
-    dataset = export_user_visit_review_data(
-        opportunity, DateRanges(date_range), [VisitReviewStatus(s) for s in status]
-    )
+    dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
     export_tmp_name = f"{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
     save_export(dataset, export_tmp_name, export_format)
     return export_tmp_name
@@ -237,9 +277,10 @@ def _get_learn_message(access: OpportunityAccess):
             data={
                 "action": "ccc_learn_progress",
                 "opportunity_id": str(access.opportunity.id),
+                "opportunity_uuid": str(access.opportunity.opportunity_id),
                 "title": gettext(f"Resume your learning journey for {access.opportunity.name}"),
                 "body": gettext(
-                    f"You have not completed your learning for {access.opportunity.name}."
+                    f"You have not completed your learning for {access.opportunity.name}. "
                     "Please complete the learning modules to start delivering visits."
                 ),
             },
@@ -258,9 +299,10 @@ def _get_deliver_message(access: OpportunityAccess):
         data={
             "action": "ccc_delivery_progress",
             "opportunity_id": str(access.opportunity.id),
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
             "title": gettext(f"Resume your job for {access.opportunity.name}"),
             "body": gettext(
-                f"You have not completed your delivery visits for {access.opportunity.name}."
+                f"You have not completed your delivery visits for {access.opportunity.name}. "
                 "To maximise your payout complete all the required service delivery."
             ),
         },
@@ -278,12 +320,11 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                 data={
                     "action": "ccc_payment",
                     "opportunity_id": str(opportunity.id),
+                    "opportunity_uuid": str(opportunity.opportunity_id),
                     "title": gettext("Payment received"),
-                    "body": gettext(
-                        "You have received a payment of"
-                        f"{opportunity.currency} {payment.amount} for {opportunity.name}.",
-                    ),
+                    "body": gettext(f"A payment is now available for {opportunity.name} Opportunity."),
                     "payment_id": str(payment.id),
+                    "payment_uuid": str(payment.payment_id),
                 },
             )
         )
@@ -291,21 +332,32 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
 
 
 @celery_app.task()
-def send_push_notification_task(user_ids: list[int], title: str, body: str):
+def send_push_notification_task(
+    user_ids: list[int],
+    title: str,
+    body: str,
+    extra_data: dict[str, str] = None,
+):
     usernames = list(User.objects.filter(id__in=user_ids).values_list("username", flat=True))
-    message = Message(usernames, title=title, body=body)
+    data = {"title": title, "body": body}
+    if extra_data is not None:
+        data.update(extra_data)
+    message = Message(usernames, data=data)
     send_message(message)
 
 
-@celery_app.task()
-def send_sms_task(user_ids: list[int], body: str):
-    user_phone_numbers = User.objects.filter(id__in=user_ids).values_list("phone_number", flat=True)
-    for phone_number in user_phone_numbers:
-        send_sms(phone_number, body)
+RETRYABLE_EXCS = (httpx.ReadTimeout, httpx.ConnectTimeout)
 
 
-@celery_app.task()
-def download_user_visit_attachments(user_visit_id: id):
+@celery_app.task(
+    bind=True,
+    autoretry_for=RETRYABLE_EXCS,
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def download_user_visit_attachments(self, user_visit_id: int):
     user_visit = UserVisit.objects.get(id=user_visit_id)
     api_key = user_visit.opportunity.api_key
     blobs = user_visit.form_json.get("attachments", {})
@@ -314,7 +366,7 @@ def download_user_visit_attachments(user_visit_id: id):
     for name, blob in blobs.items():
         if name == "form.xml":
             continue
-        url = f"{settings.COMMCARE_HQ_URL}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
+        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
 
         with transaction.atomic():
             blob_meta, created = BlobMeta.objects.get_or_create(
@@ -361,28 +413,72 @@ def generate_catchment_area_export(opportunity_id: int, export_format: str):
     return export_tmp_name
 
 
+def get_payment_upload_key(opp_id):
+    return f"bulk_update_payments_opportunity_{opp_id}"
+
+
 @celery_app.task(bind=True)
 def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_format: str):
     from commcare_connect.opportunity.visit_import import ImportException, bulk_update_payments, get_imported_dataset
 
-    set_task_progress(self, "Payment Record Import is in progress.")
+    with cache.lock(get_payment_upload_key(opportunity_id), timeout=600):
+        set_task_progress(self, "Payment Record Import is in progress.")
+        try:
+            with default_storage.open(file_path, "rb") as f:
+                dataset = get_imported_dataset(f, file_format)
+                headers = dataset.headers or []
+                rows = list(dataset)
+
+            status = bulk_update_payments(opportunity_id, headers, rows)
+            messages = [f"Payment status updated successfully for {len(status)} users."]
+            if status.missing_users:
+                messages.append(status.get_missing_message())
+
+        except ImportException as e:
+            messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
+        except Exception as e:
+            messages = [f"Unexpected error during payment import: {e}"]
+        finally:
+            default_storage.delete(file_path)
+
+        set_task_progress(self, "<br>".join(messages), is_complete=True)
+
+
+@celery_app.task(bind=True)
+def bulk_update_visit_status_task(
+    self, opportunity_id: int, file_path: str, file_format: str, tracking_info: dict = None
+):
+    from commcare_connect.opportunity.visit_import import (
+        ImportException,
+        bulk_update_visit_status,
+        get_imported_dataset,
+    )
+
+    set_task_progress(self, "Visit Verification Import is in porgress.")
     try:
         with default_storage.open(file_path, "rb") as f:
             dataset = get_imported_dataset(f, file_format)
             headers = dataset.headers or []
             rows = list(dataset)
 
-        status = bulk_update_payments(opportunity_id, headers, rows)
-        messages = [f"Payment status updated successfully for {len(status)} users."]
-        if status.missing_users:
+        status = bulk_update_visit_status(opportunity_id, headers, rows)
+        messages = [f"Visit status updated successfully for {len(status)} visits.<br>"]
+        if status.missing_visits:
             messages.append(status.get_missing_message())
+        if status.locked_visits:
+            messages.append(status.get_locked_message())
 
+        if tracking_info:
+            tracking_info = GATrackingInfo.from_dict(tracking_info)
+            events = [
+                Event("visit_import_approved", {"updated": status.approved_count, "total": len(status.seen_visits)}),
+                Event("visit_import_rejected", {"updated": status.rejected_count, "total": len(status.seen_visits)}),
+            ]
+            for event in events:
+                event.add_tracking_info(tracking_info)
+            send_event_task.delay(tracking_info.client_id, _serialize_events(events))
     except ImportException as e:
-        messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
-    except Exception as e:
-        messages = [f"Unexpected error during payment import: {e}"]
-    finally:
-        default_storage.delete(file_path)
+        messages = [f"Visit status import failed: {e}"] + getattr(e, "invalid_rows", [])
 
     set_task_progress(self, "<br>".join(messages), is_complete=True)
 
@@ -397,3 +493,234 @@ def bulk_update_payment_accrued(opportunity_id, user_ids: list):
                 "payment_unit"
             )
             update_status(completed_works, access, compute_payment=True)
+
+
+@quickcache(vary_on=["url"], timeout=60 * 60 * 24)
+def request_rates(url):
+    response = httpx.get(url)
+    rates = response.json()["rates"]
+    return rates
+
+
+@celery_app.task()
+def fetch_exchange_rates(date=None, currency=None):
+    base_url = "https://openexchangerates.org/api"
+
+    if date is None:
+        # fetch for the first of the month
+        date = datetime.date.today().replace(day=1)
+    url = f"{base_url}/historical/{date.strftime('%Y-%m-%d')}.json"
+    url = f"{url}?app_id={settings.OPEN_EXCHANGE_RATES_API_ID}"
+    rates = request_rates(url)
+
+    if currency is None:
+        currencies = Opportunity.objects.values_list("currency__code", flat=True).distinct()
+        for currency in currencies:
+            rate = rates.get(currency)
+            if rate is None:
+                message = f"Invalid currency for opportunity: {currency}"
+                sentry_sdk.capture_message(message=message, level="error")
+                continue
+            ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+    else:
+        # Parsing it to decimal otherwise the returned object rate will still be in float.
+        rate = Decimal(rates[currency])
+        return ExchangeRate.objects.create(currency_code=currency, rate=rate, rate_date=date)
+
+
+@celery_app.task()
+def issue_user_credentials():
+    """Runs daily to issue credentials to users who have earned them."""
+    UserCredentialIssuer.run()
+
+
+@celery_app.task()
+def submit_credentials_to_personalid_task():
+    UserCredentialIssuer.submit_user_credentials()
+
+
+@celery_app.task()
+def send_invoice_paid_mail(opportunity_id, invoice_ids):
+    logger.info(f"Sending invoice paid notification for opportunity {opportunity_id} and invoices {invoice_ids}")
+    opportunity = Opportunity.objects.select_related("organization").get(pk=opportunity_id)
+    nm_org = opportunity.organization
+    recipient_emails = nm_org.get_member_emails()
+    if not recipient_emails:
+        logger.info(f"No recipient emails found for organization {nm_org.slug}. Skipping invoice paid email.")
+        return
+
+    invoices = PaymentInvoice.objects.filter(id__in=invoice_ids)
+
+    base_invoice_list_url = build_absolute_uri(
+        None,
+        reverse(
+            "opportunity:invoice_list",
+            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.opportunity_id},
+        ),
+    )
+
+    for invoice in invoices:
+        subject = f"[{opportunity.name}] Invoice {invoice.invoice_number} Has Been Paid"
+        invoice_url = f"{base_invoice_list_url}?highlight={invoice.invoice_number}"
+        context = {
+            "invoice": invoice,
+            "invoice_url": invoice_url,
+            "opportunity": opportunity,
+        }
+
+        text_body = render_to_string(
+            "opportunity/email/invoice_paid.txt",
+            context,
+        )
+        html_body = render_to_string(
+            "opportunity/email/invoice_paid.html",
+            context,
+        )
+        send_mail(
+            subject=subject,
+            message=text_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipient_emails,
+            html_message=html_body,
+        )
+
+
+@celery_app.task()
+def generate_automated_service_delivery_invoice():
+    if not waffle.switch_is_active(AUTOMATED_INVOICES_MONTHLY):
+        return
+
+    CHUNK_SIZE = 100
+    invoices_chunk = []
+    end_date_prev_month = get_end_date_previous_month()
+
+    opp_start_date = datetime.date(2026, 1, 1)
+    created_invoices_ids = []
+
+    for opportunity in Opportunity.objects.filter(active=True, managed=True, start_date__gte=opp_start_date).iterator(
+        chunk_size=CHUNK_SIZE
+    ):
+        start_date = get_start_date_for_invoice(opportunity)
+        # Below indicates there are no uninvoiced completed works to invoice in previous month or earlier
+        if start_date > end_date_prev_month:
+            continue
+
+        invoice_number = generate_invoice_number()
+        line_items = get_uninvoiced_visit_items(opportunity, start_date, end_date_prev_month)
+        if not line_items:
+            continue
+
+        total_local_amount = sum(item["total_amount_local"] for item in line_items)
+        total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+        exchange_rate = ExchangeRate.latest_exchange_rate(line_items[-1]["currency"], line_items[-1]["month"])
+
+        payment_invoice = PaymentInvoice(
+            opportunity=opportunity,
+            amount=total_local_amount,
+            amount_usd=total_usd_amount,
+            date=datetime.datetime.utcnow(),
+            start_date=start_date,
+            end_date=end_date_prev_month,
+            status=InvoiceStatus.PENDING_NM_REVIEW,
+            invoice_number=invoice_number,
+            service_delivery=True,
+            exchange_rate=exchange_rate,
+        )
+        invoices_chunk.append(payment_invoice)
+
+        if len(invoices_chunk) == CHUNK_SIZE:
+            created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
+            invoices_chunk = []
+
+    if invoices_chunk:
+        created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
+
+    _send_auto_invoice_created_notification(created_invoices_ids)
+
+
+def _bulk_create_and_link_invoices(invoices_chunk):
+    invoice_ids = []
+    with transaction.atomic():
+        invoice_objs = PaymentInvoice.objects.bulk_create(invoices_chunk)
+        for invoice in invoice_objs:
+            link_invoice_to_completed_works(invoice, start_date=invoice.start_date, end_date=invoice.end_date)
+            invoice_ids.append(invoice.id)
+    return invoice_ids
+
+
+def _send_auto_invoice_created_notification(invoice_ids):
+    invoices = PaymentInvoice.objects.filter(id__in=invoice_ids).select_related("opportunity__organization")
+    org_invoices_map = {}
+    for invoice in invoices:
+        org = invoice.opportunity.organization
+        if org.id not in org_invoices_map:
+            org_invoices_map[org.id] = {"organization": org, "invoices": []}
+
+        org_invoices_map[org.id]["invoices"].append(
+            {
+                "opportunity": invoice.opportunity,
+                "invoice": invoice,
+                "invoice_url": build_absolute_uri(
+                    None,
+                    reverse(
+                        "opportunity:invoice_review",
+                        kwargs={
+                            "org_slug": org.slug,
+                            "opp_id": invoice.opportunity.opportunity_id,
+                            "pk": invoice.payment_invoice_id,
+                        },
+                    ),
+                ),
+            }
+        )
+
+    for org_item in org_invoices_map.values():
+        try:
+            organization = org_item["organization"]
+            recipient_emails = organization.get_member_emails()
+            if not recipient_emails:
+                continue
+
+            subject = f"[{organization.name}] Automated Service Delivery Invoices Created"
+            context = {
+                "organization": organization,
+                "invoices_items": org_item["invoices"],
+            }
+
+            text_body = render_to_string(
+                "opportunity/email/automated_invoice_created.txt",
+                context,
+            )
+            html_body = render_to_string(
+                "opportunity/email/automated_invoice_created.html",
+                context,
+            )
+            send_mail(
+                subject=subject,
+                message=text_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=recipient_emails,
+                html_message=html_body,
+            )
+        except Exception as e:
+            logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def notify_user_for_scored_assessment(assessment_pk):
+    assessment = Assessment.objects.get(pk=assessment_pk)
+    user = assessment.user
+    opportunity = assessment.opportunity
+    message = Message(
+        usernames=[user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "key": "scored_assessment",
+            "opportunity_status": "learn",
+            "opportunity_id": str(opportunity.id),  # added for backward compatibility
+            "opportunity_uuid": str(opportunity.opportunity_id),
+            "title": "Update on your Assessment",
+            "body": f"Assessment for opportunity '{opportunity.name}' scored, check your status",
+        },
+    )
+    send_message(message)

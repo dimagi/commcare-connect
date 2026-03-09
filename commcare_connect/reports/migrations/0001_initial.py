@@ -30,5 +30,5 @@ class Migration(migrations.Migration):
     dependencies = []
 
     operations = [
-        migrations.RunPython(create_cache_report_task, delete_cache_report_task)
+        migrations.RunPython(create_cache_report_task, delete_cache_report_task, hints={"run_on_secondary": False})
     ]

@@ -1,10 +1,11 @@
 {% load duration_minutes %}
 {% load static %}
+{% load i18n %}
 
 <div class="flex flex-col gap-6" x-data="{
     slides: [
       {% for image in user_visit.images %}
-        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug blob_id=image.blob_id %}' },
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id blob_id=image.blob_id %}' },
       {% endfor %}
     ],
     currentIndex: 0,
@@ -70,14 +71,19 @@
     setModalImage(index) {
         this.modalCurrentIndex = index;
     }
-}">
-
-
+}"
+  hx-get="{% url "opportunity:user_visit_details" request.org.slug user_visit.opportunity.opportunity_id user_visit.user_visit_id %}"
+  hx-swap="outerHTML"
+  hx-trigger="reload_table from:body"
+  hx-indicator="#visit-loading-indicator"
+  hx-on:before-swap="removeMap()"
+  hx-on::after-settle="loadMap()">
   <!-- Message Section -->
-  {% if user_visit.justification %}
+
+  {% if user_visit.reason %}
   <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
     <div class="flex items-center gap-4">
-      <i class="text-lg fa-light fa-message-lines text-brand-deep-purple"></i>
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
       <div class="flex items-center gap-1">
         <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
         <span class="flex items-center text-xs text-brand-blue-light">
@@ -88,7 +94,31 @@
     </div>
     <div>
       <div class="flex items-center gap-4 mt-2">
-        <i class="text-lg cursor-pointer fa-light fa-arrows-from-dotted-line text-brand-blue-light"
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
+           @click="message.expanded = !message.expanded"></i>
+        <p class="text-xs text-brand-deep-purple">
+          {{ user_visit.reason }}
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if user_visit.justification %}
+  <div class="px-4 py-3 mt-1 mb-3 border rounded-md border-gray-200 bg-slate-50">
+    <div class="flex items-center gap-4">
+      <i class="text-lg fa-solid fa-message text-brand-deep-purple"></i>
+      <div class="flex items-center gap-1">
+        <span class="text-xs text-brand-blue-light">{{ user_visit.status_modified_date }}</span>
+        <span class="flex items-center text-xs text-brand-blue-light">
+          <span class="mr-1 text-2xl text-brand-indigo">•</span>
+          {{ user_visit.opportunity.organization.name }}
+        </span>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center gap-4 mt-2">
+        <i class="text-lg cursor-pointer fa-solid fa-arrows-turn-to-dots text-brand-blue-light"
            @click="message.expanded = !message.expanded"></i>
         <p class="text-xs text-brand-deep-purple">
           {{ user_visit.justification }}
@@ -100,17 +130,17 @@
 
   <!-- Information -->
   <div class="grid grid-cols-3 gap-4">
-    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Information</p>
+    <p class="text-sm font-medium text-brand-deep-purple col-span-3">{% translate "Information" %}</p>
     <div>
-      <div class="text-sm text-brand-blue-light">Payment Unit</div>
+      <div class="text-sm text-brand-blue-light">{% translate "Payment Unit" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.completed_work.payment_unit.name }}</div>
     </div>
     <div>
-      <div class="text-sm text-brand-blue-light">Entity Name</div>
+      <div class="text-sm text-brand-blue-light">{% translate "Entity Name" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_name }}</div>
     </div>
     <div>
-      <div class="text-sm text-brand-blue-light">Entity ID</div>
+      <div class="text-sm text-brand-blue-light">{% translate "Entity ID" %}</div>
       <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.entity_id }}</div>
     </div>
   </div>
@@ -120,14 +150,14 @@
   <!-- Media Section -->
   {% if user_visit.images %}
   <div class="flex justify-between">
-    <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
     <div class="flex gap-2">
       <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
-        <i class="cursor-pointer fa-light fa-arrow-left"
+        <i class="cursor-pointer fa-solid fa-arrow-left"
            :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
       </button>
       <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
-        <i class="cursor-pointer fa-light fa-arrow-right"
+        <i class="cursor-pointer fa-solid fa-arrow-right"
            :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
       </button>
     </div>
@@ -146,33 +176,80 @@
   {% endif %}
 
   <!-- Verification Flags -->
-  <div class="grid grid-cols-3 gap-4">
-    <p class="text-sm font-medium text-brand-deep-purple col-span-3">Verification flags</p>
-    {% if user_visit.flagged %}
-      {% for flag in user_visit.flag_reason.flags %}
-        <div>
-          <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
-          <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
-        </div>
-      {% endfor %}
-    {% endif %}
-    <div>
-      <div class="text-sm text-brand-blue-light">Form Duration</div>
-      <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+  <div class="flex flex-col gap-4">
+    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Verification Parameters" %}</p>
+    <div class="grid grid-cols-3 gap-4">
+      {% if user_visit.location %}
+      <div>
+        <div class="text-sm text-brand-blue-light">{% translate "Location" %}</div>
+        <div class="text-sm font-normal text-brand-deep-purple">{% translate "Less than" %} {{ min_allowed_distance }} {% translate "metres from another visit" %}</div>
+      </div>
+      {% endif %}
+      <div>
+        <div class="text-sm text-brand-blue-light">{% translate "Form Duration" %}</div>
+        <div class="text-sm font-normal text-brand-deep-purple">{{ xform.metadata.duration|duration_minutes }}</div>
+      </div>
     </div>
-    <div>
-      <div class="text-sm text-brand-blue-light">Photos</div>
-      <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
+    <div x-data="{visible: false}">
+      <div class="flex flex-row gap-4 rounded border border-brand-marigold bg-brand-marigold/15 items-center text-brand-marigold" @click="visible = !visible">
+        <i class="fa-solid fa-triangle-exclamation ml-2"></i>
+        <span class="flex-1" class="">{{ flag_count }} {% translate "issues detected" %}</span>
+        <i :class="visible ? 'rotate-180' : ''" class="fa-solid fa-chevron-down transition-all mr-2"></i>
+      </div>
+      <div class="border border-brand-border-light rounded-b grid grid-cols-3 gap-4 px-3 py-2" x-show="visible">
+        {% if user_visit.flagged %}
+          {% for flag in flags %}
+            <div>
+              <div class="text-sm text-brand-blue-light">{{ flag.0 }}</div>
+              <div class="text-sm font-normal text-brand-deep-purple">{{ flag.1 }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+        {% if attachment_flagged %}
+        <div>
+          <div class="text-sm text-brand-blue-light">{% translate "Photos" %}</div>
+          <div class="text-sm font-normal text-brand-deep-purple">{{ user_visit.images|yesno:"Yes,No" }}</div>
+        </div>
+        {% endif %}
+      </div>
     </div>
   </div>
 
   <hr class="h-px bg-gray-200 border-0">
 
   <!-- Map -->
+  {% if user_visit.location %}
   <div>
-    <p class="mb-3 text-sm font-medium text-brand-deep-purple">Map</p>
-    <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
+    <p class="mb-3 text-sm font-medium text-brand-deep-purple">{% translate "Map" %}</p>
+    <div class="relative">
+      <div class="w-full rounded-lg h-64" id="user-visit-map"></div>
+      <div id="mapbox-menu" class="absolute top-0 left-0 m-1 inline-flex primary-light rounded-lg">
+        <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
+          <input class="hidden" type="radio" name="options" id="streets-v12" checked> {% translate "Streets" %}
+        </label>
+        <label class="py-1 px-2 text-sm has-checked:bg-brand-indigo has-checked:text-white rounded-lg">
+          <input class="hidden" type="radio" name="options" id="satellite-streets-v12"> {% translate "Satellite" %}
+        </label>
+      </div>
+
+      <div id="legend" class="absolute right-0 top-0 bg-white/75 p-2 rounded-lg m-1">
+        <h4 class="text-sm font-bold">Service Records</h4>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-green-600"></i> {% translate "Under review" %}</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-sky-600"></i> {% translate "Closest from this user" %}</div>
+        <div class="text-sm"><i class="fa-solid fa-location-dot text-red-600"></i> {% translate "Closest from others" %}</div>
+      </div>
+    </div>
   </div>
+  {% endif %}
+
+  {% if perms.users.view_commcarehq_form_link %}
+  <hr class="h-px bg-gray-200 border-0">
+
+  <p class="text-sm font-medium text-brand-deep-purple">{% translate "Further Information" %}</p>
+  <div class="flex">
+    <a class="button button-md button-outline-rounded" href="{{ user_visit.hq_link }}">{% translate "View Form in CommCareHQ" %} <i class="fa-solid fa-arrow-right"></i></a>
+  </div>
+  {% endif %}
 
   <!-- Popup Modal -->
   <div x-cloak
@@ -182,9 +259,9 @@
        x-transition.opacity>
     <div class="relative max-w-lg p-4 bg-white rounded-lg popup-content">
       <div class="flex justify-between mb-2">
-        <p class="text-sm font-medium text-brand-deep-purple">Media</p>
+        <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
         <button class="button-icon cursor-pointer" @click="closePopup()">
-          <i class="fa-light fa-xmark-large"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
 
@@ -198,7 +275,7 @@
           <a :href="slides[modalCurrentIndex].src"
              download="downloaded-image.jpg"
              aria-label="Download Image">
-            <i class="fa-light fa-download text-brand-deep-purple"></i>
+            <i class="fa-solid fa-download text-brand-deep-purple"></i>
           </a>
         </button>
       </div>
@@ -209,7 +286,7 @@
                 @click="prevModal()"
                 :disabled="modalCurrentIndex === 0"
                 :class="{'opacity-50': modalCurrentIndex === 0}">
-          <i class="fa-light fa-arrow-left"></i>
+          <i class="fa-solid fa-arrow-left"></i>
         </button>
 
         <div class="flex justify-center gap-2 px-16 overflow-hidden">
@@ -233,37 +310,75 @@
                 @click="nextModal()"
                 :disabled="modalCurrentIndex >= slides.length - 1"
                 :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">
-          <i class="fa-light fa-arrow-right"></i>
+          <i class="fa-solid fa-arrow-right"></i>
         </button>
       </div>
     </div>
   </div>
 </div>
 
-
-<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm"
+<div class="flex justify-end gap-4 items-center h-14 bg-white rounded-lg shadow-sm pe-2"
   x-data="{showRejectModal: false, showApproveModal: false}"
   id="visit-actions"
   hx-swap-oob="true">
+{% if request.is_opportunity_pm %}
+  {% if user_visit.review_created_on %}
   <div class="flex gap-4">
-    <button class="button button-md outline-style" @click="showRejectModal = true; showApproveModal = false;">Reject</button>
-    {% if user_visit.opportunity.managed %}
-    <button class="button button-md primary-dark" @click="showRejectModal = false; showApproveModal = true;">Approve</button>
+    <form hx-post="{% url "opportunity:user_visit_review" request.org.slug user_visit.opportunity.opportunity_id %}"
+      hx-swap="none">
+      <input type="hidden" value="{{ user_visit.pk }}" name="pk" />
+      <button class="button button-md outline-style"
+        {% if user_visit.review_status == "pending" %}value="disagree"{% else %}disabled{% endif %}
+        name="review_status">
+        {% translate "Disagree" %}
+      </button>
+      <button class="button button-md primary-dark"
+        {% if user_visit.review_status != "agree" %}value="agree"{% else %}disabled{% endif %}
+        name="review_status">
+        {% translate "Agree" %}
+      </button>
+    </form>
+  </div>
+  {% endif %}
+{% else %}
+  <div>
+    <button class="button button-md negative-light"
+    {% if request.org_membership.is_viewer %} disabled {% else %}
+    {% if user_visit.status == "rejected" or user_visit.review_status == "agree" %}
+      disabled
     {% else %}
-    <button hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
-      hx-swap="none" type="submit" class="button button-md positive-dark">Approve</button>
+      @click="showRejectModal = true; showApproveModal = false;"
     {% endif %}
+    {% endif %}>
+      {% translate "Reject" %}
+    </button>
+    <button class="button button-md positive-light"
+    {% if request.org_membership.is_viewer %} disabled {% else %}
+    {% if user_visit.status != "approved" or user_visit.review_status == "disagree" %}
+      {% if user_visit.opportunity.managed %}
+      @click="showRejectModal = false; showApproveModal = true;"
+      {% else %}
+      hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
+      hx-vals='{"visit_ids[]": "{{ user_visit.id }}"}'
+      hx-swap="none"
+      {% endif %}
+    {% else %}
+      disabled
+    {% endif %}
+    {% endif %}>
+      {% translate "Approve" %}
+    </button>
   </div>
 
   <div x-cloak x-show="showRejectModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showRejectModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
-        <h2 class="title">Reason for Rejection</h2>
+        <h2 class="title">{% translate "Reason for Rejection" %}</h2>
         <button @click="showRejectModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url 'opportunity:reject_visit' org_slug=request.org.slug pk=user_visit.id  %}"
+      <form hx-post="{% url 'opportunity:reject_visits' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id  %}"
         hx-swap="none"
         @submit="showRejectModal = false">
         {% csrf_token %}
@@ -271,12 +386,13 @@
           <textarea class="base-textarea" id="rejection-reason" rows="3" name="reason" id="reason"
             placeholder="Please provide a reason for rejecting visit.">{{ reason }}</textarea>
         </div>
-        <div class="footer flex justify-end gap-4">
+        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
+        <div class="footer flex justify-end">
           <button @click="showRejectModal = false" type="button" class="button button-md outline-style">
-            Close
+            {% translate "Close" %}
           </button>
           <button type="submit" class="button button-md negative-dark">
-            Reject
+            {% translate "Reject" %}
           </button>
         </div>
       </form>
@@ -287,12 +403,12 @@
   <div x-cloak x-show="showApproveModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showApproveModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">
-        <h2 class="title">Justification for Approval</h2>
+        <h2 class="title">{% translate "Justification for Approval" %}</h2>
         <button @click="showApproveModal = false" class="button-icon" aria-label="Close">
-          <i class="fa-light fa-xmark"></i>
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-      <form hx-post="{% url "opportunity:approve_visit" org_slug=request.org.slug pk=user_visit.id %}"
+      <form hx-post="{% url "opportunity:approve_visits" org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id %}"
         hx-swap="none"
         @submit="showApproveModal = false">
         {% csrf_token %}
@@ -300,16 +416,18 @@
           <textarea required class="base-textarea" id="justification" rows="3" name="justification"
             placeholder="Please provide a reason for approving flagged visits.">{{ justification }}</textarea>
         </div>
-        <div class="footer flex justify-end gap-4">
+        <input type="hidden" name="visit_ids[]" value="{{ user_visit.id }}">
+        <div class="footer flex justify-end">
           <button @click="showApproveModal = false" type="button" class="button button-md outline-style">
-            Close
+            {% translate "Close" %}
           </button>
-          <button type="submit" class="button button-md positive-dark">Approve</button>
+          <button type="submit" class="button button-md positive-dark">{% translate "Approve" %}</button>
         </div>
       </form>
     </div>
   </div>
   {% endif %}
+{% endif %}
 </div>
 
 {{ visit_data|json_script:"visit_data" }}

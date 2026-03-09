@@ -1,22 +1,35 @@
 import datetime
 import json
+from functools import cached_property
+from urllib.parse import urlencode
 
-from crispy_forms.helper import FormHelper, Layout
-from crispy_forms.layout import HTML, Column, Field, Fieldset, Row, Submit
+from crispy_forms.helper import FormHelper
+from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
-from django.db.models import F, Q, Sum, TextChoices
+from django.db.models import Count, F, Min, Q, Sum, TextChoices
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.timezone import now
+from django.utils.translation import gettext
+from django.utils.translation import gettext_lazy as _
+from waffle import switch_is_active
 
-from commcare_connect import connect_id_client
+from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.models import (
     CommCareApp,
+    CompletedWork,
+    CompletedWorkStatus,
+    Country,
+    CredentialConfiguration,
+    Currency,
     DeliverUnit,
     DeliverUnitFlagRules,
+    ExchangeRate,
     FormJsonValidationRules,
     HQApiKey,
+    InvoiceStatus,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
@@ -24,72 +37,96 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
+    Task,
+    UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
 )
+from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
+from commcare_connect.opportunity.utils.invoice import (
+    generate_invoice_number,
+    get_end_date_for_invoice,
+    get_start_date_for_invoice,
+)
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
-from commcare_connect.users.models import User
+from commcare_connect.users.models import User, UserCredential
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
-
-SELECT_CLASS = "base-dropdown"
 CHECKBOX_CLASS = "simple-toggle"
 
+DOMAIN_PLACEHOLDER_CHOICE = ("", "Select an API key to load domains.")
+APP_PLACEHOLDER_CHOICE = ("", "Select an Application")
+API_KEY_PLACEHOLDER_CHOICE = ("", "Select a HQ Server to load API Keys.")
 
-class OpportunityUserInviteForm(forms.Form):
+
+class HQApiKeyCreateForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
-        org_slug = kwargs.pop("org_slug", None)
-        self.opportunity = kwargs.pop("opportunity", None)
-        credentials = connect_id_client.fetch_credentials(org_slug)
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Fieldset(
-                "",
-                Row(Field("users")),
-                Row(
-                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
-                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
-                ),
-            ),
-            Submit("submit", "Submit"),
+            Field("hq_server"),
+            Field("api_key"),
+            Div(Submit("submit", "Save", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
+        self.helper.form_tag = False
 
+    class Meta:
+        model = HQApiKey
+        fields = ("hq_server", "api_key")
+
+
+class OpportunityUserInviteForm(forms.Form):
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Field("users"),
+            Submit("submit", "Submit", css_class="button button-md primary-dark float-end"),
+        )
         self.fields["users"] = forms.CharField(
             widget=forms.Textarea,
-            help_text="Enter the phone numbers of the users you want to add to this opportunity, one on each line.",
-            required=False,
+            required=True,
+            help_text=_(
+                "Enter the phone numbers of the users you want to add to this opportunity with the"
+                " country code, one on each line."
+            ),
         )
-        self.fields["filter_country"] = forms.CharField(
-            label="Filter By Country",
-            widget=forms.Select(choices=[("", "Select country")] + FILTER_COUNTRIES),
-            required=False,
-        )
-        self.fields["filter_credential"] = forms.CharField(
-            label="Filter By Credential",
-            widget=forms.Select(choices=[("", "Select credential")] + [(c.slug, c.name) for c in credentials]),
-            required=False,
-        )
-        self.initial["filter_country"] = [""]
-        self.initial["filter_credential"] = [""]
 
     def clean_users(self):
         user_data = self.cleaned_data["users"]
 
         if user_data and self.opportunity and not self.opportunity.is_setup_complete:
-            raise ValidationError("Please finish setting up the opportunity before inviting users.")
+            raise ValidationError(gettext("Please finish setting up the opportunity before inviting users."))
 
-        split_users = [line.strip() for line in user_data.splitlines() if line.strip()]
-        return split_users
+        user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
+        for user_number in user_numbers:
+            if not user_number.startswith("+") or not user_number[1:].isdigit():
+                raise ValidationError(
+                    gettext("Phone numbers must contain only digits and include the country code starting with '+'")
+                )
+
+        return user_numbers
 
 
-class OpportunityChangeForm(
-    OpportunityUserInviteForm,
-    forms.ModelForm,
-):
+class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
+    currency = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a currency"),
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a country"),
+    )
+
     class Meta:
         model = Opportunity
         fields = [
@@ -97,53 +134,153 @@ class OpportunityChangeForm(
             "description",
             "active",
             "currency",
+            "country",
             "short_description",
             "is_test",
             "delivery_type",
         ]
 
     def __init__(self, *args, **kwargs):
-        kwargs["opportunity"] = kwargs.get(
-            "instance", None
-        )  # passing the opportunity instance to OpportunityUserInviteForm
         super().__init__(*args, **kwargs)
+        self.opportunity = self.instance
+
+        self.fields["users"].required = False
+
+        layout_fields = [
+            Row(
+                HTML(
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Opportunity Details")}</h6>
+                        <span class='hint'>{_("Edit the details of the opportunity. All fields are mandatory.")}</span>
+                    </div>
+                """
+                ),
+                Column(
+                    Field("name", wrapper_class="w-full"),
+                    Field("short_description", wrapper_class="w-full"),
+                    Field("description", wrapper_class="w-full"),
+                ),
+                Column(
+                    Field("delivery_type"),
+                    Field(
+                        "active",
+                        css_class=CHECKBOX_CLASS,
+                        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                    ),
+                    Field(
+                        "is_test",
+                        css_class=CHECKBOX_CLASS,
+                        wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                    ),
+                ),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+            ),
+            Row(
+                HTML(
+                    f"""
+                    <div class='col-span-2'>
+                        <h6 class='title-sm'>{_("Date")}</h6>
+                        <span class='hint'>
+                            {_(
+                                "Optional: If not specified, the opportunity start & "
+                                "end dates will apply to the form submissions."
+                            )}
+                        </span>
+                    </div>
+                """
+                ),
+                Column(
+                    Field("end_date"),
+                ),
+                Column(Field("currency")),
+                Column(Field("country")),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+            ),
+            Row(
+                HTML(f"<div class='col-span-2'><h6 class='title-sm'>{_('Invite Connect Workers')}</h6></div>"),
+                Row(Field("users", wrapper_class="w-full"), css_class="col-span-2"),
+                css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+            ),
+        ]
+
+        if switch_is_active(OPPORTUNITY_CREDENTIALS):
+            layout_fields.append(
+                Row(
+                    HTML(
+                        format_html(
+                            """
+                            <div class='col-span-2'>
+                                <h6 class='title-sm'>{}</h6>
+                                <span class='hint'>
+                                    {}
+                                </span>
+                            </div>
+                            """,
+                            _("Manage Credentials"),
+                            format_html(
+                                _(
+                                    "Configure credential requirements for learning and delivery. For more "
+                                    "information, please refer to the {link_start}following documentation{link_end}."
+                                ),
+                                link_start=format_html(
+                                    '<a href="{}" target="_blank" class="text-blue-600 hover:underline">',
+                                    "https://dimagi.atlassian.net/wiki/spaces/connectpublic/"
+                                    "pages/3383132164/Managing+Credentials",
+                                ),
+                                link_end=format_html("</a>"),
+                            ),
+                        )
+                    ),
+                    Column(
+                        Field("learn_level"),
+                    ),
+                    Column(
+                        Field("delivery_level"),
+                    ),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                )
+            )
+            self.add_credential_fields()
+
+        layout_fields.append(
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
+        )
 
         self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("active", css_class="form-check-input", wrapper_class="form-check form-switch")),
-            Row(Field("is_test", css_class="form-check-input", wrapper_class="form-check form-switch")),
-            Row(Field("delivery_type")),
-            Row(Field("description")),
-            Row(Field("short_description")),
-            Row(
-                Field("currency", wrapper_class="form-group col-md-6 mb-0"),
-                Field("end_date", wrapper_class="form-group col-md-6 mb-0"),
-            ),
-            HTML("<hr />"),
-            Fieldset(
-                "Invite Users",
-                Row(Field("users")),
-                Row(
-                    Field("filter_country", wrapper_class="form-group col-md-6 mb-0"),
-                    Field("filter_credential", wrapper_class="form-group col-md-6 mb-0"),
-                ),
-            ),
-            Submit("submit", "Submit"),
-        )
+        self.helper.layout = Layout(*layout_fields)
+        if self.opportunity.managed:
+            self.fields["delivery_type"].disabled = True
 
         self.fields["end_date"] = forms.DateField(
             widget=forms.DateInput(attrs={"type": "date", "class": "form-input"}),
             required=False,
-            help_text="Extends opportunity end date for all users.",
+            help_text=_("Extends opportunity end date for all users."),
         )
         if self.instance:
             if self.instance.end_date:
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
 
-        if self.instance.managed:
-            self.fields["currency"].disabled = True
+    def add_credential_fields(self):
+        credential_issuer = None
+        if self.instance:
+            credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
+
+        self.fields["learn_level"] = forms.ChoiceField(
+            choices=[("", _("None"))] + UserCredential.LearnLevel.choices,
+            required=False,
+            label=_("Learn Level"),
+            help_text=_("Credential level required for completing the learning phase."),
+            initial=credential_issuer.learn_level if credential_issuer else "",
+        )
+        self.fields["delivery_level"] = forms.ChoiceField(
+            choices=[("", _("None"))] + UserCredential.DeliveryLevel.choices,
+            required=False,
+            label=_("Delivery Level"),
+            help_text=_("Credential level required for completing deliveries."),
+            initial=credential_issuer.delivery_level if credential_issuer else "",
+        )
 
     def clean_active(self):
         active = self.cleaned_data["active"]
@@ -157,9 +294,42 @@ class OpportunityChangeForm(
                 raise ValidationError("Cannot reactivate opportunity with reused applications", code="app_reused")
         return active
 
+    def save(self, commit=True):
+        instance = super().save(commit=commit)
+        if not switch_is_active(OPPORTUNITY_CREDENTIALS):
+            return instance
+
+        learn_level = self.cleaned_data.get("learn_level") or None
+        delivery_level = self.cleaned_data.get("delivery_level") or None
+        if learn_level or delivery_level:
+            CredentialConfiguration.objects.update_or_create(
+                opportunity=instance,
+                defaults={
+                    "learn_level": learn_level,
+                    "delivery_level": delivery_level,
+                },
+            )
+        else:
+            CredentialConfiguration.objects.filter(opportunity=instance).delete()
+
+        return instance
+
 
 class OpportunityInitForm(forms.ModelForm):
     managed_opp = False
+    app_hint_text = "Add required apps to the opportunity. All fields are mandatory."
+    currency = forms.ModelChoiceField(
+        label=_("Currency"),
+        queryset=Currency.objects.order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a currency"),
+    )
+    country = forms.ModelChoiceField(
+        label=_("Country"),
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label=_("Select a country"),
+    )
 
     class Meta:
         model = Opportunity
@@ -168,73 +338,142 @@ class OpportunityInitForm(forms.ModelForm):
             "description",
             "short_description",
             "currency",
+            "country",
+            "hq_server",
         ]
 
     def __init__(self, *args, **kwargs):
-        self.domains = kwargs.pop("domains", [])
         self.user = kwargs.pop("user", {})
         self.org_slug = kwargs.pop("org_slug", "")
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("short_description")),
-            Fieldset(
-                "Learn App",
-                Row(Field("learn_app_domain")),
-                Row(Field("learn_app")),
-                Row(Field("learn_app_description")),
-                Row(Field("learn_app_passing_score")),
-                data_loading_states=True,
+        self.fields["short_description"].label = format_html(
+            "{} <i class='fa-solid fa-circle-info text-gray-400' x-tooltip.raw='{}'></i>",
+            _("Short description"),
+            _(
+                "This field is used to provide a description to users on the mobile app. "
+                "It is displayed when the user wants to view more information about the opportunity."
             ),
-            Fieldset(
-                "Deliver App",
-                Row(Field("deliver_app_domain")),
-                Row(Field("deliver_app")),
-                data_loading_states=True,
-            ),
-            Row(Field("currency")),
-            Row(Field("api_key")),
-            Submit("submit", "Submit"),
         )
 
-        domain_choices = [(domain, domain) for domain in self.domains]
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(
+                HTML(
+                    "<div class='col-span-2'>"
+                    "<h6 class='title-sm'>Opportunity Details</h6>"
+                    "<span class='hint'>Add the details of the opportunity. All fields are mandatory.</span>"
+                    "</div>"
+                ),
+                Column(
+                    Field("name"),
+                    Field("short_description"),
+                    Field("description"),
+                ),
+                Column(
+                    Field("currency"),
+                    Field("country"),
+                    Field("hq_server"),
+                    Column(
+                        Field("api_key", wrapper_class="flex-1"),
+                        HTML(
+                            "<button class='button-icon primary-dark'"
+                            "type='button' @click='showAddApiKeyModal = true'>"
+                            "<i class='fa-solid fa-plus'></i>"
+                            "</button>"
+                        ),
+                        css_class="flex items-center gap-1",
+                    ),
+                ),
+                css_class="grid grid-cols-2 gap-4 card_bg",
+            ),
+            Row(
+                HTML(
+                    "<div class='col-span-2'>"
+                    "<h6 class='title-sm'>Apps</h6>"
+                    f"<span class='hint'>{self.app_hint_text}</span>"
+                    "</div>"
+                ),
+                Column(
+                    Field("learn_app_domain"),
+                    Field("learn_app"),
+                    Field("learn_app_description"),
+                    Field("learn_app_passing_score"),
+                    data_loading_states=True,
+                ),
+                Column(
+                    Field("deliver_app_domain"),
+                    Field("deliver_app"),
+                    data_loading_states=True,
+                ),
+                css_class="grid grid-cols-2 gap-4 card_bg my-4",
+            ),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
+        )
+
         self.fields["description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
-        self.fields["learn_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
+        self.fields["description"].label = format_html(
+            "{} <i class='fa-solid fa-circle-info text-gray-400' x-tooltip.raw='{}'></i>",
+            _("Description"),
+            _("This field is used to provide a description to users accessing the opportunity on the web."),
+        )
+
+        def get_htmx_swap_attrs(url_query: str, include: str, trigger: str):
+            return {
+                "hx-get": reverse(url_query),
+                "hx-include": include,
+                "hx-trigger": trigger,
+                "hx-target": "this",
+                "data-loading-disable": True,
+            }
+
+        def get_domain_select_attrs():
+            return get_htmx_swap_attrs(
+                "commcarehq:get_domains",
+                "#id_hq_server, #id_api_key",
+                "change from:#id_api_key",
+            )
+
+        def get_app_select_attrs(app_type: str):
+            domain_select_id = f"#id_{app_type}_app_domain"
+            return get_htmx_swap_attrs(
+                "commcarehq:get_applications_by_domain",
+                f"#id_hq_server, {domain_select_id}, #id_api_key",
+                f"change from:{domain_select_id}",
+            )
+
+        self.fields["learn_app_domain"] = forms.Field(
             widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_learn_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_learn_app",
-                    "data-loading-disable": True,
-                }
+                choices=[DOMAIN_PLACEHOLDER_CHOICE],
+                attrs=get_domain_select_attrs(),
             ),
         )
         self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+            widget=forms.Select(choices=[(None, "Loading...")], attrs=get_app_select_attrs("learn"))
         )
         self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
         self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
-        self.fields["deliver_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
+
+        self.fields["deliver_app_domain"] = forms.Field(
             widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_deliver_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_deliver_app",
-                    "data-loading-disable": True,
-                }
+                choices=[DOMAIN_PLACEHOLDER_CHOICE],
+                attrs=get_domain_select_attrs(),
             ),
         )
         self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
+            widget=forms.Select(choices=[(None, "Loading...")], attrs=get_app_select_attrs("deliver"))
         )
-        self.fields["api_key"] = forms.CharField(max_length=50)
+
+        self.fields["api_key"] = forms.Field(
+            widget=forms.Select(
+                choices=[API_KEY_PLACEHOLDER_CHOICE],
+                attrs=get_htmx_swap_attrs(
+                    "users:get_api_keys",
+                    "#id_hq_server",
+                    "change from:#id_hq_server, reload_api_keys from:body",
+                ),
+            ),
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -250,49 +489,208 @@ class OpportunityInitForm(forms.ModelForm):
                 raise forms.ValidationError("Invalid app data")
             return cleaned_data
 
-    def save(self, commit=True):
-        organization = Organization.objects.get(slug=self.org_slug)
-        learn_app = self.cleaned_data["learn_app"]
-        deliver_app = self.cleaned_data["deliver_app"]
-        learn_app_domain = self.cleaned_data["learn_app_domain"]
-        deliver_app_domain = self.cleaned_data["deliver_app_domain"]
+    def _build_commcare_app(self, *, app_type, organization, hq_server, created_by, update_existing=False):
+        app_data = self.cleaned_data[f"{app_type}_app"]
+        domain = self.cleaned_data[f"{app_type}_app_domain"]
+        defaults = {
+            "name": app_data["name"],
+            "created_by": created_by,
+            "modified_by": self.user.email,
+        }
+        if app_type == "learn":
+            defaults.update(
+                {
+                    "description": self.cleaned_data["learn_app_description"],
+                    "passing_score": self.cleaned_data["learn_app_passing_score"],
+                }
+            )
+        app, created = CommCareApp.objects.get_or_create(
+            cc_app_id=app_data["id"],
+            cc_domain=domain,
+            organization=organization,
+            hq_server=hq_server,
+            defaults=defaults,
+        )
+        if not created and update_existing:
+            update_fields = ["name", "hq_server", "modified_by"]
+            app.name = app_data["name"]
+            app.hq_server = hq_server
+            app.modified_by = self.user.email
+            if app_type == "learn":
+                app.description = self.cleaned_data["learn_app_description"]
+                app.passing_score = self.cleaned_data["learn_app_passing_score"]
+                update_fields.extend(["description", "passing_score"])
+            app.save(update_fields=update_fields)
+        return app
 
-        self.instance.learn_app, _ = CommCareApp.objects.get_or_create(
-            cc_app_id=learn_app["id"],
-            cc_domain=learn_app_domain,
+    def save(self, commit=True):
+        opportunity = super().save(commit=False)
+        organization = Organization.objects.get(slug=self.org_slug)
+        hq_server = self.cleaned_data["hq_server"]
+
+        learn_app = self._build_commcare_app(
+            app_type="learn",
             organization=organization,
-            defaults={
-                "name": learn_app["name"],
-                "created_by": self.user.email,
-                "modified_by": self.user.email,
-                "description": self.cleaned_data["learn_app_description"],
-                "passing_score": self.cleaned_data["learn_app_passing_score"],
-            },
+            hq_server=hq_server,
+            created_by=self.user.email,
+            update_existing=False,
         )
-        self.instance.deliver_app, _ = CommCareApp.objects.get_or_create(
-            cc_app_id=deliver_app["id"],
-            cc_domain=deliver_app_domain,
+        deliver_app = self._build_commcare_app(
+            app_type="deliver",
             organization=organization,
-            defaults={
-                "name": deliver_app["name"],
-                "created_by": self.user.email,
-                "modified_by": self.user.email,
-            },
+            hq_server=hq_server,
+            created_by=self.user.email,
+            update_existing=False,
         )
-        self.instance.created_by = self.user.email
-        self.instance.modified_by = self.user.email
-        self.instance.currency = self.instance.currency.upper()
+
+        opportunity.learn_app = learn_app
+        opportunity.deliver_app = deliver_app
+
+        if not getattr(opportunity, "created_by", None):
+            opportunity.created_by = self.user.email
+        opportunity.modified_by = self.user.email
 
         if self.managed_opp:
-            self.instance.organization = self.cleaned_data.get("organization")
+            opportunity.organization = self.cleaned_data.get("organization")
         else:
-            self.instance.organization = organization
+            opportunity.organization = organization
 
-        api_key, _ = HQApiKey.objects.get_or_create(user=self.user, api_key=self.cleaned_data["api_key"])
-        self.instance.api_key = api_key
-        super().save(commit=commit)
+        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
+            id=self.cleaned_data["api_key"],
+            defaults={
+                "hq_server": hq_server,
+                "user": self.user,
+            },
+        )
 
-        return self.instance
+        if commit:
+            opportunity.save()
+        return opportunity
+
+
+class OpportunityInitUpdateForm(OpportunityInitForm):
+    app_hint_text = "To switch apps, re-select the HQ Server field to see all app choices. All fields are mandatory."
+    disabled_app_hint_text = (
+        "Learn and Deliver apps and the API key cannot be changed after Connect Workers have joined. "
+        "You can still edit the learn app description and passing score."
+    )
+
+    def __init__(self, *args, **kwargs):
+        opportunity = kwargs.get("instance")
+        self._has_existing_accesses = False
+        self._disabled_fields = ()
+        if opportunity and getattr(opportunity, "pk", None):
+            self._has_existing_accesses = OpportunityAccess.objects.filter(opportunity=opportunity).exists()
+            if self._has_existing_accesses:
+                self.app_hint_text = self.disabled_app_hint_text
+
+        super().__init__(*args, **kwargs)
+        opportunity = self.instance
+
+        if not getattr(opportunity, "pk", None):
+            return
+
+        for field_name in ("name", "short_description", "description", "currency", "country"):
+            if field_name in self.fields:
+                self.fields[field_name].initial = getattr(opportunity, field_name)
+
+        self._set_initial_api_key(getattr(opportunity, "api_key", None))
+        self._set_initial_app("learn", getattr(opportunity, "learn_app", None))
+        self._set_initial_app("deliver", getattr(opportunity, "deliver_app", None))
+
+        if self._has_existing_accesses:
+            self._disabled_fields = (
+                "hq_server",
+                "api_key",
+                "learn_app_domain",
+                "learn_app",
+                "deliver_app_domain",
+                "deliver_app",
+            )
+            for field_name in self._disabled_fields:
+                if field_name in self.fields:
+                    self.fields[field_name].disabled = True
+
+    def _set_initial_api_key(self, api_key):
+        choices = [API_KEY_PLACEHOLDER_CHOICE]
+        if api_key:
+            if not api_key.api_key:
+                api_key_hidden = ""
+            else:
+                api_key_hidden = (
+                    f"{api_key.api_key[:4]}...{api_key.api_key[-4:]}" if len(api_key.api_key) > 8 else api_key.api_key
+                )
+            choices.append((api_key.id, api_key_hidden))
+            self.fields["api_key"].initial = api_key.id
+        self.fields["api_key"].widget.choices = choices
+
+    def _set_initial_app(self, app_type, app):
+        if not app:
+            return
+
+        app_option_value = json.dumps({"id": app.cc_app_id, "name": app.name})
+        self.fields[f"{app_type}_app"].widget.choices = [
+            APP_PLACEHOLDER_CHOICE,
+            (app_option_value, app.name),
+        ]
+        self.fields[f"{app_type}_app"].initial = app_option_value
+
+        self.fields[f"{app_type}_app_domain"].widget.choices = [
+            DOMAIN_PLACEHOLDER_CHOICE,
+            (app.cc_domain, app.cc_domain),
+        ]
+        self.fields[f"{app_type}_app_domain"].initial = app.cc_domain
+
+        if app_type == "learn":
+            self.fields["learn_app_description"].initial = app.description
+            self.fields["learn_app_passing_score"].initial = app.passing_score
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if self._has_existing_accesses:
+            for field_name in self._disabled_fields:
+                if field_name in self.data:
+                    self.add_error(
+                        field_name,
+                        "This field cannot be edited after Connect Workers have joined the opportunity.",
+                    )
+        return cleaned_data
+
+    def save(self, commit=True):
+        opportunity = self.instance
+        if self.managed_opp and self.cleaned_data.get("organization"):
+            opportunity.organization = self.cleaned_data.get("organization")
+
+        created_by = opportunity.created_by or self.user.email
+        hq_server = self.cleaned_data["hq_server"]
+
+        opportunity.learn_app = self._build_commcare_app(
+            app_type="learn",
+            organization=opportunity.organization,
+            hq_server=hq_server,
+            created_by=created_by,
+            update_existing=True,
+        )
+        opportunity.deliver_app = self._build_commcare_app(
+            app_type="deliver",
+            organization=opportunity.organization,
+            hq_server=hq_server,
+            created_by=created_by,
+            update_existing=True,
+        )
+
+        opportunity.modified_by = self.user.email
+        opportunity.api_key, _ = HQApiKey.objects.get_or_create(
+            id=self.cleaned_data["api_key"],
+            defaults={
+                "hq_server": hq_server,
+                "user": self.user,
+            },
+        )
+
+        if commit:
+            opportunity.save()
+        return opportunity
 
 
 class OpportunityFinalizeForm(forms.ModelForm):
@@ -304,54 +702,46 @@ class OpportunityFinalizeForm(forms.ModelForm):
             "total_budget",
         ]
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
         self.budget_per_user = kwargs.pop("budget_per_user")
         self.payment_units_max_total = kwargs.pop("payment_units_max_total", 0)
+        self.cumulative_pu_budget_per_user = kwargs.pop("cumulative_pu_budget_per_user", 0)
         self.opportunity = kwargs.pop("opportunity")
         self.current_start_date = kwargs.pop("current_start_date")
         self.is_start_date_readonly = self.current_start_date < datetime.date.today()
         super().__init__(*args, **kwargs)
 
-        self.helper = FormHelper()
-        self.helper.layout = Layout(
-            Field(
-                "start_date",
-                help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
-            ),
-            Field("end_date"),
-            Field(
-                "max_users",
-                oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                f"* parseInt(document.getElementById('id_org_pay_per_visit')?.value || 0)) "
-                f"* parseInt(this.value || 0)",
-            ),
-            Field("total_budget", readonly=True, wrapper_class="form-group col-md-4 mb-0"),
-            Submit("submit", "Submit"),
+        payment_calculation_string = (
+            f"id_total_budget.value = ({self.cumulative_pu_budget_per_user} * parseInt(this.value || 0))"
         )
 
-        if self.opportunity.managed:
-            self.helper.layout.fields.insert(
-                -2,
-                Row(
-                    Field(
-                        "org_pay_per_visit",
-                        oninput=f"id_total_budget.value = ({self.budget_per_user} + {self.payment_units_max_total}"
-                        f"* parseInt(this.value || 0)) "
-                        f"* parseInt(document.getElementById('id_max_users')?.value || 0)",
-                    )
+        self.helper = FormHelper(self)
+        self.helper.layout = Layout(
+            Row(
+                Field(
+                    "start_date",
+                    help="Start date can't be edited if it was set in past" if self.is_start_date_readonly else None,
+                    wrapper_class="flex-1",
                 ),
-            )
-            self.fields["org_pay_per_visit"] = forms.IntegerField(
-                required=True, widget=forms.NumberInput(attrs={"class": "form-control"})
-            )
+                Field("end_date", wrapper_class="flex-1"),
+                Field(
+                    "max_users",
+                    oninput=payment_calculation_string,
+                ),
+                Field("total_budget", readonly=True, wrapper_class="form-group "),
+                css_class="grid grid-cols-2 gap-6",
+            ),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
+        )
 
-        self.fields["max_users"] = forms.IntegerField()
+        self.fields["max_users"] = forms.IntegerField(
+            label="Max Connect Workers", initial=int(self.instance.number_of_users)
+        )
         self.fields["start_date"].disabled = self.is_start_date_readonly
-        self.fields["total_budget"].widget.attrs.update({"class": "form-control-plaintext"})
 
     def clean(self):
         cleaned_data = super().clean()
@@ -388,170 +778,6 @@ class OpportunityFinalizeForm(forms.ModelForm):
             return cleaned_data
 
 
-class OpportunityCreationForm(forms.ModelForm):
-    class Meta:
-        model = Opportunity
-        fields = [
-            "name",
-            "description",
-            "short_description",
-            "end_date",
-            "max_visits_per_user",
-            "daily_max_visits_per_user",
-            "budget_per_visit",
-            "total_budget",
-            "currency",
-        ]
-        widgets = {
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        self.domains = kwargs.pop("domains", [])
-        self.user = kwargs.pop("user", {})
-        self.org_slug = kwargs.pop("org_slug", "")
-        super().__init__(*args, **kwargs)
-
-        self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("short_description")),
-            Row(Field("end_date")),
-            Row(
-                Field("max_visits_per_user", wrapper_class="form-group col-md-4 mb-0", x_model="maxVisits"),
-                Field("daily_max_visits_per_user", wrapper_class="form-group col-md-4 mb-0"),
-                Field("budget_per_visit", wrapper_class="form-group col-md-4 mb-0", x_model="visitBudget"),
-            ),
-            Row(
-                Field("max_users", wrapper_class="form-group col-md-4 mb-0", x_model="maxUsers"),
-                Field(
-                    "total_budget",
-                    wrapper_class="form-group col-md-4 mb-0",
-                    readonly=True,
-                    x_model="totalBudget()",
-                ),
-                Field("currency", wrapper_class="form-group col-md-4 mb-0"),
-            ),
-            Fieldset(
-                "Learn App",
-                Row(Field("learn_app_domain")),
-                Row(Field("learn_app")),
-                Row(Field("learn_app_description")),
-                Row(Field("learn_app_passing_score")),
-                data_loading_states=True,
-            ),
-            Fieldset(
-                "Deliver App",
-                Row(Field("deliver_app_domain")),
-                Row(Field("deliver_app")),
-                data_loading_states=True,
-            ),
-            Row(Field("api_key")),
-            Submit("submit", "Submit"),
-        )
-
-        domain_choices = [(domain, domain) for domain in self.domains]
-        self.fields["learn_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_learn_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_learn_app",
-                    "data-loading-disable": True,
-                }
-            ),
-        )
-        self.fields["learn_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
-        self.fields["learn_app_description"] = forms.CharField(widget=forms.Textarea)
-        self.fields["learn_app_passing_score"] = forms.IntegerField(max_value=100, min_value=0)
-        self.fields["deliver_app_domain"] = forms.ChoiceField(
-            choices=domain_choices,
-            widget=forms.Select(
-                attrs={
-                    "hx-get": reverse("opportunity:get_applications_by_domain", args=(self.org_slug,)),
-                    "hx-include": "#id_deliver_app_domain",
-                    "hx-trigger": "load delay:0.3s, change",
-                    "hx-target": "#id_deliver_app",
-                    "data-loading-disable": True,
-                }
-            ),
-        )
-        self.fields["deliver_app"] = forms.Field(
-            widget=forms.Select(choices=[(None, "Loading...")], attrs={"data-loading-disable": True})
-        )
-        self.fields["api_key"] = forms.CharField(max_length=50)
-        self.fields["total_budget"].widget.attrs.update({"class": "form-control-plaintext"})
-        self.fields["max_users"] = forms.IntegerField()
-
-    def clean(self):
-        cleaned_data = super().clean()
-        if cleaned_data:
-            cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
-            cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
-
-            if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
-                self.add_error("learn_app", "Learn app and Deliver app cannot be same")
-                self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
-
-            if cleaned_data["daily_max_visits_per_user"] > cleaned_data["max_visits_per_user"]:
-                self.add_error(
-                    "daily_max_visits_per_user",
-                    "Daily max visits per user cannot be greater than Max visits per user",
-                )
-
-            if cleaned_data["budget_per_visit"] > cleaned_data["total_budget"]:
-                self.add_error("budget_per_visit", "Budget per visit cannot be greater than Total budget")
-
-            if cleaned_data["end_date"] < now().date():
-                self.add_error("end_date", "Please enter the correct end date for this opportunity")
-            return cleaned_data
-
-    def save(self, commit=True):
-        organization = Organization.objects.get(slug=self.org_slug)
-        learn_app = self.cleaned_data["learn_app"]
-        deliver_app = self.cleaned_data["deliver_app"]
-        learn_app_domain = self.cleaned_data["learn_app_domain"]
-        deliver_app_domain = self.cleaned_data["deliver_app_domain"]
-
-        self.instance.currency = self.instance.currency.upper()
-
-        self.instance.learn_app, _ = CommCareApp.objects.get_or_create(
-            cc_app_id=learn_app["id"],
-            cc_domain=learn_app_domain,
-            organization=organization,
-            defaults={
-                "name": learn_app["name"],
-                "created_by": self.user.email,
-                "modified_by": self.user.email,
-                "description": self.cleaned_data["learn_app_description"],
-                "passing_score": self.cleaned_data["learn_app_passing_score"],
-            },
-        )
-        self.instance.deliver_app, _ = CommCareApp.objects.get_or_create(
-            cc_app_id=deliver_app["id"],
-            cc_domain=deliver_app_domain,
-            organization=organization,
-            defaults={
-                "name": deliver_app["name"],
-                "created_by": self.user.email,
-                "modified_by": self.user.email,
-            },
-        )
-        self.instance.created_by = self.user.email
-        self.instance.modified_by = self.user.email
-        self.instance.organization = organization
-        api_key, _ = HQApiKey.objects.get_or_create(user=self.user, api_key=self.cleaned_data["api_key"])
-        self.instance.api_key = api_key
-        super().save(commit=commit)
-
-        return self.instance
-
-
 class DateRanges(TextChoices):
     LAST_7_DAYS = "last_7_days", "Last 7 days"
     LAST_30_DAYS = "last_30_days", "Last 30 days"
@@ -574,23 +800,80 @@ class DateRanges(TextChoices):
 
 
 class VisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
-    date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
-    status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitValidationStatus.choices, initial=["all"])
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
+    from_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    to_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        required=False,
+        initial=datetime.date.today().strftime("%Y-%m-%d"),
+    )
+    status = forms.MultipleChoiceField(
+        choices=[("all", "All")] + VisitValidationStatus.choices,
+        widget=forms.SelectMultiple(
+            attrs={
+                "hx-trigger": "change",
+                "hx-target": "#visit-count-warning",
+                "hx-include": "closest form",
+            }
+        ),
+    )
     flatten_form_data = forms.BooleanField(initial=True, required=False)
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
+        self.org_slug = kwargs.pop("org_slug")
+        self.review_export = kwargs.pop("review_export", False)
         super().__init__(*args, **kwargs)
+
+        visit_count_url = reverse(
+            "opportunity:visit_export_count", args=(self.org_slug, self.opportunity.opportunity_id)
+        )
+
+        # if export is for review update the status and url
+        if self.review_export:
+            status_choices = [("all", "All")] + (
+                VisitReviewStatus.choices if self.review_export else VisitValidationStatus.choices
+            )
+            self.fields["status"].choices = status_choices
+
+            visit_count_url = f"{visit_count_url}?{urlencode({'review_export': 'true'})}"
+
+        hx_attrs = {
+            "hx-get": visit_count_url,
+            "hx-trigger": "change",
+            "hx-target": "#visit-count-warning",
+            "hx-include": "closest form",
+        }
+
+        for field_name in ["from_date", "to_date"]:
+            self.fields[field_name].widget.attrs.update(
+                {"max": datetime.date.today().strftime("%Y-%m-%d"), **hx_attrs}
+            )
+
+        self.fields["status"].widget.attrs.update(hx_attrs)
+        self.fields["format"].widget.attrs.update(hx_attrs)
+
         self.helper = FormHelper(self)
+
         self.helper.layout = Layout(
             Row(
-                Field("format", css_class=SELECT_CLASS),
-                Field("date_range", css_class=SELECT_CLASS),
-                Field("status", css_class=SELECT_CLASS),
+                Field("format"),
+                Row(
+                    Field("from_date"),
+                    Field("to_date"),
+                    css_class="grid grid-cols-2 gap-6",
+                ),
+                Field("status"),
                 Field(
                     "flatten_form_data",
                     css_class=CHECKBOX_CLASS,
                     wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+                ),
+                Div(
+                    css_id="visit-count-warning",
+                    css_class="text-sm text-center",
                 ),
                 css_class="flex flex-col",
             ),
@@ -605,37 +888,14 @@ class VisitExportForm(forms.Form):
         return [VisitValidationStatus(status) for status in statuses]
 
 
-class ReviewVisitExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
-    date_range = forms.ChoiceField(choices=DateRanges.choices, initial=DateRanges.LAST_30_DAYS)
-    status = forms.MultipleChoiceField(choices=[("all", "All")] + VisitReviewStatus.choices, initial=["all"])
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(Field("format")),
-            Row(Field("date_range")),
-            Row(Field("status")),
-        )
-        self.helper.form_tag = False
-
-    def clean_status(self):
-        statuses = self.cleaned_data["status"]
-        if not statuses or "all" in statuses:
-            return []
-
-        return [VisitReviewStatus(status) for status in statuses]
-
-
 class PaymentExportForm(forms.Form):
-    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="xlsx")
+    format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("format", css_class=SELECT_CLASS), css_class="flex flex-col"),
+            Row(Field("format"), css_class="flex flex-col"),
         )
         self.helper.form_tag = False
 
@@ -649,13 +909,33 @@ class OpportunityAccessCreationForm(forms.ModelForm):
 
 
 class AddBudgetExistingUsersForm(forms.Form):
-    additional_visits = forms.IntegerField(
-        widget=forms.NumberInput(attrs={"x-model": "additionalVisits"}), required=False
+    class AdjustmentType(TextChoices):
+        INCREASE_VISITS = "increase_visits", _("Increase Visits")
+        DECREASE_VISITS = "decrease_visits", _("Decrease Visits")
+
+    number_of_visits = forms.IntegerField(
+        widget=forms.NumberInput(attrs={"x-model": "numberOfVisits", "min": 1}),
+        required=False,
+        min_value=1,
+        label=_("Number of Visits"),
     )
     end_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date", "class": "form-input", "x-model": "end_date"}),
+        widget=forms.DateInput(
+            attrs={
+                "type": "date",
+                "class": "form-input",
+                "x-model": "end_date",
+                "min": datetime.date.today().strftime("%Y-%m-%d"),
+            }
+        ),
         label="Extended Opportunity End date",
         required=False,
+    )
+    adjustment_type = forms.ChoiceField(
+        choices=AdjustmentType.choices,
+        widget=forms.RadioSelect(attrs={"x-model": "adjustmentType"}),
+        required=False,
+        label="",
     )
 
     def __init__(self, *args, **kwargs):
@@ -666,76 +946,181 @@ class AddBudgetExistingUsersForm(forms.Form):
         choices = [(opp_claim.id, opp_claim.id) for opp_claim in opportunity_claims]
         self.fields["selected_users"] = forms.MultipleChoiceField(choices=choices, widget=forms.CheckboxSelectMultiple)
 
+    @cached_property
+    def claim_limits(self):
+        selected_users = self.cleaned_data.get("selected_users", [])
+        return OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users).select_related(
+            "opportunity_claim__opportunity_access__user", "opportunity_claim__opportunity_access", "payment_unit"
+        )
+
     def clean(self):
         cleaned_data = super().clean()
         selected_users = cleaned_data.get("selected_users")
-        additional_visits = cleaned_data.get("additional_visits")
+        number_of_visits = cleaned_data.get("number_of_visits")
+        adjustment_type = cleaned_data.get("adjustment_type")
 
-        if not selected_users and not additional_visits and not cleaned_data.get("end_date"):
-            raise forms.ValidationError("Please select users and specify either additional visits or end date.")
+        if not selected_users:
+            raise forms.ValidationError({"selected_users": gettext("Please select workers to update.")})
+        elif not number_of_visits and not cleaned_data.get("end_date"):
+            raise forms.ValidationError(gettext("Please specify either number of visits or end date."))
 
-        if additional_visits and selected_users:
-            self.budget_increase = self._validate_budget(selected_users, additional_visits)
+        if number_of_visits and not adjustment_type:
+            raise forms.ValidationError(
+                {"adjustment_type": gettext("Please select an adjustment type for number of visits.")}
+            )
+
+        if number_of_visits and selected_users:
+            self.budget_change = self._get_budget_change(number_of_visits)
+            if adjustment_type == self.AdjustmentType.DECREASE_VISITS:
+                self._validate_decrease_visits(number_of_visits)
+            else:
+                self._validate_budget_increase()
 
         return cleaned_data
 
-    def _validate_budget(self, selected_users, additional_visits):
-        claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-        org_pay = self.opportunity.managedopportunity.org_pay_per_visit if self.opportunity.managed else 0
+    def _validate_decrease_visits(self, number_of_visits):
+        claim_limits_list = list(self.claim_limits)
+        completed_visits_map = self._get_completed_visits_map(claim_limits_list)
 
-        budget_increase = sum((ocl.payment_unit.amount + org_pay) * additional_visits for ocl in claims)
+        invalid_users = []
+        for claim_limit in claim_limits_list:
+            if number_of_visits > claim_limit.max_visits:
+                invalid_users.append(claim_limit.opportunity_claim)
+                continue
 
+            new_max_visits = claim_limit.max_visits - number_of_visits
+            key = (claim_limit.opportunity_claim.opportunity_access.id, claim_limit.payment_unit.id)
+            completed_count = completed_visits_map.get(key, 0)
+
+            if new_max_visits < completed_count:
+                invalid_users.append(claim_limit.opportunity_claim)
+
+        if invalid_users:
+            usernames_set = {user.opportunity_access.user.username for user in invalid_users}
+            if len(usernames_set) <= 10:
+                usernames = ", ".join(usernames_set)
+                users_message = f"{gettext('user(s)')}: {usernames}"
+            else:
+                users_message = f"{len(usernames_set)} {gettext('user(s)')}"
+            raise forms.ValidationError(
+                {
+                    "number_of_visits": gettext(
+                        "Cannot decrease the number of visits for %(users)s."
+                        " The visit count cannot be reduced below the number of already"
+                        " completed visits or zero."
+                    )
+                    % {"users": users_message}
+                }
+            )
+
+    def _get_completed_visits_map(self, claim_limits_list):
+        access_ids = {cl.opportunity_claim.opportunity_access.id for cl in claim_limits_list}
+        payment_unit_ids = {cl.payment_unit.id for cl in claim_limits_list}
+        visits_qs = (
+            UserVisit.objects.filter(
+                opportunity_access_id__in=access_ids,
+                deliver_unit__payment_unit_id__in=payment_unit_ids,
+            )
+            .exclude(status__in=[VisitValidationStatus.over_limit, VisitValidationStatus.trial])
+            .values("opportunity_access_id", "deliver_unit__payment_unit_id")
+            .annotate(visit_count=Count("id"))
+        )
+        visit_counts = {
+            (visit["opportunity_access_id"], visit["deliver_unit__payment_unit_id"]): visit["visit_count"]
+            for visit in visits_qs
+        }
+        return visit_counts
+
+    def _get_budget_change(self, number_of_visits):
+        if self.cleaned_data.get("adjustment_type") == self.AdjustmentType.DECREASE_VISITS:
+            number_of_visits = -number_of_visits
+        budget_change = 0
+        for claim in self.claim_limits:
+            org_amount = claim.payment_unit.org_amount if self.opportunity.managed else 0
+            budget_change += (claim.payment_unit.amount + org_amount) * number_of_visits
+        return budget_change
+
+    def clean_end_date(self):
+        end_date = self.cleaned_data.get("end_date")
+        if end_date and end_date < datetime.date.today():
+            raise forms.ValidationError(gettext("End date cannot be in the past."))
+        return end_date
+
+    def _validate_budget_increase(self):
         if self.opportunity.managed:
             # NM cannot increase the opportunity budget they can only
             # assign new visits if the opportunity has remaining budget.
-            if budget_increase > self.opportunity.remaining_budget:
-                raise forms.ValidationError({"additional_visits": "Additional visits exceed the opportunity budget."})
-
-        return budget_increase
+            if self.budget_change > self.opportunity.remaining_budget:
+                raise forms.ValidationError(
+                    {
+                        "number_of_visits": gettext(
+                            "The number of visits being increased exceeds the opportunity budget."
+                        )
+                    }
+                )
 
     def save(self):
         selected_users = self.cleaned_data["selected_users"]
-        additional_visits = self.cleaned_data["additional_visits"]
+        number_of_visits = self.cleaned_data["number_of_visits"]
         end_date = self.cleaned_data["end_date"]
 
-        if additional_visits:
-            claims = OpportunityClaimLimit.objects.filter(opportunity_claim__in=selected_users)
-            claims.update(max_visits=F("max_visits") + additional_visits)
+        if number_of_visits:
+            if self.cleaned_data.get("adjustment_type") == self.AdjustmentType.DECREASE_VISITS:
+                self.claim_limits.update(max_visits=F("max_visits") - number_of_visits)
+            else:
+                self.claim_limits.update(max_visits=F("max_visits") + number_of_visits)
 
             if not self.opportunity.managed:
-                self.opportunity.total_budget += self.budget_increase
+                self.opportunity.total_budget += self.budget_change
                 self.opportunity.save()
 
         if end_date:
             OpportunityClaim.objects.filter(pk__in=selected_users).update(end_date=end_date)
+            self.claim_limits.update(end_date=end_date)
 
 
 class AddBudgetNewUsersForm(forms.Form):
     add_users = forms.IntegerField(
         required=False,
-        label="Number Of Users",
-        help_text="New Budget = Existing Budget + sum of (Amount × Max Total × Number of Users) "
-        "for all payment units.",
+        label="Number Of Connect Workers",
+        help_text="New Budget Added = Workers Added x Sum of Budget for Each Payment Unit.",
     )
     total_budget = forms.IntegerField(
         required=False,
         label="Opportunity Total Budget",
-        help_text="Set a new total budget or leave it unchanged when using Number of Users.",
+        help_text="Set a new total budget or leave it unchanged when using Number of workers.",
     )
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         self.program_manager = kwargs.pop("program_manager", False)
+        self.payments_units = list(self.opportunity.paymentunit_set.values("amount", "max_total", "org_amount"))
+
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("add_users")),
-            Row(Field("total_budget")),
-            Submit(name="submit", value="Submit"),
+            Row(Field("add_users"), Field("total_budget"), css_class="grid grid-cols-2 gap-4"),
+            Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"),
         )
 
         self.fields["total_budget"].initial = self.opportunity.total_budget
+        if self.opportunity.currency_code:
+            self.fields["total_budget"].label += f" ({self.opportunity.currency_code})"
+
+        self.fields["add_users"].widget.attrs.update(
+            {
+                "oninput": f"""
+                id_total_budget.value =
+                {self.opportunity.total_budget} +
+                {json.dumps(self.payments_units)}.reduce(
+                    (sum, u) => sum + (u.amount + u.org_amount)
+                    * u.max_total * parseInt(this.value || 0),
+                    0
+                );
+            """
+            }
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -748,11 +1133,6 @@ class AddBudgetNewUsersForm(forms.Form):
         if not add_users and not total_budget:
             raise forms.ValidationError("Please provide either the number of users or a total budget.")
 
-        if add_users and total_budget and total_budget != self.opportunity.total_budget:
-            raise forms.ValidationError(
-                "Only one field can be updated at a time: either 'Number of Users' or 'Total Budget'."
-            )
-
         self.budget_increase = self._validate_budget(add_users, total_budget)
 
         return cleaned_data
@@ -761,11 +1141,9 @@ class AddBudgetNewUsersForm(forms.Form):
         increased_budget = 0
         total_program_budget = 0
         claimed_program_budget = 0
-        org_pay = 0
 
         if self.opportunity.managed:
             manage_opp = self.opportunity.managedopportunity
-            org_pay = manage_opp.org_pay_per_visit
             program = manage_opp.program
             total_program_budget = program.budget
             claimed_program_budget = (
@@ -776,8 +1154,16 @@ class AddBudgetNewUsersForm(forms.Form):
             )
 
         if add_users:
-            for payment_unit in self.opportunity.paymentunit_set.all():
-                increased_budget += (payment_unit.amount + org_pay) * payment_unit.max_total * add_users
+            for payment_unit in self.payments_units:
+                org_amount = payment_unit["org_amount"] if self.opportunity.managed else 0
+                increased_budget += (payment_unit["amount"] + org_amount) * payment_unit["max_total"] * add_users
+
+            # Both fields were manually modified by the user — raising a validation error to prevent conflicts.
+            if total_budget and total_budget != self.opportunity.total_budget + increased_budget:
+                raise forms.ValidationError(
+                    "Only one field can be updated at a time: either 'Number Of Connect Workers' or 'Total Budget'."
+                )
+
             if (
                 self.opportunity.managed
                 and self.opportunity.total_budget + increased_budget + claimed_program_budget > total_program_budget
@@ -802,50 +1188,73 @@ class AddBudgetNewUsersForm(forms.Form):
 class PaymentUnitForm(forms.ModelForm):
     class Meta:
         model = PaymentUnit
-        fields = ["name", "description", "amount", "max_total", "max_daily", "start_date", "end_date"]
+        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
         help_texts = {
             "start_date": "Optional. If not specified opportunity start date applies to form submissions.",
             "end_date": "Optional. If not specified opportunity end date applies to form submissions.",
         }
         widgets = {
-            "start_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
-            "end_date": forms.DateInput(attrs={"type": "date", "class": "form-input"}),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+        }
+        labels = {
+            "amount": _("Worker pay per visit"),
+            "org_amount": _("Org pay per visit"),
+            "max_total": _("Maximum visits per user"),
+            "max_daily": _("Maximum visits per day"),
         }
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+
         deliver_units = kwargs.pop("deliver_units", [])
         payment_units = kwargs.pop("payment_units", [])
         org_slug = kwargs.pop("org_slug")
-        opportunity_id = kwargs.pop("opportunity_id")
 
         super().__init__(*args, **kwargs)
 
+        self.fields["org_amount"].required = self.opportunity.managed if self.opportunity else False
+
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("amount")),
-            Row(Column("start_date"), Column("end_date")),
-            Row(Field("required_deliver_units")),
-            Row(Field("optional_deliver_units")),
-            HTML(
-                f"""
-                <button type="button" class="btn btn-sm btn-outline-info mb-3" id="sync-button"
-                hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, opportunity_id))}"
-                hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
-                event.detail.successful && location.reload();
-                this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
-                hx-disabled-elt="this"
-                hx-on:click="this.innerHTML=&quot;<span class=\\
-                'spinner-border spinner-border-sm'></span> Syncing...&quot;;">
-                <span id="sync-text">Sync Deliver Units</span>
-                </button>
+            Div(
+                Row(
+                    Column(Field("name"), Field("description")),
+                    Column(
+                        self.get_amounts_div(),
+                        Row(Field("max_total"), Field("max_daily"), css_class="grid grid-cols-2 gap-4"),
+                        Field("start_date"),
+                        Field("end_date"),
+                    ),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                ),
+                Row(
+                    Field("required_deliver_units"),
+                    Field("payment_units"),
+                    Field("optional_deliver_units"),
+                    Div(
+                        HTML(
+                            f"""
+                    <button type="button" class="button button-md outline-style" id="sync-button"
+                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, self.opportunity.pk))}"
+                    hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
+                    event.detail.successful && location.reload();
+                    this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""
+                    hx-disabled-elt="this"
+                    hx-on:click="this.innerHTML = 'Syncing...';">
+                    <span id="sync-text">Sync Deliver Units</span>
+                    </button>
+
                 """
-            ),
-            Row(Field("payment_units")),
-            Field("max_total", wrapper_class="form-group col-md-4 mb-0"),
-            Field("max_daily", wrapper_class="form-group col-md-4 mb-0"),
-            Submit(name="submit", value="Submit"),
+                        )
+                    ),
+                    css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                ),
+                Row(
+                    Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end"
+                ),
+                css_class="flex flex-col gap-4",
+            )
         )
         deliver_unit_choices = [(deliver_unit.id, deliver_unit.name) for deliver_unit in deliver_units]
         payment_unit_choices = [(payment_unit.id, payment_unit.name) for payment_unit in payment_units]
@@ -883,38 +1292,34 @@ class PaymentUnitForm(forms.ModelForm):
                     payment_units_initial.append(payment_unit.pk)
             self.fields["payment_units"].initial = payment_units_initial
 
+    def get_amounts_div(self):
+        fields = [
+            Field("amount"),
+        ]
+        if self.opportunity.managed:
+            fields.append(Field("org_amount"))
+
+        return Div(
+            *fields,
+            css_class="grid grid-cols-2 gap-4",
+        )
+
     def clean(self):
         cleaned_data = super().clean()
-        if cleaned_data:
-            if cleaned_data["max_daily"] > cleaned_data["max_total"]:
-                self.add_error(
-                    "max_daily",
-                    "Daily max visits per user cannot be greater than total Max visits per user",
-                )
-            common_deliver_units = set(cleaned_data.get("required_deliver_units", [])) & set(
-                cleaned_data.get("optional_deliver_units", [])
-            )
-            for deliver_unit in common_deliver_units:
-                deliver_unit_obj = DeliverUnit.objects.get(pk=deliver_unit)
-                self.add_error(
-                    "optional_deliver_units",
-                    error=f"{deliver_unit_obj.name} cannot be marked both Required and Optional",
-                )
-            if cleaned_data["end_date"] and cleaned_data["end_date"] < now().date():
-                self.add_error("end_date", "Please provide a valid end date.")
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and end_date < start_date:
+            raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
         return cleaned_data
 
 
 class SendMessageMobileUsersForm(forms.Form):
     title = forms.CharField(
-        empty_value="Notification from CommCare Connect",
+        empty_value="Notification from Connect",
         required=False,
     )
     body = forms.CharField(widget=forms.Textarea)
-    message_type = forms.MultipleChoiceField(
-        choices=[("notification", "Push Notification"), ("sms", "SMS")],
-        widget=forms.CheckboxSelectMultiple,
-    )
 
     def __init__(self, *args, **kwargs):
         users = kwargs.pop("users", [])
@@ -922,10 +1327,9 @@ class SendMessageMobileUsersForm(forms.Form):
 
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("selected_users")),
-            Row(Field("title")),
-            Row(Field("body")),
-            Row(Field("message_type")),
+            Field("selected_users"),
+            Field("title"),
+            Field("body"),
             Submit(name="submit", value="Submit"),
         )
 
@@ -961,24 +1365,26 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
+
         self.helper.layout = Layout(
             Row(
-                Field("duplicate", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                Field("gps", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                Field("catchment_areas", css_class="form-check-input", wrapper_class="form-check form-switch"),
+                Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
+                Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
+                Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
+                css_class="grid grid-cols-3 gap-2",
             ),
             Row(Field("location")),
             Fieldset(
                 "Form Submission Hours",
                 Row(
-                    Column(Field("form_submission_start")),
-                    Column(Field("form_submission_end")),
+                    Field("form_submission_start"),
+                    Field("form_submission_end"),
+                    css_class="grid grid-cols-2 gap-2",
                 ),
             ),
         )
 
         self.fields["duplicate"].required = False
-        self.fields["location"].required = False
         self.fields["gps"].required = False
         self.fields["catchment_areas"].required = False
         if self.instance:
@@ -1002,11 +1408,9 @@ class DeliverUnitFlagsForm(forms.ModelForm):
         self.helper.layout = Layout(
             Row(
                 Column(Field("deliver_unit")),
-                Column(
-                    HTML("<div class='fw-bold mb-3'>Attachments</div>"),
-                    Field("check_attachments", css_class="form-check-input", wrapper_class="form-check form-switch"),
-                ),
+                Column(Field("check_attachments", css_class=CHECKBOX_CLASS)),
                 Column(Field("duration")),
+                css_class="grid grid-cols-3 gap-2",
             ),
         )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
@@ -1039,44 +1443,451 @@ class FormJsonValidationRulesForm(forms.ModelForm):
                 Column(Field("name")),
                 Column(Field("question_path")),
                 Column(Field("question_value")),
+                css_class="grid grid-cols-3 gap-2",
             ),
-            Row(Column(Field("deliver_unit"))),
+            Field("deliver_unit"),
         )
         self.helper.render_hidden_fields = True
 
         self.fields["deliver_unit"] = forms.ModelMultipleChoiceField(
-            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), widget=forms.CheckboxSelectMultiple
+            queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app),
+            widget=forms.CheckboxSelectMultiple,
         )
 
 
-class PaymentInvoiceForm(forms.ModelForm):
+class PaymentInvoiceInvoiceTicketLinkForm(forms.Form):
+    invoice_ticket_link = forms.URLField(label=_("Invoice Ticket"), required=False)
+
+
+class AutomatedPaymentInvoiceForm(forms.ModelForm):
+    """
+    Form used for creating new invoices or to show details by passing read_only=True.
+    Invoices are not allowed to be edited once created.
+    """
+
+    amount = forms.DecimalField(
+        label=_("Amount"),
+        decimal_places=2,
+    )
+    amount_usd = forms.DecimalField(
+        label=_("Amount (USD)"),
+        required=False,
+        decimal_places=2,
+    )
+    invoice_number = forms.CharField(
+        label=_("Invoice ID"),
+        required=False,
+        widget=forms.TextInput(attrs={"placeholder": _("Auto-generated on save")}),
+        help_text=_("This value is system-generated and unique."),
+    )
+    usd_currency = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Specify in USD"),
+        widget=forms.CheckboxInput(),
+    )
+    date_of_expense = forms.DateField(
+        label=_("Date of expense incurred"),
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+    )
+    description = forms.CharField(
+        label="",
+        widget=forms.Textarea(attrs={"rows": 3}),
+        required=False,
+    )
+
     class Meta:
         model = PaymentInvoice
-        fields = ("amount", "date", "invoice_number", "service_delivery")
-        widgets = {"date": forms.DateInput(attrs={"type": "date", "class": "form-control"})}
+        fields = (
+            "title",
+            "date",
+            "invoice_number",
+            "start_date",
+            "end_date",
+            "description",
+            "amount",
+            "amount_usd",
+            "date_of_expense",
+        )
+        widgets = {
+            "date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "start_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "end_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "title": forms.TextInput(attrs={"placeholder": _("e.g. October Services")}),
+        }
+        labels = {
+            "title": _("Invoice title"),
+            "date": _("Generation date"),
+        }
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
+        self.invoice_type = kwargs.pop("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
+        self.read_only = kwargs.pop("read_only", False)
+        self.line_items_table = kwargs.pop("line_items_table", None)
+        self.status = kwargs.pop("status", InvoiceStatus.PENDING_NM_REVIEW)
+        self.is_opportunity_pm = kwargs.pop("is_opportunity_pm")
+
         super().__init__(*args, **kwargs)
 
+        self.prepare_fields()
+
         self.helper = FormHelper(self)
-        self.helper.layout = Layout(
-            Row(Field("amount")),
-            Row(Field("date")),
-            Row(Field("invoice_number")),
-            Row(Field("service_delivery")),
-        )
+        self.helper.layout = self.get_form_layout()
         self.helper.form_tag = False
+
+    def prepare_fields(self):
+        if self.read_only:
+            self.fields["status"] = forms.CharField(required=False, label=gettext("Invoice Status"))
+            for field in self.fields.values():
+                field.widget.attrs["readonly"] = "readonly"
+        else:
+            self.fields["date"].widget.attrs.update({"readonly": "readonly"})
+
+        if not self.instance.pk:
+            self.fields["invoice_number"].initial = generate_invoice_number()
+            self.fields["date"].initial = str(datetime.date.today())
+        else:
+            self.status = self.instance.status
+            self.fields["status"].initial = self.instance.get_status_display()
+
+        if self.is_service_delivery:
+            self.fields["amount"].label = _("Amount ({currency_code})").format(
+                currency_code=self.opportunity.currency_code or "Local Currency"
+            )
+            self.fields["amount"].help_text = _("Local currency is determined by the opportunity.")
+
+            self.fields["description"].widget.attrs.update(
+                {
+                    "placeholder": _("Describe service delivery details, references, or notes..."),
+                }
+            )
+
+            if self.instance.pk:
+                self.fields["start_date"].initial = str(self.instance.start_date)
+                self.fields["end_date"].initial = str(self.instance.end_date)
+            else:
+                start_date = get_start_date_for_invoice(self.opportunity)
+                self.fields["start_date"].initial = str(start_date)
+                self.fields["end_date"].initial = str(get_end_date_for_invoice(start_date))
+
+            if self.read_only and self.status == InvoiceStatus.PENDING_NM_REVIEW and not self.is_opportunity_pm:
+                self.fields["description"].widget.attrs.pop("readonly", None)
+        else:
+            self.fields["usd_currency"].widget.attrs.update(
+                {
+                    "x-ref": "currencyToggle",
+                    "x-on:change": "currency = $event.target.checked; convert(true)",
+                }
+            )
+            self.fields["description"].required = True
+            self.fields["description"].label = _("Justification")
+            self.fields["description"].widget.attrs.update(
+                {
+                    "placeholder": _("Provide a justification for this expense..."),
+                }
+            )
+            self.fields["date_of_expense"].required = True
+
+    def get_start_date_for_invoice(self):
+        date = (
+            CompletedWork.objects.filter(
+                invoice__isnull=True,
+                opportunity_access__opportunity=self.opportunity,
+                status=CompletedWorkStatus.approved,
+            )
+            .aggregate(earliest_date=Min("status_modified_date"))
+            .get("earliest_date")
+        )
+
+        start_date = date
+        if date:
+            start_date = date.date()
+        else:
+            start_date = self.opportunity.start_date
+
+        return start_date.replace(day=1)
+
+    def get_end_date_for_invoice(self, start_date):
+        last_day_previous_month = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+
+        if start_date > last_day_previous_month:
+            return datetime.date.today() - datetime.timedelta(days=1)
+        return last_day_previous_month
+
+    def get_form_layout(self):
+        if self.is_service_delivery:
+            invoice_form_fields = self.service_delivery_invoice_fields
+        else:
+            invoice_form_fields = self.custom_invoice_fields
+
+        if not self.read_only:
+            invoice_form_fields.append(
+                Div(
+                    Submit("submit", _("Submit"), css_class="button button-md primary-dark"),
+                    css_class="flex justify-end mt-4",
+                )
+            )
+        else:
+            invoice_form_fields.insert(0, Field("status"))
+
+        return Layout(*invoice_form_fields)
+
+    @property
+    def service_delivery_invoice_fields(self):
+        first_row = [
+            Field("invoice_number", **{"readonly": "readonly"}),
+            Field("title"),
+        ]
+
+        start_date_attrs = {} if self.read_only else {"x-model": "startDate", "x-on:change": "fetchInvoiceLineItems()"}
+        end_date_attrs = {} if self.read_only else {"x-model": "endDate", "x-on:change": "fetchInvoiceLineItems()"}
+        second_row = [
+            Field("date", **{"x-ref": "date"}),
+            Field("start_date", **start_date_attrs),
+            Field("end_date", **end_date_attrs),
+        ]
+
+        third_row = [
+            Field(
+                "amount",
+                **{
+                    "x-ref": "amount",
+                    "x-model": "amount",
+                    "readonly": "readonly",
+                },
+            ),
+            Field(
+                "amount_usd",
+                **{
+                    "x-model": "usdAmount",
+                    "readonly": "readonly",
+                },
+            ),
+        ]
+
+        return [
+            Div(
+                Div(*first_row, css_class="grid grid-cols-3 gap-6"),
+                Div(*second_row, css_class="grid grid-cols-3 gap-6"),
+                Div(*third_row, css_class="grid grid-cols-3 gap-6"),
+                css_class="flex flex-col gap-4",
+            ),
+            self.line_items,
+            Fieldset(
+                _("Service Delivery Notes"),
+                Field("description", **{"x-ref": "description"}),
+            ),
+        ]
+
+    @property
+    def custom_invoice_fields(self):
+        first_row = [
+            Field("invoice_number", **{"readonly": "readonly"}),
+            Field("date", **{"x-ref": "date"}),
+            Field("date_of_expense"),
+        ]
+
+        second_row = [
+            Field(
+                "amount",
+                label=_("Amount"),
+                **{
+                    "x-ref": "amount",
+                    "x-model": "amount",
+                    "x-on:input.debounce.300ms": "convert()",
+                },
+            ),
+            Field(
+                "usd_currency",
+                css_class=CHECKBOX_CLASS,
+                wrapper_class="flex p-4 justify-between rounded-lg bg-gray-100",
+            ),
+            Div(css_id="converted-amount-wrapper", css_class="space-y-1 text-sm text-gray-500 mb-4"),
+        ]
+
+        third_row = [
+            Field("description"),
+        ]
+
+        return [
+            Div(
+                Div(*first_row, css_class="grid grid-cols-3 gap-6"),
+                Div(*second_row, css_class="grid grid-cols-3 gap-6"),
+                Div(*third_row),
+                css_class="flex flex-col gap-4",
+            ),
+        ]
 
     def clean_invoice_number(self):
         invoice_number = self.cleaned_data["invoice_number"]
-        if PaymentInvoice.objects.filter(opportunity=self.opportunity, invoice_number=invoice_number).exists():
-            raise ValidationError(f'Invoice "{invoice_number}" already exists', code="invoice_number_reused")
+
+        if not invoice_number:
+            invoice_number = generate_invoice_number()
+
+        if PaymentInvoice.objects.filter(invoice_number=invoice_number).exists():
+            raise ValidationError(
+                "Please use a different invoice number",
+                code="invoice_number_reused",
+            )
         return invoice_number
+
+    def clean_date_of_expense(self):
+        date_of_expense = self.cleaned_data.get("date_of_expense")
+        if self.is_service_delivery:
+            return date_of_expense
+
+        if not date_of_expense:
+            raise ValidationError("Date of expense is required for custom invoices.")
+
+        if date_of_expense > datetime.date.today():
+            raise ValidationError("Date of expense cannot be in the future.")
+
+        return date_of_expense
+
+    def clean(self):
+        cleaned_data = super().clean()
+        amount = cleaned_data.get("amount")
+        date = cleaned_data.get("date")
+
+        if amount is None or date is None:
+            return cleaned_data  # Let individual field errors handle missing values
+
+        if not self.is_service_delivery:
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
+            if not exchange_rate:
+                raise ValidationError("Exchange rate not available for selected date.")
+
+            cleaned_data["exchange_rate"] = exchange_rate
+            cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
+
+            cleaned_data["title"] = None
+            cleaned_data["start_date"] = None
+            cleaned_data["end_date"] = None
+
+            exchange_rate = ExchangeRate.latest_exchange_rate(self.opportunity.currency_code, date)
+            if not exchange_rate:
+                raise ValidationError("Exchange rate not available for selected date.")
+
+            if cleaned_data.get("usd_currency"):
+                cleaned_data["amount_usd"] = amount
+                cleaned_data["amount"] = round(amount * exchange_rate.rate, 2)
+            else:
+                cleaned_data["amount"] = amount
+                cleaned_data["amount_usd"] = round(amount / exchange_rate.rate, 2)
+        else:
+            start_date = cleaned_data.get("start_date")
+            end_date = cleaned_data.get("end_date")
+
+            if not start_date:
+                raise ValidationError({"start_date": "Start date is required for service delivery invoices."})
+            if not end_date:
+                raise ValidationError({"end_date": "End date is required for service delivery invoices."})
+
+            if end_date < start_date:
+                raise ValidationError({"end_date": "End date cannot be earlier than start date."})
+
+        return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.opportunity = self.opportunity
+        instance.amount_usd = self.cleaned_data["amount_usd"]
+        instance.amount = self.cleaned_data["amount"]
+        instance.exchange_rate = self.cleaned_data.get("exchange_rate")
+        instance.service_delivery = self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+        instance.date_of_expense = self.cleaned_data.get("date_of_expense")
+        instance.status = self.status
+
         if commit:
             instance.save()
+            if self.is_service_delivery:
+                link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
+
         return instance
+
+    @property
+    def is_service_delivery(self):
+        return self.invoice_type == PaymentInvoice.InvoiceType.service_delivery
+
+    @property
+    def line_items(self):
+        if self.line_items_table:
+            table = HTML(
+                """
+                {% load django_tables2 %}
+                <div class="overflow-x-auto mb-4">
+                    {% render_table form.line_items_table %}
+                </div>
+                """
+            )
+        else:
+            table = HTML(
+                """
+                <div id="invoice-line-items-wrapper" class="space-y-1 text-sm text-gray-500 mb-4"></div>
+            """
+            )
+
+        return Fieldset(
+            "Line Items",
+            table,
+            HTML(
+                """
+                <div id="download-line-items-wrapper" x-cloak x-show="showDownloadButton" class="my-4">
+                    <a type="button"
+                    class="button button-md outline-style"
+                    :href="downloadLineItemsUrl()"
+                    target="_blank"
+                    >
+                        <i class="fa-solid fa-download mr-2"></i>
+                        {% load i18n %}{% translate "Download All Items" %}
+                    </a>
+                </div>
+                """
+            ),
+        )
+
+
+class CreateTaskForm(forms.Form):
+    task = forms.ModelChoiceField(
+        label=_("Task"),
+        queryset=Task.objects.none(),
+        empty_label=_("Select a task"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+    )
+    connect_worker = forms.ModelChoiceField(
+        label=_("Connect Worker"),
+        queryset=User.objects.none(),
+        empty_label=_("Select a Connect Worker"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+    )
+    due_date = forms.DateField(
+        label=_("Due Date"),
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+    )
+
+    def __init__(self, *args, opportunity=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if opportunity is not None:
+            self.fields["task"].queryset = Task.objects.filter(app=opportunity.deliver_app)
+            self.fields["connect_worker"].queryset = User.objects.filter(
+                opportunityaccess__opportunity=opportunity,
+                opportunityaccess__accepted=True,
+                opportunityaccess__suspended=False,
+            )
+        self.fields["due_date"].widget.attrs["min"] = datetime.date.today().isoformat()
+
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Field("task"),
+            Field("connect_worker"),
+            Field("due_date"),
+        )
+
+    def clean_due_date(self):
+        due_date = self.cleaned_data["due_date"]
+        if due_date < datetime.date.today():
+            raise ValidationError(_("Due date cannot be in the past."))
+        return due_date

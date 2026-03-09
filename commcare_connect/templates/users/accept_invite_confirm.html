@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block sidenav %}{% endblock %}
+
+
+{% block content %}
+  <div id="accept-invite" class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow">
+    <h1 class="text-2xl font-semibold mb-4">{% trans "Accept Invitation" %}</h1>
+    <p class="mb-4">
+        {% translate "You have been invited to a job" %} <strong>{{ opportunity_name }}</strong>.
+    </p>
+    <p class="mb-6">{% translate "Click the button below to accept it." %}</p>
+      <button
+        hx-post="{{ request.path }}"
+        hx-target="#accept-invite"
+        hx-swap="outerHTML"
+        class="bg-brand-mango text-white px-4 py-2 rounded">
+        {% translate "Accept Invitation" %}
+      </button>
+  </div>
+{% endblock %}

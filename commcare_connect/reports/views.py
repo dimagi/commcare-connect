@@ -1,186 +1,46 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
+from urllib.parse import urlencode
 
 import django_filters
 import django_tables2 as tables
+import waffle
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Column, Layout, Row
+from crispy_forms.layout import Column, Field, Layout, Row
 from django import forms
-from django.conf import settings
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Count, Sum
-from django.db.models.functions import TruncDate
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.db.models import F, Max
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.functional import cached_property
-from django.views.decorators.http import require_GET
+from django.utils.translation import gettext as _
+from django.views.decorators.http import require_GET, require_POST
 from django_filters.views import FilterView
+from django_tables2.views import SingleTableMixin
 
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CompletedWork,
-    CompletedWorkStatus,
+    Country,
     DeliveryType,
+    InvoiceStatus,
     Opportunity,
-    Payment,
-    UserVisit,
+    PaymentInvoice,
 )
-from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import Program
+from commcare_connect.organization.models import LLOEntity
+from commcare_connect.program.models import ManagedOpportunity, Program
+from commcare_connect.reports.decorators import KPIReportMixin
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.reports.queries import get_visit_map_queryset
+from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
+from commcare_connect.reports.tasks import export_invoice_report_task
+from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
 
-from .tables import AdminReportTable
-
-COUNTRY_CURRENCY_CHOICES = [
-    ("ETB", "Ethiopia"),
-    ("KES", "Kenya"),
-    ("MWK", "Malawi"),
-    ("MZN", "Mozambique"),
-    ("NGN", "Nigeria"),
+PERIOD_CHOICES = [
+    ("monthly", "Monthly"),
+    ("quarterly", "Quarterly"),
 ]
-
-
-class DashboardFilters(django_filters.FilterSet):
-    program = django_filters.ModelChoiceFilter(
-        queryset=DeliveryType.objects.all(),
-        field_name="opportunity__delivery_type",
-        label="Program",
-        empty_label="All Programs",
-        required=False,
-    )
-    organization = django_filters.ModelChoiceFilter(
-        queryset=Organization.objects.all(),
-        field_name="opportunity__organization",
-        label="Organization",
-        empty_label="All Organizations",
-        required=False,
-    )
-    from_date = django_filters.DateTimeFilter(
-        widget=forms.DateInput(attrs={"type": "date"}),
-        field_name="visit_date",
-        lookup_expr="gt",
-        label="From Date",
-        required=False,
-    )
-    to_date = django_filters.DateTimeFilter(
-        widget=forms.DateInput(attrs={"type": "date"}),
-        field_name="visit_date__date",
-        lookup_expr="lte",
-        label="To Date",
-        required=False,
-    )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.form.helper = FormHelper()
-        self.form.helper.form_class = "form-inline"
-        self.form.helper.layout = Layout(
-            Row(
-                Column("program", css_class="col-md-3"),
-                Column("organization", css_class="col-md-3"),
-                Column("from_date", css_class="col-md-3"),
-                Column("to_date", css_class="col-md-3"),
-            )
-        )
-
-        # Set default values if no data is provided
-        if not self.data:
-            # Create a mutable copy of the QueryDict
-            self.data = self.data.copy() if self.data else {}
-
-            # Set default dates
-            today = date.today()
-            default_from = today - timedelta(days=30)
-
-            # Set the default values
-            self.data["to_date"] = today.strftime("%Y-%m-%d")
-            self.data["from_date"] = default_from.strftime("%Y-%m-%d")
-
-            # Force the form to bind with the default data
-            self.form.is_bound = True
-            self.form.data = self.data
-
-    class Meta:
-        model = UserVisit
-        fields = ["program", "organization", "from_date", "to_date"]
-
-
-@login_required
-@user_passes_test(lambda u: u.is_superuser)
-def program_dashboard_report(request):
-    filterset = DashboardFilters(request.GET)
-    return render(
-        request,
-        "reports/dashboard.html",
-        context={
-            "mapbox_token": settings.MAPBOX_TOKEN,
-            "filter": filterset,
-        },
-    )
-
-
-@login_required
-@user_passes_test(lambda user: user.is_superuser)
-@require_GET
-def visit_map_data(request):
-    filterset = DashboardFilters(request.GET)
-
-    queryset = UserVisit.objects.filter(opportunity__is_test=False)
-    if filterset.is_valid():
-        queryset = filterset.filter_queryset(queryset)
-
-    queryset = get_visit_map_queryset(queryset)
-
-    # Convert to GeoJSON
-    geojson = _results_to_geojson(queryset)
-
-    # Return the GeoJSON as JSON response
-    return JsonResponse(geojson, safe=False)
-
-
-def _results_to_geojson(results):
-    geojson = {"type": "FeatureCollection", "features": []}
-    status_to_color = {
-        "approved": "#4ade80",
-        "rejected": "#f87171",
-    }
-    for i, result in enumerate(results.all()):
-        location_str = result.get("location_str")
-        # Check if both latitude and longitude are not None and can be converted to float
-        if location_str:
-            split_location = location_str.split(" ")
-            if len(split_location) >= 2:
-                try:
-                    longitude = float(split_location[1])
-                    latitude = float(split_location[0])
-                except ValueError:
-                    # Skip this result if conversion to float fails
-                    continue
-            else:
-                # Or if the location string is not in the expected format
-                continue
-
-            feature = {
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [longitude, latitude],
-                },
-                "properties": {
-                    key: value for key, value in result.items() if key not in ["gps_location_lat", "gps_location_long"]
-                },
-            }
-            color = status_to_color.get(result.get("status", ""), "#fbbf24")
-            feature["properties"]["color"] = color
-            geojson["features"].append(feature)
-
-    return geojson
-
-
-class SuperUserRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
-    def test_func(self):
-        return self.request.user.is_superuser
 
 
 class DeliveryReportFilters(django_filters.FilterSet):
@@ -188,19 +48,30 @@ class DeliveryReportFilters(django_filters.FilterSet):
         choices=DeliveryType.objects.values_list("slug", "name"),
         label="Delivery Type",
     )
+    period = django_filters.ChoiceFilter(
+        choices=PERIOD_CHOICES,
+        label="Period",
+        empty_label=None,
+        # No-op: period is read from filter_values in the view and passed directly
+        # to get_table_data_for_year_month — it doesn't filter a queryset.
+        method=lambda qs, name, value: qs,
+    )
     program = django_filters.ModelChoiceFilter(
         queryset=Program.objects.all(),
         label="Program",
     )
-    network_manager = django_filters.ModelChoiceFilter(
-        queryset=Organization.objects.filter(program_manager=False),
-        label="Network Manager",
+    llo = django_filters.ModelChoiceFilter(
+        queryset=LLOEntity.objects.all(),
+        label="LLO",
     )
     opportunity = django_filters.ModelChoiceFilter(
         queryset=Opportunity.objects.filter(is_test=False),
         label="Opportunity",
     )
-    country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
+    country = django_filters.ModelChoiceFilter(
+        queryset=Country.objects.filter(opportunity__isnull=False).distinct(),
+        label="Country",
+    )
     from_date = django_filters.DateFilter(
         label="From Date",
         required=False,
@@ -219,14 +90,15 @@ class DeliveryReportFilters(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             Row(
                 Column("program", css_class="col-md-3"),
-                Column("network_manager", css_class="col-md-3"),
+                Column("llo", css_class="col-md-3"),
                 Column("opportunity", css_class="col-md-3"),
-                Column("country_currency", css_class="col-md-3"),
+                Column("country", css_class="col-md-3"),
             ),
             Row(
-                Column("delivery_type", css_class="col-md-4"),
-                Column("from_date", css_class="col-md-4"),
-                Column("to_date", css_class="col-md-4"),
+                Column("delivery_type", css_class="col-md-3"),
+                Column("period", css_class="col-md-3"),
+                Column("from_date", css_class="col-md-3"),
+                Column("to_date", css_class="col-md-3"),
             ),
         )
 
@@ -236,6 +108,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
             default_from = today - timedelta(days=30)
             self.data["to_date"] = today.strftime("%Y-%m")
             self.data["from_date"] = default_from.strftime("%Y-%m")
+            self.data["period"] = "monthly"
             self.form.is_bound = True
             self.form.data = self.data
 
@@ -243,10 +116,11 @@ class DeliveryReportFilters(django_filters.FilterSet):
         model = None
         fields = [
             "delivery_type",
+            "period",
             "from_date",
             "to_date",
             "program",
-            "network_manager",
+            "llo",
             "opportunity",
         ]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
@@ -269,13 +143,13 @@ class NonModelFilterView(FilterView):
         return self.render_to_response(context)
 
 
-class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, NonModelFilterView):
+class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelFilterView):
     table_class = AdminReportTable
     filterset_class = DeliveryReportFilters
 
     def get_template_names(self):
         if self.request.htmx:
-            return ["reports/htmx_table.html"]
+            return ["base_table.html"]
         return ["reports/report_table.html"]
 
     def get_context_data(self, **kwargs):
@@ -290,190 +164,177 @@ class DeliveryStatsReportView(tables.SingleTableMixin, SuperUserRequiredMixin, N
             filters.update(self.filterset.form.cleaned_data)
         return filters
 
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["period"] = self.filter_values.get("period", "monthly")
+        return kwargs
+
     @property
     def object_list(self):
         return get_table_data_for_year_month(**self.filter_values)
 
 
-@login_required
-@user_passes_test(lambda u: u.is_superuser)
-def dashboard_stats_api(request):
-    filterset = DashboardFilters(request.GET)
-
-    # Use the filtered queryset to calculate stats
-    visit_queryset = UserVisit.objects.filter(opportunity__is_test=False)
-    flw_payment_queryset = Payment.objects.filter(opportunity_access__opportunity__is_test=False)
-    org_payment_queryset = Payment.objects.filter(invoice__opportunity__is_test=False)
-    completed_work_queryset = CompletedWork.objects.filter(opportunity_access__opportunity__is_test=False)
-    if filterset.is_valid():
-        visit_queryset = filterset.filter_queryset(visit_queryset)
-        raw_filters = filterset.form.cleaned_data
-        program = raw_filters.get("program")
-        organization = raw_filters.get("organization")
-        from_date = raw_filters.get("from_date")
-        to_date = raw_filters.get("to_date")
-
-        if program:
-            flw_payment_queryset = flw_payment_queryset.filter(opportunity_access__opportunity__delivery_type=program)
-            org_payment_queryset = org_payment_queryset.filter(invoice__opportunity__delivery_type=program)
-            completed_work_queryset = completed_work_queryset.filter(
-                opportunity_access__opportunity__delivery_type=program
-            )
-        if organization:
-            flw_payment_queryset = flw_payment_queryset.filter(
-                opportunity_access__opportunity__organization=organization
-            )
-            org_payment_queryset = org_payment_queryset.filter(invoice__opportunity__organization=organization)
-            completed_work_queryset = completed_work_queryset.filter(
-                opportunity_access__opportunity__organization=organization
-            )
-        if from_date:
-            flw_payment_queryset = flw_payment_queryset.filter(date_paid__gt=from_date)
-            org_payment_queryset = org_payment_queryset.filter(date_paid__gt=from_date)
-            # todo: is this the right date to use here?
-            completed_work_queryset = completed_work_queryset.filter(status_modified_date__gt=from_date)
-        if to_date:
-            flw_payment_queryset = flw_payment_queryset.filter(date_paid__date__lte=to_date)
-            org_payment_queryset = org_payment_queryset.filter(date_paid__date__lte=to_date)
-            completed_work_queryset = completed_work_queryset.filter(status_modified_date__date__lte=to_date)
-
-    # Example stats calculation (adjust based on your needs)
-    active_users = visit_queryset.values("opportunity_access__user").distinct().count()
-    total_visits = visit_queryset.count()
-    verified_visits = visit_queryset.filter(status=CompletedWorkStatus.approved).count()
-    percent_verified = round(float(verified_visits / total_visits) * 100, 1) if total_visits > 0 else 0
-
-    total_flw_earnings_usd = (
-        completed_work_queryset.aggregate(Sum("saved_payment_accrued_usd"))["saved_payment_accrued_usd__sum"] or 0
-    )
-    org_earnings_usd = (
-        completed_work_queryset.aggregate(Sum("saved_org_payment_accrued_usd"))["saved_org_payment_accrued_usd__sum"]
-        or 0
-    )
-    # org earnings include their share and the money they pass through to FLWs
-    total_org_earnings_usd = org_earnings_usd + total_flw_earnings_usd
-    total_flw_payments_usd = flw_payment_queryset.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
-    total_org_payments_usd = org_payment_queryset.aggregate(Sum("amount_usd"))["amount_usd__sum"] or 0
-
-    return JsonResponse(
-        {
-            "total_visits": f"{total_visits:,}",
-            "active_users": f"{active_users:,}",
-            "verified_visits": f"{verified_visits:,}",
-            "percent_verified": f"{percent_verified:.1f}%",
-            "total_flw_earnings_usd": f"${'{:,.0f}'.format(total_flw_earnings_usd)}",
-            "total_org_earnings_usd": f"${'{:,.0f}'.format(total_org_earnings_usd)}",
-            "total_flw_payments_usd": f"${'{:,.0f}'.format(total_flw_payments_usd)}",
-            "total_org_payments_usd": f"${'{:,.0f}'.format(total_org_payments_usd)}",
-        }
-    )
-
-
-@login_required
-@user_passes_test(lambda u: u.is_superuser)
-def dashboard_charts_api(request):
-    filterset = DashboardFilters(request.GET)
-    queryset = UserVisit.objects.filter(opportunity__is_test=False)
-    # Use the filtered queryset if available, else use last 30 days
-    if filterset.is_valid():
-        queryset = filterset.filter_queryset(queryset)
-        from_date = filterset.form.cleaned_data["from_date"]
-        to_date = filterset.form.cleaned_data["to_date"]
-    else:
-        to_date = datetime.now().date()
-        from_date = to_date - timedelta(days=30)
-        queryset = queryset.filter(visit_date__gte=from_date, visit_date__lte=to_date)
-
-    return JsonResponse(
-        {
-            "time_series": _get_time_series_data(queryset, from_date, to_date),
-            "program_pie": _get_program_pie_data(queryset),
-            "status_pie": _get_status_pie_data(queryset),
-        }
-    )
-
-
-def _get_time_series_data(queryset, from_date, to_date):
-    """Example output:
-    {
-        "labels": ["Jan 01", "Jan 02", "Jan 03"],
-        "datasets": [
-            {
-                "name": "Program A",
-                "data": [5, 3, 7]
-            },
-            {
-                "name": "Program B",
-                "data": [2, 4, 1]
+class InvoiceReportFilter(django_filters.FilterSet):
+    opportunity_name = django_filters.ModelChoiceFilter(
+        field_name="opportunity",
+        queryset=ManagedOpportunity.objects.only("id", "name"),
+        label=_("Opportunity"),
+        widget=forms.Select(
+            attrs={
+                "data-tomselect": "1",
+                "placeholder": "Select Opportunity (Name - ID)",
             }
-        ]
-    }
-    """
-    # Get visits over time by program
-    visits_by_program_time = (
-        queryset.values(
-            "opportunity__delivery_type__name",
-            visit_date_date=TruncDate("visit_date"),
+        ),
+    )
+
+    status = django_filters.MultipleChoiceFilter(
+        choices=lambda: InvoiceStatus.get_choices(),
+        label=_("Status"),
+        widget=forms.SelectMultiple(
+            attrs={
+                "data-tomselect": "1",
+                "placeholder": "Select status",
+            }
+        ),
+    )
+
+    from_date = django_filters.DateFilter(
+        field_name="date_paid__date",
+        lookup_expr="gte",
+        label=_("From Payment Date"),
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+        input_formats=["%Y-%m-%d"],
+    )
+
+    to_date = django_filters.DateFilter(
+        field_name="date_paid__date",
+        lookup_expr="lte",
+        label=_("To Payment Date"),
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+        input_formats=["%Y-%m-%d"],
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.filters["opportunity_name"].field.label_from_instance = lambda obj: f"{obj.name} - {obj.id}"
+        self.form.helper = FormHelper()
+        self.form.helper.form_tag = False
+        self.form.helper.disable_csrf = True
+        self.form.helper.layout = Layout(
+            Field("opportunity_name"),
+            Field("status"),
+            Row(
+                Field("from_date"),
+                Field("to_date"),
+                css_class="grid grid-cols-2 gap-4",
+            ),
         )
-        .annotate(count=Count("id"))
-        .order_by("visit_date_date", "opportunity__delivery_type__name")
+
+    class Meta:
+        model = PaymentInvoice
+        fields = ["opportunity_name", "status", "from_date", "to_date"]
+
+
+class InvoiceReportView(
+    LoginRequiredMixin,
+    PermissionRequiredMixin,
+    SingleTableMixin,
+    FilterView,
+):
+    model = PaymentInvoice
+    table_class = InvoiceReportTable
+    filterset_class = InvoiceReportFilter
+    permission_required = ALL_ORG_ACCESS
+    paginate_by = DEFAULT_PAGE_SIZE
+
+    def get_paginate_by(self, table):
+        return get_validated_page_size(self.request)
+
+    def get_template_names(self):
+        return ["reports/invoice_report.html"]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["title"] = "Invoice Report"
+        context["task_id"] = self.request.GET.get("task_id")
+
+        if self.filterset:
+            filter_fields = self.filterset.form.fields.keys()
+            context["filters_applied_count"] = sum(
+                1 for key in filter_fields if self.filterset.data.get(key) not in ("", None)
+            )
+        else:
+            context["filters_applied_count"] = 0
+
+        return context
+
+    @classmethod
+    def get_invoice_queryset(cls):
+        queryset = (
+            PaymentInvoice.objects.select_related(
+                "opportunity__managedopportunity__program__organization",
+                "payment",
+                "exchange_rate",
+            )
+            .annotate(
+                date_paid=F("payment__date_paid"),
+                org_slug=F("opportunity__managedopportunity__program__organization__slug"),
+            )
+            .order_by("-date")
+        )
+        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
+        return queryset
+
+    def get_queryset(self):
+        return self.get_invoice_queryset()
+
+
+@require_POST
+@login_required
+@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+def export_invoice_report(request):
+    filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none())
+    if not filterset.is_valid():
+        return HttpResponse("Invalid filters", status=400)
+
+    filters_data = filterset.form.cleaned_data
+    if filters_data.get("opportunity_name"):
+        filters_data["opportunity_name"] = filters_data["opportunity_name"].id
+    if filters_data.get("from_date"):
+        filters_data["from_date"] = filters_data["from_date"].isoformat()
+    if filters_data.get("to_date"):
+        filters_data["to_date"] = filters_data["to_date"].isoformat()
+
+    task = export_invoice_report_task.delay(filters_data)
+
+    #  Build redirect URL preserving applied filters
+    query_params = {k: v for k, v in filters_data.items() if v not in [None, "", []]}
+    query_params["task_id"] = task.id
+    redirect_url = f"{reverse('reports:invoice_report')}?{urlencode(query_params, doseq=True)}"
+    response = HttpResponse(status=204)
+    response["HX-Redirect"] = redirect_url
+    return response
+
+
+@require_GET
+@login_required
+@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+def export_status(request, task_id):
+    return render_export_status(
+        request,
+        task_id=task_id,
+        download_url=reverse("reports:download_export", args=(task_id,)),
+        export_status_url=reverse("reports:export_status", args=(task_id,)),
+        ownership_check=None,
     )
 
-    # Process time series data
-    program_data = {}
-    for visit in visits_by_program_time:
-        program_name = visit["opportunity__delivery_type__name"]
-        if program_name not in program_data:
-            program_data[program_name] = {}
-        program_data[program_name][visit["visit_date_date"]] = visit["count"]
-    # Create labels and datasets for time series
-    labels = []
-    time_datasets = []
-    current_date = from_date
 
-    while current_date <= to_date:
-        labels.append(current_date.strftime("%b %d"))
-        current_date += timedelta(days=1)
-
-    for program_name in program_data.keys():
-        data = []
-        current_date = from_date
-        while current_date <= to_date:
-            # Convert current_date to a date object to avoid timezones making comparisons fail
-            current_date_date = current_date.date()
-            data.append(program_data[program_name].get(current_date_date, 0))
-            current_date += timedelta(days=1)
-
-        time_datasets.append({"name": program_name or "Unknown", "data": data})
-
-    return {"labels": labels, "datasets": time_datasets}
-
-
-def _get_program_pie_data(queryset):
-    """Example output:
-    {
-        "labels": ["Program A", "Program B", "Unknown"],
-        "data": [10, 5, 2]
-    }
-    """
-    visits_by_program = (
-        queryset.values("opportunity__delivery_type__name").annotate(count=Count("id")).order_by("-count")
-    )
-    return {
-        "labels": [item["opportunity__delivery_type__name"] or "Unknown" for item in visits_by_program],
-        "data": [item["count"] for item in visits_by_program],
-    }
-
-
-def _get_status_pie_data(queryset):
-    """Example output:
-    {
-        "labels": ["Approved", "Pending", "Rejected", "Unknown"],
-        "data": [15, 8, 4, 1]
-    }
-    """
-    visits_by_status = queryset.values("status").annotate(count=Count("id")).order_by("-count")
-    return {
-        "labels": [item["status"] or "Unknown" for item in visits_by_status],
-        "data": [item["count"] for item in visits_by_status],
-    }
+@require_GET
+@login_required
+@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+def download_export(request, task_id):
+    return download_export_file(task_id=task_id, filename_without_ext=f"invoice_export_{request.user.name}")

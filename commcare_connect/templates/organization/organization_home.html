@@ -1,62 +1,135 @@
 {% extends "base.html" %}
-{% load i18n %}
 {% load static %}
 {% load crispy_forms_tags %}
+{% load django_tables2 %}
+{% load i18n %}
 
-{% block title %}{{ request.org }}{% endblock title %}
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock javascript %}
+
 
 {% block content %}
-  <div class="container">
-    <div class="mt-2 pt-4 px-4">
-      <div>
-        <h1 class="display-5 mb-0">{{ organization.name }}</h1>
-        <p class="fw-lighter">{{ organization.slug }}</p>
-      </div>
+<p class="my-5 text-sm max-w-screen-lg mx-auto font-medium text-brand-deep-purple">{{request.org.name}}</p>
 
-      <section class="shadow-sm p-3 mb-5 bg-white rounded">
-        <form method="post">
+<div
+  class="flex flex-col max-w-screen-lg mx-auto gap-2"
+  x-cloak
+  x-data="orgTabs()"
+>
+  <!-- Tabs -->
+    <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+      <ul class="tabs">
+        <!-- Details Tab -->
+        <li @click="selectedTab = 'details';" :class="{'active': selectedTab !== 'details'}">
+          <span>{% trans 'Details' %}</span>
+          <div  x-show="selectedTab === 'details'"></div>
+        </li>
+
+        <li @click="selectedTab = 'members';" :class="{'active': selectedTab !== 'members'}">
+          <span>{% trans 'Members' %}</span>
+          <div  x-show="selectedTab === 'members'"></div>
+        </li>
+      </ul>
+
+    <!-- Options -->
+      <div x-show="selectedTab === 'members'" class="flex items-center gap-x-4">
+        <button
+          class="button button-md bg-red-600 hover:bg-red-700 text-white"
+          :disabled="selected.length === 0"
+          @click="showConfirmRemoveMembershipModal = true"
+        >
+          <i class="fa-solid fa-trash"></i>
+          {% trans 'Remove Member(s)' %}
+        </button>
+        <button class="button button-md outline-style" @click="showAddMemberModal = true">
+          {% trans 'Add Members' %}
+        </button>
+      </div>
+  </div>
+
+  <!-- Tab Content Containers -->
+  <div class="w-full">
+    <!-- Details Content (Already rendered) -->
+    <div x-show="selectedTab === 'details'" class="w-full mt-6">
+      <h2 class="text-xl font-semibold text-brand-deep-purple mb-4">{% trans 'Workspace' %}</h2>
+      <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 mb-10">
+        <form method="post" class="bg-white">
           {% csrf_token %}
           {% crispy form %}
         </form>
-      </section>
-
-      <section class="shadow-sm p-3 mb-5 bg-white rounded">
-        <h3 class="mb-4">{% translate "Members" %}</h3>
-        <form method="post" action="{% url 'organization:add_members' org_slug=organization.slug %}">
-          {% csrf_token %}
-          {% crispy membership_form %}
-        </form>
-
-        <div class='table table-responsive'>
-          <table class="table pg-table ">
-            <thead>
-            <tr>
-              <th>{% translate "Member" %}</th>
-              <th>{% translate "Role" %}</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for membership in organization.memberships.all %}
-              <tr>
-                <td>
-                  {{ membership.user }}
-                </td>
-                <td>{{ membership.get_role_display }}</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="shadow-sm p-3 mb-5 bg-white rounded">
-        <h3 class="mb-4">{% translate "Add Credential" %}</h3>
-        <form method="post" action="{% url 'organization:add_credential' org_slug=organization.slug %}">
-          {% csrf_token %}
-          {% crispy add_credential_form %}
-        </form>
-      </section>
-
+      </div>
     </div>
+
+    <div
+    x-show="selectedTab === 'members'"
+    id="invoice_members_container"
+    class="w-full"
+    hx-get="{% url 'organization:org_member_table' request.org.slug %}?{% querystring %}"
+    hx-swap="innerHTML"
+    hx-trigger="loadMembers from:body"
+  ></div>
   </div>
+
+  {% include "components/organization_home_page/add_org_member_modal.html" %}
+  {% include "components/organization_home_page/remove_org_member_confirm_modal.html" %}
+</div>
 {% endblock content %}
+
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('orgTabs', () => ({
+      selectedTab: '{{ request.GET.active_tab|default:"details" }}',
+      showAddMemberModal: false,
+      isHistoryAvailable: false,
+      selected: [],
+      selectAll: false,
+      showConfirmRemoveMembershipModal: false,
+      currentUserMembershipId: '{{ request.org_membership.id }}',
+
+      toggleSelectAll() {
+        this.selectAll = !this.selectAll;
+        if (this.selectAll) {
+          this.selected = Array.from(document.querySelectorAll('input[name="row_select"]'))
+            .map(c => c.value)
+            .filter(c => c !== this.currentUserMembershipId);
+        } else {
+          this.selected = [];
+        }
+      },
+
+      init() {
+        this.updateUrl(this.selectedTab);
+        this.loadTabContent(this.selectedTab);
+
+        this.$watch('selectedTab', (value) => {
+          this.updateUrl(value);
+          this.loadTabContent(value);
+        });
+      },
+
+      updateUrl(tab) {
+        const url = new URL(window.location);
+        url.searchParams.set('active_tab', tab);
+        window.history.pushState({}, '', url);
+      },
+
+      loadTabContent(tab) {
+        if (tab === 'members' && !this.isHistoryAvailable) {
+          htmx.trigger('#invoice_members_container', 'loadMembers');
+          this.isHistoryAvailable = true;
+        }
+      },
+    }));
+  });
+</script>
+{% endblock %}

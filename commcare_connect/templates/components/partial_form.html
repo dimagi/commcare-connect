@@ -1,0 +1,10 @@
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+  {% if form_title %}<h2 class="text-xl text-brand-deep-purple mb-2">{{ form_title }}</h2>{% endif %}
+  <form method="post" hx-ext="loading-states">
+    {% csrf_token %}
+    {% crispy form %}
+  </form>
+{% endblock content %}

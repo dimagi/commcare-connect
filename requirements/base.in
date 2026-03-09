@@ -14,6 +14,7 @@ flatten-dict
 twilio
 geopy
 gevent
+sentry-sdk
 
 # Django
 # ------------------------------------------------------------------------------
@@ -23,7 +24,7 @@ django-model-utils
 django-allauth
 django-celery-beat
 django-crispy-forms
-crispy-bootstrap5
+crispy-tailwind
 django-redis
 # Django REST Framework
 djangorestframework
@@ -34,6 +35,10 @@ django-tables2
 django-filter
 django-autocomplete-light
 django-htmx
+django-waffle
+django-pghistory
+django-weasyprint
+django-vectortiles
 
 # Temporary
 # -------------------------------------------------------------------------------

@@ -2,6 +2,8 @@ name: Deploy
 
 env:
   AWS_REGION: 'us-east-1'
+  SENTRY_ORG: 'dimagi'
+  SENTRY_PROJECT: 'commcare-connect'
 
 permissions:
   id-token: write
@@ -29,11 +31,14 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      - name: Set release identifier
+        run: echo "APP_RELEASE=${GITHUB_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
+
       - name: Set up Ruby
         uses: actions/setup-ruby@v1
 
       - name: Install Kamal
-        run: gem install kamal -v '~> 1.0.0'
+        run: gem install kamal -v '~> 1.9.2'
 
       - name: Install SSH key
         uses: shimataro/ssh-key-action@v2.5.1
@@ -56,7 +61,7 @@ jobs:
         name: Notify Deploy Start
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          channel-id: 'C05APTXCTSM'
+          channel-id: 'C09TVKX4N2C'
           payload: |
             {
               "blocks": [
@@ -95,11 +100,24 @@ jobs:
         working-directory: ./deploy
         run: 'kamal deploy -d ${{ inputs.environment }}'
 
+      - name: Create Sentry release
+        if: ${{ success() }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        with:
+          environment: ${{ inputs.environment }}
+          release: ${{ env.APP_RELEASE }}
+          projects: ${{ env.SENTRY_PROJECT }}
+          set_commits: manual
+          repo: dimagi/commcare-connect
+          commit: ${{ github.sha }}
+
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
         if: always()
         with:
-          channel-id: 'C05APTXCTSM'
+          channel-id: 'C09TVKX4N2C'
           update-ts: ${{ steps.slack.outputs.ts }}
           payload: |
             {

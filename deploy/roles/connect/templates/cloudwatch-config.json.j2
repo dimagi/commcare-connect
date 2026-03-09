@@ -1,0 +1,77 @@
+{
+    "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+    },
+    "logs": {
+        "logs_collected": {
+            "files": {
+                "collect_list": [
+                    {
+                        "file_path": "/var/log/syslog",
+                        "log_group_name": "{{ deploy_environment }}_syslog",
+                        "log_stream_name": "{instance_id}",
+                        "timezone": "UTC"
+                    }
+                ]
+            }
+        }
+    },
+    "metrics": {
+        "namespace": "CommCareConnect/{{ deploy_environment }}",
+        "append_dimensions": {
+            "InstanceId": "${aws:InstanceId}"
+        },
+        "metrics_collected": {
+            "cpu": {
+                "measurement": [
+                    "cpu_usage_idle",
+                    "cpu_usage_iowait",
+                    "cpu_usage_user",
+                    "cpu_usage_system"
+                ],
+                "metrics_collection_interval": 60
+            },
+            "disk": {
+                "measurement": [
+                    "used_percent",
+                    "inodes_free"
+                ],
+                "metrics_collection_interval": 60,
+                "resources": [
+                    "*"
+                ]
+            },
+            "diskio": {
+                "measurement": [
+                    "reads",
+                    "writes",
+                    "read_time",
+                    "write_time",
+                    "io_time"
+                ],
+                "metrics_collection_interval": 60,
+                "resources": [
+                    "*"
+                ]
+            },
+            "mem": {
+                "measurement": [
+                    "mem_used_percent",
+                    "mem_total",
+                    "mem_free",
+                    "mem_cached",
+                    "mem_buffered"
+                ],
+                "metrics_collection_interval": 60
+            },
+            "processes": {
+                "measurement": [
+                    "running",
+                    "sleeping",
+                    "dead"
+                ]
+            }
+        }
+    }
+}

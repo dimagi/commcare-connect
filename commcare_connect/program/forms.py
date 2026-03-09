@@ -1,16 +1,29 @@
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Field, Layout, Row, Submit
+from crispy_forms.layout import Button, Column, Field, Layout, Row, Submit
 from django import forms
 
-from commcare_connect.opportunity.forms import OpportunityInitForm
+from commcare_connect.opportunity.forms import OpportunityInitForm, OpportunityInitUpdateForm
+from commcare_connect.opportunity.models import Country, Currency
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplicationStatus
 
-HALF_WIDTH_FIELD = "form-group col-md-6 mb-0"
-DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"})
+DATE_INPUT = forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
 
 
 class ProgramForm(forms.ModelForm):
+    currency = forms.ModelChoiceField(
+        label="Currency",
+        queryset=Currency.objects.order_by("code"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label="Select a currency",
+    )
+    country = forms.ModelChoiceField(
+        label="Country",
+        queryset=Country.objects.order_by("name"),
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
+        empty_label="Select a country",
+    )
+
     class Meta:
         model = Program
         fields = [
@@ -19,10 +32,11 @@ class ProgramForm(forms.ModelForm):
             "delivery_type",
             "budget",
             "currency",
+            "country",
             "start_date",
             "end_date",
         ]
-        widgets = {"start_date": DATE_INPUT, "end_date": DATE_INPUT}
+        widgets = {"start_date": DATE_INPUT, "end_date": DATE_INPUT, "description": forms.Textarea}
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
@@ -30,18 +44,30 @@ class ProgramForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.helper = FormHelper(self)
         self.helper.layout = Layout(
-            Row(Field("name")),
-            Row(Field("description")),
-            Row(Field("delivery_type")),
+            Field("name"),
+            Field("description"),
+            Field("delivery_type"),
             Row(
-                Field("budget", wrapper_class=HALF_WIDTH_FIELD),
-                Field("currency", wrapper_class=HALF_WIDTH_FIELD),
+                Field("budget"),
+                Field("currency"),
+                Field("country"),
+                css_class="grid grid-cols-2 gap-2",
             ),
             Row(
-                Field("start_date", wrapper_class=HALF_WIDTH_FIELD),
-                Field("end_date", wrapper_class=HALF_WIDTH_FIELD),
+                Field("start_date"),
+                Field("end_date"),
+                css_class="grid grid-cols-2 gap-2",
             ),
-            Submit("submit", "Submit"),
+            Row(
+                Button(
+                    "close",
+                    "Close",
+                    css_class="button button-md outline-style",
+                    **{"@click": "showProgramAddModal = showProgramEditModal = false"},
+                ),
+                Submit("submit", "Submit", css_class="button button-md primary-dark"),
+                css_class="flex gap-3 justify-end mt-4",
+            ),
         )
 
     def clean(self):
@@ -57,27 +83,23 @@ class ProgramForm(forms.ModelForm):
         if not self.instance.pk:
             self.instance.organization = self.organization
             self.instance.created_by = self.user.email
-
         self.instance.modified_by = self.user.email
-
-        self.instance.currency = self.cleaned_data["currency"].upper()
-
         return super().save(commit=commit)
 
 
-class ManagedOpportunityInitForm(OpportunityInitForm):
-    class Meta(OpportunityInitForm.Meta):
-        model = ManagedOpportunity
+class BaseManagedOpportunityInitForm:
+    managed_opp = True
 
     def __init__(self, *args, **kwargs):
         self.program = kwargs.pop("program")
         super().__init__(*args, **kwargs)
-        self.managed_opp = True
 
-        # Managed opportunities should use the currency specified in the program.
-        self.fields["currency"].initial = self.program.currency
-        self.fields["currency"].widget = forms.TextInput(attrs={"readonly": "readonly", "disabled": True})
-        self.fields["currency"].required = False
+        # Managed opportunities should use the currency/country specified in the program.
+        for field_name in ["currency", "country"]:
+            form_field = self.fields[field_name]
+            form_field.initial = getattr(self.program, field_name)
+            form_field.widget.attrs.update({"readonly": "readonly", "disabled": True})
+            form_field.required = False
 
         program_members = Organization.objects.filter(
             programapplication__program=self.program, programapplication__status=ProgramApplicationStatus.ACCEPTED
@@ -89,10 +111,31 @@ class ManagedOpportunityInitForm(OpportunityInitForm):
             widget=forms.Select(attrs={"class": "form-control"}),
             label="Network Manager Organization",
         )
+        self.set_organization_initial()
+        opportunity_details_row = self.helper.layout[0]
+        organization_field_layout = Column(
+            Field("organization"), css_class="col-span-2"  # This makes the field take the full width of the grid row
+        )
+        opportunity_details_row.fields.insert(1, organization_field_layout)
 
-        self.helper.layout.fields.insert(3, Row(Field("organization")))
+    def set_organization_initial(self):
+        pass
 
     def save(self, commit=True):
         self.instance.program = self.program
         self.instance.currency = self.program.currency
+        self.instance.delivery_type = self.program.delivery_type
         return super().save(commit=commit)
+
+
+class ManagedOpportunityInitForm(BaseManagedOpportunityInitForm, OpportunityInitForm):
+    class Meta(OpportunityInitForm.Meta):
+        model = ManagedOpportunity
+
+
+class ManagedOpportunityInitUpdateForm(BaseManagedOpportunityInitForm, OpportunityInitUpdateForm):
+    class Meta(OpportunityInitUpdateForm.Meta):
+        model = ManagedOpportunity
+
+    def set_organization_initial(self):
+        self.fields["organization"].initial = self.instance.organization

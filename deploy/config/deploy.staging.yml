@@ -1,16 +1,28 @@
 servers:
   web:
     hosts:
-      - 54.172.148.144
+      - i-08bbcc89fcb90b8c7
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
+    logging:
+      options:
+        awslogs-group: 'commcare-connect-staging-web'
+        tag: 'web-{{.ID}}'
+    labels:
+      traefik.http.middlewares.commcare-compress.compress: true
+      traefik.http.routers.commcare-connect-web-staging.middlewares: commcare-connect-web-staging-retry@docker,commcare-compress
+
   celery:
     hosts:
-      - 54.172.148.144
+      - i-08bbcc89fcb90b8c7
     options:
       # create by ansible
       env-file: '/home/connect/www/commcare-connect/docker.env'
     cmd: /start_celery
     labels:
       traefik.enable: false
+    logging:
+      options:
+        awslogs-group: 'commcare-connect-staging-celery'
+        tag: 'celery-{{.ID}}'
