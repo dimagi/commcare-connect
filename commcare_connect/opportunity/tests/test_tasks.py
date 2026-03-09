@@ -3,6 +3,8 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.utils.timezone import now
 from tablib import Dataset
 from waffle.testutils import override_switch
@@ -22,6 +24,7 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import (
     _get_inactive_message,
     add_connect_users,
+    cleanup_expired_exports,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
     notify_user_for_scored_assessment,
@@ -31,6 +34,7 @@ from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    ExportFileFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -390,3 +394,41 @@ def test_save_export_stores_file_with_exports_prefix(settings, tmpdir):
     from django.core.files.storage import default_storage
 
     assert default_storage.exists(filename)
+
+
+@pytest.mark.django_db
+def test_cleanup_expired_exports_deletes_old_files(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    settings.EXPORT_RETENTION_DAYS = 30
+
+    old_export = ExportFileFactory(filename="exports/old_export.csv")
+    default_storage.save("exports/old_export.csv", ContentFile(b"old data"))
+
+    ExportFile.objects.filter(id=old_export.id).update(date_created=now() - datetime.timedelta(days=31))
+
+    fresh_export = ExportFileFactory(filename="exports/fresh_export.csv")
+    default_storage.save("exports/fresh_export.csv", ContentFile(b"fresh data"))
+
+    cleanup_expired_exports()
+
+    assert not ExportFile.objects.filter(id=old_export.id).exists()
+    assert ExportFile.objects.filter(id=fresh_export.id).exists()
+    assert not default_storage.exists("exports/old_export.csv")
+    assert default_storage.exists("exports/fresh_export.csv")
+
+
+@pytest.mark.django_db
+def test_cleanup_expired_exports_keeps_record_on_s3_failure(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    settings.EXPORT_RETENTION_DAYS = 30
+
+    old_export = ExportFileFactory(filename="exports/missing_file.csv")
+    ExportFile.objects.filter(id=old_export.id).update(date_created=now() - datetime.timedelta(days=31))
+
+    with mock.patch(
+        "commcare_connect.opportunity.tasks.default_storage.delete",
+        side_effect=Exception("S3 error"),
+    ):
+        cleanup_expired_exports()
+
+    assert ExportFile.objects.filter(id=old_export.id).exists()

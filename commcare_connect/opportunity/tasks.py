@@ -715,6 +715,21 @@ def _send_auto_invoice_created_notification(invoice_ids):
 
 
 @celery_app.task()
+def cleanup_expired_exports():
+    cutoff = now() - datetime.timedelta(days=settings.EXPORT_RETENTION_DAYS)
+    expired = ExportFile.objects.filter(date_created__lt=cutoff)
+    deleted_ids = []
+    for export in expired.iterator():
+        try:
+            default_storage.delete(export.filename)
+            deleted_ids.append(export.id)
+        except Exception:
+            logger.exception(f"Failed to delete export file: {export.filename}")
+    ExportFile.objects.filter(id__in=deleted_ids).delete()
+    logger.info(f"Cleaned up {len(deleted_ids)} expired export files")
+
+
+@celery_app.task()
 def notify_user_for_scored_assessment(assessment_pk):
     assessment = Assessment.objects.get(pk=assessment_pk)
     user = assessment.user
