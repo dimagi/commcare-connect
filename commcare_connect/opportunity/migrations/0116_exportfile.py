@@ -19,7 +19,22 @@ class Migration(migrations.Migration):
                 ("date_created", models.DateTimeField(auto_now_add=True)),
                 ("date_modified", models.DateTimeField(auto_now=True)),
                 ("filename", models.CharField(max_length=512, unique=True)),
-                ("export_type", models.CharField(max_length=50)),
+                (
+                    "export_type",
+                    models.CharField(
+                        choices=[
+                            ("visit_export", "Visit Export"),
+                            ("review_visit_export", "Review Visit Export"),
+                            ("payment_export", "Payment Export"),
+                            ("user_status", "User Status"),
+                            ("deliver_status", "Deliver Status"),
+                            ("work_status", "Work Status"),
+                            ("catchment_area", "Catchment Area"),
+                            ("invoice_report", "Invoice Report"),
+                        ],
+                        max_length=50,
+                    ),
+                ),
                 (
                     "opportunity",
                     models.ForeignKey(
