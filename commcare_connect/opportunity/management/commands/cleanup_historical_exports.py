@@ -10,6 +10,15 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils.timezone import now
 
+S3_BATCH_DELETE_LIMIT = 1000
+
+
+def batched(iterable, n):
+    """Yield successive n-sized chunks from iterable."""
+    for i in range(0, len(iterable), n):
+        yield iterable[i : i + n]  # noqa: E203
+
+
 EXPORT_FILENAME_PATTERNS = [
     re.compile(
         r"\d{4}-\d{2}-\d{2}T.*_("
@@ -74,11 +83,8 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {key}")
             return
 
-        # S3 batch delete supports up to 1000 keys per request
         deleted_count = 0
-        for i in range(0, len(to_delete), 1000):
-            end = i + 1000
-            batch = to_delete[i:end]
+        for batch in batched(to_delete, S3_BATCH_DELETE_LIMIT):
             response = bucket.delete_objects(Delete={"Objects": [{"Key": k} for k in batch]})
             errors = response.get("Errors", [])
             if errors:
