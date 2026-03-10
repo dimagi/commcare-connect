@@ -300,7 +300,7 @@ CELERY_TASK_TRACK_STARTED = True
 
 # Export file retention
 # ------------------------------------------------------------------------------
-EXPORT_RETENTION_DAYS = env.int("EXPORT_RETENTION_DAYS", default=30)
+EXPORT_RETENTION_DAYS = max(1, env.int("EXPORT_RETENTION_DAYS", default=30))
 
 # django-allauth
 # ------------------------------------------------------------------------------

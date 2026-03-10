@@ -48,6 +48,9 @@ class Command(BaseCommand):
 
     def handle(self, **options):
         retention_days = options["retention_days"]
+        if retention_days < 1:
+            self.stderr.write(self.style.ERROR("--retention-days must be a positive integer."))
+            return
         dry_run = options["dry_run"]
         cutoff = now() - timedelta(days=retention_days)
 
