@@ -472,6 +472,7 @@ class TestKPIReportPermission:
 def test_export_invoice_report_task_creates_export_file(mock_storage):
     from commcare_connect.reports.tasks import export_invoice_report_task
 
+    mock_storage.save.side_effect = lambda name, content: name
     mock_view = mock.MagicMock()
     mock_view.get_invoice_queryset.return_value = []
     mock_filter = mock.MagicMock()
