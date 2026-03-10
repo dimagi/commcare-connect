@@ -32,7 +32,7 @@ class TestExportFilenamePatterns:
         ],
     )
     def test_matches_export_filenames(self, filename):
-        assert any(p.match(filename) for p in EXPORT_FILENAME_PATTERNS)
+        assert any(p.fullmatch(filename) for p in EXPORT_FILENAME_PATTERNS)
 
     @pytest.mark.parametrize(
         "filename",
@@ -44,7 +44,7 @@ class TestExportFilenamePatterns:
         ],
     )
     def test_does_not_match_non_export_filenames(self, filename):
-        assert not any(p.match(filename) for p in EXPORT_FILENAME_PATTERNS)
+        assert not any(p.fullmatch(filename) for p in EXPORT_FILENAME_PATTERNS)
 
 
 @pytest.mark.django_db

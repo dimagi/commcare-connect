@@ -66,7 +66,7 @@ class Command(BaseCommand):
             # Strip the media/ prefix for pattern matching
             filename = obj.key.removeprefix("media/")
 
-            if not any(p.match(filename) for p in EXPORT_FILENAME_PATTERNS):
+            if not any(p.fullmatch(filename) for p in EXPORT_FILENAME_PATTERNS):
                 continue
 
             if obj.last_modified >= cutoff:
