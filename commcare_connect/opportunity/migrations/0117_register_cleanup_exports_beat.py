@@ -1,33 +1,35 @@
 from django.db import migrations
+from django_celery_beat.models import CrontabSchedule, PeriodicTask
 
 
 def create_periodic_task(apps, schema_editor):
-    IntervalSchedule = apps.get_model("django_celery_beat", "IntervalSchedule")
-    PeriodicTask = apps.get_model("django_celery_beat", "PeriodicTask")
-
-    schedule, _ = IntervalSchedule.objects.get_or_create(
-        every=24,
-        period="hours",
+    schedule, _ = CrontabSchedule.objects.get_or_create(
+        minute="0",
+        hour="3",
+        day_of_week="*",
+        day_of_month="*",
+        month_of_year="*",
     )
-    PeriodicTask.objects.get_or_create(
+    PeriodicTask.objects.update_or_create(
         name="Cleanup expired export files",
         defaults={
             "task": "commcare_connect.opportunity.tasks.cleanup_expired_exports",
-            "interval": schedule,
-            "enabled": True,
+            "crontab": schedule,
+            "interval": None,
         },
     )
 
 
 def delete_periodic_task(apps, schema_editor):
-    PeriodicTask = apps.get_model("django_celery_beat", "PeriodicTask")
-    PeriodicTask.objects.filter(name="Cleanup expired export files").delete()
+    PeriodicTask.objects.filter(
+        name="Cleanup expired export files",
+        task="commcare_connect.opportunity.tasks.cleanup_expired_exports",
+    ).delete()
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("opportunity", "0116_exportfile"),
-        ("django_celery_beat", "0018_improve_crontab_helptext"),
     ]
 
     operations = [
