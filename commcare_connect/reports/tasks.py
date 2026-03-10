@@ -3,14 +3,13 @@ import uuid
 from collections import defaultdict
 from itertools import chain
 
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
 from django.db.models import Case, Count, DateTimeField, F, IntegerField, Max, Min, Q, Sum, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
 from django_tables2.export.export import TableExport
 
 from commcare_connect.connect_id_client.main import fetch_user_analytics
-from commcare_connect.opportunity.models import CompletedWorkStatus, ExportFile, ExportType, OpportunityAccess
+from commcare_connect.opportunity.models import CompletedWorkStatus, ExportType, OpportunityAccess
+from commcare_connect.opportunity.tasks import save_and_track_export
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.models import User
 from config import celery_app
@@ -147,6 +146,5 @@ def export_invoice_report_task(filters_data):
     exporter = TableExport("csv", table)
     filename = f"exports/invoice-report-{uuid.uuid4()}.csv"
     content = exporter.export()
-    default_storage.save(filename, ContentFile(content.encode("utf-8")))
-    ExportFile.track(filename, ExportType.INVOICE_REPORT)
+    save_and_track_export(filename, content.encode("utf-8"), ExportType.INVOICE_REPORT)
     return filename

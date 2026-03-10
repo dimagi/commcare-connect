@@ -247,6 +247,10 @@ def save_export(dataset: Dataset, file_name: str, export_format: str, export_typ
     content = dataset.export(export_format)
     if isinstance(content, str):
         content = content.encode()
+    save_and_track_export(file_name, content, export_type, opportunity)
+
+
+def save_and_track_export(file_name: str, content: bytes, export_type: str, opportunity=None):
     default_storage.save(file_name, ContentFile(content))
     ExportFile.track(file_name, export_type, opportunity)
 

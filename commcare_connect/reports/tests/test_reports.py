@@ -468,7 +468,7 @@ class TestKPIReportPermission:
 
 
 @pytest.mark.django_db
-@mock.patch("commcare_connect.reports.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
 def test_export_invoice_report_task_creates_export_file(mock_storage):
     from commcare_connect.reports.tasks import export_invoice_report_task
 
