@@ -32,8 +32,7 @@ from commcare_connect.utils.flags import Flags
 
 
 @pytest.mark.django_db
-def test_export_file_creation():
-    opportunity = OpportunityFactory()
+def test_export_file_creation(opportunity):
     export = ExportFile.objects.create(
         filename="exports/2026-03-09T10:00:00_test_visit_export.csv",
         export_type="visit_export",
