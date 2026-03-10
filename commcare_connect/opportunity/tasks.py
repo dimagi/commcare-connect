@@ -193,8 +193,9 @@ def generate_visit_export(
     )
     exporter = UserVisitExporter(opportunity, flatten)
     dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
-    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, ExportType.VISIT_EXPORT, opportunity)
+    export_type = ExportType.VISIT_EXPORT
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
     return export_tmp_name
 
 
@@ -205,9 +206,10 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
         f"""Export review visit for {opportunity.name} with date
         from {from_date} to {to_date} and status {','.join(status)}"""
     )
+    export_type = ExportType.REVIEW_VISIT_EXPORT
     dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
-    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_review_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, ExportType.REVIEW_VISIT_EXPORT, opportunity)
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
     return export_tmp_name
 
 
@@ -215,8 +217,9 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
 def generate_payment_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_empty_payment_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_payment_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, ExportType.PAYMENT_EXPORT, opportunity)
+    export_type = ExportType.PAYMENT_EXPORT
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
     return export_tmp_name
 
 
@@ -224,8 +227,9 @@ def generate_payment_export(opportunity_id: int, export_format: str):
 def generate_user_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_user_status_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_user_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, ExportType.USER_STATUS, opportunity)
+    export_type = ExportType.USER_STATUS
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
     return export_tmp_name
 
 
@@ -233,8 +237,9 @@ def generate_user_status_export(opportunity_id: int, export_format: str):
 def generate_deliver_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_deliver_status_table(opportunity)
-    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_deliver_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format, ExportType.DELIVER_STATUS, opportunity)
+    export_type = ExportType.DELIVER_STATUS
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
     return export_tmp_name
 
 
