@@ -1,10 +1,12 @@
 import pytest
 from django import forms
 
-from commcare_connect.organization.models import LLOEntity
+from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.users.tests.factories import OrganizationFactory
 from commcare_connect.utils.forms import (
     TOMSELECT_NEW_ENTRY_PREFIX,
     CreatableModelChoiceField,
+    DynamicCreatableChoiceField,
     tomselect_resolve_creatable_value,
 )
 
@@ -108,3 +110,52 @@ class TestCreatableModelChoiceField:
         form = LLOEntityByNameForm(data={"entity": "ByName"})
         assert form.is_valid(), form.errors
         assert form.cleaned_data["entity"] == entity
+
+
+class OrgDynamicForm(forms.Form):
+    org = DynamicCreatableChoiceField(
+        queryset=Organization.objects.all(),
+        create_key_name="name",
+        required=False,
+    )
+
+
+@pytest.mark.django_db
+class TestDynamicCreatableChoiceField:
+    def test_new_prefix_creates_unsaved_instance(self):
+        form = OrgDynamicForm(data={"org": "new:My Org"})
+        assert form.is_valid(), form.errors
+        result = form.cleaned_data["org"]
+        assert isinstance(result, Organization)
+        assert result.pk is None
+        assert result.name == "My Org"
+
+    def test_existing_pk_returns_existing_instance(self):
+        org = OrganizationFactory()
+        form = OrgDynamicForm(data={"org": str(org.pk)})
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["org"] == org
+
+    def test_invalid_pk_makes_form_invalid(self):
+        form = OrgDynamicForm(data={"org": "99999"})
+        assert not form.is_valid()
+        assert "org" in form.errors
+
+    def test_new_prefix_with_existing_name_raises_error(self):
+        # When "new:Name" is submitted but an org with that name already exists,
+        # a ValidationError should be raised — user intended creation, not selection.
+        OrganizationFactory(name="Already Exists")
+        form = OrgDynamicForm(data={"org": TOMSELECT_NEW_ENTRY_PREFIX + "Already Exists"})
+        assert not form.is_valid()
+        assert "org" in form.errors
+
+    def test_required_field_rejects_empty_value(self):
+        class RequiredOrgForm(forms.Form):
+            org = DynamicCreatableChoiceField(
+                queryset=Organization.objects.all(),
+                create_key_name="name",
+            )
+
+        form = RequiredOrgForm(data={"org": ""})
+        assert not form.is_valid()
+        assert "org" in form.errors

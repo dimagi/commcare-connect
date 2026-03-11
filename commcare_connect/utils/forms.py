@@ -67,3 +67,19 @@ class CreatableModelChoiceField(forms.ModelChoiceField):
                 )
             return self.queryset.model(**{self.create_key_name: value})
         return value
+
+
+class DynamicCreatableChoiceField(CreatableModelChoiceField):
+    """
+    CreatableModelChoiceField variant for TomSelect fields whose options are populated
+    dynamically by JS (not server-rendered). Widget starts empty; queryset is validation-only.
+    """
+
+    @property
+    def choices(self):
+        return []
+
+    @choices.setter
+    def choices(self, value):
+        # Intentionally discard: options are populated by JS, not server-rendered.
+        pass
