@@ -28,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
       let data = el.getAttribute('data-tomselect:settings');
       Object.assign(settings, JSON.parse(data));
     }
+    if (settings.create === true) {
+      settings.create = (input) => ({ value: 'new:' + input, text: input });
+    }
     new TomSelect(el, settings);
   });
 
