@@ -1,0 +1,1951 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CommCare Connect — Concept Map</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0f1117;
+        --surface: #161822;
+        --surface2: #1e2030;
+        --border: #2a2d3e;
+        --text: #e0e2f0;
+        --text-dim: #6e7191;
+        --accent: #7c5cfc;
+        --accent2: #0ea5e9;
+        --know: #34d399;
+        --fuzzy: #fbbf24;
+        --unknown: #f87171;
+        --edge-default: #4a4d6a;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .main-area {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+
+      .splitter-v {
+        width: 5px;
+        cursor: col-resize;
+        background: var(--border);
+        flex-shrink: 0;
+        transition: background 0.12s;
+        position: relative;
+        z-index: 5;
+      }
+
+      .splitter-v:hover,
+      .splitter-v.dragging {
+        background: var(--accent);
+      }
+
+      .splitter-h {
+        height: 5px;
+        cursor: row-resize;
+        background: var(--border);
+        flex-shrink: 0;
+        transition: background 0.12s;
+        position: relative;
+        z-index: 5;
+      }
+
+      .splitter-h:hover,
+      .splitter-h.dragging {
+        background: var(--accent);
+      }
+
+      header {
+        padding: 10px 20px;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      header h1 {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      header h1 span {
+        color: var(--accent);
+      }
+
+      .legend {
+        display: flex;
+        gap: 14px;
+        margin-left: 16px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .presets {
+        display: flex;
+        gap: 5px;
+        margin-left: auto;
+      }
+
+      .preset-btn {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text-dim);
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .preset-btn:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+
+      .canvas-wrap {
+        position: relative;
+        overflow: hidden;
+        flex: 1;
+        min-width: 200px;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .tooltip {
+        position: absolute;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 12px;
+        line-height: 1.5;
+        max-width: 280px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s;
+        z-index: 10;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+
+      .tooltip.visible {
+        opacity: 1;
+      }
+      .tooltip .tt-title {
+        font-weight: 600;
+        color: var(--accent2);
+        margin-bottom: 4px;
+      }
+      .tooltip .tt-path {
+        font-family: monospace;
+        font-size: 10px;
+        color: var(--text-dim);
+        margin-bottom: 4px;
+      }
+      .tooltip .tt-desc {
+        color: var(--text);
+      }
+      .tooltip .tt-rels {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+
+      .sidebar {
+        width: 320px;
+        min-width: 180px;
+        overflow-y: auto;
+        background: var(--surface);
+        padding: 12px;
+        flex-shrink: 0;
+      }
+
+      .section {
+        margin-bottom: 14px;
+      }
+
+      .section-title {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-dim);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .node-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .node-item {
+        display: grid;
+        grid-template-columns: 10px 1fr 52px 20px;
+        gap: 6px;
+        align-items: center;
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+
+      .node-item:hover {
+        background: var(--surface2);
+      }
+
+      .node-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      .node-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .knowledge-btn {
+        font-size: 9px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 3px;
+        border: none;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      .knowledge-btn.know {
+        background: rgba(52, 211, 153, 0.15);
+        color: var(--know);
+      }
+      .knowledge-btn.fuzzy {
+        background: rgba(251, 191, 36, 0.15);
+        color: var(--fuzzy);
+      }
+      .knowledge-btn.unknown {
+        background: rgba(248, 113, 113, 0.15);
+        color: var(--unknown);
+      }
+
+      .vis-toggle {
+        width: 16px;
+        height: 16px;
+        border: none;
+        background: none;
+        color: var(--text-dim);
+        cursor: pointer;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+      }
+
+      .vis-toggle:hover {
+        background: var(--surface2);
+      }
+      .vis-toggle.hidden {
+        opacity: 0.3;
+      }
+
+      .edge-type-selector {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+      }
+
+      .edge-type-chip {
+        font-size: 10px;
+        padding: 3px 8px;
+        border-radius: 3px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text-dim);
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+
+      .edge-type-chip.active {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: rgba(124, 92, 252, 0.1);
+      }
+
+      .action-btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .action-btn {
+        font-size: 11px;
+        padding: 5px 10px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--text-dim);
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+
+      .action-btn:hover {
+        color: var(--text);
+        border-color: var(--accent2);
+      }
+
+      .filter-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+      }
+
+      .filter-chip {
+        font-size: 10px;
+        padding: 3px 8px;
+        border-radius: 3px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text-dim);
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+
+      .filter-chip.active {
+        border-color: var(--accent2);
+        color: var(--accent2);
+        background: rgba(14, 165, 233, 0.1);
+      }
+
+      .prompt-wrap {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .prompt-area {
+        padding: 12px 20px;
+        background: var(--surface);
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        flex: 1;
+        min-height: 40px;
+        overflow-y: auto;
+      }
+
+      .prompt-text {
+        flex: 1;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text);
+        max-height: 72px;
+        overflow-y: auto;
+      }
+
+      .copy-btn {
+        background: var(--accent);
+        border: none;
+        color: white;
+        padding: 6px 16px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+
+      .copy-btn:hover {
+        opacity: 0.85;
+      }
+      .copy-btn.copied {
+        background: var(--know);
+      }
+
+      .sidebar::-webkit-scrollbar {
+        width: 5px;
+      }
+      .sidebar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .sidebar::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+
+      .instructions {
+        font-size: 10px;
+        color: var(--text-dim);
+        line-height: 1.5;
+        padding: 6px 8px;
+        background: var(--bg);
+        border-radius: 4px;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>CommCare Connect <span>Concept Map</span></h1>
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--know)"></div>
+          Know
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--fuzzy)"></div>
+          Fuzzy
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--unknown)"></div>
+          Unknown
+        </div>
+      </div>
+      <div class="presets">
+        <button class="preset-btn" onclick="preset('all')">All Concepts</button>
+        <button class="preset-btn" onclick="preset('core')">Core Flow</button>
+        <button class="preset-btn" onclick="preset('payments')">
+          Payments
+        </button>
+        <button class="preset-btn" onclick="preset('geography')">
+          Geography
+        </button>
+        <button class="preset-btn" onclick="preset('learning')">
+          Learning
+        </button>
+      </div>
+    </header>
+
+    <div class="main-area">
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+        <div class="tooltip" id="tooltip">
+          <div class="tt-title"></div>
+          <div class="tt-path"></div>
+          <div class="tt-desc"></div>
+          <div class="tt-rels"></div>
+        </div>
+      </div>
+
+      <div class="splitter-v" id="splitter-v"></div>
+
+      <div class="sidebar">
+        <div class="instructions">
+          Drag nodes to rearrange. Click knowledge buttons to cycle
+          Know/Fuzzy/Unknown. Toggle eye icons to show/hide. Use presets above
+          to focus on specific areas.
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <span>Filter by Layer</span>
+          </div>
+          <div class="filter-chips" id="layer-filters"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <span>Edge Types</span>
+          </div>
+          <div class="edge-type-selector" id="edge-types"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <span>Concepts</span>
+            <span
+              style="font-size: 9px; color: var(--text-dim)"
+              id="node-count"
+            ></span>
+          </div>
+          <div class="node-list" id="node-list"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-title"><span>Actions</span></div>
+          <div class="action-btns">
+            <button class="action-btn" onclick="autoLayout()">
+              Auto Layout
+            </button>
+            <button class="action-btn" onclick="resetKnowledge()">
+              Reset Knowledge
+            </button>
+            <button class="action-btn" onclick="showAll()">Show All</button>
+            <button class="action-btn" onclick="hideKnown()">Hide Known</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- /main-area -->
+
+    <div class="prompt-wrap" id="prompt-wrap" style="height: 100px">
+      <div class="splitter-h" id="splitter-h"></div>
+      <div class="prompt-area">
+        <div class="prompt-text" id="prompt-text"></div>
+        <button class="copy-btn" id="copy-btn" onclick="copyPrompt()">
+          Copy Prompt
+        </button>
+      </div>
+    </div>
+
+    <script>
+      // ─── DATA ───────────────────────────────────────────────────────────
+
+      const LAYERS = {
+        core: { label: 'Core', color: '#7c5cfc' },
+        org: { label: 'Organization', color: '#0ea5e9' },
+        payment: { label: 'Payment', color: '#34d399' },
+        learning: { label: 'Learning', color: '#fbbf24' },
+        geography: { label: 'Geography', color: '#f472b6' },
+        integration: { label: 'Integration', color: '#fb923c' },
+        user: { label: 'User', color: '#a78bfa' },
+        validation: { label: 'Validation', color: '#6ee7b7' },
+      };
+
+      const EDGE_TYPES = {
+        owns: { label: 'owns/has', color: '#7c5cfc', dash: [] },
+        references: { label: 'references', color: '#0ea5e9', dash: [] },
+        flow: { label: 'data flow', color: '#34d399', dash: [6, 3] },
+        extends: { label: 'extends', color: '#fbbf24', dash: [2, 2] },
+        payment: { label: 'payment', color: '#f87171', dash: [8, 4] },
+      };
+
+      const NODES_DEF = [
+        // Core
+        {
+          id: 'opportunity',
+          label: 'Opportunity',
+          layer: 'core',
+          desc: 'Central entity: a defined work activity published by an org for community health workers. Has learn app, deliver app, budget, dates, and payment structure.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'user_visit',
+          label: 'UserVisit',
+          layer: 'core',
+          desc: 'Individual form submission from a worker performing field work. Tracks entity visited, status (pending/approved/rejected), GPS location, and flags.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'completed_work',
+          label: 'CompletedWork',
+          layer: 'core',
+          desc: 'Aggregated work record grouping multiple visits for a specific entity under a payment unit. Tracks approved counts and payment accrued.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'opp_access',
+          label: 'OpportunityAccess',
+          layer: 'core',
+          desc: 'Links a User to an Opportunity. Tracks their full journey: learning progress, visit counts, suspension status, and payment accrued.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'opp_claim',
+          label: 'OpportunityClaim',
+          layer: 'core',
+          desc: 'Budget reservation: when a worker claims an opportunity, a portion of the total budget is reserved for them.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'deliver_unit',
+          label: 'DeliverUnit',
+          layer: 'core',
+          desc: 'Defines a specific deliverable service within the delivery app. Links to a PaymentUnit to determine compensation per unit.',
+          path: 'opportunity/models.py',
+        },
+
+        // Organization
+        {
+          id: 'organization',
+          label: 'Organization',
+          layer: 'org',
+          desc: 'Workspace container (NGO, health system). Publishes opportunities, manages users via memberships with roles (admin/member/viewer).',
+          path: 'organization/models.py',
+        },
+        {
+          id: 'membership',
+          label: 'Membership',
+          layer: 'org',
+          desc: 'UserOrganizationMembership: links a User to an Organization with a role (admin, member, viewer). Controls access to org features.',
+          path: 'organization/models.py',
+        },
+        {
+          id: 'program',
+          label: 'Program',
+          layer: 'org',
+          desc: 'Bundles multiple managed opportunities under shared goals, budget, and timeline. Managed by a program manager organization.',
+          path: 'program/models.py',
+        },
+        {
+          id: 'managed_opp',
+          label: 'ManagedOpportunity',
+          layer: 'org',
+          desc: 'An Opportunity that is part of a Program. Extends Opportunity with a program link. Enables network manager oversight.',
+          path: 'program/models.py',
+        },
+        {
+          id: 'program_app',
+          label: 'ProgramApplication',
+          layer: 'org',
+          desc: 'Application from an Organization to participate in a Program. Status flow: invited -> applied -> accepted/rejected/declined.',
+          path: 'program/models.py',
+        },
+
+        // Payment
+        {
+          id: 'payment',
+          label: 'Payment',
+          layer: 'payment',
+          desc: 'Money disbursed to a worker (via OpportunityAccess) or organization (network manager). Tracks amount, method, confirmation status.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'payment_unit',
+          label: 'PaymentUnit',
+          layer: 'payment',
+          desc: 'Defines the price structure: amount per unit to worker, org amount to network manager, daily/total limits, date range.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'payment_invoice',
+          label: 'PaymentInvoice',
+          layer: 'payment',
+          desc: 'Aggregates multiple payments into a batch invoice. Status flow: pending NM review -> pending PM review -> ready to pay -> paid.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'claim_limit',
+          label: 'ClaimLimit',
+          layer: 'payment',
+          desc: 'OpportunityClaimLimit: per-PaymentUnit cap on how many visits a worker can claim. Controls budget allocation per worker.',
+          path: 'opportunity/models.py',
+        },
+
+        // Learning
+        {
+          id: 'commcare_app',
+          label: 'CommCareApp',
+          layer: 'learning',
+          desc: 'Reference to a CommCare application on HQ. Used as learn app (training) or deliver app (service delivery). Has passing score for assessments.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'learn_module',
+          label: 'LearnModule',
+          layer: 'learning',
+          desc: 'Educational module within a CommCare app. Workers must complete modules before accessing delivery work.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'completed_module',
+          label: 'CompletedModule',
+          layer: 'learning',
+          desc: 'Tracks when a worker finishes a learning module. Records duration and xform metadata from CommCare HQ.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'assessment',
+          label: 'Assessment',
+          layer: 'learning',
+          desc: 'Learning evaluation with score and pass/fail. Workers must pass assessments to proceed from learning to delivery phase.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'task',
+          label: 'Task',
+          layer: 'learning',
+          desc: 'Work assignment defined in a CommCare app. Has slug, name, time estimate. Tracked via CompletedTask.',
+          path: 'opportunity/models.py',
+        },
+
+        // Geography
+        {
+          id: 'work_area',
+          label: 'WorkArea',
+          layer: 'geography',
+          desc: 'Geographic zone (PostGIS polygon + centroid) assigned for service delivery. Tracks building count, expected visits, completion status.',
+          path: 'microplanning/models.py',
+        },
+        {
+          id: 'work_area_group',
+          label: 'WorkAreaGroup',
+          layer: 'geography',
+          desc: 'Groups WorkAreas together (e.g. by ward). Assigned to a specific worker via OpportunityAccess.',
+          path: 'microplanning/models.py',
+        },
+        {
+          id: 'catchment_area',
+          label: 'CatchmentArea',
+          layer: 'geography',
+          desc: 'Radius-based geographic circle (lat/lng/radius). Used to validate that visits occur within assigned service areas.',
+          path: 'microplanning/models.py',
+        },
+
+        // User
+        {
+          id: 'user',
+          label: 'User',
+          layer: 'user',
+          desc: 'Custom Django user with single name field (no first/last), UUID, phone number. Links to orgs via membership and to opportunities via access.',
+          path: 'users/models.py',
+        },
+        {
+          id: 'connect_id_link',
+          label: 'ConnectIDUserLink',
+          layer: 'user',
+          desc: 'Links a User to a CommCare account via ConnectID SSO. Stores commcare_username, domain, and HQ case ID.',
+          path: 'users/models.py',
+        },
+        {
+          id: 'user_credential',
+          label: 'UserCredential',
+          layer: 'user',
+          desc: 'Badges earned for milestones: learning passed, 25/50/100/200/500/1000 deliveries. Required by CredentialConfiguration.',
+          path: 'users/models.py',
+        },
+        {
+          id: 'user_invite',
+          label: 'UserInvite',
+          layer: 'user',
+          desc: 'SMS invitation to a phone number to join an opportunity. Status: invited -> sms_delivered -> accepted/not_found.',
+          path: 'opportunity/models.py',
+        },
+
+        // Integration
+        {
+          id: 'hq_server',
+          label: 'HQServer',
+          layer: 'integration',
+          desc: 'Connection to a CommCare HQ instance. Stores URL and OAuth application. Supports multi-tenancy across HQ environments.',
+          path: 'commcarehq/models.py',
+        },
+        {
+          id: 'hq_api_key',
+          label: 'HQApiKey',
+          layer: 'integration',
+          desc: 'API key for authenticating with CommCare HQ. Created by admin users, linked to a specific HQ server.',
+          path: 'commcarehq/models.py',
+        },
+        {
+          id: 'delivery_type',
+          label: 'DeliveryType',
+          layer: 'integration',
+          desc: 'Categorizes types of services (health visit, training session, etc.). Referenced by Opportunities and Programs.',
+          path: 'opportunity/models.py',
+        },
+
+        // Validation
+        {
+          id: 'verification_flags',
+          label: 'VerificationFlags',
+          layer: 'validation',
+          desc: 'OpportunityVerificationFlags: configures visit validation rules per opportunity — GPS required, duration limits, duplicate detection, time windows.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'deliver_unit_flags',
+          label: 'DeliverUnitFlagRules',
+          layer: 'validation',
+          desc: 'Per-DeliverUnit validation rules: check attachments, enforce duration limits. Enables granular control over visit quality.',
+          path: 'opportunity/models.py',
+        },
+        {
+          id: 'form_json_rules',
+          label: 'FormJsonValidationRules',
+          layer: 'validation',
+          desc: 'Validates specific form fields (question_path = expected question_value). M2M link to DeliverUnits.',
+          path: 'opportunity/models.py',
+        },
+      ];
+
+      const EDGES_DEF = [
+        // Core flow
+        {
+          from: 'organization',
+          to: 'opportunity',
+          type: 'owns',
+          label: 'publishes',
+        },
+        { from: 'user', to: 'opp_access', type: 'owns', label: 'registers' },
+        {
+          from: 'opportunity',
+          to: 'opp_access',
+          type: 'references',
+          label: 'has workers',
+        },
+        {
+          from: 'opp_access',
+          to: 'opp_claim',
+          type: 'owns',
+          label: 'claims budget',
+        },
+        {
+          from: 'opp_access',
+          to: 'completed_work',
+          type: 'owns',
+          label: 'aggregates',
+        },
+        {
+          from: 'opp_access',
+          to: 'user_visit',
+          type: 'owns',
+          label: 'submits',
+        },
+        {
+          from: 'user_visit',
+          to: 'completed_work',
+          type: 'flow',
+          label: 'grouped into',
+        },
+        {
+          from: 'completed_work',
+          to: 'payment',
+          type: 'payment',
+          label: 'triggers',
+        },
+        {
+          from: 'user_visit',
+          to: 'deliver_unit',
+          type: 'references',
+          label: 'for service',
+        },
+
+        // Payment structure
+        {
+          from: 'opportunity',
+          to: 'payment_unit',
+          type: 'owns',
+          label: 'defines pricing',
+        },
+        {
+          from: 'deliver_unit',
+          to: 'payment_unit',
+          type: 'references',
+          label: 'priced by',
+        },
+        {
+          from: 'payment',
+          to: 'opp_access',
+          type: 'payment',
+          label: 'paid to worker',
+        },
+        {
+          from: 'payment',
+          to: 'organization',
+          type: 'payment',
+          label: 'paid to org',
+        },
+        {
+          from: 'payment',
+          to: 'payment_invoice',
+          type: 'references',
+          label: 'batched in',
+        },
+        {
+          from: 'payment',
+          to: 'payment_unit',
+          type: 'references',
+          label: 'at rate',
+        },
+        {
+          from: 'opp_claim',
+          to: 'claim_limit',
+          type: 'owns',
+          label: 'per unit caps',
+        },
+        {
+          from: 'claim_limit',
+          to: 'payment_unit',
+          type: 'references',
+          label: 'for unit',
+        },
+        {
+          from: 'payment_invoice',
+          to: 'opportunity',
+          type: 'references',
+          label: 'for opp',
+        },
+
+        // Organization & Programs
+        {
+          from: 'organization',
+          to: 'membership',
+          type: 'owns',
+          label: 'has members',
+        },
+        { from: 'user', to: 'membership', type: 'owns', label: 'belongs to' },
+        { from: 'organization', to: 'program', type: 'owns', label: 'manages' },
+        { from: 'program', to: 'managed_opp', type: 'owns', label: 'contains' },
+        {
+          from: 'managed_opp',
+          to: 'opportunity',
+          type: 'extends',
+          label: 'extends',
+        },
+        {
+          from: 'organization',
+          to: 'program_app',
+          type: 'owns',
+          label: 'applies',
+        },
+        {
+          from: 'program_app',
+          to: 'program',
+          type: 'references',
+          label: 'to join',
+        },
+
+        // Learning
+        {
+          from: 'opportunity',
+          to: 'commcare_app',
+          type: 'references',
+          label: 'learn app',
+        },
+        {
+          from: 'opportunity',
+          to: 'commcare_app',
+          type: 'references',
+          label: 'deliver app',
+        },
+        {
+          from: 'commcare_app',
+          to: 'learn_module',
+          type: 'owns',
+          label: 'contains',
+        },
+        { from: 'commcare_app', to: 'task', type: 'owns', label: 'defines' },
+        {
+          from: 'commcare_app',
+          to: 'deliver_unit',
+          type: 'owns',
+          label: 'defines',
+        },
+        {
+          from: 'opp_access',
+          to: 'completed_module',
+          type: 'owns',
+          label: 'completed',
+        },
+        {
+          from: 'completed_module',
+          to: 'learn_module',
+          type: 'references',
+          label: 'for module',
+        },
+        { from: 'user', to: 'assessment', type: 'owns', label: 'takes' },
+        {
+          from: 'assessment',
+          to: 'commcare_app',
+          type: 'references',
+          label: 'in app',
+        },
+
+        // Geography
+        {
+          from: 'opportunity',
+          to: 'work_area',
+          type: 'owns',
+          label: 'has zones',
+        },
+        {
+          from: 'opportunity',
+          to: 'work_area_group',
+          type: 'owns',
+          label: 'has groups',
+        },
+        {
+          from: 'work_area_group',
+          to: 'work_area',
+          type: 'owns',
+          label: 'contains',
+        },
+        {
+          from: 'work_area_group',
+          to: 'opp_access',
+          type: 'references',
+          label: 'assigned to',
+        },
+        {
+          from: 'user_visit',
+          to: 'work_area',
+          type: 'references',
+          label: 'in zone',
+        },
+        {
+          from: 'opportunity',
+          to: 'catchment_area',
+          type: 'owns',
+          label: 'service areas',
+        },
+        {
+          from: 'catchment_area',
+          to: 'opp_access',
+          type: 'references',
+          label: 'assigned to',
+        },
+
+        // User
+        {
+          from: 'user',
+          to: 'connect_id_link',
+          type: 'owns',
+          label: 'SSO link',
+        },
+        {
+          from: 'connect_id_link',
+          to: 'hq_server',
+          type: 'references',
+          label: 'on server',
+        },
+        { from: 'user', to: 'user_credential', type: 'owns', label: 'earns' },
+        {
+          from: 'user_credential',
+          to: 'opportunity',
+          type: 'references',
+          label: 'for opp',
+        },
+        {
+          from: 'user_invite',
+          to: 'opportunity',
+          type: 'references',
+          label: 'for opp',
+        },
+        {
+          from: 'user_invite',
+          to: 'opp_access',
+          type: 'references',
+          label: 'links to',
+        },
+
+        // Integration
+        {
+          from: 'commcare_app',
+          to: 'hq_server',
+          type: 'references',
+          label: 'hosted on',
+        },
+        {
+          from: 'opportunity',
+          to: 'hq_api_key',
+          type: 'references',
+          label: 'auth via',
+        },
+        {
+          from: 'hq_api_key',
+          to: 'hq_server',
+          type: 'references',
+          label: 'for server',
+        },
+        {
+          from: 'opportunity',
+          to: 'delivery_type',
+          type: 'references',
+          label: 'of type',
+        },
+        {
+          from: 'organization',
+          to: 'commcare_app',
+          type: 'owns',
+          label: 'owns app',
+        },
+
+        // Validation
+        {
+          from: 'opportunity',
+          to: 'verification_flags',
+          type: 'owns',
+          label: 'validation config',
+        },
+        {
+          from: 'deliver_unit',
+          to: 'deliver_unit_flags',
+          type: 'owns',
+          label: 'flag rules',
+        },
+        {
+          from: 'opportunity',
+          to: 'form_json_rules',
+          type: 'owns',
+          label: 'form validation',
+        },
+        {
+          from: 'form_json_rules',
+          to: 'deliver_unit',
+          type: 'references',
+          label: 'for units',
+        },
+      ];
+
+      // ─── STATE ──────────────────────────────────────────────────────────
+
+      const nodes = NODES_DEF.map((n, i) => ({
+        ...n,
+        x: 0,
+        y: 0,
+        knowledge: 'fuzzy', // know | fuzzy | unknown
+        visible: true,
+      }));
+
+      const edges = EDGES_DEF.map((e) => ({ ...e, visible: true }));
+
+      let activeLayerFilters = new Set(Object.keys(LAYERS));
+      let activeEdgeTypes = new Set(Object.keys(EDGE_TYPES));
+      let dragNode = null;
+      let dragOffset = { x: 0, y: 0 };
+      let hoverNode = null;
+      let panOffset = { x: 0, y: 0 };
+      let isPanning = false;
+      let panStart = { x: 0, y: 0 };
+      let scale = 1;
+
+      // ─── CANVAS ─────────────────────────────────────────────────────────
+
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const tooltip = document.getElementById('tooltip');
+
+      function resize() {
+        const wrap = canvas.parentElement;
+        canvas.width = wrap.clientWidth * devicePixelRatio;
+        canvas.height = wrap.clientHeight * devicePixelRatio;
+        canvas.style.width = wrap.clientWidth + 'px';
+        canvas.style.height = wrap.clientHeight + 'px';
+        ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+        draw();
+      }
+
+      window.addEventListener('resize', resize);
+
+      function getVisibleNodes() {
+        return nodes.filter(
+          (n) => n.visible && activeLayerFilters.has(n.layer),
+        );
+      }
+
+      function getVisibleEdges() {
+        const vis = new Set(getVisibleNodes().map((n) => n.id));
+        return edges.filter(
+          (e) =>
+            activeEdgeTypes.has(e.type) && vis.has(e.from) && vis.has(e.to),
+        );
+      }
+
+      function nodeAt(mx, my) {
+        const vn = getVisibleNodes();
+        for (let i = vn.length - 1; i >= 0; i--) {
+          const n = vn[i];
+          const sx = n.x * scale + panOffset.x;
+          const sy = n.y * scale + panOffset.y;
+          const r = nodeRadius(n) * scale;
+          if (Math.hypot(mx - sx, my - sy) < r + 4) return n;
+        }
+        return null;
+      }
+
+      function nodeRadius(n) {
+        // Size based on connection count
+        const count = edges.filter(
+          (e) => e.from === n.id || e.to === n.id,
+        ).length;
+        return Math.max(20, Math.min(40, 14 + count * 1.8));
+      }
+
+      function knowledgeColor(k) {
+        if (k === 'know') return 'var(--know)';
+        if (k === 'fuzzy') return 'var(--fuzzy)';
+        return 'var(--unknown)';
+      }
+
+      function drawEdge(e) {
+        const fromNode = nodes.find((n) => n.id === e.from);
+        const toNode = nodes.find((n) => n.id === e.to);
+        if (!fromNode || !toNode) return;
+
+        const x1 = fromNode.x * scale + panOffset.x;
+        const y1 = fromNode.y * scale + panOffset.y;
+        const x2 = toNode.x * scale + panOffset.x;
+        const y2 = toNode.y * scale + panOffset.y;
+
+        const et = EDGE_TYPES[e.type] || EDGE_TYPES.references;
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const r2 = nodeRadius(toNode) * scale;
+
+        const ex = x2 - Math.cos(angle) * (r2 + 2);
+        const ey = y2 - Math.sin(angle) * (r2 + 2);
+
+        ctx.save();
+        ctx.strokeStyle = et.color;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 1.5;
+        if (et.dash.length) ctx.setLineDash(et.dash);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+
+        // Arrowhead
+        const aSize = 7;
+        ctx.fillStyle = et.color;
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(
+          ex - aSize * Math.cos(angle - 0.4),
+          ey - aSize * Math.sin(angle - 0.4),
+        );
+        ctx.lineTo(
+          ex - aSize * Math.cos(angle + 0.4),
+          ey - aSize * Math.sin(angle + 0.4),
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Label
+        if (e.label && scale > 0.6) {
+          const mx = (x1 + ex) / 2;
+          const my = (y1 + ey) / 2;
+          ctx.font = `${
+            9 * Math.min(1, scale)
+          }px -apple-system, system-ui, sans-serif`;
+          ctx.fillStyle = et.color;
+          ctx.globalAlpha = 0.5;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          const pad = 2;
+          const tw = ctx.measureText(e.label).width;
+          ctx.fillStyle = '#0f1117';
+          ctx.globalAlpha = 0.8;
+          ctx.fillRect(mx - tw / 2 - pad, my - 6, tw + pad * 2, 12);
+          ctx.fillStyle = et.color;
+          ctx.globalAlpha = 0.5;
+          ctx.fillText(e.label, mx, my);
+        }
+
+        ctx.restore();
+      }
+
+      function drawNode(n) {
+        const sx = n.x * scale + panOffset.x;
+        const sy = n.y * scale + panOffset.y;
+        const r = nodeRadius(n) * scale;
+        const layerColor = LAYERS[n.layer].color;
+
+        // Glow for hovered
+        if (hoverNode === n) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(sx, sy, r + 6, 0, Math.PI * 2);
+          ctx.fillStyle = layerColor;
+          ctx.globalAlpha = 0.15;
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Circle
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#161822';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = layerColor;
+        ctx.globalAlpha =
+          n.knowledge === 'know' ? 1 : n.knowledge === 'fuzzy' ? 0.6 : 0.3;
+        ctx.stroke();
+        ctx.restore();
+
+        // Knowledge dot
+        const kc =
+          n.knowledge === 'know'
+            ? '#34d399'
+            : n.knowledge === 'fuzzy'
+            ? '#fbbf24'
+            : '#f87171';
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(sx + r * 0.65, sy - r * 0.65, 4 * scale, 0, Math.PI * 2);
+        ctx.fillStyle = kc;
+        ctx.fill();
+        ctx.restore();
+
+        // Label
+        if (scale > 0.35) {
+          ctx.save();
+          const fontSize = Math.max(8, Math.min(12, 11 * scale));
+          ctx.font = `600 ${fontSize}px -apple-system, system-ui, sans-serif`;
+          ctx.fillStyle = '#e0e2f0';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Word wrap inside circle
+          const maxW = r * 1.6;
+          const words = n.label.split(/(?=[A-Z])|[\s]/);
+          let lines = [];
+          let currentLine = '';
+          for (const w of words) {
+            const test = currentLine ? currentLine + w : w;
+            if (ctx.measureText(test).width > maxW && currentLine) {
+              lines.push(currentLine);
+              currentLine = w;
+            } else {
+              currentLine = test;
+            }
+          }
+          if (currentLine) lines.push(currentLine);
+
+          const lh = fontSize + 2;
+          const startY = sy - ((lines.length - 1) * lh) / 2;
+          lines.forEach((line, i) => {
+            ctx.fillText(line, sx, startY + i * lh);
+          });
+
+          ctx.restore();
+        }
+      }
+
+      function draw() {
+        const w = canvas.width / devicePixelRatio;
+        const h = canvas.height / devicePixelRatio;
+        ctx.clearRect(0, 0, w, h);
+
+        // Grid
+        ctx.save();
+        ctx.strokeStyle = '#1a1d2e';
+        ctx.lineWidth = 0.5;
+        const gridSize = 40 * scale;
+        const offX = panOffset.x % gridSize;
+        const offY = panOffset.y % gridSize;
+        for (let x = offX; x < w; x += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+        for (let y = offY; y < h; y += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        getVisibleEdges().forEach(drawEdge);
+        getVisibleNodes().forEach(drawNode);
+      }
+
+      // ─── INTERACTION ────────────────────────────────────────────────────
+
+      function getMousePos(e) {
+        const rect = canvas.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
+
+      canvas.addEventListener('mousedown', (e) => {
+        const pos = getMousePos(e);
+        const n = nodeAt(pos.x, pos.y);
+        if (n) {
+          dragNode = n;
+          dragOffset.x = pos.x - (n.x * scale + panOffset.x);
+          dragOffset.y = pos.y - (n.y * scale + panOffset.y);
+        } else {
+          isPanning = true;
+          panStart.x = pos.x - panOffset.x;
+          panStart.y = pos.y - panOffset.y;
+        }
+      });
+
+      canvas.addEventListener('mousemove', (e) => {
+        const pos = getMousePos(e);
+        if (dragNode) {
+          dragNode.x = (pos.x - dragOffset.x - panOffset.x) / scale;
+          dragNode.y = (pos.y - dragOffset.y - panOffset.y) / scale;
+          draw();
+          return;
+        }
+        if (isPanning) {
+          panOffset.x = pos.x - panStart.x;
+          panOffset.y = pos.y - panStart.y;
+          draw();
+          return;
+        }
+
+        const n = nodeAt(pos.x, pos.y);
+        if (n !== hoverNode) {
+          hoverNode = n;
+          draw();
+          if (n) {
+            const tt = tooltip;
+            tt.querySelector('.tt-title').textContent = n.label;
+            tt.querySelector('.tt-path').textContent = n.path;
+            tt.querySelector('.tt-desc').textContent = n.desc;
+            // Show connections
+            const rels = edges.filter((e) => e.from === n.id || e.to === n.id);
+            const relText = rels
+              .slice(0, 6)
+              .map((e) => {
+                const other = e.from === n.id ? e.to : e.from;
+                const otherNode = nodes.find((nd) => nd.id === other);
+                return `${e.label} ${otherNode ? otherNode.label : other}`;
+              })
+              .join(', ');
+            tt.querySelector('.tt-rels').textContent = rels.length
+              ? relText + (rels.length > 6 ? ` +${rels.length - 6} more` : '')
+              : '';
+            tt.style.left = pos.x + 16 + 'px';
+            tt.style.top = pos.y - 10 + 'px';
+            tt.classList.add('visible');
+            canvas.style.cursor = 'grab';
+          } else {
+            tooltip.classList.remove('visible');
+            canvas.style.cursor = 'default';
+          }
+        } else if (n) {
+          tooltip.style.left = pos.x + 16 + 'px';
+          tooltip.style.top = pos.y - 10 + 'px';
+        }
+      });
+
+      canvas.addEventListener('mouseup', () => {
+        dragNode = null;
+        isPanning = false;
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        dragNode = null;
+        isPanning = false;
+        hoverNode = null;
+        tooltip.classList.remove('visible');
+        draw();
+      });
+
+      canvas.addEventListener(
+        'wheel',
+        (e) => {
+          e.preventDefault();
+          const pos = getMousePos(e);
+          const oldScale = scale;
+          const factor = e.deltaY > 0 ? 0.92 : 1.08;
+          scale = Math.max(0.2, Math.min(3, scale * factor));
+
+          // Zoom toward mouse
+          panOffset.x = pos.x - (pos.x - panOffset.x) * (scale / oldScale);
+          panOffset.y = pos.y - (pos.y - panOffset.y) * (scale / oldScale);
+
+          draw();
+        },
+        { passive: false },
+      );
+
+      // ─── LAYOUT ─────────────────────────────────────────────────────────
+
+      function initialLayout() {
+        const w = canvas.parentElement.clientWidth;
+        const h = canvas.parentElement.clientHeight;
+
+        // Group by layer, arrange in clusters
+        const layerKeys = Object.keys(LAYERS);
+        const layerPositions = {
+          core: { cx: w * 0.45, cy: h * 0.4 },
+          org: { cx: w * 0.15, cy: h * 0.25 },
+          payment: { cx: w * 0.75, cy: h * 0.25 },
+          learning: { cx: w * 0.2, cy: h * 0.7 },
+          geography: { cx: w * 0.75, cy: h * 0.7 },
+          user: { cx: w * 0.45, cy: h * 0.8 },
+          integration: { cx: w * 0.85, cy: h * 0.5 },
+          validation: { cx: w * 0.1, cy: h * 0.5 },
+        };
+
+        nodes.forEach((n) => {
+          const lp = layerPositions[n.layer] || { cx: w / 2, cy: h / 2 };
+          const layerNodes = nodes.filter((nd) => nd.layer === n.layer);
+          const idx = layerNodes.indexOf(n);
+          const count = layerNodes.length;
+          const angle = (idx / count) * Math.PI * 2 - Math.PI / 2;
+          const radius = 60 + count * 12;
+          n.x = lp.cx + Math.cos(angle) * radius;
+          n.y = lp.cy + Math.sin(angle) * radius;
+        });
+      }
+
+      function autoLayout() {
+        const vn = getVisibleNodes();
+        const ve = getVisibleEdges();
+        if (vn.length === 0) return;
+
+        // Force-directed simulation
+        const iterations = 200;
+        const repulsion = 8000;
+        const attraction = 0.005;
+        const damping = 0.95;
+
+        const vel = {};
+        vn.forEach((n) => (vel[n.id] = { x: 0, y: 0 }));
+
+        for (let iter = 0; iter < iterations; iter++) {
+          // Repulsion
+          for (let i = 0; i < vn.length; i++) {
+            for (let j = i + 1; j < vn.length; j++) {
+              const a = vn[i],
+                b = vn[j];
+              let dx = b.x - a.x,
+                dy = b.y - a.y;
+              let dist = Math.max(1, Math.hypot(dx, dy));
+              let force = repulsion / (dist * dist);
+              let fx = (dx / dist) * force;
+              let fy = (dy / dist) * force;
+              vel[a.id].x -= fx;
+              vel[a.id].y -= fy;
+              vel[b.id].x += fx;
+              vel[b.id].y += fy;
+            }
+          }
+
+          // Attraction along edges
+          ve.forEach((e) => {
+            const a = nodes.find((n) => n.id === e.from);
+            const b = nodes.find((n) => n.id === e.to);
+            if (!a || !b) return;
+            let dx = b.x - a.x,
+              dy = b.y - a.y;
+            let dist = Math.hypot(dx, dy);
+            let force = dist * attraction;
+            let fx = (dx / Math.max(1, dist)) * force;
+            let fy = (dy / Math.max(1, dist)) * force;
+            vel[a.id].x += fx;
+            vel[a.id].y += fy;
+            vel[b.id].x -= fx;
+            vel[b.id].y -= fy;
+          });
+
+          // Layer clustering
+          const w = canvas.parentElement.clientWidth;
+          const h = canvas.parentElement.clientHeight;
+          const layerTargets = {
+            core: { cx: w * 0.45, cy: h * 0.4 },
+            org: { cx: w * 0.15, cy: h * 0.25 },
+            payment: { cx: w * 0.75, cy: h * 0.25 },
+            learning: { cx: w * 0.2, cy: h * 0.7 },
+            geography: { cx: w * 0.75, cy: h * 0.7 },
+            user: { cx: w * 0.45, cy: h * 0.8 },
+            integration: { cx: w * 0.85, cy: h * 0.5 },
+            validation: { cx: w * 0.1, cy: h * 0.5 },
+          };
+          vn.forEach((n) => {
+            const t = layerTargets[n.layer];
+            if (t) {
+              vel[n.id].x += (t.cx - n.x) * 0.001;
+              vel[n.id].y += (t.cy - n.y) * 0.001;
+            }
+          });
+
+          // Apply with damping
+          vn.forEach((n) => {
+            vel[n.id].x *= damping;
+            vel[n.id].y *= damping;
+            n.x += vel[n.id].x;
+            n.y += vel[n.id].y;
+          });
+        }
+
+        draw();
+      }
+
+      // ─── SIDEBAR ────────────────────────────────────────────────────────
+
+      function renderLayerFilters() {
+        const el = document.getElementById('layer-filters');
+        el.innerHTML = Object.entries(LAYERS)
+          .map(
+            ([key, layer]) =>
+              `<div class="filter-chip ${
+                activeLayerFilters.has(key) ? 'active' : ''
+              }"
+          style="${
+            activeLayerFilters.has(key)
+              ? `border-color:${layer.color};color:${layer.color};background:${layer.color}15`
+              : ''
+          }"
+          onclick="toggleLayerFilter('${key}')">
+      ${layer.label}
+    </div>`,
+          )
+          .join('');
+      }
+
+      function renderEdgeTypes() {
+        const el = document.getElementById('edge-types');
+        el.innerHTML = Object.entries(EDGE_TYPES)
+          .map(
+            ([key, et]) =>
+              `<div class="edge-type-chip ${
+                activeEdgeTypes.has(key) ? 'active' : ''
+              }"
+          style="${
+            activeEdgeTypes.has(key)
+              ? `border-color:${et.color};color:${et.color};background:${et.color}15`
+              : ''
+          }"
+          onclick="toggleEdgeType('${key}')">
+      ${et.label}
+    </div>`,
+          )
+          .join('');
+      }
+
+      function renderNodeList() {
+        const el = document.getElementById('node-list');
+        const visible = getVisibleNodes();
+        document.getElementById(
+          'node-count',
+        ).textContent = `${visible.length}/${nodes.length}`;
+
+        // Group by layer
+        let html = '';
+        const layerOrder = [
+          'core',
+          'org',
+          'payment',
+          'learning',
+          'geography',
+          'user',
+          'integration',
+          'validation',
+        ];
+        for (const layerKey of layerOrder) {
+          if (!activeLayerFilters.has(layerKey)) continue;
+          const layerNodes = nodes.filter((n) => n.layer === layerKey);
+          if (layerNodes.length === 0) continue;
+          const layer = LAYERS[layerKey];
+          html += `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${layer.color};padding:6px 6px 2px;margin-top:4px;">${layer.label}</div>`;
+          for (const n of layerNodes) {
+            const kClass = n.knowledge;
+            const kLabel =
+              n.knowledge === 'know'
+                ? 'Know'
+                : n.knowledge === 'fuzzy'
+                ? 'Fuzzy'
+                : '???';
+            html += `<div class="node-item" onclick="focusNode('${n.id}')">
+        <div class="node-dot" style="background:${layer.color};opacity:${
+          n.visible ? 1 : 0.2
+        }"></div>
+        <span class="node-name">${n.label}</span>
+        <button class="knowledge-btn ${kClass}" onclick="event.stopPropagation();cycleKnowledge('${
+          n.id
+        }')">${kLabel}</button>
+        <button class="vis-toggle ${
+          n.visible ? '' : 'hidden'
+        }" onclick="event.stopPropagation();toggleVis('${n.id}')">${
+          n.visible ? '&#x25C9;' : '&#x25CB;'
+        }</button>
+      </div>`;
+          }
+        }
+        el.innerHTML = html;
+      }
+
+      function toggleLayerFilter(key) {
+        if (activeLayerFilters.has(key)) activeLayerFilters.delete(key);
+        else activeLayerFilters.add(key);
+        updateAll();
+      }
+
+      function toggleEdgeType(key) {
+        if (activeEdgeTypes.has(key)) activeEdgeTypes.delete(key);
+        else activeEdgeTypes.add(key);
+        updateAll();
+      }
+
+      function cycleKnowledge(id) {
+        const n = nodes.find((nd) => nd.id === id);
+        if (!n) return;
+        const order = ['fuzzy', 'know', 'unknown'];
+        n.knowledge = order[(order.indexOf(n.knowledge) + 1) % 3];
+        updateAll();
+      }
+
+      function toggleVis(id) {
+        const n = nodes.find((nd) => nd.id === id);
+        if (!n) return;
+        n.visible = !n.visible;
+        updateAll();
+      }
+
+      function focusNode(id) {
+        const n = nodes.find((nd) => nd.id === id);
+        if (!n) return;
+        const w = canvas.parentElement.clientWidth;
+        const h = canvas.parentElement.clientHeight;
+        panOffset.x = w / 2 - n.x * scale;
+        panOffset.y = h / 2 - n.y * scale;
+        hoverNode = n;
+        draw();
+        setTimeout(() => {
+          hoverNode = null;
+          draw();
+        }, 1000);
+      }
+
+      function showAll() {
+        nodes.forEach((n) => (n.visible = true));
+        activeLayerFilters = new Set(Object.keys(LAYERS));
+        activeEdgeTypes = new Set(Object.keys(EDGE_TYPES));
+        updateAll();
+      }
+
+      function hideKnown() {
+        nodes.forEach((n) => {
+          if (n.knowledge === 'know') n.visible = false;
+        });
+        updateAll();
+      }
+
+      function resetKnowledge() {
+        nodes.forEach((n) => (n.knowledge = 'fuzzy'));
+        updateAll();
+      }
+
+      // ─── PRESETS ────────────────────────────────────────────────────────
+
+      function preset(name) {
+        nodes.forEach((n) => (n.visible = true));
+        activeEdgeTypes = new Set(Object.keys(EDGE_TYPES));
+
+        switch (name) {
+          case 'all':
+            activeLayerFilters = new Set(Object.keys(LAYERS));
+            break;
+          case 'core':
+            activeLayerFilters = new Set(['core', 'org', 'user']);
+            break;
+          case 'payments':
+            activeLayerFilters = new Set(['core', 'payment']);
+            // Also show key core nodes
+            nodes.forEach((n) => {
+              if (!['core', 'payment'].includes(n.layer)) n.visible = false;
+              if (
+                n.layer === 'core' &&
+                ![
+                  'opportunity',
+                  'opp_access',
+                  'completed_work',
+                  'user_visit',
+                ].includes(n.id)
+              )
+                n.visible = false;
+            });
+            break;
+          case 'geography':
+            activeLayerFilters = new Set(['core', 'geography']);
+            nodes.forEach((n) => {
+              if (
+                n.layer === 'core' &&
+                !['opportunity', 'opp_access', 'user_visit'].includes(n.id)
+              )
+                n.visible = false;
+              if (!['core', 'geography'].includes(n.layer)) n.visible = false;
+            });
+            break;
+          case 'learning':
+            activeLayerFilters = new Set(['core', 'learning', 'user']);
+            nodes.forEach((n) => {
+              if (
+                n.layer === 'core' &&
+                !['opportunity', 'opp_access', 'deliver_unit'].includes(n.id)
+              )
+                n.visible = false;
+              if (n.layer === 'user' && n.id !== 'user') n.visible = false;
+              if (!['core', 'learning', 'user'].includes(n.layer))
+                n.visible = false;
+            });
+            break;
+        }
+
+        updateAll();
+        setTimeout(autoLayout, 50);
+      }
+
+      // ─── PROMPT ─────────────────────────────────────────────────────────
+
+      function updatePrompt() {
+        const known = nodes
+          .filter((n) => n.knowledge === 'know')
+          .map((n) => n.label);
+        const fuzzy = nodes
+          .filter((n) => n.knowledge === 'fuzzy')
+          .map((n) => n.label);
+        const unknown = nodes
+          .filter((n) => n.knowledge === 'unknown')
+          .map((n) => n.label);
+
+        const parts = [`I'm learning the CommCare Connect platform.`];
+
+        if (known.length > 0)
+          parts.push(`I already understand: ${known.join(', ')}.`);
+        if (fuzzy.length > 0) parts.push(`I'm fuzzy on: ${fuzzy.join(', ')}.`);
+        if (unknown.length > 0)
+          parts.push(`I have no idea about: ${unknown.join(', ')}.`);
+
+        // Include visible edges as relationships to explain
+        const ve = getVisibleEdges();
+        const relevantEdges = ve.filter((e) => {
+          const fromNode = nodes.find((n) => n.id === e.from);
+          const toNode = nodes.find((n) => n.id === e.to);
+          return (
+            (fromNode && fromNode.knowledge !== 'know') ||
+            (toNode && toNode.knowledge !== 'know')
+          );
+        });
+
+        if (relevantEdges.length > 0) {
+          const edgeDesc = relevantEdges.slice(0, 12).map((e) => {
+            const from = nodes.find((n) => n.id === e.from);
+            const to = nodes.find((n) => n.id === e.to);
+            return `${from.label} ${e.label} ${to.label}`;
+          });
+          parts.push(
+            `Relationships I want to understand: ${edgeDesc.join('; ')}.`,
+          );
+        }
+
+        if (fuzzy.length > 0 || unknown.length > 0) {
+          parts.push(
+            `Please explain the concepts I'm fuzzy on or don't know, building on what I already understand. Use concrete references to Django models and file paths in the commcare_connect codebase.`,
+          );
+        }
+
+        document.getElementById('prompt-text').textContent = parts.join(' ');
+      }
+
+      function copyPrompt() {
+        const text = document.getElementById('prompt-text').textContent;
+        navigator.clipboard.writeText(text);
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy Prompt';
+          btn.classList.remove('copied');
+        }, 1500);
+      }
+
+      // ─── MAIN ───────────────────────────────────────────────────────────
+
+      function updateAll() {
+        renderLayerFilters();
+        renderEdgeTypes();
+        renderNodeList();
+        updatePrompt();
+        draw();
+      }
+
+      // ─── SPLITTER DRAG ──────────────────────────────────────────────────
+
+      (function () {
+        const splitterV = document.getElementById('splitter-v');
+        const splitterH = document.getElementById('splitter-h');
+        const sidebar = document.querySelector('.sidebar');
+        const promptWrap = document.getElementById('prompt-wrap');
+
+        let activeSplitter = null;
+        let startPos = 0;
+        let startSize = 0;
+
+        splitterV.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          activeSplitter = 'v';
+          startPos = e.clientX;
+          startSize = sidebar.offsetWidth;
+          splitterV.classList.add('dragging');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+        });
+
+        splitterH.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          activeSplitter = 'h';
+          startPos = e.clientY;
+          startSize = promptWrap.offsetHeight;
+          splitterH.classList.add('dragging');
+          document.body.style.cursor = 'row-resize';
+          document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!activeSplitter) return;
+          if (activeSplitter === 'v') {
+            const delta = startPos - e.clientX;
+            const newWidth = Math.max(180, Math.min(600, startSize + delta));
+            sidebar.style.width = newWidth + 'px';
+            resize();
+          } else if (activeSplitter === 'h') {
+            const delta = startPos - e.clientY;
+            const newHeight = Math.max(50, Math.min(400, startSize + delta));
+            promptWrap.style.height = newHeight + 'px';
+            resize();
+          }
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (activeSplitter) {
+            splitterV.classList.remove('dragging');
+            splitterH.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            activeSplitter = null;
+          }
+        });
+      })();
+
+      resize();
+      initialLayout();
+      updateAll();
+    </script>
+  </body>
+</html>
