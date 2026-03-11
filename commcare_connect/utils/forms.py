@@ -38,17 +38,10 @@ class CreatableModelChoiceField(forms.ModelChoiceField):
     def to_python(self, value):
         if value in self.empty_values:
             return None
-        try:
-            key = self.to_field_name or "pk"
-            if isinstance(value, self.queryset.model):
-                value = getattr(value, key)
-            return self.queryset.get(**{key: value})
-        except (ValueError, TypeError, self.queryset.model.DoesNotExist):
-            # TomSelect uses the same field for existing IDs and new text values.
-            # If lookup fails, we assume this is a newly created entry and return the raw value.
-            # Numeric-only names may conflict with existing PKs, but this is an accepted limitation for now.
-            # Frontend prefixing (e.g. "id:123") would fully resolve this if needed.
-            return value
+        key = self.to_field_name or "pk"
+        if isinstance(value, self.queryset.model):
+            value = getattr(value, key)
+        return tomselect_resolve_creatable_value(value, self.queryset, field_name=key)
 
     def validate(self, value):
         if isinstance(value, str):
@@ -64,9 +57,13 @@ class CreatableModelChoiceField(forms.ModelChoiceField):
                 if self.required:
                     raise forms.ValidationError(self.error_messages["required"], code="required")
                 return None
-            # If the value is string, return an unsaved instance or existing if present.
-            try:
-                return self.queryset.get(**{self.create_key_name: value})
-            except self.queryset.model.DoesNotExist:
-                return self.queryset.model(**{self.create_key_name: value})
+            # Raise if an entry with this name already exists — the user explicitly
+            # indicated intent to create, so a duplicate name is an error.
+            if self.queryset.filter(**{self.create_key_name: value}).exists():
+                raise forms.ValidationError(
+                    "%(value)s already exists. Select it from the list instead of creating a new entry.",
+                    code="duplicate",
+                    params={"value": value},
+                )
+            return self.queryset.model(**{self.create_key_name: value})
         return value
