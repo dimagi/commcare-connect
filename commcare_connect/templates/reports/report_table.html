@@ -7,12 +7,20 @@
 {% block content %}
     <h1>{{ report_title }}</h1>
 
+    <div id="loadingIndicator" class="loading-indicator htmx-indicator">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">{% trans "Loading..." %}</p>
+        </div>
+    </div>
+
     <form hx-get="{{ report_url }}"
           hx-target="div.table-container"
           hx-swap="outerHTML"
           hx-trigger="change"
           hx-push-url="true"
           hx-params="not csrfmiddlewaretoken"
+          hx-indicator="#loadingIndicator"
           class="form-inline">
         {% crispy filter.form %}
     </form>
