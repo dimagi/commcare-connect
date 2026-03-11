@@ -311,3 +311,14 @@ class BlobMetaFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.BlobMeta"
+
+
+class ExportFileFactory(DjangoModelFactory):
+    filename = Faker("file_name")
+    export_type = "visit_export"
+    opportunity = SubFactory(OpportunityFactory)
+    created_by = "system"
+    modified_by = "system"
+
+    class Meta:
+        model = "opportunity.ExportFile"

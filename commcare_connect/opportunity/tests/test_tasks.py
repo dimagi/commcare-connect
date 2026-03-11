@@ -3,7 +3,10 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.utils.timezone import now
+from tablib import Dataset
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
@@ -12,6 +15,8 @@ from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
     ExchangeRate,
+    ExportFile,
+    ExportType,
     InvoiceStatus,
     Opportunity,
     OpportunityAccess,
@@ -20,14 +25,24 @@ from commcare_connect.opportunity.models import (
 from commcare_connect.opportunity.tasks import (
     _get_inactive_message,
     add_connect_users,
+    cleanup_expired_exports,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
+    generate_catchment_area_export,
+    generate_deliver_status_export,
+    generate_payment_export,
+    generate_review_visit_export,
+    generate_user_status_export,
+    generate_visit_export,
+    generate_work_status_export,
     notify_user_for_scored_assessment,
+    save_export,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    ExportFileFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -348,3 +363,174 @@ def test_notify_user_for_scored_assessment(send_message_patch):
             },
         )
     )
+
+
+@pytest.mark.django_db
+def test_save_export_creates_export_file_record(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    opportunity = OpportunityFactory()
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "exports/2026-03-09T10:00:00_test_visit_export.csv"
+
+    save_export(dataset, filename, "csv", ExportType.VISIT_EXPORT, opportunity)
+
+    export_file = ExportFile.objects.get(filename=filename)
+    assert export_file.export_type == ExportType.VISIT_EXPORT
+    assert export_file.opportunity == opportunity
+
+
+@pytest.mark.django_db
+def test_save_export_without_opportunity(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "exports/2026-03-09T10:00:00_test_export.csv"
+
+    save_export(dataset, filename, "csv", ExportType.INVOICE_REPORT)
+
+    export_file = ExportFile.objects.get(filename=filename)
+    assert export_file.opportunity is None
+
+
+@pytest.mark.django_db
+def test_save_export_stores_file_with_exports_prefix(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    dataset = Dataset(["val1", "val2"], headers=["col1", "col2"])
+    filename = "exports/2026-03-09T10:00:00_test_visit_export.csv"
+
+    save_export(dataset, filename, "csv", ExportType.VISIT_EXPORT)
+
+    from django.core.files.storage import default_storage
+
+    assert default_storage.exists(filename)
+
+
+@pytest.mark.django_db
+def test_cleanup_expired_exports_deletes_old_files(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    settings.EXPORT_RETENTION_DAYS = 30
+
+    old_export = ExportFileFactory(filename="exports/old_export.csv")
+    default_storage.save("exports/old_export.csv", ContentFile(b"old data"))
+
+    ExportFile.objects.filter(id=old_export.id).update(date_created=now() - datetime.timedelta(days=31))
+
+    fresh_export = ExportFileFactory(filename="exports/fresh_export.csv")
+    default_storage.save("exports/fresh_export.csv", ContentFile(b"fresh data"))
+
+    cleanup_expired_exports()
+
+    assert not ExportFile.objects.filter(id=old_export.id).exists()
+    assert ExportFile.objects.filter(id=fresh_export.id).exists()
+    assert not default_storage.exists("exports/old_export.csv")
+    assert default_storage.exists("exports/fresh_export.csv")
+
+
+@pytest.mark.django_db
+def test_cleanup_expired_exports_keeps_record_on_s3_failure(settings, tmpdir):
+    settings.MEDIA_ROOT = tmpdir.strpath
+    settings.EXPORT_RETENTION_DAYS = 30
+
+    old_export = ExportFileFactory(filename="exports/missing_file.csv")
+    ExportFile.objects.filter(id=old_export.id).update(date_created=now() - datetime.timedelta(days=31))
+
+    with mock.patch(
+        "commcare_connect.opportunity.tasks.default_storage.delete",
+        side_effect=Exception("S3 error"),
+    ):
+        cleanup_expired_exports()
+
+    assert ExportFile.objects.filter(id=old_export.id).exists()
+
+
+@pytest.mark.django_db
+class TestExportTasksCreateExportFile:
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.UserVisitExporter")
+    def test_generate_visit_export(self, mock_exporter_cls, mock_save, opportunity):
+        mock_exporter_cls.return_value.get_dataset.return_value = Dataset()
+        generate_visit_export(opportunity.id, None, None, [], "csv", False)
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_visit_export.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.VISIT_EXPORT
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_user_visit_review_data")
+    def test_generate_review_visit_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_review_visit_export(opportunity.id, None, None, [], "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_review_visit_export.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.REVIEW_VISIT_EXPORT
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_empty_payment_table")
+    def test_generate_payment_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_payment_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_payment_export.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.PAYMENT_EXPORT
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_user_status_table")
+    def test_generate_user_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_user_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_user_status.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.USER_STATUS
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_deliver_status_table")
+    def test_generate_deliver_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_deliver_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_deliver_status.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.DELIVER_STATUS
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_work_status_table")
+    def test_generate_work_status_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_work_status_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_work_status.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.WORK_STATUS
+        assert args[4] == opportunity
+
+    @mock.patch("commcare_connect.opportunity.tasks.save_export")
+    @mock.patch("commcare_connect.opportunity.tasks.export_catchment_area_table")
+    def test_generate_catchment_area_export(self, mock_export_fn, mock_save, opportunity):
+        mock_export_fn.return_value = Dataset()
+        generate_catchment_area_export(opportunity.id, "csv")
+        mock_save.assert_called_once()
+        args = mock_save.call_args[0]
+        assert args[1].startswith("exports/")
+        assert args[1].endswith("_catchment_area.csv")
+        assert args[2] == "csv"
+        assert args[3] == ExportType.CATCHMENT_AREA
+        assert args[4] == opportunity

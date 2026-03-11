@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.text import slugify
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from tablib import Dataset
@@ -41,6 +42,8 @@ from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     DeliverUnit,
     ExchangeRate,
+    ExportFile,
+    ExportType,
     InvoiceStatus,
     LearnModule,
     Opportunity,
@@ -190,9 +193,9 @@ def generate_visit_export(
     )
     exporter = UserVisitExporter(opportunity, flatten)
     dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_type = ExportType.VISIT_EXPORT
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
 
 
 @celery_app.task()
@@ -202,44 +205,50 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
         f"""Export review visit for {opportunity.name} with date
         from {from_date} to {to_date} and status {','.join(status)}"""
     )
+    export_type = ExportType.REVIEW_VISIT_EXPORT
     dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
 
 
 @celery_app.task()
 def generate_payment_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_empty_payment_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_type = ExportType.PAYMENT_EXPORT
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
 
 
 @celery_app.task()
 def generate_user_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_user_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_user_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_type = ExportType.USER_STATUS
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
 
 
 @celery_app.task()
 def generate_deliver_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_deliver_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_deliver_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_type = ExportType.DELIVER_STATUS
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_{export_type}.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, export_type, opportunity)
 
 
-def save_export(dataset: Dataset, file_name: str, export_format: str):
+def save_export(dataset: Dataset, file_name: str, export_format: str, export_type: str, opportunity=None):
     content = dataset.export(export_format)
     if isinstance(content, str):
         content = content.encode()
-    default_storage.save(file_name, ContentFile(content))
+    return save_and_track_export(file_name, content, export_type, opportunity)
+
+
+def save_and_track_export(file_name: str, content: bytes, export_type: str, opportunity=None):
+    saved_name = default_storage.save(file_name, ContentFile(content))
+    ExportFile.track(saved_name, export_type, opportunity)
+    return saved_name
 
 
 @celery_app.task()
@@ -386,9 +395,8 @@ def download_user_visit_attachments(self, user_visit_id: int):
 def generate_work_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_verification.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, ExportType.WORK_STATUS, opportunity)
 
 
 @celery_app.task()
@@ -408,9 +416,8 @@ def bulk_approve_completed_work():
 def generate_catchment_area_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_catchment_area_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_catchment_area.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"exports/{now().isoformat()}_{slugify(opportunity.name)}_catchment_area.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format, ExportType.CATCHMENT_AREA, opportunity)
 
 
 def get_payment_upload_key(opp_id):
@@ -704,6 +711,21 @@ def _send_auto_invoice_created_notification(invoice_ids):
             )
         except Exception as e:
             logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def cleanup_expired_exports():
+    cutoff = now() - datetime.timedelta(days=settings.EXPORT_RETENTION_DAYS)
+    expired = ExportFile.objects.filter(date_created__lt=cutoff)
+    deleted_ids = []
+    for export in expired.iterator():
+        try:
+            default_storage.delete(export.filename)
+            deleted_ids.append(export.id)
+        except Exception:
+            logger.exception("Failed to delete export file: %s", export.filename)
+    ExportFile.objects.filter(id__in=deleted_ids).delete()
+    logger.info("Cleaned up %s expired export files", len(deleted_ids))
 
 
 @celery_app.task()
