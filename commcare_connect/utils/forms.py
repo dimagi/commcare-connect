@@ -1,5 +1,29 @@
 from django import forms
 
+TOMSELECT_NEW_ENTRY_PREFIX = "new:"
+
+
+def tomselect_resolve_creatable_value(value, queryset, field_name="pk"):
+    """
+    Resolves a value from a creatable TomSelect field.
+
+    Returns:
+      - str: stripped new-entry text (when value starts with TOMSELECT_NEW_ENTRY_PREFIX)
+      - model instance: existing record (when value is a PK or field match)
+
+    Raises ValidationError if value is not prefixed and no matching record is found.
+    """
+    if value.startswith(TOMSELECT_NEW_ENTRY_PREFIX):
+        return value[len(TOMSELECT_NEW_ENTRY_PREFIX) :]  # noqa: E203
+    try:
+        return queryset.get(**{field_name: value})
+    except (ValueError, TypeError, queryset.model.DoesNotExist):
+        raise forms.ValidationError(
+            "Select a valid choice. %(value)s is not one of the available choices.",
+            code="invalid_choice",
+            params={"value": value},
+        )
+
 
 class CreatableModelChoiceField(forms.ModelChoiceField):
     """Dropdown field that can be used for creating new choices using the TomSelect library.
