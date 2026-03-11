@@ -7,7 +7,7 @@ from django.utils.translation import gettext, gettext_lazy
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
 from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
 from commcare_connect.users.models import User
-from commcare_connect.utils.forms import CreatableModelChoiceField
+from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 
@@ -167,20 +167,15 @@ class OrganizationSelectOrCreateForm(forms.Form):
         empty_label=gettext_lazy("Select a LLO Entity"),
         create_key_name="name",
     )
-    org = forms.CharField(
-        max_length=255,
+    org = DynamicCreatableChoiceField(
+        queryset=Organization.objects.order_by("name"),
+        create_key_name="name",
+        widget=forms.Select(attrs={"x-ref": "org"}),
         label=gettext_lazy("Workspace Name"),
-        widget=forms.Select(
-            attrs={"x-ref": "org", "data-tomselect": "1", "data-tomselect:settings": '{"create": true}'}
-        ),
         help_text=gettext_lazy(
             "This would be used to create the Workspace URL, and you will not be able to change the URL in future."
         ),
     )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._is_new_org = False
 
     def get_entity_wise_orgs(self):
         data = {}
@@ -200,16 +195,6 @@ class OrganizationSelectOrCreateForm(forms.Form):
             }
         return data
 
-    def clean_org(self):
-        value = self.cleaned_data["org"]
-        # Existing org selected (id)
-        if value.isdigit():
-            org = Organization.objects.filter(pk=value).first()
-            if org:
-                return org
-        self._is_new_org = True
-        return Organization(name=value)
-
     def clean(self):
         cleaned_data = super().clean()
         org = cleaned_data.get("org")
@@ -228,10 +213,11 @@ class OrganizationSelectOrCreateForm(forms.Form):
     def save(self, commit=True):
         org = self.cleaned_data["org"]
         llo_entity = self.cleaned_data["llo_entity"]
+        is_new_org = not org.pk
         org.llo_entity = llo_entity
         if commit:
             if llo_entity and not llo_entity.pk:
                 llo_entity.save()
-            if not org.pk:
+            if is_new_org:
                 org.save()
-        return org, self._is_new_org
+        return org, is_new_org

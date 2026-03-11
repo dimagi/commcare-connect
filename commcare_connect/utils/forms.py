@@ -13,6 +13,7 @@ def tomselect_resolve_creatable_value(value, queryset, field_name="pk"):
 
     Raises ValidationError if value is not prefixed and no matching record is found.
     """
+    value = str(value)
     if value.startswith(TOMSELECT_NEW_ENTRY_PREFIX):
         return value[len(TOMSELECT_NEW_ENTRY_PREFIX) :]  # noqa: E203
     try:

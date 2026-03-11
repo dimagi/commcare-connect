@@ -7,6 +7,7 @@ from commcare_connect.organization.forms import OrganizationChangeForm, Organiza
 from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import UserFactory
+from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
 from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 
@@ -115,7 +116,7 @@ class TestOrganizationChangeForm:
 
         assert LLOEntity.objects.count() == 0
         form = OrganizationChangeForm(
-            data={"name": organization.name, "llo_entity": "New LLO Entity"},
+            data={"name": organization.name, "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "New LLO Entity"},
             user=user,
             instance=organization,
         )
@@ -165,7 +166,7 @@ class TestOrganizationSelectOrCreateForm:
 
         form = OrganizationSelectOrCreateForm(
             data={
-                "org": "New Organization",
+                "org": TOMSELECT_NEW_ENTRY_PREFIX + "New Organization",
                 "llo_entity": str(existing_llo.pk),
             }
         )
@@ -187,8 +188,8 @@ class TestOrganizationSelectOrCreateForm:
 
         form = OrganizationSelectOrCreateForm(
             data={
-                "org": "Brand New Organization",
-                "llo_entity": "Brand New LLO",
+                "org": TOMSELECT_NEW_ENTRY_PREFIX + "Brand New Organization",
+                "llo_entity": TOMSELECT_NEW_ENTRY_PREFIX + "Brand New LLO",
             }
         )
 
