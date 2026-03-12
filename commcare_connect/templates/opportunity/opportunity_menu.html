@@ -13,7 +13,7 @@
   class="absolute right-0 top-8 w-50 py-2 bg-white rounded-lg shadow-xl z-20"
 >
   <ul>
-     {% if not opportunity.managed or is_opportunity_pm %}
+     {% if not opportunity.managed or request.is_opportunity_pm %}
     <li>
        <a href="{% url 'opportunity:edit' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >{% translate "Edit Opportunity" %}</a
@@ -55,7 +55,7 @@
         >{% translate "Add Budget" %}</a
       >
     </li>
-    {% if not opportunity.managed or is_opportunity_pm %}
+    {% if not opportunity.managed or request.is_opportunity_pm %}
     <li>
       <a  href="{% url 'opportunity:verification_flags_config' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >{% translate "Verification Flags" %}</a
@@ -67,5 +67,12 @@
         >{% translate "Send Message" %}</a
       >
     </li>
+    {% if not opportunity.managed or request.is_opportunity_pm %}
+      <li>
+        <a href="{% url 'opportunity:task_types_config' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple">
+          {% translate "Configure Task Types" %}
+        </a>
+      </li>
+    {% endif %}
   </ul>
 </div>

@@ -23,6 +23,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentInvoice,
     PaymentUnit,
+    Task,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -1688,3 +1689,22 @@ class InvoiceDeliveriesTable(tables.Table):
             "payment_accrued",
             "payment_accrued_usd",
         )
+
+
+class TaskTable(tables.Table):
+    index = IndexColumn()
+    name = tables.Column(verbose_name=gettext_lazy("Task Type Name"))
+    description = tables.Column(verbose_name=gettext_lazy("Description"))
+    linked_task_unit = tables.Column(
+        verbose_name=gettext_lazy("Linked Task Unit"), empty_values=(), order_by="linked_task_unit__name"
+    )
+
+    class Meta:
+        model = Task
+        fields = ("index", "name", "description", "linked_task_unit")
+        empty_text = gettext_lazy("No task types configured for this opportunity.")
+
+    def render_linked_task_unit(self, record):
+        if record.linked_task_unit:
+            return record.linked_task_unit.name
+        return "—"

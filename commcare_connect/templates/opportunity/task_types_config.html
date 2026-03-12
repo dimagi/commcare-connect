@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load django_tables2 %}
+
+
+{% block title %}{{ request.org }} - {% translate "Configure Task Types" %}{% endblock %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html' with path=path %}
+
+<div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6"
+     x-data="{
+       showCreateTaskTypeModal: {% if form.errors %}true{% else %}false{% endif %},
+       task_units: {{ form.task_units_data }},
+       onTaskUnitSelectChange(taskUnitId) {
+         const name = this.task_units[taskUnitId];
+         document.getElementById('id_name').value = name;
+       }
+     }">
+  <h2 class="title">{% translate "Configure Task Types" %}</h2>
+
+  <div class="card_bg">
+    <div class="flex items-center gap-2 text-sm">
+      <span class="font-medium text-gray-600">{% translate "Connected Delivery App:" %}</span>
+      <span>{{ opportunity.deliver_app.name }}</span>
+    </div>
+  </div>
+
+  <div class="card_bg !p-0 overflow-hidden">
+    {% render_table table %}
+  </div>
+
+  <div class="flex justify-end">
+    <button type="button" class="button button-md primary-dark" @click="showCreateTaskTypeModal = true">
+      <i class="fa-solid fa-plus mr-2"></i>
+      {% translate "Add New Task Type" %}
+    </button>
+  </div>
+
+  {% include "opportunity/new_task_type_modal.html" %}
+</div>
+
+
+{% endblock content %}
