@@ -1946,6 +1946,78 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
 
 
 @pytest.mark.django_db
+class TestSuspendUser:
+    def url(self, org_slug, opp_id, pk):
+        return reverse("opportunity:suspend_user", args=(org_slug, opp_id, pk))
+
+    def test_suspend_as_pm(
+        self, client, organization, mobile_user, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        opportunity = ManagedOpportunityFactory(program=program, organization=organization)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, suspended=False)
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, opportunity.opportunity_id, access.opportunity_access_id),
+            data={"reason": "test"},
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        access.refresh_from_db()
+        assert access.suspended is True
+
+    def test_suspend_as_nm_org_admin_returns_404(
+        self, client, organization, org_user_admin, mobile_user, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        opportunity = ManagedOpportunityFactory(program=program, organization=organization)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, suspended=False)
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(organization.slug, opportunity.opportunity_id, access.opportunity_access_id),
+            data={"reason": "test"},
+        )
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        access.refresh_from_db()
+        assert access.suspended is False
+
+
+@pytest.mark.django_db
+class TestRevokeUserSuspension:
+    def url(self, org_slug, opp_id, pk):
+        return reverse("opportunity:revoke_user_suspension", args=(org_slug, opp_id, pk))
+
+    def test_revoke_as_pm(
+        self, client, organization, mobile_user, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        opportunity = ManagedOpportunityFactory(program=program, organization=organization)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, suspended=True)
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, opportunity.opportunity_id, access.opportunity_access_id),
+            data={"next": "/"},
+        )
+        assert response.status_code == HTTPStatus.OK
+        access.refresh_from_db()
+        assert access.suspended is False
+
+    def test_revoke_as_nm_org_admin_returns_404(
+        self, client, organization, org_user_admin, mobile_user, program_manager_org
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        opportunity = ManagedOpportunityFactory(program=program, organization=organization)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True, suspended=True)
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(organization.slug, opportunity.opportunity_id, access.opportunity_access_id),
+            data={"next": "/"},
+        )
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        access.refresh_from_db()
+        assert access.suspended is True
+
+
+@pytest.mark.django_db
 def test_visit_export_count_boundary_dates(
     organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
 ):

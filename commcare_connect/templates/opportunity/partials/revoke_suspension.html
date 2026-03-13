@@ -1,8 +1,10 @@
 {% load i18n %}
 
+{% if request.is_opportunity_pm %}
 <button
   hx-post="{{ revoke_url }}"
   hx-vals='{"next": "{{ request.path }}"}'
   class="button button-sm primary-light">
   {% translate "Revoke" %}
 </button>
+{% endif %}
