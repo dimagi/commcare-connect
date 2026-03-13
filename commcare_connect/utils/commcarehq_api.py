@@ -84,6 +84,22 @@ async def _get_applications_for_domain(user_email, api_key, domain, hq_server_ur
     return applications
 
 
+def get_app_structure(api_key, app):
+    """Fetch the full application structure JSON from CommCare HQ."""
+    try:
+        response = httpx.get(
+            f"{api_key.hq_server.url}/a/{app.cc_domain}/api/v0.5/application/{app.cc_app_id}/",
+            headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+            timeout=300,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError:
+        raise CommCareHQAPIException(f"Failed to fetch app structure: {response.text}")
+    except httpx.RequestError as e:
+        raise CommCareHQAPIException(f"Failed to fetch app structure: {e}")
+    return response.json()
+
+
 async def _get_commcare_app_json(client, domain):
     applications = []
     response = await client.get(f"/a/{domain}/api/v0.5/application/")

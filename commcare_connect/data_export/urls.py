@@ -24,6 +24,11 @@ urlpatterns = [
         views.ImageView.as_view(),
         name="image_export",
     ),
+    path(
+        "opportunity/<int:opp_id>/app_structure/",
+        views.AppStructureView.as_view(),
+        name="app_structure",
+    ),
     path("labs_record/", views.LabsRecordDataView.as_view(), name="labs_record_data"),
     path(
         "program/<int:program_id>/opportunity/",
