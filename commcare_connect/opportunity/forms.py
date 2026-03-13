@@ -97,10 +97,11 @@ class OpportunityUserInviteForm(forms.Form):
             ),
         )
 
-    def clean_users(self):
-        user_data = self.cleaned_data["users"]
+    def _validate_and_parse_users(self, user_data):
+        if not user_data:
+            return []
 
-        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+        if self.opportunity and not self.opportunity.is_setup_complete:
             raise ValidationError(gettext("Please finish setting up the opportunity before inviting users."))
 
         user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
@@ -111,6 +112,12 @@ class OpportunityUserInviteForm(forms.Form):
                 )
 
         return user_numbers
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        if user_data and self.opportunity and self.opportunity.has_ended:
+            raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
+        return self._validate_and_parse_users(user_data)
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
@@ -281,6 +288,14 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
             help_text=_("Credential level required for completing deliveries."),
             initial=credential_issuer.delivery_level if credential_issuer else "",
         )
+
+    def clean_users(self):
+        user_data = self.cleaned_data.get("users")
+        if user_data and self.opportunity and self.opportunity.has_ended:
+            submitted_end_date = self.cleaned_data.get("end_date")
+            if not submitted_end_date or datetime.date.fromisoformat(submitted_end_date) < now().date():
+                raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
+        return self._validate_and_parse_users(user_data)
 
     def clean_active(self):
         active = self.cleaned_data["active"]

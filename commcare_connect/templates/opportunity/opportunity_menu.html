@@ -45,11 +45,13 @@
         <a class="block px-4 py-2.5 text-sm text-brand-deep-purple" @click="showCatchmentExportModal = true">{% translate "Export" %}</a>
       </div>
     </li>
+    {% if not opportunity.has_ended %}
     <li>
       <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >{% translate "Add Connect Workers" %}</a
       >
     </li>
+    {% endif %}
     <li>
       <a href="{% url 'opportunity:add_budget_existing_users' request.org.slug opportunity.opportunity_id %}" class="block px-4 py-2.5 text-sm text-brand-deep-purple"
         >{% translate "Add Budget" %}</a

@@ -328,14 +328,14 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
     def form_valid(self, form):
         opportunity = form.instance
         opportunity.modified_by = self.request.user.email
-        users = form.cleaned_data["users"]
-        if users:
-            add_connect_users.delay(users, form.instance.id)
-
         end_date = form.cleaned_data["end_date"]
         if end_date:
             opportunity.end_date = end_date
         response = super().form_valid(form)
+        users = form.cleaned_data["users"]
+        if users:
+            add_connect_users.delay(users, form.instance.id)
+
         return response
 
 
@@ -1293,6 +1293,9 @@ def import_catchment_area(request, org_slug=None, opp_id=None):
 @org_member_required
 @opportunity_required
 def opportunity_user_invite(request, org_slug=None, opp_id=None):
+    if request.opportunity.has_ended:
+        messages.error(request, _("This opportunity has ended. You cannot invite more workers."))
+        return redirect("opportunity:detail", request.org.slug, opp_id)
     form = OpportunityUserInviteForm(data=request.POST or None, opportunity=request.opportunity)
     if form.is_valid():
         users = form.cleaned_data["users"]
@@ -1774,6 +1777,10 @@ def delete_user_invites(request, org_slug, opp_id):
 @require_POST
 @opportunity_required
 def resend_user_invites(request, org_slug, opp_id):
+    if request.opportunity.has_ended:
+        messages.error(request, _("This opportunity has ended. You cannot resend invites."))
+        redirect_url = reverse("opportunity:detail", args=(org_slug, opp_id))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
     invite_ids = request.POST.getlist("user_invite_ids")
     if not invite_ids:
         return HttpResponseBadRequest()
@@ -1802,7 +1809,7 @@ def resend_user_invites(request, org_slug, opp_id):
     if valid_phone_numbers:
         users = User.objects.filter(phone_number__in=valid_phone_numbers)
         for user in users:
-            access, _ = OpportunityAccess.objects.get_or_create(user=user, opportunity=request.opportunity)
+            access, __ = OpportunityAccess.objects.get_or_create(user=user, opportunity=request.opportunity)
             invite_user.delay(user.id, access.pk)
             resent_count += 1
 

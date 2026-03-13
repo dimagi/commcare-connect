@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     Opportunity,
     OpportunityAccess,
     PaymentInvoice,
+    UserInvite,
 )
 from commcare_connect.opportunity.tasks import (
     _get_inactive_message,
@@ -62,6 +63,20 @@ class TestConnectUserCreation:
         user2 = User.objects.filter(username="test2")
         assert len(user2) == 1
         assert len(OpportunityAccess.objects.filter(user=user2.first(), opportunity=opportunity)) == 1
+
+    @pytest.mark.django_db
+    def test_add_connect_users_skips_ended_opportunity(self):
+        opportunity = OpportunityFactory(end_date=datetime.date.today() - datetime.timedelta(days=1))
+        with mock.patch("commcare_connect.opportunity.tasks.fetch_users") as fetch_users:
+            fetch_users.return_value = [
+                ConnectIdUser(username="test", phone_number="+15555555555", name="a"),
+            ]
+            add_connect_users(["+15555555555"], opportunity.id)
+
+        fetch_users.assert_not_called()
+        assert User.objects.filter(username="test").count() == 0
+        assert OpportunityAccess.objects.filter(opportunity=opportunity).count() == 0
+        assert UserInvite.objects.filter(opportunity=opportunity).count() == 0
 
 
 def test_send_inactive_notification_learn_inactive_message(mobile_user: User, opportunity: Opportunity):
