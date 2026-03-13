@@ -1,3 +1,6 @@
+import datetime
+from collections import defaultdict
+
 from allauth.utils import build_absolute_uri
 from django.db.models import Q
 from django.template.loader import render_to_string
@@ -184,3 +187,74 @@ def _send_org_email_for_opportunities(organization, opportunities, recipient_ema
         recipient_list=recipient_emails,
         html_message=html_message,
     )
+
+
+def send_opportunity_expiry_reminder_emails(days_before: int):
+    target_date = datetime.date.today() + datetime.timedelta(days=days_before)
+    opportunities = ManagedOpportunity.objects.filter(end_date=target_date, active=True).select_related(
+        "program__organization", "organization"
+    )
+
+    # Group by PM org
+    pm_orgs = {}
+    pm_org_opportunities = defaultdict(list)
+    for opp in opportunities:
+        pm_org = opp.program.organization
+        pm_orgs[pm_org.id] = pm_org
+        opportunity_url = build_absolute_uri(
+            None,
+            reverse(
+                "opportunity:detail",
+                kwargs={"org_slug": opp.organization.slug, "opp_id": opp.id},
+            ),
+        )
+        pm_org_opportunities[pm_org.id].append(
+            {
+                "name": opp.name,
+                "end_date": opp.end_date,
+                "program_name": opp.program.name,
+                "org_name": opp.organization.name,
+                "opportunity_url": opportunity_url,
+            }
+        )
+
+    if not pm_org_opportunities:
+        return
+
+    # Fetch all membership emails in a single query
+    org_emails = defaultdict(list)
+    for org_id, email in UserOrganizationMembership.objects.filter(
+        organization_id__in=pm_org_opportunities.keys()
+    ).values_list("organization_id", "user__email"):
+        if email:
+            org_emails[org_id].append(email)
+
+    for org_id, opps in pm_org_opportunities.items():
+        pm_org = pm_orgs[org_id]
+        recipient_emails = org_emails[org_id]
+        if not recipient_emails:
+            continue
+
+        opp_count = len(opps)
+        subject = f"Reminder: {opp_count} opportunit{'y' if opp_count == 1 else 'ies'} ending in {days_before} days"
+        context = {
+            "days_before": days_before,
+            "opportunities": opps,
+            "organization": pm_org,
+        }
+
+        message = render_to_string("program/email/opportunity_expiry_reminder.txt", context)
+        html_message = render_to_string("program/email/opportunity_expiry_reminder.html", context)
+
+        send_mail_async.delay(
+            subject=subject,
+            message=message,
+            recipient_list=recipient_emails,
+            html_message=html_message,
+        )
+
+
+@celery_app.task()
+def send_opportunity_expiry_reminders():
+    send_opportunity_expiry_reminder_emails(7)
+    send_opportunity_expiry_reminder_emails(3)

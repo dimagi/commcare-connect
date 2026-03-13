@@ -1,0 +1,18 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<p>Hi,</p>
+
+<p>This is a reminder that the following {{ opportunities|length }} opportunit{{ opportunities|length|pluralize:"y,ies" }} will end in <strong>{{ days_before }} day{{ days_before|pluralize }}</strong>:</p>
+
+<ul>
+{% for opp in opportunities %}
+    <li>
+        <a href="{{ opp.opportunity_url }}">{{ opp.name }}</a><br>
+        Program: {{ opp.program_name }}<br>
+        Organization: {{ opp.org_name }}<br>
+        End Date: {{ opp.end_date }}
+    </li>
+{% endfor %}
+</ul>
+{% endblock %}

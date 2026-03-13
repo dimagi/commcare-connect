@@ -1,3 +1,4 @@
+import datetime
 from unittest.mock import patch
 
 import pytest
@@ -12,10 +13,15 @@ from commcare_connect.program.models import ProgramApplicationStatus
 from commcare_connect.program.tasks import (
     send_monthly_delivery_reminder_email,
     send_opportunity_created_email,
+    send_opportunity_expiry_reminder_emails,
     send_program_invite_applied_email,
     send_program_invite_email,
 )
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramApplicationFactory
+from commcare_connect.program.tests.factories import (
+    ManagedOpportunityFactory,
+    ProgramApplicationFactory,
+    ProgramFactory,
+)
 from commcare_connect.users.tests.factories import ProgramManagerOrgWithUsersFactory
 
 
@@ -132,3 +138,77 @@ class TestMonthlyDeliveryReminderEmail:
         send_monthly_delivery_reminder_email()
 
         assert not send_mock.delay.called
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.program.tasks.send_mail_async")
+class TestOpportunityExpiryReminderEmails:
+    def test_sends_reminder_7_days_before_end_date(self, mock_send_mail):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        program = ProgramFactory(organization=pm_org)
+        ManagedOpportunityFactory(
+            program=program,
+            end_date=datetime.date.today() + datetime.timedelta(days=7),
+            active=True,
+        )
+
+        send_opportunity_expiry_reminder_emails(7)
+
+        assert mock_send_mail.delay.called
+        call_kwargs = mock_send_mail.delay.call_args[1]
+        assert "7" in call_kwargs["subject"]
+        for email in pm_org.get_member_emails():
+            assert email in call_kwargs["recipient_list"]
+
+    def test_sends_reminder_3_days_before_end_date(self, mock_send_mail):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        program = ProgramFactory(organization=pm_org)
+        ManagedOpportunityFactory(
+            program=program,
+            end_date=datetime.date.today() + datetime.timedelta(days=3),
+            active=True,
+        )
+
+        send_opportunity_expiry_reminder_emails(3)
+
+        assert mock_send_mail.delay.called
+        call_kwargs = mock_send_mail.delay.call_args[1]
+        assert "3" in call_kwargs["subject"]
+
+    def test_no_email_sent_for_non_expiring_opportunity(self, mock_send_mail):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        program = ProgramFactory(organization=pm_org)
+        ManagedOpportunityFactory(
+            program=program,
+            end_date=datetime.date.today() + datetime.timedelta(days=10),
+            active=True,
+        )
+
+        send_opportunity_expiry_reminder_emails(7)
+
+        assert not mock_send_mail.delay.called
+
+    def test_no_email_sent_when_no_pm_members(self, mock_send_mail):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        pm_org.memberships.all().delete()
+        program = ProgramFactory(organization=pm_org)
+        ManagedOpportunityFactory(
+            program=program,
+            end_date=datetime.date.today() + datetime.timedelta(days=7),
+            active=True,
+        )
+
+        send_opportunity_expiry_reminder_emails(7)
+
+        assert not mock_send_mail.delay.called
+
+    def test_groups_multiple_opportunities_per_pm_org(self, mock_send_mail):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        program = ProgramFactory(organization=pm_org)
+        target_date = datetime.date.today() + datetime.timedelta(days=7)
+        ManagedOpportunityFactory(program=program, end_date=target_date, active=True)
+        ManagedOpportunityFactory(program=program, end_date=target_date, active=True)
+
+        send_opportunity_expiry_reminder_emails(7)
+
+        assert mock_send_mail.delay.call_count == 1
