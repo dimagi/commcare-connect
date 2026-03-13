@@ -1,0 +1,1505 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CompletedWork Status Logic — Before vs After PR #987</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ============ THEME ============ */
+      :root {
+        --font-body: 'IBM Plex Sans', 'Helvetica Neue', sans-serif;
+        --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+
+        --bg: #f0f4f8;
+        --surface: #ffffff;
+        --surface2: #e8edf3;
+        --surface3: #dce4ed;
+        --surface-elevated: #ffffff;
+        --border: rgba(30, 58, 95, 0.1);
+        --border-bright: rgba(30, 58, 95, 0.22);
+        --text: #1a2a3a;
+        --text-dim: #556070;
+        --text-dimmer: #8898a8;
+
+        --blue: #1e3a5f;
+        --blue-mid: #2d5282;
+        --blue-light: #4a7fb5;
+        --blue-dim: rgba(30, 58, 95, 0.07);
+        --gold: #c08a2a;
+        --gold-dim: rgba(192, 138, 42, 0.1);
+
+        --green: #1a6640;
+        --green-dim: rgba(26, 102, 64, 0.09);
+        --red: #a82020;
+        --red-dim: rgba(168, 32, 32, 0.09);
+        --amber: #9a6010;
+        --amber-dim: rgba(154, 96, 16, 0.09);
+        --purple: #5a3a7a;
+        --purple-dim: rgba(90, 58, 122, 0.09);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1520;
+          --surface: #162030;
+          --surface2: #1e2d40;
+          --surface3: #253548;
+          --surface-elevated: #1a2535;
+          --border: rgba(100, 160, 220, 0.1);
+          --border-bright: rgba(100, 160, 220, 0.2);
+          --text: #d8e8f4;
+          --text-dim: #8aabbf;
+          --text-dimmer: #5a7a90;
+
+          --blue: #4a8fd4;
+          --blue-mid: #6aafee;
+          --blue-light: #8ec8f8;
+          --blue-dim: rgba(74, 143, 212, 0.1);
+          --gold: #d4a850;
+          --gold-dim: rgba(212, 168, 80, 0.1);
+
+          --green: #3fb870;
+          --green-dim: rgba(63, 184, 112, 0.1);
+          --red: #e06060;
+          --red-dim: rgba(224, 96, 96, 0.1);
+          --amber: #d4a030;
+          --amber-dim: rgba(212, 160, 48, 0.1);
+          --purple: #a880d8;
+          --purple-dim: rgba(168, 128, 216, 0.1);
+        }
+      }
+
+      /* ============ RESET ============ */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--bg);
+        background-image: radial-gradient(
+            ellipse 80% 40% at 10% -10%,
+            var(--blue-dim) 0%,
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse 60% 30% at 90% 110%,
+            var(--gold-dim) 0%,
+            transparent 50%
+          );
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 14px;
+        line-height: 1.6;
+        padding: 48px 40px;
+        min-height: 100vh;
+      }
+
+      /* ============ ANIMATION ============ */
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .anim {
+        animation: fadeUp 0.3s ease-out both;
+        animation-delay: calc(var(--i, 0) * 0.05s);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-delay: 0ms !important;
+        }
+      }
+
+      /* ============ LAYOUT ============ */
+      .container {
+        max-width: 1160px;
+        margin: 0 auto;
+      }
+
+      /* ============ HEADER ============ */
+      .page-header {
+        margin-bottom: 40px;
+      }
+
+      .page-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: var(--blue-light);
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        font-family: var(--font-body);
+        font-size: 28px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: -0.3px;
+        line-height: 1.2;
+        margin-bottom: 8px;
+      }
+
+      .page-sub {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
+      /* ============ SECTION ============ */
+      .section {
+        margin-bottom: 44px;
+      }
+
+      .section-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .section-label__dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--blue-light);
+        flex-shrink: 0;
+      }
+
+      .section-label__text {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--text-dim);
+      }
+
+      h2 {
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 4px;
+      }
+
+      .section-desc {
+        font-size: 13px;
+        color: var(--text-dim);
+        margin-bottom: 16px;
+        max-width: 800px;
+        line-height: 1.65;
+      }
+
+      /* ============ CHANGE SUMMARY CARDS ============ */
+      .change-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+
+      .change-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .change-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        border-radius: 10px 10px 0 0;
+      }
+
+      .change-card--new::before {
+        background: var(--green);
+      }
+      .change-card--breaking::before {
+        background: var(--amber);
+      }
+      .change-card--fix::before {
+        background: var(--blue-light);
+      }
+
+      .change-card__tag {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        display: inline-block;
+      }
+
+      .change-card--new .change-card__tag {
+        background: var(--green-dim);
+        color: var(--green);
+      }
+      .change-card--breaking .change-card__tag {
+        background: var(--amber-dim);
+        color: var(--amber);
+      }
+      .change-card--fix .change-card__tag {
+        background: var(--blue-dim);
+        color: var(--blue-light);
+      }
+
+      .change-card__title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 6px;
+      }
+
+      .change-card__body {
+        font-size: 12px;
+        color: var(--text-dim);
+        line-height: 1.6;
+      }
+
+      .change-card__body code {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        background: var(--blue-dim);
+        color: var(--blue);
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .change-card__body code {
+          color: var(--blue-light);
+        }
+      }
+
+      /* ============ TABLE WRAPPER ============ */
+      .table-wrap {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 16px;
+      }
+
+      .table-scroll {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* ============ TABLE ============ */
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .data-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
+
+      .data-table th {
+        background: var(--surface2);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--text-dim);
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 2px solid var(--border-bright);
+        white-space: nowrap;
+      }
+
+      .data-table th.th-scenario {
+        min-width: 300px;
+        max-width: 440px;
+      }
+      .data-table th.th-result {
+        min-width: 120px;
+      }
+      .data-table th.th-note {
+        min-width: 200px;
+        max-width: 340px;
+      }
+
+      .data-table td {
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      .data-table tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      .data-table tbody tr:nth-child(even) {
+        background: rgba(30, 58, 95, 0.025);
+      }
+      @media (prefers-color-scheme: dark) {
+        .data-table tbody tr:nth-child(even) {
+          background: rgba(74, 143, 212, 0.04);
+        }
+      }
+
+      .data-table tbody tr {
+        transition: background 0.15s ease;
+        animation: fadeUp 0.3s ease-out both;
+        animation-delay: calc(var(--i, 0) * 0.03s);
+      }
+      .data-table tbody tr:hover {
+        background: var(--blue-dim);
+      }
+
+      .data-table td code {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        background: var(--blue-dim);
+        color: var(--blue);
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .data-table td code {
+          color: var(--blue-light);
+        }
+      }
+
+      .data-table td small {
+        display: block;
+        color: var(--text-dimmer);
+        font-size: 11px;
+        margin-top: 4px;
+        line-height: 1.55;
+      }
+
+      /* Row group headers */
+      .data-table .row-group th {
+        background: var(--surface3);
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: none;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-bright);
+        border-top: 2px solid var(--border-bright);
+      }
+
+      /* ============ STATUS BADGES ============ */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        padding: 3px 9px;
+        border-radius: 5px;
+        white-space: nowrap;
+        letter-spacing: 0.2px;
+      }
+
+      .badge::before {
+        content: '';
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        flex-shrink: 0;
+      }
+
+      .badge--rejected {
+        background: var(--red-dim);
+        color: var(--red);
+      }
+      .badge--approved {
+        background: var(--green-dim);
+        color: var(--green);
+      }
+      .badge--pending {
+        background: var(--amber-dim);
+        color: var(--amber);
+      }
+      .badge--incomplete {
+        background: var(--blue-dim);
+        color: var(--blue-light);
+      }
+      .badge--unchanged {
+        background: rgba(128, 128, 128, 0.08);
+        color: var(--text-dim);
+      }
+      .badge--changed {
+        background: var(--purple-dim);
+        color: var(--purple);
+      }
+      .badge--same {
+        background: var(--green-dim);
+        color: var(--green);
+      }
+
+      /* "changed" marker pill */
+      .changed-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-family: var(--font-mono);
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        background: var(--gold-dim);
+        color: var(--gold);
+        white-space: nowrap;
+        vertical-align: middle;
+        margin-left: 4px;
+      }
+
+      /* ============ SIDE-BY-SIDE DIFF ============ */
+      .diff-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+
+      .diff-panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .diff-panel__header {
+        background: var(--surface2);
+        padding: 8px 14px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .diff-panel--before .diff-panel__header {
+        color: var(--red);
+      }
+      .diff-panel--after .diff-panel__header {
+        color: var(--green);
+      }
+
+      .diff-panel__body {
+        padding: 14px 16px;
+        font-size: 12px;
+        line-height: 1.7;
+        color: var(--text-dim);
+      }
+
+      .diff-panel__body strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .diff-panel__body code {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        background: var(--blue-dim);
+        color: var(--blue);
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .diff-panel__body code {
+          color: var(--blue-light);
+        }
+      }
+
+      .diff-panel__body ol,
+      .diff-panel__body ul {
+        padding-left: 18px;
+        margin-top: 8px;
+      }
+
+      .diff-panel__body li {
+        margin-bottom: 5px;
+      }
+
+      @media (max-width: 720px) {
+        .diff-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ============ COLLAPSIBLE ============ */
+      details.collapsible {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 14px;
+      }
+
+      details.collapsible summary {
+        padding: 13px 18px;
+        background: var(--surface);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-dim);
+        letter-spacing: 0.3px;
+        transition: background 0.15s;
+      }
+
+      details.collapsible summary:hover {
+        background: var(--surface2);
+      }
+      details.collapsible summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.collapsible summary::before {
+        content: '▸';
+        font-size: 10px;
+        color: var(--text-dimmer);
+        transition: transform 0.15s;
+      }
+      details.collapsible[open] summary::before {
+        transform: rotate(90deg);
+      }
+
+      details.collapsible .coll-body {
+        padding: 18px 20px;
+        border-top: 1px solid var(--border);
+        font-size: 13px;
+        line-height: 1.65;
+        color: var(--text-dim);
+      }
+
+      details.collapsible .coll-body strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      details.collapsible .coll-body code {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        background: var(--blue-dim);
+        color: var(--blue);
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+      @media (prefers-color-scheme: dark) {
+        details.collapsible .coll-body code {
+          color: var(--blue-light);
+        }
+      }
+
+      details.collapsible .coll-body ul {
+        padding-left: 18px;
+        margin-top: 8px;
+      }
+      details.collapsible .coll-body li {
+        margin-bottom: 6px;
+      }
+
+      /* ============ LEGEND ============ */
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      /* ============ RESPONSIVE ============ */
+      @media (max-width: 768px) {
+        body {
+          padding: 20px 16px;
+        }
+        h1 {
+          font-size: 22px;
+        }
+        .change-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- HEADER -->
+      <div class="page-header anim" style="--i: 0">
+        <div class="page-label">
+          commcare_connect / opportunity / utils / completed_work.py
+        </div>
+        <h1>CompletedWork Status Logic</h1>
+        <p class="page-sub">
+          CompletedWorkUpdater._update_status — before vs after PR #987
+          &nbsp;&middot;&nbsp; auto_approve_payments = True
+        </p>
+      </div>
+
+      <!-- WHAT CHANGED -->
+      <div class="section anim" style="--i: 1">
+        <div class="section-label">
+          <div class="section-label__dot"></div>
+          <div class="section-label__text">What Changed</div>
+        </div>
+        <h2>Three behavioural changes in this PR</h2>
+        <p class="section-desc">
+          All changes are in
+          <code>CompletedWorkUpdater._update_status</code> and the new helper
+          <code>_is_completed_work_approved</code>. The legacy standalone
+          function
+          <code>_update_status_set_saved_fields_and_get_payment_accrued</code>
+          is unchanged.
+        </p>
+
+        <div class="change-grid">
+          <div class="change-card change-card--breaking">
+            <div class="change-card__tag">Breaking</div>
+            <div class="change-card__title">
+              Optional deliver units now block approval
+            </div>
+            <div class="change-card__body">
+              Previously, optional deliver units were
+              <strong>completely ignored</strong> when deciding whether a
+              completed work is approved. Now, if a payment unit has any
+              optional deliver units,
+              <strong>at least one must have an approved visit</strong> for the
+              completed work to be approved. For managed opps, the optional DU's
+              visit must also have <code>review_status = agree</code>.
+            </div>
+          </div>
+          <div class="change-card change-card--fix">
+            <div class="change-card__tag">Fix</div>
+            <div class="change-card__title">
+              <code>incomplete</code> promoted to <code>pending</code>
+            </div>
+            <div class="change-card__body">
+              The default model status is <code>incomplete</code>. Previously, a
+              completed work could stay stuck as <code>incomplete</code> even
+              after visits were submitted if not all required approvals were
+              met. Now the <code>else</code> branch promotes
+              <code>incomplete</code> → <code>pending</code>, correctly
+              signalling that work has been done but not yet fully approved.
+            </div>
+          </div>
+          <div class="change-card change-card--new">
+            <div class="change-card__tag">Clarified</div>
+            <div class="change-card__title">
+              Terminal statuses are now explicitly preserved
+            </div>
+            <div class="change-card__body">
+              <code>rejected</code>, <code>approved</code>, and
+              <code>over_limit</code> are <strong>not touched</strong> by the
+              else branch. If re-evaluation fires on a CW in one of those states
+              and neither the rejection nor approval conditions are met, the
+              status is left as-is. Only <code>incomplete</code> is promoted.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGIC DIFF -->
+      <div class="section anim" style="--i: 2">
+        <div class="section-label">
+          <div class="section-label__dot"></div>
+          <div class="section-label__text">Logic Diff</div>
+        </div>
+        <h2>How the approval check was restructured</h2>
+        <p class="section-desc">
+          Both versions share the same rejection check in branch 1. The approval
+          check (branch 2) and the fallback (branch 3) are what changed.
+        </p>
+
+        <div class="diff-row">
+          <div class="diff-panel diff-panel--before">
+            <div class="diff-panel__header">Before (acc6f168)</div>
+            <div class="diff-panel__body">
+              <strong>Branch 1 — rejection (same):</strong><br />
+              Any visit with <code>status = rejected</code> →
+              <code>CompletedWorkStatus.rejected</code> <br /><br />
+              <strong>Branch 2 — else (all-or-nothing):</strong><br />
+              Calls <code>_get_required_delivery_approvals(visits, cw)</code
+              ><br />
+              Iterates only <strong>required</strong> deliver units. For each,
+              queries DB for a visit where:<br />
+              &bull; <code>status = approved</code><br />
+              &bull; (managed only) <code>review_status = agree</code><br />
+              If <strong>all</strong> required DUs have such a visit →
+              <code>approved</code><br />
+              Optional deliver units: <strong>not checked at all</strong>
+              <br /><br />
+              <strong>No else branch:</strong> status left unchanged if neither
+              fires.
+            </div>
+          </div>
+          <div class="diff-panel diff-panel--after">
+            <div class="diff-panel__header">After (this PR)</div>
+            <div class="diff-panel__body">
+              <strong>Branch 1 — rejection (same):</strong><br />
+              Any visit with <code>status = rejected</code> →
+              <code>CompletedWorkStatus.rejected</code> <br /><br />
+              <strong
+                >Branch 2 — elif (per-DU counts, optionals included):</strong
+              ><br />
+              Calls <code>_is_completed_work_approved(cw)</code> using
+              pre-computed per-DU visit counts:<br />
+              &bull; All required DUs:
+              <code>approved_count &gt; 0</code> (managed: also
+              <code>agree_count &gt; 0</code>)<br />
+              &bull; If optional DUs exist: <strong>≥1 optional</strong> must
+              have <code>approved_count &gt; 0</code> (managed: also
+              <code>agree_count &gt; 0</code>)<br />
+              → <code>approved</code> <br /><br />
+              <strong>Branch 3 — elif (new fix):</strong><br />
+              If current status is <code>incomplete</code> →
+              <code>pending</code> <br /><br />
+              Otherwise: status left unchanged
+              (<code>rejected</code>/<code>approved</code>/<code>over_limit</code>/<code
+                >pending</code
+              >
+              preserved).
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE: NON-MANAGED, REQUIRED ONLY -->
+      <div class="section anim" style="--i: 3">
+        <div class="section-label">
+          <div class="section-label__dot"></div>
+          <div class="section-label__text">Scenario Matrix</div>
+        </div>
+        <h2>Non-managed opportunity — required deliver units only</h2>
+        <p class="section-desc">
+          No managed flag. Approval check only needs
+          <code>status = approved</code>; <code>review_status</code> is
+          irrelevant.
+        </p>
+
+        <div class="legend">
+          <span class="badge badge--approved">approved</span>
+          <span class="badge badge--pending">pending</span>
+          <span class="badge badge--rejected">rejected</span>
+          <span class="badge badge--incomplete">incomplete</span>
+          <span class="badge badge--unchanged">unchanged</span>
+          <span class="changed-pill">changed</span>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="th-scenario">Scenario</th>
+                  <th class="th-result">Before PR</th>
+                  <th class="th-result">After PR</th>
+                  <th class="th-note">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="row-group">
+                  <th colspan="4">Starting from any prior status</th>
+                </tr>
+                <tr style="--i: 1">
+                  <td>Any visit has <code>status = rejected</code></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td>
+                    Branch 1. Fires for any rejected visit regardless of deliver
+                    unit type. Rejection reason concatenated.
+                  </td>
+                </tr>
+
+                <tr class="row-group">
+                  <th colspan="4">All required DUs have ≥1 approved visit</th>
+                </tr>
+                <tr style="--i: 2">
+                  <td>All required DUs have approved visit, no rejections</td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    Branch 2. No required DUs means vacuously true — also
+                    approved.
+                  </td>
+                </tr>
+                <tr style="--i: 3">
+                  <td>
+                    All required DUs have approved visit, some visits also
+                    <code>over_limit</code> or <code>pending</code>
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <code>over_limit</code>/<code>pending</code> visits don't
+                    trigger rejection and don't count toward approval —
+                    irrelevant once at least one approved visit exists per
+                    required DU.
+                  </td>
+                </tr>
+
+                <tr class="row-group">
+                  <th colspan="4">
+                    Not all required DUs have an approved visit
+                  </th>
+                </tr>
+                <tr style="--i: 4">
+                  <td>
+                    CW was <code>incomplete</code>, some required visits still
+                    <code>pending</code>
+                  </td>
+                  <td>
+                    <span class="badge badge--incomplete">incomplete</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    <span class="badge badge--pending">pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    The key fix. Model default is <code>incomplete</code>. Now
+                    correctly promoted to <code>pending</code> once visits exist
+                    but approval isn't complete yet.
+                  </td>
+                </tr>
+                <tr style="--i: 5">
+                  <td>
+                    CW was <code>pending</code>, some required visits still
+                    <code>pending</code>
+                  </td>
+                  <td>
+                    <span class="badge badge--pending">pending</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    <span class="badge badge--pending">pending</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    Already in the right state. Both branches leave it as-is.
+                  </td>
+                </tr>
+                <tr style="--i: 6">
+                  <td>
+                    CW was <code>rejected</code>, offending visit corrected to
+                    <code>pending</code>
+                  </td>
+                  <td>
+                    <span class="badge badge--rejected">rejected</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    <span class="badge badge--rejected">rejected</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    Terminal status preserved. Standard callers also exclude
+                    <code>rejected</code> works from their querysets, so this is
+                    rarely re-evaluated in practice.
+                  </td>
+                </tr>
+                <tr style="--i: 7">
+                  <td>
+                    CW was <code>rejected</code>, offending visit corrected to
+                    <code>approved</code> (all required now approved)
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    No rejected visits → Branch 1 skipped. All required approved
+                    → Branch 2 fires. Status advances to
+                    <code>approved</code> regardless of prior status.
+                  </td>
+                </tr>
+                <tr style="--i: 8">
+                  <td>
+                    CW was <code>approved</code>, a visit reverts to
+                    <code>pending</code>
+                  </td>
+                  <td>
+                    <span class="badge badge--approved">approved</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    <span class="badge badge--approved">approved</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    Terminal status preserved. Standard callers don't normally
+                    re-evaluate <code>approved</code> works (<code
+                      >incremental=True</code
+                    >
+                    excludes them).
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE: NON-MANAGED, REQUIRED + OPTIONAL -->
+      <div class="section anim" style="--i: 4">
+        <h2>Non-managed opportunity — required + optional deliver units</h2>
+        <p class="section-desc">
+          The biggest behavioural change: optional DUs are now checked. At least
+          one optional DU must have an approved visit for the CW to be approved.
+        </p>
+
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="th-scenario">Scenario</th>
+                  <th class="th-result">Before PR</th>
+                  <th class="th-result">After PR</th>
+                  <th class="th-note">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="--i: 1">
+                  <td>Any visit has <code>status = rejected</code></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td>
+                    Branch 1 always wins. Optional DUs make no difference here.
+                  </td>
+                </tr>
+                <tr style="--i: 2">
+                  <td>All required approved, at least one optional approved</td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>Both old and new approve. Optional check satisfied.</td>
+                </tr>
+                <tr style="--i: 3">
+                  <td>
+                    All required approved, <strong>no</strong> optional has
+                    approved visit (all optional visits are
+                    <code>pending</code>)
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <span class="badge badge--pending">pending</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    <strong>Key breaking change.</strong> Old code ignored
+                    optionals entirely. New code requires ≥1 optional to be
+                    approved. CW stays <code>pending</code> (or promotes from
+                    <code>incomplete</code>).
+                  </td>
+                </tr>
+                <tr style="--i: 4">
+                  <td>
+                    All required approved, all optional visits are
+                    <code>over_limit</code>
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <span class="badge badge--pending">pending</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    <code>over_limit</code> visits are not counted as approved,
+                    so optional check fails. Same result as all-optional-pending
+                    above.
+                  </td>
+                </tr>
+                <tr style="--i: 5">
+                  <td>Only optional visits present (no required DU visits)</td>
+                  <td>
+                    <span class="badge badge--approved">approved</span>
+                    <small>(vacuously — no required DUs)</small>
+                  </td>
+                  <td>
+                    <span class="badge badge--approved">approved</span>
+                    <small>(if ≥1 optional approved)</small>
+                  </td>
+                  <td>
+                    Edge case: zero required DUs. Old code:
+                    <code>all({}.values()) = True</code> → always approved if no
+                    rejections. New code:
+                    <code>all_required_approved = True</code> vacuously, then
+                    checks optionals. Functionally the same if an optional is
+                    approved; differs if no optional is approved — new code
+                    stays pending.
+                  </td>
+                </tr>
+                <tr style="--i: 6">
+                  <td>
+                    CW was <code>incomplete</code>, required approved, no
+                    optional approved
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <span class="badge badge--pending">pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    <strong>Same breaking change as row above</strong>, but
+                    starting from <code>incomplete</code>. Old code ignores
+                    optionals → all required approved → sets
+                    <code>approved</code>. New code: optional check fails →
+                    branch 2 skips → branch 3: <code>incomplete</code> →
+                    <code>pending</code>. Net effect: old code promoted directly
+                    to <code>approved</code>; new code holds at
+                    <code>pending</code> until an optional is also approved.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE: MANAGED, REQUIRED ONLY -->
+      <div class="section anim" style="--i: 5">
+        <h2>Managed opportunity — required deliver units only</h2>
+        <p class="section-desc">
+          For managed opps, a visit must have both
+          <code>status = approved</code> <strong>and</strong>
+          <code>review_status = agree</code> for its deliver unit to count as
+          approved. This applies per-DU (old and new), not globally.
+        </p>
+
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="th-scenario">Scenario</th>
+                  <th class="th-result">Before PR</th>
+                  <th class="th-result">After PR</th>
+                  <th class="th-note">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="--i: 1">
+                  <td>Any visit has <code>status = rejected</code></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td>
+                    Same as non-managed. <code>review_status</code> irrelevant
+                    for rejection check.
+                  </td>
+                </tr>
+                <tr style="--i: 2">
+                  <td>
+                    All required DUs have a visit with
+                    <code>approved + agree</code>
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    Both old and new: per-DU check for <code>approved</code> +
+                    <code>agree</code>.
+                  </td>
+                </tr>
+                <tr style="--i: 3">
+                  <td>
+                    All required DUs have <code>approved</code> visit but none
+                    have <code>agree</code> (review still pending)
+                  </td>
+                  <td><span class="badge badge--unchanged">unchanged</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed for incomplete</span>
+                  </td>
+                  <td>
+                    Agreement is per-DU. Without <code>agree</code>, the DU
+                    doesn't count as approved. No status change for most priors;
+                    <code>incomplete</code> CWs now promoted to
+                    <code>pending</code>.
+                  </td>
+                </tr>
+                <tr style="--i: 4">
+                  <td>
+                    All required DUs have <code>approved</code> visit, mixed
+                    reviews: some <code>agree</code>, some <code>pending</code>
+                  </td>
+                  <td><span class="badge badge--unchanged">unchanged</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed for incomplete</span>
+                  </td>
+                  <td>
+                    Each required DU must individually satisfy
+                    <code>approved + agree</code>. Even one DU missing
+                    <code>agree</code> blocks approval.
+                  </td>
+                </tr>
+                <tr style="--i: 5">
+                  <td>
+                    All required DUs have <code>approved</code> visit, all have
+                    <code>agree</code>, but other non-required visits have
+                    <code>review_status = disagree</code>
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    Disagreement on non-required DUs doesn't block approval.
+                    Only required DU visits are evaluated.
+                  </td>
+                </tr>
+                <tr style="--i: 6">
+                  <td>
+                    Required DU has visit with <code>approved</code> +
+                    <code>disagree</code>
+                  </td>
+                  <td><span class="badge badge--unchanged">unchanged</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed for incomplete</span>
+                  </td>
+                  <td>
+                    <code>agree_count</code> for that DU is 0 → DU not
+                    considered approved → CW not approved.
+                  </td>
+                </tr>
+                <tr style="--i: 7">
+                  <td>
+                    CW was <code>approved</code>, org reviewer changes
+                    <code>agree</code> → <code>pending</code>, re-evaluated
+                  </td>
+                  <td>
+                    <span class="badge badge--approved">approved</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    <span class="badge badge--approved">approved</span>
+                    <small>(unchanged)</small>
+                  </td>
+                  <td>
+                    Terminal status preserved. <code>approved</code> CWs are
+                    typically excluded by standard callers; only re-evaluated by
+                    <code
+                      >update_payment_accrued_for_user(incremental=False)</code
+                    >.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE: MANAGED, REQUIRED + OPTIONAL -->
+      <div class="section anim" style="--i: 6">
+        <h2>Managed opportunity — required + optional deliver units</h2>
+        <p class="section-desc">
+          The most complex configuration. Both required (all must pass) and
+          optional (≥1 must pass) DUs now need
+          <code>approved + agree</code> visits. Old code ignored optionals
+          entirely.
+        </p>
+
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="th-scenario">Scenario</th>
+                  <th class="th-result">Before PR</th>
+                  <th class="th-result">After PR</th>
+                  <th class="th-note">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="--i: 1">
+                  <td>Any visit has <code>status = rejected</code></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td><span class="badge badge--rejected">rejected</span></td>
+                  <td>Branch 1 wins regardless.</td>
+                </tr>
+                <tr style="--i: 2">
+                  <td>
+                    All required DUs have <code>approved + agree</code>; at
+                    least one optional has <code>approved + agree</code>
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>Fully satisfied under both old and new logic.</td>
+                </tr>
+                <tr style="--i: 3">
+                  <td>
+                    All required DUs have <code>approved + agree</code>;
+                    optional has <code>approved</code> but review is
+                    <code>pending</code> (not <code>agree</code>)
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    <strong>Breaking change.</strong> Old code: optionals
+                    ignored → approved. New code: optional visit's
+                    <code>agree_count = 0</code> → optional DU not satisfied →
+                    not approved.
+                  </td>
+                </tr>
+                <tr style="--i: 4">
+                  <td>
+                    All required DUs have <code>approved + agree</code>;
+                    optional has <code>approved + agree</code> but also another
+                    optional with <code>approved</code> only (no agree)
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    New code uses <code>any()</code> over optionals — only one
+                    needs to pass. The first optional satisfies the check.
+                  </td>
+                </tr>
+                <tr style="--i: 5">
+                  <td>
+                    All required DUs have <code>approved + agree</code>; no
+                    optional DU has any visit at all
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    <strong>Breaking change.</strong> Old code: optionals
+                    ignored → approved. New code:
+                    <code>any(... for x in [])</code> = False → not approved.
+                    Optional DU must have at least one approved+agree visit.
+                  </td>
+                </tr>
+                <tr style="--i: 6">
+                  <td>
+                    Required DUs have <code>approved + agree</code>; optional
+                    has <code>approved + disagree</code>
+                  </td>
+                  <td><span class="badge badge--approved">approved</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed</span>
+                  </td>
+                  <td>
+                    <code>agree_count = 0</code> for the optional DU →
+                    <code>_is_delivery_approved</code> returns False → optional
+                    check fails.
+                  </td>
+                </tr>
+                <tr style="--i: 7">
+                  <td>
+                    Not all required DUs satisfied; optional DU has
+                    <code>approved + agree</code>
+                  </td>
+                  <td><span class="badge badge--unchanged">unchanged</span></td>
+                  <td>
+                    <span class="badge badge--unchanged">unchanged</span> /
+                    <span class="badge badge--incomplete">→ pending</span>
+                    <span class="changed-pill">changed for incomplete</span>
+                  </td>
+                  <td>
+                    Required DUs must all pass first. Optional check is
+                    secondary. Incomplete → pending is the only change.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- EDGE CASES -->
+      <div class="section anim" style="--i: 7">
+        <h2>Edge cases and subtleties</h2>
+
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="th-scenario">Edge Case</th>
+                  <th class="th-note" style="min-width: 500px">Behaviour</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="--i: 1">
+                  <td><code>over_limit</code> visits</td>
+                  <td>
+                    Not <code>rejected</code> → don't trigger Branch 1. Not
+                    <code>approved</code> → don't contribute to
+                    <code>approved_unit_counts</code>. Do increment
+                    <code>unit_counts</code> (feed
+                    <code>completed_count</code>). Effectively neutral for
+                    status decisions.
+                  </td>
+                </tr>
+                <tr style="--i: 2">
+                  <td><code>duplicate</code> / <code>trial</code> visits</td>
+                  <td>
+                    Same as <code>over_limit</code>. New code does not exclude
+                    them from the rejection query (unlike the legacy standalone
+                    function which calls
+                    <code>.exclude(status__in=[duplicate])</code>). Since they
+                    are not <code>rejected</code>, they won't trigger Branch 1.
+                  </td>
+                </tr>
+                <tr style="--i: 3">
+                  <td>No required deliver units (vacuous approval)</td>
+                  <td>
+                    Old: <code>all({}.values()) = True</code> → approved as long
+                    as no rejections. New:
+                    <code>all(... for x in []) = True</code> → same. If optional
+                    DUs also exist: old code still approves (ignores them); new
+                    code checks optionals, so at least one optional must be
+                    satisfied.
+                  </td>
+                </tr>
+                <tr style="--i: 4">
+                  <td>Multiple visits for the same required deliver unit</td>
+                  <td>
+                    Old code: <code>visits.filter(...).first()</code> — finds
+                    any matching visit. New code: counts all approved visits per
+                    DU. Any CW with ≥1 approved visit per required DU is treated
+                    the same as having exactly one. Functionally equivalent for
+                    the status decision.
+                  </td>
+                </tr>
+                <tr style="--i: 5">
+                  <td>
+                    CW that was <code>rejected</code> + visit corrected to
+                    <code>approved</code> (all required now approved)
+                  </td>
+                  <td>
+                    Branch 1 does not fire (no rejected visits). Branch 2 fires
+                    (all required approved). CW advances to
+                    <code>approved</code> regardless of prior
+                    <code>rejected</code> status. Note: standard callers exclude
+                    <code>rejected</code> from their querysets, so this path is
+                    only reachable via
+                    <code
+                      >update_payment_accrued_for_user(incremental=False)</code
+                    >.
+                  </td>
+                </tr>
+                <tr style="--i: 6">
+                  <td>Caller filter interactions</td>
+                  <td>
+                    <code>bulk_approve_completed_work</code> and
+                    <code>bulk_update_payment_accrued</code> tasks both
+                    <code>.exclude(status=rejected)</code> before calling
+                    <code>update_status</code>. The management command also
+                    excludes <code>rejected</code> by default. Only
+                    <code
+                      >update_payment_accrued_for_user(incremental=False)</code
+                    >
+                    passes all statuses — this is the only path where
+                    rejected→pending/approved re-evaluation matters.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- LEGACY FUNCTION COLLAPSIBLE -->
+      <div class="section anim" style="--i: 8">
+        <details class="collapsible">
+          <summary>
+            Legacy function:
+            _update_status_set_saved_fields_and_get_payment_accrued (NOT changed
+            by this PR)
+          </summary>
+          <div class="coll-body">
+            <p>
+              This standalone function still exists in the same file and is used
+              by the
+              <code>populate_completed_work_saved_fields</code> management
+              command only. It uses a substantially different approach:
+            </p>
+            <ul>
+              <li>
+                <strong>Excludes duplicate visits</strong> before evaluation:
+                <code>.exclude(status__in=[duplicate])</code>. The new
+                <code>CompletedWorkUpdater</code> does not.
+              </li>
+              <li>
+                <strong
+                  >No concept of required vs optional deliver units.</strong
+                >
+                It checks whether ALL visits (across all deliver units) are
+                <code>approved</code>:
+                <code
+                  >elif all(status == approved for status, *_ in visits)</code
+                >. A single non-approved visit blocks approval, regardless of
+                which DU it belongs to.
+              </li>
+              <li>
+                <strong
+                  >Managed agreement is checked globally, not per-DU.</strong
+                >
+                After setting <code>approved</code>, it checks if all visits
+                have <code>review_status = agree</code>. If not, it resets to
+                <code>pending</code>. This is a two-step approach vs the new
+                per-DU count approach.
+              </li>
+              <li>
+                <strong
+                  >No <code>incomplete</code> →
+                  <code>pending</code> transition.</strong
+                >
+                Same gap as the old <code>CompletedWorkUpdater</code> before
+                this PR.
+              </li>
+              <li>
+                This function calls <code>completed_work.save()</code> directly
+                (not bulk update), making it unsuitable for batch processing.
+              </li>
+            </ul>
+          </div>
+        </details>
+      </div>
+    </div>
+  </body>
+</html>
