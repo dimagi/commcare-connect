@@ -272,7 +272,6 @@ class TaskFactory(DjangoModelFactory):
     slug = Faker("slug")
     name = Faker("name")
     description = Faker("text")
-    time_estimate = Faker("pyint", min_value=1, max_value=8)
 
     class Meta:
         model = "opportunity.Task"

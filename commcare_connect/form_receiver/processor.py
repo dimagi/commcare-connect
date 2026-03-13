@@ -19,6 +19,8 @@ from commcare_connect.opportunity.models import (
     Assessment,
     CommCareApp,
     CompletedModule,
+    CompletedTask,
+    CompletedTaskStatus,
     CompletedWork,
     CompletedWorkStatus,
     DeliverUnit,
@@ -42,6 +44,7 @@ from commcare_connect.utils.lock import try_redis_lock
 logger = logging.getLogger(__name__)
 
 LEARN_MODULE_JSONPATH = parse("$..module")
+TASK_MODULE_JSONPATH = parse("$..task")
 ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
 
@@ -135,6 +138,62 @@ def process_learn_modules(user: User, xform: XForm, app: CommCareApp, opportunit
             update_completed_learn_date(access, save_access)
 
 
+def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity: Opportunity, blocks: list[dict]):
+    """Process task modules from a form received from CommCare HQ."""
+    with transaction.atomic():
+        try:
+            access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+        except OpportunityAccess.DoesNotExist:
+            raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
+        save_access = False
+
+        updated_tasks = False
+
+        for task_data in blocks:
+            task_slug = task_data.get("@id")
+            if not task_slug:
+                continue
+
+            completed_task = (
+                CompletedTask.objects.select_for_update()
+                .filter(
+                    task__app=app,
+                    task__slug=task_slug,
+                    opportunity_access=access,
+                    xform_id=None,
+                    status=CompletedTaskStatus.ASSIGNED,
+                )
+                .first()
+            )
+            if not completed_task:
+                continue
+
+            completed_task.xform_id = xform.id
+            completed_task.date = xform.metadata.timeEnd
+            completed_task.duration = xform.metadata.duration
+            completed_task.app_build_id = xform.build_id
+            completed_task.app_build_version = xform.metadata.app_build_version
+            completed_task.status = CompletedTaskStatus.COMPLETED
+
+            completed_task.save(
+                update_fields=[
+                    "xform_id",
+                    "date",
+                    "duration",
+                    "app_build_id",
+                    "app_build_version",
+                    "status",
+                ]
+            )
+            updated_tasks = True
+            if not access.last_active or access.last_active < completed_task.date:
+                access.last_active = completed_task.date
+                save_access = True
+
+        if updated_tasks and save_access:
+            access.save(update_fields=["last_active"])
+
+
 def update_completed_learn_date(access, save_access=False):
     if not access.completed_learn_date and access.learn_progress == 100.0:
         # Get the earliest completion date for each unique module
@@ -190,12 +249,17 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
-    matches = [
+    deliver_matches = [
         match.value for match in DELIVER_UNIT_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
     ]
-    if matches:
-        for deliver_unit_block in matches:
-            process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
+    for deliver_unit_block in deliver_matches:
+        process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
+
+    task_matches = [
+        match.value for match in TASK_MODULE_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
+    ]
+    if task_matches:
+        process_task_modules(user, xform, app, opportunity, task_matches)
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:

@@ -1,7 +1,9 @@
+import datetime
 from contextlib import ExitStack, contextmanager
 from unittest import mock
 
 import pytest
+from django.utils.timezone import now
 
 from commcare_connect.form_receiver.processor import (
     ASSESSMENT_JSONPATH,
@@ -9,13 +11,16 @@ from commcare_connect.form_receiver.processor import (
     process_assessments,
     process_deliver_form,
     process_learn_form,
+    process_task_modules,
 )
 from commcare_connect.form_receiver.tests.xforms import (
     AssessmentStubFactory,
     DeliverUnitStubFactory,
     LearnModuleJsonFactory,
+    TaskJsonFactory,
     get_form_model,
 )
+from commcare_connect.opportunity.models import CompletedTask, CompletedTaskStatus, OpportunityAccess, Task
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory, OpportunityAccessFactory
 
 LEARN_PROCESSOR_PATCHES = [
@@ -23,11 +28,21 @@ LEARN_PROCESSOR_PATCHES = [
     "commcare_connect.form_receiver.processor.process_assessments",
 ]
 
+DELIVER_PROCESSOR_PATCHES = [
+    "commcare_connect.form_receiver.processor.process_deliver_unit",
+    "commcare_connect.form_receiver.processor.process_task_modules",
+]
+
 
 def test_process_learn_form_no_matching_blocks():
-    with mock.patch("commcare_connect.form_receiver.processor.process_learn_modules") as process_learn_modules:
+    with mock.patch(
+        "commcare_connect.form_receiver.processor.process_learn_modules"
+    ) as process_learn_modules, mock.patch(
+        "commcare_connect.form_receiver.processor.process_assessments"
+    ) as process_assessments:
         process_learn_form(None, get_form_model(), None, None)
     assert process_learn_modules.call_count == 0
+    assert process_assessments.call_count == 0
 
 
 def test_process_learn_module():
@@ -51,16 +66,136 @@ def test_process_assessment():
 def test_process_deliver_form():
     deliver_block = DeliverUnitStubFactory().json
     xform = get_form_model(form_block=deliver_block)
-    with mock.patch("commcare_connect.form_receiver.processor.process_deliver_unit") as process_deliver_unit:
+    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
         process_deliver_form(None, xform, None, None)
     assert process_deliver_unit.call_count == 1
+    assert process_task_module.call_count == 0
 
 
 def test_process_deliver_form_no_matches():
     xform = get_form_model()
-    with mock.patch("commcare_connect.form_receiver.processor.process_deliver_unit") as process_deliver_unit:
+    with patch_multiple(*DELIVER_PROCESSOR_PATCHES) as [process_deliver_unit, process_task_module]:
         process_deliver_form(None, xform, None, None)
     assert process_deliver_unit.call_count == 0
+    assert process_task_module.call_count == 0
+
+
+@pytest.mark.django_db
+class TestProcessTaskModules:
+    @pytest.fixture
+    def task_module_context(self, mobile_user_with_connect_link, opportunity):
+        access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+        existing_last_active = now()
+        access.last_active = existing_last_active
+        access.save(update_fields=["last_active"])
+        return {
+            "user": mobile_user_with_connect_link,
+            "opportunity": opportunity,
+            "access": access,
+            "xform": get_form_model(),
+            "existing_last_active": existing_last_active,
+        }
+
+    def _process(self, context, blocks):
+        process_task_modules(
+            context["user"],
+            context["xform"],
+            context["opportunity"].deliver_app,
+            context["opportunity"],
+            blocks,
+        )
+
+    def _assert_last_active_unchanged(self, context):
+        context["access"].refresh_from_db()
+        assert context["access"].last_active == context["existing_last_active"]
+
+    def test_updates_assigned_tasks(self, task_module_context):
+        context = task_module_context
+        earlier_last_active = now() - datetime.timedelta(days=2)
+        context["access"].last_active = earlier_last_active
+        context["access"].save(update_fields=["last_active"])
+        context["existing_last_active"] = earlier_last_active
+
+        task = Task.objects.create(
+            app=context["opportunity"].deliver_app,
+            slug="task-one",
+            name="Task 1",
+            description="desc",
+        )
+        completed_task = CompletedTask.objects.create(
+            task=task,
+            opportunity_access=context["access"],
+            date=now() - datetime.timedelta(days=1),
+            duration=datetime.timedelta(minutes=5),
+            xform_id=None,
+            status=CompletedTaskStatus.ASSIGNED,
+        )
+
+        task_block = TaskJsonFactory(id=task.slug).json
+        context["xform"] = get_form_model(form_block=task_block)
+
+        self._process(context, [task_block["task"]])
+
+        completed_task.refresh_from_db()
+        context["access"].refresh_from_db()
+
+        assert completed_task.status == CompletedTaskStatus.COMPLETED
+        assert completed_task.xform_id == context["xform"].id
+        assert completed_task.date == context["xform"].metadata.timeEnd
+        assert completed_task.duration == context["xform"].metadata.duration
+
+    def test_missing_task(self, task_module_context):
+        task_block = TaskJsonFactory(id="unknown-task").json["task"]
+        self._process(task_module_context, [task_block])
+        assert CompletedTask.objects.filter(opportunity_access=task_module_context["access"]).count() == 0
+        self._assert_last_active_unchanged(task_module_context)
+
+    def test_unassigned_task(self, task_module_context):
+        opportunity = task_module_context["opportunity"]
+        task = Task.objects.create(
+            app=opportunity.deliver_app,
+            slug="needs-assignment",
+            name="Needs Assignment",
+            description="desc",
+        )
+        other_access = OpportunityAccessFactory(opportunity=opportunity)
+        CompletedTask.objects.create(
+            task=task,
+            opportunity_access=other_access,
+            date=now(),
+            duration=datetime.timedelta(minutes=5),
+            xform_id=None,
+            status=CompletedTaskStatus.ASSIGNED,
+        )
+        task_block = TaskJsonFactory(id=task.slug).json["task"]
+        self._process(task_module_context, [task_block])
+        assert CompletedTask.objects.filter(opportunity_access=task_module_context["access"]).count() == 0
+        self._assert_last_active_unchanged(task_module_context)
+
+    def test_already_completed_task(self, task_module_context):
+        context_access = task_module_context["access"]
+        opportunity = task_module_context["opportunity"]
+        task = Task.objects.create(
+            app=opportunity.deliver_app,
+            slug="already-completed-task",
+            name="Completed Task",
+            description="desc",
+        )
+        existing_completed_task = CompletedTask.objects.create(
+            task=task,
+            opportunity_access=context_access,
+            date=now(),
+            duration=datetime.timedelta(minutes=5),
+            xform_id="existing-form-id",
+            status=CompletedTaskStatus.COMPLETED,
+        )
+        task_block = TaskJsonFactory(id=task.slug).json["task"]
+        self._process(task_module_context, [task_block, {"name": "missing @id"}])
+        existing_completed_task.refresh_from_db()
+        assert existing_completed_task.status == CompletedTaskStatus.COMPLETED
+        assert existing_completed_task.xform_id == "existing-form-id"
+        assert CompletedTask.objects.filter(opportunity_access=context_access).count() == 1
+        self._assert_last_active_unchanged(task_module_context)
 
 
 @pytest.mark.django_db

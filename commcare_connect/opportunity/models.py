@@ -263,7 +263,6 @@ class Task(models.Model):
     slug = models.SlugField()
     name = models.CharField(max_length=255)
     description = models.TextField()
-    time_estimate = models.IntegerField(help_text="Estimated hours to complete the task")
 
     def __str__(self):
         return self.name
