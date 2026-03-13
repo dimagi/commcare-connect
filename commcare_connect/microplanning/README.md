@@ -56,14 +56,14 @@ Lifecycle statuses for a work area:
 
 All routes are scoped under `/a/<org_slug>/microplanning/<opp_id>/`. Admin-only access.
 
-| URL                         | View                      | Method | Description                     |
-| --------------------------- | ------------------------- | ------ | ------------------------------- |
-| `/`                         | `microplanning_home`      | GET    | Dashboard with map and metrics  |
-| `/upload_work_areas/`       | `WorkAreaImport`          | GET    | Download CSV template           |
-| `/upload_work_areas/`       | `WorkAreaImport`          | POST   | Upload CSV to import work areas |
-| `/import_status/`           | `import_status`           | GET    | Poll async import task status   |
-| `/tiles/<z>/<x>/<y>/`       | `WorkAreaTileView`        | GET    | Mapbox vector tiles (MVT)       |
-| `/workareas_group_geojson/` | `workareas_group_geojson` | GET    | GeoJSON of group boundaries     |
+| URL                                                             | View                      | Method | Description                     |
+| --------------------------------------------------------------- | ------------------------- | ------ | ------------------------------- |
+| `/a/<org_slug>/microplanning/<opp_id>/`                         | `microplanning_home`      | GET    | Dashboard with map and metrics  |
+| `/a/<org_slug>/microplanning/<opp_id>/upload_work_areas/`       | `WorkAreaImport`          | GET    | Download CSV template           |
+| `/a/<org_slug>/microplanning/<opp_id>/upload_work_areas/`       | `WorkAreaImport`          | POST   | Upload CSV to import work areas |
+| `/a/<org_slug>/microplanning/<opp_id>/import_status/`           | `import_status`           | GET    | Poll async import task status   |
+| `/a/<org_slug>/microplanning/<opp_id>/tiles/<z>/<x>/<y>/`       | `WorkAreaTileView`        | GET    | Mapbox vector tiles (MVT)       |
+| `/a/<org_slug>/microplanning/<opp_id>/workareas_group_geojson/` | `workareas_group_geojson` | GET    | GeoJSON of group boundaries     |
 
 ## CSV Import
 
