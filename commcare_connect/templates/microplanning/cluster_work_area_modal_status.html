@@ -1,0 +1,8 @@
+{% load i18n %}
+<button type="button" disabled class="button button-md primary-dark">{% translate "Create Groups" %}</button>
+<div id='clustering-status' class='mt-4 py-3 px-8 bg-gray-200 flex gap-4 items-center'
+    hx-get="{% url 'microplanning:clustering_status' request.org.slug request.opportunity.opportunity_id %}?clustering_task_id={{ clustering_task_id }}"
+    hx-trigger="every 2s" hx-swap="outerHTML" hx-swap-oob="outerHTML:#clustering-status">
+    <div class="animate-spin rounded-full h-4 w-4 border-4 border-brand-mango border-t-transparent"></div>
+    <span>{% translate "Work Area Clustering in progress." %}</span>
+</div>

@@ -45,7 +45,8 @@
             showUploadBtn: {{ show_area_btn|yesno:'true,false' }},
             showUploading: {{ task_id|yesno:'true,false' }},
             showSeeResult: false,
-            showImportWorkAreaModal: false
+            showImportWorkAreaModal: false,
+            showCreateWorkAreaGroupsModal: false,
         }" class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
         <div class="flex items-end space-x-2 w-full">
             {% if task_id %}
@@ -61,12 +62,17 @@
                 </button>
             {% endif %}
             {% if show_workarea_groups_btn %}
-                <button x-show="showCreateGroupBtn" type="button" id="create-work-area-groups" class="button button-md primary-dark ">
+                <button class="button button-md primary-dark"
+                  x-show="showCreateGroupBtn" type="button" id="create-work-area-groups"
+                  @click="showCreateWorkAreaGroupsModal = true">
                     <i class="fa-solid fa-play"></i> {% translate "Create Work Area Groups" %}
                 </button>
             {% endif %}
         </div>
         <div x-show="showImportWorkAreaModal" id="modal-container"></div>
+        {% if show_workarea_groups_btn %}
+          {% include "microplanning/cluster_work_area_modal.html" %}
+        {% endif %}
     </div>
 
     <div class="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:h-[max(calc(100vh-300px),200px)]" x-data="mapController()">
