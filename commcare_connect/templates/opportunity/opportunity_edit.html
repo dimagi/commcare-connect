@@ -3,20 +3,85 @@
 {% load crispy_forms_tags %}
 {% load duration_minutes %}
 {% load tailwind_filters %}
+{% load i18n %}
+
 {% block title %}{{ request.org }} - {{ opportunity.name }}{% endblock %}
 {% block breadcrumbs_inner %}
     {{ block.super }}
     <li class="breadcrumb-item">
         <a href="{% url 'opportunity:detail' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}">{{ opportunity.name }}</a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page">Edit Opportunity</li>
+    <li class="breadcrumb-item active" aria-current="page">{% trans 'Edit Opportunity' %}</li>
 {% endblock %}
 {% block content %}
-    <div class="md:max-w-screen-lg mx-auto">
-        <h2 class="title my-8">Edit Opportunity</h2>
+    <div class="md:max-w-screen-lg mx-auto" x-data="{ showActiveHistory: false }">
+        <h2 class="title my-8">{% trans 'Edit Opportunity' %}</h2>
         <form method="post" class="flex flex-col gap-4">
             {% csrf_token %}
             {% crispy form %}
         </form>
+        {% if active_events %}
+        <div x-show="showActiveHistory" x-cloak x-transition.opacity class="modal-backdrop"
+            @keydown.escape.window="showActiveHistory = false">
+            <div @click.outside="showActiveHistory = false" class="modal" role="dialog" aria-modal="true"
+                aria-labelledby="active-history-modal-title">
+                <div class="header text-lg font-semibold text-brand-deep-purple">
+                    <h1 id="active-history-modal-title">{% trans 'Active Status History' %}</h1>
+                    <button @click="showActiveHistory = false" aria-label="Close dialog">
+                        <i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="content">
+                    <div class="modal-body overflow-y-auto max-h-96">
+                        <table class="w-full text-sm text-left text-brand-deep-purple">
+                            <thead class="text-xs uppercase bg-slate-100">
+                                <tr>
+                                    <th class="px-4 py-2">{% trans 'Changed at' %}</th>
+                                    <th class="px-4 py-2">{% trans 'Changed to' %}</th>
+                                    <th class="px-4 py-2">{% trans 'Changed By' %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for event in active_events %}
+                                <tr class="border-b border-slate-200">
+                                    <td class="px-4 py-2">{{ event.pgh_created_at|date:"d M Y H:i" }}</td>
+                                    <td class="px-4 py-2">
+                                        {% if event.active %}
+                                        <span class="badge badge-sm bg-green-600/20 text-green-600">{% trans 'Active' %}</span>
+                                        {% else %}
+                                        <span class="badge badge-sm bg-slate-100 text-slate-400">{% trans 'Inactive' %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-4 py-2">
+                                        {% with ctx=event.pgh_context %}
+                                            {% if ctx and ctx.metadata and ctx.metadata.username %}
+                                                {% if ctx.metadata.username == "system" %}
+                                                    {% trans 'System' %}
+                                                {% else %}
+                                                    {{ ctx.metadata.username }}
+                                                {% endif %}
+                                            {% else %}
+                                                {% trans 'Unavailable' %}
+                                            {% endif %}
+                                        {% endwith %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="3" class="px-4 py-4 text-center text-slate-400">{% trans 'No history available.' %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="footer">
+                        <button type="button" @click="showActiveHistory = false" class="button button-md outline-style">
+                            {% trans 'Close' %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 {% endblock content %}

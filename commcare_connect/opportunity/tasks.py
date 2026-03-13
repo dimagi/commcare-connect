@@ -3,6 +3,7 @@ import logging
 from decimal import Decimal
 
 import httpx
+import pghistory
 import sentry_sdk
 import waffle
 from allauth.utils import build_absolute_uri
@@ -69,6 +70,9 @@ from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
 logger = logging.getLogger(__name__)
+
+OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
+SYSTEM = "system"
 
 
 @celery_app.task()
@@ -254,6 +258,16 @@ def send_notification_inactive_users():
         if message:
             messages.append(message)
     send_message_bulk(messages)
+
+
+@celery_app.task()
+def auto_deactivate_ended_opportunities():
+    cutoff = datetime.date.today() - datetime.timedelta(days=OPPORTUNITY_AUTO_DEACTIVATION_DAYS)
+    opportunities = Opportunity.objects.filter(active=True, end_date__lte=cutoff)
+
+    action = f"{__name__}.auto_deactivate_ended_opportunities"
+    with pghistory.context(username=SYSTEM, action=action):
+        opportunities.update(active=False)
 
 
 def _get_inactive_message(access: OpportunityAccess):
