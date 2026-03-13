@@ -4,6 +4,7 @@ from django.contrib.messages import get_messages
 from django.urls import reverse
 
 from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
 
 
 @pytest.mark.django_db
@@ -142,7 +143,7 @@ class TestOrganizationCreateView:
         response = client.post(
             self.url(),
             data={
-                "org": org_name,
+                "org": TOMSELECT_NEW_ENTRY_PREFIX + org_name,
                 "llo_entity": str(existing_llo.pk),
             },
         )

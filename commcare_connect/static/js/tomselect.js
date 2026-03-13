@@ -28,6 +28,10 @@ document.addEventListener('DOMContentLoaded', () => {
       let data = el.getAttribute('data-tomselect:settings');
       Object.assign(settings, JSON.parse(data));
     }
+    if (settings.create === true) {
+      // Must match TOMSELECT_NEW_ENTRY_PREFIX in commcare_connect/utils/forms.py
+      settings.create = (input) => ({ value: 'new:' + input, text: input });
+    }
     new TomSelect(el, settings);
   });
 
