@@ -4,6 +4,7 @@ import pytest
 
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
 from commcare_connect.opportunity.models import (
+    ExportFile,
     InvoiceStatus,
     Opportunity,
     OpportunityClaimLimit,
@@ -28,6 +29,32 @@ from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
 from commcare_connect.utils.flags import Flags
+
+
+@pytest.mark.django_db
+def test_export_file_creation(opportunity):
+    export = ExportFile.objects.create(
+        filename="exports/2026-03-09T10:00:00_test_visit_export.csv",
+        export_type="visit_export",
+        opportunity=opportunity,
+        created_by="system",
+        modified_by="system",
+    )
+    assert export.filename == "exports/2026-03-09T10:00:00_test_visit_export.csv"
+    assert export.export_type == "visit_export"
+    assert export.opportunity == opportunity
+    assert export.date_created is not None
+
+
+@pytest.mark.django_db
+def test_export_file_without_opportunity():
+    export = ExportFile.objects.create(
+        filename="exports/invoice-report-abc123.csv",
+        export_type="invoice_report",
+        created_by="system",
+        modified_by="system",
+    )
+    assert export.opportunity is None
 
 
 @pytest.mark.django_db

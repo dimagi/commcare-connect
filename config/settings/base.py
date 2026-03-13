@@ -298,6 +298,10 @@ CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
 CELERY_TASK_TRACK_STARTED = True
 
+# Export file retention
+# ------------------------------------------------------------------------------
+EXPORT_RETENTION_DAYS = max(1, env.int("EXPORT_RETENTION_DAYS", default=30))
+
 # django-allauth
 # ------------------------------------------------------------------------------
 ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)

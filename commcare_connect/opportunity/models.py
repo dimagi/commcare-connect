@@ -1034,6 +1034,36 @@ class CredentialConfiguration(models.Model):
     )
 
 
+class ExportType(models.TextChoices):
+    VISIT_EXPORT = "visit_export", gettext("Visit Export")
+    REVIEW_VISIT_EXPORT = "review_visit_export", gettext("Review Visit Export")
+    PAYMENT_EXPORT = "payment_export", gettext("Payment Export")
+    USER_STATUS = "user_status", gettext("User Status")
+    DELIVER_STATUS = "deliver_status", gettext("Deliver Status")
+    WORK_STATUS = "work_status", gettext("Work Status")
+    CATCHMENT_AREA = "catchment_area", gettext("Catchment Area")
+    INVOICE_REPORT = "invoice_report", gettext("Invoice Report")
+
+
+class ExportFile(BaseModel):
+    filename = models.CharField(max_length=512, unique=True)
+    export_type = models.CharField(max_length=50, choices=ExportType.choices)
+    opportunity = models.ForeignKey("Opportunity", on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.filename
+
+    @classmethod
+    def track(cls, filename, export_type, opportunity=None):
+        return cls.objects.create(
+            filename=filename,
+            export_type=export_type,
+            opportunity=opportunity,
+            created_by="system",
+            modified_by="system",
+        )
+
+
 class LabsRecord(models.Model):
     # inline import to avoid circular import
     from commcare_connect.program.models import Program

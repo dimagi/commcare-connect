@@ -75,7 +75,10 @@ def download_export_file(
         raise Http404("Export file not found")
 
     export_format = saved_filename.split(".")[-1]
-    export_file = storages["default"].open(saved_filename)
+    try:
+        export_file = storages["default"].open(saved_filename)
+    except FileNotFoundError:
+        raise Http404("Export file no longer available")
 
     return FileResponse(
         export_file,
