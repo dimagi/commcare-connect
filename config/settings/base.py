@@ -335,7 +335,6 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "CommCare Connect API",
     "DESCRIPTION": "Documentation of API endpoints of CommCare Connect",
     "VERSION": "1.0.0",
-    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
 }
 
 CACHES = {
