@@ -1,0 +1,50 @@
+{% load i18n %}
+
+{% if not_found %}
+<div class="rounded-md bg-yellow-50 p-4">
+    <p class="text-sm text-yellow-700">{% translate "No user found with that email." %}</p>
+</div>
+{% elif target_user %}
+<div class="card_bg">
+    {% if success %}
+    <div class="rounded-md bg-green-50 p-4 mb-4">
+        <p class="text-sm text-green-700">{% translate "Permissions updated successfully." %}</p>
+    </div>
+    {% endif %}
+
+    <h3 class="card_title mb-1">{{ target_user.name|default:target_user.email }}</h3>
+    <p class="text-sm text-gray-500 mb-4">{{ target_user.email }}</p>
+
+    <form hx-post="{% url 'users:permission_management_update' %}"
+          hx-target="#results"
+          hx-swap="innerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="user_id" value="{{ target_user.id }}">
+        <div class="space-y-3">
+            {% for perm in permissions %}
+            <label class="flex items-center gap-3">
+                <input type="checkbox"
+                       name="permissions"
+                       value="{{ perm.codename }}"
+                       {% if perm.has_perm %}checked{% endif %}
+                       {% if is_self and perm.codename == "manage_internal_permissions" %}disabled title="{% translate 'You cannot remove this permission from yourself.' %}"{% endif %}
+                       class="rounded border-gray-300 text-brand-deep-purple focus:ring-brand-deep-purple">
+                <span class="text-sm">
+                    <span class="font-medium">{{ perm.codename }}</span>
+                    <span class="text-gray-500">— {{ perm.name }}</span>
+                </span>
+            </label>
+            {% if is_self and perm.codename == "manage_internal_permissions" %}
+            {# Include as hidden so the disabled checkbox still submits #}
+            <input type="hidden" name="permissions" value="manage_internal_permissions">
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="mt-4">
+            <button type="submit" class="button button-md primary-dark">
+                {% translate "Save Permissions" %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endif %}

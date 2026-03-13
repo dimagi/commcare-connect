@@ -3,6 +3,8 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
@@ -13,7 +15,7 @@ from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import FormView, RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
@@ -35,6 +37,7 @@ from commcare_connect.utils.permission_const import (
     ALL_ORG_ACCESS,
     DEMO_USER_ACCESS,
     KPI_REPORT_ACCESS,
+    MANAGE_INTERNAL_PERMISSIONS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
 )
@@ -343,6 +346,91 @@ def internal_features(request):
             "description": "Manage feature flags and switches.",
             "url": reverse("flags:feature_flags"),
         },
+        {
+            "perm": MANAGE_INTERNAL_PERMISSIONS,
+            "name": "Permission Management",
+            "description": "Manage internal permissions for users.",
+            "url": reverse("users:permission_management"),
+        },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
+
+
+_DEFAULT_MODEL_PERMS = {"add_user", "change_user", "delete_user", "view_user"}
+
+
+def _get_user_custom_permissions(user):
+    """Get the custom permissions defined on the User model."""
+    ct = ContentType.objects.get_for_model(User)
+    custom_perms = Permission.objects.filter(content_type=ct).exclude(codename__in=_DEFAULT_MODEL_PERMS)
+    user_perm_codenames = set(user.user_permissions.values_list("codename", flat=True))
+    return [
+        {
+            "codename": perm.codename,
+            "name": perm.name,
+            "has_perm": perm.codename in user_perm_codenames,
+        }
+        for perm in custom_perms
+    ]
+
+
+@login_required
+@permission_required(MANAGE_INTERNAL_PERMISSIONS, raise_exception=True)
+@require_GET
+def permission_management(request):
+    return render(request, "users/permission_management.html")
+
+
+@login_required
+@permission_required(MANAGE_INTERNAL_PERMISSIONS, raise_exception=True)
+@require_GET
+def permission_management_search(request):
+    email = request.GET.get("email", "").strip()
+    context = {}
+    if email:
+        try:
+            target_user = User.objects.get(email__iexact=email)
+            context["target_user"] = target_user
+            context["permissions"] = _get_user_custom_permissions(target_user)
+            context["is_self"] = target_user == request.user
+        except User.DoesNotExist:
+            context["not_found"] = True
+    return render(request, "users/permission_management_results.html", context)
+
+
+@login_required
+@permission_required(MANAGE_INTERNAL_PERMISSIONS, raise_exception=True)
+@require_POST
+def permission_management_update(request):
+    user_id = request.POST.get("user_id")
+    try:
+        target_user = User.objects.get(id=user_id)
+    except (User.DoesNotExist, ValueError):
+        return render(
+            request,
+            "users/permission_management_results.html",
+            {"not_found": True},
+        )
+
+    selected_codenames = set(request.POST.getlist("permissions"))
+    ct = ContentType.objects.get_for_model(User)
+    custom_perms = Permission.objects.filter(content_type=ct).exclude(codename__in=_DEFAULT_MODEL_PERMS)
+
+    is_self = target_user == request.user
+    for perm in custom_perms:
+        # Prevent removing manage_internal_permissions from self
+        if is_self and perm.codename == "manage_internal_permissions" and perm.codename not in selected_codenames:
+            continue
+        if perm.codename in selected_codenames:
+            target_user.user_permissions.add(perm)
+        else:
+            target_user.user_permissions.remove(perm)
+
+    context = {
+        "target_user": target_user,
+        "permissions": _get_user_custom_permissions(target_user),
+        "is_self": is_self,
+        "success": True,
+    }
+    return render(request, "users/permission_management_results.html", context)
