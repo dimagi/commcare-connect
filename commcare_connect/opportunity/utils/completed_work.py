@@ -120,6 +120,9 @@ class CompletedWorkUpdater:
                 completed_work.reason = "\n".join(reason for _, reason, *_ in visits if reason)
             elif self._is_completed_work_approved(completed_work):
                 completed_work.status = CompletedWorkStatus.approved
+            elif completed_work.status == CompletedWorkStatus.incomplete:
+                # By this point know the completed_work has been completed
+                completed_work.status = CompletedWorkStatus.pending
 
             updated = True
         return updated
