@@ -36,10 +36,7 @@ def _create_hq_user(user, domain, api_key):
     mobile_worker_api_url = f"{api_key.hq_server.url}/a/{domain}/api/v0.5/user/"
     hq_request = httpx.post(
         mobile_worker_api_url,
-        json={
-            "username": user.username,
-            "connect_username": user.username,
-        },
+        json=build_hq_user_payload(user),
         headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
         timeout=10,
     )
@@ -53,3 +50,17 @@ def _create_hq_user(user, domain, api_key):
         )
 
     return hq_request.status_code == 201
+
+
+def build_hq_user_payload(user):
+    payload = {
+        "username": user.username,
+        "connect_username": user.username,
+    }
+    if user.name:
+        payload["first_name"] = user.name
+    if user.email:
+        payload["email"] = user.email
+    if user.phone_number:
+        payload["default_phone_number"] = user.phone_number
+    return payload
