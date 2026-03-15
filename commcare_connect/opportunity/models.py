@@ -705,6 +705,13 @@ class CompletedWork(models.Model):
         return self.calculate_completed(visits, approved=True)
 
     def calculate_completed(self, visits, approved=False):
+        """Count completed deliveries for this entity by taking the minimum across required deliver units.
+
+        A delivery is "complete" when all required deliver unit forms have been submitted.
+        The count is the minimum across required units (all must be done), capped by the
+        total of optional units if any exist, and further constrained by child payment
+        unit completion counts.
+        """
         unit_counts = Counter(visits)
         deliver_units = self.payment_unit.deliver_units.values("id", "optional")
         required_deliver_units = list(
@@ -914,6 +921,12 @@ class OpportunityClaimLimit(models.Model):
 
     @classmethod
     def create_claim_limits(cls, opportunity: Opportunity, claim: OpportunityClaim):
+        """Allocate visit limits for a new claim based on remaining budget.
+
+        For each payment unit, calculates how many visits are still available
+        (total capacity minus already-claimed visits) and creates a claim limit
+        with the lesser of the remaining visits or the per-user max.
+        """
         claim_limits_by_payment_unit = defaultdict(list)
         claim_limits = OpportunityClaimLimit.objects.filter(
             opportunity_claim__opportunity_access__opportunity=opportunity

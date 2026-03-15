@@ -199,6 +199,13 @@ def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
+    """Validate a form submission against the opportunity's verification flags.
+
+    Checks GPS presence, location proximity, catchment areas, submission time window,
+    duplicate entities, attachments, form duration, and custom JSON validation rules.
+    Returns a list of [flag_code, reason] pairs. May modify user_visit.status as a
+    side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
+    """
     flags = []
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
     if opportunity_flags.duplicate:
@@ -278,6 +285,15 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
 
 
 def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Opportunity, deliver_unit_block: dict):
+    """Process a delivery form submission into a UserVisit and update CompletedWork.
+
+    Acquires a Redis lock per entity to handle concurrent submissions, then:
+    1. Creates a UserVisit with initial status based on daily/total/claim limits
+    2. Runs verification flag checks via clean_form_submission()
+    3. Auto-approves if enabled and no flags are raised
+    4. Updates or creates the associated CompletedWork record
+    5. Triggers incremental payment recalculation
+    """
     deliver_unit = get_or_create_deliver_unit(app, deliver_unit_block)
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
