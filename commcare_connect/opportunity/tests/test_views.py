@@ -1430,6 +1430,69 @@ class TestAddPaymentUnitView:
 
 
 @pytest.mark.django_db
+class TestEditPaymentUnitView:
+    def _edit_url(self, organization, opportunity, payment_unit):
+        return reverse(
+            "opportunity:edit_payment_unit",
+            args=(organization.slug, opportunity.opportunity_id, payment_unit.payment_unit_id),
+        )
+
+    def _post_form_data(self, client, url, payment_unit, deliver_unit):
+        return client.post(
+            url,
+            data={
+                "name": payment_unit.name,
+                "description": payment_unit.description,
+                "amount": payment_unit.amount,
+                "org_amount": payment_unit.org_amount,
+                "max_total": payment_unit.max_total,
+                "max_daily": payment_unit.max_daily,
+                "required_deliver_units": [deliver_unit.id],
+                "optional_deliver_units": [],
+                "payment_units": [],
+            },
+        )
+
+    def test_edit_payment_unit_non_managed_redirects_to_detail(self, client):
+        opportunity = OpportunityFactory()
+        organization = opportunity.organization
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
+
+        client.force_login(user)
+        url = self._edit_url(organization, opportunity, payment_unit)
+        response = self._post_form_data(client, url, payment_unit, deliver_unit)
+
+        assert response.status_code == HTTPStatus.FOUND
+        expected_url = reverse("opportunity:detail", args=(organization.slug, opportunity.opportunity_id))
+        assert response.url == expected_url
+
+    def test_edit_payment_unit_managed_redirects_to_finalize(self, client):
+        managed_opportunity = ManagedOpportunityFactory()
+        organization = managed_opportunity.organization
+        organization.program_manager = True
+        organization.save()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=organization, role="admin")
+
+        payment_unit = PaymentUnitFactory(opportunity=managed_opportunity)
+        deliver_unit = DeliverUnitFactory(app=managed_opportunity.deliver_app, payment_unit=payment_unit)
+
+        client.force_login(user)
+        url = self._edit_url(organization, managed_opportunity, payment_unit)
+        response = self._post_form_data(client, url, payment_unit, deliver_unit)
+
+        assert response.status_code == HTTPStatus.FOUND
+        expected_url = reverse("opportunity:finalize", args=(organization.slug, managed_opportunity.opportunity_id))
+        assert response.url == expected_url
+
+
+@pytest.mark.django_db
 @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_restricted_access(
     client, program_manager_org, program_manager_org_user_member

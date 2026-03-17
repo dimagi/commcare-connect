@@ -859,7 +859,11 @@ def edit_payment_unit(request, org_slug=None, opp_id=None, pk=None):
             parent_payment_unit=None
         )
         messages.success(request, f"Payment unit {form.instance.name} updated. Please reset the budget")
-        return redirect("opportunity:finalize", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id)
+        if request.opportunity.managed:
+            return redirect(
+                "opportunity:finalize", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id
+            )
+        return redirect("opportunity:detail", org_slug=request.org.slug, opp_id=request.opportunity.opportunity_id)
 
     path = [
         {"title": "Opportunities", "url": reverse("opportunity:list", args=(request.org.slug,))},
