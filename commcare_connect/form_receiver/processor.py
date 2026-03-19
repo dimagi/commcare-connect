@@ -170,7 +170,7 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
                 continue
 
             assigned_task.xform_id = xform.id
-            assigned_task.date = xform.metadata.timeEnd
+            assigned_task.completed_at = xform.metadata.timeEnd
             assigned_task.duration = xform.metadata.duration
             assigned_task.app_build_id = xform.build_id
             assigned_task.app_build_version = xform.metadata.app_build_version
@@ -179,7 +179,7 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
             assigned_task.save(
                 update_fields=[
                     "xform_id",
-                    "date",
+                    "completed_at",
                     "duration",
                     "app_build_id",
                     "app_build_version",
@@ -187,8 +187,8 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
                 ]
             )
             updated_tasks = True
-            if not access.last_active or access.last_active < assigned_task.date:
-                access.last_active = assigned_task.date
+            if not access.last_active or access.last_active < assigned_task.completed_at:
+                access.last_active = assigned_task.completed_at
                 save_access = True
 
         if updated_tasks and save_access:

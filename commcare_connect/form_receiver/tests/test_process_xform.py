@@ -125,7 +125,7 @@ class TestProcessTaskModules:
         assigned_task = AssignedTask.objects.create(
             task_type=task_type,
             opportunity_access=context["access"],
-            date=now() - datetime.timedelta(days=1),
+            completed_at=now() - datetime.timedelta(days=1),
             duration=datetime.timedelta(minutes=5),
             xform_id=None,
             status=AssignedTaskStatus.ASSIGNED,
@@ -141,7 +141,7 @@ class TestProcessTaskModules:
 
         assert assigned_task.status == AssignedTaskStatus.COMPLETED
         assert assigned_task.xform_id == context["xform"].id
-        assert assigned_task.date == context["xform"].metadata.timeEnd
+        assert assigned_task.completed_at == context["xform"].metadata.timeEnd
         assert assigned_task.duration == context["xform"].metadata.duration
 
     def test_missing_task(self, task_module_context):
@@ -162,7 +162,7 @@ class TestProcessTaskModules:
         AssignedTask.objects.create(
             task_type=task_type,
             opportunity_access=other_access,
-            date=now(),
+            completed_at=now(),
             duration=datetime.timedelta(minutes=5),
             xform_id=None,
             status=AssignedTaskStatus.ASSIGNED,
@@ -184,7 +184,7 @@ class TestProcessTaskModules:
         existing_assigned_task = AssignedTask.objects.create(
             task_type=task_type,
             opportunity_access=context_access,
-            date=now(),
+            completed_at=now(),
             duration=datetime.timedelta(minutes=5),
             xform_id="existing-form-id",
             status=AssignedTaskStatus.COMPLETED,
