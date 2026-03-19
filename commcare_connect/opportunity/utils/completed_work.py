@@ -74,9 +74,6 @@ class CompletedWorkUpdater:
         self._prepare_deliver_payment_unit_maps()
 
         for completed_work in self.completed_works:
-            if completed_work.id in self.counts:
-                continue
-
             unit_counts = defaultdict(int)
             approved_unit_counts = defaultdict(lambda: {"approved": 0, "agree": 0})
             for user_visit in completed_work.uservisit_set.all():
@@ -87,6 +84,10 @@ class CompletedWorkUpdater:
                         approved_unit_counts[user_visit.deliver_unit_id]["agree"] += 1
 
             self.completed_works_unit_approvals[completed_work.id] = approved_unit_counts
+
+            if completed_work.id in self.counts:
+                continue
+
             payment_unit_id = completed_work.payment_unit_id
             required_deliver_units, optional_deliver_units = self._get_deliver_units_for_payment_unit(payment_unit_id)
 

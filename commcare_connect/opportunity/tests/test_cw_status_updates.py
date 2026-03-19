@@ -947,3 +947,99 @@ class TestPaymentCalculations:
         assert cw.saved_approved_count == 1  # count stored
         assert cw.saved_completed_count == 1  # count stored
         assert cw.saved_payment_accrued == 0  # but no payment
+
+
+@pytest.mark.django_db
+class TestParentChildPaymentUnit:
+    """Tests for parent-child PaymentUnit relationships processed in the same batch."""
+
+    def test_parent_processed_before_child_both_approved(self):
+        opp_access = _setup_non_managed()
+
+        parent_pu = _make_payment_unit(opp_access)
+        parent_du = _make_required_du(opp_access, parent_pu)
+
+        child_pu = PaymentUnitFactory(
+            opportunity=opp_access.opportunity,
+            amount=100,
+            parent_payment_unit=parent_pu,
+        )
+        child_du = _make_required_du(opp_access, child_pu)
+
+        entity_id = "test-entity-001"
+
+        # Parent CW created first → lower DB id → comes first when ordered by id
+        parent_cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=parent_pu,
+            entity_id=entity_id,
+        )
+        child_cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=child_pu,
+            entity_id=entity_id,
+        )
+
+        _make_visit(opp_access, parent_du, parent_cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, child_du, child_cw, VisitValidationStatus.approved)
+
+        # Process both in one batch with parent ordered first (ascending id)
+        completed_works = (
+            CompletedWork.objects.filter(id__in=[parent_cw.id, child_cw.id])
+            .order_by("id")
+            .select_related("payment_unit")
+        )
+        update_status(completed_works, opp_access, compute_payment=True)
+
+        parent_cw.refresh_from_db()
+        child_cw.refresh_from_db()
+
+        assert parent_cw.status == CompletedWorkStatus.approved
+        assert child_cw.status == CompletedWorkStatus.approved
+
+    def test_child_processed_before_parent_both_approved(self):
+        opp_access = _setup_non_managed()
+
+        parent_pu = _make_payment_unit(opp_access)
+        parent_du = _make_required_du(opp_access, parent_pu)
+
+        child_pu = PaymentUnitFactory(
+            opportunity=opp_access.opportunity,
+            amount=100,
+            parent_payment_unit=parent_pu,
+        )
+        child_du = _make_required_du(opp_access, child_pu)
+
+        entity_id = "test-entity-002"
+
+        parent_cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=parent_pu,
+            entity_id=entity_id,
+        )
+        child_cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.pending,
+            opportunity_access=opp_access,
+            payment_unit=child_pu,
+            entity_id=entity_id,
+        )
+
+        _make_visit(opp_access, parent_du, parent_cw, VisitValidationStatus.approved)
+        _make_visit(opp_access, child_du, child_cw, VisitValidationStatus.approved)
+
+        # Process both in one batch with child ordered first (descending id)
+        completed_works = (
+            CompletedWork.objects.filter(id__in=[parent_cw.id, child_cw.id])
+            .order_by("-id")
+            .select_related("payment_unit")
+        )
+        update_status(completed_works, opp_access, compute_payment=True)
+
+        parent_cw.refresh_from_db()
+        child_cw.refresh_from_db()
+
+        assert parent_cw.status == CompletedWorkStatus.approved
+        assert child_cw.status == CompletedWorkStatus.approved
