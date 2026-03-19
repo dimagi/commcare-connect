@@ -18,7 +18,7 @@ def validate_migration_operations(sender, app_config, using, plan, **kwargs):
         if migration.app_label != app_config.label:
             continue
         for operation in migration.operations:
-            if isinstance(operation, RunPython):
+            if type(operation) is RunPython:
                 if not operation.hints:
                     raise Exception("RunPython must have 'hints={'run_on_secondary': True/False}'")
     return True
