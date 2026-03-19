@@ -158,8 +158,8 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
                 assigned_task = (
                     AssignedTask.objects.select_for_update()
                     .filter(
-                        task__app=app,
-                        task__slug=task_slug,
+                        task_type__app=app,
+                        task_type__slug=task_slug,
                         opportunity_access=access,
                         xform_id=None,
                         status=AssignedTaskStatus.ASSIGNED,

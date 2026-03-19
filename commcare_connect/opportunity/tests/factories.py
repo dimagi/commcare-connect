@@ -274,7 +274,7 @@ class TaskFactory(DjangoModelFactory):
     description = Faker("text")
 
     class Meta:
-        model = "opportunity.Task"
+        model = "opportunity.TaskType"
 
 
 class ExchangeRateFactory(DjangoModelFactory):

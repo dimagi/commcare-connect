@@ -37,7 +37,7 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
-    Task,
+    TaskType,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -1867,7 +1867,7 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 class CreateTaskForm(forms.Form):
     task = forms.ModelChoiceField(
         label=_("Task"),
-        queryset=Task.objects.none(),
+        queryset=TaskType.objects.none(),
         empty_label=_("Select a task"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
@@ -1885,7 +1885,7 @@ class CreateTaskForm(forms.Form):
     def __init__(self, *args, opportunity=None, **kwargs):
         super().__init__(*args, **kwargs)
         if opportunity is not None:
-            self.fields["task"].queryset = Task.objects.filter(app=opportunity.deliver_app)
+            self.fields["task"].queryset = TaskType.objects.filter(app=opportunity.deliver_app)
             self.fields["connect_worker"].queryset = User.objects.filter(
                 opportunityaccess__opportunity=opportunity,
                 opportunityaccess__accepted=True,
