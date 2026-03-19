@@ -413,20 +413,20 @@ class CompletedModule(XFormBaseModel):
         ]
 
 
-class CompletedTaskStatus(models.TextChoices):
+class AssignedTaskStatus(models.TextChoices):
     ASSIGNED = "assigned", gettext("assigned")
     COMPLETED = "completed", gettext("completed")
 
 
-class CompletedTask(XFormBaseModel):
+class AssignedTask(XFormBaseModel):
     task = models.ForeignKey(Task, on_delete=models.PROTECT)
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     date = models.DateTimeField()
     duration = models.DurationField()
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
-        choices=CompletedTaskStatus.choices,
-        default=CompletedTaskStatus.ASSIGNED,
+        choices=AssignedTaskStatus.choices,
+        default=AssignedTaskStatus.ASSIGNED,
         max_length=50,
     )
 
