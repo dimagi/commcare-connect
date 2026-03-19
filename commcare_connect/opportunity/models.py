@@ -419,6 +419,7 @@ class AssignedTaskStatus(models.TextChoices):
 
 
 class AssignedTask(XFormBaseModel):
+    assigned_task_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     task = models.ForeignKey(Task, on_delete=models.PROTECT)
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
     date = models.DateTimeField()
@@ -429,6 +430,9 @@ class AssignedTask(XFormBaseModel):
         default=AssignedTaskStatus.ASSIGNED,
         max_length=50,
     )
+    due_date = models.DateField(null=True, blank=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.DO_NOTHING, null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
 
     class Meta:
         constraints = [
