@@ -3,6 +3,7 @@ import datetime
 import pytest
 from django.utils.timezone import now
 
+from commcare_connect.data_export.const import DELIVER_APP_KEY, LEARN_APP_KEY
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
 
 
@@ -72,8 +73,8 @@ class TestAppStructureView:
         response = api_client.get(self._get_url(opportunity.id))
         assert response.status_code == 200
         data = response.json()
-        assert data["learn_app"] == learn_json
-        assert data["deliver_app"] == deliver_json
+        assert data[LEARN_APP_KEY] == learn_json
+        assert data[DELIVER_APP_KEY] == deliver_json
 
     def test_learn_only(self, api_client, opportunity, org_user_member, httpx_mock):
         learn_json = {"id": opportunity.learn_app.cc_app_id, "name": "Learn"}
@@ -86,8 +87,8 @@ class TestAppStructureView:
         response = api_client.get(self._get_url(opportunity.id, app_type="learn"))
         assert response.status_code == 200
         data = response.json()
-        assert data["learn_app"] == learn_json
-        assert data["deliver_app"] is None
+        assert data[LEARN_APP_KEY] == learn_json
+        assert data[DELIVER_APP_KEY] is None
 
     def test_deliver_only(self, api_client, opportunity, org_user_member, httpx_mock):
         deliver_json = {"id": opportunity.deliver_app.cc_app_id, "name": "Deliver"}
@@ -100,8 +101,8 @@ class TestAppStructureView:
         response = api_client.get(self._get_url(opportunity.id, app_type="deliver"))
         assert response.status_code == 200
         data = response.json()
-        assert data["learn_app"] is None
-        assert data["deliver_app"] == deliver_json
+        assert data[LEARN_APP_KEY] is None
+        assert data[DELIVER_APP_KEY] == deliver_json
 
     def test_invalid_app_type_returns_400(self, api_client, opportunity, org_user_member):
         _add_export_credentials(api_client, org_user_member)
