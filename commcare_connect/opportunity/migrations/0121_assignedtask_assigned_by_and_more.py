@@ -9,7 +9,7 @@ import uuid
 class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ("opportunity", "0118_rename_completedtask_assignedtask"),
+        ("opportunity", "0120_rename_completedtask_assignedtask"),
     ]
 
     operations = [

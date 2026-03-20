@@ -5,7 +5,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0120_rename_task_tasktype_and_more"),
+        ("opportunity", "0122_rename_task_tasktype_and_more"),
     ]
 
     operations = [

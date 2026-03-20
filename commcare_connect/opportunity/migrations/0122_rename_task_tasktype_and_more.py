@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0119_assignedtask_assigned_by_and_more"),
+        ("opportunity", "0121_assignedtask_assigned_by_and_more"),
     ]
 
     operations = [

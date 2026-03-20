@@ -7,7 +7,7 @@ import uuid
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0116_remove_task_time_estimate"),
+        ("opportunity", "0118_create_auto_deactivate_periodic_task"),
     ]
 
     operations = [
