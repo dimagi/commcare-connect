@@ -4,7 +4,6 @@ from collections import defaultdict
 from itertools import chain
 
 from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
 from django.db.models import Case, Count, DateTimeField, F, IntegerField, Max, Min, Q, Sum, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
 from django_tables2.export.export import TableExport
@@ -145,7 +144,8 @@ def export_invoice_report_task(filters_data):
     table = InvoiceReportTable(filterset.qs)
 
     exporter = TableExport("csv", table)
+    from commcare_connect.utils.storages import ExportS3Boto3Storage
+
     filename = f"invoice-report-{uuid.uuid4()}.csv"
     content = exporter.export()
-    default_storage.save(filename, ContentFile(content.encode("utf-8")))
-    return filename
+    return ExportS3Boto3Storage().save(filename, ContentFile(content.encode("utf-8")))

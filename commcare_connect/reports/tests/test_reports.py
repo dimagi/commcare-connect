@@ -465,3 +465,34 @@ class TestKPIReportPermission:
             url,
             "kpi_report_access",
         )
+
+
+@pytest.mark.django_db
+def test_export_invoice_report_task_creates_export_file():
+    from commcare_connect.reports.tasks import export_invoice_report_task
+
+    mock_storage = mock.MagicMock()
+    mock_storage.return_value.save.side_effect = lambda name, content: name
+    mock_view = mock.MagicMock()
+    mock_view.get_invoice_queryset.return_value = []
+    mock_filter = mock.MagicMock()
+    mock_filter.return_value.qs = []
+    mock_table = mock.MagicMock()
+
+    storages_mock = mock.MagicMock(ExportS3Boto3Storage=mock_storage)
+    with mock.patch("commcare_connect.reports.views.InvoiceReportView", mock_view), mock.patch(
+        "commcare_connect.reports.views.InvoiceReportFilter", mock_filter
+    ), mock.patch("commcare_connect.reports.views.InvoiceReportTable", mock_table), mock.patch(
+        "commcare_connect.reports.tasks.TableExport"
+    ) as mock_table_export, mock.patch.dict(
+        "sys.modules", {"commcare_connect.utils.storages": storages_mock}
+    ):
+        mock_table_export.return_value.export.return_value = "col1,col2\nval1,val2"
+        result = export_invoice_report_task({})
+
+    assert result.endswith(".csv")
+    assert "invoice-report-" in result
+
+    mock_storage.return_value.save.assert_called_once()
+    save_args = mock_storage.return_value.save.call_args[0]
+    assert save_args[0] == result

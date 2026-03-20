@@ -16,6 +16,13 @@ from commcare_connect.opportunity.models import (
 
 
 class CompletedWorkUpdater:
+    """Recalculates status and payment for a batch of CompletedWork records.
+
+    Prepares deliver/payment unit mappings, counts completed and approved visits
+    per work item, updates statuses based on auto-approval and managed opportunity
+    rules, and caches payment amounts (local currency + USD).
+    """
+
     def __init__(self, opportunity_access: OpportunityAccess, completed_works, compute_payment=True):
         self.opportunity_access = opportunity_access
         self.opportunity = opportunity_access.opportunity
@@ -45,6 +52,13 @@ class CompletedWorkUpdater:
             self.deliver_unit_map[pu_id].append((du_id, optional))
 
     def _get_completed_work_counts(self):
+        """Count completed and approved visits for each CompletedWork.
+
+        For each work item, takes the minimum visit count across all required
+        deliver units (ensuring all required forms are submitted). If optional
+        deliver units exist, their total count is also used as an upper bound.
+        If child payment units exist, their counts further constrain the total.
+        """
         self._prepare_deliver_payment_unit_maps()
 
         for completed_work in self.completed_works:
@@ -95,6 +109,12 @@ class CompletedWorkUpdater:
             self.counts[completed_work.id]["completed"] = number_completed
 
     def _update_status(self, completed_work):
+        """Set CompletedWork status based on visit statuses and approval rules.
+
+        When auto_approve_payments is enabled: rejected if any visit is rejected,
+        approved if all visits are approved. For managed opportunities, approval
+        is downgraded to pending unless all visits have review_status=agree.
+        """
         updated = False
         if self.opportunity.auto_approve_payments:
             visits = completed_work.uservisit_set.values_list("status", "reason", "review_status")
@@ -114,6 +134,12 @@ class CompletedWorkUpdater:
         return updated
 
     def _update_payment(self, completed_work):
+        """Cache payment amounts on the CompletedWork record.
+
+        Calculates local currency and USD amounts for approved work using
+        the exchange rate at the time of status change. For managed opportunities,
+        also calculates the organization's payment portion.
+        """
         updated = False
         if self.compute_payment:
             completed_count = self.counts[completed_work.id]["completed"]

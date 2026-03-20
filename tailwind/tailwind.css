@@ -37,6 +37,8 @@
   --color-message-warning-border: #dbb646;
   --color-message-info-border: #3a42c7;
   --color-message-error-border: #900000;
+  --color-tooltip-light-bg: #eef0ff;
+  --color-tooltip-light: #141d4d;
   --width-screen-sm: var(--breakpoint-sm);
 }
 
@@ -60,6 +62,29 @@
 
 .tippy-box[data-placement^='right'] > .tippy-arrow::before {
   border-right-color: var(--color-brand-indigo);
+}
+
+/* ------ Tippy.js tooltip (white theme, for use on dark backgrounds) ------ */
+.tippy-box[data-theme='light'] {
+  background-color: var(--color-tooltip-light-bg);
+  color: var(--color-tooltip-light);
+}
+
+.tippy-box[data-theme='light'][data-placement^='top'] > .tippy-arrow::before {
+  border-top-color: var(--color-tooltip-light-bg);
+}
+
+.tippy-box[data-theme='light'][data-placement^='bottom']
+  > .tippy-arrow::before {
+  border-bottom-color: var(--color-tooltip-light-bg);
+}
+
+.tippy-box[data-theme='light'][data-placement^='left'] > .tippy-arrow::before {
+  border-left-color: var(--color-tooltip-light-bg);
+}
+
+.tippy-box[data-theme='light'][data-placement^='right'] > .tippy-arrow::before {
+  border-right-color: var(--color-tooltip-light-bg);
 }
 
 /* ----- background -------*/

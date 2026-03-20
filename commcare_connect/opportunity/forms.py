@@ -148,11 +148,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         ]
 
     def __init__(self, *args, **kwargs):
+        self.latest_active_history_event = kwargs.pop("latest_active_history_event", None)
         super().__init__(*args, **kwargs)
         self.opportunity = self.instance
 
         self.fields["users"].required = False
-
         layout_fields = [
             Row(
                 HTML(
@@ -174,6 +174,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                         "active",
                         css_class=CHECKBOX_CLASS,
                         wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                    ),
+                    HTML(
+                        "{% load i18n %}"
+                        "{% with latest_active_event=form.latest_active_history_event %}"
+                        '{% include "opportunity/partials/active_toggle_metadata.html" %}'
+                        "{% endwith %}"
                     ),
                     Field(
                         "is_test",

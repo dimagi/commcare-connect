@@ -3,6 +3,7 @@ import logging
 from decimal import Decimal
 
 import httpx
+import pghistory
 import sentry_sdk
 import waffle
 from allauth.utils import build_absolute_uri
@@ -16,6 +17,7 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.text import slugify
 from django.utils.timezone import now
 from django.utils.translation import gettext
 from tablib import Dataset
@@ -69,6 +71,9 @@ from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
 logger = logging.getLogger(__name__)
+
+OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
+SYSTEM = "system"
 
 
 @celery_app.task()
@@ -194,9 +199,8 @@ def generate_visit_export(
     )
     exporter = UserVisitExporter(opportunity, flatten)
     dataset = exporter.get_dataset(from_date, to_date, [VisitValidationStatus(s) for s in status])
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_visit_export.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
@@ -207,43 +211,41 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
         from {from_date} to {to_date} and status {','.join(status)}"""
     )
     dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_review_visit_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_review_visit_export.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
 def generate_payment_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_empty_payment_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_export.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_payment_export.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
 def generate_user_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_user_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_user_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_user_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
 def generate_deliver_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_deliver_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_deliver_status.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_deliver_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 def save_export(dataset: Dataset, file_name: str, export_format: str):
+    from commcare_connect.utils.storages import ExportS3Boto3Storage
+
     content = dataset.export(export_format)
     if isinstance(content, str):
         content = content.encode()
-    default_storage.save(file_name, ContentFile(content))
+    return ExportS3Boto3Storage().save(file_name, ContentFile(content))
 
 
 @celery_app.task()
@@ -258,6 +260,16 @@ def send_notification_inactive_users():
         if message:
             messages.append(message)
     send_message_bulk(messages)
+
+
+@celery_app.task()
+def auto_deactivate_ended_opportunities():
+    cutoff = datetime.date.today() - datetime.timedelta(days=OPPORTUNITY_AUTO_DEACTIVATION_DAYS)
+    opportunities = Opportunity.objects.filter(active=True, end_date__lte=cutoff)
+
+    action = f"{__name__}.auto_deactivate_ended_opportunities"
+    with pghistory.context(username=SYSTEM, action=action):
+        opportunities.update(active=False)
 
 
 def _get_inactive_message(access: OpportunityAccess):
@@ -390,9 +402,8 @@ def download_user_visit_attachments(self, user_visit_id: int):
 def generate_work_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_work_status_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_payment_verification.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_work_status.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 @celery_app.task()
@@ -412,9 +423,8 @@ def bulk_approve_completed_work():
 def generate_catchment_area_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_catchment_area_table(opportunity)
-    export_tmp_name = f"{now().isoformat()}_{opportunity.name}_catchment_area.{export_format}"
-    save_export(dataset, export_tmp_name, export_format)
-    return export_tmp_name
+    export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_catchment_area.{export_format}"
+    return save_export(dataset, export_tmp_name, export_format)
 
 
 def get_payment_upload_key(opp_id):

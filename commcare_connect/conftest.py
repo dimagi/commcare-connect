@@ -16,7 +16,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
@@ -143,6 +143,12 @@ def org_user_admin(organization) -> User:
 @pytest.fixture
 def program_manager_org(db) -> Organization:
     return ProgramManagerOrgWithUsersFactory()
+
+
+@pytest.fixture
+def managed_opportunity(organization, program_manager_org):
+    program = ProgramFactory(organization=program_manager_org)
+    return ManagedOpportunityFactory(program=program, organization=organization)
 
 
 @pytest.fixture

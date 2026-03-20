@@ -1,10 +1,10 @@
 {% load avatar %}
       <div x-data="{ isStatusModalOpen: false }"
-           class="profile-card h-full flex gap-4 text-white relative">
+           class="profile-card h-full flex gap-4 text-white relative cursor-pointer"
+           @click="isStatusModalOpen = true">
         <div class="profile-left flex flex-col justify-center items-center">
           <div class="cursor-pointer">
-            <div class="absolute z-10 top-0 left-0 w-full h-full"
-                 @click="isStatusModalOpen = true">
+            <div class="absolute z-10 top-0 left-0 w-full h-full pointer-events-none">
               {% if opportunity_access.suspended %}
                 <svg viewBox="-165 -250 1200 1200" xmlns="http://www.w3.org/2000/svg">
                   <g transform="rotate(45)">
@@ -31,7 +31,30 @@
           </div>
         </div>
         <div class="py-2 basis-sm">
-          <h2 class="text-base whitespace-nowrap">{{ opportunity_access.user.name }}</h2>
+          <h2 x-data="{}" class="text-base whitespace-nowrap flex items-center gap-1">
+            {% if opportunity_access.suspended %}
+              <span x-tooltip.raw.theme.light="User suspended">
+                <i class="fa-solid fa-minus-square text-black-600"></i>
+              </span>
+            {% elif opportunity_access.userinvite.status == "accepted" %}
+              <span x-tooltip.raw.theme.light="Invite accepted">
+                <i class="fa-solid fa-circle-check text-green-600"></i>
+              </span>
+            {% elif opportunity_access.userinvite.status == "invited" or opportunity_access.userinvite.status == "sms_delivered" %}
+              <span x-tooltip.raw.theme.light="Invite pending">
+                <i class="fa-regular fa-clock text-orange-600"></i>
+              </span>
+            {% elif opportunity_access.userinvite.status == "not_found" %}
+              <span x-tooltip.raw.theme.light="User not found">
+                <i class="fa-solid fa-circle-xmark text-red-600"></i>
+              </span>
+            {% elif opportunity_access.userinvite.status == "sms_not_delivered" %}
+              <span x-tooltip.raw.theme.light="Invite failed">
+                <i class="fa-solid fa-circle-xmark text-red-600"></i>
+              </span>
+            {% endif %}
+            {{ opportunity_access.user.name }}
+          </h2>
           <p class="text-xs">{{ opportunity_access.user.username }}</p>
           <p class="mt-2 whitespace-nowrap">
             <i class="fa-solid fa-phone"></i>

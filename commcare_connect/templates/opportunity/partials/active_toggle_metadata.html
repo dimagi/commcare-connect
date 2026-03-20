@@ -1,0 +1,25 @@
+{% load i18n %}
+{% if latest_active_event %}
+<div class="flex items-center justify-between px-4 ps-0 pb-3 -mt-3">
+    <p class="text-xs text-slate-500">
+        {% trans 'Last changed by' %}
+        {% with ctx=latest_active_event.pgh_context %}
+        {% if ctx and ctx.metadata and ctx.metadata.username %}
+            {% if ctx.metadata.username == "system" %}
+            <span class="font-medium">{% trans 'System' %}</span>
+            {% else %}
+            <span class="font-medium">{{ ctx.metadata.username }}</span>
+            {% endif %}
+        {% else %}
+            <span class="font-medium">{% trans 'Unavailable' %}</span>
+        {% endif %}
+        {% endwith %}
+        {% blocktrans with date=latest_active_event.pgh_created_at|date:"d M Y" %}on {{ date }}{% endblocktrans %}
+    </p>
+    <button type="button" @click="showActiveHistory = true" aria-label="View active status history"
+        :aria-expanded="showActiveHistory"
+        class="text-xs text-brand-cornflower-blue underline underline-offset-2 whitespace-nowrap">
+        {% trans 'View history' %}
+    </button>
+</div>
+{% endif %}

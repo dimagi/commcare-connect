@@ -1,27 +1,32 @@
 {% load i18n %}
 
-<div class="bg-white shadow-sm p-4 rounded-2xl flex flex-col gap-4 w-110" x-data="{showSuspendModal: false}">
-  <div class="flex justify-between items-center text-gray-400 text-sm">
+<div class="bg-white shadow-sm p-4 rounded-2xl flex flex-col gap-4" x-data="{showSuspendModal: false}">
+  <div class="flex justify-between items-center gap-4 text-gray-400 text-sm whitespace-nowrap">
     <h3 class="text-base font-medium text-brand-deep-purple">User Status Details</h3>
-    <div>
-      {% if opportunity_access.suspended and not request.org_membership.is_viewer %}
+    {% if opportunity_access.suspended %}
+      <span class="badge badge-md negative-dark">{% translate "Suspended" %}</span>
+    {% else %}
+      <span class="badge badge-md positive-dark">{% translate "Active" %}</span>
+    {% endif %}
+    {% if request.is_opportunity_pm %}
+      {% if opportunity_access.suspended %}
         <button
           hx-post="{% url 'opportunity:revoke_user_suspension' org_slug=request.org.slug opp_id=opportunity_access.opportunity.opportunity_id pk=opportunity_access.opportunity_access_id %}"
-          hx-vals='{"next": "{{ request.path }}"}'
+          hx-vals='{"next": "{{ request.get_full_path }}"}'
           class="button button-sm primary-light">
           {% translate "Revoke Suspension" %}
         </button>
       {% else %}
-      <button  {% if request.org_membership.is_viewer %} disabled {% endif %}
-               class="button button-sm primary-light" @click="showSuspendModal = true">
-        Suspend
-      </button>
+        <button class="button button-sm primary-light" @click="showSuspendModal = true">
+          {% translate "Suspend" %}
+        </button>
       {% endif %}
-      <button class="button-icon"
-        @click="isStatusModalOpen = false">
-        <i class="fa-solid fa-xmark cursor-pointer"></i>
-      </button>
-    </div>
+    {% endif %}
+    <button class="button-icon"
+      aria-label="{% translate 'Close user status details' %}"
+      @click="isStatusModalOpen = false">
+      <i class="fa-solid fa-xmark cursor-pointer"></i>
+    </button>
   </div>
 
   <div x-cloak x-show="showSuspendModal" x-transition.opacity class="modal-backdrop">

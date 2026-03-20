@@ -1,5 +1,4 @@
 from celery.result import AsyncResult
-from django.core.files.storage import storages
 from django.http import FileResponse, Http404
 from django.shortcuts import render
 from django_tables2.export import TableExport
@@ -75,7 +74,12 @@ def download_export_file(
         raise Http404("Export file not found")
 
     export_format = saved_filename.split(".")[-1]
-    export_file = storages["default"].open(saved_filename)
+    from commcare_connect.utils.storages import ExportS3Boto3Storage
+
+    try:
+        export_file = ExportS3Boto3Storage().open(saved_filename)
+    except FileNotFoundError as e:
+        raise Http404("Export file no longer available") from e
 
     return FileResponse(
         export_file,
