@@ -382,10 +382,13 @@ OAUTH2_PROVIDER = {
         CONNECTID_CLIENT_SECRET,
     ),
     "SCOPES": {
+        "openid": "OpenID Connect scope",
         "read": "Read scope",
         "write": "Write scope",
         "export": "Allow exporting data to other platforms using export API's.",
     },
+    "OAUTH2_VALIDATOR_CLASS": "commcare_connect.users.oauth2_validator.CustomOAuth2Validator",
+    "OIDC_ENABLED": True,
 }
 OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 
