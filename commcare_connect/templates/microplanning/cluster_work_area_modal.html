@@ -1,0 +1,44 @@
+{% load i18n %}
+<div id="cluster-work-area-modal" class="modal-backdrop" x-cloak
+  x-show="showCreateWorkAreaGroupsModal"
+  @keydown.escape.window="showCreateWorkAreaGroupsModal = false">
+  <div class="modal">
+    <div class="px-4 py-3">
+      <div class="header text-lg font-semibold text-brand-deep-purple flex flex-col items-center gap-4">
+          <i class="text-xl fa-solid fa-network-wired"></i>
+          <h1>{% translate "Create Work Area Groups" %}</h1>
+      </div>
+
+      <p class="mt-4">{% translate "This process may take a few minutes. Please do not close this window until it has completed." %}</p>
+
+      <div>
+      {% if request.GET.clustering_task_id %}
+        <div id='clustering-status' class='mt-4 py-3 px-8 bg-gray-200 flex gap-4 items-center'
+            hx-get="{% url 'microplanning:clustering_status' request.org.slug request.opportunity.opportunity_id %}?clustering_task_id={{ request.GET.clustering_task_id }}"
+            hx-trigger="every 2s" hx-swap="outerHTML">
+            <div class="animate-spin rounded-full h-4 w-4 border-4 border-brand-mango border-t-transparent"></div>
+            <span>{% translate "Work Area Clustering in progress." %}</span>
+        </div>
+      {% else %}
+        <div id="clustering-status"></div>
+      {% endif %}
+      </div>
+
+      <div class="flex justify-between mt-4">
+        <button type="button" class="button button-md outline-style" @click="showCreateWorkAreaGroupsModal = false">
+            {% trans 'Close' %}
+        </button>
+
+        {% if request.GET.clustering_task_id %}
+        <button type="button" disabled class="button button-md primary-dark">{% translate "Create Groups" %}</button>
+        {% else %}
+        <button type="submit" class="button button-md primary-dark"
+                hx-post="{% url 'microplanning:cluster_work_areas' request.org.slug request.opportunity.opportunity_id %}"
+                hx-trigger="click" hx-swap="outerHTML">
+          {% trans 'Create Groups' %}
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
