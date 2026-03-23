@@ -5,7 +5,7 @@
 {% load crispy_forms_tags %}
 
 {% block content %}
-    <h1>Delivery Stats Report</h1>
+    <h1>{{ report_title }}</h1>
 
     <div id="loadingIndicator" class="loading-indicator htmx-indicator">
         <div class="loading-content">
@@ -24,7 +24,6 @@
           class="form-inline">
         {% crispy filter.form %}
     </form>
-
     {% render_table table %}
 {% endblock %}
 
