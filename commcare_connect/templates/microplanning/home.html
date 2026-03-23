@@ -85,8 +85,21 @@
         <!-- Sidebars (stacked) -->
         <div class="w-full xl:w-96 shrink-0 flex flex-col gap-2 min-h-0 xl:h-full">
             <aside id="sidebar" class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0">
-                <h2 class="text-lg font-semibold mb-2">{% translate "Settings" %}</h2>
-                <!-- Sidebar content goes here -->
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-semibold">{% translate "Filter Map Work Areas" %}</h2>
+                    <button type="button" class="text-xs text-brand-deep-purple cursor-pointer hover:underline"
+                        @click="clearFilters()">{% translate "Clear" %}</button>
+                </div>
+                <form id="workarea-filter-form" @change.debounce.1000ms="applyFilters()">
+                    {% for field in filter_form %}
+                    <div class="mb-3">
+                        <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+                            {{ field.label }}
+                        </label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                </form>
             </aside>
 
         <aside id="lower-sidebar" class="bg-white shadow-md p-4 xl:flex-1 min-h-0">
