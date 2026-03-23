@@ -10,9 +10,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name="workareagroup",
-            name="boundary",
-            field=django.contrib.gis.db.models.fields.PolygonField(blank=True, null=True, srid=4326),
-        ),
+        # Commenting out so this migration can run on staging
+        # migrations.AddField(
+        #     model_name="workareagroup",
+        #     name="boundary",
+        #     field=django.contrib.gis.db.models.fields.PolygonField(blank=True, null=True, srid=4326),
+        # ),
     ]
