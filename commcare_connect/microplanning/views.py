@@ -30,6 +30,7 @@ from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
+from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import WorkAreaModelForm
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
@@ -80,6 +81,10 @@ def microplanning_home(request, *args, **kwargs):
         for status in WorkAreaStatus
     }
 
+    filterset = WorkAreaMapFilterSet(
+        data=request.GET,
+        opportunity=opportunity,
+    )
     return render(
         request,
         template_name="microplanning/home.html",
@@ -95,6 +100,7 @@ def microplanning_home(request, *args, **kwargs):
             "status_meta": status_meta,
             "workarea_min_zoom": WORKAREA_MIN_ZOOM,
             "edit_work_area_url": edit_work_area_url,
+            "filter_form": filterset.form,
         },
     )
 
@@ -196,16 +202,20 @@ class WorkAreaVectorLayer(VectorLayer):
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM
 
-    def __init__(self, *args, opp_id=None, **kwargs):
-        self.opp_id = opp_id
+    def __init__(self, *args, opportunity=None, filter_params=None, **kwargs):
+        self.opportunity = opportunity
+        self.filter_params = filter_params
         super().__init__(*args, **kwargs)
 
     def get_queryset(self):
-        return WorkArea.objects.filter(opportunity_id=self.opp_id).annotate(
+        qs = WorkArea.objects.filter(opportunity=self.opportunity).annotate(
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
             assignee_name=F("work_area_group__opportunity_access__user__name"),
         )
+        filterset = WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity)
+        qs = filterset.qs
+        return qs
 
 
 @method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")
@@ -213,7 +223,12 @@ class WorkAreaTileView(MVTView):
     layer_classes = [WorkAreaVectorLayer]
 
     def get_layers(self):
-        return [WorkAreaVectorLayer(opp_id=self.request.opportunity.id)]
+        return [
+            WorkAreaVectorLayer(
+                opportunity=self.request.opportunity,
+                filter_params=self.request.GET,
+            )
+        ]
 
 
 @org_admin_required
