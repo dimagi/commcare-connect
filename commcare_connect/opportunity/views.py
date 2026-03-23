@@ -339,6 +339,7 @@ class OpportunityEdit(OpportunityObjectMixin, OrganizationUserMemberRoleMixin, U
     def active_history_events(self):
         return (
             OpportunityActiveEvent.objects.filter(pgh_obj=self.get_object())
+            .exclude(pgh_context__isnull=True)
             .select_related("pgh_context")
             .order_by("-pgh_created_at")
         )
