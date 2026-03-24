@@ -9,12 +9,14 @@ from celery.result import AsyncResult
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.gis.db.models import Extent, Union
+from django.contrib.gis.db.models.fields import PointField
 from django.contrib.gis.db.models.functions import AsGeoJSON
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
 from django.db.models import F
+from django.db.models.expressions import RawSQL
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -33,6 +35,7 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.forms import WorkAreaModelForm
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
+from commcare_connect.opportunity.models import UserVisit
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -54,7 +57,6 @@ WORKAREA_MIN_ZOOM = 6
 @require_GET
 @org_admin_required
 @opportunity_required
-@require_flag_for_opp(MICROPLANNING)
 def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
     areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
@@ -64,6 +66,11 @@ def microplanning_home(request, *args, **kwargs):
 
     tiles_url = reverse(
         "microplanning:workareas_tiles",
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
+    ).replace("/0/0/0", "/{z}/{x}/{y}")
+
+    visit_tiles_url = reverse(
+        "microplanning:user_visit_tiles",
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
     ).replace("/0/0/0", "/{z}/{x}/{y}")
 
@@ -99,6 +106,7 @@ def microplanning_home(request, *args, **kwargs):
             "opportunity": opportunity,
             "metrics": get_metrics_for_microplanning(opportunity),
             "tiles_url": tiles_url,
+            "visit_tiles_url": visit_tiles_url,
             "groups_url": groups_url,
             "status_meta": status_meta,
             "workarea_min_zoom": WORKAREA_MIN_ZOOM,
@@ -216,12 +224,48 @@ class WorkAreaVectorLayer(VectorLayer):
         )
 
 
-@method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")
+@method_decorator([org_admin_required, opportunity_required], name="dispatch")
 class WorkAreaTileView(MVTView):
     layer_classes = [WorkAreaVectorLayer]
 
     def get_layers(self):
         return [WorkAreaVectorLayer(opp_id=self.request.opportunity.id)]
+
+
+class UserVisitVectorLayer(VectorLayer):
+    id = "user-visits"
+    tile_fields = ()
+    geom_field = "location_point"
+    min_zoom = WORKAREA_MIN_ZOOM
+
+    def __init__(self, *args, opp_id=None, **kwargs):
+        self.opp_id = opp_id
+        super().__init__(*args, **kwargs)
+
+    def get_queryset(self):
+        res = (
+            UserVisit.objects.filter(opportunity_id=self.opp_id, location__isnull=False)
+            .exclude(location="")
+            .annotate(
+                location_point=RawSQL(
+                    "ST_SetSRID(ST_MakePoint("
+                    "CAST(split_part(location, ' ', 2) AS DOUBLE PRECISION), "
+                    "CAST(split_part(location, ' ', 1) AS DOUBLE PRECISION)"
+                    "), 4326)",
+                    [],
+                    output_field=PointField(srid=4326),
+                )
+            )
+        )
+        return res
+
+
+@method_decorator([org_admin_required, opportunity_required], name="dispatch")
+class UserVisitTileView(MVTView):
+    layer_classes = [UserVisitVectorLayer]
+
+    def get_layers(self):
+        return [UserVisitVectorLayer(opp_id=self.request.opportunity.id)]
 
 
 @org_admin_required
