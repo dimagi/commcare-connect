@@ -509,9 +509,11 @@ class OpportunityInitForm(forms.ModelForm):
                 cleaned_data["learn_app"] = json.loads(cleaned_data["learn_app"])
                 cleaned_data["deliver_app"] = json.loads(cleaned_data["deliver_app"])
 
-                if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
-                    self.add_error("learn_app", "Learn app and Deliver app cannot be same")
-                    self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
+                # Disabled for testing a change related to using same APP for Learn
+                # and Deliver.
+                # if cleaned_data["learn_app"]["id"] == cleaned_data["deliver_app"]["id"]:
+                #     self.add_error("learn_app", "Learn app and Deliver app cannot be same")
+                #     self.add_error("deliver_app", "Learn app and Deliver app cannot be same")
             except KeyError:
                 raise forms.ValidationError("Invalid app data")
             return cleaned_data
