@@ -833,28 +833,7 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         return mark_safe(html)
 
 
-class UserVisitVerificationTable(tables.Table):
-    select = tables.CheckBoxColumn(
-        accessor="pk",
-        attrs={
-            "th__input": {
-                "@click": "toggleSelectAll()",
-                "x-model": "selectAll",
-                "name": "select_all",
-                "type": "checkbox",
-                "class": "checkbox ga-all-visit-checkbox",
-            },
-            "td__input": {
-                "x-model": "selected",
-                "@click.stop": "",  # used to stop click propagation
-                "name": "row_select",
-                "type": "checkbox",
-                "class": "checkbox",
-                "value": lambda record: record.pk,
-                "id": lambda record: f"row_checkbox_{record.pk}",
-            },
-        },
-    )
+class WorkerTasksVisitTable(tables.Table):
     date_time = columns.DateTimeColumn(verbose_name="Date", accessor="visit_date", format="d M, Y H:i")
     entity_name = columns.Column(verbose_name="Entity Name")
     deliver_unit = columns.Column(verbose_name="Deliver Unit", accessor="deliver_unit__name")
@@ -892,7 +871,6 @@ class UserVisitVerificationTable(tables.Table):
     class Meta:
         model = UserVisit
         sequence = (
-            "select",
             "date_time",
             "entity_name",
             "deliver_unit",
@@ -927,7 +905,6 @@ class UserVisitVerificationTable(tables.Table):
         self.organization = kwargs.pop("organization", None)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm", False)
         super().__init__(*args, **kwargs)
-        self.columns["select"].column.visible = not self.is_opportunity_pm
         self.use_view_url = True
 
     def get_icons(self, statuses):
@@ -991,6 +968,37 @@ class UserVisitVerificationTable(tables.Table):
                 status.append(record.status)
 
         return self.get_icons(status)
+
+
+class UserVisitVerificationTable(WorkerTasksVisitTable):
+    select = tables.CheckBoxColumn(
+        accessor="pk",
+        attrs={
+            "th__input": {
+                "@click": "toggleSelectAll()",
+                "x-model": "selectAll",
+                "name": "select_all",
+                "type": "checkbox",
+                "class": "checkbox ga-all-visit-checkbox",
+            },
+            "td__input": {
+                "x-model": "selected",
+                "@click.stop": "",  # used to stop click propagation
+                "name": "row_select",
+                "type": "checkbox",
+                "class": "checkbox",
+                "value": lambda record: record.pk,
+                "id": lambda record: f"row_checkbox_{record.pk}",
+            },
+        },
+    )
+
+    class Meta(WorkerTasksVisitTable.Meta):
+        sequence = ("select",) + WorkerTasksVisitTable.Meta.sequence
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.columns["select"].column.visible = not self.is_opportunity_pm
 
 
 class UserInfoColumn(tables.Column):

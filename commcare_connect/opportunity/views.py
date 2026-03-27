@@ -55,7 +55,7 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
@@ -142,6 +142,7 @@ from commcare_connect.opportunity.tables import (
     WorkerPaymentsTable,
     WorkerStatusTable,
     WorkerTasksTable,
+    WorkerTasksVisitTable,
     header_with_tooltip,
 )
 from commcare_connect.opportunity.tasks import (
@@ -2106,19 +2107,13 @@ def get_user_visit_counts(opportunity, queryset):
     return user_visit_counts
 
 
-class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
+class WorkerTasksVisitTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
     model = UserVisit
-    table_class = UserVisitVerificationTable
-    template_name = "opportunity/user_visit_verification_table.html"
-    exclude_columns = []
+    table_class = WorkerTasksVisitTable
+    template_name = "opportunity/worker_tasks_visit_table.html"
 
     def get_paginate_by(self, table_data):
         return get_validated_page_size(self.request)
-
-    def get_table(self, **kwargs):
-        kwargs["exclude"] = self.exclude_columns
-        self.table = super().get_table(**kwargs)
-        return self.table
 
     def dispatch(self, request, *args, **kwargs):
         self.opportunity = get_opportunity_or_404(kwargs["opp_id"], kwargs["org_slug"])
@@ -2133,6 +2128,29 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
         kwargs["organization"] = self.request.org
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opportunity"] = self.opportunity
+        return context
+
+    def get_queryset(self):
+        queryset = UserVisit.objects.filter(opportunity=self.opportunity)
+        user_id = self.request.GET.get("user")
+        if user_id:
+            queryset = queryset.filter(user__user_id=user_id)
+        return queryset.order_by("visit_date")
+
+
+class VisitVerificationTableView(WorkerTasksVisitTableView):
+    table_class = UserVisitVerificationTable
+    template_name = "opportunity/user_visit_verification_table.html"
+    exclude_columns = []
+
+    def get_table(self, **kwargs):
+        kwargs["exclude"] = self.exclude_columns
+        self.table = super().get_table(**kwargs)
+        return self.table
 
     def get_context_data(self, **kwargs):
         user_visit_counts = get_user_visit_counts(self.opportunity, self.filter_queryset)
@@ -2205,7 +2223,6 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
             )
 
         context = super().get_context_data(**kwargs)
-        context["opportunity"] = self.opportunity
         context["tabs"] = tabs
         persisted_filters = []
         for name, values in self.request.GET.lists():
@@ -2220,13 +2237,10 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
 
     def get_queryset(self):
         self.exclude_columns = []
-        queryset = UserVisit.objects.filter(opportunity=self.opportunity)
-        user_id = self.request.GET.get("user")
-        if user_id:
-            queryset = queryset.filter(user__user_id=user_id)
-        self.filter_queryset = queryset
+        self.filter_queryset = super().get_queryset()
 
         self.filter_status = self.request.GET.get("filter_status")
+        queryset = self.filter_queryset
         if self.filter_status == "pending":
             queryset = queryset.filter(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])
             self.exclude_columns = ["last_activity"]
@@ -2252,7 +2266,13 @@ class VisitVerificationTableView(OrganizationUserMixin, OpportunityObjectMixin, 
                 status=VisitValidationStatus.approved,
                 review_created_on__isnull=False,
             )
-        return queryset.order_by("visit_date")
+        return queryset
+
+
+def visit_verification_table_view(request, *args, **kwargs):
+    if switch_is_active(WORKER_VISITS_TASKS):
+        return WorkerTasksVisitTableView.as_view()(request, *args, **kwargs)
+    return VisitVerificationTableView.as_view()(request, *args, **kwargs)
 
 
 @org_viewer_required
