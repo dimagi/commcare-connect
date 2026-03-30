@@ -81,7 +81,8 @@ urlpatterns = [
     path("<slug:opp_id>/payment_unit/<slug:pk>/edit", view=edit_payment_unit, name="edit_payment_unit"),
     path("<slug:opp_id>/user_status_export/", view=export_user_status, name="user_status_export"),
     path("<slug:opp_id>/deliver_status_export/", view=export_deliver_status, name="deliver_status_export"),
-    path("<slug:opp_id>/user_visits/", view=views.user_visit_verification, name="user_visits_list"),
+    path("<slug:opp_id>/user_visits/", view=views.UserVisitVerificationView.as_view(), name="user_visits_list"),
+    path("<slug:opp_id>/user_tasks/", view=views.UserTasksView.as_view(), name="user_tasks_list"),
     path(
         "<slug:opp_id>/user_visit_verification_table/",
         view=views.visit_verification_table_view,

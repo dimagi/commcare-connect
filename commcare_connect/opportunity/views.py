@@ -1984,87 +1984,107 @@ def sync_deliver_units(request, org_slug, opp_id):
     return HttpResponse(content=message, status=status)
 
 
-@org_viewer_required
-@opportunity_required
-def user_visit_verification(request, org_slug, opp_id):
-    opportunity = get_opportunity_or_404(opp_id, org_slug)
-    user_id = request.GET.get("user")
-    opportunity_access = None
-    if user_id:
-        opportunity_access = (
-            OpportunityAccess.objects.filter(opportunity=opportunity, user__user_id=user_id)
-            .select_related("user")
+class WorkerPageView(OrganizationUserMixin, OpportunityObjectMixin, TemplateView):
+    page_title = None
+
+    def dispatch(self, request, *args, **kwargs):
+        self.opportunity = self.get_opportunity()
+        user_id = request.GET.get("user")
+        self.opportunity_access = (
+            (
+                OpportunityAccess.objects.filter(opportunity=self.opportunity, user__user_id=user_id)
+                .select_related("user")
+                .first()
+            )
+            if user_id
+            else None
+        )
+        if not self.opportunity_access:
+            raise Http404("A valid worker must be specified.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_path(self):
+        org_slug = self.kwargs["org_slug"]
+        opp_id = self.kwargs["opp_id"]
+        path = []
+        if self.opportunity.managed:
+            path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
+            path.append(
+                {
+                    "title": self.opportunity.managedopportunity.program.name,
+                    "url": reverse("program:home", args=(org_slug,)),
+                }
+            )
+        path.extend(
+            [
+                {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
+                {"title": self.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
+                {"title": "Connect Workers", "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id))},
+                {"title": self.page_title, "url": self.request.path},
+            ]
+        )
+        return path
+
+    def get_worker_kpi_context(self):
+        visits_queryset = UserVisit.objects.filter(opportunity_access=self.opportunity_access)
+        counts = get_user_visit_counts(self.opportunity, visits_queryset)
+
+        flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
+        for visit in visits_queryset.filter(flagged=True, flag_reason__isnull=False):
+            for flag, _description in visit.flag_reason.get("flags", []):
+                flag_label = FlagLabels.get_label(flag)
+                if visit.status == VisitValidationStatus.approved:
+                    if self.opportunity.managed and visit.review_created_on is not None:
+                        if visit.review_status == VisitReviewStatus.agree:
+                            flagged_info[flag_label]["approved"] += 1
+                        else:
+                            flagged_info[flag_label]["pending"] += 1
+                    else:
+                        flagged_info[flag_label]["approved"] += 1
+                if visit.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
+                    flagged_info[flag_label]["pending"] += 1
+                if visit.status == VisitValidationStatus.rejected:
+                    flagged_info[flag_label]["rejected"] += 1
+                flagged_info[flag_label]["name"] = flag_label
+
+        last_payment_details = (
+            Payment.objects.filter(opportunity_access=self.opportunity_access)
+            .select_related("opportunity_access__user")
+            .order_by("-date_paid")
             .first()
         )
+        return counts, flagged_info.values(), last_payment_details
 
-    if not opportunity_access:
-        raise Http404("A valid worker must be specified.")
-
-    visits_queryset = UserVisit.objects.filter(opportunity_access=opportunity_access).order_by("visit_date")
-
-    user_visit_counts = get_user_visit_counts(opportunity, visits_queryset)
-    visits = visits_queryset.filter(flagged=True, flag_reason__isnull=False)
-    flagged_info = defaultdict(lambda: {"name": "", "approved": 0, "pending": 0, "rejected": 0})
-    for visit in visits:
-        for flag, _description in visit.flag_reason.get("flags", []):
-            flag_label = FlagLabels.get_label(flag)
-            if visit.status == VisitValidationStatus.approved:
-                if request.opportunity.managed and visit.review_created_on is not None:
-                    if visit.review_status == VisitReviewStatus.agree:
-                        flagged_info[flag_label]["approved"] += 1
-                    else:
-                        flagged_info[flag_label]["pending"] += 1
-                else:
-                    flagged_info[flag_label]["approved"] += 1
-            if visit.status in (VisitValidationStatus.pending, VisitValidationStatus.duplicate):
-                flagged_info[flag_label]["pending"] += 1
-            if visit.status == VisitValidationStatus.rejected:
-                flagged_info[flag_label]["rejected"] += 1
-            flagged_info[flag_label]["name"] = flag_label
-    flagged_info = flagged_info.values()
-
-    last_payment_details = (
-        Payment.objects.filter(opportunity_access=opportunity_access)
-        .select_related("opportunity_access__user")
-        .order_by("-date_paid")
-        .first()
-    )
-
-    path = []
-    if request.opportunity.managed:
-        path.append({"title": "Programs", "url": reverse("program:home", args=(org_slug,))})
-        path.append(
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        counts, flagged_info, last_payment_details = self.get_worker_kpi_context()
+        context.update(
             {
-                "title": request.opportunity.managedopportunity.program.name,
-                "url": reverse("program:home", args=(org_slug,)),
+                "opportunity": self.opportunity,
+                "opportunity_access": self.opportunity_access,
+                "counts": counts,
+                "flagged_info": flagged_info,
+                "last_payment_details": last_payment_details,
+                "path": self.get_path(),
             }
         )
-    path.extend(
-        [
-            {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
-            {"title": request.opportunity.name, "url": reverse("opportunity:detail", args=(org_slug, opp_id))},
-            {
-                "title": "Connect Workers",
-                "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id)),
-            },
-            {"title": "Visits", "url": request.path},
-        ]
-    )
+        return context
 
-    response = render(
-        request,
-        "opportunity/user_visit_verification.html",
-        context={
-            "opportunity": opportunity,
-            "opportunity_access": opportunity_access,
-            "counts": user_visit_counts,
-            "flagged_info": flagged_info,
-            "last_payment_details": last_payment_details,
-            "MAPBOX_TOKEN": settings.MAPBOX_TOKEN,
-            "path": path,
-        },
-    )
-    return response
+
+class UserVisitVerificationView(WorkerPageView):
+    template_name = "opportunity/user_visit_verification.html"
+    page_title = "Visits"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["MAPBOX_TOKEN"] = settings.MAPBOX_TOKEN
+        context["show_worker_tasks_tabs"] = switch_is_active(WORKER_VISITS_TASKS)
+        return context
+
+
+class UserTasksView(WorkerPageView):
+    template_name = "opportunity/user_tasks.html"
+    page_title = "Tasks"
 
 
 def get_user_visit_counts(opportunity, queryset):

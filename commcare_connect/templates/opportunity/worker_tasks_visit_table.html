@@ -1,12 +1,6 @@
 {% load django_tables2 %}
 
 <div>
-  <div class="flex relative mx-auto items-center w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs overflow-x-auto">
-    <div class="tabs">
-      <label class="tab tab-active">Visits</label>
-    </div>
-  </div>
-
   <div class="w-full relative shadow-sm flex-1 rounded-lg">
     <div class="flex flex-col w-full gap-2 min-h-160">
       {% render_table table %}

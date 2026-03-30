@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+
+{% load i18n %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html' with path=path %}
+<div class="w-full space-y-4">
+  {% include "components/worker_page/worker_profile_kpi.html" %}
+  {% include 'components/worker_page/visit_task_tabs.html' %}
+  <div class="w-full">
+  </div>
+</div>
+{% endblock %}
