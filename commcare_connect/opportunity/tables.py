@@ -1832,6 +1832,31 @@ class AssignedTaskListTable(OrgContextTable):
         return format_html('<a href="#" class="hover:text-brand-indigo"><i class="fa-solid fa-chevron-right"></i></a>')
 
 
+class WorkerCompletedTaskTable(tables.Table):
+    task_type = tables.Column(verbose_name=_("Task Type"), accessor="task", orderable=False)
+    assigned_by = tables.Column(
+        verbose_name=_("Assigned By"),
+        accessor="assigned_by__name",
+        empty_values=(None,),
+        default=gettext_lazy("Deleted user"),
+    )
+    assigned_date = DMYTColumn(verbose_name=_("Assigned Date"), accessor="date_created")
+    due_date = DMYTColumn(verbose_name=_("Due Date"))
+    status = TaskStatusColumn(verbose_name=_("Status"), accessor="status")
+
+    class Meta:
+        model = CompletedTask
+        fields = ()
+        sequence = ("task_type", "assigned_by", "assigned_date", "due_date", "status")
+        order_by = ("-assigned_date",)
+        empty_text = gettext_lazy("No tasks have been assigned to this worker yet.")
+        attrs = {"class": "w-full"}
+        row_attrs = {"class": "cursor-pointer hover:bg-gray-50"}
+
+    def render_task_type(self, value):
+        return format_html("{} ({})", value.name, value.slug)
+
+
 class TaskTable(OpportunityContextTable):
     index = IndexColumn()
     name = tables.Column(verbose_name=gettext_lazy("Task Type Name"))

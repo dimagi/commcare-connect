@@ -136,6 +136,7 @@ from commcare_connect.opportunity.tables import (
     SuspendedUsersTable,
     TaskTable,
     UserVisitVerificationTable,
+    WorkerCompletedTaskTable,
     WorkerDeliveryTable,
     WorkerLearnStatusTable,
     WorkerLearnTable,
@@ -2087,6 +2088,42 @@ class UserTasksView(WorkerPageView):
     page_title = "Tasks"
 
 
+class WorkerTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
+    redirect_url_name = None  # subclasses must set this to the parent page URL name
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def dispatch(self, request, *args, **kwargs):
+        self.opportunity = get_opportunity_or_404(kwargs["opp_id"], kwargs["org_slug"])
+        response = super().dispatch(request, *args, **kwargs)
+        url = reverse(self.redirect_url_name, args=[request.org.slug, self.kwargs["opp_id"]])
+        query_params = request.GET.urlencode()
+        response["HX-Replace-Url"] = f"{url}?{query_params}" if query_params else url
+        return response
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opportunity"] = self.opportunity
+        return context
+
+
+class WorkerCompletedTaskTableView(WorkerTableView):
+    model = CompletedTask
+    table_class = WorkerCompletedTaskTable
+    template_name = "opportunity/worker_tasks_visit_table.html"
+    redirect_url_name = "opportunity:user_tasks_list"
+
+    def get_queryset(self):
+        queryset = CompletedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
+            "task", "assigned_by"
+        )
+        user_id = self.request.GET.get("user")
+        if user_id:
+            queryset = queryset.filter(opportunity_access__user__user_id=user_id)
+        return queryset.order_by("-date_created")
+
+
 def get_user_visit_counts(opportunity, queryset):
     visit_count_kwargs = {}
     if opportunity.managed:
@@ -2127,32 +2164,17 @@ def get_user_visit_counts(opportunity, queryset):
     return user_visit_counts
 
 
-class WorkerTasksVisitTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTableView):
+class WorkerTasksVisitTableView(WorkerTableView):
     model = UserVisit
     table_class = WorkerTasksVisitTable
     template_name = "opportunity/worker_tasks_visit_table.html"
-
-    def get_paginate_by(self, table_data):
-        return get_validated_page_size(self.request)
-
-    def dispatch(self, request, *args, **kwargs):
-        self.opportunity = get_opportunity_or_404(kwargs["opp_id"], kwargs["org_slug"])
-        response = super().dispatch(request, *args, **kwargs)
-        url = reverse("opportunity:user_visits_list", args=[request.org.slug, self.kwargs["opp_id"]])
-        query_params = request.GET.urlencode()
-        response["HX-Replace-Url"] = f"{url}?{query_params}" if query_params else url
-        return response
+    redirect_url_name = "opportunity:user_visits_list"
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["organization"] = self.request.org
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["opportunity"] = self.opportunity
-        return context
 
     def get_queryset(self):
         queryset = UserVisit.objects.filter(opportunity=self.opportunity)

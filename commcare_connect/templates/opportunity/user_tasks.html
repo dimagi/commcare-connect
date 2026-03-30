@@ -1,13 +1,17 @@
 {% extends 'base.html' %}
 
 {% load i18n %}
+{% load django_tables2 %}
 
 {% block content %}
 {% include 'components/breadcrumbs.html' with path=path %}
 <div class="w-full space-y-4">
   {% include "components/worker_page/worker_profile_kpi.html" %}
   {% include 'components/worker_page/visit_task_tabs.html' %}
-  <div class="w-full">
+  <div class="w-full" hx-indicator="#loading-spinner">
+    <div
+      hx-get="{% url 'opportunity:user_tasks_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
+      hx-trigger="load" hx-swap="outerHTML"></div>
   </div>
 </div>
 {% endblock %}

@@ -84,6 +84,11 @@ urlpatterns = [
     path("<slug:opp_id>/user_visits/", view=views.UserVisitVerificationView.as_view(), name="user_visits_list"),
     path("<slug:opp_id>/user_tasks/", view=views.UserTasksView.as_view(), name="user_tasks_list"),
     path(
+        "<slug:opp_id>/user_tasks_table/",
+        view=views.WorkerCompletedTaskTableView.as_view(),
+        name="user_tasks_table",
+    ),
+    path(
         "<slug:opp_id>/user_visit_verification_table/",
         view=views.visit_verification_table_view,
         name="user_visit_verification_table",
