@@ -1,10 +1,12 @@
+from datetime import date, timedelta
+
 import pytest
 from waffle.testutils import override_switch
 
 from commcare_connect.flags.switch_names import USER_VISIT_FILTERS
-from commcare_connect.opportunity.filters import TasksFilterSet, UserVisitFilterSet
+from commcare_connect.opportunity.filters import AssignedTaskFilterSet, TasksFilterSet, UserVisitFilterSet
 from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
-from commcare_connect.opportunity.models import AssignedTaskStatus, UserVisit
+from commcare_connect.opportunity.models import AssignedTask, AssignedTaskStatus, UserVisit
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedWorkFactory,
@@ -178,3 +180,75 @@ def test_tasks_filterset_task_type_excludes_inactive():
     choices = dict(filterset.form.fields["task_type"].choices)
     assert str(active_task.pk) in choices
     assert str(inactive_task.pk) not in choices
+
+
+@pytest.mark.django_db
+class TestAssignedTaskFilterSet:
+    def setup_method(self):
+        self.opportunity = OpportunityFactory()
+        self.access1, self.access2 = OpportunityAccessFactory.create_batch(2, opportunity=self.opportunity)
+        self.task1, self.task2 = TaskFactory.create_batch(2, opportunity=self.opportunity)
+        self.at_assigned = AssignedTaskFactory(
+            task=self.task1,
+            opportunity_access=self.access1,
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        self.at_completed = AssignedTaskFactory(
+            task=self.task2,
+            opportunity_access=self.access2,
+            status=AssignedTaskStatus.COMPLETED,
+        )
+
+    def filter_assigned_tasks(self, params):
+        return AssignedTaskFilterSet(
+            params,
+            queryset=AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity),
+            opportunity=self.opportunity,
+        ).qs
+
+    def test_no_filters_returns_all(self):
+        assert self.filter_assigned_tasks({}).count() == 2
+
+    def test_filter_by_worker_name(self):
+        result = self.filter_assigned_tasks({"worker_name": str(self.access1.user.pk)})
+        assert list(result) == [self.at_assigned]
+
+    @pytest.mark.parametrize(
+        "status,expected",
+        [
+            (AssignedTaskStatus.ASSIGNED, "at_assigned"),
+            (AssignedTaskStatus.COMPLETED, "at_completed"),
+        ],
+    )
+    def test_filter_by_task_status(self, status, expected):
+        result = self.filter_assigned_tasks({"task_status": status})
+        assert list(result) == [getattr(self, expected)]
+
+    def test_filter_by_task_type(self):
+        result = self.filter_assigned_tasks({"task_type": str(self.task1.pk)})
+        assert list(result) == [self.at_assigned]
+
+    def test_filter_by_date_assigned_range(self):
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        result = self.filter_assigned_tasks({"date_assigned_after": yesterday, "date_assigned_before": tomorrow})
+        assert result.count() == 2
+
+    def test_filter_by_date_assigned_excludes_outside_range(self):
+        future = (date.today() + timedelta(days=10)).isoformat()
+        result = self.filter_assigned_tasks({"date_assigned_after": future})
+        assert result.count() == 0
+
+    def test_filter_by_due_date_range(self):
+        soon = (date.today() + timedelta(days=14)).isoformat()
+        result = self.filter_assigned_tasks({"due_date_before": soon})
+        assert result.count() == 2
+
+    def test_combined_filters(self):
+        result = self.filter_assigned_tasks(
+            {
+                "worker_name": str(self.access1.user.pk),
+                "task_status": AssignedTaskStatus.ASSIGNED,
+            }
+        )
+        assert list(result) == [self.at_assigned]

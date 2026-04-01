@@ -1,5 +1,6 @@
 import django_filters
 from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Column, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
@@ -331,3 +332,87 @@ class TasksFilterSet(django_filters.FilterSet):
             self.filters["worker_name"].extra["choices"] = [
                 (str(user.pk), user.display_name_with_username()) for user in worker_queryset
             ]
+
+
+class AssignedTaskFilterSet(django_filters.FilterSet):
+    worker_name = django_filters.ChoiceFilter(
+        label=_("Worker Name"),
+        choices=[],
+        field_name="opportunity_access__user__id",
+    )
+    task_status = django_filters.ChoiceFilter(
+        label=_("Task Status"),
+        choices=TASK_STATUS_CHOICES,
+        field_name="status",
+    )
+    task_type = django_filters.ChoiceFilter(
+        label=_("Task Type"),
+        choices=[],
+        field_name="task__id",
+    )
+    date_assigned_after = django_filters.DateFilter(
+        label=_("Date Assigned From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        # date_created is a DateTimeField; cast to date before comparing to avoid TZ fragility
+        lookup_expr="date__gte",
+    )
+    date_assigned_before = django_filters.DateFilter(
+        label=_("Date Assigned Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        # date_created is a DateTimeField; cast to date before comparing to avoid TZ fragility
+        lookup_expr="date__lt",
+    )
+    due_date_after = django_filters.DateFilter(
+        label=_("Due Date From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="gte",
+    )
+    due_date_before = django_filters.DateFilter(
+        label=_("Due Date Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="lt",
+    )
+
+    class Meta:
+        form = CSRFExemptForm
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+        if self.opportunity:
+            self.filters["task_type"].extra["choices"] = self._get_task_type_choices()
+            self.filters["worker_name"].extra["choices"] = self._get_worker_name_choices()
+        # Layout must be set after dynamic choices are populated above; accessing self.form
+        # triggers lazy field creation which caches choices — ChoiceFilter validates strictly.
+        self.form.helper.layout = Layout(
+            "worker_name",
+            "task_status",
+            "task_type",
+            Row(Column("date_assigned_after"), Column("date_assigned_before")),
+            Row(Column("due_date_after"), Column("due_date_before")),
+        )
+
+    def _get_task_type_choices(self):
+        """
+        Fetch task types with at least one `AssignedTask` for this opportunity
+        """
+        tasks = Task.objects.filter(assignedtask__opportunity_access__opportunity=self.opportunity).distinct()
+        return [(str(t.pk), t.name) for t in tasks]
+
+    def _get_worker_name_choices(self):
+        """
+        Fetch workers with at least one assigned task for this opportunity
+        """
+        workers = (
+            User.objects.filter(
+                opportunityaccess__opportunity=self.opportunity,
+                opportunityaccess__assignedtask__isnull=False,
+            )
+            .distinct()
+            .order_by("name", "username")
+        )
+        return [(str(u.pk), u.display_name_with_username()) for u in workers]
