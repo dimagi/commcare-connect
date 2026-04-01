@@ -1,0 +1,39 @@
+{% load i18n crispy_forms_tags %}
+<div x-cloak x-data="{showFilterModal: false}" class="flex justify-end mb-3">
+    <button type="button" @click="showFilterModal = true" class="relative button-icon shadow-sm">
+        <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+        {% if filters_applied_count %}
+        <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+            {{ filters_applied_count }}
+        </span>
+        {% endif %}
+    </button>
+    <div x-show="showFilterModal" class="modal-backdrop">
+        <div class="modal">
+            <div class="header text-lg font-semibold text-brand-deep-purple">
+                <h1>{% trans "Filters" %}</h1>
+                <button @click="showFilterModal = false">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <form
+                id="assignedTaskFilterForm"
+                hx-get="."
+                hx-target="#task-list-table"
+                hx-select="#task-list-table"
+                hx-swap="outerHTML"
+                hx-push-url="true"
+                hx-trigger="submit"
+                class="content"
+            >
+                <div class="modal-body">
+                    {% crispy filter_form %}
+                </div>
+                <div class="footer">
+                    <button type="button" @click="showFilterModal = false" class="button button-md outline-style">{% trans "Close" %}</button>
+                    <button form="assignedTaskFilterForm" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">{% trans "Apply" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
