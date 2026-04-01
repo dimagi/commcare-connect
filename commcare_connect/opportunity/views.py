@@ -61,6 +61,7 @@ from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.filters import (
+    AssignedTaskFilterSet,
     DeliverFilterSet,
     FilterMixin,
     OpportunityListFilterSet,
@@ -3276,10 +3277,21 @@ def visit_export_count(request, org_slug, opp_id):
     return HttpResponse(html)
 
 
-class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, OrgContextSingleTableView):
+class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, FilterMixin, OrgContextSingleTableView):
     template_name = "opportunity/assigned_task_list.html"
     table_class = AssignedTaskListTable
     paginate_by = DEFAULT_PAGE_SIZE
+    filter_class = AssignedTaskFilterSet
+
+    def get_filter_kwargs(self):
+        opportunity = self.get_opportunity()
+        return {
+            "queryset": AssignedTask.objects.filter(opportunity_access__opportunity=opportunity)
+            .select_related("task", "opportunity_access__user", "assigned_by")
+            .order_by("-date_created"),
+            "request": self.request,
+            "opportunity": opportunity,
+        }
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
@@ -3287,12 +3299,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, OrgCon
         return kwargs
 
     def get_queryset(self):
-        opportunity = self.get_opportunity()
-        return (
-            AssignedTask.objects.filter(opportunity_access__opportunity=opportunity)
-            .select_related("task", "opportunity_access__user", "assigned_by")
-            .order_by("-date_created")
-        )
+        return self._get_filter().qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -3306,6 +3313,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, OrgCon
 
         context["opportunity"] = opportunity
         context.update(counts)
+        context.update(self.get_filter_context())
 
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": self.request.org.slug})},
