@@ -9,6 +9,7 @@ from commcare_connect.opportunity.models import (
     CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
+    DeliverUnit,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -61,6 +62,34 @@ class PaymentUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentUnit
         fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
+
+
+class PaymentUnitCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentUnit
+        fields = ["name", "description", "amount", "org_amount", "max_total", "max_daily", "start_date", "end_date"]
+
+    def create(self, validated_data):
+        validated_data["opportunity"] = self.context["opportunity"]
+        return super().create(validated_data)
+
+
+class DeliverUnitReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliverUnit
+        fields = ["id", "slug", "name", "payment_unit", "app", "optional"]
+
+
+class DeliverUnitCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliverUnit
+        fields = ["slug", "name", "payment_unit", "app", "optional"]
+
+    def validate_payment_unit(self, payment_unit):
+        opportunity = self.context.get("opportunity")
+        if opportunity and payment_unit.opportunity_id != opportunity.id:
+            raise serializers.ValidationError("Payment unit does not belong to this opportunity.")
+        return payment_unit
 
 
 class OpportunityClaimLimitSerializer(serializers.ModelSerializer):
@@ -319,3 +348,15 @@ class DeliveryProgressSerializer(serializers.Serializer):
             .annotate(last_visit_date=Max("uservisit__visit_date"))
         )
         return CompletedWorkSerializer(completed_works, many=True).data
+
+
+class InviteUsersSerializer(serializers.Serializer):
+    phone_numbers = serializers.ListField(child=serializers.CharField())
+
+    def validate_phone_numbers(self, phone_numbers):
+        for number in phone_numbers:
+            if not number.startswith("+") or not number[1:].isdigit():
+                raise serializers.ValidationError(
+                    "Phone numbers must contain only digits and include the country code starting with '+'."
+                )
+        return phone_numbers

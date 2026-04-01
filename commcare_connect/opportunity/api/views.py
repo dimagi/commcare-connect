@@ -5,28 +5,39 @@ import waffle
 from django.db import transaction
 from django.db.models import Q
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
-from rest_framework import viewsets
+from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
+from rest_framework import status, viewsets
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.flags.switch_names import API_UUID
+from commcare_connect.opportunity.api.permissions import IsOrgProgramManagerAdmin
 from commcare_connect.opportunity.api.serializers import (
     CompletedWorkSerializer,
+    DeliverUnitCreateSerializer,
+    DeliverUnitReadSerializer,
     DeliveryProgressSerializer,
+    InviteUsersSerializer,
     OpportunitySerializer,
+    PaymentUnitCreateSerializer,
+    PaymentUnitSerializer,
     UserLearnProgressSerializer,
 )
 from commcare_connect.opportunity.models import (
     CompletedWork,
+    DeliverUnit,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    PaymentUnit,
 )
+from commcare_connect.opportunity.tasks import add_connect_users
 from commcare_connect.users.helpers import create_hq_user_and_link
 from commcare_connect.users.models import User
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
@@ -182,3 +193,118 @@ class ConfirmPaymentsView(APIView):
 
     def post(self, request, *args, **kwargs):
         return confirm_payments(request, request.user, request.data.get("payments", []))
+
+
+class ReadSerializerResponseMixin:
+    """Return the read serializer in create/update responses instead of the write serializer."""
+
+    read_serializer_class = None
+
+    def create(self, request, *args, **kwargs):
+        write_serializer = self.get_serializer(data=request.data)
+        write_serializer.is_valid(raise_exception=True)
+        self.perform_create(write_serializer)
+        read_serializer = self.read_serializer_class(write_serializer.instance, context=self.get_serializer_context())
+        headers = self.get_success_headers(read_serializer.data)
+        return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class PaymentUnitViewSet(ReadSerializerResponseMixin, viewsets.ModelViewSet):
+    serializer_class = PaymentUnitSerializer
+    read_serializer_class = PaymentUnitSerializer
+    permission_classes = [IsAuthenticated]
+    required_scopes = ["create"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("create", "partial_update", "destroy"):
+            return [IsAuthenticated(), TokenHasScope(), IsOrgProgramManagerAdmin()]
+        return [IsAuthenticated()]
+
+    def get_serializer_class(self):
+        if self.action in ("create", "partial_update"):
+            return PaymentUnitCreateSerializer
+        return PaymentUnitSerializer
+
+    def get_opportunity(self):
+        return get_object_or_404(Opportunity, opportunity_id=self.kwargs["opportunity_id"])
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.kwargs.get("opportunity_id"):
+            context["opportunity"] = self.get_opportunity()
+        return context
+
+    def get_queryset(self):
+        user = self.request.user
+        return (
+            PaymentUnit.objects.filter(
+                opportunity__opportunity_id=self.kwargs["opportunity_id"],
+            )
+            .filter(
+                Q(opportunity__organization__memberships__user=user)
+                | Q(opportunity__managedopportunity__program__organization__memberships__user=user)
+            )
+            .distinct()
+            .order_by("pk")
+        )
+
+
+class DeliverUnitViewSet(ReadSerializerResponseMixin, viewsets.ModelViewSet):
+    serializer_class = DeliverUnitReadSerializer
+    read_serializer_class = DeliverUnitReadSerializer
+    permission_classes = [IsAuthenticated]
+    required_scopes = ["create"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("create", "partial_update", "destroy"):
+            return [IsAuthenticated(), TokenHasScope(), IsOrgProgramManagerAdmin()]
+        return [IsAuthenticated()]
+
+    def get_serializer_class(self):
+        if self.action in ("create", "partial_update"):
+            return DeliverUnitCreateSerializer
+        return DeliverUnitReadSerializer
+
+    def get_opportunity(self):
+        return get_object_or_404(Opportunity, opportunity_id=self.kwargs["opportunity_id"])
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.kwargs.get("opportunity_id"):
+            context["opportunity"] = self.get_opportunity()
+        return context
+
+    def get_queryset(self):
+        """Filter deliver units by those linked to payment units of this opportunity."""
+        user = self.request.user
+        return (
+            DeliverUnit.objects.filter(
+                payment_unit__opportunity__opportunity_id=self.kwargs["opportunity_id"],
+            )
+            .filter(
+                Q(payment_unit__opportunity__organization__memberships__user=user)
+                | Q(payment_unit__opportunity__managedopportunity__program__organization__memberships__user=user)
+            )
+            .distinct()
+            .order_by("pk")
+        )
+
+
+class InviteUsersView(APIView):
+    permission_classes = [IsAuthenticated, TokenHasScope, IsOrgProgramManagerAdmin]
+    required_scopes = ["create"]  # POST-only view, always requires create scope
+
+    def post(self, request, opportunity_id):
+        opportunity = get_object_or_404(Opportunity, opportunity_id=opportunity_id)
+        if opportunity.has_ended:
+            return Response(
+                {"error": "This opportunity has ended. You cannot invite more workers."},
+                status=400,
+            )
+        serializer = InviteUsersSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_numbers = serializer.validated_data["phone_numbers"]
+        add_connect_users.delay(phone_numbers, str(opportunity.pk))
+        return Response({"invited": len(phone_numbers)})

@@ -386,6 +386,7 @@ OAUTH2_PROVIDER = {
         "read": "Read scope",
         "write": "Write scope",
         "export": "Allow exporting data to other platforms using export API's.",
+        "create": "Allow creating programs, opportunities, and related resources via API.",
     },
     "OAUTH2_VALIDATOR_CLASS": "commcare_connect.users.oauth2_validator.CustomOAuth2Validator",
     "OIDC_ENABLED": True,
