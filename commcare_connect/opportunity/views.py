@@ -3213,6 +3213,9 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
     paginate_by = DEFAULT_PAGE_SIZE
     filter_class = AssignedTaskFilterSet
 
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
     def get_filter_kwargs(self):
         opportunity = self.get_opportunity()
         return {

@@ -2325,6 +2325,17 @@ class TestAssignedTaskListView:
         assert response.context["open_tasks"] == 1
         assert response.context["complete_tasks"] == 1
 
+    def test_page_size_param_is_respected(self, organization, org_user_member, opportunity, client):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        task = TaskFactory(app=opportunity.deliver_app)
+        for _ in range(30):
+            AssignedTaskFactory(task=task, opportunity_access=access)
+
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"page_size": 30})
+        assert response.context["table"].page.paginator.per_page == 30
+
 
 @pytest.mark.django_db
 class TestTaskTypesConfig:
