@@ -132,21 +132,24 @@ class TestAssignedTaskFilterSet:
         result = self.filter_assigned_tasks({"task_type": str(self.task1.pk)})
         assert list(result) == [self.at_assigned]
 
-    def test_filter_by_date_assigned_range(self):
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
-        result = self.filter_assigned_tasks({"date_assigned_after": yesterday, "date_assigned_before": tomorrow})
-        assert result.count() == 2
-
-    def test_filter_by_date_assigned_excludes_outside_range(self):
-        future = (date.today() + timedelta(days=10)).isoformat()
-        result = self.filter_assigned_tasks({"date_assigned_after": future})
-        assert result.count() == 0
-
-    def test_filter_by_due_date_range(self):
-        soon = (date.today() + timedelta(days=14)).isoformat()
-        result = self.filter_assigned_tasks({"due_date_before": soon})
-        assert result.count() == 2
+    @pytest.mark.parametrize(
+        "date_filter,expected_count",
+        [
+            (
+                {
+                    "date_assigned_after": (date.today() - timedelta(days=1)).isoformat(),
+                    "date_assigned_before": (date.today() + timedelta(days=1)).isoformat(),
+                },
+                2,
+            ),
+            ({"due_date_after": (date.today() + timedelta(days=10)).isoformat()}, 0),
+            ({"due_date_before": (date.today() + timedelta(days=14)).isoformat()}, 2),
+        ],
+        ids=["date_assigned_range_matches_all", "due_date_after_excludes_all", "due_date_before_matches_all"],
+    )
+    def test_filter_by_date_assigned_and_due_date(self, date_filter, expected_count):
+        result = self.filter_assigned_tasks(date_filter)
+        assert result.count() == expected_count
 
     def test_combined_filters(self):
         result = self.filter_assigned_tasks(

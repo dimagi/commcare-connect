@@ -2297,8 +2297,9 @@ class TestAssignedTaskListView:
     def two_tasks(self, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
         task = TaskFactory(app=opportunity.deliver_app)
-        AssignedTaskFactory(task=task, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
-        AssignedTaskFactory(task=task, opportunity_access=access, status=AssignedTaskStatus.COMPLETED)
+        at_assigned = AssignedTaskFactory(task=task, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        at_completed = AssignedTaskFactory(task=task, opportunity_access=access, status=AssignedTaskStatus.COMPLETED)
+        return [at_assigned, at_completed]
 
     def test_filter_by_status_returns_filtered_table(
         self, two_tasks, organization, org_user_member, opportunity, client
@@ -2307,20 +2308,14 @@ class TestAssignedTaskListView:
         url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
         response = client.get(url, {"task_status": AssignedTaskStatus.ASSIGNED})
         assert response.status_code == 200
+
+        # Returns filtered table with only assigned tasks
         assert len(response.context["table"].rows) == 1
 
-    def test_filters_applied_count_in_context(self, organization, org_user_member, opportunity, client):
-        client.force_login(org_user_member)
-        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
-        response = client.get(url, {"task_status": AssignedTaskStatus.ASSIGNED})
-        assert response.status_code == 200
+        # Filters applied count in context is correct
         assert response.context["filters_applied_count"] == 1
 
-    def test_metric_counts_unaffected_by_filters(self, two_tasks, organization, org_user_member, opportunity, client):
-        """Metric cards always show opportunity totals, not filtered totals."""
-        client.force_login(org_user_member)
-        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
-        response = client.get(url, {"task_status": AssignedTaskStatus.ASSIGNED})
+        # Metric counts in context are unaffected by filters
         assert response.context["total_tasks"] == 2
         assert response.context["open_tasks"] == 1
         assert response.context["complete_tasks"] == 1
