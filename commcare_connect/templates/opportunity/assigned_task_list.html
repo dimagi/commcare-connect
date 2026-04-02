@@ -73,7 +73,7 @@
              hx-trigger="reloadTable from:body"
              hx-select="#task-list-table"
              hx-swap="outerHTML">
-            {% include "opportunity/assigned_task_filter_modal.html" %}
+            {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" container_class="flex justify-end mb-3" %}
             {% render_table table %}
         </div>
 
