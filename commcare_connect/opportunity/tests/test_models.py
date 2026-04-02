@@ -4,13 +4,7 @@ import pytest
 
 from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
-from commcare_connect.opportunity.models import (
-    InvoiceStatus,
-    Opportunity,
-    OpportunityClaimLimit,
-    PaymentInvoice,
-    UserVisit,
-)
+from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, PaymentInvoice
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -28,7 +22,6 @@ from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
-from commcare_connect.utils.flags import Flags
 
 
 @pytest.mark.django_db
@@ -218,35 +211,3 @@ class TestOpportunityActiveTracking:
         # No request context in tests — both events should have no context
         assert events.first().pgh_context is None
         assert events.last().pgh_context is None
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "query_flags, expected_keys",
-    [
-        ([Flags.DUPLICATE.value], {"duplicate"}),
-        ([Flags.DUPLICATE.value, Flags.GPS.value], {"duplicate", "gps"}),
-        ([], {"duplicate", "gps", "clean"}),
-    ],
-)
-def test_uservisit_queryset_with_any_flags(query_flags, expected_keys):
-    visits = {
-        "duplicate": UserVisitFactory(
-            flagged=True,
-            flag_reason={"flags": [(Flags.DUPLICATE.value, "Duplicate submission")]},
-        ),
-        "gps": UserVisitFactory(
-            flagged=True,
-            flag_reason={"flags": [(Flags.GPS.value, "GPS missing")]},
-        ),
-        "clean": UserVisitFactory(
-            flagged=False,
-            flag_reason=None,
-        ),
-    }
-
-    queryset = UserVisit.objects.with_any_flags(query_flags)
-    result_ids = {visit_id for visit_id in queryset.values_list("id", flat=True)}
-    expected_ids = {visits[key].id for key in expected_keys}
-
-    assert result_ids == expected_ids

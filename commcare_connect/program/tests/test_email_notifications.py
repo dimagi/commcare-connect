@@ -87,7 +87,7 @@ def test_send_opportunity_created_notification(mock_send_mail):
 class TestMonthlyDeliveryReminderEmail:
     def test_send_reminder_email_with_pending_deliveries(self, send_mock):
         org = ProgramManagerOrgWithUsersFactory()
-        opportunity = ManagedOpportunityFactory(organization=org)
+        opportunity = ManagedOpportunityFactory(organization=org, is_test=False)
 
         access = OpportunityAccessFactory(opportunity=opportunity)
         completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
@@ -109,7 +109,7 @@ class TestMonthlyDeliveryReminderEmail:
 
     def test_no_email_sent_without_pending_deliveries(self, send_mock):
         org = ProgramManagerOrgWithUsersFactory()
-        opportunity = ManagedOpportunityFactory(organization=org)
+        opportunity = ManagedOpportunityFactory(organization=org, is_test=False)
 
         access = OpportunityAccessFactory(opportunity=opportunity)
         CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.approved)
@@ -123,7 +123,7 @@ class TestMonthlyDeliveryReminderEmail:
 
         org.memberships.all().delete()
 
-        opportunity = ManagedOpportunityFactory(organization=org)
+        opportunity = ManagedOpportunityFactory(organization=org, is_test=False)
         access = OpportunityAccessFactory(opportunity=opportunity)
         completed_work = CompletedWorkFactory(opportunity_access=access, status=CompletedWorkStatus.pending)
 

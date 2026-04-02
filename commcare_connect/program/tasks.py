@@ -9,7 +9,6 @@ from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
 from commcare_connect.opportunity.models import (
-    CompletedWork,
     CompletedWorkStatus,
     Opportunity,
     VisitReviewStatus,
@@ -119,17 +118,13 @@ def send_monthly_delivery_reminder_email():
     ).distinct()
 
     for organization in organizations_with_pending_deliveries.iterator(chunk_size=50):
-        opps_ids = get_org_opps_ids_for_review(organization)
+        opportunities = get_org_opps_for_review(organization)
 
         if organization.program_manager:
-            opps_ids.extend(get_org_managed_opps_ids_for_review(organization))
+            opportunities.extend(get_org_managed_opps_for_review(organization))
 
-        if not opps_ids:
+        if not opportunities:
             continue
-
-        opportunities = Opportunity.objects.filter(
-            id__in=opps_ids,
-        ).only("name", "id")
 
         _send_org_email_for_opportunities(
             organization=organization,
@@ -138,27 +133,29 @@ def send_monthly_delivery_reminder_email():
         )
 
 
-def get_org_opps_ids_for_review(organization):
+def get_org_opps_for_review(organization):
     return list(
-        CompletedWork.objects.filter(
-            opportunity_access__opportunity__organization=organization,
-            uservisit__status=VisitValidationStatus.pending,
+        Opportunity.objects.filter(
+            organization=organization,
+            opportunityaccess__completedwork__uservisit__status=VisitValidationStatus.pending,
+            is_test=False,
         )
-        .values_list("opportunity_access__opportunity_id", flat=True)
         .distinct()
+        .only("name", "id")
     )
 
 
-def get_org_managed_opps_ids_for_review(organization):
+def get_org_managed_opps_for_review(organization):
     return list(
-        CompletedWork.objects.filter(
-            opportunity_access__opportunity__managed=True,
-            opportunity_access__opportunity__managedopportunity__program__organization=organization,
-            uservisit__review_status=VisitReviewStatus.pending,
-            uservisit__status=VisitValidationStatus.approved,
+        Opportunity.objects.filter(
+            managed=True,
+            managedopportunity__program__organization=organization,
+            opportunityaccess__completedwork__uservisit__review_status=VisitReviewStatus.pending,
+            opportunityaccess__completedwork__uservisit__status=VisitValidationStatus.approved,
+            is_test=False,
         )
-        .values_list("opportunity_access__opportunity_id", flat=True)
         .distinct()
+        .only("id", "name")
     )
 
 
