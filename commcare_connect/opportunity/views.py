@@ -2145,7 +2145,7 @@ class WorkerCompletedTaskTableView(WorkerTableView):
 
     def get_queryset(self):
         queryset = AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
-            "task", "assigned_by", "opportunity_access__opportunity"
+            "task_type", "assigned_by", "opportunity_access__opportunity"
         )
         user_id = self.request.GET.get("user")
         if user_id:
