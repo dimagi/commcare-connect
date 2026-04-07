@@ -12,6 +12,7 @@ from commcare_connect.users.managers import UserManager
 from commcare_connect.utils.permission_const import (
     ALL_ORG_ACCESS,
     DEMO_USER_ACCESS,
+    INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
     ORG_MANAGEMENT_SETTINGS_ACCESS,
@@ -94,6 +95,7 @@ class User(AbstractUser):
             MANAGE_INTERNAL_PERMISSIONS,
             ORG_MANAGEMENT_SETTINGS_ACCESS,
             WORKSPACE_ENTITY_MANAGEMENT_ACCESS,
+            INVOICE_REPORT_ACCESS,
         ]
         return any([self.has_perm(perm) for perm in internal_features])
 
