@@ -34,7 +34,7 @@ from commcare_connect.reports.helpers import get_table_data_for_year_month
 from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
 from commcare_connect.reports.tasks import export_invoice_report_task
 from commcare_connect.utils.celery import download_export_file, render_export_status
-from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS, INVOICE_REPORT_ACCESS
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
 
 PERIOD_CHOICES = [
@@ -219,6 +219,14 @@ class InvoiceReportFilter(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        request = getattr(self, "request", None)
+        if request and request.user and not request.user.has_perm(ALL_ORG_ACCESS):
+            self.filters["opportunity_name"].queryset = (
+                ManagedOpportunity.objects.filter(program__organization__memberships__user=request.user)
+                .distinct()
+                .only("id", "name")
+            )
+
         self.filters["opportunity_name"].field.label_from_instance = lambda obj: f"{obj.name} - {obj.id}"
         self.form.helper = FormHelper()
         self.form.helper.form_tag = False
@@ -247,7 +255,7 @@ class InvoiceReportView(
     model = PaymentInvoice
     table_class = InvoiceReportTable
     filterset_class = InvoiceReportFilter
-    permission_required = ALL_ORG_ACCESS
+    permission_required = INVOICE_REPORT_ACCESS
     paginate_by = DEFAULT_PAGE_SIZE
 
     def get_paginate_by(self, table):
@@ -272,7 +280,7 @@ class InvoiceReportView(
         return context
 
     @classmethod
-    def get_invoice_queryset(cls):
+    def get_invoice_queryset(cls, user=None):
         queryset = (
             PaymentInvoice.objects.select_related(
                 "opportunity__managedopportunity__program__organization",
@@ -288,15 +296,20 @@ class InvoiceReportView(
         )
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
             queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
+
+        if user is not None and not user.has_perm(ALL_ORG_ACCESS):
+            queryset = queryset.filter(
+                opportunity__managedopportunity__program__organization__memberships__user=user
+            ).distinct()
         return queryset
 
     def get_queryset(self):
-        return self.get_invoice_queryset()
+        return self.get_invoice_queryset(user=self.request.user)
 
 
 @require_POST
 @login_required
-@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+@permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def export_invoice_report(request):
     filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none())
     if not filterset.is_valid():
@@ -310,7 +323,7 @@ def export_invoice_report(request):
     if filters_data.get("to_date"):
         filters_data["to_date"] = filters_data["to_date"].isoformat()
 
-    task = export_invoice_report_task.delay(filters_data)
+    task = export_invoice_report_task.delay(filters_data, user_id=request.user.id)
 
     #  Build redirect URL preserving applied filters
     query_params = {k: v for k, v in filters_data.items() if v not in [None, "", []]}
@@ -323,7 +336,7 @@ def export_invoice_report(request):
 
 @require_GET
 @login_required
-@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+@permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def export_status(request, task_id):
     return render_export_status(
         request,
@@ -336,6 +349,6 @@ def export_status(request, task_id):
 
 @require_GET
 @login_required
-@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+@permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def download_export(request, task_id):
     return download_export_file(task_id=task_id, filename_without_ext=f"invoice_export_{request.user.name}")
