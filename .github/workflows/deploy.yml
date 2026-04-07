@@ -7,7 +7,7 @@ env:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write # required for creating GitHub releases and tags
 
 on:
   #  workflow_run:
@@ -23,6 +23,10 @@ on:
         options:
           - staging
           - production
+      version:
+        description: 'Release version tag (e.g. v1.5.0) — required for production'
+        required: false
+        type: string
 
 jobs:
   deploy:
@@ -30,6 +34,30 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history needed for release notes generation
+
+      - name: Resolve version
+        if: inputs.environment == 'staging'
+        run: |
+          # Use manually provided version, or auto-increment patch from the latest semver tag (e.g. v1.4.4 → v1.4.5)
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            LATEST=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            if [[ -z "$LATEST" ]]; then
+              echo "::error::No existing semver tag found. Please provide a version manually."
+              exit 1
+            fi
+            PATCH=$(echo "$LATEST" | awk -F. '{print $3}')
+            VERSION="${LATEST%.*}.$((PATCH + 1))"
+            echo "Auto-incremented version: $LATEST → $VERSION"
+          fi
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must follow semver format: v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Set release identifier
         run: echo "APP_RELEASE=${GITHUB_REF_NAME}.${GITHUB_SHA}" >> "$GITHUB_ENV"
@@ -112,6 +140,17 @@ jobs:
           set_commits: manual
           repo: dimagi/commcare-connect
           commit: ${{ github.sha }}
+
+      - name: Create GitHub Release
+        if: success() && inputs.environment == 'staging' && inputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ env.RELEASE_VERSION }}" \
+            --title "${{ env.RELEASE_VERSION }}" \
+            --generate-notes \
+            --draft \
+            --target "${{ github.sha }}"
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
