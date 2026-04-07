@@ -77,6 +77,7 @@ class User(AbstractUser):
             ("workspace_entity_management_access", "Can manage LLO Entities for organizations"),
             ("product_features_access", "Can access and manage product features (flags and switches)"),
             ("manage_internal_permissions", "Can manage internal permissions for users"),
+            ("invoice_report_access", "Access the Invoice reports dashboard"),
         ]
 
     def __str__(self):
