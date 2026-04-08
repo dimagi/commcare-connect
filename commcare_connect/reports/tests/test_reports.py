@@ -486,9 +486,12 @@ def test_export_invoice_report_task_creates_export_file():
         "commcare_connect.reports.tasks.TableExport"
     ) as mock_table_export, mock.patch.dict(
         "sys.modules", {"commcare_connect.utils.storages": storages_mock}
-    ):
+    ), mock.patch(
+        "commcare_connect.reports.tasks.User"
+    ) as mock_user_model:
         mock_table_export.return_value.export.return_value = "col1,col2\nval1,val2"
-        result = export_invoice_report_task({})
+        result = export_invoice_report_task({}, user_id=1)
+        mock_user_model.objects.get.assert_called_once_with(id=1)
 
     assert result.endswith(".csv")
     assert "invoice-report-" in result

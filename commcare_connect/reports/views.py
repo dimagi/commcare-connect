@@ -219,10 +219,9 @@ class InvoiceReportFilter(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        request = getattr(self, "request", None)
-        if request and request.user and not request.user.has_perm(ALL_ORG_ACCESS):
+        if not self.request.user.has_perm(ALL_ORG_ACCESS):
             self.filters["opportunity_name"].queryset = (
-                ManagedOpportunity.objects.filter(program__organization__memberships__user=request.user)
+                ManagedOpportunity.objects.filter(program__organization__memberships__user=self.request.user)
                 .distinct()
                 .only("id", "name")
             )
@@ -280,7 +279,7 @@ class InvoiceReportView(
         return context
 
     @classmethod
-    def get_invoice_queryset(cls, user=None):
+    def get_invoice_queryset(cls, user):
         queryset = (
             PaymentInvoice.objects.select_related(
                 "opportunity__managedopportunity__program__organization",
@@ -297,7 +296,7 @@ class InvoiceReportView(
         if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
             queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
 
-        if user is not None and not user.has_perm(ALL_ORG_ACCESS):
+        if not user.has_perm(ALL_ORG_ACCESS):
             queryset = queryset.filter(
                 opportunity__managedopportunity__program__organization__memberships__user=user
             ).distinct()
