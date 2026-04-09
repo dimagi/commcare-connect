@@ -232,15 +232,15 @@
                         <p class="text-xs text-gray-500">
                             <span x-text="selectedWorkAreas.size"></span> {% translate "work areas selected" %}
                         </p>
-                        <div class="flex items-center gap-2">
+                        <div class="flex flex-col items-end gap-2">
                             <button type="button" disabled
                                 title="{% translate 'Exclude from Opportunity will be available in a future update' %}"
-                                class="button button-sm button-outline-rounded text-xs opacity-50 cursor-not-allowed">
+                                class="button button-sm outline-style text-xs opacity-50 cursor-not-allowed">
                                 {% translate "Exclude from Opportunity" %}
                             </button>
                             <button type="button" @click="clearSelection()"
                                 :disabled="selectedWorkAreas.size === 0"
-                                class="button button-sm button-outline-rounded text-xs">
+                                class="button button-sm outline-style text-xs">
                                 {% translate "Unassign Selected Areas" %}
                             </button>
                         </div>
@@ -279,11 +279,11 @@
                             </dl>
                             <div class="flex gap-2 mt-3">
                                 <a href="{{ worker_list_url }}" target="_blank"
-                                    class="button button-sm button-outline-rounded text-xs">
+                                    class="button button-sm outline-style text-xs">
                                     {% translate "View Summary by FLW" %}
                                 </a>
                                 <a :href="'{{ user_visits_url }}?user=' + getAssigneeUserId()" target="_blank"
-                                    class="button button-sm button-outline-rounded text-xs">
+                                    class="button button-sm outline-style text-xs">
                                     {% translate "View Visits" %}
                                 </a>
                             </div>
