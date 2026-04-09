@@ -219,7 +219,7 @@
                 </div>
 
                 <!-- Panel 1: Select Work Areas to Assign -->
-                <div class="border-t pt-3">
+                <div class="border-t border-gray-200 pt-3">
                     <h3 class="text-sm font-semibold mb-2">{% translate "Select Work Areas to Assign" %}</h3>
                     <div class="space-y-2">
                         <div>
@@ -248,13 +248,13 @@
                 </div>
 
                 <!-- Panel 2: Select new Assignee -->
-                <div class="border-t pt-3">
+                <div class="border-t border-gray-200 pt-3">
                     <h3 class="text-sm font-semibold mb-2">{{ assignment_form.assignee.label }}</h3>
                     {{ assignment_form.assignee }}
                 </div>
 
                 <!-- Panel 3: FLW Summary -->
-                <div class="border-t pt-3">
+                <div class="border-t border-gray-200 pt-3">
                     <h3 class="text-sm font-semibold mb-2">{% translate "FLW Summary" %}</h3>
                     <template x-if="!selectedAssigneeId">
                         <p class="text-sm text-gray-400">{% translate "Select an assignee to view summary." %}</p>
@@ -292,7 +292,7 @@
                 </div>
 
                 <!-- Bottom action bar -->
-                <div class="flex gap-2 mt-auto pt-4 border-t">
+                <div class="flex gap-2 mt-auto pt-4 border-t border-gray-200">
                     <button type="button" @click="handleCancel()"
                         class="button button-md outline-style flex-1">
                         {% translate "Cancel" %}
