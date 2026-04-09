@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import F, FloatField, Func, Value
+from django.db.models import F, FloatField, Func, Sum, Value
 from django.db.models.functions import Cast
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
@@ -24,7 +24,7 @@ from django.utils.decorators import method_decorator
 from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.generic.edit import UpdateView
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
@@ -36,8 +36,13 @@ from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import WorkAreaModelForm
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.models import UserVisit
-from commcare_connect.organization.decorators import opportunity_required, org_admin_required
+from commcare_connect.opportunity.models import OpportunityAccess, UserVisit
+from commcare_connect.organization.decorators import (
+    opportunity_required,
+    org_admin_required,
+    org_program_manager_required,
+    request_user_is_program_manager,
+)
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.file import get_file_extension
@@ -103,29 +108,74 @@ def microplanning_home(request, *args, **kwargs):
         for status in WorkAreaStatus
     }
 
+    is_program_manager = request_user_is_program_manager(request)
+    assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
+
     filterset = WorkAreaMapFilterSet(
         data=request.GET,
         opportunity=opportunity,
     )
+
+    context = {
+        "show_area_btn": show_area_btn,
+        "show_workarea_groups_btn": show_workarea_groups_btn,
+        "mapbox_api_key": settings.MAPBOX_TOKEN,
+        "task_id": request.GET.get("task_id"),
+        "opportunity": opportunity,
+        "metrics": get_metrics_for_microplanning(opportunity),
+        "tiles_url": tiles_url,
+        "visit_tiles_url": visit_tiles_url,
+        "groups_url": groups_url,
+        "status_meta": status_meta,
+        "workarea_min_zoom": WORKAREA_MIN_ZOOM,
+        "edit_work_area_url": edit_work_area_url,
+        "download_url": download_url,
+        "filter_form": filterset.form,
+        "is_program_manager": is_program_manager,
+        "assignment_mode": assignment_mode,
+    }
+
+    if assignment_mode:
+        org_slug = request.org.slug
+        opp_id = opportunity.opportunity_id
+
+        context["work_area_groups_json"] = list(
+            WorkAreaGroup.objects.filter(opportunity=opportunity).values("id", "name")
+        )
+        context["assignees_json"] = list(
+            OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
+            .select_related("user")
+            .values("id", "user__name", "user_id")
+        )
+        context["group_work_areas_url"] = reverse(
+            "microplanning:assignment_group_work_areas",
+            args=[org_slug, opp_id, 0],
+        ).replace("/0/", "/__group_id__/")
+        context["flw_work_areas_url"] = reverse(
+            "microplanning:assignment_flw_work_areas",
+            args=[org_slug, opp_id, 0],
+        ).replace("/0/", "/__assignee_id__/")
+        context["flw_summary_url"] = reverse(
+            "microplanning:assignment_flw_summary",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+        context["assignment_save_url"] = reverse(
+            "microplanning:assignment_save",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+        context["user_visits_url"] = reverse(
+            "opportunity:user_visits_list",
+            args=[org_slug, opp_id],
+        )
+        context["worker_list_url"] = reverse(
+            "opportunity:worker_list",
+            args=[org_slug, opp_id],
+        )
+
     return render(
         request,
         template_name="microplanning/home.html",
-        context={
-            "show_area_btn": show_area_btn,
-            "show_workarea_groups_btn": show_workarea_groups_btn,
-            "mapbox_api_key": settings.MAPBOX_TOKEN,
-            "task_id": request.GET.get("task_id"),
-            "opportunity": opportunity,
-            "metrics": get_metrics_for_microplanning(opportunity),
-            "tiles_url": tiles_url,
-            "visit_tiles_url": visit_tiles_url,
-            "groups_url": groups_url,
-            "status_meta": status_meta,
-            "workarea_min_zoom": WORKAREA_MIN_ZOOM,
-            "edit_work_area_url": edit_work_area_url,
-            "download_url": download_url,
-            "filter_form": filterset.form,
-        },
+        context=context,
     )
 
 
@@ -473,3 +523,66 @@ class ModifyWorkAreaUpdateView(UpdateView):
             }
         )
         return response
+
+
+@require_GET
+@org_program_manager_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def assignment_group_work_areas(request, org_slug, opp_id, group_id):
+    ids = list(
+        WorkArea.objects.filter(
+            opportunity=request.opportunity,
+            work_area_group_id=group_id,
+        ).values_list("id", flat=True)
+    )
+    return JsonResponse({"work_area_ids": ids})
+
+
+@require_GET
+@org_program_manager_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def assignment_flw_work_areas(request, org_slug, opp_id, assignee_id):
+    ids = list(
+        WorkArea.objects.filter(
+            opportunity=request.opportunity,
+            work_area_group__opportunity_access_id=assignee_id,
+        ).values_list("id", flat=True)
+    )
+    return JsonResponse({"work_area_ids": ids})
+
+
+@require_GET
+@org_program_manager_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def assignment_flw_summary(request, org_slug, opp_id):
+    assignee_id = request.GET.get("assignee_id")
+    if not assignee_id:
+        return JsonResponse({"error": "assignee_id required"}, status=400)
+
+    qs = WorkArea.objects.filter(
+        opportunity=request.opportunity,
+        work_area_group__opportunity_access_id=assignee_id,
+    )
+    stats = qs.aggregate(
+        buildings=Sum("building_count"),
+        visits=Sum("expected_visit_count"),
+    )
+    return JsonResponse(
+        {
+            "assigned_buildings": stats["buildings"] or 0,
+            "assigned_visits": stats["visits"] or 0,
+            "assigned_work_areas": qs.count(),
+        }
+    )
+
+
+@require_http_methods(["POST"])
+@org_program_manager_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def assignment_save(request, org_slug, opp_id):
+    """Stub endpoint for saving work area assignments. Accepts the payload but does not persist changes yet."""
+    return JsonResponse({"status": "ok"})

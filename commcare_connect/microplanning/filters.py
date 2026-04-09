@@ -1,5 +1,6 @@
 import django_filters
 from django import forms
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
@@ -41,6 +42,10 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
         widget=forms.DateInput(attrs={"type": "date", "class": INPUT_CSS}),
     )
 
+    unassigned_only = django_filters.BooleanFilter(
+        method="filter_unassigned_only",
+    )
+
     class Meta:
         model = WorkArea
         fields = []
@@ -65,6 +70,13 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
         # Display "name (username)" instead of default __str__
         # which shows email or username (not useful for mobile workers)
         self.filters["assignee"].field.label_from_instance = lambda obj: obj.display_name_with_username()
+
+    def filter_unassigned_only(self, queryset, name, value):
+        if value:
+            return queryset.filter(
+                Q(work_area_group__isnull=True) | Q(work_area_group__opportunity_access__isnull=True)
+            )
+        return queryset
 
 
 class UserVisitMapFilterSet(django_filters.FilterSet):
