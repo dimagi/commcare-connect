@@ -40,7 +40,7 @@ class WorkAreaGroup(geo_models.Model):
         return self.workarea_set.aggregate(total=Sum("building_count"))["total"] or 0
 
 
-@pghistory.track(fields=["expected_visit_count", "work_area_group"])
+@pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "inaccessibility_reason"])
 class WorkArea(geo_models.Model):
     work_area_group = geo_models.ForeignKey(WorkAreaGroup, null=True, blank=True, on_delete=geo_models.SET_NULL)
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
@@ -63,6 +63,7 @@ class WorkArea(geo_models.Model):
         choices=WorkAreaStatus.choices,
         default=WorkAreaStatus.UNASSIGNED,
     )
+    inaccessibility_reason = geo_models.TextField(blank=True, default="")
     case_id = geo_models.UUIDField(null=True, blank=True, unique=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
 
