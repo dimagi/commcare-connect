@@ -17,9 +17,11 @@ from commcare_connect.form_receiver.tests.xforms import (
     AssessmentStubFactory,
     DeliverUnitStubFactory,
     LearnModuleJsonFactory,
+    WorkAreaUpdateStubFactory,
     get_form_json,
 )
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.microplanning.models import WorkAreaStatus
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import (
     Assessment,
     CompletedModule,
@@ -986,3 +988,155 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         oauth_application=oauth_application,
     )
     assert not UserVisit.objects.filter(user=mobile_user_with_connect_link).exists()
+
+
+@pytest.mark.django_db
+def test_work_area_update_inaccessible(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.NOT_STARTED
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(
+        work_area_id=work_area.case_id, status="request_for_inaccessible", reason="Flooding"
+    )
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    work_area.refresh_from_db()
+    assert work_area.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+    assert work_area.inaccessibility_reason == "Flooding"
+
+
+@pytest.mark.django_db
+def test_work_area_update_wrong_status(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.VISITED
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(
+        work_area_id=work_area.case_id, status="request_for_inaccessible", reason="Flooding"
+    )
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+    work_area.refresh_from_db()
+    assert work_area.status == WorkAreaStatus.VISITED
+
+
+@pytest.mark.django_db
+def test_work_area_update_unassigned_worker(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(
+        work_area_id=work_area.case_id, status="request_for_inaccessible", reason="Flooding"
+    )
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+    work_area.refresh_from_db()
+    assert work_area.status == WorkAreaStatus.NOT_STARTED
+
+
+@pytest.mark.django_db
+def test_work_area_update_invalid_uuid(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id="not-a-uuid", status="request_for_inaccessible", reason="Flooding")
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+
+
+@pytest.mark.django_db
+def test_work_area_update_nonexistent_work_area(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=str(uuid4()), status="request_for_inaccessible", reason="Flooding")
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+
+
+@pytest.mark.django_db
+def test_work_area_update_missing_reason(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.NOT_STARTED
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", reason="")
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+    work_area.refresh_from_db()
+    assert work_area.status == WorkAreaStatus.NOT_STARTED
