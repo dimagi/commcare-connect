@@ -34,7 +34,7 @@ from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
-from commcare_connect.microplanning.forms import WorkAreaModelForm
+from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import OpportunityAccess, UserVisit
 from commcare_connect.organization.decorators import (
@@ -139,9 +139,7 @@ def microplanning_home(request, *args, **kwargs):
         org_slug = request.org.slug
         opp_id = opportunity.opportunity_id
 
-        context["work_area_groups_json"] = list(
-            WorkAreaGroup.objects.filter(opportunity=opportunity).values("id", "name")
-        )
+        context["assignment_form"] = AssignmentModeForm(opportunity=opportunity)
         context["assignees_json"] = list(
             OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
             .select_related("user")

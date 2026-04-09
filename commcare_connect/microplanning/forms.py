@@ -4,6 +4,12 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.opportunity.models import OpportunityAccess
+
+INPUT_CSS = (
+    "w-full rounded-md border border-gray-300 px-3 py-2 "
+    "text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+)
 
 
 class WorkAreaModelForm(forms.ModelForm):
@@ -40,3 +46,44 @@ class WorkAreaModelForm(forms.ModelForm):
     def has_changed(self):
         # Ignore "reason" form is unchanged unless model fields change
         return any(f in self.changed_data for f in self._meta.fields)
+
+
+class AssignmentModeForm(forms.Form):
+    work_area_group = forms.ModelChoiceField(
+        queryset=WorkAreaGroup.objects.none(),
+        required=False,
+        empty_label=_("— Select Group —"),
+        label=_("Select Work Area Group"),
+        widget=forms.Select(
+            attrs={
+                "class": INPUT_CSS,
+                "x-ref": "groupSelect",
+                "@change": "selectGroup($event.target.value)",
+            }
+        ),
+    )
+
+    assignee = forms.ModelChoiceField(
+        queryset=OpportunityAccess.objects.none(),
+        required=False,
+        empty_label=_("— Select FLW —"),
+        label=_("Select new Assignee"),
+        widget=forms.Select(
+            attrs={
+                "class": INPUT_CSS,
+                "x-ref": "assigneeSelect",
+                "@change": "selectedAssigneeId = $event.target.value; selectByAssignee($event.target.value)",
+            }
+        ),
+    )
+
+    def __init__(self, *args, opportunity=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if opportunity:
+            self.fields["work_area_group"].queryset = WorkAreaGroup.objects.filter(opportunity=opportunity)
+            self.fields["assignee"].queryset = (
+                OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
+                .select_related("user")
+                .order_by("user__name")
+            )
+            self.fields["assignee"].label_from_instance = lambda obj: obj.user.name

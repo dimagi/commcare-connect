@@ -22,7 +22,6 @@
             showConfirmModal: false,
             showDiscardModal: false,
             showOnlyUnassigned: false,
-            workAreaGroups: [],
             assignees: [],
             workAreaProperties: new Map(),
 
@@ -281,9 +280,7 @@
                 });
 
                 if (this.assignmentMode) {
-                    const groupsEl = document.getElementById('work-area-groups-data');
                     const assigneesEl = document.getElementById('assignees-data');
-                    if (groupsEl) this.workAreaGroups = JSON.parse(groupsEl.textContent);
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
 
                     this.$watch('showOnlyUnassigned', () => {

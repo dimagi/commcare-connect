@@ -203,7 +203,6 @@
         {% endif %}
 
         {% if assignment_mode %}
-            {{ work_area_groups_json|json_script:"work-area-groups-data" }}
             {{ assignees_json|json_script:"assignees-data" }}
 
             <aside class="bg-white shadow-md p-4 overflow-auto flex flex-col gap-4 xl:flex-1 min-h-0">
@@ -224,19 +223,21 @@
                     <h3 class="text-sm font-semibold mb-2">{% translate "Select Work Areas to Assign" %}</h3>
                     <div class="space-y-2">
                         <div>
-                            <label class="block text-xs text-gray-500 mb-1">{% translate "Select Work Area Group" %}</label>
-                            <select x-ref="groupSelect" @change="selectGroup($event.target.value)"
-                                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
-                                <option value="">{% translate "— Select Group —" %}</option>
-                                <template x-for="g in workAreaGroups" :key="g.id">
-                                    <option :value="g.id" x-text="g.name"></option>
-                                </template>
-                            </select>
+                            <label for="{{ assignment_form.work_area_group.id_for_label }}"
+                                class="block text-xs text-gray-500 mb-1">
+                                {{ assignment_form.work_area_group.label }}
+                            </label>
+                            {{ assignment_form.work_area_group }}
                         </div>
-                        <div class="flex items-center justify-between">
-                            <p class="text-xs text-gray-500">
-                                <span x-text="selectedWorkAreas.size"></span> {% translate "work areas selected" %}
-                            </p>
+                        <p class="text-xs text-gray-500">
+                            <span x-text="selectedWorkAreas.size"></span> {% translate "work areas selected" %}
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <button type="button" disabled
+                                title="{% translate 'Exclude from Opportunity will be available in a future update' %}"
+                                class="button button-sm button-outline-rounded text-xs opacity-50 cursor-not-allowed">
+                                {% translate "Exclude from Opportunity" %}
+                            </button>
                             <button type="button" @click="clearSelection()"
                                 :disabled="selectedWorkAreas.size === 0"
                                 class="button button-sm button-outline-rounded text-xs">
@@ -248,15 +249,8 @@
 
                 <!-- Panel 2: Select new Assignee -->
                 <div class="border-t pt-3">
-                    <h3 class="text-sm font-semibold mb-2">{% translate "Select new Assignee" %}</h3>
-                    <select x-ref="assigneeSelect"
-                        @change="selectedAssigneeId = $event.target.value; selectByAssignee($event.target.value)"
-                        class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
-                        <option value="">{% translate "— Select FLW —" %}</option>
-                        <template x-for="a in assignees" :key="a.id">
-                            <option :value="a.id" x-text="a.user__name"></option>
-                        </template>
-                    </select>
+                    <h3 class="text-sm font-semibold mb-2">{{ assignment_form.assignee.label }}</h3>
+                    {{ assignment_form.assignee }}
                 </div>
 
                 <!-- Panel 3: FLW Summary -->
