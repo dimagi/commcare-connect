@@ -274,40 +274,27 @@ def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         match.value for match in WORK_AREA_UPDATE_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
     ]
     for block in work_area_update_matches:
-        process_work_area_update(user, xform, opportunity, block)
+        process_work_area_update(user, opportunity, block)
 
 
-def process_work_area_update(user: User, xform: XForm, opportunity: Opportunity, block: dict):
-    work_area = _get_work_area_for_update(block, opportunity)
-    access = _get_opportunity_access(user, opportunity)
-    _validate_work_area_assignment(work_area, access)
-    new_status, reason = _parse_and_validate_work_area_transition(block, work_area)
-    _apply_work_area_status_update(user, work_area, new_status, reason)
-
-
-def _get_work_area_for_update(block: dict, opportunity: Opportunity) -> WorkArea:
+def process_work_area_update(user: User, opportunity: Opportunity, block: dict):
     work_area_case_id = block.get("work_area_id")
     if not work_area_case_id or not is_a_uuid(work_area_case_id):
         raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+
     try:
-        return WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+        work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
     except WorkArea.DoesNotExist:
         raise ProcessingError("Work area not found")
 
-
-def _get_opportunity_access(user: User, opportunity: Opportunity) -> OpportunityAccess:
     try:
-        return OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
         raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
 
-
-def _validate_work_area_assignment(work_area: WorkArea, access: OpportunityAccess):
     if not work_area.work_area_group or work_area.work_area_group.opportunity_access_id != access.id:
         raise ProcessingError("User is not assigned to this work area")
 
-
-def _parse_and_validate_work_area_transition(block: dict, work_area: WorkArea) -> tuple[WorkAreaStatus, str]:
     requested_status = block.get("status", "").upper()
     try:
         new_status = WorkAreaStatus(requested_status)
@@ -322,14 +309,11 @@ def _parse_and_validate_work_area_transition(block: dict, work_area: WorkArea) -
     if new_status in WORK_AREA_STATUS_REASON_REQUIRED and not reason:
         raise ProcessingError(f"Reason is required for status {new_status}")
 
-    return new_status, reason
-
-
-def _apply_work_area_status_update(user: User, work_area: WorkArea, new_status: WorkAreaStatus, reason: str):
     work_area.status = new_status
-    if new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE:
+    if new_status in WORK_AREA_STATUS_REASON_REQUIRED:
         work_area.inaccessibility_reason = reason
-    with pghistory.context(username=user.username):
+
+    with pghistory.context(username=user.username, user_email=user.email):
         work_area.save(update_fields=["status", "inaccessibility_reason"])
 
 

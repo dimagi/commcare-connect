@@ -999,6 +999,7 @@ def test_work_area_update_inaccessible(
     work_area = WorkAreaFactory(
         opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.NOT_STARTED
     )
+    initial_event_count = work_area.expected_visit_count_work_area_group_status_inaccessibility_reason_events.count()
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(
         work_area_id=work_area.case_id, status="request_for_inaccessible", reason="Flooding"
@@ -1014,6 +1015,13 @@ def test_work_area_update_inaccessible(
     work_area.refresh_from_db()
     assert work_area.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
     assert work_area.inaccessibility_reason == "Flooding"
+
+    events = work_area.expected_visit_count_work_area_group_status_inaccessibility_reason_events
+    assert events.count() == initial_event_count + 1
+    event = events.last()
+    assert event.pgh_context.metadata["username"] == mobile_user_with_connect_link.username
+    assert event.pgh_context.metadata["user_email"] == mobile_user_with_connect_link.email
+    assert event.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
 
 
 @pytest.mark.django_db
