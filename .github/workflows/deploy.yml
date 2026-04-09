@@ -24,7 +24,7 @@ on:
           - staging
           - production
       version:
-        description: 'Release version tag (e.g. v1.5.0) — required for production'
+        description: 'Release version (e.g., v1.5.0). Auto-incremented if omitted.'
         required: false
         type: string
 
@@ -142,15 +142,14 @@ jobs:
           commit: ${{ github.sha }}
 
       - name: Create GitHub Release
-        if: success() && inputs.environment == 'staging' && inputs.version != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ env.RELEASE_VERSION }}" \
-            --title "${{ env.RELEASE_VERSION }}" \
-            --generate-notes \
-            --draft \
-            --target "${{ github.sha }}"
+        if: success() && inputs.environment == 'staging'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_VERSION }}
+          name: ${{ env.RELEASE_VERSION }}
+          generate_release_notes: true
+          draft: true
+          target_commitish: ${{ github.sha }}
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
