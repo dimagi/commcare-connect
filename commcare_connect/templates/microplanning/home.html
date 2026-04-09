@@ -70,6 +70,21 @@
                     <i class="fa-solid fa-play"></i> {% translate "Create Work Area Groups" %}
                 </button>
             {% endif %}
+            {% if is_program_manager and not assignment_mode %}
+                <a href="?assignment_mode=1" class="button button-md primary-dark ml-auto">
+                    <i class="fa-solid fa-users-gear"></i> {% translate "Enter Assignment Mode" %}
+                </a>
+            {% endif %}
+            {% if assignment_mode %}
+                <div class="flex items-center gap-2 ml-auto">
+                    <span class="text-sm font-semibold text-indigo-700 bg-indigo-100 px-3 py-1 rounded-full">
+                        <i class="fa-solid fa-users-gear"></i> {% translate "Assignment Mode" %}
+                    </span>
+                    <a href="{{ request.path }}" class="button button-md outline-style text-sm">
+                        <i class="fa-solid fa-xmark"></i> {% translate "Exit" %}
+                    </a>
+                </div>
+            {% endif %}
         </div>
         <div x-show="showImportWorkAreaModal" id="modal-container"></div>
         {% if show_workarea_groups_btn %}
@@ -91,6 +106,7 @@
 
         <!-- Sidebars (stacked) -->
         <div class="w-full xl:w-96 shrink-0 flex flex-col gap-2 min-h-0 xl:h-full">
+        {% if not assignment_mode %}
             <aside id="sidebar" class="bg-white shadow-md p-4 overflow-auto xl:flex-1 min-h-0">
                 <div class="flex items-center justify-between mb-2">
                     <h2 class="text-lg font-semibold">{% translate "Filter Map Work Areas" %}</h2>
@@ -127,63 +143,230 @@
                 </form>
             </aside>
 
-        <aside id="lower-sidebar" class="bg-white shadow-md p-4 xl:flex-1 min-h-0">
-            {{ status_meta|json_script:"status-meta-data" }}
-            <h2 class="text-lg font-semibold mb-2">{% translate "Select Work Area" %}</h2>
-            <template x-if="!selectedFeature">
-                <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 gap-2 py-8">
-                    <i class="fa-regular fa-map text-3xl"></i>
-                    <p class="text-sm">{% translate "Click a work area on the map to view details." %}</p>
-                </div>
-            </template>
+            <aside id="lower-sidebar" class="bg-white shadow-md p-4 xl:flex-1 min-h-0">
+                {{ status_meta|json_script:"status-meta-data" }}
+                <h2 class="text-lg font-semibold mb-2">{% translate "Select Work Area" %}</h2>
+                <template x-if="!selectedFeature">
+                    <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 gap-2 py-8">
+                        <i class="fa-regular fa-map text-3xl"></i>
+                        <p class="text-sm">{% translate "Click a work area on the map to view details." %}</p>
+                    </div>
+                </template>
 
-            <!-- Selected work area detail panel -->
-            <template x-if="selectedFeature">
-                <div>
-                    <dl class="space-y-2">
-                        <div class="grid grid-cols-2 items-center gap-2">
-                            <dt class="text-sm text-gray-500">{% translate "Assignee" %}</dt>
-                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
-                                x-text="selectedFeature.assignee_name ?? '—'"></dd>
+                <!-- Selected work area detail panel -->
+                <template x-if="selectedFeature">
+                    <div>
+                        <dl class="space-y-2">
+                            <div class="grid grid-cols-2 items-center gap-2">
+                                <dt class="text-sm text-gray-500">{% translate "Assignee" %}</dt>
+                                <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                                    x-text="selectedFeature.assignee_name ?? '—'"></dd>
 
-                            <dt class="text-sm text-gray-500">{% translate "Work Area Group" %}</dt>
-                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
-                                x-text="selectedFeature.group_name ?? '—'"></dd>
+                                <dt class="text-sm text-gray-500">{% translate "Work Area Group" %}</dt>
+                                <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 truncate"
+                                    x-text="selectedFeature.group_name ?? '—'"></dd>
 
-                            <dt class="text-sm text-gray-500">{% translate "Expected Visit Count" %}</dt>
-                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                x-text="selectedFeature.expected_visit_count ?? '—'"></dd>
+                                <dt class="text-sm text-gray-500">{% translate "Expected Visit Count" %}</dt>
+                                <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                    x-text="selectedFeature.expected_visit_count ?? '—'"></dd>
 
-                            <dt class="text-sm text-gray-500">{% translate "Number of Buildings" %}</dt>
-                            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                x-text="selectedFeature.building_count ?? '—'"></dd>
+                                <dt class="text-sm text-gray-500">{% translate "Number of Buildings" %}</dt>
+                                <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                    x-text="selectedFeature.building_count ?? '—'"></dd>
+                            </div>
+                            <div class="flex items-center gap-4"
+                                x-data="{statusMeta: JSON.parse(document.getElementById('status-meta-data').textContent)}">
+                                <dt class="text-sm text-gray-500 shrink-0">{% translate "Status" %}</dt>
+                                <dd class="flex-1 min-w-0">
+                                    <span class="block w-full text-center text-sm font-semibold rounded-lg px-3 py-2"
+                                        :class="statusMeta[selectedFeature.status]?.class"
+                                        x-text="statusMeta[selectedFeature.status]?.label">
+                                    </span>
+                                </dd>
+                            </div>
+                        </dl>
+                        <div class="mt-4 flex justify-end">
+                            <button class="button button-md button-outline-rounded" @click="openWorkAreaEditModal(selectedFeature._id)">
+                                <i class="fa-regular fa-pen-to-square"></i>
+                                {% translate "Modify Work Area" %}
+                            </button>
+                            <div x-show="showWorkAreaEditModal" x-cloak @click.self="showWorkAreaEditModal = false"
+                                @work-area-updated.window="showWorkAreaEditModal = false" class="modal-backdrop">
+                                <div class="modal relative" @click.stop>
+                                    <div id="work-area-form"></div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-4"
-                            x-data="{statusMeta: JSON.parse(document.getElementById('status-meta-data').textContent)}">
-                            <dt class="text-sm text-gray-500 shrink-0">{% translate "Status" %}</dt>
-                            <dd class="flex-1 min-w-0">
-                                <span class="block w-full text-center text-sm font-semibold rounded-lg px-3 py-2"
-                                    :class="statusMeta[selectedFeature.status]?.class"
-                                    x-text="statusMeta[selectedFeature.status]?.label">
-                                </span>
-                            </dd>
-                        </div>
-                    </dl>
-                <div class="mt-4 flex justify-end">
-                    <button class="button button-md button-outline-rounded" @click="openWorkAreaEditModal(selectedFeature._id)">
-                        <i class="fa-regular fa-pen-to-square"></i>
-                        {% translate "Modify Work Area" %}
+                    </div>
+                </template>
+            </aside>
+        {% endif %}
+
+        {% if assignment_mode %}
+            {{ work_area_groups_json|json_script:"work-area-groups-data" }}
+            {{ assignees_json|json_script:"assignees-data" }}
+
+            <aside class="bg-white shadow-md p-4 overflow-auto flex flex-col gap-4 xl:flex-1 min-h-0">
+                <!-- Show only unassigned toggle -->
+                <div class="flex items-center justify-between">
+                    <label for="unassigned-toggle" class="text-sm text-gray-700">{% translate "Show only unassigned Work Areas" %}</label>
+                    <button id="unassigned-toggle" type="button" role="switch" :aria-checked="showOnlyUnassigned"
+                        @click="showOnlyUnassigned = !showOnlyUnassigned"
+                        :class="showOnlyUnassigned ? 'bg-indigo-600' : 'bg-gray-200'"
+                        class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2">
+                        <span :class="showOnlyUnassigned ? 'translate-x-5' : 'translate-x-0'"
+                            class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                     </button>
-                    <div x-show="showWorkAreaEditModal" x-cloak @click.self="showWorkAreaEditModal = false"
-                        @work-area-updated.window="showWorkAreaEditModal = false" class="modal-backdrop">
-                        <div class="modal relative" @click.stop>
-                            <div id="work-area-form"></div>
+                </div>
+
+                <!-- Panel 1: Select Work Areas to Assign -->
+                <div class="border-t pt-3">
+                    <h3 class="text-sm font-semibold mb-2">{% translate "Select Work Areas to Assign" %}</h3>
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">{% translate "Select Work Area Group" %}</label>
+                            <select x-ref="groupSelect" @change="selectGroup($event.target.value)"
+                                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                                <option value="">{% translate "— Select Group —" %}</option>
+                                <template x-for="g in workAreaGroups" :key="g.id">
+                                    <option :value="g.id" x-text="g.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs text-gray-500">
+                                <span x-text="selectedWorkAreas.size"></span> {% translate "work areas selected" %}
+                            </p>
+                            <button type="button" @click="clearSelection()"
+                                :disabled="selectedWorkAreas.size === 0"
+                                class="button button-sm button-outline-rounded text-xs">
+                                {% translate "Unassign Selected Areas" %}
+                            </button>
                         </div>
                     </div>
                 </div>
+
+                <!-- Panel 2: Select new Assignee -->
+                <div class="border-t pt-3">
+                    <h3 class="text-sm font-semibold mb-2">{% translate "Select new Assignee" %}</h3>
+                    <select x-ref="assigneeSelect"
+                        @change="selectedAssigneeId = $event.target.value; selectByAssignee($event.target.value)"
+                        class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                        <option value="">{% translate "— Select FLW —" %}</option>
+                        <template x-for="a in assignees" :key="a.id">
+                            <option :value="a.id" x-text="a.user__name"></option>
+                        </template>
+                    </select>
                 </div>
-            </template>
-        </aside>
+
+                <!-- Panel 3: FLW Summary -->
+                <div class="border-t pt-3">
+                    <h3 class="text-sm font-semibold mb-2">{% translate "FLW Summary" %}</h3>
+                    <template x-if="!selectedAssigneeId">
+                        <p class="text-sm text-gray-400">{% translate "Select an assignee to view summary." %}</p>
+                    </template>
+                    <template x-if="selectedAssigneeId && flwSummaryLoading">
+                        <div class="flex justify-center py-4"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>
+                    </template>
+                    <template x-if="selectedAssigneeId && !flwSummaryLoading && flwSummary">
+                        <div>
+                            <dl class="space-y-2">
+                                <div class="grid grid-cols-2 items-center gap-2 text-sm">
+                                    <dt class="text-gray-500">{% translate "Count of Assigned Buildings" %}</dt>
+                                    <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                        x-text="flwSummary.assigned_buildings + getSelectedStats().buildings"></dd>
+                                    <dt class="text-gray-500">{% translate "Count of Assigned Visits" %}</dt>
+                                    <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                        x-text="flwSummary.assigned_visits + getSelectedStats().visits"></dd>
+                                    <dt class="text-gray-500">{% translate "Count of Assigned Work Areas" %}</dt>
+                                    <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
+                                        x-text="flwSummary.assigned_work_areas + selectedWorkAreas.size"></dd>
+                                </div>
+                            </dl>
+                            <div class="flex gap-2 mt-3">
+                                <a href="{{ worker_list_url }}" target="_blank"
+                                    class="button button-sm button-outline-rounded text-xs">
+                                    {% translate "View Summary by FLW" %}
+                                </a>
+                                <a :href="'{{ user_visits_url }}?user=' + getAssigneeUserId()" target="_blank"
+                                    class="button button-sm button-outline-rounded text-xs">
+                                    {% translate "View Visits" %}
+                                </a>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Bottom action bar -->
+                <div class="flex gap-2 mt-auto pt-4 border-t">
+                    <button type="button" @click="handleCancel()"
+                        class="button button-md outline-style flex-1">
+                        {% translate "Cancel" %}
+                    </button>
+                    <button type="button" class="button button-md primary-dark flex-1"
+                                          :disabled="selectedWorkAreas.size === 0 || !selectedAssigneeId"
+                                          @click="showConfirmModal = true">
+                      {% translate "Save and Confirm" %}
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Save and Confirm modal -->
+            <div x-show="showConfirmModal" x-cloak @click.self="showConfirmModal = false" class="modal-backdrop">
+                <div class="modal relative p-6" @click.stop>
+                    <h3 class="text-lg font-semibold mb-3">{% translate "Warning" %}</h3>
+                    <p class="text-sm mb-4">
+                        {% translate "Saving these changes will alert all impacted FLWs that their assignment has changed. Are you sure you want to continue?" %}
+                    </p>
+                    <template x-if="flwSummary">
+                        <dl class="text-sm space-y-1 mb-4 bg-gray-50 rounded-lg p-3">
+                            <div class="flex justify-between">
+                                <dt>{% translate "Assignee" %}</dt>
+                                <dd class="font-semibold" x-text="getAssigneeName()"></dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt>{% translate "Work Areas" %}</dt>
+                                <dd class="font-semibold" x-text="selectedWorkAreas.size"></dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt>{% translate "Total Buildings" %}</dt>
+                                <dd class="font-semibold" x-text="getSelectedStats().buildings"></dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt>{% translate "Total Expected Visits" %}</dt>
+                                <dd class="font-semibold" x-text="getSelectedStats().visits"></dd>
+                            </div>
+                        </dl>
+                    </template>
+                    <div class="flex gap-2 justify-between">
+                        <button class="button button-md outline-style" @click="showConfirmModal = false">
+                            {% translate "Back to Edit" %}
+                        </button>
+                        <button class="button button-md primary-dark" @click="saveAssignment()">
+                            {% translate "Save and Confirm" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cancel/Discard modal -->
+            <div x-show="showDiscardModal" x-cloak @click.self="showDiscardModal = false" class="modal-backdrop">
+                <div class="modal relative p-6" @click.stop>
+                    <h3 class="text-lg font-semibold mb-3">{% translate "Warning" %}</h3>
+                    <p class="text-sm mb-4">
+                        {% translate "Your changes won't be saved. Are you sure you want to continue?" %}
+                    </p>
+                    <div class="flex gap-2 justify-between">
+                        <a href="{{ request.path }}" class="button button-md outline-style">
+                            {% translate "Continue" %}
+                        </a>
+                        <button class="button button-md primary-dark" @click="showDiscardModal = false">
+                            {% translate "Back to Edit" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
 </div>
 </div>
 </div>
