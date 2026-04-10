@@ -85,9 +85,9 @@
             // --- Assignment mode methods ---
 
             toggleWorkAreaSelection(id, properties) {
-                if (this.selectedWorkAreas.has(id)) {
+                const isDeselecting = this.selectedWorkAreas.has(id);
+                if (isDeselecting) {
                     this.selectedWorkAreas.delete(id);
-                    this.groupWorkAreaIds.delete(id);
                     this.flwFilterWorkAreaIds.delete(id);
                 } else {
                     this.selectedWorkAreas.add(id);
@@ -95,6 +95,18 @@
                         this.workAreaProperties.set(id, properties);
                     }
                 }
+
+                // Clear group dropdown if the map click breaks the group selection:
+                // either deselecting a WA inside the group, or selecting one outside it
+                if (this.selectedGroupId) {
+                    const isGroupWa = this.groupWorkAreaIds.has(id);
+                    if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
+                        this.groupWorkAreaIds.clear();
+                        this.selectedGroupId = null;
+                        if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                    }
+                }
+
                 this.map.setFeatureState(
                     { source: 'workareas', sourceLayer: 'workareas', id },
                     { assignment_selected: this.selectedWorkAreas.has(id) }
