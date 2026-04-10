@@ -17,6 +17,7 @@
             selectedGroupId: null,
             selectedFlwFilterId: null,
             selectedAssigneeId: null,
+            flwSummaryAssigneeId: null,
             flwSummary: null,
             flwSummaryLoading: false,
             showConfirmModal: false,
@@ -202,13 +203,13 @@
             },
 
             async updateFlwSummary() {
-                if (!this.selectedAssigneeId) {
+                if (!this.flwSummaryAssigneeId) {
                     this.flwSummary = null;
                     return;
                 }
                 this.flwSummaryLoading = true;
                 try {
-                    const url = `{{ flw_summary_url|escapejs }}?assignee_id=${this.selectedAssigneeId}`;
+                    const url = `{{ flw_summary_url|escapejs }}?assignee_id=${this.flwSummaryAssigneeId}`;
                     const resp = await fetch(url);
                     this.flwSummary = await resp.json();
                 } catch (e) {
@@ -235,7 +236,7 @@
                 let visits = 0;
                 let workAreas = 0;
                 for (const entry of this.assignmentQueue) {
-                    if (String(entry.assignee_id) === String(this.selectedAssigneeId)) {
+                    if (String(entry.assignee_id) === String(this.flwSummaryAssigneeId)) {
                         buildings += entry.buildings;
                         visits += entry.visits;
                         workAreas += entry.work_area_ids.length;
@@ -251,6 +252,11 @@
 
             getAssigneeUserId() {
                 const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
+                return a ? a.user_id : '';
+            },
+
+            getFlwSummaryUserId() {
+                const a = this.assignees.find(a => String(a.id) === String(this.flwSummaryAssigneeId));
                 return a ? a.user_id : '';
             },
 

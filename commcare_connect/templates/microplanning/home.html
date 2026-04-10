@@ -287,25 +287,36 @@
                 <!-- Panel 3: FLW Summary -->
                 <div class="border-t border-gray-200 pt-3">
                     <h3 class="text-sm font-semibold mb-2">{% translate "FLW Summary" %}</h3>
-                    <template x-if="!selectedAssigneeId">
-                        <p class="text-sm text-gray-400">{% translate "Select an assignee to view summary." %}</p>
+                    <div class="mb-2">
+                        <label class="block text-xs text-gray-500 mb-1">{% translate "Select FLW" %}</label>
+                        <select x-ref="flwSummarySelect"
+                            @change="flwSummaryAssigneeId = $event.target.value; updateFlwSummary()"
+                            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                            <option value="">{% translate "— Select FLW —" %}</option>
+                            <template x-for="a in assignees" :key="a.id">
+                                <option :value="a.id" x-text="a.user__name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <template x-if="!flwSummaryAssigneeId">
+                        <p class="text-sm text-gray-400">{% translate "Select an FLW to view summary." %}</p>
                     </template>
-                    <template x-if="selectedAssigneeId && flwSummaryLoading">
+                    <template x-if="flwSummaryAssigneeId && flwSummaryLoading">
                         <div class="flex justify-center py-4"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>
                     </template>
-                    <template x-if="selectedAssigneeId && !flwSummaryLoading && flwSummary">
+                    <template x-if="flwSummaryAssigneeId && !flwSummaryLoading && flwSummary">
                         <div>
                             <dl class="space-y-2">
                                 <div class="grid grid-cols-2 items-center gap-2 text-sm">
                                     <dt class="text-gray-500">{% translate "Count of Assigned Buildings" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_buildings + getQueuedStatsForAssignee().buildings + getSelectedStats().buildings"></dd>
+                                        x-text="flwSummary.assigned_buildings + getQueuedStatsForAssignee().buildings + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStats().buildings : 0)"></dd>
                                     <dt class="text-gray-500">{% translate "Count of Assigned Visits" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_visits + getQueuedStatsForAssignee().visits + getSelectedStats().visits"></dd>
+                                        x-text="flwSummary.assigned_visits + getQueuedStatsForAssignee().visits + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStats().visits : 0)"></dd>
                                     <dt class="text-gray-500">{% translate "Count of Assigned Work Areas" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_work_areas + getQueuedStatsForAssignee().workAreas + selectedWorkAreas.size"></dd>
+                                        x-text="flwSummary.assigned_work_areas + getQueuedStatsForAssignee().workAreas + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? selectedWorkAreas.size : 0)"></dd>
                                 </div>
                             </dl>
                             <div class="flex gap-2 mt-3">
@@ -313,7 +324,7 @@
                                     class="button button-sm outline-style text-xs">
                                     {% translate "View Summary by FLW" %}
                                 </a>
-                                <a :href="'{{ user_visits_url }}?user=' + getAssigneeUserId()" target="_blank"
+                                <a :href="'{{ user_visits_url }}?user=' + getFlwSummaryUserId()" target="_blank"
                                     class="button button-sm outline-style text-xs">
                                     {% translate "View Visits" %}
                                 </a>

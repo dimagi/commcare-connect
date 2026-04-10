@@ -72,7 +72,12 @@ class AssignmentModeForm(forms.Form):
             attrs={
                 "class": INPUT_CSS,
                 "x-ref": "assigneeSelect",
-                "@change": "selectedAssigneeId = $event.target.value; selectByAssignee($event.target.value)",
+                "@change": (
+                    "selectedAssigneeId = $event.target.value;"
+                    " flwSummaryAssigneeId = $event.target.value;"
+                    " if ($refs.flwSummarySelect) $refs.flwSummarySelect.value = $event.target.value;"
+                    " selectByAssignee($event.target.value)"
+                ),
             }
         ),
     )
