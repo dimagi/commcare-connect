@@ -251,7 +251,38 @@
                 <div class="border-t border-gray-200 pt-3">
                     <h3 class="text-sm font-semibold mb-2">{{ assignment_form.assignee.label }}</h3>
                     {{ assignment_form.assignee }}
+                    <div class="flex justify-end">
+                      <button type="button" @click="addToQueue()"
+                          :disabled="selectedWorkAreas.size === 0 || !selectedAssigneeId"
+                          class="button button-sm primary-dark text-xs mt-2">
+                          <i class="fa-solid fa-plus"></i> {% translate "Save" %}
+                      </button>
+                    </div>
                 </div>
+
+                <!-- Queued assignments -->
+                <template x-if="assignmentQueue.length > 0">
+                    <div class="border-t border-gray-200 pt-3">
+                        <h3 class="text-sm font-semibold mb-2">
+                            {% translate "Pending Assignments" %}
+                            <span class="text-gray-400 font-normal" x-text="'(' + assignmentQueue.length + ')'"></span>
+                        </h3>
+                        <div class="space-y-2 max-h-40 overflow-auto">
+                            <template x-for="(entry, index) in assignmentQueue" :key="index">
+                                <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-xs">
+                                    <div class="min-w-0">
+                                        <span class="font-medium truncate block" x-text="entry.assignee_name"></span>
+                                        <span class="text-gray-500" x-text="entry.work_area_ids.length + ' work areas'"></span>
+                                    </div>
+                                    <button type="button" @click="removeFromQueue(index)"
+                                        class="text-red-500 hover:text-red-700 ml-2 shrink-0">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
 
                 <!-- Panel 3: FLW Summary -->
                 <div class="border-t border-gray-200 pt-3">
@@ -268,13 +299,13 @@
                                 <div class="grid grid-cols-2 items-center gap-2 text-sm">
                                     <dt class="text-gray-500">{% translate "Count of Assigned Buildings" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_buildings + getSelectedStats().buildings"></dd>
+                                        x-text="flwSummary.assigned_buildings + getQueuedStatsForAssignee().buildings + getSelectedStats().buildings"></dd>
                                     <dt class="text-gray-500">{% translate "Count of Assigned Visits" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_visits + getSelectedStats().visits"></dd>
+                                        x-text="flwSummary.assigned_visits + getQueuedStatsForAssignee().visits + getSelectedStats().visits"></dd>
                                     <dt class="text-gray-500">{% translate "Count of Assigned Work Areas" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_work_areas + selectedWorkAreas.size"></dd>
+                                        x-text="flwSummary.assigned_work_areas + getQueuedStatsForAssignee().workAreas + selectedWorkAreas.size"></dd>
                                 </div>
                             </dl>
                             <div class="flex gap-2 mt-3">
@@ -298,8 +329,8 @@
                         {% translate "Cancel" %}
                     </button>
                     <button type="button" class="button button-md primary-dark flex-1"
-                                          :disabled="selectedWorkAreas.size === 0 || !selectedAssigneeId"
-                                          @click="showConfirmModal = true">
+                        :disabled="assignmentQueue.length === 0 && (selectedWorkAreas.size === 0 || !selectedAssigneeId)"
+                        @click="handleSaveAndConfirm()">
                       {% translate "Save and Confirm" %}
                     </button>
                 </div>
@@ -312,26 +343,28 @@
                     <p class="text-sm mb-4">
                         {% translate "Saving these changes will alert all impacted FLWs that their assignment has changed. Are you sure you want to continue?" %}
                     </p>
-                    <template x-if="flwSummary">
-                        <dl class="text-sm space-y-1 mb-4 bg-gray-50 rounded-lg p-3">
-                            <div class="flex justify-between">
-                                <dt>{% translate "Assignee" %}</dt>
-                                <dd class="font-semibold" x-text="getAssigneeName()"></dd>
-                            </div>
-                            <div class="flex justify-between">
-                                <dt>{% translate "Work Areas" %}</dt>
-                                <dd class="font-semibold" x-text="selectedWorkAreas.size"></dd>
-                            </div>
-                            <div class="flex justify-between">
-                                <dt>{% translate "Total Buildings" %}</dt>
-                                <dd class="font-semibold" x-text="getSelectedStats().buildings"></dd>
-                            </div>
-                            <div class="flex justify-between">
-                                <dt>{% translate "Total Expected Visits" %}</dt>
-                                <dd class="font-semibold" x-text="getSelectedStats().visits"></dd>
-                            </div>
-                        </dl>
-                    </template>
+                    <div class="space-y-2 mb-4 max-h-60 overflow-auto">
+                        <template x-for="(entry, index) in assignmentQueue" :key="index">
+                            <dl class="text-sm space-y-1 bg-gray-50 rounded-lg p-3">
+                                <div class="flex justify-between">
+                                    <dt>{% translate "Assignee" %}</dt>
+                                    <dd class="font-semibold" x-text="entry.assignee_name"></dd>
+                                </div>
+                                <div class="flex justify-between">
+                                    <dt>{% translate "Work Areas" %}</dt>
+                                    <dd class="font-semibold" x-text="entry.work_area_ids.length"></dd>
+                                </div>
+                                <div class="flex justify-between">
+                                    <dt>{% translate "Total Buildings" %}</dt>
+                                    <dd class="font-semibold" x-text="entry.buildings"></dd>
+                                </div>
+                                <div class="flex justify-between">
+                                    <dt>{% translate "Total Expected Visits" %}</dt>
+                                    <dd class="font-semibold" x-text="entry.visits"></dd>
+                                </div>
+                            </dl>
+                        </template>
+                    </div>
                     <div class="flex gap-2 justify-between">
                         <button class="button button-md outline-style" @click="showConfirmModal = false">
                             {% translate "Back to Edit" %}

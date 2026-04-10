@@ -24,6 +24,7 @@
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
+            assignmentQueue: [],
 
 
             openWorkAreaEditModal(workAreaId) {
@@ -229,6 +230,20 @@
                 return { buildings, visits };
             },
 
+            getQueuedStatsForAssignee() {
+                let buildings = 0;
+                let visits = 0;
+                let workAreas = 0;
+                for (const entry of this.assignmentQueue) {
+                    if (String(entry.assignee_id) === String(this.selectedAssigneeId)) {
+                        buildings += entry.buildings;
+                        visits += entry.visits;
+                        workAreas += entry.work_area_ids.length;
+                    }
+                }
+                return { buildings, visits, workAreas };
+            },
+
             getAssigneeName() {
                 const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
                 return a ? a.user__name : '';
@@ -239,11 +254,35 @@
                 return a ? a.user_id : '';
             },
 
-            async saveAssignment() {
-                const payload = {
+            addToQueue() {
+                if (this.selectedWorkAreas.size === 0 || !this.selectedAssigneeId) return;
+                this.assignmentQueue.push({
                     assignee_id: this.selectedAssigneeId,
+                    assignee_name: this.getAssigneeName(),
                     work_area_ids: Array.from(this.selectedWorkAreas),
-                };
+                    buildings: this.getSelectedStats().buildings,
+                    visits: this.getSelectedStats().visits,
+                });
+                this.clearSelection();
+                if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
+                this.selectedAssigneeId = null;
+                this.flwSummary = null;
+            },
+
+            removeFromQueue(index) {
+                this.assignmentQueue.splice(index, 1);
+            },
+
+            handleSaveAndConfirm() {
+                if (this.selectedWorkAreas.size > 0 && this.selectedAssigneeId) {
+                    this.addToQueue();
+                }
+                if (this.assignmentQueue.length > 0) {
+                    this.showConfirmModal = true;
+                }
+            },
+
+            async saveAssignment() {
                 try {
                     const resp = await fetch('{{ assignment_save_url|escapejs }}', {
                         method: 'POST',
@@ -251,11 +290,12 @@
                             'Content-Type': 'application/json',
                             'X-CSRFToken': '{{ csrf_token }}',
                         },
-                        body: JSON.stringify(payload),
+                        body: JSON.stringify({ assignments: this.assignmentQueue }),
                     });
                     if (resp.ok) {
                         this.showConfirmModal = false;
                         this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.assignmentQueue = [];
                         this.clearSelection();
                         if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
                         this.selectedAssigneeId = null;
@@ -269,7 +309,7 @@
             },
 
             handleCancel() {
-                if (this.selectedWorkAreas.size > 0 || this.selectedAssigneeId) {
+                if (this.assignmentQueue.length > 0 || this.selectedWorkAreas.size > 0 || this.selectedAssigneeId) {
                     this.showDiscardModal = true;
                 } else {
                     window.location.href = window.location.pathname;
