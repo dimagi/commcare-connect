@@ -24,7 +24,7 @@ from django.utils.decorators import method_decorator
 from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
@@ -577,7 +577,7 @@ def assignment_flw_summary(request, org_slug, opp_id):
     )
 
 
-@require_http_methods(["POST"])
+@require_POST
 @org_program_manager_required
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
