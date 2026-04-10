@@ -238,9 +238,9 @@
                                 class="button button-sm outline-style text-xs opacity-50 cursor-not-allowed">
                                 {% translate "Exclude from Opportunity" %}
                             </button>
-                            <button type="button" @click="clearSelection()"
-                                :disabled="selectedWorkAreas.size === 0"
-                                class="button button-sm outline-style text-xs">
+                            <button type="button" disabled
+                                title="{% translate 'Unassign Selected Areas will be available in a future update' %}"
+                                class="button button-sm outline-style text-xs opacity-50 cursor-not-allowed">
                                 {% translate "Unassign Selected Areas" %}
                             </button>
                         </div>
