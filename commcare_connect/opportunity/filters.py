@@ -231,6 +231,43 @@ class UserTasksFilterSet(django_filters.FilterSet):
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
         field_name="status",
     )
+    task_type = django_filters.MultipleChoiceFilter(
+        label=_("Task Type"),
+        choices=[],
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="task_type_id",
+    )
+    date_assigned_after = django_filters.DateFilter(
+        label=_("Date Assigned From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        lookup_expr="gte",
+    )
+    date_assigned_before = django_filters.DateFilter(
+        label=_("Date Assigned Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        lookup_expr="lt",
+    )
+    due_date_after = django_filters.DateFilter(
+        label=_("Due Date From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="gte",
+    )
+    due_date_before = django_filters.DateFilter(
+        label=_("Due Date Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="lt",
+    )
 
     class Meta:
         form = CSRFExemptForm
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+        if self.opportunity:
+            active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
+            self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
