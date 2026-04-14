@@ -2,6 +2,7 @@
 
 {% load i18n %}
 {% load django_tables2 %}
+{% load crispy_forms_tags %}
 
 {% block content %}
 {% include 'components/breadcrumbs.html' with path=path %}
@@ -9,6 +10,7 @@
      x-data="{
        showCreateTaskModal: false,
        showEditTaskModal: false,
+       showFilterModal: false,
        editTaskError: false,
        ...selectableTable()
      }"
@@ -25,6 +27,42 @@
 
   {% include "components/worker_page/worker_profile_kpi.html" %}
   {% include 'components/worker_page/visit_task_tabs.html' %}
+
+  <div class="flex justify-end">
+    <button type="button" @click="showFilterModal = true" class="relative button-icon shadow-sm">
+      <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+      {% if filters_applied_count %}
+      <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+        {{ filters_applied_count }}
+      </span>
+      {% endif %}
+    </button>
+  </div>
+
+  <div x-show="showFilterModal" x-cloak class="modal-backdrop">
+    <div class="modal">
+      <div class="header text-lg font-semibold text-brand-deep-purple">
+        <h1>{% trans "Filters" %}</h1>
+        <button @click="showFilterModal = false">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+      <form id="userTaskFilterForm" method="get" action="." class="content">
+        <input type="hidden" name="user" value="{{ request.GET.user }}">
+        <div class="modal-body">
+          {% crispy filter_form %}
+        </div>
+        <div class="footer">
+          <button type="button" @click="showFilterModal = false" class="button button-md outline-style">{% trans "Close" %}</button>
+          <button form="userTaskFilterForm" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">
+            {% trans "Apply" %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% include "components/tomselect_init.html" %}
+
   <div class="w-full grid grid-cols-10 gap-2">
     <div class="col-span-6" hx-indicator="#loading-spinner">
       <div

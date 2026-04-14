@@ -222,3 +222,15 @@ class TasksFilterSet(django_filters.FilterSet):
             self.filters["worker_name"].extra["choices"] = [
                 (str(user.pk), user.display_name_with_username()) for user in worker_queryset
             ]
+
+
+class UserTasksFilterSet(django_filters.FilterSet):
+    task_status = django_filters.MultipleChoiceFilter(
+        label=_("Task Status"),
+        choices=TASK_STATUS_CHOICES,
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="status",
+    )
+
+    class Meta:
+        form = CSRFExemptForm

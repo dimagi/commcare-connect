@@ -66,6 +66,7 @@ from commcare_connect.opportunity.filters import (
     FilterMixin,
     OpportunityListFilterSet,
     TasksFilterSet,
+    UserTasksFilterSet,
 )
 from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
@@ -2123,14 +2124,23 @@ def _task_redirect_url(request, org_slug, opp_id):
     return reverse("opportunity:assigned_task_list", args=(org_slug, opp_id))
 
 
-class UserTasksView(WorkerPageView):
+class UserTasksView(WorkerPageView, FilterMixin):
     template_name = "opportunity/user_tasks.html"
     page_title = gettext_lazy("Tasks")
+    filter_class = UserTasksFilterSet
+
+    def get_filter_kwargs(self):
+        return {
+            "queryset": AssignedTask.objects.none(),
+            "request": self.request,
+            "opportunity": self.opportunity,
+        }
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         can_manage_tasks = _can_manage_tasks(self.request, self.opportunity)
         context["can_manage_tasks"] = can_manage_tasks
+        context.update(self.get_filter_context())
         if can_manage_tasks:
             context["create_task_form"] = CreateTaskForm(opportunity=self.opportunity, access=self.opportunity_access)
             create_url = reverse(
@@ -2169,11 +2179,25 @@ class WorkerTableView(OrganizationUserMixin, OpportunityObjectMixin, SingleTable
         return context
 
 
-class WorkerCompletedTaskTableView(WorkerTableView):
+class WorkerCompletedTaskTableView(WorkerTableView, FilterMixin):
     model = AssignedTask
     table_class = WorkerCompletedTaskTable
     template_name = "opportunity/worker_visit_table.html"
     redirect_url_name = "opportunity:user_tasks_list"
+    filter_class = UserTasksFilterSet
+
+    def get_filter_kwargs(self):
+        queryset = AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
+            "task_type", "assigned_by", "opportunity_access__opportunity"
+        )
+        user_id = self.request.GET.get("user")
+        if user_id:
+            queryset = queryset.filter(opportunity_access__user__user_id=user_id)
+        return {
+            "queryset": queryset,
+            "request": self.request,
+            "opportunity": self.opportunity,
+        }
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
@@ -2182,13 +2206,7 @@ class WorkerCompletedTaskTableView(WorkerTableView):
         return kwargs
 
     def get_queryset(self):
-        queryset = AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
-            "task_type", "assigned_by", "opportunity_access__opportunity"
-        )
-        user_id = self.request.GET.get("user")
-        if user_id:
-            queryset = queryset.filter(opportunity_access__user__user_id=user_id)
-        return queryset.order_by("-date_created")
+        return self._get_filter().qs.order_by("-date_created")
 
 
 def get_user_visit_counts(opportunity, queryset):
