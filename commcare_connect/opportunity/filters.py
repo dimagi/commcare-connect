@@ -1,5 +1,6 @@
 import django_filters
 from crispy_forms.helper import FormHelper
+from crispy_forms.layout import HTML, Div, Layout
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
@@ -271,3 +272,25 @@ class UserTasksFilterSet(django_filters.FilterSet):
         if self.opportunity:
             active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
             self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
+        self.form.helper.layout = Layout(
+            "task_status",
+            "task_type",
+            Div(
+                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
+                Div(
+                    Div("date_assigned_after", css_class="flex-1"),
+                    Div("date_assigned_before", css_class="flex-1"),
+                    css_class="flex gap-2",
+                ),
+                css_class="mb-3",
+            ),
+            Div(
+                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
+                Div(
+                    Div("due_date_after", css_class="flex-1"),
+                    Div("due_date_before", css_class="flex-1"),
+                    css_class="flex gap-2",
+                ),
+                css_class="mb-3",
+            ),
+        )
