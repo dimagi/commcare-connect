@@ -177,25 +177,25 @@ class TasksFilterSet(django_filters.FilterSet):
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
         field_name="task_id",
     )
-    date_assigned_after = django_filters.DateFilter(
+    date_assigned_from = django_filters.DateFilter(
         label=_("Date Assigned From"),
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="date_assigned",
         lookup_expr="gte",
     )
-    date_assigned_before = django_filters.DateFilter(
+    date_assigned_to = django_filters.DateFilter(
         label=_("Date Assigned Before"),
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="date_assigned",
         lookup_expr="lt",
     )
-    due_date_after = django_filters.DateFilter(
+    due_date_from = django_filters.DateFilter(
         label=_("Due Date From"),
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="task_due_date",
         lookup_expr="gte",
     )
-    due_date_before = django_filters.DateFilter(
+    due_date_to = django_filters.DateFilter(
         label=_("Due Date Before"),
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="task_due_date",
@@ -238,26 +238,26 @@ class UserTasksFilterSet(django_filters.FilterSet):
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
         field_name="task_type_id",
     )
-    date_assigned_after = django_filters.DateFilter(
-        label=_("Date Assigned From"),
+    date_assigned_from = django_filters.DateFilter(
+        label="",
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="date_created",
         lookup_expr="gte",
     )
-    date_assigned_before = django_filters.DateFilter(
-        label=_("Date Assigned Before"),
+    date_assigned_to = django_filters.DateFilter(
+        label="",
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="date_created",
         lookup_expr="lt",
     )
-    due_date_after = django_filters.DateFilter(
-        label=_("Due Date From"),
+    due_date_from = django_filters.DateFilter(
+        label="",
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="due_date",
         lookup_expr="gte",
     )
-    due_date_before = django_filters.DateFilter(
-        label=_("Due Date Before"),
+    due_date_to = django_filters.DateFilter(
+        label="",
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="due_date",
         lookup_expr="lt",
@@ -278,8 +278,16 @@ class UserTasksFilterSet(django_filters.FilterSet):
             Div(
                 HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
                 Div(
-                    Div("date_assigned_after", css_class="flex-1"),
-                    Div("date_assigned_before", css_class="flex-1"),
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
+                        "date_assigned_from",
+                        css_class="flex-1",
+                    ),
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
+                        "date_assigned_to",
+                        css_class="flex-1",
+                    ),
                     css_class="flex gap-2",
                 ),
                 css_class="mb-3",
@@ -287,8 +295,16 @@ class UserTasksFilterSet(django_filters.FilterSet):
             Div(
                 HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
                 Div(
-                    Div("due_date_after", css_class="flex-1"),
-                    Div("due_date_before", css_class="flex-1"),
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
+                        "due_date_from",
+                        css_class="flex-1",
+                    ),
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
+                        "due_date_to",
+                        css_class="flex-1",
+                    ),
                     css_class="flex gap-2",
                 ),
                 css_class="mb-3",
