@@ -1559,6 +1559,11 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         self.use_view_url = False
         super().__init__(*args, **kwargs)
 
+    def render_status(self, record, value):
+        if self._is_seen(record):
+            return ""
+        return StatusIndicatorColumn.render(self.columns["status"].column, record)
+
     def render_delivery_progress(self, record):
         current = record.completed
         total = record.total_visits
