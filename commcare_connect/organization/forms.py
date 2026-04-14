@@ -134,6 +134,7 @@ class MembershipForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         self.helper = helper.FormHelper(self)
+        self.helper.form_tag = False
         self.helper.layout = layout.Layout(
             layout.Row(
                 layout.Field("email", wrapper_class="col-md-5"),
