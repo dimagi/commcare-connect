@@ -2730,6 +2730,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             opportunity=opportunity, payment_accrued__gte=0, accepted=True
         ).order_by("-payment_accrued")
         query_set = query_set.annotate(
+            status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
             last_paid=Max("payment__date_paid"),
             total_paid_d=get_payment_subquery(),
             confirmed_paid_d=get_payment_subquery(True),
