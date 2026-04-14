@@ -1588,11 +1588,6 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         self.run_after_every_row(record)
         return format_html(template, url)
 
-    def render_suspended(self, record, value):
-        if self._is_seen(record):
-            return ""
-        return SuspendedIndicatorColumn().render(value)
-
     def render_delivered(self, record, value):
         rows = [
             {"label": "Completed", "value": record.completed},
