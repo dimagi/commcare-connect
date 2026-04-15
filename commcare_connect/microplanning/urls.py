@@ -31,4 +31,24 @@ urlpatterns = [
         name="modify_work_area",
     ),
     path("<slug:opp_id>/download_work_areas/", views.download_work_areas, name="download_work_areas"),
+    path(
+        "<slug:opp_id>/assignment/group_work_areas/<int:group_id>/",
+        views.assignment_group_work_areas,
+        name="assignment_group_work_areas",
+    ),
+    path(
+        "<slug:opp_id>/assignment/flw_work_areas/<int:assignee_id>/",
+        views.assignment_flw_work_areas,
+        name="assignment_flw_work_areas",
+    ),
+    path(
+        "<slug:opp_id>/assignment/flw_summary/",
+        views.assignment_flw_summary,
+        name="assignment_flw_summary",
+    ),
+    path(
+        "<slug:opp_id>/assignment/save/",
+        views.assignment_save,
+        name="assignment_save",
+    ),
 ]

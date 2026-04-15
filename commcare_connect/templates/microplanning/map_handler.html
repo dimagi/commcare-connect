@@ -9,6 +9,24 @@
             showVisits: false,
             filterQuery: '',
 
+            // Assignment mode state
+            assignmentMode: {{ assignment_mode|yesno:'true,false' }},
+            selectedWorkAreas: new Set(),
+            groupWorkAreaIds: new Set(),
+            flwFilterWorkAreaIds: new Set(),
+            selectedGroupId: null,
+            selectedFlwFilterId: null,
+            selectedAssigneeId: null,
+            flwSummaryAssigneeId: null,
+            flwSummary: null,
+            flwSummaryLoading: false,
+            showConfirmModal: false,
+            showDiscardModal: false,
+            showOnlyUnassigned: false,
+            assignees: [],
+            workAreaProperties: new Map(),
+            assignmentQueue: [],
+
 
             openWorkAreaEditModal(workAreaId) {
                 const editWorkAreaUrl = '{{ edit_work_area_url|escapejs }}';
@@ -66,10 +84,267 @@
                 this.applyFilters();
             },
 
+            // --- Assignment mode methods ---
+
+            toggleWorkAreaSelection(id, properties) {
+                const isDeselecting = this.selectedWorkAreas.has(id);
+                if (isDeselecting) {
+                    this.selectedWorkAreas.delete(id);
+                    this.flwFilterWorkAreaIds.delete(id);
+                } else {
+                    this.selectedWorkAreas.add(id);
+                    if (properties) {
+                        this.workAreaProperties.set(id, properties);
+                    }
+                }
+
+                // Clear group dropdown if the map click breaks the group selection:
+                // either deselecting a WA inside the group, or selecting one outside it
+                if (this.selectedGroupId) {
+                    const isGroupWa = this.groupWorkAreaIds.has(id);
+                    if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
+                        this.groupWorkAreaIds.clear();
+                        this.selectedGroupId = null;
+                        if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                    }
+                }
+
+                this.map.setFeatureState(
+                    { source: 'workareas', sourceLayer: 'workareas', id },
+                    { assignment_selected: this.selectedWorkAreas.has(id) }
+                );
+                this.updateFlwSummary();
+            },
+
+            async selectGroup(groupId) {
+                // Clear previous group selections
+                for (const id of this.groupWorkAreaIds) {
+                    this.selectedWorkAreas.delete(id);
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id },
+                        { assignment_selected: false }
+                    );
+                }
+                this.groupWorkAreaIds.clear();
+                this.selectedGroupId = groupId || null;
+
+                if (!groupId) {
+                    this.updateFlwSummary();
+                    return;
+                }
+
+                try {
+                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    for (const id of data.work_area_ids) {
+                        this.selectedWorkAreas.add(id);
+                        this.groupWorkAreaIds.add(id);
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id },
+                            { assignment_selected: true }
+                        );
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
+                }
+                this.updateFlwSummary();
+            },
+
+            async selectByAssignee(assigneeId) {
+                // Clear previous FLW-filter selections
+                for (const id of this.flwFilterWorkAreaIds) {
+                    this.selectedWorkAreas.delete(id);
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id },
+                        { assignment_selected: false }
+                    );
+                }
+                this.flwFilterWorkAreaIds.clear();
+                this.selectedFlwFilterId = assigneeId || null;
+
+                if (!assigneeId) {
+                    this.updateFlwSummary();
+                    return;
+                }
+
+                try {
+                    const url = '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId);
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    for (const id of data.work_area_ids) {
+                        this.selectedWorkAreas.add(id);
+                        this.flwFilterWorkAreaIds.add(id);
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id },
+                            { assignment_selected: true }
+                        );
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load FLW work areas' %}", true);
+                }
+                this.updateFlwSummary();
+            },
+
+            clearSelection() {
+                for (const id of this.selectedWorkAreas) {
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id },
+                        { assignment_selected: false }
+                    );
+                }
+                this.selectedWorkAreas.clear();
+                this.groupWorkAreaIds.clear();
+                this.flwFilterWorkAreaIds.clear();
+                if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                this.selectedGroupId = null;
+                this.selectedFlwFilterId = null;
+                this.updateFlwSummary();
+            },
+
+            async updateFlwSummary() {
+                if (!this.flwSummaryAssigneeId) {
+                    this.flwSummary = null;
+                    return;
+                }
+                this.flwSummaryLoading = true;
+                try {
+                    const url = `{{ flw_summary_url|escapejs }}?assignee_id=${this.flwSummaryAssigneeId}`;
+                    const resp = await fetch(url);
+                    this.flwSummary = await resp.json();
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load FLW summary' %}", true);
+                }
+                this.flwSummaryLoading = false;
+            },
+
+            getSelectedStats() {
+                let buildings = 0;
+                let visits = 0;
+                for (const id of this.selectedWorkAreas) {
+                    const props = this.workAreaProperties.get(id);
+                    if (props) {
+                        buildings += parseInt(props.building_count) || 0;
+                        visits += parseInt(props.expected_visit_count) || 0;
+                    }
+                }
+                return { buildings, visits };
+            },
+
+            getQueuedStatsForAssignee() {
+                let buildings = 0;
+                let visits = 0;
+                let workAreas = 0;
+                for (const entry of this.assignmentQueue) {
+                    if (String(entry.assignee_id) === String(this.flwSummaryAssigneeId)) {
+                        buildings += entry.buildings;
+                        visits += entry.visits;
+                        workAreas += entry.work_area_ids.length;
+                    }
+                }
+                return { buildings, visits, workAreas };
+            },
+
+            getAssigneeName() {
+                const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
+                return a ? a.user__name : '';
+            },
+
+            getAssigneeUserId() {
+                const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
+                return a ? a.user_id : '';
+            },
+
+            getFlwSummaryUserId() {
+                const a = this.assignees.find(a => String(a.id) === String(this.flwSummaryAssigneeId));
+                return a ? a.user_id : '';
+            },
+
+            addToQueue() {
+                if (this.selectedWorkAreas.size === 0 || !this.selectedAssigneeId) return;
+                this.assignmentQueue.push({
+                    assignee_id: this.selectedAssigneeId,
+                    assignee_name: this.getAssigneeName(),
+                    work_area_ids: Array.from(this.selectedWorkAreas),
+                    buildings: this.getSelectedStats().buildings,
+                    visits: this.getSelectedStats().visits,
+                });
+                this.clearSelection();
+                if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
+                this.selectedAssigneeId = null;
+                this.flwSummary = null;
+            },
+
+            removeFromQueue(index) {
+                this.assignmentQueue.splice(index, 1);
+            },
+
+            handleSaveAndConfirm() {
+                if (this.selectedWorkAreas.size > 0 && this.selectedAssigneeId) {
+                    this.addToQueue();
+                }
+                if (this.assignmentQueue.length > 0) {
+                    this.showConfirmModal = true;
+                }
+            },
+
+            async saveAssignment() {
+                try {
+                    const resp = await fetch('{{ assignment_save_url|escapejs }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}',
+                        },
+                        body: JSON.stringify({ assignments: this.assignmentQueue }),
+                    });
+                    if (resp.ok) {
+                        this.showConfirmModal = false;
+                        this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.assignmentQueue = [];
+                        this.clearSelection();
+                        if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
+                        this.selectedAssigneeId = null;
+                        this.flwSummary = null;
+                    } else {
+                        this.showToast("{% translate 'Failed to save assignment' %}", true);
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to save assignment' %}", true);
+                }
+            },
+
+            handleCancel() {
+                if (this.assignmentQueue.length > 0 || this.selectedWorkAreas.size > 0 || this.selectedAssigneeId) {
+                    this.showDiscardModal = true;
+                } else {
+                    window.location.href = window.location.pathname;
+                }
+            },
+
+            applyUnassignedFilter() {
+                if (!this.map) return;
+                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
+                const newUrl = this.showOnlyUnassigned ? `${baseUrl}?unassigned_only=true` : baseUrl;
+                const source = this.map.getSource('workareas');
+                if (source) {
+                    source.setTiles([newUrl]);
+                }
+            },
+
             init() {
                 this.$nextTick(() => {
                     this.initializeMap();
                 });
+
+                if (this.assignmentMode) {
+                    const assigneesEl = document.getElementById('assignees-data');
+                    if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
+
+                    this.$watch('showOnlyUnassigned', () => {
+                        this.applyUnassignedFilter();
+                    });
+                }
 
                 document.addEventListener('workAreaUpdated', (e) => {
                     const data = e.detail;
@@ -236,6 +511,39 @@
                     }
                 });
 
+                // Orange highlight for assignment mode multi-select
+                if (this.assignmentMode) {
+                    this.map.addLayer({
+                        id: 'workareas-assignment-selected',
+                        type: 'line',
+                        source: 'workareas',
+                        'source-layer': 'workareas',
+                        minzoom: 8,
+                        paint: {
+                            'line-color': '#ff8c00',
+                            'line-width': 3,
+                            'line-opacity': [
+                                'case',
+                                ['boolean', ['feature-state', 'assignment_selected'], false],
+                                1,
+                                0
+                            ]
+                        }
+                    });
+
+                    // Reapply assignment_selected state when tiles reload (pan/zoom)
+                    this.map.on('sourcedata', (e) => {
+                        if (e.sourceId === 'workareas' && e.isSourceLoaded) {
+                            for (const id of this.selectedWorkAreas) {
+                                this.map.setFeatureState(
+                                    { source: 'workareas', sourceLayer: 'workareas', id },
+                                    { assignment_selected: true }
+                                );
+                            }
+                        }
+                    });
+                }
+
                 // Source and layer are added lazily on first toggle to avoid
                 // fetching tiles while the layer is hidden.
                 const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
@@ -338,6 +646,13 @@
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
+
+                    // In assignment mode, toggle multi-select instead of single-select
+                    if (this.assignmentMode) {
+                        this.toggleWorkAreaSelection(id, feature.properties);
+                        return;
+                    }
+
                     if (this.selectedFeature) {
                         this.map.setFeatureState(
                             {
