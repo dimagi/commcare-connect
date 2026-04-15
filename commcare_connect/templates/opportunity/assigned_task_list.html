@@ -60,10 +60,11 @@
 
         <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4"
              hx-get="{{ request.get_full_path }}"
+             hx-trigger="reload_table from:body"
              hx-select="#task-list-table"
              hx-swap="outerHTML">
-            {% if can_manage_tasks %}
             <div class="flex gap-x-4 items-center justify-end mb-4">
+                {% if can_manage_tasks %}
                 <button type="button" class="button-icon shadow-sm" @click="showCreateTaskModal = true"
                     x-tooltip.raw="{% trans 'Create Task' %}">
                     <i class="fa-solid fa-plus text-brand-deep-purple"></i>
@@ -85,9 +86,9 @@
                                         })" :disabled="selected.length === 0" x-tooltip.raw="{% trans 'Delete Task(s)' %}">
                     <i class="fa-solid fa-trash"></i>
                 </button>
+                {% endif %}
+                {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" %}
             </div>
-            {% endif %}
-            {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" container_class="flex justify-end mb-3" %}
             {% render_table table %}
         </div>
 
