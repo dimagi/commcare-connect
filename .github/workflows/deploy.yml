@@ -114,7 +114,7 @@ jobs:
           commit: ${{ github.sha }}
 
       - name: Set release date
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() }}
         run: echo "RELEASE_DATE=$(date -u +'%Y-%m-%d')" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
