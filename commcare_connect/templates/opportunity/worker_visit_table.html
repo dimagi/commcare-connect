@@ -1,0 +1,14 @@
+{% load django_tables2 i18n %}
+
+<div>
+  <div class="w-full relative shadow-sm flex-1 rounded-lg">
+    <div class="flex flex-col w-full gap-2 min-h-160">
+      {% render_table table %}
+    </div>
+    <div id="loading-spinner" role="status"
+         class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+      <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+      <span class="sr-only">{% trans "Loading..." %}</span>
+    </div>
+  </div>
+</div>

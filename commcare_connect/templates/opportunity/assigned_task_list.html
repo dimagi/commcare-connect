@@ -10,9 +10,9 @@
          x-data="{
            showEditTaskModal: false,
            editTaskError: false,
-           editTaskSuccess: false,
-         }"
-         @reload-table.camel.window="showEditTaskModal = false; editTaskError = false; editTaskSuccess = true">
+           showCreateTaskModal: false,
+           ...selectableTable()
+         }">
         {% include 'components/breadcrumbs.html' with path=path %}
 
         <div class="flex flex-col gap-8 metric-container">
@@ -48,16 +48,6 @@
             </div>
         </div>
 
-        <div x-show="editTaskSuccess" x-cloak role="status"
-          class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
-          <div class="flex items-center gap-2">
-            <i class="fa-regular fa-circle-check"></i>
-            <span>{% trans "Task updated successfully." %}</span>
-          </div>
-          <button type="button" class="ml-4 text-xl font-light hover:font-normal focus:outline-none" aria-label="{% trans "Close" %}"
-            @click="editTaskSuccess = false">&times;</button>
-        </div>
-
         <div x-show="editTaskError" x-cloak role="alert"
           class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
           <div class="flex items-center gap-2">
@@ -70,13 +60,45 @@
 
         <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4"
              hx-get="{{ request.get_full_path }}"
-             hx-trigger="reloadTable from:body"
              hx-select="#task-list-table"
              hx-swap="outerHTML">
+            {% if can_manage_tasks %}
+            <div class="flex gap-x-4 items-center justify-end mb-4">
+                <button type="button" class="button-icon shadow-sm" @click="showCreateTaskModal = true"
+                    x-tooltip.raw="{% trans 'Create Task' %}">
+                    <i class="fa-solid fa-plus text-brand-deep-purple"></i>
+                </button>
+                <form x-ref="deleteTasksForm"
+                    hx-post="{% url 'opportunity:delete_tasks' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
+                    hx-trigger="submit" class="hidden">
+                    {% csrf_token %}
+                    <template x-for="id in selected">
+                        <input type="hidden" name="task_ids" :value="id">
+                    </template>
+                </form>
+                <button type="button" class="button-icon hover:bg-red-600 hover:text-white shadow-sm" @click="$store.confirmModal.show({
+                                            title: '{% trans "Delete Tasks" %}',
+                                            message: `{% blocktrans %}Are you sure you want to delete __count__ task(s)? This action cannot be undone.{% endblocktrans %}`.replace('__count__', selected.length),
+                                            confirmBtnText: '{% trans "Delete" %}',
+                                            confirmBtnRed: true,
+                                            formRef: $refs.deleteTasksForm,
+                                        })" :disabled="selected.length === 0" x-tooltip.raw="{% trans 'Delete Task(s)' %}">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+            {% endif %}
             {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" container_class="flex justify-end mb-3" %}
             {% render_table table %}
         </div>
 
+        {% if can_manage_tasks %}
+            {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
+        {% endif %}
+        {% include 'components/confirm_modal.html' %}
         {% include "opportunity/edit_assigned_task_modal.html" %}
     </div>
+{% endblock %}
+
+{% block inline_javascript %}
+{% include "components/tables/selectable_table.html" %}
 {% endblock %}

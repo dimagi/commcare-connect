@@ -10,7 +10,7 @@ from commcare_connect.opportunity.tables import GroupedByWorkerMixin, WorkerDeli
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
-    TaskFactory,
+    TaskTypeFactory,
     UserInviteFactory,
 )
 
@@ -31,10 +31,10 @@ def test_worker_tasks_table_groups_by_user(opportunity):
     access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Bob")
     UserInviteFactory(opportunity=opportunity, opportunity_access=access2, status="invited")
 
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access1, task=task, status=AssignedTaskStatus.ASSIGNED)
-    AssignedTaskFactory(opportunity_access=access1, task=task, status=AssignedTaskStatus.COMPLETED)
-    AssignedTaskFactory(opportunity_access=access2, task=task, status=AssignedTaskStatus.ASSIGNED)
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access1, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=access1, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+    AssignedTaskFactory(opportunity_access=access2, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
 
     data = get_worker_tasks_base_queryset(opportunity)
     rows = list(data)

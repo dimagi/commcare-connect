@@ -2,6 +2,7 @@ import csv
 import json
 import logging
 import uuid
+from http import HTTPStatus
 
 import pghistory
 from celery.result import AsyncResult
@@ -23,7 +24,7 @@ from django.utils.decorators import method_decorator
 from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
@@ -37,10 +38,18 @@ from commcare_connect.microplanning.forms import WorkAreaModelForm
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import UserVisit
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
+from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.file import get_file_extension
 
-from .tasks import WorkAreaCSVExporter, WorkAreaCSVImporter, get_import_area_cache_key, import_work_areas_task
+from .tasks import (
+    WorkAreaCSVExporter,
+    WorkAreaCSVImporter,
+    cluster_work_areas_task,
+    get_cluster_area_cache_lock_key,
+    get_import_area_cache_key,
+    import_work_areas_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +64,9 @@ def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
     areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
     show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
-    show_workarea_groups_btn = (
-        areas_present and not WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
-    )
+    work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
+    show_workarea_groups_btn = areas_present and not work_area_groups_present
+
     tiles_url = reverse(
         "microplanning:workareas_tiles",
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id, "z": 0, "x": 0, "y": 0},
@@ -320,6 +329,84 @@ def workareas_group_geojson(request, org_slug, opp_id):
     ]
     extent = qs.aggregate(extent=Extent("boundary"))["extent"]
     return JsonResponse({"group_features": group_features, "workarea_bounds": extent})
+
+
+@org_admin_required
+@opportunity_required
+@require_POST
+def cluster_work_areas(request, org_slug, opp_id):
+    redirect_url = reverse(
+        "microplanning:microplanning_home",
+        kwargs={"org_slug": org_slug, "opp_id": opp_id},
+    )
+
+    if not WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists():
+        messages.error(request, _("Please upload Work Areas for this opportunity."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    if WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).exists():
+        messages.error(request, _("Work Area Groups already exist for this opportunity."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    lock_key = get_cluster_area_cache_lock_key(request.opportunity.id)
+    if cache.lock(lock_key).locked():
+        messages.error(request, _("Work Area Clustering is already in progress for this opportunity."))
+        return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+    task = cluster_work_areas_task.delay(request.opportunity.id)
+    redirect_url += f"?clustering_task_id={task.id}"
+    response = render(
+        request,
+        "microplanning/cluster_work_area_modal_status.html",
+        context={"clustering_task_id": task.id},
+    )
+    response.headers["HX-Push-Url"] = redirect_url
+    return response
+
+
+@org_admin_required
+@opportunity_required
+def clustering_status(request, org_slug, opp_id):
+    task_id = request.GET.get("clustering_task_id", None)
+    redirect_url = reverse("microplanning:microplanning_home", args=(org_slug, opp_id))
+
+    if task_id:
+        try:
+            uuid.UUID(task_id)
+        except (ValueError, TypeError):
+            return redirect("microplanning:microplanning_home", org_slug=org_slug, opp_id=opp_id)
+
+        task = AsyncResult(task_id)
+        status = task.state
+        message = None
+        icon = None
+        refresh_page = False
+
+        if status == CELERY_TASK_SUCCESS:
+            message = _("Work Area Clustering was successful. You may close this window.")
+            icon = "fa-solid fa-circle-check text-green-600"
+            refresh_page = True
+            messages.success(request, "Work Area Clustering was successful.")
+        elif status == CELERY_TASK_FAILURE:
+            message = _("There was an error. Please try again.")
+            icon = "fa-solid fa-circle-exclamation text-red-600"
+        else:
+            # htmx does not swap content when status 204 is returned.
+            # This keeps the progress bar intact, once any of the above
+            # status are triggered, the progress bar is replaced with a
+            # non-refreshing div to show final status.
+            return HttpResponse(status=HTTPStatus.NO_CONTENT)
+
+        response = render(
+            request,
+            "microplanning/cluster_work_area_final_status.html",
+            context={"icon": icon, "message": message},
+        )
+        if refresh_page:
+            response.headers["HX-Redirect"] = redirect_url
+        return response
+
+    return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
 @require_GET

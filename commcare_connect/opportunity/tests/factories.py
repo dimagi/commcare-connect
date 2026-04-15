@@ -267,18 +267,18 @@ class PaymentInvoiceFactory(DjangoModelFactory):
         model = "opportunity.PaymentInvoice"
 
 
-class TaskFactory(DjangoModelFactory):
+class TaskTypeFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("slug")
     name = Faker("name")
     description = Faker("text")
 
     class Meta:
-        model = "opportunity.Task"
+        model = "opportunity.TaskType"
 
 
 class AssignedTaskFactory(DjangoModelFactory):
-    task = SubFactory(TaskFactory)
+    task_type = SubFactory(TaskTypeFactory)
     opportunity_access = SubFactory(OpportunityAccessFactory)
     completed_at = Faker("date_time", tzinfo=timezone.utc)
     duration = LazyFunction(lambda: timedelta(hours=1))

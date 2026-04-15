@@ -91,6 +91,7 @@
       selectedTab: '{{ request.GET.active_tab|default:"details" }}',
       showAddMemberModal: false,
       isHistoryAvailable: false,
+      isNewEntity: false,
       selected: [],
       selectAll: false,
       showConfirmRemoveMembershipModal: false,
@@ -114,6 +115,13 @@
         this.$watch('selectedTab', (value) => {
           this.updateUrl(value);
           this.loadTabContent(value);
+        });
+
+        document.addEventListener('tomselect-elements:initialized', () => {
+          if (!this.$refs.llo_entity) return;
+          this.$refs.llo_entity.tomselect.on('change', (value) => {
+            this.isNewEntity = value ? value.startsWith('new:') : false;
+          });
         });
       },
 

@@ -111,3 +111,40 @@ def get_validated_page_size(request):
         return page_size if page_size in PAGE_SIZE_OPTIONS else DEFAULT_PAGE_SIZE
     except (ValueError, TypeError):
         return DEFAULT_PAGE_SIZE
+
+
+def select_column(th_extra=None, td_extra=None):
+    """
+    Return a CheckBoxColumn wired for Alpine.js table selection.
+
+    Header checkbox binds to `selectAll` and triggers `toggleSelectAll()`.
+    Row checkboxes bind to `selected` and use `record.pk` as value.
+
+    Args:
+        th_extra (dict, optional): Extra/override attrs for header checkbox.
+        td_extra (dict, optional): Extra/override attrs for row checkboxes.
+    """
+    th_attrs = {
+        "@click": "toggleSelectAll()",
+        "x-model": "selectAll",
+        "name": "select_all",
+        "type": "checkbox",
+        "class": "checkbox",
+    }
+    td_attrs = {
+        "x-model": "selected",
+        "@click.stop": "",
+        "name": "row_select",
+        "type": "checkbox",
+        "class": "checkbox",
+        "value": lambda record: record.pk,
+        "id": lambda record: f"row_checkbox_{record.pk}",
+    }
+    if th_extra:
+        th_attrs.update(th_extra)
+    if td_extra:
+        td_attrs.update(td_extra)
+    return tables.CheckBoxColumn(
+        accessor="pk",
+        attrs={"th__input": th_attrs, "td__input": td_attrs},
+    )

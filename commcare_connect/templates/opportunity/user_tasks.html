@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% load i18n %}
+{% load django_tables2 %}
+
+{% block content %}
+{% include 'components/breadcrumbs.html' with path=path %}
+<div class="w-full space-y-4"
+     x-data="{
+       showCreateTaskModal: false,
+       showEditTaskModal: false,
+       editTaskError: false,
+       ...selectableTable()
+     }"
+  >
+  <div x-show="editTaskError" x-cloak role="alert"
+    class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>{% trans "Failed to load task. Please try again." %}</span>
+    </div>
+    <button type="button" class="ml-4 text-xl font-light hover:font-normal focus:outline-none" aria-label="{% trans "Close" %}"
+      @click="editTaskError = false">&times;</button>
+  </div>
+
+  {% include "components/worker_page/worker_profile_kpi.html" %}
+  {% include 'components/worker_page/visit_task_tabs.html' %}
+  <div class="w-full grid grid-cols-10 gap-2">
+    <div class="col-span-6" hx-indicator="#loading-spinner">
+      <div
+        hx-get="{% url 'opportunity:user_tasks_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
+        hx-trigger="load" hx-swap="outerHTML"></div>
+      {% if can_manage_tasks %}
+      <div class="flex gap-4 items-center justify-start mt-4">
+        <form x-ref="deleteTasksForm"
+          hx-post="{{ delete_tasks_url }}"
+          hx-trigger="submit" class="hidden">
+          {% csrf_token %}
+          <template x-for="id in selected">
+            <input type="hidden" name="task_ids" :value="id">
+          </template>
+        </form>
+        <button type="button" class="button button-md primary-dark" @click="showCreateTaskModal = true">
+          <i class="fa-solid fa-plus mr-2"></i>
+          {% trans "Create Task" %}
+        </button>
+        <button type="button" class="button button-md bg-red-600 hover:bg-red-700 text-white"
+          @click="$store.confirmModal.show({
+            title: '{% trans "Delete Tasks" %}',
+            message: '{% trans "Are you sure you want to delete these tasks? This action can not be undone." %}',
+            confirmBtnText: '{% trans "Delete" %}',
+            confirmBtnRed: true,
+            formRef: $refs.deleteTasksForm,
+          })"
+          :disabled="selected.length === 0">
+          <i class="fa-solid fa-trash mr-2"></i>
+          <span x-text="selected.length === 0
+            ? '{% trans "Delete Tasks" %}'
+            : selected.length === 1
+              ? '{% trans "Delete 1 Task" %}'
+              : '{% trans "Delete" %} ' + selected.length + ' {% trans "Tasks" %}'">
+          </span>
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="col-span-4 relative" hx-indicator="#task-loading-indicator">
+      <div class="absolute inset-0">
+        <div class="flex flex-col gap-2 h-full">
+          <div class="flex items-center justify-between px-4 bg-white rounded-lg shadow-sm h-14">
+            <p class="text-sm font-normal text-brand-deep-purple">{% translate "Details" %}</p>
+          </div>
+          <div class="p-4 rounded-lg shadow-sm flex-1 bg-white overflow-y-auto scrollbar-hide scrollbar-default">
+            <div id="task-details">
+              <div class="flex justify-items-center align-items-center">
+                <span>{% translate "Please select a task to load details." %}</span>
+              </div>
+            </div>
+            <div id="task-loading-indicator" role="status"
+              class="htmx-indicator absolute -translate-x-1/2 -translate-y-1/2 top-2/4 left-1/2">
+              <div class="animate-spin rounded-full h-12 w-12 border-4 border-brand-mango border-t-transparent"></div>
+              <span class="sr-only">{% translate "Loading..." %}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if can_manage_tasks %}
+  {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
+  {% include 'opportunity/edit_assigned_task_modal.html' %}
+  {% include 'components/confirm_modal.html' %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{% include "components/tables/selectable_table.html" %}
+{% endblock %}

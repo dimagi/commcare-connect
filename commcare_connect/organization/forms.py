@@ -2,6 +2,7 @@ from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
+from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
@@ -9,6 +10,10 @@ from commcare_connect.organization.models import LLOEntity, Organization, UserOr
 from commcare_connect.users.models import User
 from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+
+LLO_ENTITY_SHORT_NAME_HELP_TEXT = gettext_lazy(
+    "A brief abbreviation for the entity. This will be used to reference the organization in the Connect application."
+)
 
 
 class OrganizationChangeForm(forms.ModelForm):
@@ -41,22 +46,37 @@ class OrganizationChangeForm(forms.ModelForm):
         else:
             del self.fields["program_manager"]
 
+        layout_fields.append(layout.Field("llo_entity"))
         instance_llo = getattr(self.instance, "llo_entity", None)
         if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             self.fields["llo_entity"] = CreatableModelChoiceField(
                 label=gettext("LLO Entity"),
                 queryset=LLOEntity.objects.order_by("name"),
-                widget=forms.Select(),
+                widget=forms.Select(attrs={"x-ref": "llo_entity"}),
                 empty_label=gettext("Select a LLO Entity"),
                 required=False,
                 create_key_name="name",
             )
             self.fields["llo_entity"].initial = instance_llo
+            self.fields["llo_entity_short_name"] = forms.CharField(
+                label=format_html(
+                    '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
+                    gettext("LLO Entity Short Name"),
+                ),
+                max_length=40,
+                required=False,
+                widget=forms.TextInput(attrs={"x-ref": "llo_entity_short_name", ":required": "isNewEntity"}),
+                help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
+            )
+            layout_fields.append(
+                layout.Div(
+                    layout.Field("llo_entity_short_name"),
+                    **{"x-show": "isNewEntity", "x-cloak": True, "x-transition": True},
+                )
+            )
         else:
             if instance_llo:
                 self.fields["llo_entity"].choices = [(self.instance.llo_entity_id, str(self.instance.llo_entity))]
-
-        layout_fields.append(layout.Field("llo_entity"))
 
         self.helper = helper.FormHelper(self)
         self.helper.layout = layout.Layout(
@@ -72,14 +92,26 @@ class OrganizationChangeForm(forms.ModelForm):
             return self.cleaned_data["llo_entity"]
         return self.instance.llo_entity
 
+    def clean(self):
+        cleaned_data = super().clean()
+        llo_entity = cleaned_data.get("llo_entity")
+        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
+            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
+        return cleaned_data
+
     def save(self, commit=True):
         org = super().save(commit=False)
         llo_entity = self.cleaned_data.get("llo_entity")
+        short_name = self.cleaned_data.get("llo_entity_short_name") or None
 
-        org.llo_entity = llo_entity
-        if commit:
+        if self.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
             if llo_entity and not llo_entity.pk:
-                llo_entity.save()
+                llo_entity.short_name = short_name
+                if commit:
+                    llo_entity.save()
+            org.llo_entity = llo_entity
+
+        if commit:
             org.save()
         return org
 
@@ -167,6 +199,16 @@ class OrganizationSelectOrCreateForm(forms.Form):
         empty_label=gettext_lazy("Select a LLO Entity"),
         create_key_name="name",
     )
+    llo_entity_short_name = forms.CharField(
+        label=format_html(
+            '{} <span class="asteriskField" x-show="isNewEntity" x-cloak>*</span>',
+            gettext_lazy("LLO Entity Short Name"),
+        ),
+        max_length=40,
+        required=False,
+        widget=forms.TextInput(attrs={":required": "isNewEntity"}),
+        help_text=LLO_ENTITY_SHORT_NAME_HELP_TEXT,
+    )
     org = DynamicCreatableChoiceField(
         queryset=Organization.objects.order_by("name"),
         create_key_name="name",
@@ -208,6 +250,8 @@ class OrganizationSelectOrCreateForm(forms.Form):
                         )
                     }
                 )
+        if llo_entity and not llo_entity.pk and not cleaned_data.get("llo_entity_short_name"):
+            self.add_error("llo_entity_short_name", gettext("This field is required when creating a new LLO Entity."))
         return cleaned_data
 
     def save(self, commit=True):
@@ -217,6 +261,8 @@ class OrganizationSelectOrCreateForm(forms.Form):
         org.llo_entity = llo_entity
         if commit:
             if llo_entity and not llo_entity.pk:
+                if short_name := self.cleaned_data.get("llo_entity_short_name") or None:
+                    llo_entity.short_name = short_name
                 llo_entity.save()
             if is_new_org:
                 org.save()

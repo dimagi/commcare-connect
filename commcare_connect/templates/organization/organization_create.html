@@ -18,6 +18,7 @@
         orgSelect: null,
         selectedEntity: '',
         selectedWorkspaceSlug: '',
+        isNewEntity: false,
 
 
         init() {
@@ -30,6 +31,7 @@
 
             this.$refs.llo_entity.tomselect.on('change', (value) => {
               this.selectedEntity = value;
+              this.isNewEntity = value ? value.startsWith('new:') : false;
               this.selectedWorkspaceSlug = '';
               this.updateWorkspaceOptions(value);
             });
@@ -84,6 +86,9 @@
     <div x-data="createOrgHandler(JSON.parse(document.getElementById('entity-wise-orgs').textContent))">
       <div class="mb-4" >
         {{ form.llo_entity|as_crispy_field }}
+      </div>
+      <div class="mb-4" x-show="isNewEntity" x-cloak x-transition>
+        {{ form.llo_entity_short_name|as_crispy_field }}
       </div>
       <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>
         {{ form.org|as_crispy_field }}

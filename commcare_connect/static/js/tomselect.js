@@ -32,7 +32,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // Must match TOMSELECT_NEW_ENTRY_PREFIX in commcare_connect/utils/forms.py
       settings.create = (input) => ({ value: 'new:' + input, text: input });
     }
-    new TomSelect(el, settings);
+    const ts = new TomSelect(el, settings);
+    ts.on('change', () => {
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   });
 
   document.dispatchEvent(new CustomEvent('tomselect-elements:initialized'));

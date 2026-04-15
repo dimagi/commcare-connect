@@ -61,15 +61,17 @@ class DeliveryReportFilters(django_filters.FilterSet):
         label="Program",
     )
     llo = django_filters.ModelChoiceFilter(
-        queryset=LLOEntity.objects.all(),
+        queryset=LLOEntity.objects.all().order_by("name"),
         label="LLO",
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
     opportunity = django_filters.ModelChoiceFilter(
-        queryset=Opportunity.objects.filter(is_test=False),
+        queryset=Opportunity.objects.filter(is_test=False).order_by("name"),
         label="Opportunity",
+        widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
     country = django_filters.ModelChoiceFilter(
-        queryset=Country.objects.filter(opportunity__isnull=False).distinct(),
+        queryset=Country.objects.filter(opportunity__isnull=False).distinct().order_by("name"),
         label="Country",
     )
     from_date = django_filters.DateFilter(

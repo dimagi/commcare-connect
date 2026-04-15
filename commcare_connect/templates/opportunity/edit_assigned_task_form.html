@@ -1,5 +1,9 @@
-{% load crispy_forms_tags %}
+{% load crispy_forms_tags i18n %}
 
+<div class="rounded-lg bg-gray-50 p-3 mb-4">
+    <p class="font-medium text-gray-900">{{ task_type_name }}</p>
+    <p class="text-sm text-gray-500">{% translate "Due:" %} {{ current_due_date }}</p>
+</div>
 <form
     id="edit-assigned-task-form-el"
     hx-post="{{ hx_post_url }}"

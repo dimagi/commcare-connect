@@ -11,6 +11,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.versioning import AcceptHeaderVersioning
 from rest_framework.views import APIView
 
 from commcare_connect.data_export.const import (
@@ -24,21 +25,28 @@ from commcare_connect.data_export.const import (
 from commcare_connect.data_export.pagination import IdKeysetPagination
 from commcare_connect.data_export.serializer import (
     AssessmentDataSerializer,
+    AssignedTaskDataSerializer,
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
+    LLOEntityDataSerializer,
     OpportunityDataExportSerializer,
     OpportunitySerializer,
     OpportunityUserDataSerializer,
     OrganizationDataExportSerializer,
     PaymentDataSerializer,
     ProgramDataExportSerializer,
+    TaskTypeDataSerializer,
     UserVisitDataSerializer,
     UserVisitDataWithImagesSerializer,
+    WorkAreaDataSerializer,
+    WorkAreaGroupDataSerializer,
 )
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     BlobMeta,
     CompletedModule,
     CompletedWork,
@@ -47,12 +55,14 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     Payment,
     PaymentInvoice,
+    TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
 
 STREAM_CHUNK_SIZE = 2000
 
@@ -129,6 +139,20 @@ class BaseDataExportListView(BaseDataExportView):
             serializer = serializer_class(page, many=True)
             return self.get_paginated_response(serializer.data)
         return StreamingHttpResponse(self.get_data_generator(*args, **kwargs), content_type="text/csv")
+
+
+class V2OnlyVersioning(AcceptHeaderVersioning):
+    # DRF's is_allowed_version() always permits the default_version, even if it's
+    # not in allowed_versions. Setting None ensures requests without a version header
+    # are rejected with 406 instead of falling through to the CSV streaming response.
+    default_version = None
+    allowed_versions = ["2.0"]
+
+
+class BaseDataExportListViewV2(BaseDataExportListView):
+    """V2-only export view. Returns 406 for non-v2 requests."""
+
+    versioning_class = V2OnlyVersioning
 
 
 def _get_opportunity_or_404(user, opp_id):
@@ -487,3 +511,45 @@ class ProgramOpportunityDataView(BaseDataExportListView):
             .select_related("learn_app", "deliver_app")
             .prefetch_related("paymentunit_set", "opportunityverificationflags")
         )
+
+
+class TaskTypeDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = TaskTypeDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return TaskType.objects.filter(opportunity=self.opportunity)
+
+
+class AssignedTaskDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = AssignedTaskDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
+            "task_type", "opportunity_access__user"
+        )
+
+
+class WorkAreaGroupDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = WorkAreaGroupDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return WorkAreaGroup.objects.filter(opportunity=self.opportunity).select_related("opportunity_access__user")
+
+
+class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = WorkAreaDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return WorkArea.objects.filter(opportunity=self.opportunity).select_related("work_area_group")
+
+
+class LLOEntityDataView(BaseDataExportListViewV2):
+    serializer_class = LLOEntityDataSerializer
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if not request.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            raise NotFound
+
+    def get_queryset(self, *args, **kwargs):
+        return LLOEntity.objects.all()

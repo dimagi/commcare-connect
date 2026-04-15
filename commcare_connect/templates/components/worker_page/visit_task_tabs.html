@@ -1,0 +1,11 @@
+{% url 'opportunity:user_visits_list' request.org.slug opportunity.opportunity_id as visits_url %}
+{% url 'opportunity:user_tasks_list' request.org.slug opportunity.opportunity_id as tasks_url %}
+
+<div class="flex relative mx-auto items-center w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14 better-tabs overflow-x-auto">
+  <div class="tabs">
+    <a href="{{ visits_url }}?user={{ request.GET.user }}"
+       class="tab {% if request.resolver_match.url_name == 'user_visits_list' %}tab-active{% endif %}">Visits</a>
+    <a href="{{ tasks_url }}?user={{ request.GET.user }}"
+       class="tab {% if request.resolver_match.url_name == 'user_tasks_list' %}tab-active{% endif %}">Tasks</a>
+  </div>
+</div>

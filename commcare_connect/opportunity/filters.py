@@ -4,7 +4,7 @@ from crispy_forms.layout import Column, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, Task
+from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
 
@@ -209,7 +209,7 @@ class TasksFilterSet(django_filters.FilterSet):
         self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
         if self.opportunity:
-            active_tasks = Task.objects.filter(opportunity=self.opportunity, is_active=True)
+            active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
             self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
 
             worker_queryset = (
@@ -239,7 +239,7 @@ class AssignedTaskFilterSet(django_filters.FilterSet):
     task_type = django_filters.ChoiceFilter(
         label=_("Task Type"),
         choices=[],
-        field_name="task__id",
+        field_name="task_type__id",
     )
     date_assigned_after = django_filters.DateFilter(
         label=_("Date Assigned From"),
@@ -291,7 +291,7 @@ class AssignedTaskFilterSet(django_filters.FilterSet):
         """
         Fetch task types with at least one `AssignedTask` for this opportunity
         """
-        tasks = Task.objects.filter(assignedtask__opportunity_access__opportunity=self.opportunity).distinct()
+        tasks = TaskType.objects.filter(assignedtask__opportunity_access__opportunity=self.opportunity).distinct()
         return [(str(t.pk), t.name) for t in tasks]
 
     def _get_worker_name_choices(self):

@@ -53,6 +53,12 @@ def opportunity_program_manager_required(view_func):
     return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
 
 
+def managed_opportunity_pm_required(view_func):
+    return _get_decorated_function(
+        view_func, lambda request: not request.opportunity.managed or request.is_opportunity_pm
+    )
+
+
 def _get_decorated_function(view_func, permission_test_function):
     @wraps(view_func)
     def _inner(request, *args, **kwargs):

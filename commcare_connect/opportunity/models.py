@@ -258,7 +258,7 @@ class LearnModule(models.Model):
         return self.name
 
 
-class Task(models.Model):
+class TaskType(models.Model):
     task_type_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, null=True, blank=True)
@@ -276,7 +276,7 @@ class Task(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app"),
+            models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_type_per_app"),
         ]
 
 
@@ -426,10 +426,10 @@ class AssignedTaskStatus(models.TextChoices):
 @pghistory.track(pghistory.UpdateEvent(), fields=["due_date"])
 class AssignedTask(XFormBaseModel):
     assigned_task_id = models.UUIDField(editable=False, default=uuid4, unique=True)
-    task = models.ForeignKey(Task, on_delete=models.PROTECT)
+    task_type = models.ForeignKey(TaskType, on_delete=models.PROTECT)
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
-    completed_at = models.DateTimeField()
-    duration = models.DurationField()
+    completed_at = models.DateTimeField(null=True)
+    duration = models.DurationField(null=True)
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
         choices=AssignedTaskStatus.choices,
@@ -449,7 +449,7 @@ class AssignedTask(XFormBaseModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["xform_id", "task", "opportunity_access"], name="unique_xform_assigned_task"
+                fields=["xform_id", "task_type", "opportunity_access"], name="unique_xform_assigned_task"
             )
         ]
 

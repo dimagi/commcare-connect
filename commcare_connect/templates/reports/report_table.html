@@ -2,6 +2,7 @@
 
 {% load render_table from django_tables2 %}
 {% load i18n %}
+{% load static %}
 {% load crispy_forms_tags %}
 
 {% block content %}
@@ -30,14 +31,9 @@
 
 {% block javascript %}
 {{ block.super }}
-<!-- This is required for select2 'user' field-->
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-
+<script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 <script>
  window.addEventListener("DOMContentLoaded", (e) => {
-  $('select').on('select2:select', function (e) {
-   $(this).closest('form').get(0).dispatchEvent(new Event('change'));
-  });
   monthPickr("#id_from_date", {
     altInput: true,
   }, {
@@ -57,9 +53,5 @@
 
 {% block css %}
 {{ block.super }}
-<style>
-.select2-selection__rendered {
-    line-height: initial!important;
-}
-</style>
+<link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 {% endblock %}

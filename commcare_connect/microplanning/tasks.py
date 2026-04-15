@@ -11,6 +11,7 @@ from django.utils.translation import gettext as _
 
 from config import celery_app
 
+from .clustering import WorkAreaGrouper
 from .models import SRID, WorkArea
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 def get_import_area_cache_key(opp_id: int):
     return f"work_area_import_lock_{opp_id}"
+
+
+def get_cluster_area_cache_lock_key(opp_id: int):
+    return f"work_area_clustering_cache_lock_key_{opp_id}"
 
 
 class WorkAreaCSVImporter:
@@ -297,3 +302,10 @@ class WorkAreaCSVExporter:
             yield buffer.getvalue()
             buffer.seek(0)
             buffer.truncate(0)
+
+
+@celery_app.task()
+def cluster_work_areas_task(opp_id):
+    lock_key = get_cluster_area_cache_lock_key(opp_id)
+    with cache.lock(lock_key, timeout=1200):
+        WorkAreaGrouper(opp_id).cluster_work_areas()

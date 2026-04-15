@@ -23,7 +23,7 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
     PaymentInvoiceStatusEvent,
     PaymentUnit,
-    Task,
+    TaskType,
     UserInvite,
     UserVisit,
 )
@@ -202,13 +202,13 @@ class UserInviteAdmin(admin.ModelAdmin):
     search_fields = ["phone_number", "opportunity__name"]
 
 
-@admin.register(Task)
-class TaskAdmin(admin.ModelAdmin):
+@admin.register(TaskType)
+class TaskTypeAdmin(admin.ModelAdmin):
     list_display = ["name", "app", "slug"]
     search_fields = ["name", "app__name"]
 
 
 @admin.register(AssignedTask)
 class AssignedTaskAdmin(admin.ModelAdmin):
-    list_display = ["task", "opportunity_access", "status", "completed_at"]
-    search_fields = ["task__name", "opportunity_access__user__username"]
+    list_display = ["task_type", "opportunity_access", "status", "completed_at"]
+    search_fields = ["task_type__name", "opportunity_access__user__username"]

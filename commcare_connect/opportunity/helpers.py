@@ -36,6 +36,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
+    TaskType,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -620,12 +621,12 @@ def get_worker_tasks_base_queryset(opportunity):
         .select_related("user")
         .annotate(
             status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
-            task_name=F("assignedtask__task__name"),
-            task_id=F("assignedtask__task__id"),
+            task_name=F("assignedtask__task_type__name"),
+            task_id=F("assignedtask__task_type__id"),
             date_assigned=F("assignedtask__date_created"),
             task_due_date=F("assignedtask__due_date"),
             task_status=F("assignedtask__status"),
-            task_is_active=F("assignedtask__task__is_active"),
+            task_is_active=F("assignedtask__task_type__is_active"),
         )
         .filter(task_is_active=True)
         .order_by("user__name", "assignedtask__date_created")
@@ -660,74 +661,22 @@ def get_opportunity_delivery_progress(opp_id):
         output_field=DateTimeField(),
     )
 
-    flagged_deliveries_waiting_review_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__status=VisitValidationStatus.pending,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
-    flagged_deliveries_since_yesterday_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__status=VisitValidationStatus.pending,
-                uservisit__visit_date__gte=yesterday,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
-    deliveries_pending_pm_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__review_status=VisitReviewStatus.pending,
-                uservisit__status=VisitValidationStatus.approved,
-                uservisit__review_created_on__isnull=False,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
-    deliveries_pending_pm_yesterday_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__review_status=VisitReviewStatus.pending,
-                uservisit__review_created_on__isnull=False,
-                uservisit__status=VisitValidationStatus.approved,
-                uservisit__review_created_on__gte=yesterday,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
     recent_payment_sq = Subquery(
         Payment.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
         .values("opportunity_access__opportunity_id")
         .annotate(latest=Max("date_paid"))
         .values("latest")[:1],
         output_field=DateTimeField(),
+    )
+    active_tasks_count = Coalesce(
+        Subquery(
+            TaskType.objects.filter(opportunity_id=OuterRef("pk"), is_active=True)
+            .values("opportunity_id")
+            .annotate(total=Count("pk"))
+            .values("total"),
+            output_field=IntegerField(),
+        ),
+        0,
     )
 
     annotated_opportunity = Opportunity.objects.filter(id=opp_id).annotate(
@@ -736,16 +685,13 @@ def get_opportunity_delivery_progress(opp_id):
         accrued_since_yesterday=accrued_since_yesterday_sq,
         most_recent_delivery=most_recent_delivery_sq,
         total_deliveries=get_deliveries_count_subquery(),
-        flagged_deliveries_waiting_for_review=flagged_deliveries_waiting_review_sq,
-        flagged_deliveries_waiting_for_review_since_yesterday=flagged_deliveries_since_yesterday_sq,
-        deliveries_pending_for_pm_review=deliveries_pending_pm_sq,
-        deliveries_pending_for_pm_review_since_yesterday=deliveries_pending_pm_yesterday_sq,
         recent_payment=recent_payment_sq,
         workers_invited=workers_invited_subquery(),
         pending_invites=pending_invites_subquery(),
         total_accrued=total_accrued_sq(),
         total_paid=total_paid_sq(),
         payments_due=ExpressionWrapper(F("total_accrued") - F("total_paid"), output_field=DecimalField()),
+        active_tasks_count=active_tasks_count,
     )
 
     return annotated_opportunity.first()

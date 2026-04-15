@@ -85,7 +85,7 @@ class TestOrganizationHomeView:
             data={"name": organization.name, "program_manager": "on"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 302
         organization.refresh_from_db()
         assert not organization.program_manager
 
@@ -102,7 +102,7 @@ class TestOrganizationHomeView:
             data={"name": organization.name, "program_manager": "on"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 302
         organization.refresh_from_db()
         assert organization.program_manager
 

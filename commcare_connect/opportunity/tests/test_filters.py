@@ -9,7 +9,7 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
-    TaskFactory,
+    TaskTypeFactory,
 )
 
 
@@ -18,9 +18,9 @@ def test_tasks_filterset_worker_name():
     opp = OpportunityFactory()
     access_alice = OpportunityAccessFactory(opportunity=opp, accepted=True, user__name="Alice Smith")
     access_bob = OpportunityAccessFactory(opportunity=opp, accepted=True, user__name="Bob Jones")
-    task = TaskFactory(opportunity=opp, app=opp.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access_alice, task=task)
-    AssignedTaskFactory(opportunity_access=access_bob, task=task)
+    task_type = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type)
+    AssignedTaskFactory(opportunity_access=access_bob, task_type=task_type)
 
     qs = get_worker_tasks_base_queryset(opp)
     filterset = TasksFilterSet(data={"worker_name": [str(access_alice.user.pk)]}, queryset=qs, opportunity=opp)
@@ -38,9 +38,9 @@ def test_tasks_filterset_worker_name():
 def test_tasks_filterset_task_status_single():
     opp = OpportunityFactory()
     access = OpportunityAccessFactory(opportunity=opp, accepted=True)
-    task = TaskFactory(opportunity=opp, app=opp.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task=task, status=AssignedTaskStatus.ASSIGNED)
-    AssignedTaskFactory(opportunity_access=access, task=task, status=AssignedTaskStatus.COMPLETED)
+    task_type = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
 
     qs = get_worker_tasks_base_queryset(opp)
     filterset = TasksFilterSet(data={"task_status": [AssignedTaskStatus.COMPLETED]}, queryset=qs, opportunity=opp)
@@ -55,10 +55,10 @@ def test_tasks_filterset_task_status_single():
 def test_tasks_filterset_task_type():
     opp = OpportunityFactory()
     access = OpportunityAccessFactory(opportunity=opp, accepted=True)
-    task_a = TaskFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Survey")
-    task_b = TaskFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Follow-up")
-    AssignedTaskFactory(opportunity_access=access, task=task_a)
-    AssignedTaskFactory(opportunity_access=access, task=task_b)
+    task_a = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Survey")
+    task_b = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Follow-up")
+    AssignedTaskFactory(opportunity_access=access, task_type=task_a)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_b)
 
     qs = get_worker_tasks_base_queryset(opp)
     filterset = TasksFilterSet(data={"task_type": [str(task_a.pk)]}, queryset=qs, opportunity=opp)
@@ -75,8 +75,8 @@ def test_tasks_filterset_task_type():
 @pytest.mark.django_db
 def test_tasks_filterset_task_type_excludes_inactive():
     opp = OpportunityFactory()
-    active_task = TaskFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Active")
-    inactive_task = TaskFactory(opportunity=opp, app=opp.deliver_app, is_active=False, name="Inactive")
+    active_task = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Active")
+    inactive_task = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=False, name="Inactive")
 
     qs = get_worker_tasks_base_queryset(opp)
     filterset = TasksFilterSet(data={}, queryset=qs, opportunity=opp)
@@ -91,14 +91,14 @@ class TestAssignedTaskFilterSet:
     def setup_method(self):
         self.opportunity = OpportunityFactory()
         self.access1, self.access2 = OpportunityAccessFactory.create_batch(2, opportunity=self.opportunity)
-        self.task1, self.task2 = TaskFactory.create_batch(2, opportunity=self.opportunity)
+        self.task1, self.task2 = TaskTypeFactory.create_batch(2, opportunity=self.opportunity)
         self.at_assigned = AssignedTaskFactory(
-            task=self.task1,
+            task_type=self.task1,
             opportunity_access=self.access1,
             status=AssignedTaskStatus.ASSIGNED,
         )
         self.at_completed = AssignedTaskFactory(
-            task=self.task2,
+            task_type=self.task2,
             opportunity_access=self.access2,
             status=AssignedTaskStatus.COMPLETED,
         )

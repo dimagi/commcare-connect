@@ -33,7 +33,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
-    TaskFactory,
+    TaskTypeFactory,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
@@ -779,26 +779,39 @@ class TestAutomatedPaymentInvoiceForm:
 @pytest.mark.django_db
 class TestCreateTaskForm:
     @pytest.fixture
-    def task(self, opportunity):
-        return TaskFactory(app=opportunity.deliver_app)
+    def task_type(self, opportunity):
+        return TaskTypeFactory(app=opportunity.deliver_app)
 
-    def test_invalid_past_date(self, opportunity, task):
+    def test_invalid_past_date(self, opportunity, task_type):
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
         data = {
-            "task": task.pk,
-            "connect_worker": access.user.pk,
+            "task": task_type.pk,
+            "access": access.pk,
             "due_date": (datetime.date.today() - datetime.timedelta(days=1)).isoformat(),
         }
         form = CreateTaskForm(data, opportunity=opportunity)
         assert not form.is_valid()
         assert "due_date" in form.errors
 
-    def test_flw_queryset_filtering(self, opportunity):
-        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False).user
-        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False).user
-        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True).user
+    def test_valid_form(self, opportunity, task_type):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        due_date = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+        data = {
+            "task": task_type.pk,
+            "access": access.pk,
+            "due_date": due_date,
+        }
+        form = CreateTaskForm(data, opportunity=opportunity)
+        assert form.is_valid()
+        assert form.cleaned_data["task"] == task_type
+        assert form.cleaned_data["access"] == access
 
-        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["connect_worker"].queryset
+    def test_flw_queryset_filtering(self, opportunity):
+        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False)
+        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True)
+
+        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["access"].queryset
 
         assert active in flw_queryset
         assert unaccepted not in flw_queryset
@@ -835,7 +848,7 @@ class TestAddTaskTypeForm:
         assert ("task_2", "Task Two") in choices
 
     def test_already_used_slugs_excluded(self, opportunity, task_units):
-        TaskFactory(app=opportunity.deliver_app, slug="task_1")
+        TaskTypeFactory(app=opportunity.deliver_app, slug="task_1")
         with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
             form = AddTaskTypeForm(opportunity=opportunity)
         choice_ids = [c[0] for c in form.fields["task_unit_id"].choices]
@@ -875,18 +888,18 @@ class TestAddTaskTypeForm:
                 opportunity=opportunity,
             )
         assert form.is_valid(), form.errors
-        task = form.save()
-        assert task.slug == "task_1"
-        assert task.app == opportunity.deliver_app
+        task_type = form.save()
+        assert task_type.slug == "task_1"
+        assert task_type.app == opportunity.deliver_app
 
 
 @pytest.mark.django_db
 class TestEditTaskTypeForm:
     def test_updates_name_and_description(self, opportunity):
-        task = TaskFactory(app=opportunity.deliver_app, name="Old Name", description="Old Desc")
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, name="Old Name", description="Old Desc")
         form = EditTaskTypeForm(
             data={"name": "New Name", "description": "New Desc"},
-            instance=task,
+            instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()
@@ -894,30 +907,30 @@ class TestEditTaskTypeForm:
         assert saved.description == "New Desc"
 
     def test_requires_name(self, opportunity):
-        task = TaskFactory(app=opportunity.deliver_app)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
         form = EditTaskTypeForm(
             data={"name": "", "description": "Desc"},
-            instance=task,
+            instance=task_type,
         )
         assert not form.is_valid()
         assert "name" in form.errors
 
     def test_archive_sets_archived(self, opportunity):
-        task = TaskFactory(app=opportunity.deliver_app)
-        assert task.archived is None
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
+        assert task_type.archived is None
         form = EditTaskTypeForm(
-            data={"name": task.name, "description": task.description, "is_archived": True},
-            instance=task,
+            data={"name": task_type.name, "description": task_type.description, "is_archived": True},
+            instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()
         assert saved.archived is not None
 
     def test_unarchive_clears_archived(self, opportunity):
-        task = TaskFactory(app=opportunity.deliver_app, archived=now())
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, archived=now())
         form = EditTaskTypeForm(
-            data={"name": task.name, "description": task.description},
-            instance=task,
+            data={"name": task_type.name, "description": task_type.description},
+            instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()
@@ -925,17 +938,17 @@ class TestEditTaskTypeForm:
 
     def test_archive_preserves_existing_timestamp(self, opportunity):
         original_time = now()
-        task = TaskFactory(app=opportunity.deliver_app, archived=original_time)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, archived=original_time)
         form = EditTaskTypeForm(
-            data={"name": task.name, "description": task.description, "is_archived": True},
-            instance=task,
+            data={"name": task_type.name, "description": task_type.description, "is_archived": True},
+            instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()
         assert saved.archived == original_time
 
     def test_excludes_non_editable_fields(self, opportunity):
-        task = TaskFactory(app=opportunity.deliver_app, slug="original-slug", case_property="original_prop")
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, slug="original-slug", case_property="original_prop")
         form = EditTaskTypeForm(
             data={
                 "name": "New Name",
@@ -943,7 +956,7 @@ class TestEditTaskTypeForm:
                 "slug": "hacked-slug",
                 "case_property": "hacked_prop",
             },
-            instance=task,
+            instance=task_type,
         )
         assert form.is_valid(), form.errors
         saved = form.save()

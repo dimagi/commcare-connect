@@ -1,0 +1,226 @@
+{% load i18n %}
+
+<div class="flex flex-col gap-6" x-data="{
+    slides: [
+      {% for image in images %}
+        { src: '{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=completed_task.opportunity_access.opportunity.opportunity_id blob_id=image.blob_id %}', alt: '' },
+      {% endfor %}
+    ],
+    currentIndex: 0,
+    modalCurrentIndex: 0,
+    visibleSlides: 3,
+    modalVisibleSlides: 5,
+    popupOpen: false,
+
+    get visibleImages() {
+        const start = this.currentIndex;
+        return this.slides.slice(start, start + this.visibleSlides);
+    },
+
+    get modalThumbnails() {
+        const totalSlides = this.slides.length;
+        const halfVisible = Math.floor(this.modalVisibleSlides / 2);
+        let start = this.modalCurrentIndex - halfVisible;
+
+        if (start < 0) start = 0;
+        if (start + this.modalVisibleSlides > totalSlides) {
+            start = Math.max(0, totalSlides - this.modalVisibleSlides);
+        }
+
+        return this.slides.slice(start, Math.min(start + this.modalVisibleSlides, totalSlides));
+    },
+
+    nextSlide() {
+        if (this.currentIndex + this.visibleSlides < this.slides.length) {
+            this.currentIndex++;
+        }
+    },
+
+    prevSlide() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+        }
+    },
+
+    nextModal() {
+        if (this.modalCurrentIndex < this.slides.length - 1) {
+            this.modalCurrentIndex++;
+        }
+    },
+
+    prevModal() {
+        if (this.modalCurrentIndex > 0) {
+            this.modalCurrentIndex--;
+        }
+    },
+
+    openPopup(index) {
+        this.modalCurrentIndex = index;
+        this.popupOpen = true;
+    },
+
+    closePopup() {
+        this.popupOpen = false;
+    },
+
+    setModalImage(index) {
+        this.modalCurrentIndex = index;
+    }
+}">
+
+  <!-- Information -->
+  <div class="grid grid-cols-3 gap-4">
+    <p class="text-sm font-medium text-brand-deep-purple col-span-3">{% translate "Information" %}</p>
+    <div class="col-span-3">
+      <div class="text-sm text-brand-blue-light">{% translate "Task Name" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.task.name }}</div>
+    </div>
+    {% if completed_task.task.description %}
+    <div class="col-span-3">
+      <div class="text-sm text-brand-blue-light">{% translate "Description" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.task.description }}</div>
+    </div>
+    {% endif %}
+    <div>
+      <div class="text-sm text-brand-blue-light">{% translate "Status" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.get_status_display }}</div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">{% translate "Assigned By" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">
+        {% if completed_task.assigned_by %}{{ completed_task.assigned_by.name }}{% else %}{% translate "Deleted user" %}{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">{% translate "Due Date" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.due_date }}</div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">{% translate "Duration" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.duration }}</div>
+    </div>
+    <div>
+      <div class="text-sm text-brand-blue-light">{% translate "Completed At" %}</div>
+      <div class="text-sm font-normal text-brand-deep-purple">{{ completed_task.completed_at }}</div>
+    </div>
+  </div>
+
+  {% if can_manage_tasks and completed_task.status == "assigned" %}
+  <div class="flex justify-end">
+    <button
+        type="button"
+        class="button button-md outline-style"
+        hx-get="{% url 'opportunity:edit_assigned_task' request.org.slug completed_task.opportunity_access.opportunity.opportunity_id completed_task.pk %}"
+        hx-target="#edit-assigned-task-form"
+        hx-swap="innerHTML"
+        hx-select="unset"
+        @htmx:after-request="if ($event.detail.successful) {
+                showEditTaskModal = true; editTaskError = false
+            } else { editTaskError = true }">
+      <i class="fa-regular fa-pen-to-square mr-1"></i> {% translate "Edit" %}
+    </button>
+  </div>
+  {% endif %}
+
+  {% if images %}
+  <hr class="h-px bg-gray-200 border-0">
+
+  <!-- Media Section -->
+  <div class="flex justify-between">
+    <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
+    <div class="flex gap-2">
+      <button class="button-icon" @click="prevSlide()" :disabled="currentIndex === 0">
+        <i class="cursor-pointer fa-solid fa-arrow-left"
+           :class="currentIndex === 0 ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+      </button>
+      <button class="button-icon" @click="nextSlide()" :disabled="currentIndex + visibleSlides >= slides.length">
+        <i class="cursor-pointer fa-solid fa-arrow-right"
+           :class="currentIndex + visibleSlides >= slides.length ? 'text-slate-200' : 'text-brand-deep-purple'"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-9 gap-4 cursor-pointer">
+    <template x-for="(slide, index) in visibleImages" :key="index">
+      <img :src="slide.src"
+           :alt="slide.alt"
+           class="object-cover col-span-3 rounded-2xl aspect-square hover:opacity-90 transition-opacity"
+           @click="openPopup(index + currentIndex)"/>
+    </template>
+  </div>
+  {% endif %}
+
+  {% if hq_link %}
+  <hr class="h-px bg-gray-200 border-0">
+
+  <p class="text-sm font-medium text-brand-deep-purple">{% translate "Further Information" %}</p>
+  <div class="flex">
+    <a class="button button-md button-outline-rounded" href="{{ hq_link }}">
+      {% translate "View Form in CommCareHQ" %} <i class="fa-solid fa-arrow-right"></i>
+    </a>
+  </div>
+  {% endif %}
+
+  <!-- Media Popup Modal -->
+  {% if images %}
+  <div x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+       x-show="popupOpen"
+       @click.self="closePopup()"
+       x-transition.opacity>
+    <div class="relative max-w-lg p-4 bg-white rounded-lg popup-content">
+      <div class="flex justify-between mb-2">
+        <p class="text-sm font-medium text-brand-deep-purple">{% translate "Media" %}</p>
+        <button class="button-icon cursor-pointer" @click="closePopup()">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Main Image -->
+      <div class="relative">
+        <img :src="slides[modalCurrentIndex].src"
+             :alt="slides[modalCurrentIndex].alt"
+             class="object-contain w-full rounded-lg max-h-[60vh]"/>
+        <button class="absolute bottom-2 right-2 button-icon">
+          <a :href="slides[modalCurrentIndex].src"
+             download="downloaded-image.jpg"
+             aria-label="Download Image">
+            <i class="fa-solid fa-download text-brand-deep-purple"></i>
+          </a>
+        </button>
+      </div>
+
+      <!-- Thumbnails -->
+      <div class="relative w-full flex items-center justify-center gap-4 mt-4">
+        <button class="absolute -left-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
+                @click="prevModal()"
+                :disabled="modalCurrentIndex === 0"
+                :class="{'opacity-50': modalCurrentIndex === 0}">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
+
+        <div class="flex justify-center gap-2 px-16 overflow-hidden">
+          <template x-for="(slide, idx) in modalThumbnails" :key="idx">
+            <div class="relative w-16 h-16 flex-shrink-0 cursor-pointer" @click="setModalImage(slides.indexOf(slide))">
+              <img :src="slide.src"
+                   :alt="slide.alt"
+                   class="object-cover w-full h-full rounded-lg"/>
+              <div x-show="slides.indexOf(slide) === modalCurrentIndex"
+                   class="absolute inset-0 bg-black/40 rounded-lg pointer-events-none transition-all duration-300">
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <button class="absolute -right-1 z-10 px-4.5 py-2 bg-white border-2 rounded-3xl border-brand-border-light"
+                @click="nextModal()"
+                :disabled="modalCurrentIndex >= slides.length - 1"
+                :class="{'opacity-50': modalCurrentIndex >= slides.length - 1}">
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>

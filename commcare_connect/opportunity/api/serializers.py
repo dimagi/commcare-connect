@@ -4,6 +4,7 @@ from rest_framework import serializers
 from commcare_connect.cache import quickcache
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     CatchmentArea,
     CommCareApp,
     CompletedModule,
@@ -295,12 +296,22 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = ["id", "payment_id", "amount", "date_paid", "confirmed", "confirmation_date"]
 
 
+class AssignedTaskSerializer(serializers.ModelSerializer):
+    task_name = serializers.CharField(source="task_type.name")
+    task_description = serializers.CharField(source="task_type.description")
+
+    class Meta:
+        model = AssignedTask
+        fields = ["assigned_task_id", "task_name", "task_description", "status", "due_date", "date_created"]
+
+
 class DeliveryProgressSerializer(serializers.Serializer):
     deliveries = serializers.SerializerMethodField()
     payments = serializers.SerializerMethodField()
     max_payments = serializers.SerializerMethodField()
     payment_accrued = serializers.IntegerField()
     end_date = serializers.DateField(source="opportunityclaim.end_date")
+    assigned_tasks = serializers.SerializerMethodField()
 
     def get_max_payments(self, obj):
         return (
@@ -319,3 +330,9 @@ class DeliveryProgressSerializer(serializers.Serializer):
             .annotate(last_visit_date=Max("uservisit__visit_date"))
         )
         return CompletedWorkSerializer(completed_works, many=True).data
+
+    def get_assigned_tasks(self, obj):
+        assigned_tasks = (
+            AssignedTask.objects.filter(opportunity_access=obj).select_related("task_type").order_by("due_date")
+        )
+        return AssignedTaskSerializer(assigned_tasks, many=True).data

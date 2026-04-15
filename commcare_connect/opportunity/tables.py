@@ -25,7 +25,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     PaymentInvoice,
     PaymentUnit,
-    Task,
+    TaskType,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -40,7 +40,16 @@ from commcare_connect.utils.tables import (
     IndexColumn,
     OrgContextTable,
     merge_attrs,
+    select_column,
 )
+
+
+def header_with_tooltip(label, tooltip_text):
+    return format_html(
+        '<span x-data x-tooltip.raw="{}">{}</span>',
+        tooltip_text,
+        label,
+    )
 
 
 class OpportunityContextTable(OrgContextTable):
@@ -391,7 +400,14 @@ class PaymentInvoiceTable(OpportunityContextTable):
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
     exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
-    amount_usd = tables.Column(verbose_name="Amount (USD)")
+    amount_usd = tables.Column(
+        verbose_name=header_with_tooltip(
+            "Amount (USD)",
+            "Sum of USD amount over all line items in this invoice. Each line item is calculated as "
+            "approved count × (payment unit amount ÷ exchange rate at time of approval) rounded to 2 "
+            "decimals for each delivery",
+        ),
+    )
     status = tables.Column(verbose_name="Invoice Status")
     invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery", empty_values=())
     last_status_modified_at = tables.Column(
@@ -524,16 +540,6 @@ def date_with_time_popup(table, date):
     return popup_html(
         date.strftime("%d %b, %Y"),
         date.strftime("%d %b %Y, %I:%M%p"),
-    )
-
-
-def header_with_tooltip(label, tooltip_text):
-    return mark_safe(
-        f"""
-        <span x-data x-tooltip.raw="{tooltip_text}">
-            {label}
-        </span>
-        """
     )
 
 
@@ -837,32 +843,71 @@ class ProgramManagerOpportunityTable(BaseOpportunityList):
         return mark_safe(html)
 
 
-class UserVisitVerificationTable(tables.Table):
-    select = tables.CheckBoxColumn(
-        accessor="pk",
-        attrs={
-            "th__input": {
-                "@click": "toggleSelectAll()",
-                "x-model": "selectAll",
-                "name": "select_all",
-                "type": "checkbox",
-                "class": "checkbox ga-all-visit-checkbox",
-            },
-            "td__input": {
-                "x-model": "selected",
-                "@click.stop": "",  # used to stop click propagation
-                "name": "row_select",
-                "type": "checkbox",
-                "class": "checkbox",
-                "value": lambda record: record.pk,
-                "id": lambda record: f"row_checkbox_{record.pk}",
-            },
-        },
+class WorkerVisitTable(tables.Table):
+    date_time = DMYTColumn(verbose_name=gettext_lazy("Date"), accessor="visit_date")
+    entity_name = columns.Column(verbose_name=gettext_lazy("Entity Name"))
+    deliver_unit = columns.Column(verbose_name=gettext_lazy("Deliver Unit"), accessor="deliver_unit__name")
+    payment_unit = columns.Column(
+        verbose_name=gettext_lazy("Payment Unit"), accessor="completed_work__payment_unit__name"
     )
-    date_time = columns.DateTimeColumn(verbose_name="Date", accessor="visit_date", format="d M, Y H:i")
-    entity_name = columns.Column(verbose_name="Entity Name")
-    deliver_unit = columns.Column(verbose_name="Deliver Unit", accessor="deliver_unit__name")
-    payment_unit = columns.Column(verbose_name="Payment Unit", accessor="completed_work__payment_unit__name")
+    last_activity = DMYTColumn(verbose_name=gettext_lazy("Last Activity"), accessor="status_modified_date")
+    status = columns.Column(verbose_name=gettext_lazy("Status"), accessor="status")
+
+    class Meta:
+        model = UserVisit
+        sequence = (
+            "date_time",
+            "entity_name",
+            "deliver_unit",
+            "payment_unit",
+            "last_activity",
+            "status",
+        )
+        fields = []
+        empty_text = gettext_lazy("No Visits for this filter.")
+        attrs = {
+            "x-data": "{selectedRow: null}",
+            "@change": "updateSelectAll()",
+        }
+        row_attrs = {
+            "hx-get": lambda record, table: reverse(
+                "opportunity:user_visit_details",
+                args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
+            ),
+            "hx-trigger": "click",
+            "hx-indicator": "#visit-loading-indicator",
+            "hx-target": "#visit-details",
+            "hx-params": "none",
+            "hx-swap": "innerHTML",
+            "@click": lambda record: f"selectedRow = {record.id}",
+            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
+            "data-visit-id": lambda record: record.pk,
+            "data-visit-status": lambda record: record.status,
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.organization = kwargs.pop("organization", None)
+        self.is_opportunity_pm = kwargs.pop("is_opportunity_pm", False)
+        super().__init__(*args, **kwargs)
+        self.use_view_url = True
+
+    def render_status(self, record):
+        status = record.status
+        if status == VisitValidationStatus.rejected:
+            badge_classes = "bg-red-100 text-red-800"
+        elif status == VisitValidationStatus.approved:
+            badge_classes = "bg-green-100 text-green-800"
+        else:
+            badge_classes = "bg-gray-100 text-gray-800"
+        return format_html(
+            '<span class="inline-flex w-[80px] items-center justify-center px-3 py-1 rounded text-xs font-medium {}">'
+            "{}</span>",
+            badge_classes,
+            record.get_status_display(),
+        )
+
+
+class UserVisitVerificationTable(WorkerVisitTable):
     flags = columns.TemplateColumn(
         verbose_name="Flags",
         orderable=False,
@@ -890,11 +935,10 @@ class UserVisitVerificationTable(tables.Table):
             </div>
             """,
     )
-    last_activity = columns.DateColumn(verbose_name="Last Activity", accessor="status_modified_date", format="d M, Y")
     icons = columns.Column(verbose_name="", empty_values=("",), orderable=False)
+    select = select_column(th_extra={"class": "checkbox ga-all-visit-checkbox"})
 
-    class Meta:
-        model = UserVisit
+    class Meta(WorkerVisitTable.Meta):
         sequence = (
             "select",
             "date_time",
@@ -905,34 +949,11 @@ class UserVisitVerificationTable(tables.Table):
             "last_activity",
             "icons",
         )
-        fields = []
-        empty_text = "No Visits for this filter."
-        attrs = {
-            "x-data": "{selectedRow: null}",
-            "@change": "updateSelectAll()",
-        }
-        row_attrs = {
-            "hx-get": lambda record, table: reverse(
-                "opportunity:user_visit_details",
-                args=[table.organization.slug, record.opportunity.opportunity_id, record.user_visit_id],
-            ),
-            "hx-trigger": "click",
-            "hx-indicator": "#visit-loading-indicator",
-            "hx-target": "#visit-details",
-            "hx-params": "none",
-            "hx-swap": "innerHTML",
-            "@click": lambda record: f"selectedRow = {record.id}",
-            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
-            "data-visit-id": lambda record: record.pk,
-            "data-visit-status": lambda record: record.status,
-        }
+        exclude = ("status",)
 
     def __init__(self, *args, **kwargs):
-        self.organization = kwargs.pop("organization", None)
-        self.is_opportunity_pm = kwargs.pop("is_opportunity_pm", False)
         super().__init__(*args, **kwargs)
         self.columns["select"].column.visible = not self.is_opportunity_pm
-        self.use_view_url = True
 
     def get_icons(self, statuses):
         status_meta = {
@@ -1721,12 +1742,15 @@ class InvoiceLineItemsTable(tables.Table):
     )
     exchange_rate = tables.Column()
     total_amount_usd = tables.Column(
-        verbose_name="Total Amount (USD)",
+        verbose_name=header_with_tooltip(
+            "Total Amount (USD)",
+            "Approved count × (payment unit amount ÷ exchange rate at time of approval) "
+            "rounded to 2 decimals for each delivery",
+        ),
     )
 
     def __init__(self, currency, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         if currency:
             self.columns["amount_per_unit"].column.verbose_name = f"Payment Unit Amount ({currency})"
             self.columns["total_amount_local"].column.verbose_name = f"Total Amount ({currency})"
@@ -1771,11 +1795,19 @@ class InvoiceDeliveriesTable(tables.Table):
         )
 
 
+_task_select_td_extra = {
+    "@change": "updateSelectAll()",
+    # return None instead of False to skip the attribute.
+    "disabled": lambda record: True if record.status == AssignedTaskStatus.COMPLETED else None,
+}
+
+
 class AssignedTaskListTable(OpportunityContextTable):
+    select = select_column(td_extra=_task_select_td_extra)
     assigned_task_id = tables.Column(verbose_name=gettext_lazy("Task ID"), accessor="pk")
     connect_worker = tables.Column(verbose_name=gettext_lazy("Connect Worker"), accessor="opportunity_access__user")
     status = TaskStatusColumn(verbose_name=gettext_lazy("Status"), accessor="status")
-    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task__name")
+    task_type = tables.Column(verbose_name=gettext_lazy("Task Type"), accessor="task_type__name")
     assigned_date = DMYTColumn(verbose_name=gettext_lazy("Assigned Date"), accessor="date_created")
     due_date = DMYTColumn(verbose_name=gettext_lazy("Due Date"), accessor="due_date")
     assigned_by = tables.Column(
@@ -1794,6 +1826,7 @@ class AssignedTaskListTable(OpportunityContextTable):
         model = AssignedTask
         fields = ()
         sequence = (
+            "select",
             "assigned_task_id",
             "connect_worker",
             "status",
@@ -1826,6 +1859,57 @@ class AssignedTaskListTable(OpportunityContextTable):
         )
 
 
+class WorkerCompletedTaskTable(tables.Table):
+    use_view_url = True
+
+    select = select_column(td_extra=_task_select_td_extra)
+    task_type = tables.Column(verbose_name=_("Task Type"), accessor="task", orderable=False)
+    assigned_by = tables.Column(
+        verbose_name=_("Assigned By"),
+        accessor="assigned_by__name",
+        empty_values=(None,),
+        default=gettext_lazy("Deleted user"),
+    )
+    assigned_date = DMYTColumn(verbose_name=_("Assigned Date"), accessor="date_created")
+    due_date = DMYTColumn(verbose_name=_("Due Date"))
+    status = TaskStatusColumn(verbose_name=_("Status"), accessor="status")
+
+    class Meta:
+        model = AssignedTask
+        fields = ()
+        sequence = ("select", "task_type", "assigned_by", "assigned_date", "due_date", "status")
+        order_by = ("-assigned_date",)
+        empty_text = gettext_lazy("No tasks have been assigned to this worker yet.")
+        attrs = {"class": "w-full", "x-data": "{selectedRow: null}"}
+        row_attrs = {
+            "hx-get": lambda record, table: reverse(
+                "opportunity:user_task_details",
+                args=[
+                    table.organization.slug,
+                    record.opportunity_access.opportunity.opportunity_id,
+                    record.assigned_task_id,
+                ],
+            ),
+            "hx-trigger": "click",
+            "hx-indicator": "#task-loading-indicator",
+            "hx-target": "#task-details",
+            "hx-params": "none",
+            "hx-swap": "innerHTML",
+            "@click": lambda record: f"selectedRow = {record.id}",
+            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.organization = kwargs.pop("organization", None)
+        self.can_manage_tasks = kwargs.pop("can_manage_tasks", False)
+        super().__init__(*args, **kwargs)
+        if not self.can_manage_tasks:
+            self.columns.hide("select")
+
+    def render_task_type(self, value):
+        return format_html("{} ({})", value.name, value.slug)
+
+
 class TaskTable(OpportunityContextTable):
     index = IndexColumn()
     name = tables.Column(verbose_name=gettext_lazy("Task Type Name"))
@@ -1851,6 +1935,6 @@ class TaskTable(OpportunityContextTable):
     )
 
     class Meta:
-        model = Task
+        model = TaskType
         fields = ("index", "name", "description", "linked_task_unit", "archived", "actions")
         empty_text = gettext_lazy("No task types configured for this opportunity.")

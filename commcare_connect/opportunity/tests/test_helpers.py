@@ -32,7 +32,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     PaymentFactory,
     PaymentUnitFactory,
-    TaskFactory,
+    TaskTypeFactory,
     UserInviteFactory,
     UserVisitFactory,
 )
@@ -351,10 +351,6 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.accrued_since_yesterday == 10
     assert result.most_recent_delivery == today
     assert result.total_deliveries == 5
-    assert result.flagged_deliveries_waiting_for_review == 2
-    assert result.flagged_deliveries_waiting_for_review_since_yesterday == 2
-    assert result.deliveries_pending_for_pm_review == 2
-    assert result.deliveries_pending_for_pm_review_since_yesterday == 1
     assert result.recent_payment == today
     assert result.workers_invited == 3
     assert result.pending_invites == 1
@@ -538,9 +534,9 @@ def _filter_worker_tasks(opportunity, filters):
 def test_get_worker_tasks_base_queryset(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task=task)
-    AssignedTaskFactory(opportunity_access=access, task=task)
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type)
 
     result = list(get_worker_tasks_base_queryset(opportunity))
     assert len(result) == 2
@@ -555,9 +551,9 @@ def test_filter_worker_tasks_by_worker_name(opportunity):
     UserInviteFactory(opportunity=opportunity, opportunity_access=access_alice, status="accepted")
     access_bob = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Bob")
     UserInviteFactory(opportunity=opportunity, opportunity_access=access_bob, status="accepted")
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access_alice, task=task)
-    AssignedTaskFactory(opportunity_access=access_bob, task=task)
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type)
+    AssignedTaskFactory(opportunity_access=access_bob, task_type=task_type)
 
     result = _filter_worker_tasks(opportunity, {"worker_name": [str(access_alice.user.pk)]})
     assert len(result) == 1
@@ -568,9 +564,9 @@ def test_filter_worker_tasks_by_worker_name(opportunity):
 def test_filter_worker_tasks_by_task_status(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task=task, status=AssignedTaskStatus.ASSIGNED)
-    AssignedTaskFactory(opportunity_access=access, task=task, status=AssignedTaskStatus.COMPLETED)
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
 
     result = _filter_worker_tasks(opportunity, {"task_status": [AssignedTaskStatus.COMPLETED]})
     assert len(result) == 1
@@ -581,10 +577,10 @@ def test_filter_worker_tasks_by_task_status(opportunity):
 def test_filter_worker_tasks_by_task_type(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_a = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    task_b = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task=task_a)
-    AssignedTaskFactory(opportunity_access=access, task=task_b)
+    task_a = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    task_b = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_a)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_b)
 
     result = _filter_worker_tasks(opportunity, {"task_type": [str(task_a.pk)]})
     assert len(result) == 1
@@ -595,11 +591,11 @@ def test_filter_worker_tasks_by_task_type(opportunity):
 def test_filter_worker_tasks_by_date_assigned_range(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    old_task = AssignedTaskFactory(opportunity_access=access, task=task)
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    old_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
     AssignedTask.objects.filter(pk=old_task.pk).update(date_created=date.today() - timedelta(days=30))
 
-    AssignedTaskFactory(opportunity_access=access, task=task)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type)
 
     result = _filter_worker_tasks(opportunity, {"date_assigned_after": date.today() - timedelta(days=7)})
     assert len(result) == 1
@@ -609,9 +605,9 @@ def test_filter_worker_tasks_by_date_assigned_range(opportunity):
 def test_filter_worker_tasks_by_due_date_range(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task=task, due_date=date.today() + timedelta(days=1))
-    AssignedTaskFactory(opportunity_access=access, task=task, due_date=date.today() + timedelta(days=30))
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, due_date=date.today() + timedelta(days=1))
+    AssignedTaskFactory(opportunity_access=access, task_type=task_type, due_date=date.today() + timedelta(days=30))
 
     result = _filter_worker_tasks(opportunity, {"due_date_before": date.today() + timedelta(days=7)})
     assert len(result) == 1
@@ -623,10 +619,10 @@ def test_filter_worker_tasks_combined_filters(opportunity):
     UserInviteFactory(opportunity=opportunity, opportunity_access=access_alice, status="accepted")
     access_bob = OpportunityAccessFactory(opportunity=opportunity, accepted=True, user__name="Bob")
     UserInviteFactory(opportunity=opportunity, opportunity_access=access_bob, status="accepted")
-    task = TaskFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access_alice, task=task, status=AssignedTaskStatus.COMPLETED)
-    AssignedTaskFactory(opportunity_access=access_alice, task=task, status=AssignedTaskStatus.ASSIGNED)
-    AssignedTaskFactory(opportunity_access=access_bob, task=task, status=AssignedTaskStatus.COMPLETED)
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+    AssignedTaskFactory(opportunity_access=access_alice, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=access_bob, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
 
     result = _filter_worker_tasks(
         opportunity, {"worker_name": [str(access_alice.user.pk)], "task_status": [AssignedTaskStatus.COMPLETED]}
