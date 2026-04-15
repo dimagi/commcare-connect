@@ -118,7 +118,7 @@ jobs:
         run: echo "RELEASE_DATE=$(date -u +'%Y-%m-%d')" >> "$GITHUB_ENV"
 
       - name: Create GitHub release
-        if: ${{ success() && inputs.environment == 'production' }}
+        if: ${{ success() }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_DATE }}
