@@ -77,3 +77,40 @@ class UserOrganizationMembership(models.Model):
         db_table = "organization_membership"
         unique_together = ("user", "organization")
         indexes = [models.Index(fields=["invite_id"])]
+
+
+class OrgUserPaymentNumberStatus(models.Model):
+    """
+    This model stores whether a payment phone number of a
+        Connect mobile user is working or not.
+        The same is stored on ConnectID side per user level
+        This model stores any overrides at org level.
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+    STATUS_CHOICES = [
+        (PENDING, "Pending"),
+        (APPROVED, "Approved"),
+        (REJECTED, "Rejected"),
+    ]
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.DO_NOTHING,
+    )
+    phone_number = models.CharField(max_length=15)
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=PENDING,
+    )
+
+    class Meta:
+        unique_together = ("user", "organization")
