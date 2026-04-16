@@ -29,7 +29,7 @@ from django.views.generic.edit import UpdateView
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 
-from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
+from commcare_connect.commcarehq.api import create_or_update_case, create_or_update_case_by_work_area
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
@@ -407,6 +407,87 @@ def clustering_status(request, org_slug, opp_id):
         return response
 
     return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+
+@require_POST
+@org_admin_required
+@opportunity_required
+def exclude_work_areas(request, org_slug, opp_id):
+    exclusion_reason = request.POST.get("exclusion_reason", "").strip()
+    if not exclusion_reason:
+        return JsonResponse({"error": "exclusion_reason is required"}, status=400)
+
+    raw_ids = request.POST.getlist("work_area_ids[]")
+    if not raw_ids:
+        return JsonResponse({"error": "work_area_ids[] is required"}, status=400)
+
+    try:
+        work_area_ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "work_area_ids[] must be integers"}, status=400)
+
+    excluded = []
+    skipped = []
+    failed = []
+
+    work_areas_map = {
+        wa.id: wa
+        for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=request.opportunity).select_related(
+            "work_area_group__opportunity_access__opportunity__api_key__hq_server",
+            "work_area_group__opportunity_access__opportunity__deliver_app",
+        )
+    }
+
+    for work_area_id in work_area_ids:
+        work_area = work_areas_map.get(work_area_id)
+        if work_area is None:
+            skipped.append({"id": work_area_id, "reason": "not_found"})
+            continue
+
+        if work_area.status == WorkAreaStatus.EXCLUDED:
+            skipped.append({"id": work_area_id, "reason": "already_excluded"})
+            continue
+
+        if work_area.status == WorkAreaStatus.INACCESSIBLE:
+            skipped.append({"id": work_area_id, "reason": "inaccessible"})
+            continue
+
+        if work_area.status != WorkAreaStatus.NOT_STARTED:
+            skipped.append({"id": work_area_id, "reason": "work_started"})
+            continue
+
+        # Read HQ credentials before nulling the group
+        api_key = None
+        domain = None
+        if work_area.work_area_group and work_area.work_area_group.opportunity_access:
+            opp_access = work_area.work_area_group.opportunity_access
+            if opp_access.opportunity.api_key and opp_access.opportunity.deliver_app:
+                api_key = opp_access.opportunity.api_key
+                domain = opp_access.opportunity.deliver_app.cc_domain
+
+        try:
+            with transaction.atomic(), pghistory.context(
+                reason=exclusion_reason,
+                username=request.user.username,
+                user_email=request.user.email,
+            ):
+                work_area.status = WorkAreaStatus.EXCLUDED
+                work_area.excluded_by = request.user
+                work_area.excluded_reason = exclusion_reason
+                work_area.work_area_group = None
+                work_area.save(update_fields=["status", "excluded_by", "excluded_reason", "work_area_group"])
+
+                if work_area.case_id and api_key and domain:
+                    create_or_update_case(api_key, domain, {"owner_id": ""}, case_id=str(work_area.case_id))
+
+        except CommCareHQAPIException as e:
+            logger.info(f"Failed to unassign HQ case for work area {work_area_id}: {e}")
+            failed.append({"id": work_area_id, "reason": "hq_sync_failed"})
+            continue
+
+        excluded.append(work_area_id)
+
+    return JsonResponse({"excluded": excluded, "skipped": skipped, "failed": failed})
 
 
 @require_GET

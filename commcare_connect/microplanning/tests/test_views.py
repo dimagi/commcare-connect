@@ -170,7 +170,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10)
 
-        initial_event_count = work_area.expected_visit_count_work_area_group_events.count()
+        initial_event_count = work_area.expected_visit_count_work_area_group_excluded_reason_events.count()
         assert work_area.work_area_group is None
         new_expected_visit_count = 25
         client.force_login(org_user_admin)
@@ -194,7 +194,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert work_area.expected_visit_count == new_expected_visit_count
         assert work_area.work_area_group == group
 
-        events = work_area.expected_visit_count_work_area_group_events
+        events = work_area.expected_visit_count_work_area_group_excluded_reason_events
         assert events.count() == initial_event_count + 1
         event = events.last()
         assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
@@ -205,7 +205,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
-        initial_event_count = work_area.expected_visit_count_work_area_group_events.count()
+        initial_event_count = work_area.expected_visit_count_work_area_group_excluded_reason_events.count()
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -219,7 +219,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
 
         work_area.refresh_from_db()
         assert response.status_code == 204
-        assert work_area.expected_visit_count_work_area_group_events.count() == initial_event_count
+        assert work_area.expected_visit_count_work_area_group_excluded_reason_events.count() == initial_event_count
         assert mock_sync.call_count == 0  # No sync since nothing changed
         assert work_area.work_area_group == group
         assert work_area.expected_visit_count == 10
@@ -737,3 +737,189 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         assert row_dict["LGA"] == "RevLGA"
         assert row_dict["State"] == "RevState"
         assert row_dict["Work Area Group Name"] == "Rev Group"
+
+
+@pytest.mark.django_db
+class TestExcludeWorkAreas:
+    def url(self, opportunity):
+        return reverse(
+            "microplanning:exclude_work_areas",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+    @patch("commcare_connect.microplanning.views.create_or_update_case")
+    def test_happy_path_excludes_not_started_areas(self, mock_hq, client, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_areas = WorkAreaFactory.create_batch(
+            2, opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group
+        )
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {"work_area_ids[]": [wa.id for wa in work_areas], "exclusion_reason": "Flooding"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data["excluded"]) == {wa.id for wa in work_areas}
+        assert data["skipped"] == []
+        assert data["failed"] == []
+
+        for wa in work_areas:
+            wa.refresh_from_db()
+            assert wa.status == WorkAreaStatus.EXCLUDED
+            assert wa.work_area_group is None
+            assert wa.excluded_by == org_user_admin
+            assert wa.excluded_reason == "Flooding"
+
+        assert mock_hq.call_count == 2
+
+    @patch("commcare_connect.microplanning.views.create_or_update_case")
+    def test_mixed_batch(self, mock_hq, client, org_user_admin, opportunity):
+        wa_valid = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+        wa_inaccessible = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.INACCESSIBLE)
+        wa_excluded = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.EXCLUDED)
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {
+                "work_area_ids[]": [wa_valid.id, wa_inaccessible.id, wa_excluded.id],
+                "exclusion_reason": "Test",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["excluded"] == [wa_valid.id]
+        skipped_ids = {s["id"] for s in data["skipped"]}
+        assert skipped_ids == {wa_inaccessible.id, wa_excluded.id}
+        skipped_reasons = {s["id"]: s["reason"] for s in data["skipped"]}
+        assert skipped_reasons[wa_inaccessible.id] == "inaccessible"
+        assert skipped_reasons[wa_excluded.id] == "already_excluded"
+
+        wa_valid.refresh_from_db()
+        assert wa_valid.status == WorkAreaStatus.EXCLUDED
+
+    @patch("commcare_connect.microplanning.views.create_or_update_case")
+    def test_hq_failure_rolls_back_single_item(self, mock_hq, client, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        wa_ok = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group)
+        wa_fail = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group)
+
+        def hq_side_effect(*args, **kwargs):
+            # fail only for wa_fail's case_id
+            if kwargs.get("case_id") == str(wa_fail.case_id):
+                raise CommCareHQAPIException("HQ down")
+            return MagicMock()
+
+        mock_hq.side_effect = hq_side_effect
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {"work_area_ids[]": [wa_ok.id, wa_fail.id], "exclusion_reason": "Test"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["excluded"] == [wa_ok.id]
+        assert len(data["failed"]) == 1
+        assert data["failed"][0]["id"] == wa_fail.id
+
+        wa_ok.refresh_from_db()
+        assert wa_ok.status == WorkAreaStatus.EXCLUDED
+
+        wa_fail.refresh_from_db()
+        assert wa_fail.status == WorkAreaStatus.NOT_STARTED  # rolled back
+        assert wa_fail.work_area_group == group  # group assignment was also rolled back
+
+    @patch("commcare_connect.microplanning.views.create_or_update_case")
+    def test_no_case_id_excludes_locally_without_hq_call(self, mock_hq, client, org_user_admin, opportunity):
+        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, case_id=None)
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {"work_area_ids[]": [wa.id], "exclusion_reason": "No case"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["excluded"] == [wa.id]
+        mock_hq.assert_not_called()
+        wa.refresh_from_db()
+        assert wa.status == WorkAreaStatus.EXCLUDED
+
+
+@pytest.mark.django_db
+class TestExcludeWorkAreasValidation:
+    def url(self, opportunity):
+        return reverse(
+            "microplanning:exclude_work_areas",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+    @pytest.mark.parametrize(
+        "post_data",
+        [
+            {"work_area_ids[]": [1]},
+            {"work_area_ids[]": [1], "exclusion_reason": "   "},
+        ],
+        ids=["missing", "blank"],
+    )
+    def test_invalid_exclusion_reason_returns_400(self, client, org_user_admin, opportunity, post_data):
+        client.force_login(org_user_admin)
+        response = client.post(self.url(opportunity), post_data)
+        assert response.status_code == 400
+        assert "exclusion_reason" in response.json()["error"]
+
+    @pytest.mark.parametrize(
+        "post_data",
+        [
+            {"exclusion_reason": "Flooding"},
+            {"work_area_ids[]": ["abc", "foo"], "exclusion_reason": "Test"},
+        ],
+        ids=["missing", "non_integer"],
+    )
+    def test_invalid_work_area_ids_returns_400(self, client, org_user_admin, opportunity, post_data):
+        client.force_login(org_user_admin)
+        response = client.post(self.url(opportunity), post_data)
+        assert response.status_code == 400
+
+    def test_work_area_from_other_opportunity_is_skipped(self, client, org_user_admin, opportunity):
+        other_wa = WorkAreaFactory(status=WorkAreaStatus.NOT_STARTED)  # different opportunity
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {"work_area_ids[]": [other_wa.id], "exclusion_reason": "Test"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["excluded"] == []
+        assert data["skipped"][0]["reason"] == "not_found"
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            WorkAreaStatus.VISITED,
+            WorkAreaStatus.NOT_VISITED,
+            WorkAreaStatus.UNASSIGNED,
+            WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+            WorkAreaStatus.EXPECTED_VISIT_REACHED,
+        ],
+    )
+    def test_work_started_statuses_are_skipped(self, client, org_user_admin, opportunity, status):
+        wa = WorkAreaFactory(opportunity=opportunity, status=status)
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {"work_area_ids[]": [wa.id], "exclusion_reason": "Test"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["skipped"][0]["reason"] == "work_started"
+        wa.refresh_from_db()
+        assert wa.status == status  # unchanged
