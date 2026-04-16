@@ -241,6 +241,10 @@ class AssignedTaskFilterSet(django_filters.FilterSet):
         choices=[],
         field_name="task_type__id",
     )
+    is_active = django_filters.BooleanFilter(
+        label=_("Is Active"),
+        field_name="task_type__is_active",
+    )
     date_assigned_after = django_filters.DateFilter(
         label=_("Date Assigned From"),
         widget=forms.DateInput(attrs={"type": "date"}),
@@ -283,6 +287,7 @@ class AssignedTaskFilterSet(django_filters.FilterSet):
             "worker_name",
             "task_status",
             "task_type",
+            "is_active",
             Row(Column("date_assigned_after"), Column("date_assigned_before")),
             Row(Column("due_date_after"), Column("due_date_before")),
         )
