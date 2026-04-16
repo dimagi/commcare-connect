@@ -137,11 +137,12 @@
                     const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
                     const resp = await fetch(url);
                     const data = await resp.json();
-                    for (const id of data.work_area_ids) {
-                        this.selectedWorkAreas.add(id);
-                        this.groupWorkAreaIds.add(id);
+                    for (const wa of data.work_areas) {
+                        this.selectedWorkAreas.add(wa.id);
+                        this.groupWorkAreaIds.add(wa.id);
+                        this.workAreaProperties.set(wa.id, wa);
                         this.map.setFeatureState(
-                            { source: 'workareas', sourceLayer: 'workareas', id },
+                            { source: 'workareas', sourceLayer: 'workareas', id: wa.id },
                             { assignment_selected: true }
                         );
                     }
@@ -172,11 +173,12 @@
                     const url = '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId);
                     const resp = await fetch(url);
                     const data = await resp.json();
-                    for (const id of data.work_area_ids) {
-                        this.selectedWorkAreas.add(id);
-                        this.flwFilterWorkAreaIds.add(id);
+                    for (const wa of data.work_areas) {
+                        this.selectedWorkAreas.add(wa.id);
+                        this.flwFilterWorkAreaIds.add(wa.id);
+                        this.workAreaProperties.set(wa.id, wa);
                         this.map.setFeatureState(
-                            { source: 'workareas', sourceLayer: 'workareas', id },
+                            { source: 'workareas', sourceLayer: 'workareas', id: wa.id },
                             { assignment_selected: true }
                         );
                     }

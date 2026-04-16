@@ -136,39 +136,7 @@ def microplanning_home(request, *args, **kwargs):
     }
 
     if assignment_mode:
-        org_slug = request.org.slug
-        opp_id = opportunity.opportunity_id
-
-        context["assignment_form"] = AssignmentModeForm(opportunity=opportunity)
-        context["assignees_json"] = list(
-            OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
-            .select_related("user")
-            .values("id", "user__name", "user_id")
-        )
-        context["group_work_areas_url"] = reverse(
-            "microplanning:assignment_group_work_areas",
-            args=[org_slug, opp_id, 0],
-        ).replace("/0/", "/__group_id__/")
-        context["flw_work_areas_url"] = reverse(
-            "microplanning:assignment_flw_work_areas",
-            args=[org_slug, opp_id, 0],
-        ).replace("/0/", "/__assignee_id__/")
-        context["flw_summary_url"] = reverse(
-            "microplanning:assignment_flw_summary",
-            kwargs={"org_slug": org_slug, "opp_id": opp_id},
-        )
-        context["assignment_save_url"] = reverse(
-            "microplanning:assignment_save",
-            kwargs={"org_slug": org_slug, "opp_id": opp_id},
-        )
-        context["user_visits_url"] = reverse(
-            "opportunity:user_visits_list",
-            args=[org_slug, opp_id],
-        )
-        context["worker_list_url"] = reverse(
-            "opportunity:worker_list",
-            args=[org_slug, opp_id],
-        )
+        context.update(_get_assignment_mode_context(request, opportunity))
 
     return render(
         request,
@@ -184,6 +152,43 @@ def get_metrics_for_microplanning(opportunity):
             "value": max((opportunity.end_date - localdate()).days, 0) if opportunity.end_date else "--",
         },
     ]
+
+
+def _get_assignment_mode_context(request, opportunity):
+    org_slug = request.org.slug
+    opp_id = opportunity.opportunity_id
+    return {
+        "assignment_form": AssignmentModeForm(opportunity=opportunity),
+        "assignees_json": list(
+            OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True, suspended=False)
+            .select_related("user")
+            .values("id", "user__name", "user_id")
+        ),
+        "group_work_areas_url": reverse(
+            "microplanning:assignment_group_work_areas",
+            args=[org_slug, opp_id, 0],
+        ).replace("/0/", "/__group_id__/"),
+        "flw_work_areas_url": reverse(
+            "microplanning:assignment_flw_work_areas",
+            args=[org_slug, opp_id, 0],
+        ).replace("/0/", "/__assignee_id__/"),
+        "flw_summary_url": reverse(
+            "microplanning:assignment_flw_summary",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        ),
+        "assignment_save_url": reverse(
+            "microplanning:assignment_save",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        ),
+        "user_visits_url": reverse(
+            "opportunity:user_visits_list",
+            args=[org_slug, opp_id],
+        ),
+        "worker_list_url": reverse(
+            "opportunity:worker_list",
+            args=[org_slug, opp_id],
+        ),
+    }
 
 
 @method_decorator([org_admin_required, opportunity_required, require_flag_for_opp(MICROPLANNING)], name="dispatch")
@@ -528,13 +533,13 @@ class ModifyWorkAreaUpdateView(UpdateView):
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def assignment_group_work_areas(request, org_slug, opp_id, group_id):
-    ids = list(
+    work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
             work_area_group_id=group_id,
-        ).values_list("id", flat=True)
+        ).values("id", "building_count", "expected_visit_count")
     )
-    return JsonResponse({"work_area_ids": ids})
+    return JsonResponse({"work_areas": work_areas})
 
 
 @require_GET
@@ -542,13 +547,13 @@ def assignment_group_work_areas(request, org_slug, opp_id, group_id):
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def assignment_flw_work_areas(request, org_slug, opp_id, assignee_id):
-    ids = list(
+    work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
             work_area_group__opportunity_access_id=assignee_id,
-        ).values_list("id", flat=True)
+        ).values("id", "building_count", "expected_visit_count")
     )
-    return JsonResponse({"work_area_ids": ids})
+    return JsonResponse({"work_areas": work_areas})
 
 
 @require_GET
