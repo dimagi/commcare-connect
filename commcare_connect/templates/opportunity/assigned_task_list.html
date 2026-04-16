@@ -58,11 +58,7 @@
             @click="editTaskError = false">&times;</button>
         </div>
 
-        <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4"
-             hx-get="{{ request.get_full_path }}"
-             hx-trigger="reload_table from:body"
-             hx-select="#task-list-table"
-             hx-swap="outerHTML">
+        <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4">
             <div class="flex gap-x-4 items-center justify-end mb-4">
                 {% if can_manage_tasks %}
                 <button type="button" class="button-icon shadow-sm" @click="showCreateTaskModal = true"
