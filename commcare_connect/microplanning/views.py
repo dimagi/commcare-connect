@@ -416,6 +416,8 @@ def exclude_work_areas(request, org_slug, opp_id):
     exclusion_reason = request.POST.get("exclusion_reason", "").strip()
     if not exclusion_reason:
         return JsonResponse({"error": "exclusion_reason is required"}, status=400)
+    if len(exclusion_reason) > 500:
+        return JsonResponse({"error": "exclusion_reason must be at most 500 characters"}, status=400)
 
     raw_ids = request.POST.getlist("work_area_ids[]")
     if not raw_ids:

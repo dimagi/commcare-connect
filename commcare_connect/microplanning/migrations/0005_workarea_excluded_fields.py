@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Create new event table with its basic (non-FK) fields.
         migrations.CreateModel(
             name="WorkAreaExpectedVisitCountWorkAreaGroupExcludedReasonEvent",
             fields=[
@@ -28,18 +29,43 @@ class Migration(migrations.Migration):
                 "abstract": False,
             },
         ),
-        migrations.RemoveField(
-            model_name="workareaexpectedvisitcountworkareagroupevent",
+        # Add FK columns to the new table NOW so they exist when we copy rows
+        # from the old table below.
+        migrations.AddField(
+            model_name="workareaexpectedvisitcountworkareagroupexcludedreasonevent",
             name="pgh_context",
+            field=models.ForeignKey(
+                db_constraint=False,
+                null=True,
+                on_delete=django.db.models.deletion.DO_NOTHING,
+                related_name="+",
+                to="pghistory.context",
+            ),
         ),
-        migrations.RemoveField(
-            model_name="workareaexpectedvisitcountworkareagroupevent",
+        migrations.AddField(
+            model_name="workareaexpectedvisitcountworkareagroupexcludedreasonevent",
             name="pgh_obj",
+            field=models.ForeignKey(
+                db_constraint=False,
+                on_delete=django.db.models.deletion.DO_NOTHING,
+                related_name="expected_visit_count_work_area_group_excluded_reason_events",
+                to="microplanning.workarea",
+            ),
         ),
-        migrations.RemoveField(
-            model_name="workareaexpectedvisitcountworkareagroupevent",
+        migrations.AddField(
+            model_name="workareaexpectedvisitcountworkareagroupexcludedreasonevent",
             name="work_area_group",
+            field=models.ForeignKey(
+                blank=True,
+                db_constraint=False,
+                null=True,
+                on_delete=django.db.models.deletion.DO_NOTHING,
+                related_name="+",
+                related_query_name="+",
+                to="microplanning.workareagroup",
+            ),
         ),
+        # Swap triggers on workarea so new events go to the new table.
         pgtrigger.migrations.RemoveTrigger(
             model_name="workarea",
             name="insert_insert",
@@ -93,41 +119,54 @@ class Migration(migrations.Migration):
                 ),
             ),
         ),
+        # Copy all existing history rows from the old event table into the new
+        # one before the old table is dropped.  excluded_reason did not exist on
+        # the old model so it defaults to ''.  After the INSERT the sequence for
+        # pgh_id is advanced past the highest copied value so future inserts
+        # don't collide.
+        migrations.RunSQL(
+            sql="""
+                INSERT INTO "microplanning_workareaexpectedvisitcountworkareagroupexcludf65f"
+                    ("pgh_id", "pgh_created_at", "pgh_label", "expected_visit_count",
+                     "excluded_reason", "pgh_context_id", "pgh_obj_id", "work_area_group_id")
+                SELECT
+                    "pgh_id", "pgh_created_at", "pgh_label", "expected_visit_count",
+                    '' AS "excluded_reason",
+                    "pgh_context_id", "pgh_obj_id", "work_area_group_id"
+                FROM "microplanning_workareaexpectedvisitcountworkareagroupevent";
+
+                SELECT setval(
+                    pg_get_serial_sequence(
+                        'microplanning_workareaexpectedvisitcountworkareagroupexcludf65f',
+                        'pgh_id'
+                    ),
+                    GREATEST(
+                        COALESCE(
+                            (SELECT MAX(pgh_id)
+                             FROM microplanning_workareaexpectedvisitcountworkareagroupexcludf65f),
+                            1
+                        ),
+                        1
+                    )
+                );
+            """,
+            reverse_sql=migrations.RunSQL.noop,
+        ),
+        # Now that rows are preserved in the new table, drop the FK columns
+        # from the old table and then remove the old table entirely.
+        migrations.RemoveField(
+            model_name="workareaexpectedvisitcountworkareagroupevent",
+            name="pgh_context",
+        ),
+        migrations.RemoveField(
+            model_name="workareaexpectedvisitcountworkareagroupevent",
+            name="pgh_obj",
+        ),
+        migrations.RemoveField(
+            model_name="workareaexpectedvisitcountworkareagroupevent",
+            name="work_area_group",
+        ),
         migrations.DeleteModel(
             name="WorkAreaExpectedVisitCountWorkAreaGroupEvent",
-        ),
-        migrations.AddField(
-            model_name="workareaexpectedvisitcountworkareagroupexcludedreasonevent",
-            name="pgh_context",
-            field=models.ForeignKey(
-                db_constraint=False,
-                null=True,
-                on_delete=django.db.models.deletion.DO_NOTHING,
-                related_name="+",
-                to="pghistory.context",
-            ),
-        ),
-        migrations.AddField(
-            model_name="workareaexpectedvisitcountworkareagroupexcludedreasonevent",
-            name="pgh_obj",
-            field=models.ForeignKey(
-                db_constraint=False,
-                on_delete=django.db.models.deletion.DO_NOTHING,
-                related_name="expected_visit_count_work_area_group_excluded_reason_events",
-                to="microplanning.workarea",
-            ),
-        ),
-        migrations.AddField(
-            model_name="workareaexpectedvisitcountworkareagroupexcludedreasonevent",
-            name="work_area_group",
-            field=models.ForeignKey(
-                blank=True,
-                db_constraint=False,
-                null=True,
-                on_delete=django.db.models.deletion.DO_NOTHING,
-                related_name="+",
-                related_query_name="+",
-                to="microplanning.workareagroup",
-            ),
         ),
     ]

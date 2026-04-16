@@ -867,8 +867,9 @@ class TestExcludeWorkAreasValidation:
         [
             {"work_area_ids[]": [1]},
             {"work_area_ids[]": [1], "exclusion_reason": "   "},
+            {"work_area_ids[]": [1], "exclusion_reason": "x" * 501},
         ],
-        ids=["missing", "blank"],
+        ids=["missing", "blank", "too_long"],
     )
     def test_invalid_exclusion_reason_returns_400(self, client, org_user_admin, opportunity, post_data):
         client.force_login(org_user_admin)
