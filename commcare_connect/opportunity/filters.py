@@ -248,7 +248,7 @@ class UserTasksFilterSet(django_filters.FilterSet):
         label="",
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="date_created",
-        lookup_expr="lt",
+        lookup_expr="lte",
     )
     due_date_from = django_filters.DateFilter(
         label="",
@@ -260,7 +260,7 @@ class UserTasksFilterSet(django_filters.FilterSet):
         label="",
         widget=forms.DateInput(attrs={"type": "date"}),
         field_name="due_date",
-        lookup_expr="lt",
+        lookup_expr="lte",
     )
 
     class Meta:
