@@ -10,6 +10,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.http import HttpRequest
 from django.shortcuts import redirect
+from django.utils.translation import gettext as _
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -30,6 +31,7 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if email_address_exists(email):
             messages.error(
                 request,
-                f"An account with the email {email} already exists. " "Please sign in with your email and password.",
+                _("An account with the email %(email)s already exists. Please sign in with your email and password.")
+                % {"email": email},
             )
             raise ImmediateHttpResponse(redirect("account_login"))
