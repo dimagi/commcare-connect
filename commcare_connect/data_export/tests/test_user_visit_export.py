@@ -8,7 +8,12 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils.timezone import now
 
-from commcare_connect.opportunity.tests.factories import BlobMetaFactory, UserVisitFactory
+from commcare_connect.opportunity.tests.factories import (
+    BlobMetaFactory,
+    DeliverUnitFactory,
+    OpportunityAccessFactory,
+    UserVisitFactory,
+)
 
 
 def _add_export_credentials(api_client, user):
@@ -77,7 +82,16 @@ class TestUserVisitDataViewV1:
         assert "images" not in fieldnames
 
     def test_images_prefetch_avoids_n_plus_1(self, api_client, opportunity, org_user_member):
-        visits = UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=org_user_member)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+        visits = UserVisitFactory.create_batch(
+            5,
+            opportunity=opportunity,
+            user=org_user_member,
+            opportunity_access=access,
+            deliver_unit=deliver_unit,
+            completed_work=None,
+        )
         for visit in visits:
             BlobMetaFactory(parent_id=visit.xform_id, content_type="image/png", name="img.png")
 
@@ -157,7 +171,16 @@ class TestUserVisitDataViewV2:
         }
 
     def test_images_prefetch_avoids_n_plus_1(self, api_client_v2, opportunity, org_user_member):
-        visits = UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=org_user_member)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+        visits = UserVisitFactory.create_batch(
+            5,
+            opportunity=opportunity,
+            user=org_user_member,
+            opportunity_access=access,
+            deliver_unit=deliver_unit,
+            completed_work=None,
+        )
         for visit in visits:
             BlobMetaFactory(parent_id=visit.xform_id, content_type="image/png", name="img.png")
 
@@ -198,7 +221,16 @@ class TestUserVisitDataViewV2:
         ]
 
     def test_pagination_traversal(self, api_client_v2, opportunity, org_user_member):
-        UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member)
+        access = OpportunityAccessFactory(opportunity=opportunity, user=org_user_member)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+        UserVisitFactory.create_batch(
+            5,
+            opportunity=opportunity,
+            user=org_user_member,
+            opportunity_access=access,
+            deliver_unit=deliver_unit,
+            completed_work=None,
+        )
         _add_export_credentials(api_client_v2, org_user_member)
 
         all_results = []

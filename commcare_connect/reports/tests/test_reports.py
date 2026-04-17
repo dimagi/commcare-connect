@@ -15,6 +15,7 @@ from commcare_connect.opportunity.helpers import get_payment_report_data
 from commcare_connect.opportunity.models import CompletedWorkStatus, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
+    DeliverUnitFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
     PaymentFactory,
@@ -49,10 +50,12 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
             opportunity__delivery_type__name=f"Delivery Type {(i % 2) + 1}",
             **access_kwargs,
         )
+        payment_unit = PaymentUnitFactory(opportunity=access.opportunity)
         inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
         cw = CompletedWorkFactory(
             status_modified_date=timestamp,
             opportunity_access=access,
+            payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             saved_approved_count=1,
             saved_payment_accrued_usd=i * 100,
@@ -62,16 +65,20 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
         )
         UserVisitFactory(
             date_created=timestamp - timedelta(i * 10),
+            opportunity=access.opportunity,
+            user=access.user,
             opportunity_access=access,
+            deliver_unit=DeliverUnitFactory(app=access.opportunity.deliver_app, payment_unit=payment_unit),
             completed_work=cw,
             status=VisitValidationStatus.approved,
         )
         PaymentFactory(opportunity_access=access, date_paid=timestamp, amount_usd=i * 50, confirmed=True)
-        PaymentFactory(invoice=inv, date_paid=timestamp, amount_usd=50)
+        PaymentFactory(opportunity_access=None, invoice=inv, date_paid=timestamp, amount_usd=50)
         other_inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100, service_delivery=False)
         CompletedWorkFactory(
             status_modified_date=timestamp,
             opportunity_access=access,
+            payment_unit=payment_unit,
             status=CompletedWorkStatus.approved,
             saved_approved_count=0,
             saved_payment_accrued_usd=0,
@@ -79,7 +86,7 @@ def _create_kpi_test_data(users, timestamp, **access_kwargs):
             payment_date=timestamp + timedelta(minutes=30),
             invoice=other_inv,
         )
-        PaymentFactory(invoice=other_inv, date_paid=timestamp, amount_usd=100)
+        PaymentFactory(opportunity_access=None, invoice=other_inv, date_paid=timestamp, amount_usd=100)
 
 
 @pytest.mark.django_db
@@ -204,10 +211,13 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
                 opportunity__delivery_type__slug=slug,
                 opportunity__delivery_type__name=slug,
             )
+            payment_unit = PaymentUnitFactory(opportunity=access.opportunity)
+            deliver_unit = DeliverUnitFactory(app=access.opportunity.deliver_app, payment_unit=payment_unit)
             inv = PaymentInvoiceFactory(opportunity=access.opportunity, amount=100)
             cw = CompletedWorkFactory(
                 status_modified_date=now,
                 opportunity_access=access,
+                payment_unit=payment_unit,
                 status=CompletedWorkStatus.approved,
                 saved_approved_count=1,
                 saved_payment_accrued_usd=i * 100,
@@ -217,12 +227,15 @@ def test_get_table_data_for_year_month_by_delivery_type(delivery_type, httpx_moc
             )
             UserVisitFactory(
                 date_created=now - timedelta(i * 10),
+                opportunity=access.opportunity,
+                user=access.user,
                 opportunity_access=access,
+                deliver_unit=deliver_unit,
                 completed_work=cw,
                 status=VisitValidationStatus.approved,
             )
             PaymentFactory(opportunity_access=access, date_paid=now, amount_usd=i * 50, confirmed=True)
-            PaymentFactory(invoice=inv, date_paid=now, amount_usd=50)
+            PaymentFactory(opportunity_access=None, invoice=inv, date_paid=now, amount_usd=50)
     fetch_user_counts.clear()
     httpx_mock.add_response(
         method="GET",

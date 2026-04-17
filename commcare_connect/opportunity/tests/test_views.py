@@ -597,26 +597,37 @@ def test_get_opportunity_list_data_all_annotations(organization, filters, expect
     UserInviteFactory(opportunity=opportunity, status=UserInviteStatus.accepted)
 
     # Visits
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=payment_unit)
+    cw1 = CompletedWorkFactory(opportunity_access=oa1, payment_unit=payment_unit)
     UserVisitFactory(
         opportunity=opportunity,
+        user=oa1.user,
         opportunity_access=oa1,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.pending,
         visit_date=now(),
-        completed_work__opportunity_access=oa1,
+        completed_work=cw1,
     )
 
     UserVisitFactory(
         opportunity=opportunity,
+        user=oa2.user,
         opportunity_access=oa2,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved,
         visit_date=three_days_ago - timedelta(days=2),
+        completed_work=None,
     )
 
     UserVisitFactory(
         opportunity=opportunity,
+        user=oa3.user,
         opportunity_access=oa3,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.rejected,
         visit_date=three_days_ago - timedelta(days=2),
+        completed_work=None,
     )
 
     queryset = OpportunityData(organization, False, filters).get_data()
@@ -2163,10 +2174,19 @@ def test_visit_export_count_boundary_dates(
     before_from_date = datetime.combine(from_date - timedelta(days=1), time.max, tzinfo=UTC)
     after_to_date = datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC)
 
-    UserVisitFactory(opportunity=opportunity, visit_date=on_from_date)
-    UserVisitFactory(opportunity=opportunity, visit_date=on_to_date)
-    UserVisitFactory(opportunity=opportunity, visit_date=before_from_date)
-    UserVisitFactory(opportunity=opportunity, visit_date=after_to_date)
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+    shared = {
+        "opportunity": opportunity,
+        "user": access.user,
+        "opportunity_access": access,
+        "deliver_unit": deliver_unit,
+        "completed_work": None,
+    }
+    UserVisitFactory(**shared, visit_date=on_from_date)
+    UserVisitFactory(**shared, visit_date=on_to_date)
+    UserVisitFactory(**shared, visit_date=before_from_date)
+    UserVisitFactory(**shared, visit_date=after_to_date)
 
     url = reverse("opportunity:visit_export_count", args=(organization.slug, opportunity.pk))
     client.force_login(org_user_member)
@@ -2480,8 +2500,9 @@ class TestWorkerTasksView:
 
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
         UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-        AssignedTaskFactory(opportunity_access=access)
-        AssignedTaskFactory(opportunity_access=access)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app)
+        AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+        AssignedTaskFactory(opportunity_access=access, task_type=task_type)
 
         url = self._url(organization, opportunity)
 

@@ -27,6 +27,7 @@ from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     LearnModuleFactory,
     OpportunityAccessFactory,
     OpportunityClaimFactory,
@@ -87,9 +88,11 @@ def test_deliver_status_query_visits_another_opportunity(opportunity: Opportunit
     # Test user visit counts when visits are for another opportunity. Should return 0 for all counts as the user has
     # done no visits in the current opportunity.
     mobile_users = MobileUserFactory.create_batch(5)
+    other_access = OpportunityAccessFactory()
+    other_payment_unit = PaymentUnitFactory(opportunity=other_access.opportunity)
     for mobile_user in mobile_users:
         OpportunityAccessFactory(opportunity=opportunity, user=mobile_user, accepted=True)
-        CompletedWorkFactory.create_batch(5)
+    CompletedWorkFactory.create_batch(25, opportunity_access=other_access, payment_unit=other_payment_unit)
     access_objects = get_annotated_opportunity_access_deliver_status(opportunity, {})
     usernames = {user.username for user in mobile_users}
     for access in access_objects:
@@ -245,6 +248,8 @@ def test_opportunity_delivery_stats(opportunity):
     day_before_yesterday = yesterday - timedelta(days=1)
 
     users = MobileUserFactory.create_batch(4)
+    payment_unit = PaymentUnitFactory(opportunity=opportunity)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
 
     oa1 = OpportunityAccessFactory(
         opportunity=opportunity, user=users[0], last_active=yesterday, accepted=True, payment_accrued=100
@@ -270,10 +275,17 @@ def test_opportunity_delivery_stats(opportunity):
     payment_due = total_accrued - total_paid
 
     # total deliveries=4 deliveries_from_yesterday=3
-    cw = CompletedWorkFactory(opportunity_access=oa1, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa1,
+        payment_unit=payment_unit,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
+        user=oa1.user,
         opportunity_access=oa1,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.pending,
         completed_work=cw,
         visit_date=yesterday,
@@ -282,43 +294,67 @@ def test_opportunity_delivery_stats(opportunity):
     # accrued_since_yesterday=10
     cw = CompletedWorkFactory(
         opportunity_access=oa2,
+        payment_unit=payment_unit,
         status_modified_date=now(),
         status=CompletedWorkStatus.approved,
         saved_payment_accrued=10,
     )
     UserVisitFactory.create(
         opportunity=opportunity,
+        user=oa2.user,
         opportunity_access=oa2,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved,
         completed_work=cw,
         visit_date=today,
     )
 
     UserVisitFactory.create(
-        opportunity=opportunity, opportunity_access=oa1, status=VisitValidationStatus.approved, completed_work=cw
+        opportunity=opportunity,
+        user=oa1.user,
+        opportunity_access=oa1,
+        deliver_unit=deliver_unit,
+        status=VisitValidationStatus.approved,
+        completed_work=cw,
     )
     UserVisitFactory.create(
         opportunity=opportunity,
+        user=oa2.user,
         opportunity_access=oa2,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.pending,
         completed_work=cw,
         visit_date=today,
     )
 
-    cw = CompletedWorkFactory(opportunity_access=oa1, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa1,
+        payment_unit=payment_unit,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
+        user=oa2.user,
         opportunity_access=oa2,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved,
         completed_work=cw,
         visit_date=day_before_yesterday,
         review_created_on=now() - timedelta(days=2),
     )
 
-    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa2,
+        payment_unit=payment_unit,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
+        user=oa2.user,
         opportunity_access=oa2,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved,
         completed_work=cw,
         visit_date=day_before_yesterday,
@@ -326,10 +362,17 @@ def test_opportunity_delivery_stats(opportunity):
     )
 
     # case nm approved first but rejected later so review_created_on will not be null in this case.
-    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    cw = CompletedWorkFactory(
+        opportunity_access=oa2,
+        payment_unit=payment_unit,
+        status_modified_date=now(),
+        status=CompletedWorkStatus.pending,
+    )
     UserVisitFactory.create(
         opportunity=opportunity,
+        user=oa2.user,
         opportunity_access=oa2,
+        deliver_unit=deliver_unit,
         status=VisitValidationStatus.rejected,
         completed_work=cw,
         visit_date=day_before_yesterday,

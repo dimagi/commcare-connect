@@ -11,6 +11,7 @@ from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     CredentialConfigurationFactory,
     OpportunityAccessFactory,
+    PaymentUnitFactory,
     UserCredentialFactory,
 )
 from commcare_connect.users.models import User, UserCredential
@@ -54,9 +55,14 @@ class TestUserCredentialIssuer:
     def test_issue_delivery_credentials(self, mock_submit_credentials_to_personalid_task, opportunity):
         access1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
         access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
 
-        CompletedWorkFactory.create_batch(1, opportunity_access=access1, status=CompletedWorkStatus.approved)
-        CompletedWorkFactory.create_batch(50, opportunity_access=access2, status=CompletedWorkStatus.approved)
+        CompletedWorkFactory.create_batch(
+            1, opportunity_access=access1, payment_unit=payment_unit, status=CompletedWorkStatus.approved
+        )
+        CompletedWorkFactory.create_batch(
+            50, opportunity_access=access2, payment_unit=payment_unit, status=CompletedWorkStatus.approved
+        )
 
         CredentialConfigurationFactory(
             opportunity=opportunity,
@@ -140,9 +146,14 @@ class TestUserCredentialIssuer:
     def test_delivery_creds_no_credentials_issued_yet(self, opportunity):
         access1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
         access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
 
-        CompletedWorkFactory.create_batch(50, opportunity_access=access1, status=CompletedWorkStatus.approved)
-        CompletedWorkFactory.create_batch(5, opportunity_access=access2, status=CompletedWorkStatus.approved)
+        CompletedWorkFactory.create_batch(
+            50, opportunity_access=access1, payment_unit=payment_unit, status=CompletedWorkStatus.approved
+        )
+        CompletedWorkFactory.create_batch(
+            5, opportunity_access=access2, payment_unit=payment_unit, status=CompletedWorkStatus.approved
+        )
 
         assert UserCredential.objects.count() == 0
 
@@ -173,7 +184,10 @@ class TestUserCredentialIssuer:
         cred_config.refresh_from_db()
 
         access1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
-        CompletedWorkFactory.create_batch(50, opportunity_access=access1, status=CompletedWorkStatus.approved)
+        payment_unit = PaymentUnitFactory(opportunity=opportunity)
+        CompletedWorkFactory.create_batch(
+            50, opportunity_access=access1, payment_unit=payment_unit, status=CompletedWorkStatus.approved
+        )
 
         UserCredentialFactory(
             user=access1.user,
@@ -190,7 +204,9 @@ class TestUserCredentialIssuer:
         assert len(users_earning_creds) == 0
 
         access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
-        CompletedWorkFactory.create_batch(50, opportunity_access=access2, status=CompletedWorkStatus.approved)
+        CompletedWorkFactory.create_batch(
+            50, opportunity_access=access2, payment_unit=payment_unit, status=CompletedWorkStatus.approved
+        )
 
         users_earning_creds = UserCredentialIssuer.get_delivery_user_credentials(
             opp_query, UserCredential.DeliveryLevel.FIFTY

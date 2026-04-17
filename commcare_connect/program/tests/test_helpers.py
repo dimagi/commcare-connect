@@ -7,7 +7,9 @@ from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
     CompletedWorkFactory,
+    DeliverUnitFactory,
     OpportunityAccessFactory,
+    PaymentUnitFactory,
     UserVisitFactory,
 )
 from commcare_connect.program.helpers import get_annotated_managed_opportunity, get_delivery_performance_report
@@ -22,6 +24,8 @@ class BaseManagedOpportunityTest:
         self.program = ProgramFactory.create()
         self.nm_org = OrganizationFactory.create()
         self.opp = ManagedOpportunityFactory.create(program=self.program, organization=self.nm_org)
+        self.deliver_unit = DeliverUnitFactory(app=self.opp.deliver_app)
+        self.payment_unit = PaymentUnitFactory(opportunity=self.opp)
 
     def create_user_with_access(self, visit_status=VisitValidationStatus.pending, passed_assessment=True):
         user = UserFactory.create()
@@ -32,6 +36,7 @@ class BaseManagedOpportunityTest:
             opportunity=self.opp,
             status=visit_status,
             opportunity_access=access,
+            deliver_unit=self.deliver_unit,
             visit_date=now() + timedelta(days=1),
         )
         return user
@@ -44,11 +49,12 @@ class BaseManagedOpportunityTest:
             opportunity=self.opp,
             status=visit_status,
             opportunity_access=access,
+            deliver_unit=self.deliver_unit,
             visit_date=visit_date,
             flagged=flagged,
         )
         if create_completed_work:
-            work = CompletedWorkFactory.create(opportunity_access=access)
+            work = CompletedWorkFactory.create(opportunity_access=access, payment_unit=self.payment_unit)
             visit.completed_work = work
             visit.save()
         return user
@@ -252,6 +258,7 @@ def test_average_time_to_convert_for_negative_values():
     nm_org = OrganizationFactory.create()
     opp = ManagedOpportunityFactory.create(program=program, organization=nm_org)
     today = now()
+    deliver_unit = DeliverUnitFactory(app=opp.deliver_app)
 
     valid_durations = []
 
@@ -271,6 +278,7 @@ def test_average_time_to_convert_for_negative_values():
             user=user,
             opportunity=opp,
             opportunity_access=access,
+            deliver_unit=deliver_unit,
             visit_date=visit_date,
             status=VisitValidationStatus.approved,
         )

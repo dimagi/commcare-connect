@@ -7,7 +7,7 @@ from rest_framework.test import APIRequestFactory
 
 from commcare_connect.data_export.pagination import IdKeysetPagination
 from commcare_connect.opportunity.models import UserVisit
-from commcare_connect.opportunity.tests.factories import UserVisitFactory
+from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, OpportunityAccessFactory, UserVisitFactory
 
 
 @pytest.fixture
@@ -48,9 +48,21 @@ def _collect_all_ids(api_rf, queryset, cursor_order="forward", page_size=2):
 @pytest.mark.django_db
 @pytest.mark.parametrize("cursor_order", ["forward", "reverse"])
 class TestIdKeysetPagination:
+    @pytest.fixture(autouse=True)
+    def _visit_shared(self, opportunity, org_user_member):
+        access = OpportunityAccessFactory(opportunity=opportunity, user=org_user_member)
+        deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+        self._visit_kwargs = {
+            "opportunity": opportunity,
+            "user": org_user_member,
+            "opportunity_access": access,
+            "deliver_unit": deliver_unit,
+            "completed_work": None,
+        }
+
     def test_first_page_no_cursor(self, paginator, api_rf, opportunity, org_user_member, cursor_order):
         visits = sorted(
-            UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member),
+            UserVisitFactory.create_batch(5, **self._visit_kwargs),
             key=lambda v: v.id,
             reverse=cursor_order == "reverse",
         )
@@ -67,7 +79,7 @@ class TestIdKeysetPagination:
 
     def test_last_id_returns_next_page(self, paginator, api_rf, opportunity, org_user_member, cursor_order):
         visits = sorted(
-            UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member),
+            UserVisitFactory.create_batch(5, **self._visit_kwargs),
             key=lambda v: v.id,
             reverse=cursor_order == "reverse",
         )
@@ -81,7 +93,7 @@ class TestIdKeysetPagination:
 
     def test_pagination_traversal(self, api_rf, opportunity, org_user_member, cursor_order):
         visits = sorted(
-            UserVisitFactory.create_batch(5, opportunity=opportunity, user=org_user_member),
+            UserVisitFactory.create_batch(5, **self._visit_kwargs),
             key=lambda v: v.id,
             reverse=cursor_order == "reverse",
         )

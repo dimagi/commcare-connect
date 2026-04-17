@@ -324,27 +324,36 @@ def test_export_user_visit_review_data(organization, from_date, to_date, expecte
         "Visit ID",
     ]
     opp = ManagedOpportunityFactory(organization=organization)
+    access = OpportunityAccessFactory(opportunity=opp)
+    deliver_unit = DeliverUnitFactory(app=opp.deliver_app)
+    shared = {
+        "opportunity": opp,
+        "user": access.user,
+        "opportunity_access": access,
+        "deliver_unit": deliver_unit,
+        "completed_work": None,
+    }
     now_time = now()
     pending_date = now_time - timedelta(days=3)
     agree_date = now_time - timedelta(days=10)
     disagree_date = now_time - timedelta(days=15)
     UserVisitFactory.create_batch(
         20,
-        opportunity=opp,
+        **shared,
         visit_date=pending_date,
         review_created_on=pending_date,
         review_status=VisitReviewStatus.pending,
     )
     UserVisitFactory.create_batch(
         5,
-        opportunity=opp,
+        **shared,
         visit_date=agree_date,
         review_created_on=agree_date,
         review_status=VisitReviewStatus.agree,
     )
     UserVisitFactory.create_batch(
         15,
-        opportunity=opp,
+        **shared,
         visit_date=disagree_date,
         review_created_on=disagree_date,
         review_status=VisitReviewStatus.disagree,
@@ -365,6 +374,15 @@ def test_export_user_visit_review_data(organization, from_date, to_date, expecte
 @pytest.mark.django_db
 def test_export_user_visit_review_data_boundary_dates(organization):
     opp = ManagedOpportunityFactory(organization=organization)
+    access = OpportunityAccessFactory(opportunity=opp)
+    deliver_unit = DeliverUnitFactory(app=opp.deliver_app)
+    shared = {
+        "opportunity": opp,
+        "user": access.user,
+        "opportunity_access": access,
+        "deliver_unit": deliver_unit,
+        "completed_work": None,
+    }
 
     from_date = datetime.date.today() - datetime.timedelta(days=4)
     to_date = datetime.date.today() - datetime.timedelta(days=1)
@@ -380,26 +398,26 @@ def test_export_user_visit_review_data_boundary_dates(organization):
 
     UserVisitFactory.create_batch(
         3,
-        opportunity=opp,
+        **shared,
         visit_date=on_from_date,
         review_created_on=on_from_date,
         review_status=VisitReviewStatus.pending,
     )
     UserVisitFactory.create_batch(
         2,
-        opportunity=opp,
+        **shared,
         visit_date=on_to_date,
         review_created_on=on_to_date,
         review_status=VisitReviewStatus.pending,
     )
     UserVisitFactory(
-        opportunity=opp,
+        **shared,
         visit_date=before_from_date,
         review_created_on=before_from_date,
         review_status=VisitReviewStatus.pending,
     )
     UserVisitFactory(
-        opportunity=opp,
+        **shared,
         visit_date=after_to_date,
         review_created_on=after_to_date,
         review_status=VisitReviewStatus.pending,

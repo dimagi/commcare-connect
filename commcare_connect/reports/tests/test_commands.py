@@ -33,6 +33,9 @@ class TestBackfillUserAnalyticsData:
             )
 
             AssessmentFactory(
+                opportunity=opportunity,
+                user=access.user,
+                app=opportunity.learn_app,
                 opportunity_access=access,
                 passed=True,
                 date=datetime.datetime(2023 + idx, 1, 4, tzinfo=timezone.utc),

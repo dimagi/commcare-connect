@@ -217,6 +217,7 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
                     opportunity=opportunity,
                     user=access.user,
                     deliver_unit=deliver_unit,
+                    opportunity_access=access,
                     status=VisitValidationStatus.approved.value,
                     completed_work=completed_work,
                 )
@@ -225,6 +226,7 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
                 opportunity=opportunity,
                 user=access.user,
                 deliver_unit=optional_deliver_unit,
+                opportunity_access=access,
                 status=VisitValidationStatus.approved.value,
                 completed_work=completed_work,
             )
@@ -769,6 +771,8 @@ class TestBulkReviewVisitImport:
     def setup_method(self):
         self.organization = OrganizationFactory.create()
         self.opp = ManagedOpportunityFactory.create(organization=self.organization)
+        self.access = OpportunityAccessFactory.create(opportunity=self.opp)
+        self.deliver_unit = DeliverUnitFactory(app=self.opp.deliver_app)
         self.now_time = now()
 
     def _prepare_dataset(self, visits, status):
@@ -788,15 +792,22 @@ class TestBulkReviewVisitImport:
         ],
     )
     def test_bulk_review_update(self, num_agree, num_disagree):
+        shared = {
+            "opportunity": self.opp,
+            "user": self.access.user,
+            "opportunity_access": self.access,
+            "deliver_unit": self.deliver_unit,
+            "completed_work": None,
+        }
         agree_visits = UserVisitFactory.create_batch(
             num_agree,
-            opportunity=self.opp,
+            **shared,
             review_created_on=self.now_time - timedelta(days=3),
             status=VisitValidationStatus.pending,
         )
         disagree_visits = UserVisitFactory.create_batch(
             num_disagree,
-            opportunity=self.opp,
+            **shared,
             review_created_on=self.now_time - timedelta(days=3),
             status=VisitValidationStatus.pending,
         )
@@ -858,6 +869,10 @@ class TestBulkReviewVisitImport:
         visits = UserVisitFactory.create_batch(
             5,
             opportunity=self.opp,
+            user=self.access.user,
+            opportunity_access=self.access,
+            deliver_unit=self.deliver_unit,
+            completed_work=None,
             review_created_on=self.now_time - timedelta(days=3),
             status=initial_status,
         )
@@ -878,6 +893,10 @@ class TestBulkReviewVisitImport:
         visits = UserVisitFactory.create_batch(
             3,
             opportunity=self.opp,
+            user=self.access.user,
+            opportunity_access=self.access,
+            deliver_unit=self.deliver_unit,
+            completed_work=None,
             review_created_on=self.now_time - timedelta(days=3),
             status=VisitReviewStatus.pending,
         )
@@ -937,15 +956,22 @@ class TestBulkReviewVisitImport:
                 ReviewVisitRowData(row_number, row, dataset.headers)
 
     def test_locked_visits(self):
+        shared = {
+            "opportunity": self.opp,
+            "user": self.access.user,
+            "opportunity_access": self.access,
+            "deliver_unit": self.deliver_unit,
+            "completed_work": None,
+        }
         agree_visits = UserVisitFactory.create_batch(
             2,
-            opportunity=self.opp,
+            **shared,
             review_created_on=self.now_time - timedelta(days=3),
             status=VisitValidationStatus.pending,
         )
         locked_visits = UserVisitFactory.create_batch(
             2,
-            opportunity=self.opp,
+            **shared,
             review_created_on=self.now_time - timedelta(days=3),
             status=VisitValidationStatus.approved,
             review_status=VisitReviewStatus.agree,
