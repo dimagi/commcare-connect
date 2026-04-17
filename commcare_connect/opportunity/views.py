@@ -2078,18 +2078,29 @@ class WorkerPageView(OrganizationUserMixin, OpportunityObjectMixin, TemplateView
             .order_by("-date_paid")
             .first()
         )
-        return counts, flagged_info.values(), last_payment_details
+        pending_tasks_count = AssignedTask.objects.filter(
+            opportunity_access=self.opportunity_access,
+            status=AssignedTaskStatus.ASSIGNED,
+        ).count()
+        tasks_url = reverse(
+            "opportunity:user_tasks_list", args=(self.request.org.slug, self.opportunity.opportunity_id)
+        )
+        pending_tasks_url = f"{tasks_url}?{urlencode({'user': self.opportunity_access.user.user_id, 'task_status': AssignedTaskStatus.ASSIGNED})}"  # noqa: E501
+        return {
+            "counts": counts,
+            "flagged_info": flagged_info.values(),
+            "last_payment_details": last_payment_details,
+            "pending_tasks_count": pending_tasks_count,
+            "pending_tasks_url": pending_tasks_url,
+        }
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        counts, flagged_info, last_payment_details = self.get_worker_kpi_context()
+        context.update(self.get_worker_kpi_context())
         context.update(
             {
                 "opportunity": self.opportunity,
                 "opportunity_access": self.opportunity_access,
-                "counts": counts,
-                "flagged_info": flagged_info,
-                "last_payment_details": last_payment_details,
                 "path": self.get_path(),
                 "has_suspension_perm": (
                     self.request.is_opportunity_pm

@@ -4,61 +4,40 @@
   <div class="grid grid-cols-5 gap-4 w-full">
     <div class="w-full h-full metric-card relative flex flex-col justify-between p-4">
       <div class="flex justify-between items-center">
-        <div class="text-2xl" x-data
+        <a href="{% url 'opportunity:user_visits_list' request.org.slug opportunity.opportunity_id %}?user={{ opportunity_access.user.user_id }}" class="text-2xl hover:underline" x-data
           x-tooltip.raw="{% trans 'Includes all Deliver app forms submitted by this worker across all payment units including duplicates' %}">
-          {{ counts.total }}</div>
+          {{ counts.total }}</a>
         <div class="hidden lg:block">
           <i class="fa-solid fa-file-invoice text-xl"></i>
         </div>
       </div>
       <div class="pt-4 text-sm flex items-center justify-between">
-        <span>{% trans "Total Deliver Units" %}</span>
+        <span>{% trans "Total Visits" %}</span>
       </div>
     </div>
 
-    <div class="w-full h-full metric-card relative flex flex-col justify-between p-4"
-      x-data="{ isOpen: false }">
+    <div class="w-full h-full metric-card relative flex flex-col justify-between p-4">
       <div class="flex justify-between items-center">
-        <div class="text-2xl">{{ counts.flagged }}</div>
+        <a href="{{ pending_tasks_url }}" class="text-2xl hover:underline">{{ pending_tasks_count }}</a>
         <div class="hidden lg:block">
           <i class="fa-solid fa-flag text-xl"></i>
         </div>
       </div>
       <div class="pt-4 text-sm flex items-center justify-between">
-        <span>{% trans "Flagged Deliver Units" %}</span>
-        <i class="fa-solid ml-2 cursor-pointer" :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
-          @click="isOpen = !isOpen"></i>
-      </div>
-      <div x-show="isOpen" x-cloak @click.outside="isOpen = false" x-transition
-        class="z-50 absolute top-full mt-2 right-0 w-full rounded-lg bg-white text-brand-deep-purple shadow-lg pt-2 px-5">
-        <span class="text-sm font-medium text-brand-deep-purple">{% trans "Flagged Info" %}</span>
-        <div class="py-2">
-          <div class="flex justify-between items-center py-3">
-            <span class="text-xs w-27">{% trans "Name" %}</span>
-            <i class="fa-solid fa-circle-check text-green-600"></i>
-            <i class="fa-solid fa-clock text-gray-300"></i>
-          </div>
-          {% for flag in flagged_info %}
-          <div class="flex justify-between items-center py-3 pr-1">
-            <span class="text-xs w-25">{{ flag.name }}</span>
-            <span class="text-xs">{{ flag.approved }}</span>
-            <span class="text-xs">{{ flag.pending }}</span>
-          </div>
-          {% endfor %}
-        </div>
+        <span>{% trans "Pending Tasks" %}</span>
       </div>
     </div>
 
     <div class="w-full h-full metric-card relative flex flex-col justify-between p-4"
       x-data="{ isOpen: false }">
       <div class="flex justify-between items-center">
-        <div class="text-2xl">{{ counts.rejected }}</div>
+        <a href="{% url 'opportunity:user_visits_list' request.org.slug opportunity.opportunity_id %}?user={{ opportunity_access.user.user_id }}" class="text-2xl hover:underline">{{ counts.rejected }}</a>
         <div class="hidden lg:block">
           <i class="fa-solid fa-thumbs-down text-xl"></i>
         </div>
       </div>
       <div class="pt-4 text-sm flex items-center justify-between">
-        <span>{% trans "Rejected Deliver Units" %}</span>
+        <span>{% trans "Rejected Visits" %}</span>
         <i class="fa-solid ml-2 cursor-pointer" :class="isOpen ? 'fa-caret-up' : 'fa-caret-down'"
           @click="isOpen = !isOpen"></i>
       </div>
