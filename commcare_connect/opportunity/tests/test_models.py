@@ -2,10 +2,12 @@ import datetime
 
 import pytest
 from django.db import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
 from commcare_connect.opportunity.models import (
+    CompletedWorkStatus,
     InvoiceStatus,
     Opportunity,
     OpportunityClaimLimit,
@@ -236,3 +238,27 @@ class TestPaymentInvoiceLineItem:
         PaymentInvoiceLineItemFactory(invoice=invoice)
         invoice.delete()
         assert PaymentInvoiceLineItem.objects.count() == 0
+
+    def test_cancel_invoice_preserves_line_items(self, opportunity):
+        pu = PaymentUnitFactory(opportunity=opportunity)
+        opp_access = OpportunityAccessFactory(opportunity=opportunity)
+        invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            service_delivery=True,
+            status=InvoiceStatus.PENDING_NM_REVIEW,
+        )
+        cw = CompletedWorkFactory(
+            opportunity_access=opp_access,
+            payment_unit=pu,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=now(),
+            invoice=invoice,
+        )
+        PaymentInvoiceLineItemFactory(invoice=invoice, payment_unit=pu)
+
+        invoice.unlink_completed_works()
+
+        # CWs detached, but snapshot remains
+        cw.refresh_from_db()
+        assert cw.invoice is None
+        assert PaymentInvoiceLineItem.objects.filter(invoice=invoice).count() == 1
