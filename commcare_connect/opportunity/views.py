@@ -3354,13 +3354,10 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         return get_validated_page_size(self.request)
 
     def get_filter_kwargs(self):
-        opportunity = self.get_opportunity()
         return {
-            "queryset": AssignedTask.objects.filter(opportunity_access__opportunity=opportunity)
-            .select_related("task_type", "opportunity_access__user", "assigned_by")
-            .order_by("-date_created"),
+            "queryset": self.get_queryset(),
             "request": self.request,
-            "opportunity": opportunity,
+            "opportunity": self.get_opportunity(),
         }
 
     def get_table_kwargs(self):
