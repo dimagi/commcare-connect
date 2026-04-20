@@ -357,6 +357,7 @@ def get_invoice_items(completed_works_qs):
             {
                 "month": record["month_approved"],
                 "payment_unit_name": record["payment_unit_name"],
+                "payment_unit_id": record["payment_unit"],
                 "number_approved": record["record_count"],
                 "amount_per_unit": record["payment_unit_amount"],
                 "total_amount_local": record["total_amount_local"],

@@ -40,6 +40,7 @@ class TestUninvoicedVisitItems:
 
         invoice_item = items[0]
         assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
+        assert invoice_item["payment_unit_id"] == completed_work.payment_unit.id
         assert invoice_item["number_approved"] == 1
         assert invoice_item["amount_per_unit"] == completed_work.payment_unit.amount
         assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
@@ -67,6 +68,7 @@ class TestUninvoicedVisitItems:
 
         invoice_item = items[0]
         assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
+        assert invoice_item["payment_unit_id"] == completed_work.payment_unit.id
         assert invoice_item["number_approved"] == 1
         assert invoice_item["amount_per_unit"] == completed_work.payment_unit.amount
         assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
