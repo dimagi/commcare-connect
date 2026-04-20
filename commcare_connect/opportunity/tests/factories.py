@@ -1,4 +1,5 @@
 from datetime import date, timedelta, timezone
+from decimal import Decimal
 
 from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
@@ -265,6 +266,20 @@ class PaymentInvoiceFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class PaymentInvoiceLineItemFactory(DjangoModelFactory):
+    invoice = SubFactory(PaymentInvoiceFactory)
+    payment_unit = SubFactory(PaymentUnitFactory)
+    month = date(2026, 1, 1)
+    record_count = 1
+    amount_per_unit = Decimal("1")
+    total_amount_local = Decimal("1")
+    total_amount_usd = Decimal("1")
+    exchange_rate = Decimal("1")
+
+    class Meta:
+        model = "opportunity.PaymentInvoiceLineItem"
 
 
 class TaskTypeFactory(DjangoModelFactory):
