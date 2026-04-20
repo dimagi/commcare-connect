@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -18,11 +19,13 @@ from commcare_connect.opportunity.tests.factories import (
     ExchangeRateFactory,
     OpportunityAccessFactory,
     PaymentInvoiceFactory,
+    PaymentInvoiceLineItemFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
 from commcare_connect.opportunity.utils.completed_work import (
     create_invoice_line_items,
+    get_invoiced_visit_items,
     get_uninvoiced_visit_items,
     update_status,
 )
@@ -686,7 +689,6 @@ class TestUpdateStatus:
         assert completed_work.status == CompletedWorkStatus.approved
 
 
-@pytest.mark.django_db
 def test_create_invoice_line_items_creates_rows_matching_input(opportunity):
     invoice = PaymentInvoiceFactory(opportunity=opportunity)
     pu = PaymentUnitFactory(opportunity=opportunity)
@@ -712,3 +714,98 @@ def test_create_invoice_line_items_creates_rows_matching_input(opportunity):
     assert row.amount_per_unit == Decimal("900.00")
     assert row.total_amount_local == Decimal("9000.00")
     assert row.exchange_rate == Decimal("1451.612903")
+
+
+@pytest.mark.django_db
+class TestGetInvoicedVisitItems:
+    def test_returns_snapshot_when_present(self, opportunity):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+        pu = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("900.00"))
+        PaymentInvoiceLineItemFactory(
+            invoice=invoice,
+            payment_unit=pu,
+            record_count=10,
+            amount_per_unit=Decimal("900.00"),
+            total_amount_local=Decimal("9000.00"),
+            total_amount_usd=Decimal("6.20"),
+            exchange_rate=Decimal("1451.612903"),
+        )
+        items = get_invoiced_visit_items(invoice)
+        assert len(items) == 1
+        assert items[0]["number_approved"] == 10
+        assert items[0]["total_amount_local"] == Decimal("9000.00")
+        assert items[0]["exchange_rate"] == Decimal("1451.612903")
+        assert items[0]["payment_unit_name"] == pu.name  # live label
+        assert items[0]["amount_per_unit"] == Decimal("900.00")
+
+    def test_amount_per_unit_is_frozen_not_live(self, opportunity):
+        """If PaymentUnit.amount is edited after snapshot, read still returns snapshot value."""
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+        pu = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("900.00"))
+        PaymentInvoiceLineItemFactory(
+            invoice=invoice,
+            payment_unit=pu,
+            record_count=10,
+            amount_per_unit=Decimal("900.00"),
+            total_amount_local=Decimal("9000.00"),
+            total_amount_usd=Decimal("6.20"),
+        )
+        pu.amount = Decimal("500.00")
+        pu.save()
+        items = get_invoiced_visit_items(invoice)
+        assert items[0]["amount_per_unit"] == Decimal("900.00")  # frozen, not 500
+
+    def test_falls_back_to_live_aggregation_when_no_snapshot(self):
+        opp_access = OpportunityAccessFactory()
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity)
+        invoice = PaymentInvoiceFactory(opportunity=opp_access.opportunity)
+        cw = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+            invoice=invoice,
+        )
+        cw.saved_payment_accrued = payment_unit.amount
+        cw.save()
+
+        items = get_invoiced_visit_items(invoice)
+        assert len(items) == 1
+        assert items[0]["total_amount_local"] == payment_unit.amount
+
+    def test_drift_scenario_snapshot_preserves_original(self):
+        """Snapshot totals stay stable when a linked CompletedWork is un-approved.
+
+        Without the snapshot, the fallback live-aggregation would read the zeroed
+        saved_payment_accrued and return 0 for this line item.
+        """
+        opp_access = OpportunityAccessFactory()
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=Decimal("100.00"))
+        invoice = PaymentInvoiceFactory(opportunity=opp_access.opportunity)
+        # Create an approved linked CW
+        cw = CompletedWorkFactory(
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            saved_payment_accrued=100,
+            saved_payment_accrued_usd=Decimal("1.00"),
+            status_modified_date=now(),
+            invoice=invoice,
+        )
+        # Create a snapshot
+        PaymentInvoiceLineItemFactory(
+            invoice=invoice,
+            month=cw.status_modified_date.replace(day=1).date(),
+            payment_unit=payment_unit,
+            record_count=1,
+            amount_per_unit=payment_unit.amount,
+            total_amount_local=Decimal("100"),
+            total_amount_usd=Decimal("1.00"),
+            exchange_rate=Decimal("100"),
+        )
+        # Simulate drift: un-approve the CW
+        cw.status = CompletedWorkStatus.rejected
+        cw.saved_payment_accrued = 0
+        cw.save()
+
+        items = get_invoiced_visit_items(invoice)
+        assert items[0]["total_amount_local"] == 100  # still original, not 0
