@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,7 @@ from dateutil.relativedelta import relativedelta
 from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
+    PaymentInvoiceLineItem,
     VisitReviewStatus,
     VisitValidationStatus,
 )
@@ -19,7 +21,11 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.utils.completed_work import get_uninvoiced_visit_items, update_status
+from commcare_connect.opportunity.utils.completed_work import (
+    create_invoice_line_items,
+    get_uninvoiced_visit_items,
+    update_status,
+)
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory
 
 
@@ -678,3 +684,31 @@ class TestUpdateStatus:
         self._run_update_status(completed_work)
 
         assert completed_work.status == CompletedWorkStatus.approved
+
+
+@pytest.mark.django_db
+def test_create_invoice_line_items_creates_rows_matching_input(opportunity):
+    invoice = PaymentInvoiceFactory(opportunity=opportunity)
+    pu = PaymentUnitFactory(opportunity=opportunity)
+    items = [
+        {
+            "month": date(2026, 1, 1),
+            "payment_unit_id": pu.id,
+            "number_approved": 10,
+            "amount_per_unit": Decimal("900.00"),
+            "total_amount_local": Decimal("9000.00"),
+            "total_amount_usd": Decimal("6.20"),
+            "exchange_rate": Decimal("1451.612903"),
+            "currency": "NGN",
+        }
+    ]
+    create_invoice_line_items(invoice, items)
+    rows = PaymentInvoiceLineItem.objects.filter(invoice=invoice)
+    assert rows.count() == 1
+    row = rows.first()
+    assert row.month == date(2026, 1, 1)
+    assert row.payment_unit_id == pu.id
+    assert row.record_count == 10
+    assert row.amount_per_unit == Decimal("900.00")
+    assert row.total_amount_local == Decimal("9000.00")
+    assert row.exchange_rate == Decimal("1451.612903")

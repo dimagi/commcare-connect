@@ -9,6 +9,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     OpportunityAccess,
     Payment,
+    PaymentInvoiceLineItem,
     PaymentUnit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -368,6 +369,25 @@ def get_invoice_items(completed_works_qs):
         )
 
     return invoice_items
+
+
+def create_invoice_line_items(invoice, line_items):
+    """Persist an invoice's line-item snapshot from an already-computed aggregate."""
+    PaymentInvoiceLineItem.objects.bulk_create(
+        [
+            PaymentInvoiceLineItem(
+                invoice=invoice,
+                month=item["month"],
+                payment_unit_id=item["payment_unit_id"],
+                record_count=item["number_approved"],
+                amount_per_unit=item["amount_per_unit"],
+                total_amount_local=item["total_amount_local"],
+                total_amount_usd=item["total_amount_usd"],
+                exchange_rate=item["exchange_rate"],
+            )
+            for item in line_items
+        ]
+    )
 
 
 def link_invoice_to_completed_works(invoice, start_date=None, end_date=None):
