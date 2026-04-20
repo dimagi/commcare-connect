@@ -55,6 +55,7 @@ from commcare_connect.opportunity.models import (
     VisitValidationStatus,
 )
 from commcare_connect.opportunity.utils.completed_work import (
+    create_invoice_line_items,
     get_uninvoiced_visit_items,
     link_invoice_to_completed_works,
     update_status,
@@ -635,7 +636,7 @@ def generate_automated_service_delivery_invoice():
             service_delivery=True,
             exchange_rate=exchange_rate,
         )
-        invoices_chunk.append(payment_invoice)
+        invoices_chunk.append((payment_invoice, line_items))
 
         if len(invoices_chunk) == CHUNK_SIZE:
             created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
@@ -647,12 +648,17 @@ def generate_automated_service_delivery_invoice():
     _send_auto_invoice_created_notification(created_invoices_ids)
 
 
-def _bulk_create_and_link_invoices(invoices_chunk):
+def _bulk_create_and_link_invoices(invoices_with_items):
     invoice_ids = []
+    # All invoices in a chunk share fate: if any per-invoice step fails, the whole
+    # chunk rolls back to keep invoice + line-item snapshot writes consistent.
     with transaction.atomic():
-        invoice_objs = PaymentInvoice.objects.bulk_create(invoices_chunk)
-        for invoice in invoice_objs:
+        invoice_objs = PaymentInvoice.objects.bulk_create([inv for inv, _ in invoices_with_items])
+        # bulk_create returns objects in input order on Postgres via RETURNING;
+        # strict=True asserts the ordering invariant that the zip relies on.
+        for invoice, (_, line_items) in zip(invoice_objs, invoices_with_items, strict=True):
             link_invoice_to_completed_works(invoice, start_date=invoice.start_date, end_date=invoice.end_date)
+            create_invoice_line_items(invoice, line_items)
             invoice_ids.append(invoice.id)
     return invoice_ids
 

@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityActiveEvent,
     PaymentInvoice,
+    PaymentInvoiceLineItem,
     UserInvite,
 )
 from commcare_connect.opportunity.tasks import (
@@ -327,6 +328,29 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
 
         invoice = PaymentInvoice.objects.filter(opportunity=opportunity)
         assert len(invoice) == 0
+
+    def test_creates_line_item_snapshot(self):
+        opportunity = OpportunityFactory(active=True, managed=True, start_date=datetime.date(2026, 1, 1))
+        payment_unit = PaymentUnitFactory(opportunity=opportunity, amount=Decimal("100.00"))
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        completed_work = CompletedWorkFactory(
+            opportunity_access=access,
+            payment_unit=payment_unit,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=datetime.date(2024, 1, 4),
+        )
+        completed_work.saved_payment_accrued = Decimal("100.00")
+        completed_work.save()
+
+        generate_automated_service_delivery_invoice()
+
+        invoice = PaymentInvoice.objects.get(opportunity=opportunity)
+        line_items = PaymentInvoiceLineItem.objects.filter(invoice=invoice)
+        assert line_items.exists()
+        total_local = sum(item.total_amount_local for item in line_items)
+        total_usd = sum(item.total_amount_usd for item in line_items)
+        assert total_local == invoice.amount
+        assert total_usd == invoice.amount_usd
 
 
 @pytest.mark.django_db
