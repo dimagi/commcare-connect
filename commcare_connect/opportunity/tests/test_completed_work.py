@@ -689,6 +689,7 @@ class TestUpdateStatus:
         assert completed_work.status == CompletedWorkStatus.approved
 
 
+@pytest.mark.django_db
 def test_create_invoice_line_items_creates_rows_matching_input(opportunity):
     invoice = PaymentInvoiceFactory(opportunity=opportunity)
     pu = PaymentUnitFactory(opportunity=opportunity)
