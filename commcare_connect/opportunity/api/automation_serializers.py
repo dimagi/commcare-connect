@@ -1,7 +1,7 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from commcare_connect.opportunity.models import DeliverUnit, PaymentUnit
+from commcare_connect.opportunity.models import DeliverUnit, Opportunity, PaymentUnit
 
 
 class PaymentUnitItemSerializer(serializers.Serializer):
@@ -127,3 +127,9 @@ class PaymentUnitResponseSerializer(serializers.ModelSerializer):
 
     def get_optional_deliver_units(self, obj):
         return list(obj.deliver_units.filter(optional=True).values_list("id", flat=True))
+
+
+class OpportunityActivateResponseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Opportunity
+        fields = ["id", "opportunity_id", "name", "active"]

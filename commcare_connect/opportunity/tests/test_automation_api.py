@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
@@ -24,6 +26,12 @@ def managed_opp_with_deliver_units(program_manager_org, organization):
     du1 = DeliverUnitFactory(app=deliver_app, slug="du-1", name="DU 1", payment_unit=None)
     du2 = DeliverUnitFactory(app=deliver_app, slug="du-2", name="DU 2", payment_unit=None)
     return opportunity, du1, du2
+
+
+@pytest.fixture
+def active_managed_opportunity(program_manager_org, organization):
+    program = ProgramFactory(organization=program_manager_org)
+    return ManagedOpportunityFactory(program=program, organization=organization, active=True)
 
 
 @pytest.mark.django_db
@@ -228,3 +236,53 @@ class TestPaymentUnits:
             format="json",
         )
         assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestActivateOpportunity:
+    def test_activate_success(self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units):
+        opportunity, du1, du2 = managed_opp_with_deliver_units
+        PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{opportunity.opportunity_id}/activate/",
+        )
+        assert response.status_code == 200
+        opportunity.refresh_from_db()
+        assert opportunity.active is True
+
+    def test_activate_no_payment_units(
+        self, api_client, program_manager_org_user_admin, program_manager_org, organization
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        opportunity = ManagedOpportunityFactory(
+            program=program,
+            organization=organization,
+            active=False,
+        )
+        # No payment units created
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{opportunity.opportunity_id}/activate/",
+        )
+        assert response.status_code == 400
+
+    def test_activate_already_active(self, api_client, program_manager_org_user_admin, active_managed_opportunity):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/activate/",
+        )
+        assert response.status_code == 400
+
+    def test_activate_ended_opportunity_rejected(
+        self, api_client, program_manager_org_user_admin, managed_opp_with_deliver_units
+    ):
+        opportunity, du1, du2 = managed_opp_with_deliver_units
+        PaymentUnitFactory(opportunity=opportunity, amount=100, org_amount=10, max_total=50)
+        opportunity.end_date = datetime.date.today() - datetime.timedelta(days=1)
+        opportunity.save(update_fields=["end_date"])
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{opportunity.opportunity_id}/activate/",
+        )
+        assert response.status_code == 400
