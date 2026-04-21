@@ -33,8 +33,8 @@ urlpatterns = [
     path("<slug:opp_id>/download_work_areas/", views.download_work_areas, name="download_work_areas"),
     path(
         "<slug:opp_id>/assignment/group_work_areas/<int:group_id>/",
-        views.assignment_group_work_areas,
-        name="assignment_group_work_areas",
+        views.get_work_areas_for_assignment,
+        name="get_work_areas_for_assignment",
     ),
     path(
         "<slug:opp_id>/assignment/flw_work_areas/<int:assignee_id>/",

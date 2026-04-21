@@ -165,7 +165,7 @@ def _get_assignment_mode_context(request, opportunity):
             .values("id", "user__name", "user_id")
         ),
         "group_work_areas_url": reverse(
-            "microplanning:assignment_group_work_areas",
+            "microplanning:get_work_areas_for_assignment",
             args=[org_slug, opp_id, 0],
         ).replace("/0/", "/__group_id__/"),
         "flw_work_areas_url": reverse(
@@ -532,7 +532,7 @@ class ModifyWorkAreaUpdateView(UpdateView):
 @org_program_manager_required
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
-def assignment_group_work_areas(request, org_slug, opp_id, group_id):
+def get_work_areas_for_assignment(request, org_slug, opp_id, group_id):
     work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
