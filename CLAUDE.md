@@ -86,7 +86,7 @@ config/
 - **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
 - **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
 - **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
-- **Use predefined style classes** for elements instead of raw Tailwind utility classes
+- **Use predefined style classes** (defined in `tailwind/tailwind.css`) for elements instead of raw Tailwind utility classes
 
 ## Testing
 
