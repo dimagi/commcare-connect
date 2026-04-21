@@ -133,3 +133,15 @@ class OpportunityActivateResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Opportunity
         fields = ["id", "opportunity_id", "name", "active"]
+
+
+class UserInviteSerializer(serializers.Serializer):
+    phone_numbers = serializers.ListField(child=serializers.CharField(), min_length=1)
+
+    def validate(self, data):
+        opportunity = self.context["opportunity"]
+        if not opportunity.active:
+            raise serializers.ValidationError(_("Opportunity must be active to invite users."))
+        if opportunity.has_ended:
+            raise serializers.ValidationError(_("Opportunity has ended."))
+        return data

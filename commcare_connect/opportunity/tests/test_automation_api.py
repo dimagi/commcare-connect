@@ -1,4 +1,5 @@
 import datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -284,5 +285,42 @@ class TestActivateOpportunity:
         api_client.force_authenticate(program_manager_org_user_admin)
         response = api_client.post(
             f"/api/opportunities/{opportunity.opportunity_id}/activate/",
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestInviteUsers:
+    @patch("commcare_connect.opportunity.api.automation_views.add_connect_users")
+    def test_invite_users_success(
+        self, mock_add_users, api_client, program_manager_org_user_admin, active_managed_opportunity
+    ):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
+            {"phone_numbers": ["+265999111222", "+265999333444"]},
+            format="json",
+        )
+        assert response.status_code == 202
+        assert response.data["invited_count"] == 2
+        mock_add_users.delay.assert_called_once_with(["+265999111222", "+265999333444"], active_managed_opportunity.id)
+
+    def test_invite_users_inactive_opportunity(self, api_client, program_manager_org_user_admin, managed_opportunity):
+        managed_opportunity.active = False
+        managed_opportunity.save(update_fields=["active"])
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{managed_opportunity.opportunity_id}/invite_users/",
+            {"phone_numbers": ["+265999111222"]},
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_invite_users_empty_list(self, api_client, program_manager_org_user_admin, active_managed_opportunity):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/opportunities/{active_managed_opportunity.opportunity_id}/invite_users/",
+            {"phone_numbers": []},
+            format="json",
         )
         assert response.status_code == 400

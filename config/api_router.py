@@ -3,7 +3,11 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from commcare_connect.form_receiver.views import FormReceiver
-from commcare_connect.opportunity.api.automation_views import OpportunityActivateView, PaymentUnitCreateView
+from commcare_connect.opportunity.api.automation_views import (
+    InviteUsersView,
+    OpportunityActivateView,
+    PaymentUnitCreateView,
+)
 from commcare_connect.opportunity.api.views import (
     ClaimOpportunityView,
     ConfirmPaymentsView,
@@ -65,5 +69,10 @@ urlpatterns = [
         "opportunities/<uuid:opportunity_id>/activate/",
         OpportunityActivateView.as_view(),
         name="opportunity_activate",
+    ),
+    path(
+        "opportunities/<uuid:opportunity_id>/invite_users/",
+        InviteUsersView.as_view(),
+        name="invite_users",
     ),
 ]

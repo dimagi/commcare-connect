@@ -9,8 +9,10 @@ from commcare_connect.opportunity.api.automation_serializers import (
     OpportunityActivateResponseSerializer,
     PaymentUnitListCreateSerializer,
     PaymentUnitResponseSerializer,
+    UserInviteSerializer,
 )
 from commcare_connect.opportunity.models import Opportunity, PaymentUnit
+from commcare_connect.opportunity.tasks import add_connect_users
 from commcare_connect.organization.decorators import user_is_org_admin
 from commcare_connect.program.models import ManagedOpportunity
 
@@ -73,3 +75,18 @@ class OpportunityActivateView(OpportunityMixin, APIView):
         opportunity.modified_by = request.user.email
         opportunity.save(update_fields=["active", "modified_by", "date_modified"])
         return Response(OpportunityActivateResponseSerializer(opportunity).data)
+
+
+class InviteUsersView(OpportunityMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, opportunity_id):
+        opportunity = self.get_opportunity()
+        serializer = UserInviteSerializer(data=request.data, context={"request": request, "opportunity": opportunity})
+        serializer.is_valid(raise_exception=True)
+        phone_numbers = serializer.validated_data["phone_numbers"]
+        add_connect_users.delay(phone_numbers, opportunity.id)
+        return Response(
+            {"invited_count": len(phone_numbers), "message": _("User invitations are being processed")},
+            status=status.HTTP_202_ACCEPTED,
+        )
