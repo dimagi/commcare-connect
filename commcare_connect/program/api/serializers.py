@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from commcare_connect.opportunity.models import Country, Currency, DeliveryType
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import Program
+from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 
 
 class ProgramCreateSerializer(serializers.ModelSerializer):
@@ -66,3 +66,36 @@ class ProgramResponseSerializer(serializers.ModelSerializer):
             "start_date",
             "end_date",
         ]
+
+
+class ProgramApplicationCreateSerializer(serializers.ModelSerializer):
+    organization = serializers.SlugRelatedField(slug_field="slug", queryset=Organization.objects.all())
+
+    class Meta:
+        model = ProgramApplication
+        fields = ["organization"]
+
+    def validate_organization(self, value):
+        program = self.context["program"]
+        if ProgramApplication.objects.filter(program=program, organization=value).exists():
+            raise serializers.ValidationError(_("Organization already has an application for this program."))
+        return value
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+        return ProgramApplication.objects.create(
+            program=self.context["program"],
+            organization=validated_data["organization"],
+            status=ProgramApplicationStatus.INVITED,
+            created_by=user.email,
+            modified_by=user.email,
+        )
+
+
+class ProgramApplicationResponseSerializer(serializers.ModelSerializer):
+    program = serializers.UUIDField(source="program.program_id", read_only=True)
+    organization = serializers.SlugRelatedField(slug_field="slug", read_only=True)
+
+    class Meta:
+        model = ProgramApplication
+        fields = ["program_application_id", "program", "organization", "status"]

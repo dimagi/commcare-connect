@@ -12,7 +12,11 @@ from commcare_connect.opportunity.api.views import (
     UserLearnProgressView,
     UserVisitViewSet,
 )
-from commcare_connect.program.api.views import ProgramCreateView
+from commcare_connect.program.api.views import (
+    ProgramApplicationAcceptView,
+    ProgramApplicationCreateView,
+    ProgramCreateView,
+)
 from commcare_connect.users.api.views import UserViewSet
 
 if settings.DEBUG:
@@ -35,4 +39,14 @@ urlpatterns = [
     path("payment/confirm", ConfirmPaymentsView.as_view(), name="confirm_payments"),
     # Automation API (programs, managed opportunities, payment units, user invites)
     path("programs/", ProgramCreateView.as_view(), name="program_create"),
+    path(
+        "programs/<uuid:program_id>/applications/",
+        ProgramApplicationCreateView.as_view(),
+        name="program_application_create",
+    ),
+    path(
+        "programs/<uuid:program_id>/applications/<uuid:application_id>/accept/",
+        ProgramApplicationAcceptView.as_view(),
+        name="program_application_accept",
+    ),
 ]

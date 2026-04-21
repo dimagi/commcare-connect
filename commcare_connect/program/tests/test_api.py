@@ -1,12 +1,25 @@
+import datetime
+
 import pytest
 
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
-from commcare_connect.program.models import Program
+from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 
 
 @pytest.fixture
 def delivery_type(db):
     return DeliveryTypeFactory(slug="test-delivery")
+
+
+@pytest.fixture
+def program(program_manager_org, delivery_type):
+    return ProgramFactory(
+        organization=program_manager_org,
+        start_date=datetime.date(2026, 1, 1),
+        end_date=datetime.date(2026, 12, 31),
+        budget=500000,
+    )
 
 
 @pytest.mark.django_db
@@ -96,6 +109,48 @@ class TestProgramCreate:
                 "start_date": "2026-05-01",
                 "end_date": "2026-12-31",
             },
+            format="json",
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestProgramApplication:
+    def test_invite_organization(self, api_client, program_manager_org_user_admin, program, organization):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/",
+            {"organization": organization.slug},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["status"] == "invited"
+        assert response.data["organization"] == organization.slug
+        assert ProgramApplication.objects.filter(program=program, organization=organization).exists()
+
+    def test_accept_application(self, api_client, program_manager_org_user_admin, program):
+        application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.INVITED)
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/{application.program_application_id}/accept/",
+        )
+        assert response.status_code == 200
+        application.refresh_from_db()
+        assert application.status == ProgramApplicationStatus.ACCEPTED
+
+    def test_accept_already_accepted_fails(self, api_client, program_manager_org_user_admin, program):
+        application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.ACCEPTED)
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/{application.program_application_id}/accept/",
+        )
+        assert response.status_code == 400
+
+    def test_invite_requires_program_org_admin(self, api_client, user, program, organization):
+        api_client.force_authenticate(user)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/applications/",
+            {"organization": organization.slug},
             format="json",
         )
         assert response.status_code == 403
