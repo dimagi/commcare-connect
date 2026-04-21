@@ -1212,7 +1212,7 @@ class WorkerStatusTable(tables.Table):
 class WorkerPaymentsTable(tables.Table):
     index = IndexColumn()
     user = UserInfoColumn(footer="Total")
-    suspended = SuspendedIndicatorColumn()
+    status = StatusIndicatorColumn(orderable=False)
     last_active = DMYTColumn()
     payment_accrued = tables.Column(
         verbose_name="Accrued", footer=lambda table: intcomma(sum(x.payment_accrued or 0 for x in table.data))
@@ -1243,11 +1243,11 @@ class WorkerPaymentsTable(tables.Table):
 
     class Meta:
         model = OpportunityAccess
-        fields = ("user", "suspended", "payment_accrued", "confirmed_paid")
+        fields = ("user", "payment_accrued", "confirmed_paid")
         sequence = (
             "index",
+            "status",
             "user",
-            "suspended",
             "last_active",
             "payment_accrued",
             "total_paid",
@@ -1413,7 +1413,7 @@ class WorkerTasksTable(GroupedByWorkerMixin, OrgContextTable):
 class WorkerLearnTable(OrgContextTable):
     index = IndexColumn()
     user = UserInfoColumn()
-    suspended = SuspendedIndicatorColumn()
+    status = StatusIndicatorColumn(orderable=False)
     last_active = DMYTColumn()
     started_learning = DMYTColumn(accessor="date_learn_started", verbose_name="Started Learning")
     modules_completed = tables.TemplateColumn(
@@ -1441,11 +1441,11 @@ class WorkerLearnTable(OrgContextTable):
 
     class Meta:
         model = OpportunityAccess
-        fields = ("suspended", "user")
+        fields = ("user",)
         sequence = (
             "index",
+            "status",
             "user",
-            "suspended",
             "last_active",
             "started_learning",
             "modules_completed",
@@ -1545,7 +1545,7 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
     id = tables.Column(visible=False)
     index = IndexColumn()
     user = tables.Column(orderable=False, verbose_name="Name", footer="Total")
-    suspended = SuspendedIndicatorColumn()
+    status = StatusIndicatorColumn(orderable=False)
     last_active = DMYTColumn(empty_values=())
     payment_unit = tables.Column(orderable=False)
     delivery_progress = tables.Column(accessor="total_visits", empty_values=(), orderable=False)
@@ -1582,11 +1582,11 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
 
     class Meta:
         model = OpportunityAccess
-        fields = ("id", "suspended", "user")
+        fields = ("id", "user")
         sequence = (
             "index",
+            "status",
             "user",
-            "suspended",
             "last_active",
             "payment_unit",
             "delivery_progress",
@@ -1603,6 +1603,11 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         self.opp_id = kwargs.pop("opp_id")
         self.use_view_url = False
         super().__init__(*args, **kwargs)
+
+    def render_status(self, record, value):
+        if self._is_seen(record):
+            return ""
+        return StatusIndicatorColumn.render(self.columns["status"].column, record)
 
     def render_delivery_progress(self, record):
         current = record.completed
@@ -1632,11 +1637,6 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
         """
         self.run_after_every_row(record)
         return format_html(template, url)
-
-    def render_suspended(self, record, value):
-        if self._is_seen(record):
-            return ""
-        return SuspendedIndicatorColumn().render(value)
 
     def render_delivered(self, record, value):
         rows = [
