@@ -38,17 +38,17 @@ urlpatterns = [
     ),
     path(
         "<slug:opp_id>/assignment/flw_work_areas/<int:assignee_id>/",
-        views.assignment_flw_work_areas,
-        name="assignment_flw_work_areas",
+        views.get_flw_work_areas_for_assignment,
+        name="get_flw_work_areas_for_assignment",
     ),
     path(
         "<slug:opp_id>/assignment/flw_summary/",
-        views.assignment_flw_summary,
-        name="assignment_flw_summary",
+        views.get_flw_summary_for_assignment,
+        name="get_flw_summary_for_assignment",
     ),
     path(
         "<slug:opp_id>/assignment/save/",
-        views.assignment_save,
-        name="assignment_save",
+        views.save_assignment,
+        name="save_assignment",
     ),
 ]

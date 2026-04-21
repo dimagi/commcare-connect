@@ -169,15 +169,15 @@ def _get_assignment_mode_context(request, opportunity):
             args=[org_slug, opp_id, 0],
         ).replace("/0/", "/__group_id__/"),
         "flw_work_areas_url": reverse(
-            "microplanning:assignment_flw_work_areas",
+            "microplanning:get_flw_work_areas_for_assignment",
             args=[org_slug, opp_id, 0],
         ).replace("/0/", "/__assignee_id__/"),
         "flw_summary_url": reverse(
-            "microplanning:assignment_flw_summary",
+            "microplanning:get_flw_summary_for_assignment",
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         ),
         "assignment_save_url": reverse(
-            "microplanning:assignment_save",
+            "microplanning:save_assignment",
             kwargs={"org_slug": org_slug, "opp_id": opp_id},
         ),
         "user_visits_url": reverse(
@@ -546,7 +546,7 @@ def get_work_areas_for_assignment(request, org_slug, opp_id, group_id):
 @org_program_manager_required
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
-def assignment_flw_work_areas(request, org_slug, opp_id, assignee_id):
+def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
     work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
@@ -560,7 +560,7 @@ def assignment_flw_work_areas(request, org_slug, opp_id, assignee_id):
 @org_program_manager_required
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
-def assignment_flw_summary(request, org_slug, opp_id):
+def get_flw_summary_for_assignment(request, org_slug, opp_id):
     assignee_id = request.GET.get("assignee_id")
     if not assignee_id:
         return JsonResponse({"error": "assignee_id required"}, status=400)
@@ -586,6 +586,6 @@ def assignment_flw_summary(request, org_slug, opp_id):
 @org_program_manager_required
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
-def assignment_save(request, org_slug, opp_id):
+def save_assignment(request, org_slug, opp_id):
     """Stub endpoint for saving work area assignments. Accepts the payload but does not persist changes yet."""
     return JsonResponse({"status": "ok"})
