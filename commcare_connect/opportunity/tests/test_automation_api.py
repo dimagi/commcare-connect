@@ -5,7 +5,13 @@ import pytest
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.models import PaymentUnit
-from commcare_connect.opportunity.tests.factories import CommCareAppFactory, DeliverUnitFactory, PaymentUnitFactory
+from commcare_connect.opportunity.tests.factories import (
+    CommCareAppFactory,
+    DeliverUnitFactory,
+    DeliveryTypeFactory,
+    HQApiKeyFactory,
+    PaymentUnitFactory,
+)
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
 
@@ -324,3 +330,139 @@ class TestInviteUsers:
             format="json",
         )
         assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestFullPipeline:
+    @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
+    @patch("commcare_connect.opportunity.api.automation_views.add_connect_users")
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_full_automation_flow(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_add_users,
+        mock_hq_apps,
+        api_client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        organization,
+    ):
+        mock_hq_apps.return_value = [
+            {"id": "learn-e2e", "name": "E2E Learn App"},
+            {"id": "deliver-e2e", "name": "E2E Deliver App"},
+        ]
+        from commcare_connect.opportunity.app_xml import DeliverUnit as DeliverUnitData
+        from commcare_connect.opportunity.app_xml import Module
+
+        mock_learn_modules.return_value = [Module(id="mod-1", name="Module 1", description="Desc", time_estimate=10)]
+        mock_deliver_units.return_value = [
+            DeliverUnitData(id="du-1", name="Deliver Unit 1"),
+        ]
+
+        delivery_type = DeliveryTypeFactory(slug="test-delivery")
+        hq_server = HQServerFactory()
+        hq_api_key = HQApiKeyFactory(user=program_manager_org_user_admin, hq_server=hq_server)
+        api_client.force_authenticate(program_manager_org_user_admin)
+
+        # Step 1: Create program
+        response = api_client.post(
+            "/api/programs/",
+            {
+                "name": "E2E Program",
+                "description": "End to end test",
+                "organization": program_manager_org.slug,
+                "delivery_type": delivery_type.slug,
+                "budget": 500000,
+                "currency": "USD",
+                "country": "United States of America",
+                "start_date": "2026-05-01",
+                "end_date": "2026-12-31",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        program_id = response.data["program_id"]
+
+        # Step 2: Invite org
+        response = api_client.post(
+            f"/api/programs/{program_id}/applications/",
+            {"organization": organization.slug},
+            format="json",
+        )
+        assert response.status_code == 201
+        application_id = response.data["program_application_id"]
+
+        # Step 3: Accept org
+        response = api_client.post(f"/api/programs/{program_id}/applications/{application_id}/accept/")
+        assert response.status_code == 200
+
+        # Step 4: Create opportunity
+        response = api_client.post(
+            f"/api/programs/{program_id}/opportunities/",
+            {
+                "name": "E2E Opportunity",
+                "description": "Test opportunity",
+                "short_description": "Short",
+                "organization": organization.slug,
+                "start_date": "2026-05-01",
+                "end_date": "2026-12-31",
+                "total_budget": 100000,
+                "learn_app": {
+                    "hq_server_url": hq_server.url,
+                    "api_key": hq_api_key.api_key,
+                    "cc_domain": "e2e-domain",
+                    "cc_app_id": "learn-e2e",
+                    "description": "Learn desc",
+                    "passing_score": 75,
+                },
+                "deliver_app": {
+                    "hq_server_url": hq_server.url,
+                    "api_key": hq_api_key.api_key,
+                    "cc_domain": "e2e-domain",
+                    "cc_app_id": "deliver-e2e",
+                },
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        opportunity_id = response.data["opportunity_id"]
+        deliver_unit_id = response.data["deliver_app"]["deliver_units"][0]["id"]
+
+        # Step 5: Add payment units
+        response = api_client.post(
+            f"/api/opportunities/{opportunity_id}/payment_units/",
+            {
+                "payment_units": [
+                    {
+                        "name": "Visit",
+                        "description": "A visit",
+                        "amount": 500,
+                        "org_amount": 100,
+                        "max_total": 50,
+                        "max_daily": 10,
+                        "required_deliver_units": [deliver_unit_id],
+                        "optional_deliver_units": [],
+                    }
+                ]
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+
+        # Step 6: Activate
+        response = api_client.post(
+            f"/api/opportunities/{opportunity_id}/activate/",
+        )
+        assert response.status_code == 200
+        assert response.data["active"] is True
+
+        # Step 7: Invite users
+        response = api_client.post(
+            f"/api/opportunities/{opportunity_id}/invite_users/",
+            {"phone_numbers": ["+265999111222"]},
+            format="json",
+        )
+        assert response.status_code == 202
+        mock_add_users.delay.assert_called_once()
