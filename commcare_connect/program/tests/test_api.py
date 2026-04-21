@@ -1,9 +1,14 @@
 import datetime
+from unittest.mock import patch
 
 import pytest
 
-from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
-from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.commcarehq.tests.factories import HQServerFactory
+from commcare_connect.opportunity.app_xml import DeliverUnit as DeliverUnitData
+from commcare_connect.opportunity.app_xml import Module
+from commcare_connect.opportunity.models import HQApiKey
+from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory, HQApiKeyFactory
+from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
 
 
@@ -13,12 +18,49 @@ def delivery_type(db):
 
 
 @pytest.fixture
+def hq_server(db):
+    return HQServerFactory()
+
+
+@pytest.fixture
+def hq_api_key(program_manager_org_user_admin, hq_server):
+    return HQApiKeyFactory(user=program_manager_org_user_admin, hq_server=hq_server)
+
+
+@pytest.fixture
 def program(program_manager_org, delivery_type):
     return ProgramFactory(
         organization=program_manager_org,
         start_date=datetime.date(2026, 1, 1),
         end_date=datetime.date(2026, 12, 31),
         budget=500000,
+    )
+
+
+@pytest.fixture
+def accepted_application(program, organization):
+    return ProgramApplicationFactory(
+        program=program,
+        organization=organization,
+        status=ProgramApplicationStatus.ACCEPTED,
+    )
+
+
+@pytest.fixture
+def mock_hq_apps(monkeypatch):
+    """Mock get_applications_for_user_by_domain to return both test app IDs."""
+
+    def fake_get_apps(api_key, domain):
+        return [
+            {"id": "learn-app-123", "name": "Test Learn App"},
+            {"id": "deliver-app-456", "name": "Test Deliver App"},
+            {"id": "learn-e2e", "name": "E2E Learn App"},
+            {"id": "deliver-e2e", "name": "E2E Deliver App"},
+        ]
+
+    monkeypatch.setattr(
+        "commcare_connect.program.api.serializers.get_applications_for_user_by_domain",
+        fake_get_apps,
     )
 
 
@@ -154,3 +196,237 @@ class TestProgramApplication:
             format="json",
         )
         assert response.status_code == 403
+
+
+def _opportunity_payload(org, hq_server, hq_api_key):
+    return {
+        "name": "Test Opportunity",
+        "description": "A test opportunity",
+        "short_description": "Short desc",
+        "organization": org.slug,
+        "start_date": "2026-05-01",
+        "end_date": "2026-12-31",
+        "total_budget": 100000,
+        "learn_app": {
+            "hq_server_url": hq_server.url,
+            "api_key": hq_api_key.api_key,
+            "cc_domain": "test-domain",
+            "cc_app_id": "learn-app-123",
+            "description": "Learn app desc",
+            "passing_score": 80,
+        },
+        "deliver_app": {
+            "hq_server_url": hq_server.url,
+            "api_key": hq_api_key.api_key,
+            "cc_domain": "test-domain",
+            "cc_app_id": "deliver-app-456",
+        },
+    }
+
+
+@pytest.mark.django_db
+class TestManagedOpportunityCreate:
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_managed_opportunity(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        mock_learn_modules.return_value = [Module(id="mod-1", name="Module 1", description="Desc", time_estimate=10)]
+        mock_deliver_units.return_value = [
+            DeliverUnitData(id="du-1", name="Deliver Unit 1"),
+            DeliverUnitData(id="du-2", name="Deliver Unit 2"),
+        ]
+
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            _opportunity_payload(organization, hq_server, hq_api_key),
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["managed"] is True
+        assert response.data["program_id"] == str(program.program_id)
+        assert response.data["organization"] == organization.slug
+        assert response.data["start_date"] == "2026-05-01"
+        assert response.data["end_date"] == "2026-12-31"
+        assert response.data["total_budget"] == 100000
+        assert response.data["active"] is False
+        assert len(response.data["learn_app"]["learn_modules"]) == 1
+        assert len(response.data["deliver_app"]["deliver_units"]) == 2
+
+        opp = ManagedOpportunity.objects.get(opportunity_id=response.data["opportunity_id"])
+        assert opp.organization == organization
+        assert opp.program == program
+        assert opp.currency == program.currency
+        assert opp.delivery_type == program.delivery_type
+        assert opp.learn_app.name == "Test Learn App"
+        assert opp.deliver_app.name == "Test Deliver App"
+
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_same_learn_deliver_app_fails(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payload = _opportunity_payload(organization, hq_server, hq_api_key)
+        payload["deliver_app"]["cc_app_id"] = payload["learn_app"]["cc_app_id"]
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 400
+
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_unaccepted_org_fails(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        ProgramApplication.objects.filter(program=program).update(status=ProgramApplicationStatus.INVITED)
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            _opportunity_payload(organization, hq_server, hq_api_key),
+            format="json",
+        )
+        assert response.status_code == 400
+
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_dates_outside_program_fails(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payload = _opportunity_payload(organization, hq_server, hq_api_key)
+        payload["start_date"] = "2020-01-01"
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 400
+
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_budget_exceeds_program_fails(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payload = _opportunity_payload(organization, hq_server, hq_api_key)
+        payload["total_budget"] = 999999999
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 400
+
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_registers_new_api_key(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+    ):
+        """If the caller supplies an api_key string that doesn't exist yet, it gets created for them."""
+        mock_learn_modules.return_value = []
+        mock_deliver_units.return_value = [DeliverUnitData(id="du-1", name="DU 1")]
+
+        # Note: no hq_api_key fixture used — we're supplying a fresh key string
+        fresh_key = "freshly-minted-api-key-12345"
+        assert not HQApiKey.objects.filter(api_key=fresh_key).exists()
+
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payload = _opportunity_payload(organization, hq_server, type("K", (), {"api_key": fresh_key})())
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 201
+        key = HQApiKey.objects.get(api_key=fresh_key)
+        assert key.user == program_manager_org_user_admin
+        assert key.hq_server == hq_server
+
+    @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_app_not_found_in_hq(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        # Return apps list that doesn't include our cc_app_ids
+        mock_hq_apps.return_value = [{"id": "some-other-app", "name": "Other"}]
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            _opportunity_payload(organization, hq_server, hq_api_key),
+            format="json",
+        )
+        assert response.status_code == 400

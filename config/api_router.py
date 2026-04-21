@@ -13,6 +13,7 @@ from commcare_connect.opportunity.api.views import (
     UserVisitViewSet,
 )
 from commcare_connect.program.api.views import (
+    ManagedOpportunityCreateView,
     ProgramApplicationAcceptView,
     ProgramApplicationCreateView,
     ProgramCreateView,
@@ -48,5 +49,10 @@ urlpatterns = [
         "programs/<uuid:program_id>/applications/<uuid:application_id>/accept/",
         ProgramApplicationAcceptView.as_view(),
         name="program_application_accept",
+    ),
+    path(
+        "programs/<uuid:program_id>/opportunities/",
+        ManagedOpportunityCreateView.as_view(),
+        name="managed_opportunity_create",
     ),
 ]

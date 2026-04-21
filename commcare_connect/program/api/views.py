@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
@@ -5,14 +7,21 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from commcare_connect.opportunity.app_xml import AppNoBuildException
+from commcare_connect.opportunity.tasks import sync_learn_modules_and_deliver_units
 from commcare_connect.organization.decorators import IsProgramManagerAdmin, user_is_org_admin
 from commcare_connect.program.api.serializers import (
+    ManagedOpportunityCreateSerializer,
+    ManagedOpportunityResponseSerializer,
     ProgramApplicationCreateSerializer,
     ProgramApplicationResponseSerializer,
     ProgramCreateSerializer,
     ProgramResponseSerializer,
 )
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+logger = logging.getLogger(__name__)
 
 
 class ProgramCreateView(APIView):
@@ -73,3 +82,30 @@ class ProgramApplicationAcceptView(ProgramMixin, APIView):
         application.modified_by = request.user.email
         application.save(update_fields=["status", "modified_by"])
         return Response(ProgramApplicationResponseSerializer(application).data)
+
+
+class ManagedOpportunityCreateView(ProgramMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, program_id):
+        program = self.get_program()
+        serializer = ManagedOpportunityCreateSerializer(
+            data=request.data, context={"request": request, "program": program}
+        )
+        serializer.is_valid(raise_exception=True)
+        opportunity = serializer.save()
+
+        try:
+            sync_learn_modules_and_deliver_units(opportunity)
+        except (CommCareHQAPIException, AppNoBuildException):
+            logger.exception("Failed to fetch app metadata from HQ for opportunity %s", opportunity.id)
+            opportunity.delete()
+            return Response(
+                {"non_field_errors": [_("Failed to fetch app metadata from CommCare HQ.")]},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            ManagedOpportunityResponseSerializer(opportunity).data,
+            status=status.HTTP_201_CREATED,
+        )

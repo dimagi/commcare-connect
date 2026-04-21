@@ -74,9 +74,8 @@ OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
 SYSTEM = "system"
 
 
-@celery_app.task()
-def create_learn_modules_and_deliver_units(opportunity_id):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
+def sync_learn_modules_and_deliver_units(opportunity):
+    """Fetch learn modules and deliver units from CommCare HQ and upsert them for the opportunity's apps."""
     learn_app = opportunity.learn_app
     deliver_app = opportunity.deliver_app
     learn_app_connect_blocks = get_connect_blocks_for_app(learn_app)
@@ -95,6 +94,12 @@ def create_learn_modules_and_deliver_units(opportunity_id):
 
     for block in deliver_app_connect_blocks:
         DeliverUnit.objects.get_or_create(app=deliver_app, slug=block.id, defaults=dict(name=block.name))
+
+
+@celery_app.task()
+def create_learn_modules_and_deliver_units(opportunity_id):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    sync_learn_modules_and_deliver_units(opportunity)
 
 
 @celery_app.task()
