@@ -29,7 +29,5 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
         if not email:
             return
         if email_address_exists(email):
-            messages.error(
-                request, _("An account with that email already exists. Please sign in with your email and password.")
-            )
+            messages.error(request, _("Unable to sign in with SSO. Please sign in with your email and password."))
             raise ImmediateHttpResponse(redirect("account_login"))
