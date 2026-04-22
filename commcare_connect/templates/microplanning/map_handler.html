@@ -5,6 +5,7 @@
         Alpine.data("mapController", () => ({
             map: null,
             selectedFeature: null,
+            highlightedWorkAreaId: null,
             showWorkAreaEditModal: false,
             showVisits: false,
             filterQuery: '',
@@ -33,6 +34,12 @@
                 const url = editWorkAreaUrl + workAreaId + '/';
                 htmx.ajax('GET', url, { target: '#work-area-form', swap: 'innerHTML' })
                 .then(() => this.showWorkAreaEditModal = true)
+            },
+
+            updateHighlightedWorkAreaId() {
+                this.highlightedWorkAreaId = (this.assignmentMode || !this.selectedFeature)
+                    ? null
+                    : this.selectedFeature._id;
             },
 
             getDownloadUrl() {
@@ -338,6 +345,8 @@
                 this.$nextTick(() => {
                     this.initializeMap();
                 });
+
+                this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
 
                 if (this.assignmentMode) {
                     const assigneesEl = document.getElementById('assignees-data');
