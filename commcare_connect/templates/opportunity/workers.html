@@ -18,9 +18,7 @@
            class="pl-9 pr-8 py-2 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-deep-purple/30"
            hx-get="{% url 'opportunity:worker_list' request.org.slug opportunity.opportunity_id %}"
            hx-trigger="keyup changed delay:400ms, clear-search from:window"
-           hx-target="#table"
-           hx-select="#table"
-           hx-swap="outerHTML"
+           hx-swap="none"
            hx-replace-url="true">
     <button type="button"
             x-show="search"
