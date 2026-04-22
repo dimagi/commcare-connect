@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import pytest
 from django.utils.timezone import now
 
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.filters import TasksFilterSet
 from commcare_connect.opportunity.helpers import (
     get_annotated_opportunity_access_deliver_status,
@@ -13,6 +14,7 @@ from commcare_connect.opportunity.helpers import (
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
+    get_worker_work_area_table_data,
 )
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -630,3 +632,78 @@ def test_filter_worker_tasks_combined_filters(opportunity):
     assert len(result) == 1
     assert result[0].user.name == "Alice"
     assert result[0].task_status == AssignedTaskStatus.COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_worker_work_area_table_data_unassigned_worker(opportunity):
+    OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    result = get_worker_work_area_table_data(opportunity)
+    assert result.count() == 1
+
+    row = result.first()
+    assert row.assigned_buildings == 0
+    assert row.assigned_visits == 0
+    assert row.assigned_work_areas == 0
+    assert row.assigned_work_area_groups == 0
+    assert row.visits_done == 0
+
+
+@pytest.mark.django_db
+def test_get_worker_work_area_table_data_visit_without_work_area_not_counted(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    UserVisitFactory(
+        opportunity=opportunity,
+        user=access.user,
+        opportunity_access=access,
+        work_area=None,
+    )
+
+    result = get_worker_work_area_table_data(opportunity)
+    row = result.first()
+    assert row.visits_done == 0
+
+
+@pytest.mark.django_db
+def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity):
+    access1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+    access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+
+    group1a = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access1)
+    group1b = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access1)
+    area1a = WorkAreaFactory(
+        opportunity=opportunity, work_area_group=group1a, building_count=10, expected_visit_count=5
+    )
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group1a, building_count=15, expected_visit_count=3)
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group1b, building_count=20, expected_visit_count=7)
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group1b, building_count=25, expected_visit_count=4)
+
+    group2a = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access2)
+    group2b = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access2)
+    area2a = WorkAreaFactory(
+        opportunity=opportunity, work_area_group=group2a, building_count=30, expected_visit_count=10
+    )
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group2a, building_count=5, expected_visit_count=2)
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group2b, building_count=8, expected_visit_count=6)
+    WorkAreaFactory(opportunity=opportunity, work_area_group=group2b, building_count=12, expected_visit_count=1)
+
+    UserVisitFactory(opportunity=opportunity, user=access1.user, opportunity_access=access1, work_area=area1a)
+    UserVisitFactory(opportunity=opportunity, user=access1.user, opportunity_access=access1, work_area=area1a)
+    UserVisitFactory(opportunity=opportunity, user=access2.user, opportunity_access=access2, work_area=area2a)
+
+    result = get_worker_work_area_table_data(opportunity).order_by("user__name")
+    assert result.count() == 2
+
+    row1 = result.filter(pk=access1.pk).first()
+    assert row1.assigned_buildings == 70
+    assert row1.assigned_visits == 19
+    assert row1.assigned_work_areas == 4
+    assert row1.assigned_work_area_groups == 2
+    assert row1.visits_done == 2
+
+    row2 = result.filter(pk=access2.pk).first()
+    assert row2.assigned_buildings == 55
+    assert row2.assigned_visits == 19
+    assert row2.assigned_work_areas == 4
+    assert row2.assigned_work_area_groups == 2
+    assert row2.visits_done == 1

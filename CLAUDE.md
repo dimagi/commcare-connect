@@ -79,6 +79,14 @@ config/
 - **Pre-commit hooks enforce all of the above** plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
+- **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it
+- **Newspaper metaphor**: Order functions top-down — high-level/public functions at the top, helpers/details below
+- **Prefer class-based views** for complex business logic, form handling, and views that switch on request method. Use function views only for simple cases
+- **Use Django Forms** over raw HTML forms for validation and rendering
+- **No inline HTML in Python**: Keep templates in `.html` files, not in Python strings
+- **Keep JS in JS files**: Don't inline JavaScript in templates; use separate `.js` files
+- **Alpine.js for in-page interactivity**, **htmx for dynamic data loading** from the server
+- **Use predefined style classes** (defined in `tailwind/tailwind.css`) for elements instead of raw Tailwind utility classes
 
 ## Testing
 
@@ -87,6 +95,9 @@ config/
 - **Global fixtures** in `commcare_connect/conftest.py`: `organization`, `user`, `opportunity`, `mobile_user`, `mobile_user_with_connect_link`, `org_user_member`, `org_user_admin`, `api_rf`, `api_client`
 - **autouse fixtures**: `media_storage` (redirects to tmpdir), `ensure_currency_country_data` (repopulates Currency/Country flushed between tests)
 - HTTP mocking: `pytest-httpx` for httpx calls
+- **Prefer fixtures over factories** to avoid duplication. Check `conftest.py` files (global and per-app) for existing fixtures before creating new factory instances
+- **Use `pytest.mark.parametrize`** instead of writing multiple near-identical tests
+- **Test functions, not view responses**: When testing views, extract and test the underlying business logic functions rather than making HTTP requests. Extract helper functions from views if needed to make them testable
 
 ## Gotchas
 

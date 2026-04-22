@@ -244,9 +244,9 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         )
 
         if not created:
-            return ProcessingError("Learn Assessment is already completed")
+            raise ProcessingError("Learn Assessment is already completed")
 
-        notify_user_for_scored_assessment.delay(assessment.pk)
+        transaction.on_commit(partial(notify_user_for_scored_assessment.delay, assessment.pk))
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):

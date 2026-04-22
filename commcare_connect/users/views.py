@@ -34,8 +34,8 @@ from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
-    ALL_ORG_ACCESS,
     DEMO_USER_ACCESS,
+    INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
     MANAGE_INTERNAL_PERMISSIONS,
     OTP_ACCESS,
@@ -335,7 +335,7 @@ def internal_features(request):
             "url": reverse("reports:delivery_stats_report"),
         },
         {
-            "perm": ALL_ORG_ACCESS,
+            "perm": INVOICE_REPORT_ACCESS,
             "name": "Invoice Report",
             "description": "Access the Invoice reports dashboard.",
             "url": reverse("reports:invoice_report"),
