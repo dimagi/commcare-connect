@@ -791,7 +791,8 @@ class TestExcludeWorkAreasTask:
         assert wa_excluded.status == WorkAreaStatus.EXCLUDED  # unchanged
 
     @patch("commcare_connect.microplanning.tasks.create_or_update_case")
-    def test_hq_failure_rolls_back_single_item(self, mock_hq, org_user_admin, opportunity):
+    def test_hq_failure_skips_local_exclusion(self, mock_hq, org_user_admin, opportunity):
+        """HQ sync runs before the DB save; if HQ fails, the local row is left untouched."""
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
         wa_ok = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group)
@@ -813,10 +814,12 @@ class TestExcludeWorkAreasTask:
 
         wa_ok.refresh_from_db()
         assert wa_ok.status == WorkAreaStatus.EXCLUDED
+        assert wa_ok.work_area_group is None
 
+        # HQ call failed → local state unchanged; admin can safely retry
         wa_fail.refresh_from_db()
-        assert wa_fail.status == WorkAreaStatus.NOT_STARTED  # rolled back
-        assert wa_fail.work_area_group == group  # group assignment rolled back too
+        assert wa_fail.status == WorkAreaStatus.NOT_STARTED
+        assert wa_fail.work_area_group == group
 
     @patch("commcare_connect.microplanning.tasks.create_or_update_case")
     def test_no_case_id_excludes_locally_without_hq_call(self, mock_hq, org_user_admin, opportunity):

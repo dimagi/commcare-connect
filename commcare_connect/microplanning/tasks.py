@@ -344,7 +344,6 @@ def exclude_work_areas_task(opp_id, work_area_ids, user_id, exclusion_reason):
             skipped += 1
             continue
 
-        # Read HQ credentials before nulling the group
         api_key = None
         domain = None
         if work_area.work_area_group and work_area.work_area_group.opportunity_access:
@@ -353,25 +352,24 @@ def exclude_work_areas_task(opp_id, work_area_ids, user_id, exclusion_reason):
                 api_key = opp_access.opportunity.api_key
                 domain = opp_access.opportunity.deliver_app.cc_domain
 
-        try:
-            with transaction.atomic(), pghistory.context(
-                reason=exclusion_reason,
-                username=user.username,
-                user_email=user.email,
-            ):
-                work_area.status = WorkAreaStatus.EXCLUDED
-                work_area.excluded_by = user
-                work_area.excluded_reason = exclusion_reason
-                work_area.work_area_group = None
-                work_area.save(update_fields=["status", "excluded_by", "excluded_reason", "work_area_group"])
+        if work_area.case_id and api_key and domain:
+            try:
+                create_or_update_case(api_key, domain, {"owner_id": ""}, case_id=str(work_area.case_id))
+            except CommCareHQAPIException as e:
+                logger.info(f"Failed to unassign HQ case for work area {work_area_id}: {e}")
+                failed += 1
+                continue
 
-                if work_area.case_id and api_key and domain:
-                    create_or_update_case(api_key, domain, {"owner_id": ""}, case_id=str(work_area.case_id))
-
-        except CommCareHQAPIException as e:
-            logger.info(f"Failed to unassign HQ case for work area {work_area_id}: {e}")
-            failed += 1
-            continue
+        with transaction.atomic(), pghistory.context(
+            reason=exclusion_reason,
+            username=user.username,
+            user_email=user.email,
+        ):
+            work_area.status = WorkAreaStatus.EXCLUDED
+            work_area.excluded_by = user
+            work_area.excluded_reason = exclusion_reason
+            work_area.work_area_group = None
+            work_area.save(update_fields=["status", "excluded_by", "excluded_reason", "work_area_group"])
 
         excluded += 1
 
