@@ -652,6 +652,7 @@
                         });
                         this.addVisitHighlightLayer();
                         visitsLayerAdded = true;
+                        this.refreshVisitStyling();
                     } else if (visitsLayerAdded) {
                         this.map.setLayoutProperty('user-visits-circle', 'visibility', visible ? 'visible' : 'none');
                         if (this.map.getLayer('user-visits-highlight')) {
