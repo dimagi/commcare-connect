@@ -3,16 +3,22 @@ import io
 import logging
 from collections import defaultdict
 
+import pghistory
+from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
+from commcare_connect.commcarehq.api import create_or_update_case
+from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
-from .models import SRID, WorkArea
+from .models import SRID, WorkArea, WorkAreaStatus
 
 logger = logging.getLogger(__name__)
 
@@ -309,3 +315,71 @@ def cluster_work_areas_task(opp_id):
     lock_key = get_cluster_area_cache_lock_key(opp_id)
     with cache.lock(lock_key, timeout=1200):
         WorkAreaGrouper(opp_id).cluster_work_areas()
+
+
+@celery_app.task()
+def exclude_work_areas_task(opp_id, work_area_ids, user_id, exclusion_reason):
+    """Exclude work areas and unassign their HQ cases.
+    Per-row failures are logged; the task itself does not fail the whole batch.
+    """
+    User = get_user_model()
+    opportunity = Opportunity.objects.get(pk=opp_id)
+    user = User.objects.get(pk=user_id)
+
+    excluded = 0
+    skipped = 0
+    failed = 0
+
+    work_areas_map = {
+        wa.id: wa
+        for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=opportunity).select_related(
+            "work_area_group__opportunity_access__opportunity__api_key__hq_server",
+            "work_area_group__opportunity_access__opportunity__deliver_app",
+        )
+    }
+
+    for work_area_id in work_area_ids:
+        work_area = work_areas_map.get(work_area_id)
+        if work_area is None or work_area.status != WorkAreaStatus.NOT_STARTED:
+            skipped += 1
+            continue
+
+        # Read HQ credentials before nulling the group
+        api_key = None
+        domain = None
+        if work_area.work_area_group and work_area.work_area_group.opportunity_access:
+            opp_access = work_area.work_area_group.opportunity_access
+            if opp_access.opportunity.api_key and opp_access.opportunity.deliver_app:
+                api_key = opp_access.opportunity.api_key
+                domain = opp_access.opportunity.deliver_app.cc_domain
+
+        try:
+            with transaction.atomic(), pghistory.context(
+                reason=exclusion_reason,
+                username=user.username,
+                user_email=user.email,
+            ):
+                work_area.status = WorkAreaStatus.EXCLUDED
+                work_area.excluded_by = user
+                work_area.excluded_reason = exclusion_reason
+                work_area.work_area_group = None
+                work_area.save(update_fields=["status", "excluded_by", "excluded_reason", "work_area_group"])
+
+                if work_area.case_id and api_key and domain:
+                    create_or_update_case(api_key, domain, {"owner_id": ""}, case_id=str(work_area.case_id))
+
+        except CommCareHQAPIException as e:
+            logger.info(f"Failed to unassign HQ case for work area {work_area_id}: {e}")
+            failed += 1
+            continue
+
+        excluded += 1
+
+    logger.info(
+        "exclude_work_areas_task finished opp=%s requested=%d excluded=%d skipped=%d failed=%d",
+        opp_id,
+        len(work_area_ids),
+        excluded,
+        skipped,
+        failed,
+    )
