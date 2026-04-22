@@ -58,6 +58,33 @@
                 };
             },
 
+            addVisitHighlightLayer() {
+                if (!this.map || this.map.getLayer('user-visits-highlight')) return;
+                this.map.addLayer({
+                    id: 'user-visits-highlight',
+                    type: 'symbol',
+                    source: 'user-visits',
+                    'source-layer': 'user-visits',
+                    layout: {
+                        'text-field': '◆',
+                        'text-size': [
+                            'interpolate', ['linear'], ['zoom'],
+                            8, 13,
+                            14, 22,
+                        ],
+                        'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+                        'text-allow-overlap': true,
+                        'text-ignore-placement': true,
+                        'visibility': 'none',
+                    },
+                    paint: {
+                        'text-color': '#22c55e',
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 1.5,
+                    },
+                });
+            },
+
             refreshVisitStyling() {
                 if (!this.map) return;
 
@@ -623,13 +650,17 @@
                             'source-layer': 'user-visits',
                             paint: this.buildVisitCirclePaint(),
                         });
+                        this.addVisitHighlightLayer();
                         visitsLayerAdded = true;
                     } else if (visitsLayerAdded) {
-                        this.map.setLayoutProperty(
-                            'user-visits-circle',
-                            'visibility',
-                            visible ? 'visible' : 'none'
-                        );
+                        this.map.setLayoutProperty('user-visits-circle', 'visibility', visible ? 'visible' : 'none');
+                        if (this.map.getLayer('user-visits-highlight')) {
+                            if (!visible) {
+                                this.map.setLayoutProperty('user-visits-highlight', 'visibility', 'none');
+                            } else {
+                                this.refreshVisitStyling();
+                            }
+                        }
                     }
                 });
 
