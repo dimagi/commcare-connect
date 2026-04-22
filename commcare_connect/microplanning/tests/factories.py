@@ -7,12 +7,11 @@ from factory import Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
+from commcare_connect.opportunity.tests.factories import OpportunityFactory
 
 
 class WorkAreaGroupFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
-    opportunity_access = SubFactory(OpportunityAccessFactory)
     ward = Sequence(lambda n: f"ward-{n}")
     name = Sequence(lambda n: f"group-{n}")
 
