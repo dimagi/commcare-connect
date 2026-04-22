@@ -651,10 +651,10 @@ def get_worker_work_area_table_data(opportunity):
         OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
         .select_related("user")
         .annotate(
-            assigned_buildings=Coalesce(Sum("workareagroup__workarea__building_count"), Value(0)),
-            assigned_visits=Coalesce(Sum("workareagroup__workarea__expected_visit_count"), Value(0)),
-            assigned_work_areas=Count("workareagroup__workarea"),
-            assigned_work_area_groups=Count("workareagroup", distinct=True),
+            assigned_buildings=Coalesce(Sum("workarea__building_count"), Value(0)),
+            assigned_visits=Coalesce(Sum("workarea__expected_visit_count"), Value(0)),
+            assigned_work_areas=Count("workarea"),
+            assigned_work_area_groups=Count("workarea__work_area_group", distinct=True),
             visits_done=Coalesce(Subquery(visits_done_subquery), Value(0), output_field=IntegerField()),
         )
     )
