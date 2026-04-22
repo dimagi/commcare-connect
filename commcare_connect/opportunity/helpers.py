@@ -553,31 +553,32 @@ class OpportunityData:
         return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
 
 
-def get_worker_table_data(opportunity):
-    return (
-        UserInvite.objects.filter(opportunity=opportunity)
-        .annotate(
-            days_to_complete_learn=ExpressionWrapper(
-                F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
-                output_field=DurationField(),
-            ),
-            first_delivery=Min(
-                "opportunity_access__uservisit__visit_date",
-            ),
-            days_to_start_delivery=Case(
-                When(
-                    opportunity_access__date_learn_started__isnull=False,
-                    first_delivery__isnull=False,
-                    then=ExpressionWrapper(
-                        F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
-                    ),
-                ),
-                default=None,
-                output_field=DurationField(),
-            ),
+def get_worker_table_data(opportunity, search_term=None):
+    qs = UserInvite.objects.filter(opportunity=opportunity)
+    if search_term:
+        qs = qs.filter(
+            Q(opportunity_access__user__name__icontains=search_term) | Q(phone_number__icontains=search_term)
         )
-        .select_related("opportunity_access", "opportunity_access__user")
-    )
+    return qs.annotate(
+        days_to_complete_learn=ExpressionWrapper(
+            F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
+            output_field=DurationField(),
+        ),
+        first_delivery=Min(
+            "opportunity_access__uservisit__visit_date",
+        ),
+        days_to_start_delivery=Case(
+            When(
+                opportunity_access__date_learn_started__isnull=False,
+                first_delivery__isnull=False,
+                then=ExpressionWrapper(
+                    F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
+                ),
+            ),
+            default=None,
+            output_field=DurationField(),
+        ),
+    ).select_related("opportunity_access", "opportunity_access__user")
 
 
 def get_worker_learn_table_data(opportunity):
