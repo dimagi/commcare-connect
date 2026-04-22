@@ -481,13 +481,24 @@ def exclude_work_areas(request, org_slug, opp_id):
     except (ValueError, TypeError):
         return JsonResponse({"error": "work_area_ids[] must be integers"}, status=400)
 
+    excluded, skipped, failed = _exclude_work_areas(
+        opportunity=request.opportunity,
+        work_area_ids=work_area_ids,
+        user=request.user,
+        exclusion_reason=exclusion_reason,
+    )
+    return JsonResponse({"excluded": excluded, "skipped": skipped, "failed": failed})
+
+
+def _exclude_work_areas(opportunity, work_area_ids, user, exclusion_reason):
+    """Exclude work areas and unassign their HQ cases."""
     excluded = []
     skipped = []
     failed = []
 
     work_areas_map = {
         wa.id: wa
-        for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=request.opportunity).select_related(
+        for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=opportunity).select_related(
             "work_area_group__opportunity_access__opportunity__api_key__hq_server",
             "work_area_group__opportunity_access__opportunity__deliver_app",
         )
@@ -523,11 +534,11 @@ def exclude_work_areas(request, org_slug, opp_id):
         try:
             with transaction.atomic(), pghistory.context(
                 reason=exclusion_reason,
-                username=request.user.username,
-                user_email=request.user.email,
+                username=user.username,
+                user_email=user.email,
             ):
                 work_area.status = WorkAreaStatus.EXCLUDED
-                work_area.excluded_by = request.user
+                work_area.excluded_by = user
                 work_area.excluded_reason = exclusion_reason
                 work_area.work_area_group = None
                 work_area.save(update_fields=["status", "excluded_by", "excluded_reason", "work_area_group"])
@@ -542,7 +553,7 @@ def exclude_work_areas(request, org_slug, opp_id):
 
         excluded.append(work_area_id)
 
-    return JsonResponse({"excluded": excluded, "skipped": skipped, "failed": failed})
+    return excluded, skipped, failed
 
 
 @require_GET
