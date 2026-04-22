@@ -602,7 +602,10 @@ def save_assignment(request, org_slug, opp_id):
 
     invalid_ids = assignee_ids - valid_accesses.keys()
     if invalid_ids:
-        return JsonResponse({"error": _(f"Invalid assignee IDs: {sorted(invalid_ids)}")}, status=400)
+        if invalid_ids:
+            return JsonResponse(
+                {"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400
+            )
 
     try:
         with transaction.atomic():
