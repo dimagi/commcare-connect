@@ -60,6 +60,7 @@ from .tasks import (
 logger = logging.getLogger(__name__)
 
 WORKAREA_MIN_ZOOM = 6
+MAX_EXCLUDE_WORK_AREAS = 200
 
 
 @require_GET
@@ -476,6 +477,11 @@ def exclude_work_areas(request, org_slug, opp_id):
     raw_ids = request.POST.getlist("work_area_ids[]")
     if not raw_ids:
         return JsonResponse({"error": "work_area_ids[] is required"}, status=400)
+    if len(raw_ids) > MAX_EXCLUDE_WORK_AREAS:
+        return JsonResponse(
+            {"error": f"work_area_ids[] must contain at most {MAX_EXCLUDE_WORK_AREAS} items"},
+            status=400,
+        )
 
     try:
         work_area_ids = [int(i) for i in raw_ids]

@@ -941,3 +941,19 @@ class TestExcludeWorkAreasView:
         response = client.post(self.url(opportunity), post_data)
         assert response.status_code == 400
         mock_task.delay.assert_not_called()
+
+    @patch("commcare_connect.microplanning.views.exclude_work_areas_task")
+    def test_too_many_work_area_ids_returns_400(self, mock_task, client, org_user_admin, opportunity):
+        from commcare_connect.microplanning.views import MAX_EXCLUDE_WORK_AREAS
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {
+                "work_area_ids[]": list(range(1, MAX_EXCLUDE_WORK_AREAS + 2)),
+                "exclusion_reason": "Flooding",
+            },
+        )
+        assert response.status_code == 400
+        assert str(MAX_EXCLUDE_WORK_AREAS) in response.json()["error"]
+        mock_task.delay.assert_not_called()
