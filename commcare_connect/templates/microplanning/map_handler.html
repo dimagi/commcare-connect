@@ -58,6 +58,35 @@
                 };
             },
 
+            refreshVisitStyling() {
+                if (!this.map) return;
+
+                if (this.map.getLayer('user-visits-circle')) {
+                    this.map.setPaintProperty(
+                        'user-visits-circle',
+                        'circle-opacity',
+                        this.highlightedWorkAreaId !== null ? 0.2 : 0.7,
+                    );
+                }
+
+                if (this.map.getLayer('user-visits-highlight')) {
+                    const id = this.highlightedWorkAreaId;
+                    if (id === null) {
+                        this.map.setLayoutProperty('user-visits-highlight', 'visibility', 'none');
+                    } else {
+                        this.map.setFilter(
+                            'user-visits-highlight',
+                            ['==', ['get', 'work_area_id'], id],
+                        );
+                        this.map.setLayoutProperty(
+                            'user-visits-highlight',
+                            'visibility',
+                            this.showVisits ? 'visible' : 'none',
+                        );
+                    }
+                }
+            },
+
             getDownloadUrl() {
                 const baseUrl = '{{ download_url|escapejs }}';
                 return this.filterQuery ? `${baseUrl}?${this.filterQuery}` : baseUrl;
@@ -363,6 +392,7 @@
                 });
 
                 this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
+                this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
 
                 if (this.assignmentMode) {
                     const assigneesEl = document.getElementById('assignees-data');
