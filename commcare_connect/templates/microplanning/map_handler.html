@@ -42,6 +42,22 @@
                     : this.selectedFeature._id;
             },
 
+            buildVisitCirclePaint() {
+                const hasSelection = this.highlightedWorkAreaId !== null;
+                return {
+                    'circle-radius': [
+                        'interpolate', ['linear'], ['zoom'],
+                        8, 2,
+                        14, 5,
+                    ],
+                    'circle-color': '#e74c3c',
+                    'circle-opacity': hasSelection ? 0.2 : 0.7,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-stroke-opacity': 0.5,
+                };
+            },
+
             getDownloadUrl() {
                 const baseUrl = '{{ download_url|escapejs }}';
                 return this.filterQuery ? `${baseUrl}?${this.filterQuery}` : baseUrl;
@@ -575,18 +591,7 @@
                             type: 'circle',
                             source: 'user-visits',
                             'source-layer': 'user-visits',
-                            paint: {
-                                'circle-radius': [
-                                    'interpolate', ['linear'], ['zoom'],
-                                    8, 2,
-                                    14, 5
-                                ],
-                                'circle-color': '#e74c3c',
-                                'circle-opacity': 0.7,
-                                'circle-stroke-width': 1,
-                                'circle-stroke-color': '#ffffff',
-                                'circle-stroke-opacity': 0.5,
-                            }
+                            paint: this.buildVisitCirclePaint(),
                         });
                         visitsLayerAdded = true;
                     } else if (visitsLayerAdded) {
