@@ -675,6 +675,14 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         assert rows[1][0] == wa.slug
         assert len(rows) == 2
 
+    def test_excludes_excluded_work_areas(self, client, org_user_admin, opportunity):
+        kept = WorkAreaFactory(opportunity=opportunity, slug="kept", status=WorkAreaStatus.NOT_STARTED)
+        WorkAreaFactory(opportunity=opportunity, slug="dropped", status=WorkAreaStatus.EXCLUDED)
+        client.force_login(org_user_admin)
+
+        rows = self._parse_csv(client.get(self.url(opportunity)))
+        assert [r[0] for r in rows[1:]] == [kept.slug]
+
     def test_assignee_filter(self, client, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
