@@ -31,20 +31,16 @@
                     <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-4xl xl:grid-cols-[repeat(7,minmax(0,1fr))]">
                         {% for metric in metrics %}
                             <div class="metric-card rounded-md p-3 text-center">
-                                {% if metric.percentage is not None %}
+                                {% if "percentage" in metric %}
                                     <div class="flex items-baseline justify-between gap-1 text-white">
                                         <span class="text-xl font-semibold">{{ metric.value|default:"--" }}</span>
                                         <span class="text-sm">
-                                            {% if metric.percentage != "--" %}({{ metric.percentage }}%){% else %}--{% endif %}
+                                            {% if metric.percentage is not None %}({{ metric.percentage }}%){% else %}--{% endif %}
                                         </span>
                                     </div>
                                 {% else %}
                                     <div class="text-xl font-semibold text-white">
-                                        {% if metric.value == "--" %}
-                                            --
-                                        {% else %}
-                                            {{ metric.value }}{% if metric.unit %}{{ metric.unit }}{% endif %}
-                                        {% endif %}
+                                        {{ metric.value }}{% if metric.unit %}{{ metric.unit }}{% endif %}
                                     </div>
                                 {% endif %}
                                 <div class="mt-0.5 text-xs text-white/80">{{ metric.name }}</div>

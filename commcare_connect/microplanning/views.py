@@ -153,7 +153,7 @@ def get_metrics_for_microplanning(opportunity):
 
     def pct(numerator, denominator):
         if not denominator:
-            return "--"
+            return None
         return round(numerator / denominator * 100)
 
     total_expected = agg["total_expected_visits"] or 0

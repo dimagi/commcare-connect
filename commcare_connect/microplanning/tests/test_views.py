@@ -1067,4 +1067,4 @@ class TestGetMetricsForMicroplanningWorkAreas:
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas")
         assert m["value"] == 0
-        assert m["percentage"] == "--"
+        assert m["percentage"] is None
