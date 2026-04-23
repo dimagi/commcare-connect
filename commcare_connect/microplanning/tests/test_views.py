@@ -940,9 +940,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     @pytest.fixture
     def opp(self):
-        from datetime import date, timedelta
-
-        from commcare_connect.opportunity.tests.factories import OpportunityFactory
+        from datetime import timedelta
 
         return OpportunityFactory(end_date=date.today() + timedelta(days=5))
 
@@ -955,7 +953,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
         return areas
 
     def _get_metric(self, metrics, name):
-        return next(m for m in metrics if m["name"] == name)
+        result = next((m for m in metrics if m["name"] == name), None)
+        assert result is not None, f"Metric '{name}' not found in {[m['name'] for m in metrics]}"
+        return result
 
     def test_days_remaining(self, opp):
         from commcare_connect.microplanning.views import get_metrics_for_microplanning
@@ -1050,7 +1050,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     def test_pct_visited_to_pct_visits(self, opp):
         from commcare_connect.microplanning.views import get_metrics_for_microplanning
-        from commcare_connect.opportunity.tests.factories import UserVisitFactory
 
         # 2 non-excluded WAs, 1 visited → pct_wa_visited = 1/2 = 0.5
         # expected_visit_count = 10 each → total_expected = 20
