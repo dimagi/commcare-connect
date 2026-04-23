@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import F, FloatField, Func, Value
+from django.db.models import Count, F, FloatField, Func, Q, Sum, Value
 from django.db.models.functions import Cast
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
@@ -130,11 +130,71 @@ def microplanning_home(request, *args, **kwargs):
 
 
 def get_metrics_for_microplanning(opportunity):
+    qs = WorkArea.objects.filter(opportunity=opportunity)
+    agg = qs.aggregate(
+        total=Count("id"),
+        excluded=Count("id", filter=Q(status=WorkAreaStatus.EXCLUDED)),
+        non_excluded=Count("id", filter=~Q(status=WorkAreaStatus.EXCLUDED)),
+        unvisited=Count(
+            "id",
+            filter=Q(status__in=[WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED]),
+        ),
+        visited=Count("id", filter=Q(status=WorkAreaStatus.VISITED)),
+        evc_reached=Count("id", filter=Q(status=WorkAreaStatus.EXPECTED_VISIT_REACHED)),
+        inaccessible=Count("id", filter=Q(status=WorkAreaStatus.INACCESSIBLE)),
+        total_expected_visits=Sum(
+            "expected_visit_count",
+            filter=~Q(status=WorkAreaStatus.EXCLUDED),
+        ),
+    )
+
+    non_excluded = agg["non_excluded"] or 0
+    total = agg["total"] or 0
+
+    def pct(numerator, denominator):
+        if not denominator:
+            return "--"
+        return round(numerator / denominator * 100)
+
+    total_expected = agg["total_expected_visits"] or 0
+    if non_excluded and total_expected:
+        total_visits = UserVisit.objects.filter(opportunity=opportunity).count()
+        pct_wa_visited = agg["visited"] / non_excluded
+        pct_visits = total_visits / total_expected
+        visited_to_visits = round(pct_wa_visited / pct_visits * 100) if pct_visits else "--"
+    else:
+        visited_to_visits = "--"
+
+    days_remaining = max((opportunity.end_date - localdate()).days, 0) if opportunity.end_date else "--"
+
     return [
+        {"name": _("Days Remaining"), "value": days_remaining},
         {
-            "name": _("Days Remaining"),
-            "value": max((opportunity.end_date - localdate()).days, 0) if opportunity.end_date else "--",
+            "name": _("Unvisited Work Areas"),
+            "value": agg["unvisited"],
+            "percentage": pct(agg["unvisited"], non_excluded),
         },
+        {
+            "name": _("Visited Work Areas"),
+            "value": agg["visited"],
+            "percentage": pct(agg["visited"], non_excluded),
+        },
+        {
+            "name": _("EVC Reached"),
+            "value": agg["evc_reached"],
+            "percentage": pct(agg["evc_reached"], non_excluded),
+        },
+        {
+            "name": _("Inaccessible Work Areas"),
+            "value": agg["inaccessible"],
+            "percentage": pct(agg["inaccessible"], non_excluded),
+        },
+        {
+            "name": _("Excluded Work Areas"),
+            "value": agg["excluded"],
+            "percentage": pct(agg["excluded"], total),
+        },
+        {"name": _("% Visited to % Visits"), "value": visited_to_visits},
     ]
 
 

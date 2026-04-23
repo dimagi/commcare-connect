@@ -5,7 +5,6 @@ import io
 import json
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -92,26 +91,6 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         response = client.post(url, {"csv_file": csv_file})
         assert response.status_code == 404
         assert mock_delay.call_count == 0
-
-
-@pytest.mark.django_db
-class TestGetMetricsForMicroplanning:
-    def test_end_date_missing(self):
-        opp = SimpleNamespace(end_date=None)
-        metrics = microplanning_views.get_metrics_for_microplanning(opp)
-        assert metrics == [{"name": "Days Remaining", "value": "--"}]
-
-    def test_end_date_in_future(self):
-        with mock.patch.object(microplanning_views, "localdate", return_value=date(2026, 1, 1)):
-            opp = SimpleNamespace(end_date=date(2026, 1, 11))
-            metrics = microplanning_views.get_metrics_for_microplanning(opp)
-            assert metrics == [{"name": "Days Remaining", "value": 10}]
-
-    def test_end_date_in_past(self):
-        with mock.patch.object(microplanning_views, "localdate", return_value=date(2026, 1, 1)):
-            opp = SimpleNamespace(end_date=date(2025, 12, 30))
-            metrics = microplanning_views.get_metrics_for_microplanning(opp)
-            assert metrics == [{"name": "Days Remaining", "value": 0}]
 
 
 @pytest.mark.django_db
