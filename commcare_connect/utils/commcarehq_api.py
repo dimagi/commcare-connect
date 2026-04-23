@@ -111,7 +111,11 @@ async def _get_commcare_app_json(client, domain):
 
     for application in data.get("objects", []):
         app_name = application.get("name")
-        if not application.get("is_released"):
+        # The top-level app object is always a draft (is_released=False).
+        # Released builds are nested inside 'versions', so we check there.
+        versions = application.get("versions", [])
+        is_released = any(v.get("is_released") for v in versions)
+        if not is_released:
             app_name = f"Unreleased - {app_name}"
         applications.append({"id": application.get("id"), "name": app_name})
     return applications

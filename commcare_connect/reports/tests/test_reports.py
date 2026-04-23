@@ -3,7 +3,9 @@ from unittest import mock
 
 import pytest
 from dateutil.relativedelta import relativedelta
+from django.contrib.auth.models import Permission
 from django.http import HttpResponse
+from django.test import RequestFactory
 from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
 from django.utils.timezone import now
@@ -12,7 +14,7 @@ from django.views import View
 from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.connect_id_client.main import fetch_user_counts
 from commcare_connect.opportunity.helpers import get_payment_report_data
-from commcare_connect.opportunity.models import CompletedWorkStatus, VisitValidationStatus
+from commcare_connect.opportunity.models import CompletedWorkStatus, InvoiceStatus, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
@@ -22,10 +24,17 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.reports import urls as reports_urls
 from commcare_connect.reports.decorators import KPIReportMixin, kpi_report_access_required
 from commcare_connect.reports.helpers import get_table_data_for_year_month
-from commcare_connect.users.tests.factories import LLOEntityFactory, OrganizationFactory, UserFactory
+from commcare_connect.reports.views import InvoiceReportFilter, InvoiceReportView
+from commcare_connect.users.tests.factories import (
+    LLOEntityFactory,
+    MembershipFactory,
+    OrganizationFactory,
+    UserFactory,
+)
 from commcare_connect.utils.datetime import get_month_series
 from commcare_connect.utils.test_utils import check_basic_permissions
 
@@ -488,7 +497,7 @@ def test_export_invoice_report_task_creates_export_file():
         "sys.modules", {"commcare_connect.utils.storages": storages_mock}
     ):
         mock_table_export.return_value.export.return_value = "col1,col2\nval1,val2"
-        result = export_invoice_report_task({})
+        result = export_invoice_report_task({}, user_id=UserFactory().id)
 
     assert result.endswith(".csv")
     assert "invoice-report-" in result
@@ -496,3 +505,88 @@ def test_export_invoice_report_task_creates_export_file():
     mock_storage.return_value.save.assert_called_once()
     save_args = mock_storage.return_value.save.call_args[0]
     assert save_args[0] == result
+
+
+@pytest.mark.django_db
+class TestInvoiceReportFilter:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.org = OrganizationFactory()
+        self.program = ProgramFactory(organization=self.org)
+        self.opp1 = ManagedOpportunityFactory(program=self.program)
+        self.opp2 = ManagedOpportunityFactory(program=self.program)
+        self.invoice1 = PaymentInvoiceFactory(opportunity=self.opp1, status=InvoiceStatus.PENDING_NM_REVIEW)
+        self.invoice2 = PaymentInvoiceFactory(opportunity=self.opp2, status=InvoiceStatus.PAID)
+
+        self.user = UserFactory()
+        self.user.user_permissions.add(Permission.objects.get(codename="all_org_access"))
+        self.rf = RequestFactory()
+
+    def _apply_filter(self, data, user=None):
+        user = user or self.user
+        request = self.rf.get("/")
+        request.user = user
+        qs = InvoiceReportView.get_invoice_queryset(user)
+        return InvoiceReportFilter(data=data, queryset=qs, request=request)
+
+    def test_no_filters_returns_all(self):
+        f = self._apply_filter({})
+        assert set(f.qs.values_list("id", flat=True)) == {self.invoice1.id, self.invoice2.id}
+
+    def test_filter_by_opportunity(self):
+        f = self._apply_filter({"opportunity_name": self.opp1.id})
+        assert list(f.qs.values_list("id", flat=True)) == [self.invoice1.id]
+
+    @pytest.mark.parametrize(
+        "statuses, expected_attrs",
+        [
+            ([InvoiceStatus.PAID], {"invoice2"}),
+            ([InvoiceStatus.PENDING_NM_REVIEW, InvoiceStatus.PAID], {"invoice1", "invoice2"}),
+        ],
+        ids=["single_status", "multiple_statuses"],
+    )
+    def test_filter_by_status(self, statuses, expected_attrs):
+        f = self._apply_filter({"status": statuses})
+        assert set(f.qs.values_list("id", flat=True)) == {getattr(self, a).id for a in expected_attrs}
+
+    @pytest.mark.parametrize(
+        "filter_data, expected_in, expected_out",
+        [
+            ({"from_date": "2024-03-01"}, "invoice2", "invoice1"),
+            ({"to_date": "2024-03-01"}, "invoice1", "invoice2"),
+            ({"from_date": "2024-01-01", "to_date": "2024-03-01"}, "invoice1", "invoice2"),
+        ],
+        ids=["from_date", "to_date", "date_range"],
+    )
+    def test_filter_by_date(self, filter_data, expected_in, expected_out):
+        PaymentFactory(invoice=self.invoice1, date_paid=datetime(2024, 1, 15, tzinfo=UTC), amount=50)
+        PaymentFactory(invoice=self.invoice2, date_paid=datetime(2024, 6, 15, tzinfo=UTC), amount=50)
+
+        f = self._apply_filter(filter_data)
+        ids = list(f.qs.values_list("id", flat=True))
+        assert getattr(self, expected_in).id in ids
+        assert getattr(self, expected_out).id not in ids
+
+    @pytest.mark.parametrize(
+        "use_member_user, other_opp_visible",
+        [
+            (True, False),
+            (False, True),
+        ],
+        ids=["member_user", "privileged_user"],
+    )
+    def test_opportunity_queryset_scoping(self, use_member_user, other_opp_visible):
+        other_opp = ManagedOpportunityFactory(program=ProgramFactory(organization=OrganizationFactory()))
+
+        if use_member_user:
+            user = UserFactory()
+            MembershipFactory(user=user, organization=self.org)
+        else:
+            user = self.user
+
+        opp_ids = set(
+            self._apply_filter({}, user=user).filters["opportunity_name"].queryset.values_list("id", flat=True)
+        )
+        assert self.opp1.id in opp_ids
+        assert self.opp2.id in opp_ids
+        assert (other_opp.id in opp_ids) == other_opp_visible

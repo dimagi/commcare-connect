@@ -289,6 +289,7 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
         queryset = queryset.annotate(
+            status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
             payment_unit_id=Value(payment_unit.pk, output_field=IntegerField()),
             payment_unit_payment_unit_id=Value(payment_unit.payment_unit_id, output_field=UUIDField()),
             payment_unit=Value(payment_unit.name, output_field=CharField()),
@@ -594,6 +595,7 @@ def get_worker_learn_table_data(opportunity):
         .values("total_duration")[:1]
     )
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).annotate(
+        status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
         completed_modules_count=Count("completedmodule__module", distinct=True),
         assesment_count=Count("assessment", distinct=True),
         learning_hours=Subquery(duration_subquery, output_field=DurationField()),
@@ -631,6 +633,31 @@ def get_worker_tasks_base_queryset(opportunity):
         )
         .filter(task_is_active=True)
         .order_by("user__name", "assignedtask__date_created")
+    )
+
+
+def get_worker_work_area_table_data(opportunity):
+    visits_done_subquery = (
+        UserVisit.objects.filter(
+            opportunity=opportunity,
+            opportunity_access=OuterRef("pk"),
+            work_area__isnull=False,
+        )
+        .values("opportunity_access")
+        .annotate(total=Count("id"))
+        .values("total")[:1]
+    )
+
+    return (
+        OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
+        .select_related("user")
+        .annotate(
+            assigned_buildings=Coalesce(Sum("workareagroup__workarea__building_count"), Value(0)),
+            assigned_visits=Coalesce(Sum("workareagroup__workarea__expected_visit_count"), Value(0)),
+            assigned_work_areas=Count("workareagroup__workarea"),
+            assigned_work_area_groups=Count("workareagroup", distinct=True),
+            visits_done=Coalesce(Subquery(visits_done_subquery), Value(0), output_field=IntegerField()),
+        )
     )
 
 

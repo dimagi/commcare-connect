@@ -1,0 +1,60 @@
+{% comment %}
+  Reusable filter modal component.
+
+  Required:
+    form_id         - HTML id for the <form> element (also used as the Apply button's `form` attribute)
+    filter_form     - Crispy form object
+
+  Optional (passed via `with`):
+    hx_target       - HTMX CSS selector for both hx-target and hx-select (e.g. "#task-list-table");
+                      omit to let the browser do a full-page form submit
+    hx_indicator    - HTMX CSS selector for the loading indicator (e.g. "#loadingIndicator")
+    container_class - CSS classes on the outermost wrapper div (e.g. "flex justify-end mb-3");
+
+  From view context (not passed via `with`):
+    filters_applied_count - Integer; shows a badge on the filter button when > 0
+                            (provided automatically by FilterMixin.get_filter_context())
+
+  Usage example:
+    {% include "components/filter_modal.html" with form_id="myFilterForm" hx_target="#my-table" container_class="flex justify-end mb-3" %}
+{% endcomment %}
+
+{% load i18n crispy_forms_tags %}
+<div x-cloak x-data="{showFilterModal: false}" {% if container_class %}class="{{ container_class }}"{% endif %}>
+    <button type="button" @click="showFilterModal = true" class="relative button-icon shadow-sm">
+        <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+        {% if filters_applied_count %}
+        <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
+            {{ filters_applied_count }}
+        </span>
+        {% endif %}
+    </button>
+    <div x-show="showFilterModal" class="modal-backdrop">
+        <div class="modal">
+            <div class="header text-lg font-semibold text-brand-deep-purple">
+                <h1>{% trans "Filters" %}</h1>
+                <button @click="showFilterModal = false">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <form
+                id="{{ form_id }}"
+                hx-get="."
+                {% if hx_target %}hx-target="{{ hx_target }}"{% endif %}
+                {% if hx_target %}hx-select="{{ hx_target }}"{% endif %}
+                hx-push-url="true"
+                hx-trigger="submit"
+                {% if hx_indicator %}hx-indicator="{{ hx_indicator }}"{% endif %}
+                class="content"
+            >
+                <div class="modal-body">
+                    {% crispy filter_form %}
+                </div>
+                <div class="footer">
+                    <button type="button" @click="showFilterModal = false" class="button button-md outline-style">{% trans "Close" %}</button>
+                    <button form="{{ form_id }}" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">{% trans "Apply" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

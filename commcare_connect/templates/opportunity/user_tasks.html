@@ -8,8 +8,21 @@
 <div class="w-full space-y-4"
      x-data="{
        showCreateTaskModal: false,
+       showEditTaskModal: false,
+       editTaskError: false,
        ...selectableTable()
-     }">
+     }"
+  >
+  <div x-show="editTaskError" x-cloak role="alert"
+    class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>{% trans "Failed to load task. Please try again." %}</span>
+    </div>
+    <button type="button" class="ml-4 text-xl font-light hover:font-normal focus:outline-none" aria-label="{% trans "Close" %}"
+      @click="editTaskError = false">&times;</button>
+  </div>
+
   {% include "components/worker_page/worker_profile_kpi.html" %}
   {% include 'components/worker_page/visit_task_tabs.html' %}
   <div class="w-full grid grid-cols-10 gap-2">
@@ -20,7 +33,7 @@
       {% if can_manage_tasks %}
       <div class="flex gap-4 items-center justify-start mt-4">
         <form x-ref="deleteTasksForm"
-          hx-post="{% url 'opportunity:delete_tasks' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}?next=worker_tasks&user={{ opportunity_access.user.user_id }}"
+          hx-post="{{ delete_tasks_url }}"
           hx-trigger="submit" class="hidden">
           {% csrf_token %}
           <template x-for="id in selected">
@@ -77,6 +90,7 @@
 
   {% if can_manage_tasks %}
   {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
+  {% include 'opportunity/edit_assigned_task_modal.html' %}
   {% include 'components/confirm_modal.html' %}
   {% endif %}
 </div>
