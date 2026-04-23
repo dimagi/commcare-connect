@@ -80,7 +80,7 @@ class ProgramApplicationAcceptView(ProgramMixin, APIView):
             )
         application.status = ProgramApplicationStatus.ACCEPTED
         application.modified_by = request.user.email
-        application.save(update_fields=["status", "modified_by"])
+        application.save(update_fields=["status", "modified_by", "date_modified"])
         return Response(ProgramApplicationResponseSerializer(application).data)
 
 
