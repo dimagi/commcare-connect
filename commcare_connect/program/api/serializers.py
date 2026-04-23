@@ -192,9 +192,9 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
         if cache_key not in self._apps_cache:
             try:
                 self._apps_cache[cache_key] = get_applications_for_user_by_domain(api_key, domain)
-            except CommCareHQAPIException as exc:
+            except CommCareHQAPIException:
                 raise serializers.ValidationError(
-                    {"non_field_errors": [_("Failed to fetch apps from CommCare HQ: {exc}").format(exc=exc)]}
+                    {"non_field_errors": [_("Failed to fetch apps from CommCare HQ.")]}
                 )
         for app in self._apps_cache[cache_key]:
             if app["id"] == cc_app_id:
