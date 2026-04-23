@@ -19,7 +19,7 @@ from commcare_connect.opportunity.models import (
     PaymentUnit,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.reports.models import UserAnalyticsData
 from commcare_connect.users.models import ConnectIDUserLink, User, UserCredential
@@ -40,6 +40,7 @@ REPLICATION_ALLOWED_MODELS = [
     DeliveryType,
     DeliverUnitFlagRules,
     LearnModule,
+    LLOEntity,
     Opportunity,
     OpportunityAccess,
     OpportunityClaim,
