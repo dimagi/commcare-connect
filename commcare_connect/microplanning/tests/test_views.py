@@ -1033,7 +1033,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         # 2 non-excluded WAs, 1 visited → pct_wa_visited = 1/2 = 0.5
         # expected_visit_count = 10 each → total_expected = 20
         # 4 user visits → pct_visits = 4/20 = 0.2
-        # ratio = 0.5 / 0.2 = 2.5 → 250% (capped or displayed as-is)
+        # ratio = 0.5 / 0.2 = 2.5 → displayed as plain ratio
         self._make_work_areas(
             opp,
             [
@@ -1045,17 +1045,19 @@ class TestGetMetricsForMicroplanningWorkAreas:
         for _ in range(4):
             UserVisitFactory(opportunity=opp)
         metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "% Visited to % Visits")
-        assert m["value"] == 250
+        m = self._get_metric(metrics, "% WA visited to % total visits")
+        assert m["value"] == 2.5
         assert "percentage" not in m
+        assert "unit" not in m
 
     def test_pct_visited_to_pct_visits_zero_denominator(self, opp):
         """No visits and no expected visits → show '--'."""
         from commcare_connect.microplanning.views import get_metrics_for_microplanning
 
         metrics = get_metrics_for_microplanning(opp)
-        m = self._get_metric(metrics, "% Visited to % Visits")
+        m = self._get_metric(metrics, "% WA visited to % total visits")
         assert m["value"] == "--"
+        assert "unit" not in m
 
     def test_zero_non_excluded_work_areas(self, opp):
         """All WAs excluded → percentage metrics show '--'."""

@@ -161,7 +161,7 @@ def get_metrics_for_microplanning(opportunity):
         total_visits = UserVisit.objects.filter(opportunity=opportunity).count()
         pct_wa_visited = agg["visited"] / non_excluded
         pct_visits = total_visits / total_expected
-        visited_to_visits = round(pct_wa_visited / pct_visits * 100) if pct_visits else "--"
+        visited_to_visits = round(pct_wa_visited / pct_visits, 2) if pct_visits else "--"
     else:
         visited_to_visits = "--"
 
@@ -194,7 +194,7 @@ def get_metrics_for_microplanning(opportunity):
             "value": agg["excluded"],
             "percentage": pct(agg["excluded"], total),
         },
-        {"name": _("% Visited to % Visits"), "value": visited_to_visits},
+        {"name": _("% WA visited to % total visits"), "value": visited_to_visits},
     ]
 
 
