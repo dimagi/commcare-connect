@@ -165,28 +165,28 @@ def test_get_worker_table_data_all_fields(opportunity):
 
 @pytest.mark.django_db
 def test_get_worker_table_data_search(opportunity):
-    """Q1/Q3: search matches name (via linked user) and phone_number (including not_found invites)."""
+    """Search matches name (via linked user) and phone_number (including not_found invites)."""
     # Accepted worker with known name
-    thabo_access = OpportunityAccessFactory(opportunity=opportunity)
-    thabo_access.user.name = "Thabo Mokoena"
-    thabo_access.user.phone_number = "+27110000001"
-    thabo_access.user.save()
-    thabo_invite = UserInviteFactory(
+    alpha_access = OpportunityAccessFactory(opportunity=opportunity)
+    alpha_access.user.name = "Alpha Worker"
+    alpha_access.user.phone_number = "+10000000001"
+    alpha_access.user.save()
+    alpha_invite = UserInviteFactory(
         opportunity=opportunity,
-        opportunity_access=thabo_access,
-        phone_number=thabo_access.user.phone_number,
+        opportunity_access=alpha_access,
+        phone_number=alpha_access.user.phone_number,
         status=UserInviteStatus.accepted,
     )
 
-    # Another accepted worker — should be filtered out by a name search for "Thabo"
-    other_access = OpportunityAccessFactory(opportunity=opportunity)
-    other_access.user.name = "Nomsa Dlamini"
-    other_access.user.phone_number = "+27110000002"
-    other_access.user.save()
-    other_invite = UserInviteFactory(
+    # Another accepted worker — should be filtered out by a name search for "Alpha"
+    beta_access = OpportunityAccessFactory(opportunity=opportunity)
+    beta_access.user.name = "Beta Worker"
+    beta_access.user.phone_number = "+10000000002"
+    beta_access.user.save()
+    beta_invite = UserInviteFactory(
         opportunity=opportunity,
-        opportunity_access=other_access,
-        phone_number=other_access.user.phone_number,
+        opportunity_access=beta_access,
+        phone_number=beta_access.user.phone_number,
         status=UserInviteStatus.accepted,
     )
 
@@ -194,24 +194,24 @@ def test_get_worker_table_data_search(opportunity):
     not_found_invite = UserInviteFactory(
         opportunity=opportunity,
         opportunity_access=None,
-        phone_number="+27119999999",
+        phone_number="+10000009999",
         status=UserInviteStatus.not_found,
     )
 
     # Empty search: returns everything (including not_found)
     all_ids = set(get_worker_table_data(opportunity).values_list("id", flat=True))
-    assert all_ids == {thabo_invite.id, other_invite.id, not_found_invite.id}
+    assert all_ids == {alpha_invite.id, beta_invite.id, not_found_invite.id}
 
-    # Name search: matches Thabo only (case-insensitive substring)
-    name_ids = set(get_worker_table_data(opportunity, search_term="thabo").values_list("id", flat=True))
-    assert name_ids == {thabo_invite.id}
+    # Name search: matches Alpha only (case-insensitive substring)
+    name_ids = set(get_worker_table_data(opportunity, search_term="alpha").values_list("id", flat=True))
+    assert name_ids == {alpha_invite.id}
 
     # Phone search on linked-user phone
     phone_ids = set(get_worker_table_data(opportunity, search_term="0000002").values_list("id", flat=True))
-    assert phone_ids == {other_invite.id}
+    assert phone_ids == {beta_invite.id}
 
     # Phone search finds the not_found invite (no linked user, matches on UserInvite.phone_number)
-    not_found_ids = set(get_worker_table_data(opportunity, search_term="9999999").values_list("id", flat=True))
+    not_found_ids = set(get_worker_table_data(opportunity, search_term="0009999").values_list("id", flat=True))
     assert not_found_ids == {not_found_invite.id}
 
     # No match: empty result
