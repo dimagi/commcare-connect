@@ -297,7 +297,7 @@ class TestActivateOpportunity:
 
 @pytest.mark.django_db
 class TestInviteUsers:
-    @patch("commcare_connect.opportunity.api.automation_views.add_connect_users")
+    @patch("commcare_connect.opportunity.api.views.automation.add_connect_users")
     def test_invite_users_success(
         self, mock_add_users, api_client, program_manager_org_user_admin, active_managed_opportunity
     ):
@@ -335,7 +335,7 @@ class TestInviteUsers:
 @pytest.mark.django_db
 class TestFullPipeline:
     @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
-    @patch("commcare_connect.opportunity.api.automation_views.add_connect_users")
+    @patch("commcare_connect.opportunity.api.views.automation.add_connect_users")
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
     def test_full_automation_flow(

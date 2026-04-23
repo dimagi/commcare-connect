@@ -3,12 +3,12 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from commcare_connect.form_receiver.views import FormReceiver
-from commcare_connect.opportunity.api.automation_views import (
+from commcare_connect.opportunity.api.views.automation import (
     InviteUsersView,
     OpportunityActivateView,
     PaymentUnitCreateView,
 )
-from commcare_connect.opportunity.api.views import (
+from commcare_connect.opportunity.api.views.mobile import (
     ClaimOpportunityView,
     ConfirmPaymentsView,
     ConfirmPaymentView,
