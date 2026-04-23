@@ -1,4 +1,4 @@
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -193,9 +193,7 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
             try:
                 self._apps_cache[cache_key] = get_applications_for_user_by_domain(api_key, domain)
             except CommCareHQAPIException:
-                raise serializers.ValidationError(
-                    {"non_field_errors": [_("Failed to fetch apps from CommCare HQ.")]}
-                )
+                raise serializers.ValidationError({"non_field_errors": [_("Failed to fetch apps from CommCare HQ.")]})
         for app in self._apps_cache[cache_key]:
             if app["id"] == cc_app_id:
                 return app["name"]
@@ -207,6 +205,7 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
             }
         )
 
+    @transaction.atomic
     def create(self, validated_data):
         user = self.context["request"].user
         program = self.context["program"]

@@ -1,12 +1,13 @@
 import datetime
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.opportunity.app_xml import DeliverUnit as DeliverUnitData
 from commcare_connect.opportunity.app_xml import Module
-from commcare_connect.opportunity.models import HQApiKey
+from commcare_connect.opportunity.models import CommCareApp, HQApiKey
 from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory, HQApiKeyFactory
 from commcare_connect.program.models import ManagedOpportunity, Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import ProgramApplicationFactory, ProgramFactory
@@ -430,3 +431,38 @@ class TestManagedOpportunityCreate:
             format="json",
         )
         assert response.status_code == 400
+
+    @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
+    @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
+    @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
+    def test_create_opportunity_rolls_back_when_hq_sync_fails(
+        self,
+        mock_deliver_units,
+        mock_learn_modules,
+        mock_hq_apps,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        accepted_application,
+        hq_server,
+        hq_api_key,
+    ):
+        """If the HQ sync step fails, the opportunity + apps should be rolled back."""
+        mock_hq_apps.return_value = [
+            {"id": "learn-app-123", "name": "Test Learn App"},
+            {"id": "deliver-app-456", "name": "Test Deliver App"},
+        ]
+        # Name lookup succeeds, but the sync step fails with a network error
+        mock_learn_modules.side_effect = httpx.ConnectError("connection refused")
+
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            f"/api/programs/{program.program_id}/opportunities/",
+            _opportunity_payload(organization, hq_server, hq_api_key),
+            format="json",
+        )
+        assert response.status_code == 502
+        assert not ManagedOpportunity.objects.filter(program=program).exists()
+        assert not CommCareApp.objects.filter(cc_app_id="learn-app-123").exists()
+        assert not CommCareApp.objects.filter(cc_app_id="deliver-app-456").exists()

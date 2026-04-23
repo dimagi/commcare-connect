@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
@@ -93,13 +95,19 @@ class ManagedOpportunityCreateView(ProgramMixin, APIView):
             data=request.data, context={"request": request, "program": program}
         )
         serializer.is_valid(raise_exception=True)
-        opportunity = serializer.save()
 
         try:
-            sync_learn_modules_and_deliver_units(opportunity)
-        except (CommCareHQAPIException, AppNoBuildException):
-            logger.exception("Failed to fetch app metadata from HQ for opportunity %s", opportunity.id)
-            opportunity.delete()
+            with transaction.atomic():
+                opportunity = serializer.save()
+                sync_learn_modules_and_deliver_units(opportunity)
+        except (
+            CommCareHQAPIException,
+            AppNoBuildException,
+            httpx.RequestError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+        ):
+            logger.exception("Failed to fetch app metadata from HQ while creating managed opportunity")
             return Response(
                 {"non_field_errors": [_("Failed to fetch app metadata from CommCare HQ.")]},
                 status=status.HTTP_502_BAD_GATEWAY,

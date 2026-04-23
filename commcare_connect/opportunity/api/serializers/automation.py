@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -78,6 +79,7 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
             seen_du_ids.update(item_dus)
         return data
 
+    @transaction.atomic
     def create(self, validated_data):
         opportunity = self.context["opportunity"]
         created = []
