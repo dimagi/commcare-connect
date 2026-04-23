@@ -11,11 +11,12 @@ CommCare Connect
 This assumes you will use the docker compose file in this repo to run services. If that is not the case you may
 need to edit some settings.
 
-    # create and active a python vertual environment using Python 3.11
-    $ python3.11 -m venv <virtual env path>
+    # install uv to manage python versions and dependencies
+    # https://docs.astral.sh/uv/getting-started/installation/
+    $ curl -LsSf https://astral.sh/uv/install.sh | sh
 
-    # install requirements
-    $ pip install -r requirements-dev.txt
+    # create a venv and install requirements
+    $ uv sync
 
     # install git hooks
     $ pre-commit install
