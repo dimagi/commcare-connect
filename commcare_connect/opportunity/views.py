@@ -2571,9 +2571,7 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
             tabs_with_urls.append({**tab, "url": url})
 
         # Label with count for workers tab
-        workers_count = (
-            UserInvite.objects.filter(opportunity=opportunity).exclude(status=UserInviteStatus.not_found).count()
-        )
+        workers_count = UserInvite.objects.filter(opportunity=opportunity).count()
         tabs_with_urls[0]["label"] = f"Connect Workers ({workers_count})"
         return tabs_with_urls
 
