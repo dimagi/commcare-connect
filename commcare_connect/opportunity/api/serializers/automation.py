@@ -95,12 +95,28 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
                 start_date=pu_data.get("start_date"),
                 end_date=pu_data.get("end_date"),
             )
-            for du_id in pu_data.get("required_deliver_units", []):
-                DeliverUnit.objects.filter(id=du_id).update(payment_unit=pu, optional=False)
-            for du_id in pu_data.get("optional_deliver_units", []):
-                DeliverUnit.objects.filter(id=du_id).update(payment_unit=pu, optional=True)
+            self._assign_deliver_units(pu_data.get("required_deliver_units", []), pu, optional=False)
+            self._assign_deliver_units(pu_data.get("optional_deliver_units", []), pu, optional=True)
             created.append(pu)
         return created
+
+    def _assign_deliver_units(self, deliver_unit_ids, payment_unit, optional):
+        """Assign unassigned deliver units to the given payment unit in a single query.
+
+        Raises ValidationError if any of the requested deliver units are already
+        assigned to another payment unit (re-checked here under transaction to
+        protect against races between validate() and create()).
+        """
+        unique_ids = set(deliver_unit_ids)
+        if not unique_ids:
+            return
+        updated = DeliverUnit.objects.filter(id__in=unique_ids, payment_unit__isnull=True).update(
+            payment_unit=payment_unit, optional=optional
+        )
+        if updated != len(unique_ids):
+            raise serializers.ValidationError(
+                {"required_deliver_units": _("One or more deliver units are already assigned to a payment unit.")}
+            )
 
 
 class PaymentUnitResponseSerializer(serializers.ModelSerializer):
