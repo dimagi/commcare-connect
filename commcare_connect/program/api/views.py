@@ -36,8 +36,10 @@ class ProgramCreateView(APIView):
         return Response(ProgramResponseSerializer(program).data, status=status.HTTP_201_CREATED)
 
 
-class ProgramMixin:
-    """Shared logic for views scoped to a program — resolves program and checks caller is admin of its org."""
+class ProgramAPIView(APIView):
+    """Base view for endpoints scoped to a program — resolves program and checks caller is admin of its org."""
+
+    permission_classes = [IsAuthenticated]
 
     def get_program(self):
         program = get_object_or_404(Program, program_id=self.kwargs["program_id"])
@@ -46,9 +48,7 @@ class ProgramMixin:
         return program
 
 
-class ProgramApplicationCreateView(ProgramMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
+class ProgramApplicationCreateView(ProgramAPIView):
     def post(self, request, program_id):
         program = self.get_program()
         serializer = ProgramApplicationCreateSerializer(
@@ -62,9 +62,7 @@ class ProgramApplicationCreateView(ProgramMixin, APIView):
         )
 
 
-class ProgramApplicationAcceptView(ProgramMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
+class ProgramApplicationAcceptView(ProgramAPIView):
     def post(self, request, program_id, application_id):
         program = self.get_program()
         application = get_object_or_404(
@@ -86,9 +84,7 @@ class ProgramApplicationAcceptView(ProgramMixin, APIView):
         return Response(ProgramApplicationResponseSerializer(application).data)
 
 
-class ManagedOpportunityCreateView(ProgramMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
+class ManagedOpportunityCreateView(ProgramAPIView):
     def post(self, request, program_id):
         program = self.get_program()
         serializer = ManagedOpportunityCreateSerializer(

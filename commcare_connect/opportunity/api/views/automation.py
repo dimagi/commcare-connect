@@ -17,8 +17,10 @@ from commcare_connect.organization.decorators import user_is_org_admin
 from commcare_connect.program.models import ManagedOpportunity
 
 
-class OpportunityMixin:
-    """Shared logic for views scoped to an opportunity — resolves opportunity and checks permissions."""
+class OpportunityAPIView(APIView):
+    """Base view for endpoints scoped to an opportunity — resolves opportunity and checks permissions."""
+
+    permission_classes = [IsAuthenticated]
 
     def get_opportunity(self):
         opportunity = get_object_or_404(Opportunity, opportunity_id=self.kwargs["opportunity_id"])
@@ -31,9 +33,7 @@ class OpportunityMixin:
         return opportunity
 
 
-class PaymentUnitCreateView(OpportunityMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
+class PaymentUnitCreateView(OpportunityAPIView):
     def post(self, request, opportunity_id):
         opportunity = self.get_opportunity()
         serializer = PaymentUnitListCreateSerializer(
@@ -47,9 +47,7 @@ class PaymentUnitCreateView(OpportunityMixin, APIView):
         )
 
 
-class OpportunityActivateView(OpportunityMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
+class OpportunityActivateView(OpportunityAPIView):
     def post(self, request, opportunity_id):
         opportunity = self.get_opportunity()
 
@@ -77,9 +75,7 @@ class OpportunityActivateView(OpportunityMixin, APIView):
         return Response(OpportunityActivateResponseSerializer(opportunity).data)
 
 
-class InviteUsersView(OpportunityMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
+class InviteUsersView(OpportunityAPIView):
     def post(self, request, opportunity_id):
         opportunity = self.get_opportunity()
         serializer = UserInviteSerializer(data=request.data, context={"request": request, "opportunity": opportunity})
