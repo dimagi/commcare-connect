@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv as csv_mod
 import io
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -19,7 +19,7 @@ from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
-from commcare_connect.microplanning.views import UserVisitVectorLayer
+from commcare_connect.microplanning.views import UserVisitVectorLayer, get_metrics_for_microplanning
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -919,8 +919,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     @pytest.fixture
     def opp(self):
-        from datetime import timedelta
-
         return OpportunityFactory(end_date=date.today() + timedelta(days=5))
 
     def _make_work_areas(self, opp, statuses, expected_visit_counts=None):
@@ -937,16 +935,12 @@ class TestGetMetricsForMicroplanningWorkAreas:
         return result
 
     def test_days_remaining(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Days Remaining")
         assert m["value"] == 5
         assert "percentage" not in m
 
     def test_unvisited_count_and_percentage(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         self._make_work_areas(
             opp,
             [
@@ -963,8 +957,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 67  # round(2/3 * 100)
 
     def test_visited_count_and_percentage(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         self._make_work_areas(
             opp,
             [
@@ -980,8 +972,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 67  # round(2/3 * 100)
 
     def test_evc_reached_count_and_percentage(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         self._make_work_areas(
             opp,
             [
@@ -996,8 +986,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 50  # round(1/2 * 100)
 
     def test_inaccessible_count_and_percentage(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         self._make_work_areas(
             opp,
             [
@@ -1012,8 +1000,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 50  # round(1/2 * 100)
 
     def test_excluded_count_and_percentage(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         self._make_work_areas(
             opp,
             [
@@ -1028,8 +1014,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 67  # round(2/3 * 100)
 
     def test_pct_visited_to_pct_visits(self, opp):
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
-
         # 2 non-excluded WAs, 1 visited → pct_wa_visited = 1/2 = 0.5
         # expected_visit_count = 10 each → total_expected = 20
         # 4 user visits → pct_visits = 4/20 = 0.2
@@ -1052,7 +1036,6 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     def test_pct_visited_to_pct_visits_zero_denominator(self, opp):
         """No visits and no expected visits → show '--'."""
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "% WA visited to % total visits")
@@ -1061,10 +1044,40 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
     def test_zero_non_excluded_work_areas(self, opp):
         """All WAs excluded → percentage metrics show '--'."""
-        from commcare_connect.microplanning.views import get_metrics_for_microplanning
 
         self._make_work_areas(opp, [WorkAreaStatus.EXCLUDED])
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas")
         assert m["value"] == 0
         assert m["percentage"] is None
+
+    def test_unassigned_counted_as_unvisited(self, opp):
+        """UNASSIGNED (the default status) must be counted in Unvisited Work Areas."""
+
+        self._make_work_areas(
+            opp,
+            [
+                WorkAreaStatus.UNASSIGNED,  # default status — should count as unvisited
+                WorkAreaStatus.VISITED,
+            ],
+        )
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "Unvisited Work Areas")
+        assert m["value"] == 1
+        assert m["percentage"] == 50  # round(1/2 * 100)
+
+    def test_end_date_missing(self, opp):
+        """No end_date → Days Remaining shows '--'."""
+
+        opp.end_date = None
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "Days Remaining")
+        assert m["value"] == "--"
+
+    def test_end_date_in_past(self, opp):
+        """Past end_date → Days Remaining is 0, not negative."""
+
+        opp.end_date = date.today() - timedelta(days=3)
+        metrics = get_metrics_for_microplanning(opp)
+        m = self._get_metric(metrics, "Days Remaining")
+        assert m["value"] == 0

@@ -137,7 +137,7 @@ def get_metrics_for_microplanning(opportunity):
         non_excluded=Count("id", filter=~Q(status=WorkAreaStatus.EXCLUDED)),
         unvisited=Count(
             "id",
-            filter=Q(status__in=[WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED]),
+            filter=Q(status__in=[WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED, WorkAreaStatus.UNASSIGNED]),
         ),
         visited=Count("id", filter=Q(status=WorkAreaStatus.VISITED)),
         evc_reached=Count("id", filter=Q(status=WorkAreaStatus.EXPECTED_VISIT_REACHED)),
