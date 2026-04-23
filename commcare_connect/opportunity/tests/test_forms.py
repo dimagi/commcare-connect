@@ -786,19 +786,32 @@ class TestCreateTaskForm:
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
         data = {
             "task": task_type.pk,
-            "connect_worker": access.user.pk,
+            "access": access.pk,
             "due_date": (datetime.date.today() - datetime.timedelta(days=1)).isoformat(),
         }
         form = CreateTaskForm(data, opportunity=opportunity)
         assert not form.is_valid()
         assert "due_date" in form.errors
 
-    def test_flw_queryset_filtering(self, opportunity):
-        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False).user
-        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False).user
-        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True).user
+    def test_valid_form(self, opportunity, task_type):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        due_date = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+        data = {
+            "task": task_type.pk,
+            "access": access.pk,
+            "due_date": due_date,
+        }
+        form = CreateTaskForm(data, opportunity=opportunity)
+        assert form.is_valid()
+        assert form.cleaned_data["task"] == task_type
+        assert form.cleaned_data["access"] == access
 
-        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["connect_worker"].queryset
+    def test_flw_queryset_filtering(self, opportunity):
+        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False)
+        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True)
+
+        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["access"].queryset
 
         assert active in flw_queryset
         assert unaccepted not in flw_queryset

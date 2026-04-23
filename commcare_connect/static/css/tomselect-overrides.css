@@ -20,3 +20,7 @@
   border: 0 solid #fff;
   color: #7d7d7d;
 }
+
+.ts-dropdown {
+  z-index: 100;
+}

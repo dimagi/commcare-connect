@@ -3,17 +3,8 @@
 {% load static %}
 
 <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
-<script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
-<script>
-    document.addEventListener('htmx:afterRequest', function (event) {
-        if (event.detail.successful && event.detail.elt.id === 'create-task-form') {
-            const form = document.getElementById('create-task-form');
-            form.reset();
-            form.querySelectorAll('[data-tomselect]').forEach(el => el.tomselect?.clear());
-            window.dispatchEvent(new CustomEvent('create-task-success'));
-        }
-    });
-</script>
+<script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
+
 
 <div x-show="{{ modal_name }}" x-cloak x-transition.opacity class="modal-backdrop" role="dialog" aria-modal="true"
     aria-labelledby="new-task-modal-title"
@@ -40,24 +31,21 @@
                 <i class="fa-solid fa-xmark cursor-pointer" aria-hidden="true"></i>
             </button>
         </div>
-
-        <form id="create-task-form"
-              method="post"
-              action="{{ create_task_url }}"
-              hx-post="{{ create_task_url }}"
-              hx-target="#create-task-form"
-              hx-swap="outerHTML">
-            {% csrf_token %}
-            {% crispy form %}
-            <div class="flex justify-between gap-3 pt-2">
-                <button type="button" @click="{{ modal_name }} = false"
-                        class="button button-md outline-style flex-1">
-                    {% trans "Cancel" %}
-                </button>
-                <button type="submit" class="button button-md primary-dark flex-1">
-                    {% trans "Save Changes" %}
-                </button>
-            </div>
-        </form>
+        <div id="create-task-form-wrapper">
+            <form id="create-task-form" method="post" action="{{ create_task_url }}" hx-post="{{ create_task_url }}"
+                hx-target="#create-task-form-wrapper" hx-select="#create-task-form-wrapper" hx-swap="outerHTML">
+                {% csrf_token %}
+                {% crispy form %}
+                <div class="flex justify-between gap-3 pt-2">
+                    <button type="button" @click="{{ modal_name }} = false" class="button button-md outline-style flex-1">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="button button-md primary-dark flex-1">
+                        {% trans "Save Changes" %}
+                    </button>
+                </div>
+            </form>
+            {% include "components/tomselect_init.html" %}
+        </div>
     </div>
 </div>

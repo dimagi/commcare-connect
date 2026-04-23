@@ -428,8 +428,8 @@ class AssignedTask(XFormBaseModel):
     assigned_task_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     task_type = models.ForeignKey(TaskType, on_delete=models.PROTECT)
     opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
-    completed_at = models.DateTimeField()
-    duration = models.DurationField()
+    completed_at = models.DateTimeField(null=True)
+    duration = models.DurationField(null=True)
     xform_id = models.CharField(max_length=50, null=True)
     status = models.CharField(
         choices=AssignedTaskStatus.choices,
