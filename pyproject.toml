@@ -123,7 +123,6 @@ dev = [
     "git-build-branch",
     "invoke>=2.2.0",
     "ipdb>=0.13.13",
-    "pip-tools>=7.1.0",
     "pre-commit>=3.3.3",
     "psycopg2-binary>=2.9.6",
     "pylint-celery>=0.3",

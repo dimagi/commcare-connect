@@ -283,20 +283,6 @@ wheels = [
 ]
 
 [[package]]
-name = "build"
-version = "0.10.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "os_name == 'nt'" },
-    { name = "packaging" },
-    { name = "pyproject-hooks" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/de/1c/fb62f81952f0e74c3fbf411261d1adbdd2d615c89a24b42d0fe44eb4bcf3/build-0.10.0.tar.gz", hash = "sha256:d5b71264afdb5951d6704482aac78de887c80691c52b88a9ad195983ca2c9269", size = 16465, upload-time = "2023-01-11T20:32:50.632Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/91/17b00d5fac63d3dca605f1b8269ba3c65e98059e1fd99d00283e42a454f0/build-0.10.0-py3-none-any.whl", hash = "sha256:af266720050a66c893a6096a2f410989eeac74ff9a68ba194b3f6473e8e26171", size = 17429, upload-time = "2023-01-11T20:32:48.786Z" },
-]
-
-[[package]]
 name = "celery"
 version = "5.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -496,7 +482,6 @@ dev = [
     { name = "git-build-branch" },
     { name = "invoke" },
     { name = "ipdb" },
-    { name = "pip-tools" },
     { name = "pre-commit" },
     { name = "psycopg2-binary" },
     { name = "pylint-celery" },
@@ -570,7 +555,6 @@ dev = [
     { name = "git-build-branch", git = "https://github.com/dimagi/git-build-branch" },
     { name = "invoke", specifier = ">=2.2.0" },
     { name = "ipdb", specifier = ">=0.13.13" },
-    { name = "pip-tools", specifier = ">=7.1.0" },
     { name = "pre-commit", specifier = ">=3.3.3" },
     { name = "psycopg2-binary", specifier = ">=2.9.6" },
     { name = "pylint-celery", specifier = ">=0.3" },
@@ -1800,31 +1784,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pip"
-version = "26.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/48/83/0d7d4e9efe3344b8e2fe25d93be44f64b65364d3c8d7bc6dc90198d5422e/pip-26.0.1.tar.gz", hash = "sha256:c4037d8a277c89b320abe636d59f91e6d0922d08a05b60e85e53b296613346d8", size = 1812747, upload-time = "2026-02-05T02:20:18.702Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/f0/c81e05b613866b76d2d1066490adf1a3dbc4ee9d9c839961c3fc8a6997af/pip-26.0.1-py3-none-any.whl", hash = "sha256:bdb1b08f4274833d62c1aa29e20907365a2ceb950410df15fc9521bad440122b", size = 1787723, upload-time = "2026-02-05T02:20:16.416Z" },
-]
-
-[[package]]
-name = "pip-tools"
-version = "7.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "build" },
-    { name = "click" },
-    { name = "pip" },
-    { name = "setuptools" },
-    { name = "wheel" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/fe/127e9475a18b0c98005d474db3804a2408489d6a3cc60282b3949bf191e7/pip-tools-7.1.0.tar.gz", hash = "sha256:f6ead499e726c8cfee04b2dea6282a9faf29663c378d9a4aca2ea6b86c8ec715", size = 134062, upload-time = "2023-07-19T05:19:30.932Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/1a/76b72efce8ce109f0da69630109ea1f619c5a26dee89665460b84c4616dc/pip_tools-7.1.0-py3-none-any.whl", hash = "sha256:4e60b7d05b046f49ad5bf3c2818df8e78dec5820e9b331cd9898cff5ec19ff2f", size = 56938, upload-time = "2023-07-19T05:19:59.147Z" },
-]
-
-[[package]]
 name = "platformdirs"
 version = "3.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2067,15 +2026,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/53/6d/ad928fe975a6c14a093c92e6a319ca18f479f3336bb353a740bdba335681/pyproj-3.7.2-cp311-cp311-win32.whl", hash = "sha256:f2af4ed34b2cf3e031a2d85b067a3ecbd38df073c567e04b52fa7a0202afde8a", size = 5908533, upload-time = "2025-08-14T12:04:04.821Z" },
     { url = "https://files.pythonhosted.org/packages/79/e0/b95584605cec9ed50b7ebaf7975d1c4ddeec5a86b7a20554ed8b60042bd7/pyproj-3.7.2-cp311-cp311-win_amd64.whl", hash = "sha256:0b7cb633565129677b2a183c4d807c727d1c736fcb0568a12299383056e67433", size = 6320742, upload-time = "2025-08-14T12:04:06.357Z" },
     { url = "https://files.pythonhosted.org/packages/b7/4d/536e8f93bca808175c2d0a5ac9fdf69b960d8ab6b14f25030dccb07464d7/pyproj-3.7.2-cp311-cp311-win_arm64.whl", hash = "sha256:38b08d85e3a38e455625b80e9eb9f78027c8e2649a21dec4df1f9c3525460c71", size = 6245772, upload-time = "2025-08-14T12:04:08.365Z" },
-]
-
-[[package]]
-name = "pyproject-hooks"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/25/c1/374304b8407d3818f7025457b7366c8e07768377ce12edfe2aa58aa0f64c/pyproject_hooks-1.0.0.tar.gz", hash = "sha256:f271b298b97f5955d53fb12b72c1fb1948c22c1a6b70b315c54cedaca0264ef5", size = 16901, upload-time = "2022-11-21T11:52:14.029Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/ea/9ae603de7fbb3df820b23a70f6aff92bf8c7770043254ad8d2dc9d6bcba4/pyproject_hooks-1.0.0-py3-none-any.whl", hash = "sha256:283c11acd6b928d2f6a7c73fa0d01cb2bdc5f07c57a2eeb6e83d5e56b97976f8", size = 9286, upload-time = "2022-11-21T11:52:11.072Z" },
 ]
 
 [[package]]
@@ -2607,15 +2557,6 @@ wheels = [
 [package.optional-dependencies]
 watchdog = [
     { name = "watchdog" },
-]
-
-[[package]]
-name = "wheel"
-version = "0.41.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ec/34/903929e15b2657335b2ce8723d92fc804d3569b7ac0f1f8877ed1a7b2024/wheel-0.41.0.tar.gz", hash = "sha256:55a0f0a5a84869bce5ba775abfd9c462e3a6b1b7b7ec69d72c0b83d673a5114d", size = 96943, upload-time = "2023-07-22T11:01:57.225Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/11/f139e25018ea2218aeedbedcf85cd0dd8abeed29a38ac1fda7f5a8889382/wheel-0.41.0-py3-none-any.whl", hash = "sha256:7e9be3bbd0078f6147d82ed9ed957e323e7708f57e134743d2edef3a7b7972a9", size = 64712, upload-time = "2023-07-22T11:01:55.495Z" },
 ]
 
 [[package]]
