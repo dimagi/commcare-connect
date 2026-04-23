@@ -19,11 +19,13 @@
            hx-get="{% url 'opportunity:worker_list' request.org.slug opportunity.opportunity_id %}"
            hx-trigger="keyup changed delay:400ms, clear-search from:window"
            hx-swap="none"
-           hx-replace-url="true">
+           hx-replace-url="true"
+           hx-indicator="closest #worker-search">
+    <i class="fa-solid fa-spinner fa-spin htmx-indicator absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
     <button type="button"
             x-show="search"
             @click="search=''; $nextTick(() => { $dispatch('clear-search') })"
-            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 [.htmx-request_&]:hidden"
             x-tooltip.raw="{% trans 'Clear search' %}">
       <i class="fa-solid fa-xmark"></i>
     </button>
