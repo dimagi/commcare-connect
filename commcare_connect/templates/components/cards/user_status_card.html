@@ -29,6 +29,23 @@
     </button>
   </div>
 
+  {% if opportunity_access.suspended %}
+    <div class="flex flex-col gap-1 text-sm">
+      {% if opportunity_access.suspension_date %}
+        <div class="flex gap-2 text-gray-500">
+          <span class="whitespace-nowrap">{% translate "Suspended on" %}:</span>
+          <span>{{ opportunity_access.suspension_date|date:"N j, Y" }}</span>
+        </div>
+      {% endif %}
+      {% if opportunity_access.suspension_reason %}
+        <div class="flex gap-2 text-gray-500">
+          <span class="whitespace-nowrap">{% translate "Reason" %}:</span>
+          <span>{{ opportunity_access.suspension_reason }}</span>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
   <div x-cloak x-show="showSuspendModal" x-transition.opacity class="modal-backdrop">
     <div @click.away="showSuspendModal = false" x-transition class="modal">
       <div class="header flex justify-between items-center">

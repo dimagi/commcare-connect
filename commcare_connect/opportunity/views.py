@@ -57,11 +57,14 @@ from geopy import distance
 from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
+from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
+from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.filters import (
+    AssignedTaskFilterSet,
     DeliverFilterSet,
     FilterMixin,
     OpportunityListFilterSet,
@@ -101,6 +104,7 @@ from commcare_connect.opportunity.helpers import (
     get_worker_learn_table_data,
     get_worker_table_data,
     get_worker_tasks_base_queryset,
+    get_worker_work_area_table_data,
 )
 from commcare_connect.opportunity.models import (
     AssignedTask,
@@ -154,6 +158,7 @@ from commcare_connect.opportunity.tables import (
     WorkerStatusTable,
     WorkerTasksTable,
     WorkerVisitTable,
+    WorkerWorkAreaTable,
     header_with_tooltip,
 )
 from commcare_connect.opportunity.tasks import (
@@ -2562,11 +2567,11 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
     hx_template_name = "opportunity/workers.html"
     active_tab = "workers"
     tabs = [
-        {"key": "workers", "label": "Connect Workers", "url_name": "opportunity:worker_list"},
-        {"key": "learn", "label": "Learn", "url_name": "opportunity:worker_learn"},
-        {"key": "deliver", "label": "Deliver", "url_name": "opportunity:worker_deliver"},
-        {"key": "payments", "label": "Payments", "url_name": "opportunity:worker_payments"},
-        {"key": "tasks", "label": "Tasks", "url_name": "opportunity:worker_tasks"},
+        {"key": "workers", "label": gettext_lazy("Connect Workers"), "url_name": "opportunity:worker_list"},
+        {"key": "learn", "label": gettext_lazy("Learn"), "url_name": "opportunity:worker_learn"},
+        {"key": "deliver", "label": gettext_lazy("Deliver"), "url_name": "opportunity:worker_deliver"},
+        {"key": "payments", "label": gettext_lazy("Payments"), "url_name": "opportunity:worker_payments"},
+        {"key": "tasks", "label": gettext_lazy("Tasks"), "url_name": "opportunity:worker_tasks"},
     ]
 
     def _is_navigating_between_tabs(self, org_slug, opportunity):
@@ -2614,11 +2619,19 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
         workers_count = (
             UserInvite.objects.filter(opportunity=opportunity).exclude(status=UserInviteStatus.not_found).count()
         )
-        tabs_with_urls[0]["label"] = f"Connect Workers ({workers_count})"
+        tabs_with_urls[0]["label"] = _("Connect Workers") + f" ({workers_count})"
         return tabs_with_urls
 
     def get(self, request, org_slug, opp_id):
         opportunity = self.get_opportunity()
+        if is_flag_active(MICROPLANNING, opportunity):
+            self.tabs = self.tabs + [
+                {
+                    "key": "work_areas",
+                    "label": gettext_lazy("Work Area Assignments"),
+                    "url_name": "opportunity:worker_work_areas",
+                }
+            ]
         context = self.get_context_data(opportunity, org_slug)
         context.update(self.get_extra_context(opportunity, org_slug))
         return render(
@@ -2759,6 +2772,7 @@ class WorkerPaymentsView(BaseWorkerListView):
             opportunity=opportunity, payment_accrued__gte=0, accepted=True
         ).order_by("-payment_accrued")
         query_set = query_set.annotate(
+            status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
             last_paid=Max("payment__date_paid"),
             total_paid_d=get_payment_subquery(),
             confirmed_paid_d=get_payment_subquery(True),
@@ -2786,6 +2800,22 @@ class WorkerTaskView(BaseWorkerListView, FilterMixin):
     def get_table(self, opportunity, org_slug):
         data = self._get_filter().qs
         table = WorkerTasksTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
+        RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        return table
+
+
+class WorkerWorkAreaView(BaseWorkerListView):
+    hx_template_name = "opportunity/worker_list_work_areas.html"
+    active_tab = "work_areas"
+
+    def dispatch(self, request, *args, **kwargs):
+        if not is_flag_active(MICROPLANNING, self.get_opportunity()):
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_table(self, opportunity, org_slug):
+        data = get_worker_work_area_table_data(opportunity)
+        table = WorkerWorkAreaTable(data, org_slug=org_slug)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
 
@@ -3372,15 +3402,29 @@ def visit_export_count(request, org_slug, opp_id):
     return HttpResponse(html)
 
 
-class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, OrgContextSingleTableView):
+class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, FilterMixin, OrgContextSingleTableView):
     template_name = "opportunity/assigned_task_list.html"
     table_class = AssignedTaskListTable
     paginate_by = DEFAULT_PAGE_SIZE
+    filter_class = AssignedTaskFilterSet
+
+    def get_paginate_by(self, table_data):
+        return get_validated_page_size(self.request)
+
+    def get_filter_kwargs(self):
+        return {
+            "queryset": self.get_queryset(),
+            "request": self.request,
+            "opportunity": self.get_opportunity(),
+        }
 
     def get_table_kwargs(self):
         kwargs = super().get_table_kwargs()
         kwargs["opp_id"] = self.get_opportunity().opportunity_id
         return kwargs
+
+    def get_table_data(self):
+        return self._get_filter().qs
 
     def get_queryset(self):
         opportunity = self.get_opportunity()
@@ -3402,6 +3446,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, OrgCon
 
         context["opportunity"] = opportunity
         context.update(counts)
+        context.update(self.get_filter_context())
 
         context["path"] = [
             {"title": "Opportunities", "url": reverse("opportunity:list", kwargs={"org_slug": self.request.org.slug})},

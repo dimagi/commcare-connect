@@ -3,15 +3,8 @@
 {% load crispy_forms_tags %}
 
 {% block tab_options %}
-  <div x-cloak x-data="{showVisitImportModal: false, showVisitExportModal: false, showFilterModal: false}">
-    <button type="button" @click="showFilterModal = true" class="relative button-icon shadow-sm">
-      <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
-      {% if filters_applied_count %}
-      <span class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-brand-marigold border-2 border-white rounded-full transform translate-x-1/2 -translate-y-1/2">
-        {{ filters_applied_count }}
-      </span>
-      {% endif %}
-    </button>
+  {% include "components/filter_modal.html" with form_id="filterForm" hx_indicator="#loadingIndicator" %}
+  <div x-cloak x-data="{showVisitImportModal: false, showVisitExportModal: false}">
     <button type="button" @click="showVisitImportModal = true" class="button-icon shadow-sm"
             {% if request.org_membership.is_viewer %} disabled {% endif %}>
       <i class="fa-solid fa-upload text-brand-deep-purple"></i>
@@ -21,36 +14,6 @@
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% block modals %}
-        <div x-show="showFilterModal" class="modal-backdrop">
-          <div class="modal">
-            <div class="header text-lg font-semibold text-brand-deep-purple">
-              <h1>Filters</h1>
-              <button @click="showFilterModal = false">
-                <i class="fa-solid fa-xmark text-xl"></i>
-              </button>
-            </div>
-            <form
-              id="filterForm"
-              hx-get="."
-              hx-push-url="true"
-              hx-trigger="submit"
-              hx-indicator="#loadingIndicator"
-              class="content"
-            >
-              <div class="modal-body">
-                {% crispy filter_form %}
-              </div>
-              <div class="footer">
-                <button type="button" @click="showFilterModal = false" class="button button-md outline-style">Close</button>
-                <button
-                  form="filterForm" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">
-                  Apply
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
         {% url 'opportunity:visit_import' request.org.slug opportunity.opportunity_id as visit_import_url %}
         {% include "components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}
 

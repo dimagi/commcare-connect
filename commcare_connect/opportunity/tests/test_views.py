@@ -2294,6 +2294,48 @@ class TestAssignedTaskListView:
         assert response.context["open_tasks"] == 2
         assert response.context["complete_tasks"] == 1
 
+    @pytest.fixture
+    def two_tasks(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        at_assigned = AssignedTaskFactory(
+            task_type=task, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED
+        )
+        at_completed = AssignedTaskFactory(
+            task_type=task, opportunity_access=access, status=AssignedTaskStatus.COMPLETED
+        )
+        return [at_assigned, at_completed]
+
+    def test_filter_by_status_returns_filtered_table(
+        self, two_tasks, organization, org_user_member, opportunity, client
+    ):
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"task_status": AssignedTaskStatus.ASSIGNED})
+        assert response.status_code == 200
+
+        # Returns filtered table with only assigned tasks
+        assert len(response.context["table"].rows) == 1
+
+        # Filters applied count in context is correct
+        assert response.context["filters_applied_count"] == 1
+
+        # Metric counts in context are unaffected by filters
+        assert response.context["total_tasks"] == 2
+        assert response.context["open_tasks"] == 1
+        assert response.context["complete_tasks"] == 1
+
+    def test_page_size_param_is_respected(self, organization, org_user_member, opportunity, client):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        for _ in range(30):
+            AssignedTaskFactory(task_type=task, opportunity_access=access)
+
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"page_size": 30})
+        assert response.context["table"].page.paginator.per_page == 30
+
 
 @pytest.mark.django_db
 class TestTaskTypesConfig:

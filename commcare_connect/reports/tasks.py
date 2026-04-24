@@ -134,12 +134,12 @@ def sync_user_analytics_data():
 
 
 @celery_app.task()
-def export_invoice_report_task(filters_data):
+def export_invoice_report_task(filters_data, user_id):
     from commcare_connect.reports.views import InvoiceReportFilter, InvoiceReportTable, InvoiceReportView
 
     logger.info("Starting invoice report export task with filters: %s", filters_data)
 
-    qs = InvoiceReportView.get_invoice_queryset()
+    qs = InvoiceReportView.get_invoice_queryset(user=User.objects.get(id=user_id))
     filterset = InvoiceReportFilter(filters_data, queryset=qs)
     table = InvoiceReportTable(filterset.qs)
 
