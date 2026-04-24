@@ -14,7 +14,7 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -433,7 +433,11 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         if work_area_case_id := deliver_unit_block.get("work_area_id"):
             if is_a_uuid(work_area_case_id):
                 try:
-                    user_visit.work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+                    work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+                    user_visit.work_area = work_area
+                    if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
+                        work_area.status = WorkAreaStatus.VISITED
+                        work_area.save(update_fields=["status"])
                 except WorkArea.DoesNotExist:
                     raise ProcessingError("Work area not found")
             else:
