@@ -15,8 +15,8 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import Count, F, FloatField, Func, Q, Sum, Value
-from django.db.models.functions import Cast
+from django.db.models import Count, F, FloatField, Func, IntegerField, OuterRef, Q, Subquery, Sum, Value
+from django.db.models.functions import Cast, Coalesce
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -36,7 +36,7 @@ from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import WorkAreaModelForm
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.models import UserVisit
+from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
 from commcare_connect.organization.decorators import opportunity_required, org_admin_required
 from commcare_connect.utils.celery import CELERY_TASK_FAILURE, CELERY_TASK_SUCCESS
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -130,25 +130,40 @@ def microplanning_home(request, *args, **kwargs):
 
 
 def get_metrics_for_microplanning(opportunity):
-    qs = WorkArea.objects.filter(opportunity=opportunity)
+    approved_visits_for_work_area = (
+        UserVisit.objects.filter(
+            opportunity=opportunity,
+            work_area=OuterRef("pk"),
+            status=VisitValidationStatus.approved,
+        )
+        .values("work_area")
+        .annotate(c=Count("*"))
+        .values("c")
+    )
+
+    qs = WorkArea.objects.filter(opportunity=opportunity).annotate(
+        approved_count=Coalesce(
+            Subquery(approved_visits_for_work_area, output_field=IntegerField()),
+            0,
+        )
+    )
+
+    non_excluded = ~Q(status=WorkAreaStatus.EXCLUDED)
     agg = qs.aggregate(
         total=Count("id"),
         excluded=Count("id", filter=Q(status=WorkAreaStatus.EXCLUDED)),
-        non_excluded=Count("id", filter=~Q(status=WorkAreaStatus.EXCLUDED)),
-        unvisited=Count(
+        non_excluded=Count("id", filter=non_excluded),
+        unvisited=Count("id", filter=non_excluded & Q(approved_count=0)),
+        visited=Count("id", filter=non_excluded & Q(approved_count__gte=1)),
+        evc_reached=Count(
             "id",
-            filter=Q(status__in=[WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED, WorkAreaStatus.UNASSIGNED]),
+            filter=non_excluded & Q(approved_count__gte=F("expected_visit_count")),
         ),
-        visited=Count("id", filter=Q(status=WorkAreaStatus.VISITED)),
-        evc_reached=Count("id", filter=Q(status=WorkAreaStatus.EXPECTED_VISIT_REACHED)),
         inaccessible=Count("id", filter=Q(status=WorkAreaStatus.INACCESSIBLE)),
-        total_expected_visits=Sum(
-            "expected_visit_count",
-            filter=~Q(status=WorkAreaStatus.EXCLUDED),
-        ),
+        total_expected_visits=Sum("expected_visit_count", filter=non_excluded),
     )
 
-    non_excluded = agg["non_excluded"] or 0
+    non_excluded_count = agg["non_excluded"] or 0
     total = agg["total"] or 0
 
     def pct(numerator, denominator):
@@ -157,10 +172,13 @@ def get_metrics_for_microplanning(opportunity):
         return round(numerator / denominator * 100)
 
     total_expected = agg["total_expected_visits"] or 0
-    if non_excluded and total_expected:
-        total_visits = UserVisit.objects.filter(opportunity=opportunity).count()
-        pct_wa_visited = agg["visited"] / non_excluded
-        pct_visits = total_visits / total_expected
+    if non_excluded_count and total_expected:
+        total_approved_visits = UserVisit.objects.filter(
+            opportunity=opportunity,
+            status=VisitValidationStatus.approved,
+        ).count()
+        pct_wa_visited = agg["visited"] / non_excluded_count
+        pct_visits = total_approved_visits / total_expected
         visited_to_visits = round(pct_wa_visited / pct_visits, 2) if pct_visits else "--"
     else:
         visited_to_visits = "--"
@@ -172,22 +190,22 @@ def get_metrics_for_microplanning(opportunity):
         {
             "name": _("Unvisited Work Areas"),
             "value": agg["unvisited"],
-            "percentage": pct(agg["unvisited"], non_excluded),
+            "percentage": pct(agg["unvisited"], non_excluded_count),
         },
         {
             "name": _("Visited Work Areas"),
             "value": agg["visited"],
-            "percentage": pct(agg["visited"], non_excluded),
+            "percentage": pct(agg["visited"], non_excluded_count),
         },
         {
             "name": _("EVC Reached"),
             "value": agg["evc_reached"],
-            "percentage": pct(agg["evc_reached"], non_excluded),
+            "percentage": pct(agg["evc_reached"], non_excluded_count),
         },
         {
             "name": _("Inaccessible Work Areas"),
             "value": agg["inaccessible"],
-            "percentage": pct(agg["inaccessible"], non_excluded),
+            "percentage": pct(agg["inaccessible"], non_excluded_count),
         },
         {
             "name": _("Excluded Work Areas"),

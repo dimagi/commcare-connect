@@ -1058,23 +1058,33 @@ class TestGetMetricsForMicroplanningWorkAreas:
         assert m["percentage"] == 67  # round(2/3 * 100)
 
     def test_pct_visited_to_pct_visits(self, opp):
-        """Ratio uses approved UserVisits only, and data-driven `visited` count."""
-        # 2 non-excluded WAs; expected_visit_count = 10 each → total_expected = 20
-        wa_visited, wa_second = self._make_work_areas(
+        """Ratio uses approved UserVisits only, and data-driven `visited` count.
+
+        Setup:
+          - wa_visited (NOT_STARTED, expected=10): 1 approved → counted as visited
+          - wa_unvisited (NOT_STARTED, expected=10): 0 approved → not visited
+          - wa_excluded (EXCLUDED, expected=10): 3 approved → excluded from denominator
+          pct_wa_visited = 1/2 = 0.5  (non_excluded = 2)
+          total_approved = 1 + 0 + 3 = 4
+          total_expected (non_excluded) = 10 + 10 = 20
+          pct_visits = 4/20 = 0.2
+          ratio = 0.5 / 0.2 = 2.5
+        """
+        wa_visited, wa_unvisited, wa_excluded = self._make_work_areas(
             opp,
-            [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_STARTED],
-            expected_visit_counts=[10, 10],
+            [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_STARTED, WorkAreaStatus.EXCLUDED],
+            expected_visit_counts=[10, 10, 10],
         )
-        # 1 WA with approved visits → pct_wa_visited = 1/2 = 0.5
+        # 1 approved on visited WA
         self._make_visits(opp, wa_visited, approved=1)
-        # 4 approved visits total (1 on wa_visited + 3 more on wa_second, pending visits ignored)
-        self._make_visits(opp, wa_second, approved=3, pending=5)
-        # Non-approved noise on opportunity level (e.g., a pending visit with no work area) must be ignored.
+        # 3 approved on excluded WA (boosts total_approved without affecting non_excluded denominator)
+        self._make_visits(opp, wa_excluded, approved=3)
+        # Non-approved noise must be ignored.
+        self._make_visits(opp, wa_unvisited, pending=5)
         UserVisitFactory(opportunity=opp, work_area=None, status=VisitValidationStatus.pending)
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "% WA visited to % total visits")
-        # pct_visits = 4/20 = 0.2 → ratio = 0.5/0.2 = 2.5
         assert m["value"] == 2.5
         assert "percentage" not in m
         assert "unit" not in m
