@@ -503,9 +503,8 @@ def exclude_work_areas(request, org_slug, opp_id):
 @require_flag_for_opp(MICROPLANNING)
 def download_work_areas(request, org_slug, opp_id):
     opportunity = request.opportunity
-    filterset = WorkAreaMapFilterSet(
-        request.GET, queryset=WorkArea.objects.filter(opportunity=opportunity), opportunity=opportunity
-    )
+    base_qs = WorkArea.objects.filter(opportunity=opportunity).exclude(status=WorkAreaStatus.EXCLUDED)
+    filterset = WorkAreaMapFilterSet(request.GET, queryset=base_qs, opportunity=opportunity)
     queryset = filterset.qs.annotate(group_name=F("work_area_group__name"))
     response = StreamingHttpResponse(WorkAreaCSVExporter.rows(queryset), content_type="text/csv")
     response["Content-Disposition"] = f'attachment; filename="work_area_summary_{opportunity.opportunity_id}.csv"'
