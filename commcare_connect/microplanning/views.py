@@ -176,6 +176,7 @@ def get_metrics_for_microplanning(opportunity):
         total_approved_visits = UserVisit.objects.filter(
             opportunity=opportunity,
             status=VisitValidationStatus.approved,
+            work_area__isnull=False,
         ).count()
         pct_wa_visited = agg["visited"] / non_excluded_count
         pct_visits = total_approved_visits / total_expected
