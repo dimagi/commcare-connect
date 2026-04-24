@@ -599,7 +599,7 @@ def test_filter_worker_tasks_by_date_assigned_range(opportunity):
 
     AssignedTaskFactory(opportunity_access=access, task_type=task_type)
 
-    result = _filter_worker_tasks(opportunity, {"date_assigned_after": date.today() - timedelta(days=7)})
+    result = _filter_worker_tasks(opportunity, {"date_assigned_from": date.today() - timedelta(days=7)})
     assert len(result) == 1
 
 
@@ -611,7 +611,7 @@ def test_filter_worker_tasks_by_due_date_range(opportunity):
     AssignedTaskFactory(opportunity_access=access, task_type=task_type, due_date=date.today() + timedelta(days=1))
     AssignedTaskFactory(opportunity_access=access, task_type=task_type, due_date=date.today() + timedelta(days=30))
 
-    result = _filter_worker_tasks(opportunity, {"due_date_before": date.today() + timedelta(days=7)})
+    result = _filter_worker_tasks(opportunity, {"due_date_to": date.today() + timedelta(days=7)})
     assert len(result) == 1
 
 
