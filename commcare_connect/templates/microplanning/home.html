@@ -28,12 +28,21 @@
                 </div>
 
                 <div class="w-full border-t border-white/20 pt-4 lg:w-auto lg:border-t-0 lg:border-l lg:border-white/20 lg:pl-8 lg:pt-0">
-                    <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-3xl xl:grid-cols-6">
+                    <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-4xl xl:grid-cols-[repeat(7,minmax(0,1fr))]">
                         {% for metric in metrics %}
                             <div class="metric-card rounded-md p-3 text-center">
-                                <div class="text-xl font-semibold text-white">
-                                    {{ metric.value|default:"--" }}
-                                </div>
+                                {% if "percentage" in metric %}
+                                    <div class="flex items-baseline justify-between gap-1 text-white">
+                                        <span class="text-xl font-semibold">{{ metric.value|default:"--" }}</span>
+                                        <span class="text-sm">
+                                            {% if metric.percentage is not None %}({{ metric.percentage }}%){% else %}--{% endif %}
+                                        </span>
+                                    </div>
+                                {% else %}
+                                    <div class="text-xl font-semibold text-white">
+                                        {{ metric.value }}{% if metric.unit %}{{ metric.unit }}{% endif %}
+                                    </div>
+                                {% endif %}
                                 <div class="mt-0.5 text-xs text-white/80">{{ metric.name }}</div>
                             </div>
                         {% endfor %}
