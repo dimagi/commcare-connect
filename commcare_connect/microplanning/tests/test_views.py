@@ -765,7 +765,7 @@ class TestExcludeWorkAreasTask:
             wa.refresh_from_db()
             assert wa.status == WorkAreaStatus.EXCLUDED
             assert wa.work_area_group is None
-            assert wa.excluded_by == org_user_admin
+            assert wa.excluded_by == org_user_admin.email
             assert wa.excluded_reason == "Flooding"
 
         assert mock_bulk_hq.call_count == 1

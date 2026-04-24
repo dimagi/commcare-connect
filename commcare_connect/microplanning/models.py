@@ -1,7 +1,6 @@
 from functools import cached_property
 
 import pghistory
-from django.conf import settings
 from django.contrib.gis.db import models as geo_models
 from django.db.models import Sum
 from django.utils.translation import gettext_lazy as _
@@ -66,13 +65,7 @@ class WorkArea(geo_models.Model):
     )
     case_id = geo_models.UUIDField(null=True, blank=True, unique=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
-    excluded_by = geo_models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=geo_models.SET_NULL,
-        related_name="excluded_work_areas",
-    )
+    excluded_by = geo_models.EmailField(blank=True, default="")
     excluded_reason = geo_models.CharField(max_length=500, blank=True, default="")
 
     class Meta:

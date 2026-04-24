@@ -322,7 +322,7 @@ def cluster_work_areas_task(opp_id):
 def _bulk_exclude(work_areas, user, exclusion_reason):
     for wa in work_areas:
         wa.status = WorkAreaStatus.EXCLUDED
-        wa.excluded_by = user
+        wa.excluded_by = user.email
         wa.excluded_reason = exclusion_reason
         wa.work_area_group = None
     with transaction.atomic(), pghistory.context(
