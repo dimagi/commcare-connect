@@ -930,15 +930,15 @@ class TestGetMetricsForMicroplanningWorkAreas:
             areas.append(WorkAreaFactory(opportunity=opp, status=status, expected_visit_count=evc))
         return areas
 
-    def _make_approved_visits(self, opp, work_area, count, extra_non_approved=0):
-        """Create `count` approved UserVisits for `work_area` + optional non-approved noise."""
-        for _ in range(count):
+    def _make_visits(self, opp, work_area, *, approved=0, pending=0):
+        """Create `approved` approved + `pending` pending UserVisits for `work_area`."""
+        for _ in range(approved):
             UserVisitFactory(
                 opportunity=opp,
                 work_area=work_area,
                 status=VisitValidationStatus.approved,
             )
-        for _ in range(extra_non_approved):
+        for _ in range(pending):
             UserVisitFactory(
                 opportunity=opp,
                 work_area=work_area,
@@ -961,7 +961,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
         Inaccessible with 0 approved visits is included.
         """
-        wa_visited, wa_no_visits_1, wa_no_visits_2, wa_inaccessible, wa_excluded = self._make_work_areas(
+        wa_visited, wa_pending_only, wa_empty, wa_inaccessible, wa_excluded = self._make_work_areas(
             opp,
             [
                 WorkAreaStatus.NOT_STARTED,
@@ -971,13 +971,13 @@ class TestGetMetricsForMicroplanningWorkAreas:
                 WorkAreaStatus.EXCLUDED,
             ],
         )
-        self._make_approved_visits(opp, wa_visited, count=2)
+        self._make_visits(opp, wa_visited, approved=2)
         # Pending visits don't count — these WAs stay "unvisited".
-        self._make_approved_visits(opp, wa_no_visits_1, count=0, extra_non_approved=3)
+        self._make_visits(opp, wa_pending_only, pending=3)
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Unvisited Work Areas")
-        # non_excluded = 4 (wa_visited, wa_no_visits_1, wa_no_visits_2, wa_inaccessible)
+        # non_excluded = 4 (wa_visited, wa_pending_only, wa_empty, wa_inaccessible)
         # unvisited = 3 (all non-excluded except wa_visited)
         assert m["value"] == 3
         assert m["percentage"] == 75  # round(3/4 * 100)
@@ -994,11 +994,11 @@ class TestGetMetricsForMicroplanningWorkAreas:
             ],
         )
         # Two WAs get approved visits; one gets only non-approved (does NOT count as visited).
-        self._make_approved_visits(opp, wa_visited_1, count=1)
-        self._make_approved_visits(opp, wa_visited_2, count=3)
-        self._make_approved_visits(opp, wa_no_visits, count=0, extra_non_approved=2)
+        self._make_visits(opp, wa_visited_1, approved=1)
+        self._make_visits(opp, wa_visited_2, approved=3)
+        self._make_visits(opp, wa_no_visits, pending=2)
         # Approved visits on an excluded WA must not bump visited count.
-        self._make_approved_visits(opp, wa_excluded, count=5)
+        self._make_visits(opp, wa_excluded, approved=5)
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Visited Work Areas")
@@ -1018,10 +1018,10 @@ class TestGetMetricsForMicroplanningWorkAreas:
             ],
             expected_visit_counts=[5, 5, 5, 5],
         )
-        self._make_approved_visits(opp, wa_reached, count=5)  # reached
-        self._make_approved_visits(opp, wa_partial, count=4)  # not reached
-        self._make_approved_visits(opp, wa_over, count=7)  # reached (>=)
-        self._make_approved_visits(opp, wa_excluded_reached, count=10)  # excluded — ignored
+        self._make_visits(opp, wa_reached, approved=5)  # reached
+        self._make_visits(opp, wa_partial, approved=4)  # not reached
+        self._make_visits(opp, wa_over, approved=7)  # reached (>=)
+        self._make_visits(opp, wa_excluded_reached, approved=10)  # excluded — ignored
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "EVC Reached")
@@ -1060,15 +1060,15 @@ class TestGetMetricsForMicroplanningWorkAreas:
     def test_pct_visited_to_pct_visits(self, opp):
         """Ratio uses approved UserVisits only, and data-driven `visited` count."""
         # 2 non-excluded WAs; expected_visit_count = 10 each → total_expected = 20
-        wa_visited, wa_unvisited = self._make_work_areas(
+        wa_visited, wa_second = self._make_work_areas(
             opp,
             [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_STARTED],
             expected_visit_counts=[10, 10],
         )
         # 1 WA with approved visits → pct_wa_visited = 1/2 = 0.5
-        self._make_approved_visits(opp, wa_visited, count=1)
-        # 4 approved visits total (1 on wa_visited + 3 more on wa_unvisited, pending visits ignored)
-        self._make_approved_visits(opp, wa_unvisited, count=3, extra_non_approved=5)
+        self._make_visits(opp, wa_visited, approved=1)
+        # 4 approved visits total (1 on wa_visited + 3 more on wa_second, pending visits ignored)
+        self._make_visits(opp, wa_second, approved=3, pending=5)
         # Non-approved noise on opportunity level (e.g., a pending visit with no work area) must be ignored.
         UserVisitFactory(opportunity=opp, work_area=None, status=VisitValidationStatus.pending)
 
@@ -1104,7 +1104,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
                 WorkAreaStatus.UNASSIGNED,  # has approved visit → visited
             ],
         )
-        self._make_approved_visits(opp, wa_with_visits, count=1)
+        self._make_visits(opp, wa_with_visits, approved=1)
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "Unvisited Work Areas")
