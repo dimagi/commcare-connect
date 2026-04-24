@@ -727,8 +727,8 @@ def send_task_assignment_notification(assigned_task_id: int):
         usernames=[access.user.username],
         data={
             "action": "ccc_generic_opportunity",
-            "title": "Notification Title",
-            "body": "Notification description",
+            "title": "New Task Assigned",
+            "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
             "opportunity_uuid": str(access.opportunity.opportunity_id),
             "opportunity_status": "delivery",
             "key": "task_assignment",
