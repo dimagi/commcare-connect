@@ -178,9 +178,9 @@ def get_metrics_for_microplanning(opportunity):
             status=VisitValidationStatus.approved,
             work_area__isnull=False,
         ).count()
-        pct_wa_visited = agg["visited"] or 0 / non_excluded_count
+        pct_wa_visited = (agg["visited"] or 0) / non_excluded_count
         pct_visits = total_approved_visits / total_expected
-        visited_to_visits = round(pct_wa_visited / pct_visits, 2) if pct_visits else "--"
+        visited_to_visits = round((pct_wa_visited * 100) / pct_visits, 2) if pct_visits else "--"
     else:
         visited_to_visits = "--"
 
@@ -213,7 +213,7 @@ def get_metrics_for_microplanning(opportunity):
             "value": agg["excluded"],
             "percentage": pct(agg["excluded"], total),
         },
-        {"name": _("% WA visited to % total visits"), "value": visited_to_visits},
+        {"name": _("% WA visited to % total visits"), "value": visited_to_visits, "unit": "%"},
     ]
 
 

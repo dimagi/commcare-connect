@@ -1085,9 +1085,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
 
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "% WA visited to % total visits")
-        assert m["value"] == 2.5
+        assert m["value"] == 250
         assert "percentage" not in m
-        assert "unit" not in m
+        assert m["unit"] == "%"
 
     def test_pct_visited_to_pct_visits_zero_denominator(self, opp):
         """No visits and no expected visits → show '--'."""
@@ -1095,7 +1095,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         metrics = get_metrics_for_microplanning(opp)
         m = self._get_metric(metrics, "% WA visited to % total visits")
         assert m["value"] == "--"
-        assert "unit" not in m
+        assert m["unit"] == "%"
 
     def test_pct_visited_ignores_visits_without_work_area(self, opp):
         """Approved visits with no work_area must not inflate the ratio's total_approved denominator."""
@@ -1113,7 +1113,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         m = self._get_metric(metrics, "% WA visited to % total visits")
         # total_approved (WA-attached) = 1 → pct_visits = 1/20 = 0.05
         # pct_wa_visited = 1/2 = 0.5 → ratio = 0.5 / 0.05 = 10.0
-        assert m["value"] == 10.0
+        assert m["value"] == 1000.0
 
     def test_zero_non_excluded_work_areas(self, opp):
         """All WAs excluded → percentage metrics show None; visited count is 0."""
