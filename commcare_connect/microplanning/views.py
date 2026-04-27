@@ -308,7 +308,7 @@ class WorkAreaTileView(MVTView):
 
 class UserVisitVectorLayer(VectorLayer):
     id = "user-visits"
-    tile_fields = ()
+    tile_fields = ("work_area_id",)
     geom_field = "location_point"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -342,7 +342,7 @@ class UserVisitVectorLayer(VectorLayer):
                     output_field=PointField(srid=4326),
                 )
             )
-            .values("location_point")
+            .values("location_point", "work_area_id")
         )
 
 

@@ -5,6 +5,7 @@
         Alpine.data("mapController", () => ({
             map: null,
             selectedFeature: null,
+            highlightedWorkAreaId: null,
             showWorkAreaEditModal: false,
             showVisits: false,
             filterQuery: '',
@@ -33,6 +34,84 @@
                 const url = editWorkAreaUrl + workAreaId + '/';
                 htmx.ajax('GET', url, { target: '#work-area-form', swap: 'innerHTML' })
                 .then(() => this.showWorkAreaEditModal = true)
+            },
+
+            updateHighlightedWorkAreaId() {
+                this.highlightedWorkAreaId = (this.assignmentMode || !this.selectedFeature)
+                    ? null
+                    : this.selectedFeature._id;
+            },
+
+            buildVisitCirclePaint() {
+                const hasSelection = this.highlightedWorkAreaId !== null;
+                return {
+                    'circle-radius': [
+                        'interpolate', ['linear'], ['zoom'],
+                        8, 2,
+                        14, 5,
+                    ],
+                    'circle-color': '#e74c3c',
+                    'circle-opacity': hasSelection ? 0.2 : 0.7,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-stroke-opacity': 0.5,
+                };
+            },
+
+            addVisitHighlightLayer() {
+                if (!this.map || this.map.getLayer('user-visits-highlight')) return;
+                this.map.addLayer({
+                    id: 'user-visits-highlight',
+                    type: 'symbol',
+                    source: 'user-visits',
+                    'source-layer': 'user-visits',
+                    layout: {
+                        'text-field': '◆',
+                        'text-size': [
+                            'interpolate', ['linear'], ['zoom'],
+                            8, 13,
+                            14, 22,
+                        ],
+                        'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+                        'text-allow-overlap': true,
+                        'text-ignore-placement': true,
+                        'visibility': 'none',
+                    },
+                    paint: {
+                        'text-color': '#22c55e',
+                        'text-halo-color': '#000000',
+                        'text-halo-width': 2.5,
+                    },
+                });
+            },
+
+            refreshVisitStyling() {
+                if (!this.map) return;
+
+                if (this.map.getLayer('user-visits-circle')) {
+                    this.map.setPaintProperty(
+                        'user-visits-circle',
+                        'circle-opacity',
+                        this.highlightedWorkAreaId !== null ? 0.2 : 0.7,
+                    );
+                }
+
+                if (this.map.getLayer('user-visits-highlight')) {
+                    const id = this.highlightedWorkAreaId;
+                    if (id === null) {
+                        this.map.setLayoutProperty('user-visits-highlight', 'visibility', 'none');
+                    } else {
+                        this.map.setFilter(
+                            'user-visits-highlight',
+                            ['==', ['get', 'work_area_id'], id],
+                        );
+                        this.map.setLayoutProperty(
+                            'user-visits-highlight',
+                            'visibility',
+                            this.showVisits ? 'visible' : 'none',
+                        );
+                    }
+                }
             },
 
             getDownloadUrl() {
@@ -339,6 +418,9 @@
                     this.initializeMap();
                 });
 
+                this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
+                this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
+
                 if (this.assignmentMode) {
                     const assigneesEl = document.getElementById('assignees-data');
                     if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
@@ -566,26 +648,20 @@
                             type: 'circle',
                             source: 'user-visits',
                             'source-layer': 'user-visits',
-                            paint: {
-                                'circle-radius': [
-                                    'interpolate', ['linear'], ['zoom'],
-                                    8, 2,
-                                    14, 5
-                                ],
-                                'circle-color': '#e74c3c',
-                                'circle-opacity': 0.7,
-                                'circle-stroke-width': 1,
-                                'circle-stroke-color': '#ffffff',
-                                'circle-stroke-opacity': 0.5,
-                            }
+                            paint: this.buildVisitCirclePaint(),
                         });
+                        this.addVisitHighlightLayer();
                         visitsLayerAdded = true;
+                        this.refreshVisitStyling();
                     } else if (visitsLayerAdded) {
-                        this.map.setLayoutProperty(
-                            'user-visits-circle',
-                            'visibility',
-                            visible ? 'visible' : 'none'
-                        );
+                        this.map.setLayoutProperty('user-visits-circle', 'visibility', visible ? 'visible' : 'none');
+                        if (this.map.getLayer('user-visits-highlight')) {
+                            if (!visible) {
+                                this.map.setLayoutProperty('user-visits-highlight', 'visibility', 'none');
+                            } else {
+                                this.refreshVisitStyling();
+                            }
+                        }
                     }
                 });
 
