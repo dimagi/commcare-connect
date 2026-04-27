@@ -52,7 +52,6 @@ class AuditReportEntry(BaseModel):
     review_action = models.CharField(max_length=32, choices=ReviewAction.choices, null=True, blank=True)
 
     class Meta:
-        ordering = ["opportunity_access__user__name", "date_created"]
         indexes = [
             models.Index(fields=["audit_report", "flagged", "reviewed"]),
         ]
