@@ -2656,20 +2656,27 @@ class TestCreateTask:
     def _url(self, opportunity):
         return reverse("opportunity:create_task", args=(opportunity.organization.slug, opportunity.opportunity_id))
 
-    def test_create_task_success(self, client, org_user_member, opportunity, access):
+    def test_create_task_success(
+        self, client, org_user_member, opportunity, access, django_capture_on_commit_callbacks
+    ):
         client.force_login(org_user_member)
-        task = TaskTypeFactory(app=opportunity.deliver_app)
+        task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
         due_date = date.today() + timedelta(days=7)
-        response = client.post(
-            self._url(opportunity),
-            data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-        )
+
+        with mock.patch("commcare_connect.opportunity.tasks.sync_assigned_task_to_usercase") as mock_task:
+            with django_capture_on_commit_callbacks(execute=True):
+                response = client.post(
+                    self._url(opportunity),
+                    data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+                )
+
         assert response.status_code == HTTPStatus.OK
         assert "HX-Redirect" in response
         assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
         assert assigned.due_date == due_date
         assert assigned.status == AssignedTaskStatus.ASSIGNED
         assert assigned.assigned_by == org_user_member
+        mock_task.delay.assert_called_once_with(assigned.id)
         msgs = list(get_messages(response.wsgi_request))
         assert any("successfully" in str(m) for m in msgs)
 

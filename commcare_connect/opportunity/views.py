@@ -3546,11 +3546,10 @@ def create_task(request, org_slug, opp_id):
     access = form.cleaned_data["access"]
     due_date = form.cleaned_data["due_date"]
 
-    AssignedTask.objects.create(
+    AssignedTask.assign(
         task_type=task,
         opportunity_access=access,
         due_date=due_date,
-        status=AssignedTaskStatus.ASSIGNED,
         assigned_by=request.user,
     )
     messages.success(request, _("Task created successfully."))
