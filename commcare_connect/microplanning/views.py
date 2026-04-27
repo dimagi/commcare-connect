@@ -51,6 +51,7 @@ from .tasks import (
     WorkAreaCSVExporter,
     WorkAreaCSVImporter,
     cluster_work_areas_task,
+    exclude_work_areas_task,
     get_cluster_area_cache_lock_key,
     get_import_area_cache_key,
     import_work_areas_task,
@@ -59,6 +60,7 @@ from .tasks import (
 logger = logging.getLogger(__name__)
 
 WORKAREA_MIN_ZOOM = 6
+MAX_EXCLUDE_WORK_AREAS = 200
 
 
 @require_GET
@@ -460,6 +462,39 @@ def clustering_status(request, org_slug, opp_id):
         return response
 
     return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+
+@require_POST
+@org_admin_required
+@opportunity_required
+def exclude_work_areas(request, org_slug, opp_id):
+    exclusion_reason = request.POST.get("exclusion_reason", "").strip()
+    if not exclusion_reason:
+        return JsonResponse({"error": "exclusion_reason is required"}, status=400)
+    if len(exclusion_reason) > 500:
+        return JsonResponse({"error": "exclusion_reason must be at most 500 characters"}, status=400)
+
+    raw_ids = request.POST.getlist("work_area_ids[]")
+    if not raw_ids:
+        return JsonResponse({"error": "work_area_ids[] is required"}, status=400)
+    if len(raw_ids) > MAX_EXCLUDE_WORK_AREAS:
+        return JsonResponse(
+            {"error": f"work_area_ids[] must contain at most {MAX_EXCLUDE_WORK_AREAS} items"},
+            status=400,
+        )
+
+    try:
+        work_area_ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "work_area_ids[] must be integers"}, status=400)
+
+    exclude_work_areas_task.delay(
+        opp_id=request.opportunity.id,
+        work_area_ids=work_area_ids,
+        user_id=request.user.id,
+        exclusion_reason=exclusion_reason,
+    )
+    return JsonResponse({"status": "queued"}, status=202)
 
 
 @require_GET

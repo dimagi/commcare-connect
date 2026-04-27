@@ -3,18 +3,26 @@ import io
 import logging
 from collections import defaultdict
 
+import pghistory
+from django.contrib.auth import get_user_model
 from django.contrib.gis.geos import GEOSException, GEOSGeometry
 from django.core.cache import cache
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
+from commcare_connect.commcarehq.api import bulk_update_cases
+from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
-from .models import SRID, WorkArea
+from .models import SRID, WorkArea, WorkAreaStatus
 
 logger = logging.getLogger(__name__)
+
+HQ_BULK_CHUNK_SIZE = 50
 
 
 def get_import_area_cache_key(opp_id: int):
@@ -309,3 +317,80 @@ def cluster_work_areas_task(opp_id):
     lock_key = get_cluster_area_cache_lock_key(opp_id)
     with cache.lock(lock_key, timeout=1200):
         WorkAreaGrouper(opp_id).cluster_work_areas()
+
+
+def _bulk_exclude(work_areas, user, exclusion_reason):
+    for wa in work_areas:
+        wa.status = WorkAreaStatus.EXCLUDED
+        wa.excluded_by = user.email
+        wa.excluded_reason = exclusion_reason
+        wa.work_area_group = None
+    with transaction.atomic(), pghistory.context(
+        reason=exclusion_reason,
+        username=user.username,
+        user_email=user.email,
+    ):
+        WorkArea.objects.bulk_update(
+            work_areas,
+            fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
+        )
+
+
+@celery_app.task()
+def exclude_work_areas_task(opp_id, work_area_ids, user_id, exclusion_reason):
+    """Exclude work areas and unassign their HQ cases.
+    HQ calls are batched by HQ_BULK_CHUNK_SIZE; a batch failure skips DB exclusion
+    for the whole chunk. The task itself does not fail on per-chunk errors.
+    """
+    User = get_user_model()
+    opportunity = Opportunity.objects.get(pk=opp_id)
+    user = User.objects.get(pk=user_id)
+
+    excluded = 0
+    skipped = 0
+    failed = 0
+
+    work_areas_map = {wa.id: wa for wa in WorkArea.objects.filter(id__in=work_area_ids, opportunity=opportunity)}
+
+    api_key = opportunity.api_key
+    domain = opportunity.deliver_app.cc_domain if opportunity.deliver_app else None
+
+    needs_hq = []
+    db_only = []
+
+    for work_area_id in work_area_ids:
+        work_area = work_areas_map.get(work_area_id)
+        if work_area is None or work_area.status != WorkAreaStatus.NOT_STARTED:
+            skipped += 1
+            continue
+
+        if work_area.case_id and api_key and domain:
+            needs_hq.append(work_area)
+        else:
+            db_only.append(work_area)
+
+    for i in range(0, len(needs_hq), HQ_BULK_CHUNK_SIZE):
+        chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]  # noqa: E203
+        # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
+        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
+        try:
+            bulk_update_cases(api_key, domain, updates)
+        except CommCareHQAPIException as e:
+            logger.warning("Failed to unassign HQ case chunk (size=%d): %s", len(chunk), e)
+            failed += len(chunk)
+            continue
+        _bulk_exclude(chunk, user, exclusion_reason)
+        excluded += len(chunk)
+
+    if db_only:
+        _bulk_exclude(db_only, user, exclusion_reason)
+        excluded += len(db_only)
+
+    logger.info(
+        "exclude_work_areas_task finished opp=%s requested=%d excluded=%d skipped=%d failed=%d",
+        opp_id,
+        len(work_area_ids),
+        excluded,
+        skipped,
+        failed,
+    )
