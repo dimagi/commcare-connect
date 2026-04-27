@@ -37,8 +37,9 @@ class AuditCalculation(ABC):
     - ``min_sample_size``: if the reported sample size is less than this,
       ``has_sufficient_data`` is False and the result is considered in-range
       by convention (no actionable data).
-    - ``lower_bound`` / ``upper_bound``: inclusive-exclusive acceptability
-      range for the value. Either may be ``None`` to disable that side.
+    - ``lower_bound`` / ``upper_bound``: inclusive acceptability range for
+      the value (``lower_bound <= value <= upper_bound``). Either may be
+      ``None`` to disable that side.
     """
 
     name: ClassVar[str]
