@@ -1,4 +1,32 @@
+from django.conf import settings
 from django.http import JsonResponse
+from django.urls import reverse
+from django.views.decorators.http import require_GET
+
+
+@require_GET
+def oauth_authorization_server(request):
+    """RFC 8414 OAuth 2.0 Authorization Server Metadata."""
+
+    def absolute(url_name):
+        return request.build_absolute_uri(reverse(url_name))
+
+    scopes = list(settings.OAUTH2_PROVIDER.get("SCOPES", {}).keys())
+    metadata = {
+        "issuer": f"{request.scheme}://{request.get_host()}",
+        "authorization_endpoint": absolute("oauth2_provider:authorize"),
+        "token_endpoint": absolute("oauth2_provider:token"),
+        "introspection_endpoint": absolute("oauth2_provider:introspect"),
+        "userinfo_endpoint": absolute("oauth2_provider:user-info"),
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+        "code_challenge_methods_supported": ["S256"],
+        "scopes_supported": scopes,
+    }
+    response = JsonResponse(metadata)
+    response["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 def assetlinks_json(request):
