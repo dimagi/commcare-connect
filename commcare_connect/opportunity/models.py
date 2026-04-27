@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pghistory
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Count, F, Q, Sum
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
@@ -452,6 +452,20 @@ class AssignedTask(XFormBaseModel):
                 fields=["xform_id", "task_type", "opportunity_access"], name="unique_xform_assigned_task"
             )
         ]
+
+    @classmethod
+    def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> "AssignedTask":
+        from commcare_connect.opportunity.tasks import sync_assigned_task_to_usercase
+
+        task = cls.objects.create(
+            task_type=task_type,
+            opportunity_access=opportunity_access,
+            due_date=due_date,
+            status=AssignedTaskStatus.ASSIGNED,
+            assigned_by=assigned_by,
+        )
+        transaction.on_commit(lambda: sync_assigned_task_to_usercase.delay(task.id))
+        return task
 
 
 class Assessment(XFormBaseModel):

@@ -1,10 +1,19 @@
 import datetime
+from datetime import date, timedelta
+from unittest import mock
 
 import pytest
 
 from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
-from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, PaymentInvoice
+from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
+    InvoiceStatus,
+    Opportunity,
+    OpportunityClaimLimit,
+    PaymentInvoice,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -16,6 +25,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    TaskTypeFactory,
     UserVisitFactory,
 )
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number
@@ -211,3 +221,29 @@ class TestOpportunityActiveTracking:
         # No request context in tests — both events should have no context
         assert events.first().pgh_context is None
         assert events.last().pgh_context is None
+
+
+@pytest.mark.django_db
+class TestAssignedTaskAssign:
+    def test_creates_row_and_enqueues_sync(self, django_capture_on_commit_callbacks):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+        assigner = access.user
+
+        with mock.patch("commcare_connect.opportunity.tasks.sync_assigned_task_to_usercase") as mock_task:
+            with django_capture_on_commit_callbacks(execute=True):
+                assigned = AssignedTask.assign(
+                    task_type=task_type,
+                    opportunity_access=access,
+                    due_date=due_date,
+                    assigned_by=assigner,
+                )
+
+        assert isinstance(assigned, AssignedTask)
+        assert assigned.task_type == task_type
+        assert assigned.opportunity_access == access
+        assert assigned.due_date == due_date
+        assert assigned.status == AssignedTaskStatus.ASSIGNED
+        assert assigned.assigned_by == assigner
+        mock_task.delay.assert_called_once_with(assigned.id)
