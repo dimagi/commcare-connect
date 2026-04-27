@@ -9,6 +9,7 @@ from commcare_connect.opportunity.models import (
     DeliverUnit,
     OpportunityAccess,
     Payment,
+    PaymentInvoiceLineItem,
     PaymentUnit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -313,8 +314,36 @@ def get_uninvoiced_completed_works_qs(opportunity, start_date=None, end_date=Non
 
 
 def get_invoiced_visit_items(payment_invoice):
-    completed_works_qs = CompletedWork.objects.filter(invoice=payment_invoice)
-    return get_invoice_items(completed_works_qs)
+    """Return per-(month, payment_unit) rows for a persisted invoice.
+
+    Prefers the frozen `PaymentInvoiceLineItem` snapshot when present, otherwise
+    falls back to live aggregation over linked `CompletedWork` records (for
+    invoices that predate the snapshot feature or haven't been backfilled yet).
+    Amount columns and `amount_per_unit` are frozen in the snapshot;
+    `payment_unit_name` and `currency` remain live reads (display labels, not
+    arithmetic drivers).
+    """
+    snapshot_rows = list(
+        PaymentInvoiceLineItem.objects.filter(invoice=payment_invoice).select_related("payment_unit").order_by("month")
+    )
+    if snapshot_rows:
+        return [
+            {
+                "month": item.month,
+                "payment_unit_name": item.payment_unit.name,  # live label
+                "payment_unit_id": item.payment_unit_id,
+                "number_approved": item.record_count,
+                "amount_per_unit": item.amount_per_unit,
+                "total_amount_local": item.total_amount_local,
+                "total_amount_usd": item.total_amount_usd,
+                "exchange_rate": item.exchange_rate,
+                "currency": payment_invoice.opportunity.currency_code,  # live label
+            }
+            for item in snapshot_rows
+        ]
+    # Transitional fallback: remove once backfill_invoice_line_items has run in prod and
+    # `PaymentInvoice.objects.filter(service_delivery=True, line_items__isnull=True)` is empty.
+    return get_invoice_items(CompletedWork.objects.filter(invoice=payment_invoice))
 
 
 def get_uninvoiced_visit_items(opportunity, start_date=None, end_date=None):
@@ -357,6 +386,7 @@ def get_invoice_items(completed_works_qs):
             {
                 "month": record["month_approved"],
                 "payment_unit_name": record["payment_unit_name"],
+                "payment_unit_id": record["payment_unit"],
                 "number_approved": record["record_count"],
                 "amount_per_unit": record["payment_unit_amount"],
                 "total_amount_local": record["total_amount_local"],
@@ -367,6 +397,25 @@ def get_invoice_items(completed_works_qs):
         )
 
     return invoice_items
+
+
+def create_invoice_line_items(invoice, line_items):
+    """Persist an invoice's line-item snapshot from an already-computed aggregate."""
+    PaymentInvoiceLineItem.objects.bulk_create(
+        [
+            PaymentInvoiceLineItem(
+                invoice=invoice,
+                month=item["month"],
+                payment_unit_id=item["payment_unit_id"],
+                record_count=item["number_approved"],
+                amount_per_unit=item["amount_per_unit"],
+                total_amount_local=item["total_amount_local"],
+                total_amount_usd=item["total_amount_usd"],
+                exchange_rate=item["exchange_rate"],
+            )
+            for item in line_items
+        ]
+    )
 
 
 def link_invoice_to_completed_works(invoice, start_date=None, end_date=None):

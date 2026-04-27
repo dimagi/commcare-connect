@@ -1,10 +1,19 @@
 import datetime
 
 import pytest
+from django.db import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
-from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, PaymentInvoice
+from commcare_connect.opportunity.models import (
+    CompletedWorkStatus,
+    InvoiceStatus,
+    Opportunity,
+    OpportunityClaimLimit,
+    PaymentInvoice,
+    PaymentInvoiceLineItem,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -15,6 +24,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimLimitFactory,
     OpportunityFactory,
     PaymentInvoiceFactory,
+    PaymentInvoiceLineItemFactory,
     PaymentUnitFactory,
     UserVisitFactory,
 )
@@ -211,3 +221,44 @@ class TestOpportunityActiveTracking:
         # No request context in tests — both events should have no context
         assert events.first().pgh_context is None
         assert events.last().pgh_context is None
+
+
+@pytest.mark.django_db
+class TestPaymentInvoiceLineItem:
+    def test_unique_per_invoice_month_payment_unit(self, opportunity):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+        pu = PaymentUnitFactory(opportunity=opportunity)
+        month = datetime.date(2026, 1, 1)
+        PaymentInvoiceLineItemFactory(invoice=invoice, month=month, payment_unit=pu)
+        with pytest.raises(IntegrityError):
+            PaymentInvoiceLineItemFactory(invoice=invoice, month=month, payment_unit=pu)
+
+    def test_cascade_on_invoice_delete(self, opportunity):
+        invoice = PaymentInvoiceFactory(opportunity=opportunity)
+        PaymentInvoiceLineItemFactory(invoice=invoice)
+        invoice.delete()
+        assert PaymentInvoiceLineItem.objects.count() == 0
+
+    def test_cancel_invoice_preserves_line_items(self, opportunity):
+        pu = PaymentUnitFactory(opportunity=opportunity)
+        opp_access = OpportunityAccessFactory(opportunity=opportunity)
+        invoice = PaymentInvoiceFactory(
+            opportunity=opportunity,
+            service_delivery=True,
+            status=InvoiceStatus.PENDING_NM_REVIEW,
+        )
+        cw = CompletedWorkFactory(
+            opportunity_access=opp_access,
+            payment_unit=pu,
+            status=CompletedWorkStatus.approved,
+            status_modified_date=now(),
+            invoice=invoice,
+        )
+        PaymentInvoiceLineItemFactory(invoice=invoice, payment_unit=pu)
+
+        invoice.unlink_completed_works()
+
+        # CWs detached, but snapshot remains
+        cw.refresh_from_db()
+        assert cw.invoice is None
+        assert PaymentInvoiceLineItem.objects.filter(invoice=invoice).count() == 1

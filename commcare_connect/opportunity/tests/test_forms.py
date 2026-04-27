@@ -1,5 +1,6 @@
 import datetime
 import json
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -23,6 +24,7 @@ from commcare_connect.opportunity.models import (
     CompletedWork,
     CompletedWorkStatus,
     CredentialConfiguration,
+    PaymentInvoiceLineItem,
     PaymentUnit,
 )
 from commcare_connect.opportunity.tests.factories import (
@@ -723,6 +725,118 @@ class TestAutomatedPaymentInvoiceForm:
         invoice = form.save()
 
         assert CompletedWork.objects.get(id=cw.id).invoice == invoice
+
+    def test_service_delivery_save_creates_line_items(self, valid_opportunity):
+        ExchangeRateFactory()
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            status=CompletedWorkStatus.approved,
+            saved_payment_accrued=50,
+            saved_payment_accrued_usd=50,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-SD-001",
+                "amount": 100.0,
+                "date": "2025-11-06",
+                "title": "Service Delivery Invoice",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "Monthly services rendered.",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid()
+        invoice = form.save()
+
+        line_items = PaymentInvoiceLineItem.objects.filter(invoice=invoice)
+        assert line_items.count() == 1
+        line_item = line_items.first()
+        assert line_item.payment_unit_id == cw.payment_unit_id
+        assert line_item.record_count == 1
+
+    def test_service_delivery_snapshot_derived_from_linked_cws_not_submitted_amount(self, valid_opportunity):
+        """Snapshot rows reflect the linked CompletedWork aggregate, not the submitted `amount`.
+
+        The UI renders `amount` as readonly and populates it from the same aggregation the
+        snapshot captures, so in practice sum(snapshot) == invoice.amount. This test pins the
+        save-layer contract against a future contributor adding a validation that couples the
+        two — see grill-resolutions Q1 ("no extra validation").
+        """
+        ExchangeRateFactory()
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            status=CompletedWorkStatus.approved,
+            saved_payment_accrued=50,
+            saved_payment_accrued_usd=50,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="service_delivery",
+            data={
+                "invoice_number": "INV-SD-DRIFT",
+                "amount": 100.0,  # deliberately mismatched with CW sum to prove save-layer decoupling
+                "date": "2025-11-06",
+                "title": "Service Delivery Invoice",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "description": "Monthly services rendered.",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid()
+        invoice = form.save()
+
+        snapshot_total = sum(
+            item.total_amount_local for item in PaymentInvoiceLineItem.objects.filter(invoice=invoice)
+        )
+        assert snapshot_total == Decimal("50")  # from linked CWs
+        assert invoice.amount == Decimal("100")  # submitted value preserved
+        assert snapshot_total != invoice.amount  # save does not couple the two
+
+    def test_custom_invoice_save_creates_no_line_items(self, valid_opportunity):
+        ExchangeRateFactory()
+        cw = CompletedWorkFactory(
+            opportunity_access__opportunity=valid_opportunity,
+            status=CompletedWorkStatus.approved,
+            saved_payment_accrued=50,
+            saved_payment_accrued_usd=50,
+        )
+        cw.status_modified_date = datetime.date(2025, 10, 5)
+        cw.save()
+
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity,
+            invoice_type="custom",
+            data={
+                "invoice_number": "INV-CUST-001",
+                "date": "2025-11-06",
+                "usd_currency": False,
+                "amount": 100.0,
+                "start_date": None,
+                "end_date": None,
+                "description": "A mandatory description",
+                "title": "",
+                "date_of_expense": "2025-11-05",
+            },
+            is_opportunity_pm=False,
+        )
+
+        assert form.is_valid()
+        invoice = form.save()
+
+        assert not invoice.service_delivery
+        assert PaymentInvoiceLineItem.objects.filter(invoice=invoice).count() == 0
 
     def test_readonly_form_initialization(self, valid_opportunity):
         invoice = PaymentInvoiceFactory(

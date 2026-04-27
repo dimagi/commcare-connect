@@ -46,7 +46,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import link_invoice_to_completed_works
+from commcare_connect.opportunity.utils.completed_work import (
+    create_invoice_line_items,
+    get_invoice_items,
+    link_invoice_to_completed_works,
+)
 from commcare_connect.opportunity.utils.invoice import (
     generate_invoice_number,
     get_end_date_for_invoice,
@@ -1826,6 +1830,8 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
             instance.save()
             if self.is_service_delivery:
                 link_invoice_to_completed_works(instance, start_date=instance.start_date, end_date=instance.end_date)
+                line_items = get_invoice_items(CompletedWork.objects.filter(invoice=instance))
+                create_invoice_line_items(instance, line_items)
 
         return instance
 
