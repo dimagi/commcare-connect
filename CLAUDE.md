@@ -30,9 +30,9 @@ pytest path/to/test_file.py::test_name  # run single test
 # Linting (runs black, isort, flake8, pyupgrade, django-upgrade, prettier)
 pre-commit run -a
 
-# Requirements (pip-tools)
-inv requirements                    # recompile .txt from .in files
-inv requirements --upgrade-package <pkg>
+# Requirements (uv)
+uv sync
+uv add <pkg>
 
 # Translations
 inv translations
