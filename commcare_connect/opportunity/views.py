@@ -2616,9 +2616,7 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
             tabs_with_urls.append({**tab, "url": url})
 
         # Label with count for workers tab
-        workers_count = (
-            UserInvite.objects.filter(opportunity=opportunity).exclude(status=UserInviteStatus.not_found).count()
-        )
+        workers_count = UserInvite.objects.filter(opportunity=opportunity).count()
         tabs_with_urls[0]["label"] = _("Connect Workers") + f" ({workers_count})"
         return tabs_with_urls
 
@@ -2686,13 +2684,27 @@ class WorkerView(BaseWorkerListView):
     hx_template_name = "opportunity/workers.html"
     active_tab = "workers"
 
+    def _get_search_term(self):
+        return self.request.GET.get("q", "").strip()
+
     def get_extra_context(self, opportunity, org_slug):
-        return {"export_form": PaymentExportForm()}
+        context = {
+            "export_form": PaymentExportForm(),
+            "search_term": self._get_search_term(),
+        }
+        if self.request.htmx:
+            # Counts for "Displaying X of Y Connect Workers"; table already built by get_context_data.
+            table = self._table
+            context["worker_filtered_count"] = table.paginator.count
+            context["worker_total_count"] = UserInvite.objects.filter(opportunity=opportunity).count()
+        return context
 
     def get_table(self, opportunity, org_slug):
-        data = get_worker_table_data(opportunity)
+        data = get_worker_table_data(opportunity, search_term=self._get_search_term())
         table = WorkerStatusTable(data)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
+        # Cache for get_extra_context so we can read paginator.count without requerying.
+        self._table = table
         return table
 
 
