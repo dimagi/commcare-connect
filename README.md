@@ -18,6 +18,18 @@ need to edit some settings.
     # create a venv and install requirements
     $ uv sync
 
+    # This will also create a virtual environment in .venv if
+    # one does not already exist. To activate the environment:
+    source .venv/bin/activate
+
+    # For convenience, you can create an alias to activate
+    # virtual environments in ".venv" and "venv" directories.
+    # To do that, add the following to your .bashrc or .zshrc file (optional):
+    alias venv='if [[ -d .venv ]] ; then source .venv/bin/activate ; elif [[ -d venv ]] ; then source venv/bin/activate ; fi'
+
+    # Then you can activate virtual environments with
+    venv
+
     # install git hooks
     $ pre-commit install
     $ pre-commit run -a
