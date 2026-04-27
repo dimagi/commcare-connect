@@ -21,6 +21,7 @@ from commcare_connect.program.api.serializers import (
     ProgramResponseSerializer,
 )
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
+from commcare_connect.program.tasks import send_opportunity_created_email, send_program_invite_email
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class ProgramApplicationCreateView(ProgramAPIView):
         )
         serializer.is_valid(raise_exception=True)
         application = serializer.save()
+        transaction.on_commit(lambda: send_program_invite_email(application.id))
         return Response(
             ProgramApplicationResponseSerializer(application).data,
             status=status.HTTP_201_CREATED,
@@ -96,6 +98,7 @@ class ManagedOpportunityCreateView(ProgramAPIView):
             with transaction.atomic():
                 opportunity = serializer.save()
                 sync_learn_modules_and_deliver_units(opportunity)
+                transaction.on_commit(lambda: send_opportunity_created_email(opportunity.id))
         except (
             CommCareHQAPIException,
             AppNoBuildException,

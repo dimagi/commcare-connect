@@ -159,17 +159,28 @@ class TestProgramCreate:
 
 @pytest.mark.django_db
 class TestProgramApplication:
-    def test_invite_organization(self, api_client, program_manager_org_user_admin, program, organization):
+    @patch("commcare_connect.program.api.views.send_program_invite_email")
+    def test_invite_organization(
+        self,
+        mock_send_email,
+        api_client,
+        program_manager_org_user_admin,
+        program,
+        organization,
+        django_capture_on_commit_callbacks,
+    ):
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/programs/{program.program_id}/applications/",
-            {"organization": organization.slug},
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = api_client.post(
+                f"/api/programs/{program.program_id}/applications/",
+                {"organization": organization.slug},
+                format="json",
+            )
         assert response.status_code == 201
         assert response.data["status"] == "invited"
         assert response.data["organization"] == organization.slug
-        assert ProgramApplication.objects.filter(program=program, organization=organization).exists()
+        application = ProgramApplication.objects.get(program=program, organization=organization)
+        mock_send_email.assert_called_once_with(application.id)
 
     def test_accept_application(self, api_client, program_manager_org_user_admin, program):
         application = ProgramApplicationFactory(program=program, status=ProgramApplicationStatus.INVITED)
@@ -227,12 +238,14 @@ def _opportunity_payload(org, hq_server, hq_api_key):
 
 @pytest.mark.django_db
 class TestManagedOpportunityCreate:
+    @patch("commcare_connect.program.api.views.send_opportunity_created_email")
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
     def test_create_managed_opportunity(
         self,
         mock_deliver_units,
         mock_learn_modules,
+        mock_send_email,
         mock_hq_apps,
         api_client,
         program_manager_org_user_admin,
@@ -241,6 +254,7 @@ class TestManagedOpportunityCreate:
         accepted_application,
         hq_server,
         hq_api_key,
+        django_capture_on_commit_callbacks,
     ):
         mock_learn_modules.return_value = [Module(id="mod-1", name="Module 1", description="Desc", time_estimate=10)]
         mock_deliver_units.return_value = [
@@ -249,11 +263,12 @@ class TestManagedOpportunityCreate:
         ]
 
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/programs/{program.program_id}/opportunities/",
-            _opportunity_payload(organization, hq_server, hq_api_key),
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = api_client.post(
+                f"/api/programs/{program.program_id}/opportunities/",
+                _opportunity_payload(organization, hq_server, hq_api_key),
+                format="json",
+            )
         assert response.status_code == 201
         assert response.data["managed"] is True
         assert response.data["program_id"] == str(program.program_id)
@@ -272,6 +287,7 @@ class TestManagedOpportunityCreate:
         assert opp.delivery_type == program.delivery_type
         assert opp.learn_app.name == "Test Learn App"
         assert opp.deliver_app.name == "Test Deliver App"
+        mock_send_email.assert_called_once_with(opp.id)
 
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
@@ -432,6 +448,7 @@ class TestManagedOpportunityCreate:
         )
         assert response.status_code == 400
 
+    @patch("commcare_connect.program.api.views.send_opportunity_created_email")
     @patch("commcare_connect.program.api.serializers.get_applications_for_user_by_domain")
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")
     @patch("commcare_connect.opportunity.tasks.get_deliver_units_for_app")
@@ -440,6 +457,7 @@ class TestManagedOpportunityCreate:
         mock_deliver_units,
         mock_learn_modules,
         mock_hq_apps,
+        mock_send_email,
         api_client,
         program_manager_org_user_admin,
         program,
@@ -447,8 +465,9 @@ class TestManagedOpportunityCreate:
         accepted_application,
         hq_server,
         hq_api_key,
+        django_capture_on_commit_callbacks,
     ):
-        """If the HQ sync step fails, the opportunity + apps should be rolled back."""
+        """If the HQ sync step fails, the opportunity + apps should be rolled back and no email sent."""
         mock_hq_apps.return_value = [
             {"id": "learn-app-123", "name": "Test Learn App"},
             {"id": "deliver-app-456", "name": "Test Deliver App"},
@@ -457,12 +476,14 @@ class TestManagedOpportunityCreate:
         mock_learn_modules.side_effect = httpx.ConnectError("connection refused")
 
         api_client.force_authenticate(program_manager_org_user_admin)
-        response = api_client.post(
-            f"/api/programs/{program.program_id}/opportunities/",
-            _opportunity_payload(organization, hq_server, hq_api_key),
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = api_client.post(
+                f"/api/programs/{program.program_id}/opportunities/",
+                _opportunity_payload(organization, hq_server, hq_api_key),
+                format="json",
+            )
         assert response.status_code == 502
         assert not ManagedOpportunity.objects.filter(program=program).exists()
         assert not CommCareApp.objects.filter(cc_app_id="learn-app-123").exists()
         assert not CommCareApp.objects.filter(cc_app_id="deliver-app-456").exists()
+        mock_send_email.assert_not_called()
