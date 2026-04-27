@@ -287,6 +287,9 @@ class TestManagedOpportunityCreate:
         assert opp.delivery_type == program.delivery_type
         assert opp.learn_app.name == "Test Learn App"
         assert opp.deliver_app.name == "Test Deliver App"
+        # is_test defaults to True when not supplied
+        assert response.data["is_test"] is True
+        assert opp.is_test is True
         mock_send_email.assert_called_once_with(opp.id)
 
     @patch("commcare_connect.opportunity.tasks.get_connect_blocks_for_app")

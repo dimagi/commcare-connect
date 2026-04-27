@@ -133,6 +133,7 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     total_budget = serializers.IntegerField(min_value=1)
+    is_test = serializers.BooleanField(required=False, default=True)
     learn_app = LearnAppInputSerializer()
     deliver_app = CommCareAppInputSerializer()
 
@@ -257,6 +258,7 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
             start_date=validated_data["start_date"],
             end_date=validated_data["end_date"],
             total_budget=validated_data["total_budget"],
+            is_test=validated_data["is_test"],
             currency=program.currency,
             country=program.country,
             delivery_type=program.delivery_type,
@@ -303,6 +305,7 @@ class ManagedOpportunityResponseSerializer(serializers.ModelSerializer):
             "start_date",
             "end_date",
             "total_budget",
+            "is_test",
             "learn_app",
             "deliver_app",
             "currency",
