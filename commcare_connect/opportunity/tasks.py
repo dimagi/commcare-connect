@@ -22,6 +22,7 @@ from django.utils.translation import gettext
 from tablib import Dataset
 
 from commcare_connect.cache import quickcache
+from commcare_connect.commcarehq.api import update_usercase
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
@@ -37,6 +38,7 @@ from commcare_connect.opportunity.export import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
@@ -64,6 +66,7 @@ from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
@@ -394,6 +397,22 @@ def download_user_visit_attachments(self, user_visit_id: int):
                 headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
             )
             default_storage.save(str(blob_meta.blob_id), ContentFile(response.content, name))
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(CommCareHQAPIException,),
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def sync_assigned_task_to_usercase(self, assigned_task_id: int):
+    task = AssignedTask.objects.select_related("task_type", "opportunity_access").get(pk=assigned_task_id)
+    case_property = task.task_type.case_property
+    if not case_property:
+        return
+    update_usercase(task.opportunity_access, data={"properties": {case_property: "1"}})
 
 
 @celery_app.task()
