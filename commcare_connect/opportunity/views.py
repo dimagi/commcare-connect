@@ -210,6 +210,7 @@ from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
@@ -3546,14 +3547,17 @@ def create_task(request, org_slug, opp_id):
     access = form.cleaned_data["access"]
     due_date = form.cleaned_data["due_date"]
 
-    AssignedTask.objects.create(
-        task_type=task,
-        opportunity_access=access,
-        due_date=due_date,
-        status=AssignedTaskStatus.ASSIGNED,
-        assigned_by=request.user,
-    )
-    messages.success(request, _("Task created successfully."))
+    try:
+        AssignedTask.assign(
+            task_type=task,
+            opportunity_access=access,
+            due_date=due_date,
+            assigned_by=request.user,
+        )
+    except CommCareHQAPIException:
+        messages.error(request, _("Task creation failed: could not update CommCare HQ. Please try again."))
+    else:
+        messages.success(request, _("Task created successfully."))
     redirect_url = _task_redirect_url(request, org_slug, opp_id)
     return HttpResponse(headers={"HX-Redirect": redirect_url})
 

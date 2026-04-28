@@ -453,6 +453,21 @@ class AssignedTask(XFormBaseModel):
             )
         ]
 
+    @classmethod
+    def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> "AssignedTask":
+        from commcare_connect.commcarehq.api import update_usercase
+
+        case_property = task_type.case_property
+        if case_property:
+            update_usercase(opportunity_access, data={"properties": {case_property: "1"}})
+        return cls.objects.create(
+            task_type=task_type,
+            opportunity_access=opportunity_access,
+            due_date=due_date,
+            status=AssignedTaskStatus.ASSIGNED,
+            assigned_by=assigned_by,
+        )
+
 
 class Assessment(XFormBaseModel):
     user = models.ForeignKey(
