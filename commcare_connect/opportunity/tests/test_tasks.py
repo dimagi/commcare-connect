@@ -8,7 +8,6 @@ from tablib import Dataset
 
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.opportunity.models import (
-    AssignedTaskStatus,
     BlobMeta,
     CompletedWorkStatus,
     ExchangeRate,
@@ -34,11 +33,9 @@ from commcare_connect.opportunity.tasks import (
     generate_work_status_export,
     notify_user_for_scored_assessment,
     save_export,
-    sync_assigned_task_to_usercase,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssessmentFactory,
-    AssignedTaskFactory,
     CompletedModuleFactory,
     CompletedWorkFactory,
     LearnModuleFactory,
@@ -46,11 +43,9 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityClaimFactory,
     OpportunityFactory,
     PaymentUnitFactory,
-    TaskTypeFactory,
     UserVisitFactory,
 )
 from commcare_connect.users.models import User
-from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
 class TestConnectUserCreation:
@@ -478,43 +473,3 @@ class TestExportTasksCreateExportFile:
         args = mock_save.call_args[0]
         assert args[1].endswith("_catchment_area.csv")
         assert args[2] == "csv"
-
-
-@pytest.mark.django_db
-class TestSyncAssignedTaskToUsercase:
-    def test_pushes_case_property_to_hq(self):
-        task_type = TaskTypeFactory(case_property="needs_assessment")
-        assigned = AssignedTaskFactory(task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
-
-        with mock.patch("commcare_connect.opportunity.tasks.update_usercase") as mock_update:
-            sync_assigned_task_to_usercase(assigned.id)
-
-        mock_update.assert_called_once_with(
-            assigned.opportunity_access,
-            data={"properties": {"needs_assessment": "1"}},
-        )
-
-    @pytest.mark.parametrize("case_property", [None, ""])
-    def test_skips_when_case_property_missing(self, case_property):
-        task_type = TaskTypeFactory(case_property=case_property)
-        assigned = AssignedTaskFactory(task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
-
-        with mock.patch("commcare_connect.opportunity.tasks.update_usercase") as mock_update:
-            sync_assigned_task_to_usercase(assigned.id)
-
-        mock_update.assert_not_called()
-
-    def test_propagates_hq_exception_for_celery_to_retry(self):
-        """The Celery decorator's autoretry_for catches CommCareHQAPIException;
-        the inner function must let it propagate (not swallow)."""
-        task_type = TaskTypeFactory(case_property="x")
-        assigned = AssignedTaskFactory(task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
-
-        with mock.patch(
-            "commcare_connect.opportunity.tasks.update_usercase",
-            side_effect=CommCareHQAPIException("boom"),
-        ):
-            # Call .run() directly so the decorator's autoretry doesn't kick in;
-            # we just want to confirm the inner function raises.
-            with pytest.raises(CommCareHQAPIException):
-                sync_assigned_task_to_usercase.run(assigned.id)

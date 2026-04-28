@@ -67,6 +67,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
 @pytest.mark.django_db
@@ -2656,19 +2657,16 @@ class TestCreateTask:
     def _url(self, opportunity):
         return reverse("opportunity:create_task", args=(opportunity.organization.slug, opportunity.opportunity_id))
 
-    def test_create_task_success(
-        self, client, org_user_member, opportunity, access, django_capture_on_commit_callbacks
-    ):
+    def test_create_task_success(self, client, org_user_member, opportunity, access):
         client.force_login(org_user_member)
         task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
         due_date = date.today() + timedelta(days=7)
 
-        with mock.patch("commcare_connect.opportunity.tasks.sync_assigned_task_to_usercase") as mock_task:
-            with django_capture_on_commit_callbacks(execute=True):
-                response = client.post(
-                    self._url(opportunity),
-                    data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-                )
+        with mock.patch("commcare_connect.commcarehq.api.update_usercase") as mock_update:
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
 
         assert response.status_code == HTTPStatus.OK
         assert "HX-Redirect" in response
@@ -2676,9 +2674,29 @@ class TestCreateTask:
         assert assigned.due_date == due_date
         assert assigned.status == AssignedTaskStatus.ASSIGNED
         assert assigned.assigned_by == org_user_member
-        mock_task.delay.assert_called_once_with(assigned.id)
+        mock_update.assert_called_once_with(access, data={"properties": {"some_prop": "1"}})
         msgs = list(get_messages(response.wsgi_request))
         assert any("successfully" in str(m) for m in msgs)
+
+    def test_create_task_hq_failure_shows_error_and_no_row(self, client, org_user_member, opportunity, access):
+        client.force_login(org_user_member)
+        task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.update_usercase",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assert not AssignedTask.objects.filter(task_type=task, opportunity_access=access).exists()
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("CommCare HQ" in str(m) for m in msgs)
 
     def test_create_task_invalid_form(self, client, org_user_member, opportunity):
         client.force_login(org_user_member)
