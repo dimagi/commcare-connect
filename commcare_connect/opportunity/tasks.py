@@ -37,6 +37,7 @@ from commcare_connect.opportunity.export import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
@@ -713,6 +714,28 @@ def _send_auto_invoice_created_notification(invoice_ids):
             )
         except Exception as e:
             logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def send_task_assignment_notification(assigned_task_id: int):
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+    ).get(pk=assigned_task_id)
+    access = assigned_task.opportunity_access
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "New Task Assigned",
+            "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "task_assignment",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
 
 
 @celery_app.task()

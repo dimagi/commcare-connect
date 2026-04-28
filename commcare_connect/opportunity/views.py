@@ -177,6 +177,7 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_invoice_paid_mail,
     send_push_notification_task,
+    send_task_assignment_notification,
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.utils.completed_work import (
@@ -3546,13 +3547,14 @@ def create_task(request, org_slug, opp_id):
     access = form.cleaned_data["access"]
     due_date = form.cleaned_data["due_date"]
 
-    AssignedTask.objects.create(
+    assigned_task = AssignedTask.objects.create(
         task_type=task,
         opportunity_access=access,
         due_date=due_date,
         status=AssignedTaskStatus.ASSIGNED,
         assigned_by=request.user,
     )
+    transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
     messages.success(request, _("Task created successfully."))
     redirect_url = _task_redirect_url(request, org_slug, opp_id)
     return HttpResponse(headers={"HX-Redirect": redirect_url})
