@@ -63,6 +63,10 @@ class Migration(migrations.Migration):
                 blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to="opportunity.opportunityaccess"
             ),
         ),
+        migrations.RunPython(
+            copy_opportunity_access_from_group_to_work_areas,
+            reverse_code=migrations.RunPython.noop,
+        ),
         pgtrigger.migrations.AddTrigger(
             model_name="workarea",
             trigger=pgtrigger.compiler.Trigger(
