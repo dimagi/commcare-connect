@@ -258,22 +258,14 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
-    deliver_matches = [
-        match.value for match in DELIVER_UNIT_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
-    ]
-    for deliver_unit_block in deliver_matches:
+    for deliver_unit_block in _get_matching_blocks(DELIVER_UNIT_JSONPATH, xform):
         process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
 
-    task_matches = [
-        match.value for match in TASK_MODULE_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
-    ]
+    task_matches = _get_matching_blocks(TASK_MODULE_JSONPATH, xform)
     if task_matches:
         process_task_modules(user, xform, app, opportunity, task_matches)
 
-    work_area_update_matches = [
-        match.value for match in WORK_AREA_UPDATE_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
-    ]
-    for block in work_area_update_matches:
+    for block in _get_matching_blocks(WORK_AREA_UPDATE_JSONPATH, xform):
         process_work_area_update(user, opportunity, block)
 
 
