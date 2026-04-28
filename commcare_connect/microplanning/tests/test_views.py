@@ -764,9 +764,14 @@ class TestSaveAssignment:
             content_type="application/json",
         )
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
-    def test_assigns_work_areas_and_sets_status(
-        self, mock_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    def test_assigns_work_areas_and_syncs_to_hq(
+        self,
+        mock_hq_sync,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
     ):
         access = OpportunityAccessFactory(opportunity=managed_opportunity)
         wa1 = WorkAreaFactory(opportunity=managed_opportunity)
@@ -782,19 +787,26 @@ class TestSaveAssignment:
 
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-        assert mock_sync.call_count == 2
+        mock_hq_sync.assert_called_once()
+        synced_ids = {wa.id for wa in mock_hq_sync.call_args[0][0]}
+        assert synced_ids == {wa1.id, wa2.id}
         for wa in [wa1, wa2]:
             wa.refresh_from_db()
             assert wa.opportunity_access_id == access.id
-            assert wa.status == WorkAreaStatus.NOT_STARTED
 
-    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
-    def test_hq_failure_rolls_back_assignment(
-        self, mock_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
+    def test_hq_failure_rolls_back_db(
+        self,
+        mock_hq_sync,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
     ):
+        """If HQ sync fails, the DB assignment must not be committed."""
+        mock_hq_sync.side_effect = CommCareHQAPIException("HQ unavailable")
         access = OpportunityAccessFactory(opportunity=managed_opportunity)
         wa = WorkAreaFactory(opportunity=managed_opportunity)
-        mock_sync.side_effect = CommCareHQAPIException("HQ down")
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
