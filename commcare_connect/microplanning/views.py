@@ -29,7 +29,10 @@ from django.views.generic.edit import UpdateView
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 
-from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
+from commcare_connect.commcarehq.api import (
+    bulk_create_or_update_cases_by_work_areas,
+    create_or_update_case_by_work_area,
+)
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
@@ -602,38 +605,30 @@ def save_assignment(request, org_slug, opp_id):
 
     invalid_ids = assignee_ids - valid_accesses.keys()
     if invalid_ids:
-        if invalid_ids:
-            return JsonResponse(
-                {"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400
-            )
+        return JsonResponse({"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400)
+
+    work_area_to_access = {
+        int(wa_id): valid_accesses[int(entry["assignee_id"])]
+        for entry in assignments
+        for wa_id in entry.get("work_area_ids", [])
+    }
+
+    all_work_areas = list(
+        WorkArea.objects.filter(
+            id__in=work_area_to_access,
+            opportunity=request.opportunity,
+        ).select_for_update()
+    )
+
+    for work_area in all_work_areas:
+        work_area.opportunity_access = work_area_to_access[work_area.id]
+
+    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access"])
 
     try:
-        with transaction.atomic():
-            for entry in assignments:
-                opp_access = valid_accesses[int(entry["assignee_id"])]
-                work_area_ids = entry.get("work_area_ids", [])
-
-                work_areas = list(
-                    WorkArea.objects.filter(
-                        id__in=work_area_ids,
-                        opportunity=request.opportunity,
-                    ).select_for_update()
-                )
-
-                for work_area in work_areas:
-                    work_area.opportunity_access = opp_access
-                    work_area.status = WorkAreaStatus.NOT_STARTED
-
-                WorkArea.objects.bulk_update(work_areas, ["opportunity_access", "status"])
-
-                for work_area in work_areas:
-                    create_or_update_case_by_work_area(work_area)
-
-    except CommCareHQAPIException as e:
-        logger.error(f"HQ sync failed during assignment: {e}")
-        return JsonResponse(
-            {"error": _("Failed to sync with CommCare HQ. Assignment not saved.")},
-            status=502,
-        )
+        bulk_create_or_update_cases_by_work_areas(all_work_areas)
+    except CommCareHQAPIException:
+        transaction.set_rollback(True)
+        return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
 
     return JsonResponse({"status": "ok"})
