@@ -1,6 +1,5 @@
 import django_filters
 from django import forms
-from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
@@ -23,7 +22,7 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
 
     assignee = django_filters.ModelMultipleChoiceFilter(
         label=_("Assignee"),
-        field_name="work_area_group__opportunity_access__user",
+        field_name="opportunity_access__user",
         queryset=User.objects.none(),
         widget=forms.SelectMultiple(attrs={"data-tomselect": "1", "class": INPUT_CSS}),
     )
@@ -43,6 +42,7 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
     )
 
     unassigned_only = django_filters.BooleanFilter(
+        label=_("Show Only Unassigned"),
         method="filter_unassigned_only",
     )
 
@@ -61,7 +61,7 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
             self.filters["assignee"].queryset = (
                 User.objects.filter(
                     opportunityaccess__opportunity=opportunity,
-                    opportunityaccess__workareagroup__isnull=False,
+                    opportunityaccess__workarea__isnull=False,
                 )
                 .distinct()
                 .order_by("name")
@@ -73,9 +73,7 @@ class WorkAreaMapFilterSet(django_filters.FilterSet):
 
     def filter_unassigned_only(self, queryset, name, value):
         if value:
-            return queryset.filter(
-                Q(work_area_group__isnull=True) | Q(work_area_group__opportunity_access__isnull=True)
-            )
+            return queryset.filter(opportunity_access__isnull=True)
         return queryset
 
 
@@ -111,7 +109,7 @@ class UserVisitMapFilterSet(django_filters.FilterSet):
             self.filters["assignee"].queryset = (
                 User.objects.filter(
                     opportunityaccess__opportunity=opportunity,
-                    opportunityaccess__workareagroup__isnull=False,
+                    opportunityaccess__workarea__isnull=False,
                 )
                 .distinct()
                 .order_by("name")
