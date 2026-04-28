@@ -75,7 +75,7 @@ def _back_fill_completed_learn_date(Opportunity, OpportunityAccess, CompletedMod
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("opportunity", "0074_payment_created_at"),
+        ("opportunity", "0073_payment_payment_method_payment_payment_operator"),
     ]
 
     operations = [
