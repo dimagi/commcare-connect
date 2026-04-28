@@ -283,7 +283,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, block: dict):
         raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
 
     try:
-        work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+        work_area = WorkArea.objects.select_for_update().get(case_id=work_area_case_id, opportunity=opportunity)
     except WorkArea.DoesNotExist:
         raise ProcessingError("Work area not found")
 
