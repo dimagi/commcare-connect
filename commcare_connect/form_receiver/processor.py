@@ -276,7 +276,7 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
     if opportunity_flags.duplicate:
         if user_visit.status == VisitValidationStatus.duplicate:
             flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
-    else:
+    if user_visit.status == VisitValidationStatus.duplicate and not opportunity_flags.duplicate:
         user_visit.status = VisitValidationStatus.pending
     if opportunity_flags.gps and user_visit.location is None:
         flags.append(["gps", "GPS data is missing"])
