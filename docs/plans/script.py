@@ -40,6 +40,9 @@ def _find_over_cap_visit_ids():
     qs = OpportunityClaimLimit.objects.select_related(
         "opportunity_claim__opportunity_access",
         "payment_unit",
+    ).filter(
+        opportunity_claim__opportunity_access__opportunity__active=True,
+        opportunity_claim__opportunity_access__opportunity__is_test=False,
     )
     if OPP_UUID:
         qs = qs.filter(
