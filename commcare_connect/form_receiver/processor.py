@@ -297,7 +297,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, block: dict):
     if new_status not in allowed:
         raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
 
-    reason = block.get("reason", "")
+    reason = block.get("reason", "").strip()
     if new_status in WORK_AREA_STATUS_REASON_REQUIRED and not reason:
         raise ProcessingError(f"Reason is required for status {new_status}")
 
