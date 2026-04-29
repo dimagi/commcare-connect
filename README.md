@@ -37,6 +37,9 @@ need to edit some settings.
     # create env file and edit the settings as needed (or export settings directly)
     $ cp .env_template .env
 
+    # command for installing new python dependencies
+    $ uv add <pkg>
+
 ### GeoDjango / PostGIS Setup
 
 Connect uses GeoDjango and PostGIS.
