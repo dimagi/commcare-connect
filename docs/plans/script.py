@@ -22,6 +22,7 @@ from collections import defaultdict
 from itertools import islice
 
 from django.db import transaction
+from django.db.models import Sum
 
 from commcare_connect.opportunity.models import (
     CompletedWork,
@@ -89,6 +90,26 @@ def _find_over_cap_completed_works():
             yield cl, over_cap_cw_ids, over_cap_visit_ids
 
 
+def _accrued_delta_by_access(plan):
+    """Return {access_id: {"worker": int, "org": int}} totals across the over-cap
+    CWs so the operator can see the projected payment_accrued reduction before
+    applying. Both values are >= 0; the corresponding accrued figures will
+    *decrease* by these amounts. The "org" total is only meaningful on managed
+    opportunities (zero on unmanaged ones)."""
+    deltas = defaultdict(lambda: {"worker": 0, "org": 0})
+    for cl, cw_ids, _ in plan:
+        if not cw_ids:
+            continue
+        agg = CompletedWork.objects.filter(id__in=cw_ids).aggregate(
+            worker=Sum("saved_payment_accrued"),
+            org=Sum("saved_org_payment_accrued"),
+        )
+        access_id = cl.opportunity_claim.opportunity_access_id
+        deltas[access_id]["worker"] += agg.get("worker") or 0
+        deltas[access_id]["org"] += agg.get("org") or 0
+    return deltas
+
+
 def main():
     plan = list(_find_over_cap_completed_works())
 
@@ -103,6 +124,10 @@ def main():
         f"({total_visits} associated UserVisit rows) across {len(plan)} claim limits."
     )
 
+    accrued_deltas = _accrued_delta_by_access(plan)
+    total_worker_drop = sum(d["worker"] for d in accrued_deltas.values())
+    total_org_drop = sum(d["org"] for d in accrued_deltas.values())
+
     if DRY_RUN:
         print("\n--- DRY RUN — printing breakdown ---")
         per_access = defaultdict(lambda: {"cws": 0, "visits": 0})
@@ -111,10 +136,17 @@ def main():
             per_access[access_id]["cws"] += len(cw_ids)
             per_access[access_id]["visits"] += len(visit_ids)
         for access_id, counts in sorted(per_access.items()):
+            delta = accrued_deltas.get(access_id, {"worker": 0, "org": 0})
             print(
                 f"  access {access_id}: {counts['cws']} CW(s), "
-                f"{counts['visits']} visit(s) -> over_limit"
+                f"{counts['visits']} visit(s) -> over_limit; "
+                f"worker payment_accrued -{delta['worker']}, "
+                f"org payment_accrued -{delta['org']}"
             )
+        print(
+            f"\nProjected total reduction across all affected accesses: "
+            f"worker -{total_worker_drop}, org -{total_org_drop}"
+        )
         print("Re-run with DRY_RUN = False to apply.")
         return
 
@@ -148,5 +180,6 @@ def main():
     print(
         f"Done. Flipped {len(affected_visit_ids)} UserVisit rows and "
         f"{len(affected_cw_ids)} CompletedWork rows. "
-        f"Recomputed payment_accrued for {len(affected_access_ids)} accesses."
+        f"Recomputed payment_accrued for {len(affected_access_ids)} accesses. "
+        f"Projected reduction: worker -{total_worker_drop}, org -{total_org_drop}."
     )
