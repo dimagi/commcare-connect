@@ -150,7 +150,7 @@ def main():
         print("Re-run with DRY_RUN = False to apply.")
         return
 
-    affected_access_ids = set()
+    affected_access_ids = sorted({cl.opportunity_claim.opportunity_access_id for cl, _, _ in plan})
     affected_visit_ids = [vid for _, _, visit_ids in plan for vid in visit_ids]
     affected_cw_ids = [cw_id for _, cw_ids, _ in plan for cw_id in cw_ids]
 
@@ -161,7 +161,6 @@ def main():
             visits = list(UserVisit.objects.select_for_update().filter(id__in=batch))
             for v in visits:
                 v.status = VisitValidationStatus.over_limit
-                affected_access_ids.add(v.opportunity_access_id)
             UserVisit.objects.bulk_update(visits, fields=["status", "status_modified_date"])
 
         for batch in _batched(affected_cw_ids, BATCH_SIZE):
@@ -170,16 +169,28 @@ def main():
                 cw.status = CompletedWorkStatus.over_limit
             CompletedWork.objects.bulk_update(cws, fields=["status", "status_modified_date"])
 
-    # Recompute payment_accrued for each affected access (full recompute, not incremental).
-    # Outside the atomic block because update_payment_accrued_for_user acquires its own
-    # Redis lock per access.
-    for access_id in sorted(affected_access_ids):
-        access = OpportunityAccess.objects.get(id=access_id)
-        update_payment_accrued_for_user(access, incremental=False)
+    # Recompute happens outside the atomic block because update_payment_accrued_for_user
+    # acquires its own Redis lock per access. If this loop is interrupted, the status
+    # flips are already committed but payment_accrued is stale for the unfinished
+    # accesses; the WARNING below prints the remaining ids so an operator can re-run
+    # update_payment_accrued_for_user(access, incremental=False) manually.
+    accesses_by_id = OpportunityAccess.objects.in_bulk(affected_access_ids)
+    recomputed = []
+    try:
+        for access_id in affected_access_ids:
+            update_payment_accrued_for_user(accesses_by_id[access_id], incremental=False)
+            recomputed.append(access_id)
+    finally:
+        if len(recomputed) != len(affected_access_ids):
+            remaining = [a for a in affected_access_ids if a not in recomputed]
+            print(
+                f"WARNING: recompute interrupted. {len(recomputed)} done, "
+                f"{len(remaining)} remaining: {remaining}"
+            )
 
     print(
         f"Done. Flipped {len(affected_visit_ids)} UserVisit rows and "
         f"{len(affected_cw_ids)} CompletedWork rows. "
-        f"Recomputed payment_accrued for {len(affected_access_ids)} accesses. "
+        f"Recomputed payment_accrued for {len(recomputed)}/{len(affected_access_ids)} accesses. "
         f"Projected reduction: worker -{total_worker_drop}, org -{total_org_drop}."
     )
