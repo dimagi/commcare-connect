@@ -2,7 +2,13 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from commcare_connect.opportunity.models import DeliverUnit, Opportunity, PaymentUnit
+from commcare_connect.opportunity.models import (
+    DeliverUnit,
+    Opportunity,
+    OpportunityClaim,
+    OpportunityClaimLimit,
+    PaymentUnit,
+)
 
 
 class PaymentUnitItemSerializer(serializers.Serializer):
@@ -20,7 +26,7 @@ class PaymentUnitItemSerializer(serializers.Serializer):
     def validate(self, data):
         opportunity = self.context["opportunity"]
 
-        if opportunity.managed and not data.get("org_amount"):
+        if opportunity.managed and data.get("org_amount") is None:
             raise serializers.ValidationError({"org_amount": _("org_amount is required for managed opportunities.")})
 
         if data["start_date"] and data["end_date"] and data["end_date"] < data["start_date"]:
@@ -98,6 +104,9 @@ class PaymentUnitListCreateSerializer(serializers.Serializer):
             self._assign_deliver_units(pu_data.get("required_deliver_units", []), pu, optional=False)
             self._assign_deliver_units(pu_data.get("optional_deliver_units", []), pu, optional=True)
             created.append(pu)
+        claims = OpportunityClaim.objects.filter(opportunity_access__opportunity=opportunity)
+        for claim in claims:
+            OpportunityClaimLimit.create_claim_limits(opportunity, claim)
         return created
 
     def _assign_deliver_units(self, deliver_unit_ids, payment_unit, optional):
