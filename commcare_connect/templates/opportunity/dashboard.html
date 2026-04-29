@@ -106,11 +106,11 @@
                   {% endfor %}
                   <div>
                     {% if object.is_active %}
-                        <span class="badge badge-md positive-dark">Active</span>
-                    {% elif object.has_ended %}
-                        <span class="badge badge-md warning-dark">Ended</span>
+                        <span class="badge badge-md positive-dark">{% trans 'Active' %}</span>
+                    {% elif object.active and object.has_ended %}
+                        <span class="badge badge-md warning-dark">{% trans 'Ended' %}</span>
                     {% else %}
-                        <span class="badge badge-md negative-dark">Inactive</span>
+                        <span class="badge badge-md negative-dark">{% trans 'Inactive' %}</span>
                     {% endif %}
                   </div>
               </div>
