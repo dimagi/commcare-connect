@@ -1,7 +1,18 @@
 """
-Identify and remediate UserVisit rows that exceed the per-worker cap configured
-on their OpportunityClaimLimit. Caused by the over_limit status-reset bug fixed
-in processor.py:280 (commit <fix-sha>).
+Identify and remediate CompletedWork (and their UserVisit) rows that exceed
+the per-worker cap configured on their OpportunityClaimLimit. Caused by the
+over_limit status-reset bug fixed in processor.py:280 (PR https://github.com/dimagi/commcare-connect/pull/1151).
+
+The cap (claim_limit.max_visits) is on EARNED PAYMENT UNITS, not on raw
+UserVisits. A payment unit can have multiple deliver units (e.g. registration
++ service delivery), so counting visits double-counts in those cases. We count
+CompletedWork rows instead — each CW is unique per (access, entity, payment_unit)
+and represents one earned payment unit regardless of how many deliver-unit
+forms it took to satisfy.
+
+For each over-cap CompletedWork we flip the CW *and all its UserVisits* to
+over_limit as a unit. This avoids any partial-flip inconsistency between a
+CW and its visits.
 
 Usage:
     Edit OPP_UUID and DRY_RUN below, then:
@@ -35,10 +46,13 @@ def _batched(iterable, n):
         yield batch
 
 
-def _find_over_cap_visit_ids():
-    """Yield (claim_limit, [over_cap_visit_id, ...]) for every claim limit with extras."""
+def _find_over_cap_completed_works():
+    """Yield (claim_limit, [over_cap_cw_id, ...], [over_cap_visit_id, ...])
+    for every claim limit whose worker has more active CompletedWork rows than
+    the per-payment-unit cap allows.
+    """
     qs = OpportunityClaimLimit.objects.select_related(
-        "opportunity_claim__opportunity_access",
+        "opportunity_claim__opportunity_access__opportunity",
         "payment_unit",
     ).filter(
         opportunity_claim__opportunity_access__opportunity__active=True,
@@ -50,107 +64,89 @@ def _find_over_cap_visit_ids():
         )
     for cl in qs.iterator():
         access = cl.opportunity_claim.opportunity_access
-        active_visit_ids = list(
-            UserVisit.objects.filter(
+        active_cw_ids = list(
+            CompletedWork.objects.filter(
                 opportunity_access=access,
-                deliver_unit__payment_unit=cl.payment_unit,
+                payment_unit=cl.payment_unit,
             )
-            .exclude(
-                status__in=[
-                    VisitValidationStatus.over_limit,
-                    VisitValidationStatus.trial,
-                ]
-            )
+            .exclude(status=CompletedWorkStatus.over_limit)
             .order_by("date_created")
             .values_list("id", flat=True)
         )
-        if len(active_visit_ids) > cl.max_visits:
-            yield cl, active_visit_ids[cl.max_visits :]
-
-
-def _completed_works_safe_to_flip(over_cap_visit_ids):
-    """Return CompletedWork ids whose every linked visit is in the over-cap set.
-
-    A CompletedWork that has at least one visit OUTSIDE the over-cap set is left
-    alone and reported as a warning — those need manual review.
-    """
-    over_cap_set = set(over_cap_visit_ids)
-    cw_ids = (
-        UserVisit.objects.filter(id__in=over_cap_set)
-        .exclude(completed_work__isnull=True)
-        .values_list("completed_work_id", flat=True)
-        .distinct()
-    )
-    safe, mixed = [], []
-    for cw_id in cw_ids:
-        all_visit_ids = set(
-            UserVisit.objects.filter(completed_work_id=cw_id).values_list("id", flat=True)
-        )
-        if all_visit_ids.issubset(over_cap_set):
-            safe.append(cw_id)
-        else:
-            mixed.append(cw_id)
-    return safe, mixed
+        if len(active_cw_ids) > cl.max_visits:
+            over_cap_cw_ids = active_cw_ids[cl.max_visits :]
+            # All non-over_limit/trial visits attached to those CWs need flipping too.
+            over_cap_visit_ids = list(
+                UserVisit.objects.filter(completed_work_id__in=over_cap_cw_ids)
+                .exclude(
+                    status__in=[
+                        VisitValidationStatus.over_limit,
+                        VisitValidationStatus.trial,
+                    ]
+                )
+                .values_list("id", flat=True)
+            )
+            yield cl, over_cap_cw_ids, over_cap_visit_ids
 
 
 def main():
-    plan = []  # list of (claim_limit, over_cap_ids)
-    for cl, over_cap_ids in _find_over_cap_visit_ids():
-        plan.append((cl, over_cap_ids))
+    plan = list(_find_over_cap_completed_works())
 
     if not plan:
         print("Nothing to remediate.")
         return
 
-    total = sum(len(ids) for _, ids in plan)
-    print(f"Found {total} over-cap UserVisit rows across {len(plan)} claim limits.")
-    affected_visit_ids = [vid for _, ids in plan for vid in ids]
-    safe_cw_ids, mixed_cw_ids = _completed_works_safe_to_flip(affected_visit_ids)
-    print(f"  CompletedWork rows to flip: {len(safe_cw_ids)}")
-    if mixed_cw_ids:
-        print(
-            f"  WARNING: {len(mixed_cw_ids)} CompletedWork rows are linked to BOTH "
-            f"in-cap and over-cap visits. They will NOT be flipped automatically. "
-            f"Manual review needed: {mixed_cw_ids}"
-        )
+    total_cws = sum(len(cw_ids) for _, cw_ids, _ in plan)
+    total_visits = sum(len(visit_ids) for _, _, visit_ids in plan)
+    print(
+        f"Found {total_cws} over-cap CompletedWork rows "
+        f"({total_visits} associated UserVisit rows) across {len(plan)} claim limits."
+    )
 
     if DRY_RUN:
         print("\n--- DRY RUN — printing breakdown ---")
-        per_access = defaultdict(int)
-        for cl, ids in plan:
-            per_access[cl.opportunity_claim.opportunity_access_id] += len(ids)
-        for access_id, n in sorted(per_access.items()):
-            print(f"  access {access_id}: {n} over-cap visit(s) -> over_limit")
-        print("\nRe-run with DRY_RUN = False to apply.")
+        per_access = defaultdict(lambda: {"cws": 0, "visits": 0})
+        for cl, cw_ids, visit_ids in plan:
+            access_id = cl.opportunity_claim.opportunity_access_id
+            per_access[access_id]["cws"] += len(cw_ids)
+            per_access[access_id]["visits"] += len(visit_ids)
+        for access_id, counts in sorted(per_access.items()):
+            print(
+                f"  access {access_id}: {counts['cws']} CW(s), "
+                f"{counts['visits']} visit(s) -> over_limit"
+            )
+        print("Re-run with DRY_RUN = False to apply.")
         return
 
     affected_access_ids = set()
+    affected_visit_ids = [vid for _, _, visit_ids in plan for vid in visit_ids]
+    affected_cw_ids = [cw_id for _, cw_ids, _ in plan for cw_id in cw_ids]
+
     with transaction.atomic():
-        # Flip UserVisit.status
+        # bulk_update persists status_modified_date because __setattr__ stamps
+        # it in memory when status is assigned, and we list both fields below.
         for batch in _batched(affected_visit_ids, BATCH_SIZE):
-            visits = list(
-                UserVisit.objects.select_for_update().filter(id__in=batch)
-            )
+            visits = list(UserVisit.objects.select_for_update().filter(id__in=batch))
             for v in visits:
-                v.status = VisitValidationStatus.over_limit  # __setattr__ updates status_modified_date
+                v.status = VisitValidationStatus.over_limit
                 affected_access_ids.add(v.opportunity_access_id)
-            UserVisit.objects.bulk_update(
-                visits, fields=["status", "status_modified_date"]
-            )
+            UserVisit.objects.bulk_update(visits, fields=["status", "status_modified_date"])
 
-        # Flip CompletedWork.status (only for completed works fully covered by over-cap visits)
-        if safe_cw_ids:
-            CompletedWork.objects.filter(id__in=safe_cw_ids).update(
-                status=CompletedWorkStatus.over_limit
-            )
+        for batch in _batched(affected_cw_ids, BATCH_SIZE):
+            cws = list(CompletedWork.objects.select_for_update().filter(id__in=batch))
+            for cw in cws:
+                cw.status = CompletedWorkStatus.over_limit
+            CompletedWork.objects.bulk_update(cws, fields=["status", "status_modified_date"])
 
-    # Recompute payment_accrued for each affected access (full recompute, not incremental)
+    # Recompute payment_accrued for each affected access (full recompute, not incremental).
+    # Outside the atomic block because update_payment_accrued_for_user acquires its own
+    # Redis lock per access.
     for access_id in sorted(affected_access_ids):
         access = OpportunityAccess.objects.get(id=access_id)
         update_payment_accrued_for_user(access, incremental=False)
 
     print(
-        f"Done. Flipped {len(affected_visit_ids)} UserVisit rows, "
-        f"{len(safe_cw_ids)} CompletedWork rows, recomputed payment_accrued for "
-        f"{len(affected_access_ids)} accesses."
+        f"Done. Flipped {len(affected_visit_ids)} UserVisit rows and "
+        f"{len(affected_cw_ids)} CompletedWork rows. "
+        f"Recomputed payment_accrued for {len(affected_access_ids)} accesses."
     )
