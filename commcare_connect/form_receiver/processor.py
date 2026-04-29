@@ -431,18 +431,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
                 user_visit.status = VisitValidationStatus.duplicate
 
         if work_area_case_id := deliver_unit_block.get("work_area_id"):
-            if is_a_uuid(work_area_case_id):
-                try:
-                    work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
-                    user_visit.work_area = work_area
-                    if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
-                        work_area.status = WorkAreaStatus.VISITED
-                        work_area.save(update_fields=["status"])
-                except WorkArea.DoesNotExist:
-                    raise ProcessingError("Work area not found")
-            else:
-                raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
-
+            process_work_area(access, user_visit, work_area_case_id)
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
@@ -474,6 +463,28 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     update_payment_accrued_for_user(access, incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
+
+
+def process_work_area(access, user_visit, work_area_case_id):
+    if is_a_uuid(work_area_case_id):
+        try:
+            work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=access.opportunity)
+            user_visit.work_area = work_area
+            new_status = None
+            if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
+                new_status = WorkAreaStatus.VISITED
+            work_area_visit_count = (
+                UserVisit.objects.filter(opportunity_access=access, work_area=work_area).count() + 1
+            )  # +1 for current visit which is not counted in the query
+            if work_area_visit_count == work_area.expected_visit_count:
+                new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
+            if new_status is not None:
+                work_area.status = new_status
+                work_area.save(update_fields=["status"])
+        except WorkArea.DoesNotExist:
+            raise ProcessingError("Work area not found")
+    else:
+        raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
 
 
 def get_or_create_deliver_unit(app, unit_data):

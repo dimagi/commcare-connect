@@ -1025,3 +1025,43 @@ def test_receiver_deliver_form_work_area_status(
 
     work_area.refresh_from_db()
     assert work_area.status == updated_status
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "expected_visit_count,prior_visit_count,expected_status",
+    [
+        (2, 1, WorkAreaStatus.EXPECTED_VISIT_REACHED),
+        (3, 1, WorkAreaStatus.VISITED),
+    ],
+)
+def test_receiver_deliver_form_expected_visit_count(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    expected_visit_count,
+    prior_visit_count,
+    expected_status,
+):
+    work_area = WorkAreaFactory(
+        opportunity=opportunity,
+        status=WorkAreaStatus.NOT_STARTED,
+        expected_visit_count=expected_visit_count,
+    )
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    for _ in range(prior_visit_count):
+        UserVisitFactory(opportunity_access=access, work_area=work_area, opportunity=opportunity)
+
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug, work_area_id=work_area.case_id)
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    work_area.refresh_from_db()
+    assert work_area.status == expected_status
