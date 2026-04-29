@@ -37,8 +37,8 @@ else:
             status=CompletedWorkStatus.over_limit,
             status_modified_date=now(),
         )
-    bulk_update_payment_accrued.delay(opp_id, user_ids)
+    bulk_update_payment_accrued(opp_id, user_ids)
     print(
         f"Flipped {len(visit_rows)} UserVisits and {len(cw_ids)} CompletedWorks; "
-        f"recompute queued for {len(user_ids)} worker(s)."
+        f"recompute completed for {len(user_ids)} worker(s)."
     )

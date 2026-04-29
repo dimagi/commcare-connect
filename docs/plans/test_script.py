@@ -28,7 +28,7 @@ def run_script(xform_ids):
 
 @pytest.fixture
 def mock_recompute():
-    with patch("commcare_connect.opportunity.tasks.bulk_update_payment_accrued.delay") as m:
+    with patch("commcare_connect.opportunity.tasks.bulk_update_payment_accrued") as m:
         yield m
 
 
