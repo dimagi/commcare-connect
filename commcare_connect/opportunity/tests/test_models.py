@@ -226,7 +226,7 @@ class TestOpportunityActiveTracking:
 
 @pytest.mark.django_db
 class TestAssignedTaskAssign:
-    def test_pushes_to_hq_then_creates_row(self):
+    def test_creates_row_and_pushes_to_hq(self):
         access = OpportunityAccessFactory()
         task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
         due_date = date.today() + timedelta(days=7)

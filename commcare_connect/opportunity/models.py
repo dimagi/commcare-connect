@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pghistory
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Count, F, Q, Sum
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
@@ -457,16 +457,18 @@ class AssignedTask(XFormBaseModel):
     def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> "AssignedTask":
         from commcare_connect.commcarehq.api import update_usercase
 
-        case_property = task_type.case_property
-        if case_property:
-            update_usercase(opportunity_access, data={"properties": {case_property: "1"}})
-        return cls.objects.create(
-            task_type=task_type,
-            opportunity_access=opportunity_access,
-            due_date=due_date,
-            status=AssignedTaskStatus.ASSIGNED,
-            assigned_by=assigned_by,
-        )
+        with transaction.atomic():
+            assigned_task = cls.objects.create(
+                task_type=task_type,
+                opportunity_access=opportunity_access,
+                due_date=due_date,
+                status=AssignedTaskStatus.ASSIGNED,
+                assigned_by=assigned_by,
+            )
+            case_property = task_type.case_property
+            if case_property:
+                update_usercase(opportunity_access, data={"properties": {case_property: "1"}})
+        return assigned_task
 
 
 class Assessment(XFormBaseModel):
