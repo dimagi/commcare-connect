@@ -54,8 +54,6 @@ ALLOWED_WORK_AREA_STATUS_TRANSITIONS = {
     WorkAreaStatus.NOT_STARTED: {WorkAreaStatus.REQUEST_FOR_INACCESSIBLE},
 }
 
-WORK_AREA_STATUS_REASON_REQUIRED = {WorkAreaStatus.REQUEST_FOR_INACCESSIBLE}
-
 
 def is_a_uuid(value):
     try:
@@ -297,16 +295,9 @@ def process_work_area_update(user: User, opportunity: Opportunity, block: dict):
     if new_status not in allowed:
         raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
 
-    reason = block.get("reason", "").strip()
-    if new_status in WORK_AREA_STATUS_REASON_REQUIRED and not reason:
-        raise ProcessingError(f"Reason is required for status {new_status}")
-
     work_area.status = new_status
-    if new_status in WORK_AREA_STATUS_REASON_REQUIRED:
-        work_area.inaccessibility_reason = reason
-
     with pghistory.context(username=user.username, user_email=user.email):
-        work_area.save(update_fields=["status", "inaccessibility_reason"])
+        work_area.save(update_fields=["status"])
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
