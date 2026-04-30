@@ -50,10 +50,6 @@ ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
 WORK_AREA_UPDATE_JSONPATH = parse("$..work_area_update")
 
-ALLOWED_WORK_AREA_STATUS_TRANSITIONS = {
-    WorkAreaStatus.NOT_STARTED: {WorkAreaStatus.REQUEST_FOR_INACCESSIBLE},
-}
-
 
 def is_a_uuid(value):
     try:
@@ -291,8 +287,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, block: dict):
     except ValueError:
         raise ProcessingError(f"Invalid work area status: {requested_status}")
 
-    allowed = ALLOWED_WORK_AREA_STATUS_TRANSITIONS.get(work_area.status, set())
-    if new_status not in allowed:
+    if not (work_area.status == WorkAreaStatus.NOT_STARTED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE):
         raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
 
     work_area.status = new_status

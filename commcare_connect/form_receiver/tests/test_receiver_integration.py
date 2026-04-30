@@ -1022,14 +1022,28 @@ def test_work_area_update_inaccessible(
 
 
 @pytest.mark.django_db
-def test_work_area_update_wrong_status(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+@pytest.mark.parametrize(
+    "status, assigned_to_user",
+    [
+        (WorkAreaStatus.VISITED, True),
+        (WorkAreaStatus.NOT_STARTED, False),
+    ],
+    ids=["wrong_status", "unassigned_worker"],
+)
+def test_work_area_update_rejected(
+    status,
+    assigned_to_user,
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
 ):
-    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
-    work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
-    work_area = WorkAreaFactory(
-        opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.VISITED
-    )
+    if assigned_to_user:
+        access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+        work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=work_area_group, status=status)
+    else:
+        work_area = WorkAreaFactory(opportunity=opportunity, status=status)
+
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible")
     form_json = get_form_json(
@@ -1046,60 +1060,20 @@ def test_work_area_update_wrong_status(
         oauth_application=oauth_application,
     )
     work_area.refresh_from_db()
-    assert work_area.status == WorkAreaStatus.VISITED
+    assert work_area.status == status
 
 
 @pytest.mark.django_db
-def test_work_area_update_unassigned_worker(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    work_area = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
-    oauth_application = opportunity.hq_server.oauth_application
-    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible")
-    form_json = get_form_json(
-        form_block={**stub.json},
-        domain=opportunity.deliver_app.cc_domain,
-        app_id=opportunity.deliver_app.cc_app_id,
-    )
-
-    make_request(
-        api_client,
-        form_json,
-        mobile_user_with_connect_link,
-        expected_status_code=400,
-        oauth_application=oauth_application,
-    )
-    work_area.refresh_from_db()
-    assert work_area.status == WorkAreaStatus.NOT_STARTED
-
-
-@pytest.mark.django_db
-def test_work_area_update_invalid_uuid(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+@pytest.mark.parametrize(
+    "work_area_id",
+    ["not-a-uuid", str(uuid4())],
+    ids=["invalid_uuid", "nonexistent_work_area"],
+)
+def test_work_area_update_unresolvable_id(
+    work_area_id, mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     oauth_application = opportunity.hq_server.oauth_application
-    stub = WorkAreaUpdateStubFactory(work_area_id="not-a-uuid", status="request_for_inaccessible")
-    form_json = get_form_json(
-        form_block={**stub.json},
-        domain=opportunity.deliver_app.cc_domain,
-        app_id=opportunity.deliver_app.cc_app_id,
-    )
-
-    make_request(
-        api_client,
-        form_json,
-        mobile_user_with_connect_link,
-        expected_status_code=400,
-        oauth_application=oauth_application,
-    )
-
-
-@pytest.mark.django_db
-def test_work_area_update_nonexistent_work_area(
-    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    oauth_application = opportunity.hq_server.oauth_application
-    stub = WorkAreaUpdateStubFactory(work_area_id=str(uuid4()), status="request_for_inaccessible")
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area_id, status="request_for_inaccessible")
     form_json = get_form_json(
         form_block={**stub.json},
         domain=opportunity.deliver_app.cc_domain,
