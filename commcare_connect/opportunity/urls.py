@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.views import (
@@ -184,4 +184,5 @@ urlpatterns = [
     path("<slug:opp_id>/assigned_tasks/create/", create_task, name="create_task"),
     path("<slug:opp_id>/assigned_tasks/delete/", delete_tasks, name="delete_tasks"),
     path("<slug:opp_id>/assigned_tasks/<int:pk>/edit/", EditAssignedTask.as_view(), name="edit_assigned_task"),
+    path("", include("commcare_connect.audit.urls", namespace="audit")),
 ]

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load django_tables2 %}
+{% block title %}{% blocktrans with name=opportunity.name %}Audits — {{ name }}{% endblocktrans %}{% endblock %}
+{% block content %}
+  <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
+    {% include 'components/breadcrumbs.html' with path=path %}
+
+    <div class="metric-container flex items-center justify-between">
+      <div class="flex flex-col gap-2">
+        <h1 class="text-2xl font-medium text-white">{% trans "Audits" %}</h1>
+        <p class="text-sm text-gray-100">{% trans "Monitor Connect Worker performance." %}</p>
+      </div>
+      <div class="flex gap-4">
+        <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
+          <span class="text-2xl font-bold text-white">{{ total_count }}</span>
+          <span class="text-xs text-white mt-1">{% trans "Total Audits" %}</span>
+        </div>
+        <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
+          <span class="text-2xl font-bold text-white">{{ pending_count }}</span>
+          <span class="text-xs text-white mt-1">{% trans "Pending Audits" %}</span>
+        </div>
+        <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
+          <span class="text-2xl font-bold text-white">{{ completed_count }}</span>
+          <span class="text-xs text-white mt-1">{% trans "Complete" %}</span>
+        </div>
+      </div>
+    </div>
+
+    {% render_table table %}
+  </div>
+{% endblock %}
