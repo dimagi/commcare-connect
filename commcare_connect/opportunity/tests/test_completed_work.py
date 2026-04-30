@@ -32,6 +32,7 @@ class TestUninvoicedVisitItems:
         assert len(items) == 0
 
         completed_work = CompletedWorkFactory(status=CompletedWorkStatus.approved, opportunity_access=opp_access)
+        completed_work.saved_approved_count = 1
         completed_work.saved_payment_accrued = completed_work.payment_unit.amount
         completed_work.save()
 
@@ -59,6 +60,7 @@ class TestUninvoicedVisitItems:
             status=CompletedWorkStatus.approved,
             opportunity_access=opp_access,
         )
+        completed_work.saved_approved_count = 1
         completed_work.saved_payment_accrued = completed_work.payment_unit.amount
         completed_work.save()
 
@@ -207,6 +209,41 @@ class TestUninvoicedVisitItems:
             assert item["exchange_rate"] == expected_exchange_rate
             assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
 
+    def test_number_approved_uses_saved_approved_count(self):
+        """A single CompletedWork can represent multiple approved visits.
+
+        number_approved must aggregate saved_approved_count, not row count, so it
+        stays consistent with total_amount_local (which sums saved_payment_accrued
+        = saved_approved_count * payment_unit.amount).
+        """
+        opp_access = OpportunityAccessFactory()
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+
+        cw1 = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+        cw1.saved_approved_count = 2
+        cw1.saved_payment_accrued = 2 * payment_unit.amount
+        cw1.save()
+
+        cw2 = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+        cw2.saved_approved_count = 1
+        cw2.saved_payment_accrued = payment_unit.amount
+        cw2.save()
+
+        items = get_uninvoiced_visit_items(opp_access.opportunity)
+        assert len(items) == 1
+
+        item = items[0]
+        assert item["number_approved"] == 3
+        assert item["total_amount_local"] == 3 * payment_unit.amount
+
     def _create_completed_work(self, opp_access, status_modified_date, payment_unit, exchange_rate=1.0, n=1):
         for _ in range(n):
             cw = CompletedWorkFactory(
@@ -215,6 +252,7 @@ class TestUninvoicedVisitItems:
                 payment_unit=payment_unit,
             )
             cw.status_modified_date = status_modified_date
+            cw.saved_approved_count = 1
             cw.saved_payment_accrued = cw.payment_unit.amount
             cw.saved_payment_accrued_usd = cw.saved_payment_accrued / exchange_rate
             cw.save()
