@@ -92,7 +92,7 @@ def test_bulk_update_cases(httpx_mock, status_code, expect_exception):
         {"case_id": "case-2", "owner_id": ""},
     ]
     httpx_mock.add_response(
-        method="PUT",
+        method="POST",
         url=f"{api_key.hq_server.url}/a/{DOMAIN}/api/case/v2/",
         status_code=status_code,
         json={} if not expect_exception else None,
@@ -104,7 +104,7 @@ def test_bulk_update_cases(httpx_mock, status_code, expect_exception):
     else:
         bulk_update_cases(api_key, DOMAIN, updates)
         request = httpx_mock.get_request()
-        assert request.method == "PUT"
+        assert request.method == "POST"
         expected_payload = [{**update, "create": False} for update in updates]
         assert json.loads(request.content) == expected_payload
         assert request.headers["Authorization"] == f"ApiKey {api_key.user.email}:{api_key.api_key}"

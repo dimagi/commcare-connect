@@ -110,7 +110,7 @@ def create_or_update_case(
 
 
 def bulk_update_cases(api_key: HQApiKey, domain: str, updates: list[dict[str, Any]]) -> None:
-    """PUT a JSON array of case updates to /api/case/v2/.
+    """POST a JSON array of case updates to /api/case/v2/.
 
     HQ's bulk endpoint requires each row to carry a create flag; this helper
     only updates existing cases, so create=False is injected per item.
@@ -123,7 +123,7 @@ def bulk_update_cases(api_key: HQApiKey, domain: str, updates: list[dict[str, An
 
     try:
         with httpx.Client(base_url=base_url, headers=headers) as client:
-            response = client.put("", json=payload)
+            response = client.post("", json=payload)
         response.raise_for_status()
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         raise CommCareHQAPIException(f"Failed to bulk-update {len(updates)} cases for {domain}. HQ Error: {e}") from e
