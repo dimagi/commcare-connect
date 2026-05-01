@@ -631,6 +631,25 @@ class PaymentInvoice(models.Model):
         CompletedWork.objects.filter(invoice=self).update(invoice=None)
 
 
+class PaymentInvoiceLineItem(models.Model):
+    invoice = models.ForeignKey(PaymentInvoice, on_delete=models.CASCADE, related_name="line_items")
+    month = models.DateField()
+    # PROTECT: a PaymentUnit with historical snapshots cannot be deleted — the snapshot is the
+    # record of truth for a closed invoice and must keep resolving to a real PaymentUnit row.
+    payment_unit = models.ForeignKey(PaymentUnit, on_delete=models.PROTECT)
+    record_count = models.IntegerField()
+    amount_per_unit = models.DecimalField(max_digits=12, decimal_places=2)
+    total_amount_local = models.DecimalField(max_digits=12, decimal_places=2)
+    total_amount_usd = models.DecimalField(max_digits=12, decimal_places=2)
+    exchange_rate = models.DecimalField(max_digits=10, decimal_places=6)
+
+    class Meta:
+        unique_together = ("invoice", "month", "payment_unit")
+
+    def __str__(self):
+        return f"{self.invoice.invoice_number} / {self.month:%Y-%m} / {self.payment_unit_id}"
+
+
 class Payment(models.Model):
     payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
