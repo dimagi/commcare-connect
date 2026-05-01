@@ -61,7 +61,7 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
 from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
-from commcare_connect.opportunity.api.serializers import remove_opportunity_access_cache
+from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
 from commcare_connect.opportunity.filters import (
     AssignedTaskFilterSet,
@@ -177,6 +177,7 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_invoice_paid_mail,
     send_push_notification_task,
+    send_task_assignment_notification,
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.utils.completed_work import (
@@ -3548,7 +3549,7 @@ def create_task(request, org_slug, opp_id):
     due_date = form.cleaned_data["due_date"]
 
     try:
-        AssignedTask.assign(
+        assigned_task = AssignedTask.assign(
             task_type=task,
             opportunity_access=access,
             due_date=due_date,
@@ -3557,6 +3558,7 @@ def create_task(request, org_slug, opp_id):
     except CommCareHQAPIException:
         messages.error(request, _("Task creation failed: could not update CommCare HQ. Please try again."))
     else:
+        transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
         messages.success(request, _("Task created successfully."))
     redirect_url = _task_redirect_url(request, org_slug, opp_id)
     return HttpResponse(headers={"HX-Redirect": redirect_url})

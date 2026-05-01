@@ -245,6 +245,21 @@ def test_receiver_deliver_form_daily_visits_reached(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("opportunity", [{"verification_flags": {"duplicate": False}}], indirect=True)
+def test_over_limit_status_preserved_when_duplicate_flag_disabled(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # When the duplicate verification flag is off, clean_form_submission() must not
+    # clobber an over_limit status set by the cap check; otherwise auto_approve will
+    # silently accept visits past the per-worker max.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.status == VisitValidationStatus.over_limit
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("paymentunit_options", [pytest.param({"max_daily": 2})])
 def test_receiver_deliver_form_max_visits_reached(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity

@@ -2705,6 +2705,22 @@ class TestCreateTask:
         assert response.context["form"].errors
         assert AssignedTask.objects.count() == 0
 
+    @pytest.mark.django_db(transaction=True)
+    def test_create_task_schedules_push_notification(self, client, org_user_member, opportunity, access):
+        client.force_login(org_user_member)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.opportunity.views.send_task_assignment_notification.delay") as delay_patch:
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
+        delay_patch.assert_called_once_with(assigned.pk)
+
     @pytest.mark.parametrize(
         "user_fixture, opportunity_fixture",
         [
