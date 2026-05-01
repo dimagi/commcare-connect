@@ -259,40 +259,44 @@ def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Oppo
     if task_matches:
         process_task_modules(user, xform, app, opportunity, task_matches)
 
-    for block in _get_matching_blocks(WORK_AREA_UPDATE_JSONPATH, xform):
-        process_work_area_update(user, opportunity, block)
+    work_area_blocks = _get_matching_blocks(WORK_AREA_UPDATE_JSONPATH, xform)
+    if work_area_blocks:
+        process_work_area_update(user, opportunity, work_area_blocks)
 
 
-def process_work_area_update(user: User, opportunity: Opportunity, block: dict):
-    work_area_case_id = block.get("work_area_id")
-    if not work_area_case_id or not is_a_uuid(work_area_case_id):
-        raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
-
-    try:
-        work_area = WorkArea.objects.select_for_update().get(case_id=work_area_case_id, opportunity=opportunity)
-    except WorkArea.DoesNotExist:
-        raise ProcessingError("Work area not found")
-
+def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[dict]):
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
         raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
 
-    if not work_area.work_area_group or work_area.work_area_group.opportunity_access_id != access.id:
-        raise ProcessingError("User is not assigned to this work area")
+    for block in blocks:
+        work_area_case_id = block.get("work_area_id")
+        if not work_area_case_id or not is_a_uuid(work_area_case_id):
+            raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
 
-    requested_status = block.get("status", "").upper()
-    try:
-        new_status = WorkAreaStatus(requested_status)
-    except ValueError:
-        raise ProcessingError(f"Invalid work area status: {requested_status}")
+        try:
+            work_area = WorkArea.objects.select_for_update().get(case_id=work_area_case_id, opportunity=opportunity)
+        except WorkArea.DoesNotExist:
+            raise ProcessingError("Work area not found")
 
-    if not (work_area.status == WorkAreaStatus.NOT_STARTED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE):
-        raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
+        if not work_area.work_area_group or work_area.work_area_group.opportunity_access_id != access.id:
+            raise ProcessingError("User is not assigned to this work area")
 
-    work_area.status = new_status
-    with pghistory.context(username=user.username, user_email=user.email):
-        work_area.save(update_fields=["status"])
+        requested_status = block.get("status", "").upper()
+        try:
+            new_status = WorkAreaStatus(requested_status)
+        except ValueError:
+            raise ProcessingError(f"Invalid work area status: {requested_status}")
+
+        if not (
+            work_area.status == WorkAreaStatus.NOT_STARTED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+        ):
+            raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
+
+        work_area.status = new_status
+        with pghistory.context(username=user.username, user_email=user.email):
+            work_area.save(update_fields=["status"])
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
