@@ -430,8 +430,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        if work_area_case_id := deliver_unit_block.get("work_area_id"):
-            process_work_area(access, user_visit, work_area_case_id)
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
@@ -448,6 +446,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         ):
             user_visit.status = VisitValidationStatus.approved
             user_visit.review_status = VisitReviewStatus.agree
+
+        if work_area_case_id := deliver_unit_block.get("work_area_id"):
+            process_work_area(access, user_visit, work_area_case_id)
 
         user_visit.save()
 
@@ -473,10 +474,11 @@ def process_work_area(access, user_visit, work_area_case_id):
             new_status = None
             if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
                 new_status = WorkAreaStatus.VISITED
+            current_visit_count = 1 if user_visit.status == VisitValidationStatus.approved else 0
             work_area_visit_count = (
-                UserVisit.objects.filter(opportunity_access=access, work_area=work_area).count() + 1
-            )  # +1 for current visit which is not counted in the query
-            if work_area_visit_count == work_area.expected_visit_count:
+                UserVisit.objects.filter(opportunity_access=access, work_area=work_area).count() + current_visit_count
+            )
+            if work_area_visit_count >= work_area.expected_visit_count:
                 new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
             if new_status is not None:
                 work_area.status = new_status

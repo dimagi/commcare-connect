@@ -991,16 +991,18 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "initial_status,updated_status",
+    "initial_status,updated_status,expected_visit_count,auto_approve_visits",
     [
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED),
-        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED),
-        (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED),
-        (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED),
-        (WorkAreaStatus.UNASSIGNED, WorkAreaStatus.UNASSIGNED),
-        (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE),
-        (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE),
-        (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED),
+        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, None, True),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, None, True),
+        (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED, None, True),
+        (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED, None, True),
+        (WorkAreaStatus.UNASSIGNED, WorkAreaStatus.UNASSIGNED, None, True),
+        (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, None, True),
+        (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE, None, True),
+        (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED, None, True),
+        # pending visit (auto_approve_visits=False) should not trigger EXPECTED_VISIT_REACHED
+        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 1, False),
     ],
 )
 def test_receiver_deliver_form_work_area_status(
@@ -1009,8 +1011,17 @@ def test_receiver_deliver_form_work_area_status(
     opportunity: Opportunity,
     initial_status,
     updated_status,
+    expected_visit_count,
+    auto_approve_visits,
 ):
-    work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status)
+    if not auto_approve_visits:
+        opportunity.auto_approve_visits = False
+        opportunity.save(update_fields=["auto_approve_visits"])
+
+    factory_kwargs = {"opportunity": opportunity, "status": initial_status}
+    if expected_visit_count is not None:
+        factory_kwargs["expected_visit_count"] = expected_visit_count
+    work_area = WorkAreaFactory(**factory_kwargs)
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
     oauth_application = opportunity.hq_server.oauth_application
     stub = DeliverUnitStubFactory(id=deliver_unit.slug, work_area_id=work_area.case_id)
