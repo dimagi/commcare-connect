@@ -177,7 +177,6 @@ from commcare_connect.opportunity.tasks import (
     invite_user,
     send_invoice_paid_mail,
     send_push_notification_task,
-    send_task_assignment_notification,
     update_user_and_send_invite,
 )
 from commcare_connect.opportunity.utils.completed_work import (
@@ -3549,7 +3548,7 @@ def create_task(request, org_slug, opp_id):
     due_date = form.cleaned_data["due_date"]
 
     try:
-        assigned_task = AssignedTask.assign(
+        AssignedTask.assign(
             task_type=task,
             opportunity_access=access,
             due_date=due_date,
@@ -3558,7 +3557,6 @@ def create_task(request, org_slug, opp_id):
     except CommCareHQAPIException:
         messages.error(request, _("Task creation failed: could not update CommCare HQ. Please try again."))
     else:
-        transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
         messages.success(request, _("Task created successfully."))
     redirect_url = _task_redirect_url(request, org_slug, opp_id)
     return HttpResponse(headers={"HX-Redirect": redirect_url})

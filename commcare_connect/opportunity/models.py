@@ -15,6 +15,7 @@ from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.tasks import send_task_assignment_notification
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -468,6 +469,7 @@ class AssignedTask(XFormBaseModel):
             case_property = task_type.case_property
             if case_property:
                 update_usercase(opportunity_access, data={"properties": {case_property: "1"}})
+            transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
         return assigned_task
 
 
