@@ -19,6 +19,7 @@ from commcare_connect.form_receiver.tests.xforms import (
     LearnModuleJsonFactory,
     get_form_json,
 )
+from commcare_connect.microplanning.models import WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -1001,3 +1002,41 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         oauth_application=oauth_application,
     )
     assert not UserVisit.objects.filter(user=mobile_user_with_connect_link).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "initial_status,updated_status",
+    [
+        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED),
+        (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED),
+        (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED),
+        (WorkAreaStatus.UNASSIGNED, WorkAreaStatus.UNASSIGNED),
+        (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE),
+        (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE),
+        (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED),
+    ],
+)
+def test_receiver_deliver_form_work_area_status(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    initial_status,
+    updated_status,
+):
+    work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug, work_area_id=work_area.case_id)
+
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    work_area.refresh_from_db()
+    assert work_area.status == updated_status
