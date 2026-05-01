@@ -262,6 +262,46 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert work_area.expected_visit_count == 10  # rolled back due to atomic transaction
 
+    @pytest.mark.parametrize(
+        "initial_status,prior_visits,old_count,new_count,expected_status",
+        [
+            # decreased below visit count → EXPECTED_VISIT_REACHED
+            (WorkAreaStatus.VISITED, 3, 5, 2, WorkAreaStatus.EXPECTED_VISIT_REACHED),
+            # increased above visit count (was EXPECTED_VISIT_REACHED) → VISITED
+            (WorkAreaStatus.EXPECTED_VISIT_REACHED, 2, 2, 5, WorkAreaStatus.VISITED),
+            # no visits → status unchanged regardless of count change
+            (WorkAreaStatus.NOT_STARTED, 0, 5, 2, WorkAreaStatus.NOT_STARTED),
+            # only group changed, not expected_visit_count → status unchanged
+            (WorkAreaStatus.VISITED, 3, 5, 5, WorkAreaStatus.VISITED),
+        ],
+    )
+    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    def test_expected_visit_count_change_reevaluates_status(
+        self,
+        mock_sync,
+        client,
+        org_user_admin,
+        opportunity,
+        initial_status,
+        prior_visits,
+        old_count,
+        new_count,
+        expected_status,
+    ):
+        work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status, expected_visit_count=old_count)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        for _ in range(prior_visits):
+            UserVisitFactory(opportunity_access=access, work_area=work_area, opportunity=opportunity)
+
+        client.force_login(org_user_admin)
+        client.post(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
+            {"expected_visit_count": new_count},
+        )
+
+        work_area.refresh_from_db()
+        assert work_area.status == expected_status
+
 
 @pytest.mark.django_db
 class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
