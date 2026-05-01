@@ -15,7 +15,6 @@ from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
-from commcare_connect.opportunity.tasks import send_task_assignment_notification
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -457,6 +456,7 @@ class AssignedTask(XFormBaseModel):
     @classmethod
     def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> "AssignedTask":
         from commcare_connect.commcarehq.api import update_usercase
+        from commcare_connect.opportunity.tasks import send_task_assignment_notification
 
         with transaction.atomic():
             assigned_task = cls.objects.create(

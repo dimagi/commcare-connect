@@ -2711,7 +2711,7 @@ class TestCreateTask:
         task = TaskTypeFactory(app=opportunity.deliver_app)
         due_date = date.today() + timedelta(days=7)
 
-        with mock.patch("commcare_connect.opportunity.views.send_task_assignment_notification.delay") as delay_patch:
+        with mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch:
             response = client.post(
                 self._url(opportunity),
                 data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
