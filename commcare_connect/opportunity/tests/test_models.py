@@ -1,10 +1,19 @@
 import datetime
+from datetime import date, timedelta
+from unittest import mock
 
 import pytest
 
 from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
 from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
-from commcare_connect.opportunity.models import InvoiceStatus, Opportunity, OpportunityClaimLimit, PaymentInvoice
+from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
+    InvoiceStatus,
+    Opportunity,
+    OpportunityClaimLimit,
+    PaymentInvoice,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedModuleFactory,
     CompletedWorkFactory,
@@ -16,12 +25,14 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    TaskTypeFactory,
     UserVisitFactory,
 )
 from commcare_connect.opportunity.utils.invoice import generate_invoice_number
 from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
 @pytest.mark.django_db
@@ -211,3 +222,62 @@ class TestOpportunityActiveTracking:
         # No request context in tests — both events should have no context
         assert events.first().pgh_context is None
         assert events.last().pgh_context is None
+
+
+@pytest.mark.django_db
+class TestAssignedTaskAssign:
+    def test_creates_row_and_pushes_to_hq(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        due_date = date.today() + timedelta(days=7)
+        assigner = access.user
+
+        with mock.patch("commcare_connect.commcarehq.api.update_usercase") as mock_update:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=assigner,
+            )
+
+        mock_update.assert_called_once_with(access, data={"properties": {"needs_assessment": "1"}})
+        assert isinstance(assigned, AssignedTask)
+        assert assigned.task_type == task_type
+        assert assigned.opportunity_access == access
+        assert assigned.due_date == due_date
+        assert assigned.status == AssignedTaskStatus.ASSIGNED
+        assert assigned.assigned_by == assigner
+
+    @pytest.mark.parametrize("case_property", [None, ""])
+    def test_skips_hq_when_case_property_missing(self, case_property):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property=case_property)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.commcarehq.api.update_usercase") as mock_update:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+            )
+
+        mock_update.assert_not_called()
+        assert AssignedTask.objects.filter(pk=assigned.pk).exists()
+
+    def test_does_not_create_row_when_hq_call_fails(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, case_property="needs_assessment")
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.update_usercase",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            with pytest.raises(CommCareHQAPIException):
+                AssignedTask.assign(
+                    task_type=task_type,
+                    opportunity_access=access,
+                    due_date=due_date,
+                )
+
+        assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
