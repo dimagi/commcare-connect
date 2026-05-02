@@ -4,24 +4,24 @@
   "devDependencies": {
     "@babel/core": "^7.16.5",
     "@babel/preset-env": "^7.16.5",
+    "@fortawesome/fontawesome-free": "^7.0.0",
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@ryangjchandler/alpine-tooltip": "^2.0.1",
     "@tailwindcss/postcss": "^4.1.11",
     "@turf/circle": "^7.2.0",
-    "alpinejs": "^3.14.9",
+    "alpinejs": "^3.15.8",
     "autoprefixer": "^10.4.0",
     "babel-loader": "^9.1.2",
     "concurrently": "^8.0.1",
     "css-loader": "^6.5.1",
     "dotenv-webpack": "^8.0.1",
-    "tom-select": "^2.4.3",
     "flatpickr": "^4.6.13",
     "gulp-concat": "^2.6.1",
     "htmx.org": "^1.9.4",
     "mapbox-gl": "^3.13.0",
-    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "mini-css-extract-plugin": "^2.4.5",
-    "open-chat-studio-widget": "^0.5.2",
     "node-sass-tilde-importer": "^1.0.2",
+    "open-chat-studio-widget": "^0.5.2",
     "pixrem": "^5.0.0",
     "postcss": "^8.5.3",
     "postcss-loader": "^7.0.2",
@@ -30,12 +30,12 @@
     "sass-loader": "^13.2.0",
     "tailwindcss": "^4.1.11",
     "tippy.js": "^6.3.7",
+    "tom-select": "^2.4.3",
     "webpack": "^5.65.0",
     "webpack-bundle-tracker": "^2.0.0",
     "webpack-cli": "^5.0.1",
     "webpack-dev-server": "^4.6.0",
-    "webpack-merge": "^5.8.0",
-    "@fortawesome/fontawesome-free": "^7.0.0"
+    "webpack-merge": "^5.8.0"
   },
   "engines": {
     "node": "18"
@@ -52,5 +52,8 @@
     "build": "NODE_ENV=production webpack --mode production --config webpack/prod.config.js",
     "dev": "webpack --mode development --config webpack/base.config.js",
     "dev-watch": "webpack --mode development --config webpack/base.config.js --watch"
+  },
+  "dependencies": {
+    "@alpinejs/persist": "^3.15.8"
   }
 }

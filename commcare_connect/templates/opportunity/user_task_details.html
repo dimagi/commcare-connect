@@ -105,6 +105,23 @@
     </div>
   </div>
 
+  {% if can_manage_tasks and completed_task.status == "assigned" %}
+  <div class="flex justify-end">
+    <button
+        type="button"
+        class="button button-md outline-style"
+        hx-get="{% url 'opportunity:edit_assigned_task' request.org.slug completed_task.opportunity_access.opportunity.opportunity_id completed_task.pk %}"
+        hx-target="#edit-assigned-task-form"
+        hx-swap="innerHTML"
+        hx-select="unset"
+        @htmx:after-request="if ($event.detail.successful) {
+                showEditTaskModal = true; editTaskError = false
+            } else { editTaskError = true }">
+      <i class="fa-regular fa-pen-to-square mr-1"></i> {% translate "Edit" %}
+    </button>
+  </div>
+  {% endif %}
+
   {% if images %}
   <hr class="h-px bg-gray-200 border-0">
 

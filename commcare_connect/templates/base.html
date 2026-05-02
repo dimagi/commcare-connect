@@ -23,7 +23,13 @@
       {% endif %}
     {% endblock javascript %}
   </head>
-  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
+  <body
+    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+    x-data="{ sidebarOpen: $persist(false).as('sidebarOpen'), hasSidebar: {% block has_sidebar %}true{% endblock %} }"
+    x-init="$nextTick(() => $el.classList.add('transition-[padding-left]', 'duration-300'))"
+    :class="hasSidebar ? (sidebarOpen ? 'pl-64' : 'pl-16') : ''"
+    class="flex flex-col justify-center overflow-x-hidden bg-stone-100 font-work-sans"
+  >
     {% block sidenav %}
       {% include 'layouts/sidenav.html'%}
     {% endblock %}

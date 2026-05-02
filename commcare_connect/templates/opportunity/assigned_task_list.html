@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load i18n %}
+{% load crispy_forms_tags %}
 {% load render_table from django_tables2 %}
 
 {% block title %}{{ request.org }} - {{ opportunity.name }} - {% trans "Task List" %}{% endblock %}
@@ -9,11 +10,9 @@
          x-data="{
            showEditTaskModal: false,
            editTaskError: false,
-           editTaskSuccess: false,
            showCreateTaskModal: false,
            ...selectableTable()
-         }"
-         @reload-table.camel.window="showEditTaskModal = false; editTaskError = false; editTaskSuccess = true">
+         }">
         {% include 'components/breadcrumbs.html' with path=path %}
 
         <div class="flex flex-col gap-8 metric-container">
@@ -49,16 +48,6 @@
             </div>
         </div>
 
-        <div x-show="editTaskSuccess" x-cloak role="status"
-          class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
-          <div class="flex items-center gap-2">
-            <i class="fa-regular fa-circle-check"></i>
-            <span>{% trans "Task updated successfully." %}</span>
-          </div>
-          <button type="button" class="ml-4 text-xl font-light hover:font-normal focus:outline-none" aria-label="{% trans "Close" %}"
-            @click="editTaskSuccess = false">&times;</button>
-        </div>
-
         <div x-show="editTaskError" x-cloak role="alert"
           class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
           <div class="flex items-center gap-2">
@@ -69,13 +58,9 @@
             @click="editTaskError = false">&times;</button>
         </div>
 
-        <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4"
-             hx-get="{{ request.get_full_path }}"
-             hx-trigger="reloadTable from:body"
-             hx-select="#task-list-table"
-             hx-swap="outerHTML">
-            {% if can_manage_tasks %}
+        <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4">
             <div class="flex gap-x-4 items-center justify-end mb-4">
+                {% if can_manage_tasks %}
                 <button type="button" class="button-icon shadow-sm" @click="showCreateTaskModal = true"
                     x-tooltip.raw="{% trans 'Create Task' %}">
                     <i class="fa-solid fa-plus text-brand-deep-purple"></i>
@@ -97,8 +82,9 @@
                                         })" :disabled="selected.length === 0" x-tooltip.raw="{% trans 'Delete Task(s)' %}">
                     <i class="fa-solid fa-trash"></i>
                 </button>
+                {% endif %}
+                {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" %}
             </div>
-            {% endif %}
             {% render_table table %}
         </div>
 

@@ -67,6 +67,7 @@ from commcare_connect.users.tests.factories import (
     ProgramManagerOrgWithUsersFactory,
     UserFactory,
 )
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 
 @pytest.mark.django_db
@@ -2294,6 +2295,48 @@ class TestAssignedTaskListView:
         assert response.context["open_tasks"] == 2
         assert response.context["complete_tasks"] == 1
 
+    @pytest.fixture
+    def two_tasks(self, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        at_assigned = AssignedTaskFactory(
+            task_type=task, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED
+        )
+        at_completed = AssignedTaskFactory(
+            task_type=task, opportunity_access=access, status=AssignedTaskStatus.COMPLETED
+        )
+        return [at_assigned, at_completed]
+
+    def test_filter_by_status_returns_filtered_table(
+        self, two_tasks, organization, org_user_member, opportunity, client
+    ):
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"task_status": AssignedTaskStatus.ASSIGNED})
+        assert response.status_code == 200
+
+        # Returns filtered table with only assigned tasks
+        assert len(response.context["table"].rows) == 1
+
+        # Filters applied count in context is correct
+        assert response.context["filters_applied_count"] == 1
+
+        # Metric counts in context are unaffected by filters
+        assert response.context["total_tasks"] == 2
+        assert response.context["open_tasks"] == 1
+        assert response.context["complete_tasks"] == 1
+
+    def test_page_size_param_is_respected(self, organization, org_user_member, opportunity, client):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        for _ in range(30):
+            AssignedTaskFactory(task_type=task, opportunity_access=access)
+
+        client.force_login(org_user_member)
+        url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
+        response = client.get(url, {"page_size": 30})
+        assert response.context["table"].page.paginator.per_page == 30
+
 
 @pytest.mark.django_db
 class TestTaskTypesConfig:
@@ -2556,8 +2599,8 @@ class TestEditAssignedTask:
             self._edit_url(opp, assigned_task),
             data={"due_date": future_date.isoformat(), "reason": "Extended deadline"},
         )
-        assert response.status_code == HTTPStatus.NO_CONTENT
-        assert response["HX-Trigger"] == "reloadTable"
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
         assigned_task.refresh_from_db()
         assert assigned_task.due_date == future_date
 
@@ -2616,20 +2659,44 @@ class TestCreateTask:
 
     def test_create_task_success(self, client, org_user_member, opportunity, access):
         client.force_login(org_user_member)
-        task = TaskTypeFactory(app=opportunity.deliver_app)
+        task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
         due_date = date.today() + timedelta(days=7)
-        response = client.post(
-            self._url(opportunity),
-            data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
-        )
+
+        with mock.patch("commcare_connect.commcarehq.api.update_usercase") as mock_update:
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
         assert response.status_code == HTTPStatus.OK
         assert "HX-Redirect" in response
         assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
         assert assigned.due_date == due_date
         assert assigned.status == AssignedTaskStatus.ASSIGNED
         assert assigned.assigned_by == org_user_member
+        mock_update.assert_called_once_with(access, data={"properties": {"some_prop": "1"}})
         msgs = list(get_messages(response.wsgi_request))
         assert any("successfully" in str(m) for m in msgs)
+
+    def test_create_task_hq_failure_shows_error_and_no_row(self, client, org_user_member, opportunity, access):
+        client.force_login(org_user_member)
+        task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.update_usercase",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assert not AssignedTask.objects.filter(task_type=task, opportunity_access=access).exists()
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("CommCare HQ" in str(m) for m in msgs)
 
     def test_create_task_invalid_form(self, client, org_user_member, opportunity):
         client.force_login(org_user_member)
@@ -2637,6 +2704,22 @@ class TestCreateTask:
         assert response.status_code == HTTPStatus.OK
         assert response.context["form"].errors
         assert AssignedTask.objects.count() == 0
+
+    @pytest.mark.django_db(transaction=True)
+    def test_create_task_schedules_push_notification(self, client, org_user_member, opportunity, access):
+        client.force_login(org_user_member)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.opportunity.tasks.send_task_assignment_notification.delay") as delay_patch:
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        assigned = AssignedTask.objects.get(task_type=task, opportunity_access=access)
+        delay_patch.assert_called_once_with(assigned.pk)
 
     @pytest.mark.parametrize(
         "user_fixture, opportunity_fixture",

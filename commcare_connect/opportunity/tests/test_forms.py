@@ -793,6 +793,19 @@ class TestCreateTaskForm:
         assert not form.is_valid()
         assert "due_date" in form.errors
 
+    def test_valid_form(self, opportunity, task_type):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        due_date = (datetime.date.today() + datetime.timedelta(days=7)).isoformat()
+        data = {
+            "task": task_type.pk,
+            "access": access.pk,
+            "due_date": due_date,
+        }
+        form = CreateTaskForm(data, opportunity=opportunity)
+        assert form.is_valid()
+        assert form.cleaned_data["task"] == task_type
+        assert form.cleaned_data["access"] == access
+
     def test_flw_queryset_filtering(self, opportunity):
         active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
         unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False)

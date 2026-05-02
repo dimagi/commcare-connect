@@ -247,6 +247,21 @@ def test_receiver_deliver_form_daily_visits_reached(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("opportunity", [{"verification_flags": {"duplicate": False}}], indirect=True)
+def test_over_limit_status_preserved_when_duplicate_flag_disabled(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # When the duplicate verification flag is off, clean_form_submission() must not
+    # clobber an over_limit status set by the cap check; otherwise auto_approve will
+    # silently accept visits past the per-worker max.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.status == VisitValidationStatus.over_limit
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("paymentunit_options", [pytest.param({"max_daily": 2})])
 def test_receiver_deliver_form_max_visits_reached(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
@@ -988,6 +1003,44 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         oauth_application=oauth_application,
     )
     assert not UserVisit.objects.filter(user=mobile_user_with_connect_link).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "initial_status,updated_status",
+    [
+        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED),
+        (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED),
+        (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED),
+        (WorkAreaStatus.UNASSIGNED, WorkAreaStatus.UNASSIGNED),
+        (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE),
+        (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE),
+        (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED),
+    ],
+)
+def test_receiver_deliver_form_work_area_status(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+    initial_status,
+    updated_status,
+):
+    work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status)
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = DeliverUnitStubFactory(id=deliver_unit.slug, work_area_id=work_area.case_id)
+
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=deliver_unit.app.cc_domain,
+        app_id=deliver_unit.app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    work_area.refresh_from_db()
+    assert work_area.status == updated_status
 
 
 @pytest.mark.django_db

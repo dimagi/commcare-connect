@@ -246,9 +246,9 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
         )
 
         if not created:
-            return ProcessingError("Learn Assessment is already completed")
+            raise ProcessingError("Learn Assessment is already completed")
 
-        notify_user_for_scored_assessment.delay(assessment.pk)
+        transaction.on_commit(partial(notify_user_for_scored_assessment.delay, assessment.pk))
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
@@ -311,11 +311,11 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
     """
     flags = []
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
-    if opportunity_flags.duplicate:
-        if user_visit.status == VisitValidationStatus.duplicate:
+    if user_visit.status == VisitValidationStatus.duplicate:
+        if opportunity_flags.duplicate:
             flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
-    else:
-        user_visit.status = VisitValidationStatus.pending
+        else:
+            user_visit.status = VisitValidationStatus.pending
     if opportunity_flags.gps and user_visit.location is None:
         flags.append(["gps", "GPS data is missing"])
     if opportunity_flags.location > 0 and user_visit.location:
@@ -471,7 +471,11 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         if work_area_case_id := deliver_unit_block.get("work_area_id"):
             if is_a_uuid(work_area_case_id):
                 try:
-                    user_visit.work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+                    work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
+                    user_visit.work_area = work_area
+                    if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
+                        work_area.status = WorkAreaStatus.VISITED
+                        work_area.save(update_fields=["status"])
                 except WorkArea.DoesNotExist:
                     raise ProcessingError("Work area not found")
             else:
