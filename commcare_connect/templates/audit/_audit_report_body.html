@@ -1,0 +1,49 @@
+{% load i18n %}
+{% load django_tables2 %}
+<div id="detail-body"
+     hx-get="{% url 'opportunity:audit:audit_report_detail' org_slug=opportunity.organization.slug opportunity_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+     hx-trigger="refreshDetail from:body"
+     hx-swap="outerHTML"
+     class="flex flex-col gap-4">
+
+  <div class="metric-container flex items-center justify-between">
+    <div class="flex flex-col gap-2">
+      <h1 class="text-2xl font-medium text-white">{% trans "Weekly Performance Report" %}</h1>
+      <p class="text-sm text-gray-100">{% trans "Audit the activity of one or multiple FLWs" %}</p>
+    </div>
+    <div class="flex flex-col items-center justify-center min-w-48 px-4 py-3 metric-card">
+      <span class="text-2xl font-bold text-white">{{ reviewed_count }} of {{ total_flagged }}</span>
+      <span class="text-xs text-white mt-1">{% trans "Workers reviewed" %}</span>
+    </div>
+  </div>
+
+  <div>
+    <input type="text"
+           name="filter"
+           value="{{ name_filter }}"
+           placeholder="{% trans 'Filter by worker name' %}"
+           class="base-input w-64"
+           hx-get="{% url 'opportunity:audit:audit_report_detail' org_slug=opportunity.organization.slug opportunity_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
+           hx-trigger="input changed delay:200ms, search"
+           hx-target="#detail-body"
+           hx-swap="outerHTML" />
+  </div>
+
+  <h2 class="text-xl font-semibold">{% trans "Workers to Review" %}</h2>
+  {% render_table review_table %}
+
+  <h2 class="text-xl font-semibold mt-4">{% trans "No Action" %}</h2>
+  {% render_table no_action_table %}
+
+  <div class="flex justify-end mt-6">
+    <button type="button"
+            class="button button-md primary-dark"
+            {% if not can_complete %}disabled{% endif %}
+            hx-post="#"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            hx-swap="none"
+            hx-on::after-request="window.location.reload()">
+      {% trans "Complete Audit" %}
+    </button>
+  </div>
+</div>
