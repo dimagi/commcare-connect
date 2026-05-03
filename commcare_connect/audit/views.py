@@ -7,11 +7,11 @@ from django.urls import reverse
 from django_tables2 import RequestConfig
 
 from commcare_connect.audit.calculations import get_registered_calculations
-from commcare_connect.audit.models import AuditReport
+from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.tables import AuditReportEntryTable, AuditReportTable
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.opportunity.models import Opportunity, TaskType
 from commcare_connect.organization.decorators import org_program_manager_required
 
 DEFAULT_PAGE_SIZE = 25
@@ -146,3 +146,26 @@ def audit_report_detail(request, org_slug, opportunity_id, audit_report_id):
         else "audit/audit_report_detail.html"
     )
     return render(request, template, context)
+
+
+@login_required
+@org_program_manager_required
+def audit_report_task_modal(request, org_slug, opportunity_id, audit_report_id, entry_id):
+    opportunity = _require_flagged_opportunity(org_slug, opportunity_id)
+    report = get_object_or_404(AuditReport, audit_report_id=audit_report_id, opportunity=opportunity)
+    entry = get_object_or_404(AuditReportEntry, audit_report_entry_id=entry_id, audit_report=report)
+
+    failed = [(name, r) for name, r in entry.results.items() if r.get("has_sufficient_data") and not r.get("in_range")]
+    task_types = TaskType.objects.filter(opportunity=opportunity).order_by("name")
+
+    return render(
+        request,
+        "audit/audit_report_task_modal.html",
+        {
+            "opportunity": opportunity,
+            "report": report,
+            "entry": entry,
+            "failed": failed,
+            "task_types": task_types,
+        },
+    )

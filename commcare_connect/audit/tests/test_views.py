@@ -5,7 +5,7 @@ from commcare_connect.audit.models import AuditReport
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, TaskTypeFactory
 
 
 @pytest.fixture
@@ -159,3 +159,32 @@ def test_detail_404_when_flag_disabled(client, program_manager_org_user_admin, a
     report = AuditReportFactory(opportunity=audit_opp)
     response = client.get(_detail_url(audit_opp, report))
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Task modal tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_task_modal_renders_task_types(client, program_manager_org_user_admin, audit_opp):
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True)
+
+    task_type = TaskTypeFactory(opportunity=audit_opp, name="Refresher Module A")
+
+    url = reverse(
+        "opportunity:audit:audit_report_task_modal",
+        kwargs={
+            "org_slug": audit_opp.organization.slug,
+            "opportunity_id": audit_opp.opportunity_id,
+            "audit_report_id": report.audit_report_id,
+            "entry_id": entry.audit_report_entry_id,
+        },
+    )
+    response = client.get(url)
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert task_type.name in html
+    assert entry.opportunity_access.user.name in html

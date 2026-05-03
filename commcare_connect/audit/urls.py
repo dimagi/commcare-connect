@@ -15,4 +15,9 @@ urlpatterns = [
         views.audit_report_detail,
         name="audit_report_detail",
     ),
+    path(
+        "<uuid:opportunity_id>/audit_reports/<uuid:audit_report_id>/entries/<uuid:entry_id>/modal/",
+        views.audit_report_task_modal,
+        name="audit_report_task_modal",
+    ),
 ]

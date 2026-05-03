@@ -1,0 +1,91 @@
+{% load i18n %}
+<div x-data="{ open: true, confirm: false, action: null }"
+     x-show="open"
+     x-cloak
+     @keydown.escape.window="open = false"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+  <div @click.outside="open = false"
+       class="bg-white rounded-lg shadow-lg w-full max-w-3xl overflow-hidden relative">
+    <div class="metric-container px-6 py-4">
+      <h3 class="text-lg font-semibold text-white">
+        {% blocktrans with name=entry.opportunity_access.user.name %}{{ name }}: Weekly Performance Report{% endblocktrans %}
+      </h3>
+      <p class="text-sm text-gray-100">
+        {{ report.period_start }} – {{ report.period_end }}
+      </p>
+    </div>
+
+    <form method="post"
+          hx-post="#"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-swap="none"
+          hx-on:htmx:after-request="if (event.detail.successful) { document.getElementById('modal-root').innerHTML = ''; htmx.trigger(document.body, 'refreshDetail'); }">
+      {% csrf_token %}
+      <div class="grid grid-cols-2 gap-6 p-6">
+        <div>
+          <h4 class="font-semibold mb-2">{% trans "Audit Results" %}</h4>
+          {% if failed %}
+            <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+              {% for name, result in failed %}
+                <li>
+                  <strong>{{ result.label }}:</strong>
+                  {{ result.value }} {% trans "(out of acceptable range)" %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-gray-500">{% trans "No failed calculations for this worker." %}</p>
+          {% endif %}
+        </div>
+
+        <div>
+          <h4 class="font-semibold mb-2">{% trans "Suggested Tasks" %}</h4>
+          {% if task_types %}
+            <ul class="space-y-1">
+              {% for task_type in task_types %}
+                <li>
+                  <label class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="task_type_ids" value="{{ task_type.pk }}" />
+                    {{ task_type.name }}
+                  </label>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-gray-500">{% trans "No task types are configured for this opportunity." %}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="px-6 pb-6 flex justify-end gap-2">
+        <button type="button" class="button button-md outline-style" @click="open = false">{% trans "Cancel" %}</button>
+        <button type="button"
+                class="button button-md outline-style"
+                @click="action='none'; confirm=true;">
+          {% trans "No Action Needed" %}
+        </button>
+        <button type="button"
+                class="button button-md primary-dark"
+                @click="action='tasks_assigned'; confirm=true;">
+          {% trans "Complete Review" %}
+        </button>
+      </div>
+
+      <!-- Confirmation overlay -->
+      <div x-show="confirm"
+           x-cloak
+           class="absolute inset-0 bg-black/40 flex items-center justify-center">
+        <div class="bg-white rounded-lg shadow p-6 w-96">
+          <p class="text-sm mb-4">
+            {% trans "Completing this review will assign the selected tasks to the Connect Worker. Are you sure you want to proceed?" %}
+          </p>
+          <input type="hidden" name="action" :value="action" />
+          <div class="flex justify-end gap-2">
+            <button type="button" class="button button-md outline-style" @click="confirm=false">{% trans "Cancel" %}</button>
+            <button type="submit" class="button button-md primary-dark">{% trans "Assign Tasks" %}</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
