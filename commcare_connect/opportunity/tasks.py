@@ -403,6 +403,12 @@ def download_user_visit_attachments(self, user_visit_id: int):
 
 
 @celery_app.task()
+def download_inaccessibility_request_attachments(xform_id: str, attachments: dict):
+    # TODO (Task 3): implement attachment download for WorkAreaInaccessibilityRequest
+    pass
+
+
+@celery_app.task()
 def generate_work_status_export(opportunity_id: int, export_format: str):
     opportunity = Opportunity.objects.get(id=opportunity_id)
     dataset = export_work_status_table(opportunity)

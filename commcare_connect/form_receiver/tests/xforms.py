@@ -1,3 +1,4 @@
+import datetime
 from copy import deepcopy
 
 import factory
@@ -90,6 +91,9 @@ WORK_AREA_UPDATE_XML_TEMPLATE = (
     <work_area_id>{work_area_id}</work_area_id>
     <status>{status}</status>
     <reason>{reason}</reason>
+    <date_of_visit>{date_of_visit}</date_of_visit>
+    <additional_details>{additional_details}</additional_details>
+    <estimated_duration>{estimated_duration}</estimated_duration>
 </work_area_update>
 </data>"""
     % CCC_LEARN_XMLNS
@@ -174,7 +178,10 @@ class WorkAreaUpdateStubFactory(factory.StubFactory):
     id = factory.Faker("slug")
     work_area_id = factory.Faker("uuid4")
     status = "request_for_inaccessible"
-    reason = factory.Faker("sentence")
+    reason = factory.Faker("sentence", nb_words=3)
+    date_of_visit = factory.LazyFunction(lambda: datetime.date.today().isoformat())
+    additional_details = ""
+    estimated_duration = "1 week"
 
     @factory.lazy_attribute
     def json(self):
@@ -183,6 +190,9 @@ class WorkAreaUpdateStubFactory(factory.StubFactory):
             work_area_id=self.work_area_id,
             status=self.status,
             reason=self.reason,
+            date_of_visit=self.date_of_visit,
+            additional_details=self.additional_details,
+            estimated_duration=self.estimated_duration,
         )
         _, block = xml2json(xml)
         return block

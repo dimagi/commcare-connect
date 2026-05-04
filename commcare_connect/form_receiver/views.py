@@ -42,6 +42,8 @@ class FormReceiver(APIView):
                 logger.info(f"Duplicate form with ID: {xform.id} received.")
             elif "unique_xform_completed_module" in str(e):
                 logger.info(f"Learn Module is already completed with form ID: {xform.id}.")
+            elif "unique_xform_work_area_inaccessibility" in str(e):
+                logger.info(f"Duplicate inaccessibility request for form ID: {xform.id}.")
             else:
                 raise
         return Response(status=status.HTTP_200_OK)
