@@ -203,14 +203,21 @@ class TestProcessTaskModules:
 
 @pytest.mark.django_db
 @mock.patch("commcare_connect.form_receiver.processor.notify_user_for_scored_assessment.delay")
-def test_process_assessments(notification_patch):
+def test_process_assessments(notification_patch, django_capture_on_commit_callbacks):
     app = CommCareAppFactory()
     opportunity_access = OpportunityAccessFactory()
     assessment_form = AssessmentStubFactory().json
     xform = get_form_model(form_block=assessment_form)
     matches = _get_matching_blocks(ASSESSMENT_JSONPATH, xform)
 
-    process_assessments(opportunity_access.user, xform, app, opportunity_access.opportunity, matches)
+    with django_capture_on_commit_callbacks(execute=True):
+        process_assessments(
+            opportunity_access.user,
+            xform,
+            app,
+            opportunity_access.opportunity,
+            matches,
+        )
 
     user_assessment = opportunity_access.user.assessments.first()
 

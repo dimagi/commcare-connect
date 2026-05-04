@@ -19,6 +19,7 @@ from commcare_connect.opportunity.views import (
     WorkerPaymentsView,
     WorkerTaskView,
     WorkerView,
+    WorkerWorkAreaView,
     add_budget_existing_users,
     add_budget_new_users,
     add_payment_unit,
@@ -146,6 +147,7 @@ urlpatterns = [
     path("<slug:opp_id>/workers/deliver/", WorkerDeliverView.as_view(), name="worker_deliver"),
     path("<slug:opp_id>/workers/payments/", WorkerPaymentsView.as_view(), name="worker_payments"),
     path("<slug:opp_id>/workers/tasks/", WorkerTaskView.as_view(), name="worker_tasks"),
+    path("<slug:opp_id>/workers/work-areas/", WorkerWorkAreaView.as_view(), name="worker_work_areas"),
     path(
         "<slug:opp_id>/worker_learn_progress/<slug:access_id>",
         views.worker_learn_status_view,

@@ -32,4 +32,24 @@ urlpatterns = [
     ),
     path("<slug:opp_id>/download_work_areas/", views.download_work_areas, name="download_work_areas"),
     path("<slug:opp_id>/exclude_work_areas/", views.exclude_work_areas, name="exclude_work_areas"),
+    path(
+        "<slug:opp_id>/assignment/group_work_areas/<int:group_id>/",
+        views.get_work_areas_for_assignment,
+        name="get_work_areas_for_assignment",
+    ),
+    path(
+        "<slug:opp_id>/assignment/flw_work_areas/<int:assignee_id>/",
+        views.get_flw_work_areas_for_assignment,
+        name="get_flw_work_areas_for_assignment",
+    ),
+    path(
+        "<slug:opp_id>/assignment/flw_summary/",
+        views.get_flw_summary_for_assignment,
+        name="get_flw_summary_for_assignment",
+    ),
+    path(
+        "<slug:opp_id>/assignment/save/",
+        views.save_assignment,
+        name="save_assignment",
+    ),
 ]

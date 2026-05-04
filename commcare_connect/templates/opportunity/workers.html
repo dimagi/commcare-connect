@@ -2,7 +2,35 @@
 {% load i18n %}
 
 {% block tab_options %}
-  <div id="worker-tab-options">
+  {% if search_term %}
+    <span class="text-sm text-slate-600 italic whitespace-nowrap">
+      {% blocktrans with x=worker_filtered_count y=worker_total_count %}Displaying {{ x }} of {{ y }} Connect Workers{% endblocktrans %}
+    </span>
+  {% endif %}
+  {# hx-preserve keeps the input (and its focus/value) alive across #tab-options OOB swaps. #}
+  <div id="worker-search" hx-preserve="true"
+       class="relative" x-data="{ search: '{{ search_term|escapejs }}' }">
+    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+    <input type="text"
+           name="q"
+           x-model="search"
+           placeholder="{% trans 'Search by name or phone' %}"
+           class="pl-9 pr-8 py-2 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-deep-purple/30"
+           hx-get="{% url 'opportunity:worker_list' request.org.slug opportunity.opportunity_id %}"
+           hx-trigger="keyup changed delay:400ms, clear-search from:window"
+           hx-swap="none"
+           hx-replace-url="true"
+           hx-indicator="closest #worker-search">
+    <i class="fa-solid fa-spinner fa-spin htmx-indicator absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+    <button type="button"
+            x-show="search"
+            @click="search=''; $nextTick(() => { $dispatch('clear-search') })"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 [.htmx-request_&]:hidden"
+            x-tooltip.raw="{% trans 'Clear search' %}">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  </div>
+  <div id="worker-tab-options" class="flex gap-x-4 items-center">
     <button type="button" class="button-icon shadow-sm" @click="showWorkerExportModal = true"
             {% if request.org_membership.is_viewer %} disabled {% endif %}
     >

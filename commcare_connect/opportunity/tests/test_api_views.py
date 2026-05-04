@@ -3,7 +3,7 @@ import datetime
 import pytest
 from rest_framework.test import APIClient
 
-from commcare_connect.opportunity.api.serializers import (
+from commcare_connect.opportunity.api.serializers.mobile import (
     AssignedTaskSerializer,
     CommCareAppSerializer,
     CompletedWorkSerializer,

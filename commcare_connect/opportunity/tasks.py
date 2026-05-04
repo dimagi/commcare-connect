@@ -37,6 +37,7 @@ from commcare_connect.opportunity.export import (
 )
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
@@ -74,9 +75,8 @@ OPPORTUNITY_AUTO_DEACTIVATION_DAYS = 30
 SYSTEM = "system"
 
 
-@celery_app.task()
-def create_learn_modules_and_deliver_units(opportunity_id):
-    opportunity = Opportunity.objects.get(id=opportunity_id)
+def sync_learn_modules_and_deliver_units(opportunity):
+    """Fetch learn modules and deliver units from CommCare HQ and upsert them for the opportunity's apps."""
     learn_app = opportunity.learn_app
     deliver_app = opportunity.deliver_app
     learn_app_connect_blocks = get_connect_blocks_for_app(learn_app)
@@ -95,6 +95,12 @@ def create_learn_modules_and_deliver_units(opportunity_id):
 
     for block in deliver_app_connect_blocks:
         DeliverUnit.objects.get_or_create(app=deliver_app, slug=block.id, defaults=dict(name=block.name))
+
+
+@celery_app.task()
+def create_learn_modules_and_deliver_units(opportunity_id):
+    opportunity = Opportunity.objects.get(id=opportunity_id)
+    sync_learn_modules_and_deliver_units(opportunity)
 
 
 @celery_app.task()
@@ -713,6 +719,28 @@ def _send_auto_invoice_created_notification(invoice_ids):
             )
         except Exception as e:
             logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def send_task_assignment_notification(assigned_task_id: int):
+    assigned_task = AssignedTask.objects.select_related(
+        "opportunity_access__user",
+        "opportunity_access__opportunity",
+    ).get(pk=assigned_task_id)
+    access = assigned_task.opportunity_access
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "New Task Assigned",
+            "body": "A task has been assigned to you. You must complete it before continuing Delivery activities.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "task_assignment",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
 
 
 @celery_app.task()
