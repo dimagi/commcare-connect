@@ -19,9 +19,10 @@ from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory, WorkAreaInaccessibilityRequestFactory
 
 from commcare_connect.microplanning.views import UserVisitVectorLayer
+from commcare_connect.opportunity.models import BlobMeta
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -798,3 +799,156 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
         assert response.status_code == 200
         delay_patch.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
+    def get_url(self, org_slug, opp_id, work_area_id):
+        return reverse(
+            "microplanning:review_inaccessibility_request",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id, "work_area_id": work_area_id},
+        )
+
+    def action_url(self, org_slug, opp_id, work_area_id):
+        return reverse(
+            "microplanning:act_on_inaccessibility_request",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id, "work_area_id": work_area_id},
+        )
+
+    @pytest.fixture
+    def pending_wa(self, opportunity, org_user_admin):
+        access = OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
+        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity,
+            work_area_group=group,
+            status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+        )
+        inacc_request = WorkAreaInaccessibilityRequestFactory(
+            work_area=work_area,
+            opportunity_access=access,
+        )
+        return work_area, inacc_request
+
+    def test_get_modal_renders_for_pending_request(self, client, org_user_admin, pending_wa, organization):
+        work_area, _ = pending_wa
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            WorkAreaStatus.NOT_STARTED,
+            WorkAreaStatus.NOT_VISITED,
+            WorkAreaStatus.VISITED,
+            WorkAreaStatus.INACCESSIBLE,
+        ],
+        ids=["not_started", "not_visited", "visited", "inaccessible"],
+    )
+    def test_get_modal_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
+        access = OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
+        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_get_modal_photos_filtered_by_xform_id(self, client, org_user_admin, pending_wa, organization):
+        work_area, inacc_request = pending_wa
+        BlobMeta.objects.create(
+            name="photo.jpg", parent_id=inacc_request.xform_id, content_length=10, content_type="image/jpeg"
+        )
+        BlobMeta.objects.create(
+            name="form.xml", parent_id=inacc_request.xform_id, content_length=5, content_type="text/xml"
+        )
+        BlobMeta.objects.create(
+            name="other.jpg", parent_id="some-other-xform-id", content_length=10, content_type="image/jpeg"
+        )
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 200
+        photos = response.context["photos"]
+        assert photos.count() == 1
+        assert photos.first().name == "photo.jpg"
+
+    @pytest.mark.parametrize(
+        "action, expected_status, expect_notify",
+        [
+            ("approve", WorkAreaStatus.INACCESSIBLE, False),
+            ("deny", WorkAreaStatus.NOT_VISITED, True),
+        ],
+        ids=["approve", "deny"],
+    )
+    def test_action_transitions_status(
+        self,
+        action,
+        expected_status,
+        expect_notify,
+        client,
+        org_user_admin,
+        pending_wa,
+        organization,
+        django_capture_on_commit_callbacks,
+    ):
+        work_area, inacc_request = pending_wa
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+
+        with (
+            patch("commcare_connect.microplanning.views.send_push_notification_task") as mock_notif,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            response = client.post(url, {"action": action})
+
+        assert response.status_code == 204
+        work_area.refresh_from_db()
+        assert work_area.status == expected_status
+        hx_trigger = json.loads(response["HX-Trigger"])
+        assert "inaccessibilityReviewed" in hx_trigger
+        assert hx_trigger["inaccessibilityReviewed"]["status"] == expected_status
+
+        event = work_area.expected_visit_count_work_area_group_status_events.last()
+        assert event.pgh_context.metadata["username"] == org_user_admin.username
+        assert event.pgh_context.metadata["user_email"] == org_user_admin.email
+
+        if expect_notify:
+            mock_notif.delay.assert_called_once()
+        else:
+            mock_notif.delay.assert_not_called()
+
+    def test_action_invalid_action_returns_400(self, client, org_user_admin, pending_wa, organization):
+        work_area, _ = pending_wa
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.post(url, {"action": "invalid_action"})
+        assert response.status_code == 400
+
+    @pytest.mark.parametrize(
+        "status",
+        [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.INACCESSIBLE],
+        ids=["not_started", "already_inaccessible"],
+    )
+    def test_action_404_when_wa_not_pending(self, status, client, org_user_admin, opportunity, organization):
+        access = OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
+        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=status)
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
+        response = client.post(url, {"action": "approve"})
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_get_modal_microplanning_flag_required(self, client, org_user_admin, opportunity, organization):
+        access = OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
+        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity, work_area_group=group, status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+        )
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 404

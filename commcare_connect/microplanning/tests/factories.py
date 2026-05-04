@@ -62,7 +62,11 @@ class WorkAreaFactory(DjangoModelFactory):
 
 class WorkAreaInaccessibilityRequestFactory(DjangoModelFactory):
     work_area = SubFactory(WorkAreaFactory)
-    opportunity_access = SubFactory(OpportunityAccessFactory)
+
+    @factory.lazy_attribute
+    def opportunity_access(self):
+        return OpportunityAccessFactory(opportunity=self.work_area.opportunity)
+
     xform_id = factory.LazyFunction(lambda: str(uuid.uuid4()))
     date_of_visit = factory.LazyFunction(datetime.date.today)
     location = None
