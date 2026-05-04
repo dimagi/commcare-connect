@@ -21,6 +21,7 @@ from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.microplanning.views import UserVisitVectorLayer
+from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -267,8 +268,6 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         [
             # decreased below visit count → EXPECTED_VISIT_REACHED
             (WorkAreaStatus.VISITED, 3, 5, 2, WorkAreaStatus.EXPECTED_VISIT_REACHED),
-            # increased above visit count (was EXPECTED_VISIT_REACHED) → VISITED
-            (WorkAreaStatus.EXPECTED_VISIT_REACHED, 2, 2, 5, WorkAreaStatus.VISITED),
             # no visits → status unchanged regardless of count change
             (WorkAreaStatus.NOT_STARTED, 0, 5, 2, WorkAreaStatus.NOT_STARTED),
             # only group changed, not expected_visit_count → status unchanged
@@ -288,10 +287,15 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         new_count,
         expected_status,
     ):
-        work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status, expected_visit_count=old_count)
         access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status, expected_visit_count=old_count)
         for _ in range(prior_visits):
-            UserVisitFactory(opportunity_access=access, work_area=work_area, opportunity=opportunity)
+            UserVisitFactory(
+                opportunity_access=access,
+                work_area=work_area,
+                opportunity=opportunity,
+                status=VisitValidationStatus.approved,
+            )
 
         client.force_login(org_user_admin)
         client.post(

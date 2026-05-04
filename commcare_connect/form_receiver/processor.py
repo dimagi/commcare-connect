@@ -14,7 +14,7 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -447,10 +447,20 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.status = VisitValidationStatus.approved
             user_visit.review_status = VisitReviewStatus.agree
 
+        work_area = None
         if work_area_case_id := deliver_unit_block.get("work_area_id"):
-            process_work_area(access, user_visit, work_area_case_id)
+            if not is_a_uuid(work_area_case_id):
+                raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+            try:
+                work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=access.opportunity)
+                user_visit.work_area = work_area
+            except WorkArea.DoesNotExist:
+                raise ProcessingError("Work area not found")
 
         user_visit.save()
+
+        if work_area:
+            work_area.update_status()
 
         if not access.last_active or access.last_active < user_visit.visit_date:
             access.last_active = user_visit.visit_date
@@ -464,29 +474,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     update_payment_accrued_for_user(access, incremental=True)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
-
-
-def process_work_area(access, user_visit, work_area_case_id):
-    if is_a_uuid(work_area_case_id):
-        try:
-            work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=access.opportunity)
-            user_visit.work_area = work_area
-            new_status = None
-            if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
-                new_status = WorkAreaStatus.VISITED
-            current_visit_count = 1 if user_visit.status == VisitValidationStatus.approved else 0
-            work_area_visit_count = (
-                UserVisit.objects.filter(opportunity_access=access, work_area=work_area).count() + current_visit_count
-            )
-            if work_area_visit_count >= work_area.expected_visit_count:
-                new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
-            if new_status is not None:
-                work_area.status = new_status
-                work_area.save(update_fields=["status"])
-        except WorkArea.DoesNotExist:
-            raise ProcessingError("Work area not found")
-    else:
-        raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
 
 
 def get_or_create_deliver_unit(app, unit_data):

@@ -1062,7 +1062,12 @@ def test_receiver_deliver_form_expected_visit_count(
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
     access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
     for _ in range(prior_visit_count):
-        UserVisitFactory(opportunity_access=access, work_area=work_area, opportunity=opportunity)
+        UserVisitFactory(
+            opportunity_access=access,
+            work_area=work_area,
+            opportunity=opportunity,
+            status=VisitValidationStatus.approved,
+        )
 
     oauth_application = opportunity.hq_server.oauth_application
     stub = DeliverUnitStubFactory(id=deliver_unit.slug, work_area_id=work_area.case_id)

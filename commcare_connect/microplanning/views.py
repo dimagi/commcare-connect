@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import Count, F, FloatField, Func, Max, Sum, Value
+from django.db.models import F, FloatField, Func, Sum, Value
 from django.db.models.functions import Cast
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
@@ -498,11 +498,9 @@ class ModifyWorkAreaUpdateView(UpdateView):
         reason = form.cleaned_data.pop("reason", "")
         try:
             with transaction.atomic(), pghistory.context(reason=reason):
-                update_fields = ["expected_visit_count", "work_area_group"]
+                work_area.save(update_fields=["expected_visit_count", "work_area_group"])
                 if "expected_visit_count" in form.changed_data:
-                    work_area.status = _reevaluated_work_area_status(work_area)
-                    update_fields.append("status")
-                work_area.save(update_fields=update_fields)
+                    work_area.update_status()
                 if (
                     form.has_changed()
                     and work_area.work_area_group
@@ -530,20 +528,6 @@ class ModifyWorkAreaUpdateView(UpdateView):
             }
         )
         return response
-
-
-def _reevaluated_work_area_status(work_area):
-    max_visit_count = (
-        UserVisit.objects.filter(work_area=work_area)
-        .values("opportunity_access")
-        .annotate(count=Count("id"))
-        .aggregate(max_count=Max("count"))["max_count"]
-    ) or 0
-    if max_visit_count >= work_area.expected_visit_count:
-        return WorkAreaStatus.EXPECTED_VISIT_REACHED
-    if work_area.status == WorkAreaStatus.EXPECTED_VISIT_REACHED:
-        return WorkAreaStatus.VISITED
-    return work_area.status
 
 
 @require_GET
