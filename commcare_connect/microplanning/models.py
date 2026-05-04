@@ -71,3 +71,24 @@ class WorkArea(geo_models.Model):
 
     def __str__(self):
         return f"{self.slug}-{self.opportunity_id}"
+
+
+class WorkAreaInaccessibilityRequest(geo_models.Model):
+    work_area = geo_models.ForeignKey(WorkArea, on_delete=geo_models.CASCADE)
+    opportunity_access = geo_models.ForeignKey(OpportunityAccess, on_delete=geo_models.CASCADE)
+    xform_id = geo_models.CharField(max_length=50)
+    date_of_visit = geo_models.DateField()
+    location = geo_models.PointField(null=True, blank=True, srid=SRID)
+    reason = geo_models.CharField(max_length=256)
+    additional_details = geo_models.TextField(blank=True, default="")
+    estimated_duration = geo_models.CharField(max_length=256, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            geo_models.UniqueConstraint(
+                fields=["xform_id", "work_area"], name="unique_xform_work_area_inaccessibility"
+            )
+        ]
+
+    def __str__(self):
+        return f"WorkAreaInaccessibilityRequest {self.xform_id} - {self.work_area}"

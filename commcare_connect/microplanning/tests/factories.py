@@ -1,3 +1,4 @@
+import datetime
 import random
 import uuid
 
@@ -6,7 +7,7 @@ from django.contrib.gis.geos import Point, Polygon
 from factory import Sequence, SubFactory
 from factory.django import DjangoModelFactory
 
-from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaGroup, WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory
 
 
@@ -57,3 +58,17 @@ class WorkAreaFactory(DjangoModelFactory):
 
     class Meta:
         model = WorkArea
+
+
+class WorkAreaInaccessibilityRequestFactory(DjangoModelFactory):
+    work_area = SubFactory(WorkAreaFactory)
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+    xform_id = factory.LazyFunction(lambda: str(uuid.uuid4()))
+    date_of_visit = factory.LazyFunction(datetime.date.today)
+    location = None
+    reason = factory.Faker("sentence", nb_words=3)
+    additional_details = ""
+    estimated_duration = ""
+
+    class Meta:
+        model = WorkAreaInaccessibilityRequest
