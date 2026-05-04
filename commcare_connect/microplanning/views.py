@@ -644,10 +644,8 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
             "work_area": work_area,
             "inaccessibility_request": inacc_request,
             "photos": photos,
-            "boundary_geojson": json.loads(work_area.boundary.geojson),
-            "request_location_geojson": (
-                json.loads(inacc_request.location.geojson) if inacc_request.location else None
-            ),
+            "boundary_geojson": work_area.boundary.geojson,
+            "request_location_geojson": (inacc_request.location.geojson if inacc_request.location else None),
             "mapbox_api_key": settings.MAPBOX_TOKEN,
         },
     )

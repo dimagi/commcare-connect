@@ -19,8 +19,11 @@ from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory, WorkAreaInaccessibilityRequestFactory
-
+from commcare_connect.microplanning.tests.factories import (
+    WorkAreaFactory,
+    WorkAreaGroupFactory,
+    WorkAreaInaccessibilityRequestFactory,
+)
 from commcare_connect.microplanning.views import UserVisitVectorLayer
 from commcare_connect.opportunity.models import BlobMeta
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
@@ -799,6 +802,17 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
 
         assert response.status_code == 200
         delay_patch.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_work_area_inaccessibility_request_factory_creates_instance():
+    req = WorkAreaInaccessibilityRequestFactory()
+    assert req.pk is not None
+    assert req.reason
+    assert req.date_of_visit is not None
+    assert req.xform_id
+    assert req.additional_details is not None
+    assert req.estimated_duration is not None  # optional — can be empty string
 
 
 @pytest.mark.django_db
