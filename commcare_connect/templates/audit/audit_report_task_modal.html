@@ -1,5 +1,5 @@
 {% load i18n %}
-<div x-data="{ open: true, confirm: false, action: null }"
+<div x-data="{ open: true, confirm: false, action: null, error: '' }"
      x-show="open"
      x-cloak
      @keydown.escape.window="open = false"
@@ -16,10 +16,10 @@
     </div>
 
     <form method="post"
-          hx-post="#"
+          hx-post="{% url 'opportunity:audit:audit_report_task_action' org_slug=opportunity.organization.slug opportunity_id=opportunity.opportunity_id audit_report_id=report.audit_report_id entry_id=entry.audit_report_entry_id %}"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
           hx-swap="none"
-          hx-on:htmx:after-request="if (event.detail.successful) { document.getElementById('modal-root').innerHTML = ''; htmx.trigger(document.body, 'refreshDetail'); }">
+          hx-on:htmx:after-request="if (event.detail.successful) { document.getElementById('modal-root').innerHTML = ''; htmx.trigger(document.body, 'refreshDetail'); } else { error = event.detail.xhr.responseText || '{% trans "Something went wrong. Please try again." %}'; confirm = false; }">
       {% csrf_token %}
       <div class="grid grid-cols-2 gap-6 p-6">
         <div>
@@ -56,6 +56,12 @@
           {% endif %}
         </div>
       </div>
+
+      <div x-show="error"
+           x-cloak
+           role="alert"
+           class="mx-6 mb-4 p-3 rounded-lg border border-message-error-border bg-message-error text-message-error-text text-sm"
+           x-text="error"></div>
 
       <div class="px-6 pb-6 flex justify-end gap-2">
         <button type="button" class="button button-md outline-style" @click="open = false">{% trans "Cancel" %}</button>

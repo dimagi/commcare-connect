@@ -26,7 +26,8 @@
            hx-get="{% url 'opportunity:audit:audit_report_detail' org_slug=opportunity.organization.slug opportunity_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
            hx-trigger="input changed delay:200ms, search"
            hx-target="#detail-body"
-           hx-swap="outerHTML" />
+           hx-swap="outerHTML"
+           hx-vals='{"review-page": "1", "noaction-page": "1"}' />
   </div>
 
   <h2 class="text-xl font-semibold">{% trans "Workers to Review" %}</h2>
@@ -39,10 +40,10 @@
     <button type="button"
             class="button button-md primary-dark"
             {% if not can_complete %}disabled{% endif %}
-            hx-post="#"
+            hx-post="{% url 'opportunity:audit:audit_report_complete' org_slug=opportunity.organization.slug opportunity_id=opportunity.opportunity_id audit_report_id=report.audit_report_id %}"
             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
             hx-swap="none"
-            hx-on::after-request="window.location.reload()">
+            hx-on::after-request="if (event.detail.successful) window.location.reload()">
       {% trans "Complete Audit" %}
     </button>
   </div>

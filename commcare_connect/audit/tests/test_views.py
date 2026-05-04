@@ -1,10 +1,11 @@
 import pytest
 from django.urls import reverse
 
-from commcare_connect.audit.models import AuditReport
+from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
+from commcare_connect.opportunity.models import AssignedTask
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, TaskTypeFactory
 
 
@@ -188,3 +189,127 @@ def test_task_modal_renders_task_types(client, program_manager_org_user_admin, a
     html = response.content.decode()
     assert task_type.name in html
     assert entry.opportunity_access.user.name in html
+
+
+# ---------------------------------------------------------------------------
+# Modal submit and complete-audit endpoint tests
+# ---------------------------------------------------------------------------
+
+
+def _action_url(audit_opp, report, entry):
+    return reverse(
+        "opportunity:audit:audit_report_task_action",
+        kwargs={
+            "org_slug": audit_opp.organization.slug,
+            "opportunity_id": audit_opp.opportunity_id,
+            "audit_report_id": report.audit_report_id,
+            "entry_id": entry.audit_report_entry_id,
+        },
+    )
+
+
+def _complete_url(audit_opp, report):
+    return reverse(
+        "opportunity:audit:audit_report_complete",
+        kwargs={
+            "org_slug": audit_opp.organization.slug,
+            "opportunity_id": audit_opp.opportunity_id,
+            "audit_report_id": report.audit_report_id,
+        },
+    )
+
+
+@pytest.mark.django_db
+def test_modal_submit_assigns_tasks(client, program_manager_org_user_admin, audit_opp):
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True)
+    task_type = TaskTypeFactory(opportunity=audit_opp, name="Refresher Module A")
+
+    response = client.post(
+        _action_url(audit_opp, report, entry),
+        data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
+    )
+    assert response.status_code == 200
+    entry.refresh_from_db()
+    assert entry.reviewed is True
+    assert entry.review_action == AuditReportEntry.ReviewAction.TASKS_ASSIGNED
+    assert AssignedTask.objects.filter(task_type=task_type).count() == 1
+
+
+@pytest.mark.django_db
+def test_modal_submit_no_action(client, program_manager_org_user_admin, audit_opp):
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True)
+    TaskTypeFactory(opportunity=audit_opp, name="Refresher Module A")
+
+    response = client.post(_action_url(audit_opp, report, entry), data={"action": "none"})
+    assert response.status_code == 200
+    entry.refresh_from_db()
+    assert entry.reviewed is True
+    assert entry.review_action == AuditReportEntry.ReviewAction.NONE
+    assert AssignedTask.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_complete_audit_succeeds_when_all_reviewed(client, program_manager_org_user_admin, audit_opp):
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    _entry(report, audit_opp, flagged=True, reviewed=True)
+
+    response = client.post(_complete_url(audit_opp, report))
+    assert response.status_code == 204
+    report.refresh_from_db()
+    assert report.status == AuditReport.Status.COMPLETED
+    assert report.completed_by == program_manager_org_user_admin
+    assert report.completed_date is not None
+
+
+@pytest.mark.django_db
+def test_complete_audit_blocked_when_flagged_unreviewed(client, program_manager_org_user_admin, audit_opp):
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    _entry(report, audit_opp, flagged=True, reviewed=False)
+
+    response = client.post(_complete_url(audit_opp, report))
+    assert response.status_code == 400
+    report.refresh_from_db()
+    assert report.status == AuditReport.Status.PENDING
+
+
+@pytest.mark.django_db
+def test_modal_submit_rejects_already_reviewed(client, program_manager_org_user_admin, audit_opp):
+    """Re-submitting a reviewed entry must not duplicate AssignedTasks."""
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True, reviewed=True)
+    task_type = TaskTypeFactory(opportunity=audit_opp, name="Refresher")
+
+    response = client.post(
+        _action_url(audit_opp, report, entry),
+        data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
+    )
+    assert response.status_code == 400
+    assert AssignedTask.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_modal_submit_rejects_cross_opportunity_task_type(
+    client, program_manager_org_user_admin, audit_opp, opportunity
+):
+    """A submitted task_type_id from another opportunity must not be assigned."""
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True)
+    foreign_task_type = TaskTypeFactory(opportunity=opportunity, name="Foreign")
+
+    response = client.post(
+        _action_url(audit_opp, report, entry),
+        data={"action": "tasks_assigned", "task_type_ids": [str(foreign_task_type.pk)]},
+    )
+    assert response.status_code == 200
+    assert AssignedTask.objects.count() == 0
+    entry.refresh_from_db()
+    # Entry is still marked reviewed (the action ran; no foreign task types matched).
+    assert entry.reviewed is True

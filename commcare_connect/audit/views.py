@@ -1,9 +1,12 @@
-from django.contrib.auth.decorators import login_required
+from datetime import timedelta
+
 from django.db.models import F, Window
 from django.db.models.functions import RowNumber
-from django.http import Http404
+from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 from django_tables2 import RequestConfig
 
 from commcare_connect.audit.calculations import get_registered_calculations
@@ -11,10 +14,11 @@ from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.tables import AuditReportEntryTable, AuditReportTable
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.models import Opportunity, TaskType
+from commcare_connect.opportunity.models import AssignedTask, Opportunity, TaskType
 from commcare_connect.organization.decorators import org_program_manager_required
 
 DEFAULT_PAGE_SIZE = 25
+DEFAULT_TASK_DUE_DAYS = 7
 
 
 def _require_flagged_opportunity(org_slug, opportunity_id):
@@ -28,7 +32,6 @@ def _require_flagged_opportunity(org_slug, opportunity_id):
     return opportunity
 
 
-@login_required
 @org_program_manager_required
 def audit_report_list(request, org_slug, opportunity_id):
     opportunity = _require_flagged_opportunity(org_slug, opportunity_id)
@@ -82,7 +85,6 @@ def _column_specs(entries):
     return ordered + leftovers
 
 
-@login_required
 @org_program_manager_required
 def audit_report_detail(request, org_slug, opportunity_id, audit_report_id):
     opportunity = _require_flagged_opportunity(org_slug, opportunity_id)
@@ -141,14 +143,13 @@ def audit_report_detail(request, org_slug, opportunity_id, audit_report_id):
     }
 
     template = (
-        "audit/_audit_report_body.html"
+        "audit/audit_report_body.html"
         if request.headers.get("HX-Request") == "true"
         else "audit/audit_report_detail.html"
     )
     return render(request, template, context)
 
 
-@login_required
 @org_program_manager_required
 def audit_report_task_modal(request, org_slug, opportunity_id, audit_report_id, entry_id):
     opportunity = _require_flagged_opportunity(org_slug, opportunity_id)
@@ -169,3 +170,61 @@ def audit_report_task_modal(request, org_slug, opportunity_id, audit_report_id, 
             "task_types": task_types,
         },
     )
+
+
+@org_program_manager_required
+@require_POST
+def audit_report_task_action(request, org_slug, opportunity_id, audit_report_id, entry_id):
+    opportunity = _require_flagged_opportunity(org_slug, opportunity_id)
+    report = get_object_or_404(AuditReport, audit_report_id=audit_report_id, opportunity=opportunity)
+    entry = get_object_or_404(AuditReportEntry, audit_report_entry_id=entry_id, audit_report=report)
+
+    if report.status == AuditReport.Status.COMPLETED:
+        return HttpResponseBadRequest("Report is already completed.")
+    if entry.reviewed:
+        return HttpResponseBadRequest("Entry has already been reviewed.")
+
+    action = request.POST.get("action")
+    if action == "tasks_assigned":
+        task_type_ids = request.POST.getlist("task_type_ids")
+        task_types = TaskType.objects.filter(pk__in=task_type_ids, opportunity=opportunity)
+        due_date = timezone.now().date() + timedelta(days=DEFAULT_TASK_DUE_DAYS)
+        for task_type in task_types:
+            AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=entry.opportunity_access,
+                due_date=due_date,
+                assigned_by=request.user,
+            )
+        entry.review_action = AuditReportEntry.ReviewAction.TASKS_ASSIGNED
+    elif action == "none":
+        entry.review_action = AuditReportEntry.ReviewAction.NONE
+    else:
+        return HttpResponseBadRequest("Unknown action.")
+
+    entry.reviewed = True
+    entry.save(update_fields=["reviewed", "review_action", "date_modified"])
+
+    # Empty 200. The modal's client-side handler closes the modal and triggers
+    # `refreshDetail` on document.body, which causes `#detail-body` to re-fetch
+    # itself and render the updated tables.
+    return HttpResponse(status=200)
+
+
+@org_program_manager_required
+@require_POST
+def audit_report_complete(request, org_slug, opportunity_id, audit_report_id):
+    opportunity = _require_flagged_opportunity(org_slug, opportunity_id)
+    report = get_object_or_404(AuditReport, audit_report_id=audit_report_id, opportunity=opportunity)
+
+    unreviewed_flagged = report.entries.filter(flagged=True, reviewed=False).exists()
+    if unreviewed_flagged:
+        return HttpResponseBadRequest("All flagged entries must be reviewed before completing the audit.")
+
+    if report.status != AuditReport.Status.COMPLETED:
+        report.status = AuditReport.Status.COMPLETED
+        report.completed_by = request.user
+        report.completed_date = timezone.now()
+        report.save(update_fields=["status", "completed_by", "completed_date", "date_modified"])
+
+    return HttpResponse(status=204)

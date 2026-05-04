@@ -1,4 +1,4 @@
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _l
@@ -89,7 +89,7 @@ class CalcColumn(columns.Column):
         super().__init__(empty_values=(), orderable=False, **kw)
 
     def render(self, record):
-        r = record.results.get(self.calc_name) or {}
+        r = record.results.get(self.calc_name, {})
         if not r.get("has_sufficient_data"):
             return format_html('<span class="text-gray-400">{}</span>', _("N/A"))
         value = r.get("value")
@@ -111,18 +111,15 @@ class ActionColumn(columns.Column):
 
     def render(self, record, table):
         if record.flagged and not record.reviewed:
-            try:
-                url = reverse(
-                    "opportunity:audit:audit_report_task_modal",
-                    kwargs={
-                        "org_slug": table.opportunity.organization.slug,
-                        "opportunity_id": table.opportunity.opportunity_id,
-                        "audit_report_id": table.report.audit_report_id,
-                        "entry_id": record.audit_report_entry_id,
-                    },
-                )
-            except NoReverseMatch:
-                url = "#"
+            url = reverse(
+                "opportunity:audit:audit_report_task_modal",
+                kwargs={
+                    "org_slug": table.opportunity.organization.slug,
+                    "opportunity_id": table.opportunity.opportunity_id,
+                    "audit_report_id": table.report.audit_report_id,
+                    "entry_id": record.audit_report_entry_id,
+                },
+            )
             return format_html(
                 '<button type="button" class="button button-md primary-dark"'
                 ' hx-get="{}" hx-target="#modal-root" hx-swap="innerHTML">{}</button>',
