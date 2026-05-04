@@ -109,6 +109,26 @@ def create_or_update_case(
     return CommCareCase(**data.get("case", {}))
 
 
+def bulk_update_cases(api_key: HQApiKey, domain: str, updates: list[dict[str, Any]]) -> None:
+    """POST a JSON array of case updates to /api/case/v2/.
+
+    HQ's bulk endpoint requires each row to carry a create flag; this helper
+    only updates existing cases, so create=False is injected per item.
+
+    All-or-nothing: raises CommCareHQAPIException on any non-2xx response.
+    """
+    base_url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
+    headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
+    payload = [{**update, "create": False} for update in updates]
+
+    try:
+        with httpx.Client(base_url=base_url, headers=headers) as client:
+            response = client.post("", json=payload)
+        response.raise_for_status()
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        raise CommCareHQAPIException(f"Failed to bulk-update {len(updates)} cases for {domain}. HQ Error: {e}") from e
+
+
 def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, Any]) -> CommCareCase:
     domain = opportunity_access.opportunity.deliver_app.cc_domain
     api_key = opportunity_access.opportunity.api_key

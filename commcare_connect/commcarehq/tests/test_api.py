@@ -1,13 +1,15 @@
+import json
 import uuid
 from unittest.mock import patch
 
 import pytest
 
-from commcare_connect.commcarehq.api import CommCareCase, create_or_update_case_by_work_area
+from commcare_connect.commcarehq.api import CommCareCase, bulk_update_cases, create_or_update_case_by_work_area
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.microplanning.const import WORK_AREA_CASE_TYPE
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityAccessFactory
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 DOMAIN = "test-domain"
 
@@ -76,3 +78,33 @@ class TestCreateOrUpdateCaseByWorkArea:
         expected_error_message = "Work Area must have an assigned Opportunity Access through its Work Area Group"
         with pytest.raises(ValueError, match=expected_error_message):
             create_or_update_case_by_work_area(work_area)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status_code, expect_exception",
+    [(200, False), (500, True)],
+)
+def test_bulk_update_cases(httpx_mock, status_code, expect_exception):
+    api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+    updates = [
+        {"case_id": "case-1", "owner_id": ""},
+        {"case_id": "case-2", "owner_id": ""},
+    ]
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{api_key.hq_server.url}/a/{DOMAIN}/api/case/v2/",
+        status_code=status_code,
+        json={} if not expect_exception else None,
+    )
+
+    if expect_exception:
+        with pytest.raises(CommCareHQAPIException):
+            bulk_update_cases(api_key, DOMAIN, updates)
+    else:
+        bulk_update_cases(api_key, DOMAIN, updates)
+        request = httpx_mock.get_request()
+        assert request.method == "POST"
+        expected_payload = [{**update, "create": False} for update in updates]
+        assert json.loads(request.content) == expected_payload
+        assert request.headers["Authorization"] == f"ApiKey {api_key.user.email}:{api_key.api_key}"
