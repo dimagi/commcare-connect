@@ -24,6 +24,7 @@ from tablib import Dataset
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
 from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
@@ -402,10 +403,38 @@ def download_user_visit_attachments(self, user_visit_id: int):
             default_storage.save(str(blob_meta.blob_id), ContentFile(response.content, name))
 
 
-@celery_app.task()
-def download_inaccessibility_request_attachments(xform_id: str, attachments: dict):
-    # TODO (Task 3): implement attachment download for WorkAreaInaccessibilityRequest
-    pass
+@celery_app.task(
+    bind=True,
+    autoretry_for=RETRYABLE_EXCS,
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def download_inaccessibility_request_attachments(self, xform_id: str, attachments: dict):
+    request_obj = WorkAreaInaccessibilityRequest.objects.select_related(
+        "work_area__opportunity__deliver_app", "work_area__opportunity__api_key"
+    ).get(xform_id=xform_id)
+    api_key = request_obj.work_area.opportunity.api_key
+    domain = request_obj.work_area.opportunity.deliver_app.cc_domain
+    for name, blob in attachments.items():
+        if name == "form.xml":
+            continue
+        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{xform_id}/{name}"
+        with transaction.atomic():
+            blob_meta, created = BlobMeta.objects.get_or_create(
+                name=name,
+                parent_id=xform_id,
+                content_length=blob["length"],
+                content_type=blob["content_type"],
+            )
+            if not created:
+                continue
+            response = httpx.get(
+                url,
+                headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+            )
+            default_storage.save(str(blob_meta.blob_id), ContentFile(response.content, name))
 
 
 @celery_app.task()

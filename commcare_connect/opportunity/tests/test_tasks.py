@@ -1,4 +1,5 @@
 import datetime
+import uuid
 from decimal import Decimal
 from unittest import mock
 
@@ -7,6 +8,7 @@ from django.utils.timezone import now
 from tablib import Dataset
 
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.models import (
     BlobMeta,
     CompletedWorkStatus,
@@ -22,6 +24,7 @@ from commcare_connect.opportunity.tasks import (
     _get_inactive_message,
     add_connect_users,
     auto_deactivate_ended_opportunities,
+    download_inaccessibility_request_attachments,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
     generate_catchment_area_export,
@@ -204,6 +207,58 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         blob_id, content_file = save_blob.call_args_list[0].args
         assert str(blob_id) == blob_meta.blob_id
         assert content_file.read() == b"asdas"
+
+
+@pytest.mark.django_db
+def test_download_inaccessibility_request_attachments_creates_blobs(opportunity):
+    xform_id = str(uuid.uuid4())
+    WorkAreaInaccessibilityRequestFactory(
+        xform_id=xform_id,
+        work_area__opportunity=opportunity,
+    )
+    attachments = {
+        "form.xml": {"content_type": "text/xml", "length": 500},
+        "photo.jpg": {"content_type": "image/jpeg", "length": 20},
+    }
+
+    with mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response, mock.patch(
+        "commcare_connect.opportunity.tasks.default_storage.save"
+    ) as save_blob:
+        get_response.return_value.content = b"imgdata"
+        download_inaccessibility_request_attachments.run(xform_id, attachments)
+
+    assert BlobMeta.objects.filter(parent_id=xform_id).count() == 1  # form.xml excluded
+    blob = BlobMeta.objects.get(parent_id=xform_id)
+    assert blob.name == "photo.jpg"
+    assert blob.content_length == 20
+    assert blob.content_type == "image/jpeg"
+    blob_id, content_file = save_blob.call_args_list[0].args
+    assert str(blob_id) == blob.blob_id
+    assert content_file.read() == b"imgdata"
+
+
+@pytest.mark.django_db
+def test_download_inaccessibility_request_attachments_skips_existing_blobs(opportunity):
+    xform_id = str(uuid.uuid4())
+    WorkAreaInaccessibilityRequestFactory(
+        xform_id=xform_id,
+        work_area__opportunity=opportunity,
+    )
+    BlobMeta.objects.create(
+        name="photo.jpg",
+        parent_id=xform_id,
+        content_length=20,
+        content_type="image/jpeg",
+    )
+    attachments = {"photo.jpg": {"content_type": "image/jpeg", "length": 20}}
+
+    with mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response, mock.patch(
+        "commcare_connect.opportunity.tasks.default_storage.save"
+    ) as save_blob:
+        download_inaccessibility_request_attachments.run(xform_id, attachments)
+
+    get_response.assert_not_called()
+    save_blob.assert_not_called()
 
 
 @pytest.mark.django_db
