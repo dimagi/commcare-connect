@@ -39,21 +39,25 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
         else:
             db_only.append(work_area)
 
+    pghistory_ctx = dict(reason=exclusion_reason, username=user.username, user_email=user.email)
+
     for i in range(0, len(needs_hq), HQ_BULK_CHUNK_SIZE):
         chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]  # noqa: E203
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
         updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:
-            bulk_update_cases(api_key, domain, updates)
+            with transaction.atomic(), pghistory.context(**pghistory_ctx):
+                _bulk_exclude(chunk, user, exclusion_reason)
+                bulk_update_cases(api_key, domain, updates)
         except CommCareHQAPIException as e:
             logger.warning("Failed to unassign HQ case chunk (size=%d): %s", len(chunk), e)
             failed += len(chunk)
             continue
-        _bulk_exclude(chunk, user, exclusion_reason)
         excluded += len(chunk)
 
     if db_only:
-        _bulk_exclude(db_only, user, exclusion_reason)
+        with transaction.atomic(), pghistory.context(**pghistory_ctx):
+            _bulk_exclude(db_only, user, exclusion_reason)
         excluded += len(db_only)
 
     logger.info(
@@ -73,12 +77,7 @@ def _bulk_exclude(work_areas, user, exclusion_reason):
         wa.excluded_by = user
         wa.excluded_reason = exclusion_reason
         wa.work_area_group = None
-    with transaction.atomic(), pghistory.context(
-        reason=exclusion_reason,
-        username=user.username,
-        user_email=user.email,
-    ):
-        WorkArea.objects.bulk_update(
-            work_areas,
-            fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
-        )
+    WorkArea.objects.bulk_update(
+        work_areas,
+        fields=["status", "excluded_by", "excluded_reason", "work_area_group"],
+    )
