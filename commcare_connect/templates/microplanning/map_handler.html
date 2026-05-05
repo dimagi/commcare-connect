@@ -27,7 +27,11 @@
             assignees: [],
             workAreaProperties: new Map(),
             assignmentQueue: [],
+            excludedWorkAreaIds: new Set(),
 
+            isExcluded(id) {
+                return this.excludedWorkAreaIds.has(id) || this.workAreaProperties.get(id)?.status === 'EXCLUDED';
+            },
 
             openWorkAreaEditModal(workAreaId) {
                 const editWorkAreaUrl = '{{ edit_work_area_url|escapejs }}';
@@ -386,6 +390,7 @@
                             { source: 'workareas', sourceLayer: 'workareas', id },
                             { status: 'EXCLUDED' }
                         );
+                        this.excludedWorkAreaIds.add(id);
                     }
                     this.showExcludeModal = false;
                     this.clearSelection();
