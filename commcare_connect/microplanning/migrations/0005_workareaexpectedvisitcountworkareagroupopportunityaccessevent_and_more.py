@@ -66,6 +66,7 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             copy_opportunity_access_from_group_to_work_areas,
             reverse_code=migrations.RunPython.noop,
+            hints={"run_on_secondary": False},
         ),
         pgtrigger.migrations.AddTrigger(
             model_name="workarea",
