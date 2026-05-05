@@ -1003,6 +1003,8 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED, None, True),
         # pending visit (auto_approve_visits=False) should not trigger EXPECTED_VISIT_REACHED
         (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 1, False),
+        # expected_visit_count=0 (unconfigured) should never trigger EXPECTED_VISIT_REACHED
+        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 0, True),
     ],
 )
 def test_receiver_deliver_form_work_area_status(
