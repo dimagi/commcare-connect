@@ -4,7 +4,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
-from commcare_connect.opportunity.api.serializers import (
+from commcare_connect.opportunity.api.serializers.mobile import (
     CommCareAppSerializer,
     OpportunityClaimLimitSerializer,
     OpportunityVerificationFlagsSerializer,

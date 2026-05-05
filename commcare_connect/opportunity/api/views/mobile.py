@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from commcare_connect.flags.switch_names import API_UUID
-from commcare_connect.opportunity.api.serializers import (
+from commcare_connect.opportunity.api.serializers.mobile import (
     CompletedWorkSerializer,
     DeliveryProgressSerializer,
     OpportunitySerializer,
