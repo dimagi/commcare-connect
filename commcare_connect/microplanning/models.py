@@ -85,7 +85,7 @@ class WorkArea(geo_models.Model):
         new_status = self.status
         if self.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED) and counts["total"]:
             new_status = WorkAreaStatus.VISITED
-        if counts["approved"] >= self.expected_visit_count:
+        if self.expected_visit_count and counts["approved"] >= self.expected_visit_count:
             new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
 
         if new_status != self.status:
