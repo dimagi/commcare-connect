@@ -3,6 +3,7 @@ import logging
 from functools import partial
 from uuid import UUID
 
+import pghistory
 from django.db import transaction
 from django.db.models import Count, Min, Q
 from django.utils.timezone import now
@@ -14,7 +15,7 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -47,6 +48,7 @@ LEARN_MODULE_JSONPATH = parse("$..module")
 TASK_MODULE_JSONPATH = parse("$..task")
 ASSESSMENT_JSONPATH = parse("$..assessment")
 DELIVER_UNIT_JSONPATH = parse("$..deliver")
+WORK_AREA_UPDATE_JSONPATH = parse("$..work_area_update")
 
 
 def is_a_uuid(value):
@@ -250,17 +252,53 @@ def process_assessments(user, xform: XForm, app: CommCareApp, opportunity: Oppor
 
 
 def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Opportunity):
-    deliver_matches = [
-        match.value for match in DELIVER_UNIT_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
-    ]
-    for deliver_unit_block in deliver_matches:
+    for deliver_unit_block in _get_matching_blocks(DELIVER_UNIT_JSONPATH, xform):
         process_deliver_unit(user, xform, app, opportunity, deliver_unit_block)
 
-    task_matches = [
-        match.value for match in TASK_MODULE_JSONPATH.find(xform.form) if match.value["@xmlns"] == CCC_LEARN_XMLNS
-    ]
+    task_matches = _get_matching_blocks(TASK_MODULE_JSONPATH, xform)
     if task_matches:
         process_task_modules(user, xform, app, opportunity, task_matches)
+
+    work_area_blocks = _get_matching_blocks(WORK_AREA_UPDATE_JSONPATH, xform)
+    if work_area_blocks:
+        process_work_area_update(user, opportunity, work_area_blocks)
+
+
+def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[dict]):
+    try:
+        access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
+    except OpportunityAccess.DoesNotExist:
+        raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
+
+    for block in blocks:
+        work_area_case_id = block.get("work_area_id")
+        if not work_area_case_id or not is_a_uuid(work_area_case_id):
+            raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+
+        try:
+            work_area = WorkArea.objects.select_for_update().get(case_id=work_area_case_id, opportunity=opportunity)
+        except WorkArea.DoesNotExist:
+            raise ProcessingError("Work area not found")
+
+        # TODO: CCCT-2277 moves the assignment directly to `WorkArea`, so this check should be updated
+        # depending on which PR gets merged first.
+        if not work_area.work_area_group or work_area.work_area_group.opportunity_access_id != access.id:
+            raise ProcessingError("User is not assigned to this work area")
+
+        requested_status = block.get("status", "").upper()
+        try:
+            new_status = WorkAreaStatus(requested_status)
+        except ValueError:
+            raise ProcessingError(f"Invalid work area status: {requested_status}")
+
+        if not (
+            work_area.status == WorkAreaStatus.NOT_STARTED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+        ):
+            raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
+
+        work_area.status = new_status
+        with pghistory.context(username=user.username, user_email=user.email):
+            work_area.save(update_fields=["status"])
 
 
 def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xform: XForm) -> list[list[str]]:
@@ -273,11 +311,11 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
     """
     flags = []
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(opportunity=user_visit.opportunity)
-    if opportunity_flags.duplicate:
-        if user_visit.status == VisitValidationStatus.duplicate:
+    if user_visit.status == VisitValidationStatus.duplicate:
+        if opportunity_flags.duplicate:
             flags.append(["duplicate", "A beneficiary with the same identifier already exists"])
-    else:
-        user_visit.status = VisitValidationStatus.pending
+        else:
+            user_visit.status = VisitValidationStatus.pending
     if opportunity_flags.gps and user_visit.location is None:
         flags.append(["gps", "GPS data is missing"])
     if opportunity_flags.location > 0 and user_visit.location:

@@ -171,7 +171,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10)
 
-        initial_event_count = work_area.expected_visit_count_work_area_group_events.count()
+        initial_event_count = work_area.expected_visit_count_work_area_group_status_events.count()
         assert work_area.work_area_group is None
         new_expected_visit_count = 25
         client.force_login(org_user_admin)
@@ -195,7 +195,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert work_area.expected_visit_count == new_expected_visit_count
         assert work_area.work_area_group == group
 
-        events = work_area.expected_visit_count_work_area_group_events
+        events = work_area.expected_visit_count_work_area_group_status_events
         assert events.count() == initial_event_count + 1
         event = events.last()
         assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
@@ -206,7 +206,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
-        initial_event_count = work_area.expected_visit_count_work_area_group_events.count()
+        initial_event_count = work_area.expected_visit_count_work_area_group_status_events.count()
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -220,7 +220,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
 
         work_area.refresh_from_db()
         assert response.status_code == 204
-        assert work_area.expected_visit_count_work_area_group_events.count() == initial_event_count
+        assert work_area.expected_visit_count_work_area_group_status_events.count() == initial_event_count
         assert mock_sync.call_count == 0  # No sync since nothing changed
         assert work_area.work_area_group == group
         assert work_area.expected_visit_count == 10
@@ -781,3 +781,63 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         assert row_dict["LGA"] == "RevLGA"
         assert row_dict["State"] == "RevState"
         assert row_dict["Work Area Group Name"] == "Rev Group"
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
+    @pytest.fixture(autouse=True)
+    def setup_microplanning_flag(self, managed_opportunity, request):
+        flag, _ = Flag.objects.get_or_create(name=MICROPLANNING)
+        flag.opportunities.add(managed_opportunity)
+        flag.flush()
+
+    def _url(self, program_manager_org, managed_opportunity):
+        return reverse(
+            "microplanning:save_assignment",
+            kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
+        )
+
+    def test_schedules_one_notification_per_assignee(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        access_a = OpportunityAccessFactory(opportunity=managed_opportunity)
+        access_b = OpportunityAccessFactory(opportunity=managed_opportunity)
+        client.force_login(program_manager_org_user_admin)
+
+        payload = {
+            "assignments": [
+                {"assignee_id": access_a.pk, "work_area_ids": [1, 2]},
+                {"assignee_id": access_a.pk, "work_area_ids": [3]},
+                {"assignee_id": access_b.pk, "work_area_ids": [4]},
+            ]
+        }
+        with mock.patch(
+            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+        ) as delay_patch:
+            response = client.post(
+                self._url(program_manager_org, managed_opportunity),
+                data=json.dumps(payload),
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200
+        called_ids = sorted(call.args[0] for call in delay_patch.call_args_list)
+        assert called_ids == sorted([access_a.pk, access_b.pk])
+
+    def test_ignores_assignees_from_other_opportunity(
+        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+    ):
+        other_access = OpportunityAccessFactory(opportunity=OpportunityFactory())
+        client.force_login(program_manager_org_user_admin)
+
+        with mock.patch(
+            "commcare_connect.microplanning.views.send_work_area_assignment_notification.delay"
+        ) as delay_patch:
+            response = client.post(
+                self._url(program_manager_org, managed_opportunity),
+                data=json.dumps({"assignments": [{"assignee_id": other_access.pk, "work_area_ids": [1]}]}),
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200
+        delay_patch.assert_not_called()

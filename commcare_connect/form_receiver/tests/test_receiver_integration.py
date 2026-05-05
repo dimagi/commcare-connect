@@ -17,10 +17,11 @@ from commcare_connect.form_receiver.tests.xforms import (
     AssessmentStubFactory,
     DeliverUnitStubFactory,
     LearnModuleJsonFactory,
+    WorkAreaUpdateStubFactory,
     get_form_json,
 )
 from commcare_connect.microplanning.models import WorkAreaStatus
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import (
     Assessment,
     CompletedModule,
@@ -241,6 +242,21 @@ def test_receiver_deliver_form_daily_visits_reached(
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 0
     make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     assert UserVisit.objects.filter(user=user_with_connectid_link).count() == 1
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert visit.status == VisitValidationStatus.over_limit
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("opportunity", [{"verification_flags": {"duplicate": False}}], indirect=True)
+def test_over_limit_status_preserved_when_duplicate_flag_disabled(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    # When the duplicate verification flag is off, clean_form_submission() must not
+    # clobber an over_limit status set by the cap check; otherwise auto_approve will
+    # silently accept visits past the per-worker max.
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link, daily_max_per_user=0)
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.over_limit
 
@@ -1083,3 +1099,102 @@ def test_receiver_deliver_form_expected_visit_count(
 
     work_area.refresh_from_db()
     assert work_area.status == expected_status
+
+
+@pytest.mark.django_db
+def test_work_area_update_inaccessible(
+    mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.NOT_STARTED
+    )
+    initial_event_count = work_area.expected_visit_count_work_area_group_status_events.count()
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible")
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    work_area.refresh_from_db()
+    assert work_area.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+
+    events = work_area.expected_visit_count_work_area_group_status_events
+    assert events.count() == initial_event_count + 1
+    event = events.last()
+    assert event.pgh_context.metadata["username"] == mobile_user_with_connect_link.username
+    assert event.pgh_context.metadata["user_email"] == mobile_user_with_connect_link.email
+    assert event.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status, assigned_to_user",
+    [
+        (WorkAreaStatus.VISITED, True),
+        (WorkAreaStatus.NOT_STARTED, False),
+    ],
+    ids=["wrong_status", "unassigned_worker"],
+)
+def test_work_area_update_rejected(
+    status,
+    assigned_to_user,
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+):
+    if assigned_to_user:
+        access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+        work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=work_area_group, status=status)
+    else:
+        work_area = WorkAreaFactory(opportunity=opportunity, status=status)
+
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible")
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+    work_area.refresh_from_db()
+    assert work_area.status == status
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "work_area_id",
+    ["not-a-uuid", str(uuid4())],
+    ids=["invalid_uuid", "nonexistent_work_area"],
+)
+def test_work_area_update_unresolvable_id(
+    work_area_id, mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area_id, status="request_for_inaccessible")
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )

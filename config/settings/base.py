@@ -98,6 +98,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "commcare_connect.audit",
     "commcare_connect.commcarehq_provider",
     "commcare_connect.commcarehq",
     "commcare_connect.data_export",

@@ -54,6 +54,7 @@ from .tasks import (
     get_cluster_area_cache_lock_key,
     get_import_area_cache_key,
     import_work_areas_task,
+    send_work_area_assignment_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -590,4 +591,22 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 @require_flag_for_opp(MICROPLANNING)
 def save_assignment(request, org_slug, opp_id):
     """Stub endpoint for saving work area assignments. Accepts the payload but does not persist changes yet."""
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "invalid json"}, status=400)
+
+    assignee_ids = {
+        a["assignee_id"]
+        for a in payload.get("assignments", [])
+        if isinstance(a, dict) and a.get("assignee_id") is not None
+    }
+    valid_assignee_ids = list(
+        OpportunityAccess.objects.filter(pk__in=assignee_ids, opportunity=request.opportunity).values_list(
+            "pk", flat=True
+        )
+    )
+    for access_id in valid_assignee_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
+
     return JsonResponse({"status": "ok"})
