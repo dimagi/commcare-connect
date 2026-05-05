@@ -638,8 +638,10 @@ def save_assignment(request, org_slug, opp_id):
 
     for work_area in all_work_areas:
         work_area.opportunity_access = work_area_to_access[work_area.id]
+        if work_area.status == WorkAreaStatus.UNASSIGNED:
+            work_area.status = WorkAreaStatus.NOT_STARTED
 
-    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access"])
+    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access", "status"])
 
     try:
         bulk_create_or_update_cases_by_work_areas(all_work_areas)
