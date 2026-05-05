@@ -234,10 +234,15 @@
                         </p>
                         <div class="flex flex-col items-end gap-2">
                             <button type="button" @click="showExcludeModal = true"
-                                :disabled="selectedWorkAreas.size === 0 || Array.from(selectedWorkAreas).every(id => isExcluded(id))"
+                                :disabled="selectedWorkAreas.size === 0 || Array.from(selectedWorkAreas).every(id => cannotExclude(id))"
                                 class="button button-sm outline-style text-xs">
                                 {% translate "Exclude from Opportunity" %}
                             </button>
+                            <p x-show="selectedWorkAreas.size > 0 && Array.from(selectedWorkAreas).every(id => cannotExclude(id))"
+                               class="text-xs text-amber-600 text-right max-w-48">
+                                <i class="fa-solid fa-circle-info"></i>
+                                {% translate "Only 'Not Started' work areas can be excluded." %}
+                            </p>
                             <button type="button" disabled
                                 title="{% translate 'Unassign Selected Areas will be available in a future update' %}"
                                 class="button button-sm outline-style text-xs opacity-50 cursor-not-allowed">
@@ -418,7 +423,7 @@
                           hx-target="this"
                           hx-swap="outerHTML">
                         {% csrf_token %}
-                        <template x-for="id in Array.from(selectedWorkAreas).filter(id => !isExcluded(id))" :key="id">
+                        <template x-for="id in Array.from(selectedWorkAreas).filter(id => !cannotExclude(id))" :key="id">
                             <input type="hidden" name="work_area_ids[]" :value="id">
                         </template>
                         <div class="py-4">
@@ -429,12 +434,12 @@
                                 placeholder="{% translate 'Please provide a reason for excluding this work area.' %}"></textarea>
                             <div class="mt-3 p-4 rounded-lg border bg-blue-50 border-blue-200">
                                 <p class="text-sm text-gray-800">
-                                    <span x-text="Array.from(selectedWorkAreas).filter(id => !isExcluded(id)).length"></span> {% translate "work area(s) will be excluded" %}
+                                    <span x-text="Array.from(selectedWorkAreas).filter(id => !cannotExclude(id)).length"></span> {% translate "work area(s) will be excluded" %}
                                 </p>
-                                <template x-if="Array.from(selectedWorkAreas).some(id => isExcluded(id))">
+                                <template x-if="Array.from(selectedWorkAreas).some(id => cannotExclude(id))">
                                     <p class="text-xs text-amber-700 mt-1">
                                         <i class="fa-solid fa-circle-info"></i>
-                                        <span x-text="Array.from(selectedWorkAreas).filter(id => isExcluded(id)).length"></span> {% translate "already excluded and will be skipped." %}
+                                        <span x-text="Array.from(selectedWorkAreas).filter(id => cannotExclude(id)).length"></span> {% translate "area(s) are not eligible for exclusion and will be skipped." %}
                                     </p>
                                 </template>
                             </div>

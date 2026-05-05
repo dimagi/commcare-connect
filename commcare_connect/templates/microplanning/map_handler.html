@@ -29,8 +29,10 @@
             assignmentQueue: [],
             excludedWorkAreaIds: new Set(),
 
-            isExcluded(id) {
-                return this.excludedWorkAreaIds.has(id) || this.workAreaProperties.get(id)?.status === 'EXCLUDED';
+            cannotExclude(id) {
+                if (this.excludedWorkAreaIds.has(id)) return true;
+                const status = this.workAreaProperties.get(id)?.status;
+                return status !== undefined && status !== 'NOT_STARTED';
             },
 
             openWorkAreaEditModal(workAreaId) {
