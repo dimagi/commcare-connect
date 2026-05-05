@@ -470,23 +470,23 @@ def clustering_status(request, org_slug, opp_id):
 def exclude_work_areas(request, org_slug, opp_id):
     exclusion_reason = request.POST.get("exclusion_reason", "").strip()
     if not exclusion_reason:
-        return JsonResponse({"error": "exclusion_reason is required"}, status=400)
+        return JsonResponse({"error": _("Exclusion reason is required")}, status=400)
     if len(exclusion_reason) > 500:
-        return JsonResponse({"error": "exclusion_reason must be at most 500 characters"}, status=400)
+        return JsonResponse({"error": _("Exclusion reason must be at most 500 characters")}, status=400)
 
     raw_ids = request.POST.getlist("work_area_ids[]")
     if not raw_ids:
-        return JsonResponse({"error": "work_area_ids[] is required"}, status=400)
+        return JsonResponse({"error": _("Work Area IDs is required")}, status=400)
     if len(raw_ids) > MAX_EXCLUDE_WORK_AREAS:
         return JsonResponse(
-            {"error": f"work_area_ids[] must contain at most {MAX_EXCLUDE_WORK_AREAS} items"},
+            {"error": _("Work Area IDs must contain at most %(max)d items") % {"max": MAX_EXCLUDE_WORK_AREAS}},
             status=400,
         )
 
     try:
         work_area_ids = [int(i) for i in raw_ids]
     except (ValueError, TypeError):
-        return JsonResponse({"error": "work_area_ids[] must be integers"}, status=400)
+        return JsonResponse({"error": _("Work Area IDs must be integers")}, status=400)
 
     exclude_work_areas_task.delay(
         opp_id=request.opportunity.id,

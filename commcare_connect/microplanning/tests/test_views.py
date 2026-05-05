@@ -968,7 +968,7 @@ class TestExcludeWorkAreasView:
         client.force_login(org_user_admin)
         response = client.post(self.url(opportunity), post_data)
         assert response.status_code == 400
-        assert "exclusion_reason" in response.json()["error"]
+        assert "Exclusion reason" in response.json()["error"]
         mock_task.delay.assert_not_called()
 
     @pytest.mark.parametrize(
