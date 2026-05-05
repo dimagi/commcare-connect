@@ -41,7 +41,7 @@ class WorkAreaGroup(geo_models.Model):
         return self.workarea_set.aggregate(total=Sum("building_count"))["total"] or 0
 
 
-@pghistory.track(fields=["expected_visit_count", "work_area_group", "excluded_reason"])
+@pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "excluded_reason"])
 class WorkArea(geo_models.Model):
     work_area_group = geo_models.ForeignKey(WorkAreaGroup, null=True, blank=True, on_delete=geo_models.SET_NULL)
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
