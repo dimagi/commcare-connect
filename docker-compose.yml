@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgis/postgis:15-3.5
+    image: postgis/postgis
     platform: linux/amd64
     # persist data beyond lifetime of container
     volumes:

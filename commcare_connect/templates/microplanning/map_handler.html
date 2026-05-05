@@ -22,6 +22,7 @@
             flwSummaryLoading: false,
             showConfirmModal: false,
             showDiscardModal: false,
+            showExcludeModal: false,
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
@@ -377,6 +378,19 @@
                     this.showWorkAreaEditModal = false;
                     this.showToast("{% translate 'Work area updated successfully!' %}");
                 });
+
+                document.addEventListener('work_areas_excluded', (e) => {
+                    const excluded = e.detail?.excluded ?? [];
+                    for (const id of excluded) {
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id },
+                            { status: 'EXCLUDED' }
+                        );
+                    }
+                    this.showExcludeModal = false;
+                    this.clearSelection();
+                    this.showToast(`{% translate "Work area(s) excluded successfully." %}`);
+                });
             },
 
 
@@ -424,6 +438,11 @@
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
                             '#ffffff',
+
+                            // Excluded areas are always grey regardless of group — supports
+                            // live update via setFeatureState without waiting for tile reload.
+                            ['==', ['coalesce', ['feature-state', 'status'], ['get', 'status']], 'EXCLUDED'],
+                            '#9ca3af',
 
                             [
                                 'case',

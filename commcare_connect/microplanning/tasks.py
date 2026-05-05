@@ -346,7 +346,7 @@ def exclude_work_areas_task(opp_id, work_area_ids, user_id, exclusion_reason):
     opportunity = Opportunity.objects.get(pk=opp_id)
     user = User.objects.get(pk=user_id)
 
-    excluded = 0
+    excluded_ids = []
     skipped = 0
     failed = 0
 
@@ -380,17 +380,18 @@ def exclude_work_areas_task(opp_id, work_area_ids, user_id, exclusion_reason):
             failed += len(chunk)
             continue
         _bulk_exclude(chunk, user, exclusion_reason)
-        excluded += len(chunk)
+        excluded_ids.extend(wa.id for wa in chunk)
 
     if db_only:
         _bulk_exclude(db_only, user, exclusion_reason)
-        excluded += len(db_only)
+        excluded_ids.extend(wa.id for wa in db_only)
 
     logger.info(
         "exclude_work_areas_task finished opp=%s requested=%d excluded=%d skipped=%d failed=%d",
         opp_id,
         len(work_area_ids),
-        excluded,
+        len(excluded_ids),
         skipped,
         failed,
     )
+    return {"excluded": excluded_ids}

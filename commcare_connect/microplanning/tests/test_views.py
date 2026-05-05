@@ -932,7 +932,9 @@ class TestExcludeWorkAreasView:
         )
 
     @patch("commcare_connect.microplanning.views.exclude_work_areas_task")
-    def test_valid_request_enqueues_task_and_returns_202(self, mock_task, client, org_user_admin, opportunity):
+    def test_valid_request_enqueues_task_and_returns_progress_template(
+        self, mock_task, client, org_user_admin, opportunity
+    ):
         wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
 
         client.force_login(org_user_admin)
@@ -941,8 +943,8 @@ class TestExcludeWorkAreasView:
             {"work_area_ids[]": [wa.id], "exclusion_reason": "Flooding"},
         )
 
-        assert response.status_code == 202
-        assert response.json() == {"status": "queued"}
+        assert response.status_code == 200
+        assert b"exclude-progress" in response.content
         mock_task.delay.assert_called_once_with(
             opp_id=opportunity.id,
             work_area_ids=[wa.id],

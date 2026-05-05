@@ -32,6 +32,7 @@ urlpatterns = [
     ),
     path("<slug:opp_id>/download_work_areas/", views.download_work_areas, name="download_work_areas"),
     path("<slug:opp_id>/exclude_work_areas/", views.exclude_work_areas, name="exclude_work_areas"),
+    path("<slug:opp_id>/exclude_status/", views.exclude_status, name="exclude_status"),
     path(
         "<slug:opp_id>/assignment/group_work_areas/<int:group_id>/",
         views.get_work_areas_for_assignment,
