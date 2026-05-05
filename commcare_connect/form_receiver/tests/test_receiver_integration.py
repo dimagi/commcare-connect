@@ -1048,11 +1048,14 @@ def test_work_area_update_inaccessible(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
     access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
-    work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
     work_area = WorkAreaFactory(
-        opportunity=opportunity, work_area_group=work_area_group, status=WorkAreaStatus.NOT_STARTED
+        opportunity=opportunity,
+        work_area_group=work_area_group,
+        status=WorkAreaStatus.NOT_STARTED,
+        opportunity_access=access,
     )
-    initial_event_count = work_area.expected_visit_count_work_area_group_status_events.count()
+    initial_event_count = work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible")
     form_json = get_form_json(
@@ -1066,7 +1069,7 @@ def test_work_area_update_inaccessible(
     work_area.refresh_from_db()
     assert work_area.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
 
-    events = work_area.expected_visit_count_work_area_group_status_events
+    events = work_area.expected_visit_count_work_area_group_status_opportunity_access_events
     assert events.count() == initial_event_count + 1
     event = events.last()
     assert event.pgh_context.metadata["username"] == mobile_user_with_connect_link.username
@@ -1092,8 +1095,10 @@ def test_work_area_update_rejected(
 ):
     if assigned_to_user:
         access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
-        work_area_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
-        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=work_area_group, status=status)
+        work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity, work_area_group=work_area_group, status=status, opportunity_access=access
+        )
     else:
         work_area = WorkAreaFactory(opportunity=opportunity, status=status)
 

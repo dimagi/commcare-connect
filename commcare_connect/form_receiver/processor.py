@@ -280,7 +280,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
-        if not work_area.opportunity_access_id != access.id:
+        if work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
 
         requested_status = block.get("status", "").upper()
