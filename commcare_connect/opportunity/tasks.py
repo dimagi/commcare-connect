@@ -370,28 +370,17 @@ def send_push_notification_task(
 RETRYABLE_EXCS = (httpx.ReadTimeout, httpx.ConnectTimeout)
 
 
-@celery_app.task(
-    bind=True,
-    autoretry_for=RETRYABLE_EXCS,
-    retry_kwargs={"max_retries": 5},
-    retry_backoff=True,
-    retry_backoff_max=300,
-    retry_jitter=True,
-)
-def download_user_visit_attachments(self, user_visit_id: int):
-    user_visit = UserVisit.objects.get(id=user_visit_id)
-    api_key = user_visit.opportunity.api_key
-    blobs = user_visit.form_json.get("attachments", {})
-    domain = user_visit.opportunity.deliver_app.cc_domain
-    form_id = user_visit.xform_id
-    for name, blob in blobs.items():
+def _download_attachments(api_key, domain: str, xform_id: str, attachments: dict):
+    for name, blob in attachments.items():
         if name == "form.xml":
             continue
-        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{user_visit.xform_id}/{name}"
-
+        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{xform_id}/{name}"
         with transaction.atomic():
             blob_meta, created = BlobMeta.objects.get_or_create(
-                name=name, parent_id=form_id, content_length=blob["length"], content_type=blob["content_type"]
+                name=name,
+                parent_id=xform_id,
+                content_length=blob["length"],
+                content_type=blob["content_type"],
             )
             if not created:
                 # attachment already exists
@@ -411,30 +400,29 @@ def download_user_visit_attachments(self, user_visit_id: int):
     retry_backoff_max=300,
     retry_jitter=True,
 )
+def download_user_visit_attachments(self, user_visit_id: int):
+    user_visit = UserVisit.objects.get(id=user_visit_id)
+    api_key = user_visit.opportunity.api_key
+    domain = user_visit.opportunity.deliver_app.cc_domain
+    attachments = user_visit.form_json.get("attachments", {})
+    _download_attachments(api_key, domain, user_visit.xform_id, attachments)
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=RETRYABLE_EXCS,
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
 def download_inaccessibility_request_attachments(self, xform_id: str, attachments: dict):
     request_obj = WorkAreaInaccessibilityRequest.objects.select_related(
         "work_area__opportunity__deliver_app", "work_area__opportunity__api_key"
     ).get(xform_id=xform_id)
     api_key = request_obj.work_area.opportunity.api_key
     domain = request_obj.work_area.opportunity.deliver_app.cc_domain
-    for name, blob in attachments.items():
-        if name == "form.xml":
-            continue
-        url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{xform_id}/{name}"
-        with transaction.atomic():
-            blob_meta, created = BlobMeta.objects.get_or_create(
-                name=name,
-                parent_id=xform_id,
-                content_length=blob["length"],
-                content_type=blob["content_type"],
-            )
-            if not created:
-                continue
-            response = httpx.get(
-                url,
-                headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
-            )
-            default_storage.save(str(blob_meta.blob_id), ContentFile(response.content, name))
+    _download_attachments(api_key, domain, xform_id, attachments)
 
 
 @celery_app.task()
