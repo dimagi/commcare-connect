@@ -84,6 +84,17 @@ DELIVER_UNIT_XML_TEMPLATE = (
     % CCC_LEARN_XMLNS
 )
 
+WORK_AREA_UPDATE_XML_TEMPLATE = (
+    """<data>
+<work_area_update xmlns="%s" id="{id}">
+    <work_area_id>{work_area_id}</work_area_id>
+    <status>{status}</status>
+    <reason>{reason}</reason>
+</work_area_update>
+</data>"""
+    % CCC_LEARN_XMLNS
+)
+
 
 def get_form_json(xmlns=DEFAULT_XMLNS, form_block=None, **kwargs):
     form = deepcopy(MOCK_FORM)
@@ -157,3 +168,21 @@ class DeliverUnitStubFactory(factory.StubFactory):
         )
         _, module = xml2json(xml)
         return module
+
+
+class WorkAreaUpdateStubFactory(factory.StubFactory):
+    id = factory.Faker("slug")
+    work_area_id = factory.Faker("uuid4")
+    status = "request_for_inaccessible"
+    reason = factory.Faker("sentence")
+
+    @factory.lazy_attribute
+    def json(self):
+        xml = WORK_AREA_UPDATE_XML_TEMPLATE.format(
+            id=self.id,
+            work_area_id=self.work_area_id,
+            status=self.status,
+            reason=self.reason,
+        )
+        _, block = xml2json(xml)
+        return block
