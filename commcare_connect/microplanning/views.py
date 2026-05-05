@@ -102,6 +102,11 @@ def microplanning_home(request, *args, **kwargs):
         kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
     )
 
+    exclude_url = reverse(
+        "microplanning:exclude_work_areas",
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
+    )
+
     status_meta = {
         status.value: {
             "label": status.label,
@@ -132,6 +137,7 @@ def microplanning_home(request, *args, **kwargs):
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
         "download_url": download_url,
+        "exclude_url": exclude_url,
         "filter_form": filterset.form,
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
@@ -488,13 +494,44 @@ def exclude_work_areas(request, org_slug, opp_id):
     except (ValueError, TypeError):
         return JsonResponse({"error": "work_area_ids[] must be integers"}, status=400)
 
-    exclude_work_areas_task.delay(
+    task = exclude_work_areas_task.delay(
         opp_id=request.opportunity.id,
         work_area_ids=work_area_ids,
         user_id=request.user.id,
         exclusion_reason=exclusion_reason,
     )
-    return JsonResponse({"status": "queued"}, status=202)
+    return render(
+        request,
+        "microplanning/exclude_work_area_progress.html",
+        context={"exclude_task_id": task.id},
+    )
+
+
+@org_admin_required
+@opportunity_required
+def exclude_status(request, org_slug, opp_id):
+    task_id = request.GET.get("exclude_task_id")
+    if not task_id:
+        return HttpResponse(status=HTTPStatus.NO_CONTENT)
+
+    try:
+        uuid.UUID(task_id)
+    except (ValueError, TypeError):
+        return HttpResponse(status=HTTPStatus.NO_CONTENT)
+
+    task = AsyncResult(task_id)
+    status = task.state
+
+    if status == CELERY_TASK_SUCCESS:
+        result = task.result or {}
+        excluded = result.get("excluded", [])
+        response = HttpResponse('<div id="exclude-progress"></div>')
+        response.headers["HX-Trigger"] = json.dumps({"work_areas_excluded": {"excluded": excluded}})
+        return response
+    elif status == CELERY_TASK_FAILURE:
+        return render(request, "microplanning/exclude_work_area_progress.html", context={"error": True})
+    else:
+        return HttpResponse(status=HTTPStatus.NO_CONTENT)
 
 
 @require_GET

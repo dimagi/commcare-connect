@@ -1,0 +1,18 @@
+{% load i18n %}
+{% if error %}
+<div id="exclude-progress" class="py-6 text-center">
+    <i class="fa-solid fa-circle-exclamation text-red-600 text-2xl mb-3"></i>
+    <p class="text-sm text-gray-700">{% translate "Failed to exclude work areas. Please try again." %}</p>
+</div>
+{% else %}
+<div id="exclude-progress"
+     hx-get="{% url 'microplanning:exclude_status' request.org.slug request.opportunity.opportunity_id %}?exclude_task_id={{ exclude_task_id }}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML">
+    <div class="py-8 flex flex-col items-center gap-3">
+        <div class="animate-spin rounded-full h-8 w-8 border-4 border-brand-mango border-t-transparent"></div>
+        <p class="text-sm text-gray-600">{% translate "Excluding work areas..." %}</p>
+        <p class="text-xs text-gray-400">{% translate "This may take a moment. Please do not close this window." %}</p>
+    </div>
+</div>
+{% endif %}
