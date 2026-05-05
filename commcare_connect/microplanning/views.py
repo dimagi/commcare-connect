@@ -32,9 +32,10 @@ from vectortiles.views import MVTView
 from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
+from commcare_connect.microplanning.const import MAX_EXCLUDE_WORK_AREAS, WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
+from commcare_connect.microplanning.helpers import exclude_work_areas_for_opportunity
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import OpportunityAccess, UserVisit
 from commcare_connect.organization.decorators import (
@@ -51,7 +52,6 @@ from .tasks import (
     WorkAreaCSVExporter,
     WorkAreaCSVImporter,
     cluster_work_areas_task,
-    exclude_work_areas_task,
     get_cluster_area_cache_lock_key,
     get_import_area_cache_key,
     import_work_areas_task,
@@ -60,7 +60,6 @@ from .tasks import (
 logger = logging.getLogger(__name__)
 
 WORKAREA_MIN_ZOOM = 6
-MAX_EXCLUDE_WORK_AREAS = 200
 
 
 @require_GET
@@ -488,13 +487,13 @@ def exclude_work_areas(request, org_slug, opp_id):
     except (ValueError, TypeError):
         return JsonResponse({"error": _("Work Area IDs must be integers")}, status=400)
 
-    exclude_work_areas_task.delay(
-        opp_id=request.opportunity.id,
+    res = exclude_work_areas_for_opportunity(
+        opportunity=request.opportunity,
         work_area_ids=work_area_ids,
-        user_id=request.user.id,
+        user=request.user,
         exclusion_reason=exclusion_reason,
     )
-    return JsonResponse({"status": "queued"}, status=202)
+    return JsonResponse(res)
 
 
 @require_GET
