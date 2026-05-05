@@ -95,16 +95,15 @@ def bulk_create_or_update_cases_by_work_areas(work_areas: list[WorkArea]) -> lis
     api_key = first.opportunity_access.opportunity.api_key
     domain = first.opportunity_access.opportunity.deliver_app.cc_domain
 
-    usernames = {wa.opportunity_access.user.username.lower() for wa in work_areas}
+    wa_by_username: dict[str, WorkArea] = {wa.opportunity_access.user.username.lower(): wa for wa in work_areas}
     owner_id_by_username: dict[str, str] = {
         link.commcare_username: link.hq_case_id
         for link in ConnectIDUserLink.objects.filter(
-            commcare_username__in=usernames,
+            commcare_username__in=wa_by_username.keys(),
         ).exclude(hq_case_id=None)
     }
-    for username in usernames - owner_id_by_username.keys():
-        wa = next(wa for wa in work_areas if wa.opportunity_access.user.username.lower() == username)
-        owner_id_by_username[username] = get_usercase(wa.opportunity_access).case_id
+    for username in wa_by_username.keys() - owner_id_by_username.keys():
+        owner_id_by_username[username] = get_usercase(wa_by_username[username].opportunity_access).case_id
 
     cases_data = []
     for wa in work_areas:

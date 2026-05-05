@@ -607,7 +607,10 @@ def save_assignment(request, org_slug, opp_id):
     if invalid_ids:
         return JsonResponse({"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400)
 
-    all_wa_ids = [int(wa_id) for entry in assignments for wa_id in entry.get("work_area_ids", [])]
+    try:
+        all_wa_ids = [int(wa_id) for entry in assignments for wa_id in entry.get("work_area_ids", [])]
+    except (TypeError, ValueError):
+        return JsonResponse({"error": _("Work area IDs must be integers")}, status=400)
     requested_wa_ids = set(all_wa_ids)
     if len(all_wa_ids) != len(requested_wa_ids):
         return JsonResponse({"error": _("Duplicate work area IDs in request")}, status=400)
