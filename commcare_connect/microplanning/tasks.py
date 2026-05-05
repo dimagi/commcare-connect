@@ -315,7 +315,7 @@ def send_work_area_assignment_notification(opportunity_access_id: int):
         data={
             "action": "ccc_generic_opportunity",
             "title": "New Work Areas Assigned",
-            "body": "You have been assigned new work areas. Open the app to start.",
+            "body": "You have been assigned new work areas. Click here to begin.",
             "opportunity_uuid": str(access.opportunity.opportunity_id),
             "opportunity_status": "delivery",
             "key": "work_area_assignment",
