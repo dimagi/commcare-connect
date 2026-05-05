@@ -57,6 +57,7 @@ from .tasks import (
     get_cluster_area_cache_lock_key,
     get_import_area_cache_key,
     import_work_areas_task,
+    send_work_area_assignment_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -645,5 +646,9 @@ def save_assignment(request, org_slug, opp_id):
     except CommCareHQAPIException:
         transaction.set_rollback(True)
         return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
+
+    notified_access_ids = {access.id for access in work_area_to_access.values()}
+    for access_id in notified_access_ids:
+        transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
     return JsonResponse({"status": "ok"})
