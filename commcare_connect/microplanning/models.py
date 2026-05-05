@@ -2,10 +2,10 @@ from functools import cached_property
 
 import pghistory
 from django.contrib.gis.db import models as geo_models
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
+from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserVisit, VisitValidationStatus
 
 # The most common SRID for geographic coordinates is 4326,
 # which corresponds to “longitude/latitude on the WGS84 spheroid
@@ -73,10 +73,6 @@ class WorkArea(geo_models.Model):
         return f"{self.slug}-{self.opportunity_id}"
 
     def update_status(self):
-        from django.db.models import Count, Q
-
-        from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
-
         counts = UserVisit.objects.filter(work_area=self).aggregate(
             total=Count("id"),
             approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
