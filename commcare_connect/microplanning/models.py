@@ -71,3 +71,23 @@ class WorkArea(geo_models.Model):
 
     def __str__(self):
         return f"{self.slug}-{self.opportunity_id}"
+
+    def update_status(self):
+        from django.db.models import Count, Q
+
+        from commcare_connect.opportunity.models import UserVisit, VisitValidationStatus
+
+        counts = UserVisit.objects.filter(work_area=self).aggregate(
+            total=Count("id"),
+            approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
+        )
+
+        new_status = self.status
+        if self.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED) and counts["total"]:
+            new_status = WorkAreaStatus.VISITED
+        if counts["approved"] >= self.expected_visit_count:
+            new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
+
+        if new_status != self.status:
+            self.status = new_status
+            self.save(update_fields=["status"])
