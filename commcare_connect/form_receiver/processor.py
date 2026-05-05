@@ -280,9 +280,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
-        # TODO: CCCT-2277 moves the assignment directly to `WorkArea`, so this check should be updated
-        # depending on which PR gets merged first.
-        if not work_area.work_area_group or work_area.work_area_group.opportunity_access_id != access.id:
+        if not work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
 
         requested_status = block.get("status", "").upper()
@@ -468,19 +466,6 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             elif counts["entity"] > 0:
                 user_visit.status = VisitValidationStatus.duplicate
 
-        if work_area_case_id := deliver_unit_block.get("work_area_id"):
-            if is_a_uuid(work_area_case_id):
-                try:
-                    work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=opportunity)
-                    user_visit.work_area = work_area
-                    if work_area.status in (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_VISITED):
-                        work_area.status = WorkAreaStatus.VISITED
-                        work_area.save(update_fields=["status"])
-                except WorkArea.DoesNotExist:
-                    raise ProcessingError("Work area not found")
-            else:
-                raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
-
         flags = clean_form_submission(access, user_visit, xform)
         if access.suspended:
             flags.append(["user_suspended", "This user is suspended from the opportunity."])
@@ -498,7 +483,20 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             user_visit.status = VisitValidationStatus.approved
             user_visit.review_status = VisitReviewStatus.agree
 
+        work_area = None
+        if work_area_case_id := deliver_unit_block.get("work_area_id"):
+            if not is_a_uuid(work_area_case_id):
+                raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
+            try:
+                work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=access.opportunity)
+                user_visit.work_area = work_area
+            except WorkArea.DoesNotExist:
+                raise ProcessingError("Work area not found")
+
         user_visit.save()
+
+        if work_area:
+            work_area.update_status()
 
         if not access.last_active or access.last_active < user_visit.visit_date:
             access.last_active = user_visit.visit_date

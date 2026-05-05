@@ -343,16 +343,9 @@ class AssignedTaskDataSerializer(serializers.ModelSerializer):
 
 
 class WorkAreaGroupDataSerializer(serializers.ModelSerializer):
-    assigned_username = serializers.SerializerMethodField()
-
     class Meta:
         model = WorkAreaGroup
-        fields = ["id", "name", "ward", "opportunity", "opportunity_access", "assigned_username"]
-
-    def get_assigned_username(self, obj) -> str | None:
-        if obj.opportunity_access_id is None:
-            return None
-        return obj.opportunity_access.user.username
+        fields = ["id", "name", "ward", "opportunity"]
 
 
 class WorkAreaDataSerializer(serializers.ModelSerializer):

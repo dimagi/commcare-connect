@@ -21,6 +21,7 @@ from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.microplanning.views import UserVisitVectorLayer
+from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -168,9 +169,10 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
     def test_successful_field_updates(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
-        work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, opportunity_access=access)
 
-        initial_event_count = work_area.expected_visit_count_work_area_group_status_events.count()
+        initial_event_count = work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
         assert work_area.work_area_group is None
         new_expected_visit_count = 25
         client.force_login(org_user_admin)
@@ -194,7 +196,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert work_area.expected_visit_count == new_expected_visit_count
         assert work_area.work_area_group == group
 
-        events = work_area.expected_visit_count_work_area_group_status_events
+        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_events
         assert events.count() == initial_event_count + 1
         event = events.last()
         assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
@@ -205,7 +207,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
-        initial_event_count = work_area.expected_visit_count_work_area_group_status_events.count()
+        initial_event_count = work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -219,7 +221,10 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
 
         work_area.refresh_from_db()
         assert response.status_code == 204
-        assert work_area.expected_visit_count_work_area_group_status_events.count() == initial_event_count
+        assert (
+            work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
+            == initial_event_count
+        )
         assert mock_sync.call_count == 0  # No sync since nothing changed
         assert work_area.work_area_group == group
         assert work_area.expected_visit_count == 10
@@ -242,7 +247,10 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
     def test_hq_sync_failure_returns_form_error(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
-        work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity, expected_visit_count=10, work_area_group=group, opportunity_access=access
+        )
         mock_sync.side_effect = CommCareHQAPIException("sync failed")
 
         client.force_login(org_user_admin)
@@ -261,6 +269,49 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert response.context["form"].non_field_errors()
         work_area.refresh_from_db()
         assert work_area.expected_visit_count == 10  # rolled back due to atomic transaction
+
+    @pytest.mark.parametrize(
+        "initial_status,prior_visits,old_count,new_count,expected_status",
+        [
+            # decreased below visit count → EXPECTED_VISIT_REACHED
+            (WorkAreaStatus.VISITED, 3, 5, 2, WorkAreaStatus.EXPECTED_VISIT_REACHED),
+            # no visits → status unchanged regardless of count change
+            (WorkAreaStatus.NOT_STARTED, 0, 5, 2, WorkAreaStatus.NOT_STARTED),
+            # only group changed, not expected_visit_count → status unchanged
+            (WorkAreaStatus.VISITED, 3, 5, 5, WorkAreaStatus.VISITED),
+        ],
+    )
+    @patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area")
+    def test_expected_visit_count_change_reevaluates_status(
+        self,
+        mock_sync,
+        client,
+        org_user_admin,
+        opportunity,
+        initial_status,
+        prior_visits,
+        old_count,
+        new_count,
+        expected_status,
+    ):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status, expected_visit_count=old_count)
+        for _ in range(prior_visits):
+            UserVisitFactory(
+                opportunity_access=access,
+                work_area=work_area,
+                opportunity=opportunity,
+                status=VisitValidationStatus.approved,
+            )
+
+        client.force_login(org_user_admin)
+        client.post(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id), work_area.id),
+            {"expected_visit_count": new_count},
+        )
+
+        work_area.refresh_from_db()
+        assert work_area.status == expected_status
 
 
 @pytest.mark.django_db
@@ -311,9 +362,8 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
 
     def test_assignee_filter_forwarded(self, client, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
         wa_assigned = WorkAreaFactory(
-            opportunity=opportunity, work_area_group=group, status=WorkAreaStatus.NOT_STARTED
+            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_STARTED
         )
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
 
@@ -334,8 +384,8 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
 
     def test_annotations_present(self, client, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
-        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
 
         qs = self._get_tile_queryset(client, org_user_admin, opportunity)
         row = qs.first()
@@ -349,12 +399,17 @@ class TestWorkAreaMapFilterSet:
     @pytest.fixture
     def work_areas(self, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
 
         wa_not_started = WorkAreaFactory(
-            opportunity=opportunity, work_area_group=group, status=WorkAreaStatus.NOT_STARTED
+            opportunity=opportunity,
+            work_area_group=group,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_STARTED,
         )
-        wa_visited = WorkAreaFactory(opportunity=opportunity, work_area_group=group, status=WorkAreaStatus.VISITED)
+        wa_visited = WorkAreaFactory(
+            opportunity=opportunity, work_area_group=group, opportunity_access=access, status=WorkAreaStatus.VISITED
+        )
         wa_unassigned = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
         return SimpleNamespace(
             access=access,
@@ -440,9 +495,8 @@ class TestUserVisitVectorLayer:
     @pytest.fixture
     def visit_data(self, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
-        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
-        return SimpleNamespace(access=access, group=group, work_area=work_area)
+        work_area = WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
+        return SimpleNamespace(access=access, work_area=work_area)
 
     def test_queryset_includes_visits_with_location(self, opportunity, visit_data):
         visit = UserVisitFactory(
@@ -503,8 +557,7 @@ class TestUserVisitVectorLayer:
 
     def test_filter_by_assignee(self, opportunity, visit_data):
         other_access = OpportunityAccessFactory(opportunity=opportunity)
-        other_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=other_access)
-        other_wa = WorkAreaFactory(opportunity=opportunity, work_area_group=other_group)
+        other_wa = WorkAreaFactory(opportunity=opportunity, opportunity_access=other_access)
         UserVisitFactory(
             opportunity=opportunity,
             user=visit_data.access.user,
@@ -548,9 +601,8 @@ class TestUserVisitVectorLayer:
         visit_data.work_area.status = WorkAreaStatus.VISITED
         visit_data.work_area.save()
         other_access = OpportunityAccessFactory(opportunity=opportunity)
-        other_group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=other_access)
         other_wa = WorkAreaFactory(
-            opportunity=opportunity, work_area_group=other_group, status=WorkAreaStatus.NOT_STARTED
+            opportunity=opportunity, opportunity_access=other_access, status=WorkAreaStatus.NOT_STARTED
         )
         UserVisitFactory(
             opportunity=opportunity,
@@ -677,9 +729,8 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
 
     def test_assignee_filter(self, client, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
-        wa = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
-        WorkAreaFactory(opportunity=opportunity)  # unassigned, no group
+        wa = WorkAreaFactory(opportunity=opportunity, opportunity_access=access)
+        WorkAreaFactory(opportunity=opportunity)  # unassigned
         client.force_login(org_user_admin)
 
         rows = self._parse_csv(client.get(self.url(opportunity) + f"?assignee={access.user.id}"))

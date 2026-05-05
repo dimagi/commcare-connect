@@ -11,6 +11,8 @@ from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
+HQ_CASE_BULK_CHUNK_SIZE = 100
+
 
 class GetCaseDataAPIFilters(TypedDict):
     case_type: str
@@ -58,10 +60,10 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
 
 
 def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
-    if not (work_area.work_area_group and work_area.work_area_group.opportunity_access):
-        raise ValueError("Work Area must have an assigned Opportunity Access through its Work Area Group")
+    if not work_area.opportunity_access:
+        raise ValueError("Work Area must have an assigned Opportunity Access")
 
-    opp_access = work_area.work_area_group.opportunity_access
+    opp_access = work_area.opportunity_access
     api_key = opp_access.opportunity.api_key
     domain = opp_access.opportunity.deliver_app.cc_domain
     user = opp_access.user
@@ -82,6 +84,66 @@ def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
             locked_work_area.case_id = case.case_id
             locked_work_area.save(update_fields=["case_id"])
     return case
+
+
+def bulk_create_or_update_cases_by_work_areas(work_areas: list[WorkArea]) -> list[CommCareCase]:
+    """Sync a batch of work areas to HQ in a single UPSERT call keyed on external_id."""
+    if not work_areas:
+        return []
+
+    first = work_areas[0]
+    api_key = first.opportunity_access.opportunity.api_key
+    domain = first.opportunity_access.opportunity.deliver_app.cc_domain
+
+    usernames = {wa.opportunity_access.user.username.lower() for wa in work_areas}
+    owner_id_by_username: dict[str, str] = {
+        link.commcare_username: link.hq_case_id
+        for link in ConnectIDUserLink.objects.filter(
+            commcare_username__in=usernames,
+        ).exclude(hq_case_id=None)
+    }
+    for username in usernames - owner_id_by_username.keys():
+        wa = next(wa for wa in work_areas if wa.opportunity_access.user.username.lower() == username)
+        owner_id_by_username[username] = get_usercase(wa.opportunity_access).case_id
+
+    cases_data = []
+    for wa in work_areas:
+        case_data = dict(WorkAreaCaseSerializer(wa).data)
+        case_data["owner_id"] = owner_id_by_username[wa.opportunity_access.user.username.lower()]
+        case_data["create"] = None  # UPSERT: HQ decides create vs update via external_id
+        cases_data.append(case_data)
+
+    cases = bulk_create_or_update_cases(api_key, domain, cases_data)
+
+    newly_created = []
+    for wa, case in zip(work_areas, cases, strict=True):
+        if wa.case_id is None:
+            newly_created.append(wa)
+        wa.case_id = case.case_id
+    if newly_created:
+        WorkArea.objects.bulk_update(newly_created, ["case_id"])
+
+    return cases
+
+
+def bulk_create_or_update_cases(
+    api_key: HQApiKey,
+    domain: str,
+    cases_data: list[dict[str, Any]],
+) -> list[CommCareCase]:
+    url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
+    headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
+    cases = []
+    with httpx.Client(headers=headers) as client:
+        for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
+            chunk = cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]  # noqa: E203
+            try:
+                response = client.post(url, json=chunk)
+                response.raise_for_status()
+            except (httpx.HTTPStatusError, httpx.RequestError) as e:
+                raise CommCareHQAPIException(f"Failed to bulk update cases for {domain}. HQ Error: {e}") from e
+            cases.extend(CommCareCase(**case_data) for case_data in response.json().get("cases", []))
+    return cases
 
 
 def create_or_update_case(

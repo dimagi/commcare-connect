@@ -40,13 +40,11 @@ class TestCreateOrUpdateCaseByWorkArea:
         api_key = HQApiKeyFactory(hq_server=HQServerFactory())
         existing_case_id = uuid.uuid4() if has_case_id else None
         opp_access = OpportunityAccessFactory(opportunity__api_key=api_key)
-        work_area_group = WorkAreaGroupFactory(
-            opportunity=opp_access.opportunity,
-            opportunity_access=opp_access,
-        )
+        work_area_group = WorkAreaGroupFactory(opportunity=opp_access.opportunity)
         work_area = WorkAreaFactory(
             opportunity=opp_access.opportunity,
             work_area_group=work_area_group,
+            opportunity_access=opp_access,
             case_id=existing_case_id,
         )
 
@@ -70,9 +68,7 @@ class TestCreateOrUpdateCaseByWorkArea:
             assert call_kwargs.get("case_id") is None
 
     def test_no_opportunity_access(self):
-        work_area_group = WorkAreaGroupFactory(opportunity_access=None)
-        work_area = WorkAreaFactory(work_area_group=work_area_group)
+        work_area = WorkAreaFactory()
 
-        expected_error_message = "Work Area must have an assigned Opportunity Access through its Work Area Group"
-        with pytest.raises(ValueError, match=expected_error_message):
+        with pytest.raises(ValueError, match="Work Area must have an assigned Opportunity Access"):
             create_or_update_case_by_work_area(work_area)
