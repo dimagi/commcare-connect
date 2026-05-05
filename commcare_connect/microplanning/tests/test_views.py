@@ -760,18 +760,23 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
             kwargs={"org_slug": program_manager_org.slug, "opp_id": managed_opportunity.opportunity_id},
         )
 
+    @patch("commcare_connect.microplanning.views.bulk_create_or_update_cases_by_work_areas")
     def test_schedules_one_notification_per_assignee(
-        self, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
+        self, mock_hq_sync, client, program_manager_org, program_manager_org_user_admin, managed_opportunity
     ):
         access_a = OpportunityAccessFactory(opportunity=managed_opportunity)
         access_b = OpportunityAccessFactory(opportunity=managed_opportunity)
+        wa1 = WorkAreaFactory(opportunity=managed_opportunity)
+        wa2 = WorkAreaFactory(opportunity=managed_opportunity)
+        wa3 = WorkAreaFactory(opportunity=managed_opportunity)
+        wa4 = WorkAreaFactory(opportunity=managed_opportunity)
         client.force_login(program_manager_org_user_admin)
 
         payload = {
             "assignments": [
-                {"assignee_id": access_a.pk, "work_area_ids": [1, 2]},
-                {"assignee_id": access_a.pk, "work_area_ids": [3]},
-                {"assignee_id": access_b.pk, "work_area_ids": [4]},
+                {"assignee_id": access_a.pk, "work_area_ids": [wa1.id, wa2.id]},
+                {"assignee_id": access_a.pk, "work_area_ids": [wa3.id]},
+                {"assignee_id": access_b.pk, "work_area_ids": [wa4.id]},
             ]
         }
         with mock.patch(
@@ -802,7 +807,7 @@ class TestSaveAssignmentNotification(BaseMicroplanningFlagTest):
                 content_type="application/json",
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 400
         delay_patch.assert_not_called()
 
 
