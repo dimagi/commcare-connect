@@ -607,6 +607,11 @@ def save_assignment(request, org_slug, opp_id):
     if invalid_ids:
         return JsonResponse({"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400)
 
+    all_wa_ids = [int(wa_id) for entry in assignments for wa_id in entry.get("work_area_ids", [])]
+    requested_wa_ids = set(all_wa_ids)
+    if len(all_wa_ids) != len(requested_wa_ids):
+        return JsonResponse({"error": _("Duplicate work area IDs in request")}, status=400)
+
     work_area_to_access = {
         int(wa_id): valid_accesses[int(entry["assignee_id"])]
         for entry in assignments
@@ -615,10 +620,17 @@ def save_assignment(request, org_slug, opp_id):
 
     all_work_areas = list(
         WorkArea.objects.filter(
-            id__in=work_area_to_access,
+            id__in=requested_wa_ids,
             opportunity=request.opportunity,
         ).select_for_update()
     )
+
+    found_ids = {wa.id for wa in all_work_areas}
+    invalid_wa_ids = requested_wa_ids - found_ids
+    if invalid_wa_ids:
+        return JsonResponse(
+            {"error": _("Invalid work area IDs: %(ids)s") % {"ids": sorted(invalid_wa_ids)}}, status=400
+        )
 
     for work_area in all_work_areas:
         work_area.opportunity_access = work_area_to_access[work_area.id]

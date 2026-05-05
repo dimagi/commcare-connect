@@ -116,7 +116,7 @@ def bulk_create_or_update_cases_by_work_areas(work_areas: list[WorkArea]) -> lis
     cases = bulk_create_or_update_cases(api_key, domain, cases_data)
 
     newly_created = []
-    for wa, case in zip(work_areas, cases):
+    for wa, case in zip(work_areas, cases, strict=True):
         if wa.case_id is None:
             newly_created.append(wa)
         wa.case_id = case.case_id
