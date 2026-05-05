@@ -9,6 +9,9 @@ from django.core.files.storage import default_storage
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 
+from commcare_connect.connect_id_client import send_message
+from commcare_connect.connect_id_client.models import Message
+from commcare_connect.opportunity.models import OpportunityAccess
 from config import celery_app
 
 from .clustering import WorkAreaGrouper
@@ -302,6 +305,24 @@ class WorkAreaCSVExporter:
             yield buffer.getvalue()
             buffer.seek(0)
             buffer.truncate(0)
+
+
+@celery_app.task()
+def send_work_area_assignment_notification(opportunity_access_id: int):
+    access = OpportunityAccess.objects.select_related("user", "opportunity").get(pk=opportunity_access_id)
+    message = Message(
+        usernames=[access.user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "title": "New Work Areas Assigned",
+            "body": "You have been assigned new work areas. Open the app to start.",
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
+            "opportunity_status": "delivery",
+            "key": "work_area_assignment",
+            "session_endpoint_id": "cc_app_home",
+        },
+    )
+    send_message(message)
 
 
 @celery_app.task()
