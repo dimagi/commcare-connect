@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from django.db.models import Count, F, Sum
+from django.db.models import F, Sum
 from django.db.models.functions import TruncMonth
 
 from commcare_connect.opportunity.models import (
@@ -333,7 +333,7 @@ def get_invoice_items(completed_works_qs):
         .annotate(
             payment_unit_name=F("payment_unit__name"),
             payment_unit_amount=F("payment_unit__amount"),
-            record_count=Count("id"),
+            record_count=Sum("saved_approved_count"),
             currency=F("opportunity_access__opportunity__currency__code"),
             total_amount_usd=Sum("saved_payment_accrued_usd"),
             total_amount_local=Sum("saved_payment_accrued"),
