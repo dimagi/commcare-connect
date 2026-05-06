@@ -2,7 +2,7 @@ import pytest
 from django.contrib.gis.geos import Point, Polygon
 
 from commcare_connect.microplanning.clustering import WorkAreaGrouper
-from commcare_connect.microplanning.models import SRID, WorkAreaGroup
+from commcare_connect.microplanning.models import SRID, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 
 
@@ -159,6 +159,27 @@ class TestWorkAreaGrouper:
                 srid=SRID,
             ),
             building_count=0,
+        )
+
+        grouper = WorkAreaGrouper(opportunity_id=opportunity.id)
+        grouper.cluster_work_areas()
+
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        work_area.refresh_from_db()
+        assert work_area.work_area_group is None
+
+    def test_cluster_excludes_excluded_work_areas(self, opportunity):
+        work_area = WorkAreaFactory(
+            opportunity=opportunity,
+            slug="excluded-area",
+            ward="ward-1",
+            centroid=Point(77.5, 28.5, srid=SRID),
+            boundary=Polygon(
+                ((77.0, 28.0), (78.0, 28.0), (78.0, 29.0), (77.0, 29.0), (77.0, 28.0)),
+                srid=SRID,
+            ),
+            building_count=100,
+            status=WorkAreaStatus.EXCLUDED,
         )
 
         grouper = WorkAreaGrouper(opportunity_id=opportunity.id)

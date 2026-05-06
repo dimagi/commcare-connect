@@ -9,7 +9,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform
 from shapely.strtree import STRtree
 
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,7 @@ class WorkAreaGrouper:
             opportunity_id=self.opportunity_id,
             work_area_group__isnull=True,
             building_count__gt=0,
-        )
+        ).exclude(status=WorkAreaStatus.EXCLUDED)
         for wa in work_area_qs.iterator():
             work_areas[wa.id] = WorkAreaData(
                 ward=wa.ward,

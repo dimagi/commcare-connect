@@ -37,7 +37,10 @@ class WorkAreaGroup(geo_models.Model):
 
     @cached_property
     def building_count(self):
-        return self.workarea_set.aggregate(total=Sum("building_count"))["total"] or 0
+        return (
+            self.workarea_set.exclude(status=WorkAreaStatus.EXCLUDED).aggregate(total=Sum("building_count"))["total"]
+            or 0
+        )
 
 
 @pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "opportunity_access", "excluded_reason"])
