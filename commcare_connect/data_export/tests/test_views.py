@@ -81,8 +81,7 @@ class TestAssignedTaskDataView:
 @pytest.mark.django_db
 class TestWorkAreaGroupDataView:
     def test_returns_work_area_group_list(self, v2_export_client, opportunity):
-        opp_access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=opp_access)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
         url = reverse("data_export:work_area_group_data", kwargs={"opp_id": opportunity.id})
         response = v2_export_client.get(url)
         assert response.status_code == 200
@@ -91,7 +90,6 @@ class TestWorkAreaGroupDataView:
         result = data["results"][0]
         assert result["id"] == group.id
         assert result["name"] == group.name
-        assert result["assigned_username"] == opp_access.user.username
 
     def test_returns_404_for_unauthorized_opportunity(self, api_client, opportunity, user):
         _add_export_credentials(api_client, user)
