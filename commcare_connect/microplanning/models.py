@@ -2,10 +2,10 @@ from functools import cached_property
 
 import pghistory
 from django.contrib.gis.db import models as geo_models
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.opportunity.models import Opportunity, OpportunityAccess
+from commcare_connect.opportunity.models import Opportunity, OpportunityAccess, UserVisit, VisitValidationStatus
 
 # The most common SRID for geographic coordinates is 4326,
 # which corresponds to “longitude/latitude on the WGS84 spheroid
@@ -71,3 +71,27 @@ class WorkArea(geo_models.Model):
 
     def __str__(self):
         return f"{self.slug}-{self.opportunity_id}"
+
+    VISIT_TRACKABLE_STATUSES = {
+        WorkAreaStatus.NOT_STARTED,
+        WorkAreaStatus.NOT_VISITED,
+        WorkAreaStatus.VISITED,
+        WorkAreaStatus.EXPECTED_VISIT_REACHED,
+    }
+
+    def update_status(self):
+        if self.status not in self.VISIT_TRACKABLE_STATUSES:
+            return
+
+        counts = UserVisit.objects.filter(work_area=self).aggregate(
+            total=Count("id"),
+            approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
+        )
+
+        new_status = WorkAreaStatus.VISITED if counts["total"] else self.status
+        if self.expected_visit_count and counts["approved"] >= self.expected_visit_count:
+            new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
+
+        if new_status != self.status:
+            self.status = new_status
+            self.save(update_fields=["status"])

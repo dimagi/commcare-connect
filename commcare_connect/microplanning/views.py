@@ -500,6 +500,8 @@ class ModifyWorkAreaUpdateView(UpdateView):
         try:
             with transaction.atomic(), pghistory.context(reason=reason):
                 work_area.save(update_fields=["expected_visit_count", "work_area_group"])
+                if "expected_visit_count" in form.changed_data:
+                    work_area.update_status()
                 if (
                     form.has_changed()
                     and work_area.work_area_group
