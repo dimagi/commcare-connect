@@ -15,9 +15,13 @@ class TestExcludeWorkAreas:
     @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
     def test_happy_path_excludes_not_started_areas(self, mock_bulk_hq, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
         work_areas = WorkAreaFactory.create_batch(
-            2, opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group
+            2,
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_STARTED,
+            work_area_group=group,
         )
 
         res = exclude_work_areas_for_opportunity(
@@ -63,9 +67,13 @@ class TestExcludeWorkAreas:
     def test_hq_batch_failure_skips_local_exclusion_for_whole_chunk(self, mock_bulk_hq, org_user_admin, opportunity):
         """When the HQ bulk call fails, no work area in that chunk is excluded."""
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
         work_areas = WorkAreaFactory.create_batch(
-            2, opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group
+            2,
+            opportunity=opportunity,
+            status=WorkAreaStatus.NOT_STARTED,
+            opportunity_access=access,
+            work_area_group=group,
         )
         mock_bulk_hq.side_effect = CommCareHQAPIException("HQ down")
 
@@ -141,10 +149,14 @@ class TestExcludeWorkAreas:
     def test_work_areas_over_chunk_size_are_split_into_batches(self, mock_bulk_hq, org_user_admin, opportunity):
         """125 work areas → 3 HQ calls (50, 50, 25); all excluded on success."""
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
         count = HQ_BULK_CHUNK_SIZE * 2 + 25
         work_areas = WorkAreaFactory.create_batch(
-            count, opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group
+            count,
+            opportunity=opportunity,
+            status=WorkAreaStatus.NOT_STARTED,
+            opportunity_access=access,
+            work_area_group=group,
         )
 
         exclude_work_areas_for_opportunity(
@@ -166,10 +178,14 @@ class TestExcludeWorkAreas:
     def test_one_failed_chunk_does_not_block_other_chunks(self, mock_bulk_hq, org_user_admin, opportunity):
         """Chunk 2 fails; chunks 1 and 3 still excluded."""
         access = OpportunityAccessFactory(opportunity=opportunity)
-        group = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
         count = HQ_BULK_CHUNK_SIZE * 3
         work_areas = WorkAreaFactory.create_batch(
-            count, opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, work_area_group=group
+            count,
+            opportunity=opportunity,
+            status=WorkAreaStatus.NOT_STARTED,
+            opportunity_access=access,
+            work_area_group=group,
         )
 
         mock_bulk_hq.side_effect = [None, CommCareHQAPIException("HQ down"), None]
