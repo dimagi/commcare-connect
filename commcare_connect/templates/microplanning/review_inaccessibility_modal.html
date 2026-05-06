@@ -1,0 +1,161 @@
+{% load i18n %}
+
+<div>
+    <div class="flex items-center justify-between mb-6 mt-2">
+        <div class="w-8"></div>
+        <h1 class="text-lg font-semibold text-brand-deep-purple">{% translate "Review Inaccessibility Request" %}</h1>
+        <button @click="showReviewInaccessibilityModal = false" class="button-icon" aria-label="{% translate 'Close' %}">
+            <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+    </div>
+
+    <dl class="space-y-2 mb-6">
+        <div class="grid grid-cols-2 items-center gap-2">
+            <dt class="text-sm text-gray-500">{% translate "Date of Visit" %}</dt>
+            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">
+                {{ inaccessibility_request.date_of_visit }}
+            </dd>
+
+            <dt class="text-sm text-gray-500">{% translate "Reason" %}</dt>
+            <dd class="text-sm font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">
+                {{ inaccessibility_request.reason }}
+            </dd>
+
+        </div>
+    </dl>
+
+    <div class="mb-6">
+        <p class="text-sm font-medium text-brand-deep-purple mb-2">{% translate "Location" %}</p>
+        <div id="review-inaccessibility-map" class="w-full rounded-lg h-56"></div>
+    </div>
+
+    <div class="mb-6">
+        <p class="text-sm font-medium text-brand-deep-purple mb-2">{% translate "Photos" %}</p>
+        {% if photos %}
+        <div class="grid grid-cols-2 gap-3">
+            {% for photo in photos %}
+            <a href="{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=request.opportunity.opportunity_id blob_id=photo.blob_id %}"
+               target="_blank" rel="noopener noreferrer">
+                <div class="relative">
+                    <img src="{% url 'opportunity:fetch_attachment' org_slug=request.org.slug opp_id=request.opportunity.opportunity_id blob_id=photo.blob_id %}"
+                         alt="{{ photo.name }}"
+                         class="object-cover w-full rounded-lg aspect-square hover:opacity-90 transition-opacity">
+                    <p class="text-xs text-gray-500 mt-1 truncate">{{ photo.name }}</p>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 italic">{% translate "No photos were submitted with this request." %}</p>
+        {% endif %}
+    </div>
+
+    <form hx-post="{% url 'microplanning:act_on_inaccessibility_request' request.org.slug request.opportunity.opportunity_id work_area.id %}"
+          hx-swap="none"
+          hx-indicator="#review-submit-spinner"
+          hx-on:htmx:before-request="this.querySelectorAll('button[type=submit]').forEach(b => b.disabled = true)"
+          hx-on:htmx:after-request="this.querySelectorAll('button[type=submit]').forEach(b => b.disabled = false)">
+        <div class="mt-6 flex justify-between gap-3">
+            <button type="button"
+                    @click="showReviewInaccessibilityModal = false"
+                    class="button button-md outline-style flex items-center gap-2">
+                <i class="fa-solid fa-arrow-left"></i>
+                {% translate "Return to Progress Map" %}
+            </button>
+            <div class="flex gap-2">
+                <button type="submit"
+                        name="action"
+                        value="deny"
+                        class="button button-md negative-dark">
+                    {% translate "Deny Request" %}
+                </button>
+                <button type="submit"
+                        name="action"
+                        value="approve"
+                        class="button button-md primary-dark flex items-center justify-center gap-2">
+                    <span>{% translate "Approve as Inaccessible" %}</span>
+                    <i id="review-submit-spinner"
+                       class="fa-solid fa-spinner animate-spin !hidden [&.htmx-request]:!inline-block htmx-indicator"></i>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    const accessToken = '{{ mapbox_api_key|escapejs }}';
+    const boundaryGeojson = {{ boundary_geojson|safe }};
+    const requestLocationGeojson = {% if request_location_geojson %}{{ request_location_geojson|safe }}{% else %}null{% endif %};
+
+    if (!MapboxUtils.setAccessToken(accessToken)) return;
+
+    const map = MapboxUtils.createMap({
+        container: 'review-inaccessibility-map',
+        style: 'mapbox://styles/mapbox/standard',
+        zoom: 12,
+        center: [0, 0],
+    });
+    window.reviewInaccessibilityMap = map;
+
+    map.once('load', () => {
+        map.addSource('review-boundary', {
+            type: 'geojson',
+            data: boundaryGeojson,
+        });
+
+        map.addLayer({
+            id: 'review-boundary-fill',
+            type: 'fill',
+            source: 'review-boundary',
+            paint: {
+                'fill-color': '#6366f1',
+                'fill-opacity': 0.35,
+            },
+        });
+
+        map.addLayer({
+            id: 'review-boundary-outline',
+            type: 'line',
+            source: 'review-boundary',
+            paint: {
+                'line-color': '#4338ca',
+                'line-width': 2,
+            },
+        });
+
+        // Fit map to the boundary
+        const bounds = new mapboxgl.LngLatBounds();
+        const coords = boundaryGeojson.coordinates ?? boundaryGeojson.geometries?.flatMap(g => g.coordinates) ?? [];
+        function expandBounds(ring) {
+            if (Array.isArray(ring[0])) {
+                ring.forEach(expandBounds);
+            } else {
+                bounds.extend(ring);
+            }
+        }
+        expandBounds(coords);
+        if (!bounds.isEmpty()) {
+            map.fitBounds(bounds, { padding: 40, duration: 0 });
+        }
+
+        if (requestLocationGeojson) {
+            map.addSource('review-location', {
+                type: 'geojson',
+                data: requestLocationGeojson,
+            });
+            map.addLayer({
+                id: 'review-location-point',
+                type: 'circle',
+                source: 'review-location',
+                paint: {
+                    'circle-radius': 8,
+                    'circle-color': '#e11d48',
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#ffffff',
+                },
+            });
+        }
+    });
+})();
+</script>

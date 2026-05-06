@@ -2,6 +2,7 @@ import csv
 import json
 import logging
 import uuid
+from functools import partial
 from http import HTTPStatus
 
 import pghistory
@@ -15,10 +16,10 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import F, FloatField, Func, Sum, Value
+from django.db.models import F, FloatField, Func, Sum, TextChoices, Value
 from django.db.models.functions import Cast
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
-from django.shortcuts import redirect, render
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse, StreamingHttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.timezone import localdate
@@ -38,8 +39,14 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
-from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
-from commcare_connect.opportunity.models import OpportunityAccess, UserVisit
+from commcare_connect.microplanning.models import (
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
+from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit
+from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
     opportunity_required,
     org_admin_required,
@@ -134,6 +141,10 @@ def microplanning_home(request, *args, **kwargs):
         "workarea_min_zoom": WORKAREA_MIN_ZOOM,
         "edit_work_area_url": edit_work_area_url,
         "download_url": download_url,
+        "review_inaccessibility_url": reverse(
+            "microplanning:review_inaccessibility_request",
+            args=[request.org.slug, opportunity.opportunity_id, 0],
+        ).replace("/0/", "/"),
         "filter_form": filterset.form,
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
@@ -654,3 +665,90 @@ def save_assignment(request, org_slug, opp_id):
         transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
     return JsonResponse({"status": "ok"})
+
+
+@require_GET
+@org_admin_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
+    work_area = get_object_or_404(
+        WorkArea,
+        id=work_area_id,
+        opportunity=request.opportunity,
+        status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+    )
+    try:
+        inacc_request = WorkAreaInaccessibilityRequest.objects.filter(work_area=work_area).latest("pk")
+    except WorkAreaInaccessibilityRequest.DoesNotExist:
+        raise Http404
+    photos = BlobMeta.objects.filter(parent_id=inacc_request.xform_id).exclude(name="form.xml")
+    return render(
+        request,
+        "microplanning/review_inaccessibility_modal.html",
+        context={
+            "work_area": work_area,
+            "inaccessibility_request": inacc_request,
+            "photos": photos,
+            "boundary_geojson": work_area.boundary.geojson,
+            "request_location_geojson": (inacc_request.location.geojson if inacc_request.location else None),
+            "mapbox_api_key": settings.MAPBOX_TOKEN,
+        },
+    )
+
+
+class InaccessibilityReviewAction(TextChoices):
+    APPROVE = "approve", "Approve"
+    DENY = "deny", "Deny"
+
+
+_ACTION_TO_NEW_STATUS = {
+    InaccessibilityReviewAction.APPROVE: WorkAreaStatus.INACCESSIBLE,
+    InaccessibilityReviewAction.DENY: WorkAreaStatus.NOT_VISITED,
+}
+
+
+@require_POST
+@org_admin_required
+@opportunity_required
+@require_flag_for_opp(MICROPLANNING)
+def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
+    try:
+        action = InaccessibilityReviewAction(request.POST.get("action", ""))
+    except ValueError:
+        return HttpResponseBadRequest("Invalid action")
+
+    new_status = _ACTION_TO_NEW_STATUS[action]
+
+    work_area = get_object_or_404(
+        WorkArea.objects.select_for_update(),
+        id=work_area_id,
+        opportunity=request.opportunity,
+        status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
+    )
+    try:
+        inacc_request = (
+            WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user")
+            .filter(work_area=work_area)
+            .latest("pk")
+        )
+    except WorkAreaInaccessibilityRequest.DoesNotExist:
+        raise Http404
+
+    work_area.status = new_status
+    with pghistory.context(username=request.user.username, user_email=request.user.email):
+        work_area.save(update_fields=["status"])
+
+    if action == InaccessibilityReviewAction.DENY:
+        transaction.on_commit(
+            partial(
+                send_push_notification_task.delay,
+                [inacc_request.opportunity_access.user_id],
+                _("Inaccessibility Request Denied"),
+                _("Your request to mark a work area inaccessible has been declined."),
+            )
+        )
+
+    response = HttpResponse(status=204)
+    response["HX-Trigger"] = json.dumps({"inaccessibilityReviewed": {"id": work_area.id, "status": new_status}})
+    return response

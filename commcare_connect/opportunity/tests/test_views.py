@@ -16,6 +16,7 @@ from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
+from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -999,6 +1000,43 @@ class TestFetchAttachmentView:
         response = client.get(url)
         assert response.status_code == 200
         storage_handler_getitem_mock.assert_called_once()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_user_can_fetch_blob_from_inaccessibility_request(
+        self, storage_handler_getitem_mock, org_user_member, organization, client, opportunity
+    ):
+        inacc_request = WorkAreaInaccessibilityRequestFactory(
+            work_area__opportunity=opportunity,
+        )
+        blob_meta = BlobMetaFactory(parent_id=inacc_request.xform_id)
+
+        url = reverse(
+            "opportunity:fetch_attachment",
+            args=(organization.slug, opportunity.opportunity_id, blob_meta.blob_id),
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 200
+        storage_handler_getitem_mock.assert_called_once()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_cannot_fetch_inaccessibility_blob_for_different_opportunity(
+        self, storage_handler_getitem_mock, org_user_member, organization, client
+    ):
+        other_opp_inacc_request = WorkAreaInaccessibilityRequestFactory()
+        blob_meta = BlobMetaFactory(parent_id=other_opp_inacc_request.xform_id)
+
+        my_opportunity = OpportunityFactory(organization=organization)
+        url = reverse(
+            "opportunity:fetch_attachment",
+            args=(organization.slug, my_opportunity.opportunity_id, blob_meta.blob_id),
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+        storage_handler_getitem_mock.assert_not_called()
 
 
 def test_views_use_opportunity_decorator_or_mixin():

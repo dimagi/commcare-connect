@@ -185,7 +185,13 @@
                                 </dd>
                             </div>
                         </dl>
-                        <div class="mt-4 flex justify-end">
+                        <div class="mt-4 flex justify-end gap-2">
+                            <button
+                                x-show="selectedFeature.status === 'REQUEST_FOR_INACCESSIBLE'"
+                                class="button button-md button-outline-rounded"
+                                @click="openReviewInaccessibilityModal(selectedFeature._id)">
+                                {% translate "Review Inaccessible" %}
+                            </button>
                             <button class="button button-md button-outline-rounded" @click="openWorkAreaEditModal(selectedFeature._id)">
                                 <i class="fa-regular fa-pen-to-square"></i>
                                 {% translate "Modify Work Area" %}
@@ -194,6 +200,14 @@
                                 @work-area-updated.window="showWorkAreaEditModal = false" class="modal-backdrop">
                                 <div class="modal relative" @click.stop>
                                     <div id="work-area-form"></div>
+                                </div>
+                            </div>
+                            <div x-show="showReviewInaccessibilityModal" x-cloak
+                                 @click.self="showReviewInaccessibilityModal = false"
+                                 x-effect="if (showReviewInaccessibilityModal) $el.scrollTop = 0"
+                                 class="modal-backdrop">
+                                <div class="modal-lg relative" @click.stop>
+                                    <div id="review-inaccessibility-fragment"></div>
                                 </div>
                             </div>
                         </div>
