@@ -35,9 +35,10 @@ from commcare_connect.commcarehq.api import (
 )
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
+from commcare_connect.microplanning.const import MAX_EXCLUDE_WORK_AREAS, WORK_AREA_STATUS_COLORS
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
+from commcare_connect.microplanning.helpers import exclude_work_areas_for_opportunity
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.opportunity.models import OpportunityAccess, UserVisit
 from commcare_connect.organization.decorators import (
@@ -464,6 +465,39 @@ def clustering_status(request, org_slug, opp_id):
         return response
 
     return HttpResponse(headers={"HX-Redirect": redirect_url})
+
+
+@require_POST
+@org_admin_required
+@opportunity_required
+def exclude_work_areas(request, org_slug, opp_id):
+    exclusion_reason = request.POST.get("exclusion_reason", "").strip()
+    if not exclusion_reason:
+        return JsonResponse({"error": _("Exclusion reason is required")}, status=400)
+    if len(exclusion_reason) > 500:
+        return JsonResponse({"error": _("Exclusion reason must be at most 500 characters")}, status=400)
+
+    raw_ids = request.POST.getlist("work_area_ids[]")
+    if not raw_ids:
+        return JsonResponse({"error": _("Work Area IDs is required")}, status=400)
+    if len(raw_ids) > MAX_EXCLUDE_WORK_AREAS:
+        return JsonResponse(
+            {"error": _("Work Area IDs must contain at most %(max)d items") % {"max": MAX_EXCLUDE_WORK_AREAS}},
+            status=400,
+        )
+
+    try:
+        work_area_ids = [int(i) for i in raw_ids]
+    except (ValueError, TypeError):
+        return JsonResponse({"error": _("Work Area IDs must be integers")}, status=400)
+
+    res = exclude_work_areas_for_opportunity(
+        opportunity=request.opportunity,
+        work_area_ids=work_area_ids,
+        user=request.user,
+        exclusion_reason=exclusion_reason,
+    )
+    return JsonResponse(res)
 
 
 @require_GET

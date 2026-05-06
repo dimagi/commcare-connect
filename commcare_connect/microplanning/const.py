@@ -11,3 +11,5 @@ WORK_AREA_STATUS_COLORS = {
     WorkAreaStatus.EXCLUDED: "bg-gray-500 text-white",
 }
 WORK_AREA_CASE_TYPE = "work-area"
+MAX_EXCLUDE_WORK_AREAS = 200
+HQ_BULK_CHUNK_SIZE = 50

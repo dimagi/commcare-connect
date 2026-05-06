@@ -171,7 +171,9 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         access = OpportunityAccessFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, opportunity_access=access)
 
-        initial_event_count = work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
+        initial_event_count = (
+            work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
+        )
         assert work_area.work_area_group is None
         new_expected_visit_count = 25
         client.force_login(org_user_admin)
@@ -195,7 +197,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         assert work_area.expected_visit_count == new_expected_visit_count
         assert work_area.work_area_group == group
 
-        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_events
+        events = work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events
         assert events.count() == initial_event_count + 1
         event = events.last()
         assert event.pgh_context.metadata["reason"] == "Boundary adjusted"
@@ -206,7 +208,9 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
     def test_no_history_created_when_nothing_changes(self, mock_sync, client, org_user_admin, opportunity):
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, expected_visit_count=10, work_area_group=group)
-        initial_event_count = work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
+        initial_event_count = (
+            work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
+        )
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -221,7 +225,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         work_area.refresh_from_db()
         assert response.status_code == 204
         assert (
-            work_area.expected_visit_count_work_area_group_status_opportunity_access_events.count()
+            work_area.expected_visit_count_work_area_group_status_opportunity_access_excluded_reason_events.count()
             == initial_event_count
         )
         assert mock_sync.call_count == 0  # No sync since nothing changed
@@ -921,3 +925,84 @@ class TestSaveAssignment:
             [{"assignee_id": access.id, "work_area_ids": [wa.id]}],
         )
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestExcludeWorkAreasView:
+    """Thin tests for the view: validation + synchronous exclusion."""
+
+    def url(self, opportunity):
+        return reverse(
+            "microplanning:exclude_work_areas",
+            kwargs={"org_slug": opportunity.organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+
+    @patch(
+        "commcare_connect.microplanning.views.exclude_work_areas_for_opportunity",
+        return_value={"excluded": 1, "skipped": 0, "failed": 0},
+    )
+    def test_valid_request_calls_exclude_and_returns_200(self, mock_exclude, client, org_user_admin, opportunity):
+        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {"work_area_ids[]": [wa.id], "exclusion_reason": "Flooding"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"excluded": 1, "skipped": 0, "failed": 0}
+        mock_exclude.assert_called_once()
+        kwargs = mock_exclude.call_args.kwargs
+        assert kwargs["opportunity"].pk == opportunity.pk
+        assert kwargs["work_area_ids"] == [wa.id]
+        assert kwargs["user"].pk == org_user_admin.pk
+        assert kwargs["exclusion_reason"] == "Flooding"
+
+    @pytest.mark.parametrize(
+        "post_data",
+        [
+            {"work_area_ids[]": [1]},
+            {"work_area_ids[]": [1], "exclusion_reason": "   "},
+            {"work_area_ids[]": [1], "exclusion_reason": "x" * 501},
+        ],
+        ids=["missing", "blank", "too_long"],
+    )
+    @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
+    def test_invalid_exclusion_reason_returns_400(self, mock_exclude, client, org_user_admin, opportunity, post_data):
+        client.force_login(org_user_admin)
+        response = client.post(self.url(opportunity), post_data)
+        assert response.status_code == 400
+        assert "Exclusion reason" in response.json()["error"]
+        mock_exclude.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "post_data",
+        [
+            {"exclusion_reason": "Flooding"},
+            {"work_area_ids[]": ["abc", "foo"], "exclusion_reason": "Test"},
+        ],
+        ids=["missing", "non_integer"],
+    )
+    @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
+    def test_invalid_work_area_ids_returns_400(self, mock_exclude, client, org_user_admin, opportunity, post_data):
+        client.force_login(org_user_admin)
+        response = client.post(self.url(opportunity), post_data)
+        assert response.status_code == 400
+        mock_exclude.assert_not_called()
+
+    @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
+    def test_too_many_work_area_ids_returns_400(self, mock_exclude, client, org_user_admin, opportunity):
+        from commcare_connect.microplanning.views import MAX_EXCLUDE_WORK_AREAS
+
+        client.force_login(org_user_admin)
+        response = client.post(
+            self.url(opportunity),
+            {
+                "work_area_ids[]": list(range(1, MAX_EXCLUDE_WORK_AREAS + 2)),
+                "exclusion_reason": "Flooding",
+            },
+        )
+        assert response.status_code == 400
+        assert str(MAX_EXCLUDE_WORK_AREAS) in response.json()["error"]
+        mock_exclude.assert_not_called()

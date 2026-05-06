@@ -1,6 +1,7 @@
 from functools import cached_property
 
 import pghistory
+from django.conf import settings
 from django.contrib.gis.db import models as geo_models
 from django.db.models import Sum
 from django.utils.translation import gettext_lazy as _
@@ -39,7 +40,7 @@ class WorkAreaGroup(geo_models.Model):
         return self.workarea_set.aggregate(total=Sum("building_count"))["total"] or 0
 
 
-@pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "opportunity_access"])
+@pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "opportunity_access", "excluded_reason"])
 class WorkArea(geo_models.Model):
     work_area_group = geo_models.ForeignKey(WorkAreaGroup, null=True, blank=True, on_delete=geo_models.SET_NULL)
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
@@ -65,6 +66,14 @@ class WorkArea(geo_models.Model):
     )
     case_id = geo_models.UUIDField(null=True, blank=True, unique=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
+    excluded_by = geo_models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=geo_models.SET_NULL,
+        related_name="excluded_work_areas",
+    )
+    excluded_reason = geo_models.CharField(max_length=500, blank=True, default="")
 
     class Meta:
         constraints = [geo_models.UniqueConstraint(fields=["slug", "opportunity"], name="unique_slug_per_opportunity")]
