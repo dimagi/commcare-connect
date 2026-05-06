@@ -15,6 +15,11 @@ urlpatterns = [
     path("", TemplateView.as_view(template_name="pages/home.html"), name="home"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
+    path(
+        ".well-known/oauth-authorization-server",
+        views.oauth_authorization_server,
+        name="oauth_authorization_server",
+    ),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
