@@ -324,6 +324,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
 
         additional_details = block.get("additional_details", "")
         estimated_duration = block.get("estimated_duration", "")
+        # TODO Revisit if any change required to source this based on xform structure in CCCT-2397
         location = _parse_xform_location(xform.metadata.location)
 
         WorkAreaInaccessibilityRequest.objects.create(
@@ -336,6 +337,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             additional_details=additional_details,
             estimated_duration=estimated_duration,
         )
+        # TODO Revisit if any change required to source this based on xform structure in CCCT-2397
         attachments = xform.raw_form.get("attachments", {})
         transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, attachments))
 
