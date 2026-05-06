@@ -533,7 +533,7 @@ class WorkAreaGroupDataView(OpportunityDataExportView, BaseDataExportListViewV2)
     serializer_class = WorkAreaGroupDataSerializer
 
     def get_queryset(self, *args, **kwargs):
-        return WorkAreaGroup.objects.filter(opportunity=self.opportunity).select_related("opportunity_access__user")
+        return WorkAreaGroup.objects.filter(opportunity=self.opportunity)
 
 
 class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):

@@ -26,7 +26,6 @@ class WorkAreaStatus(geo_models.TextChoices):
 
 class WorkAreaGroup(geo_models.Model):
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
-    opportunity_access = geo_models.ForeignKey(OpportunityAccess, null=True, blank=True, on_delete=geo_models.SET_NULL)
     ward = geo_models.SlugField(max_length=255)
     name = geo_models.CharField(max_length=255)
 
@@ -41,10 +40,11 @@ class WorkAreaGroup(geo_models.Model):
         return self.workarea_set.aggregate(total=Sum("building_count"))["total"] or 0
 
 
-@pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "excluded_reason"])
+@pghistory.track(fields=["expected_visit_count", "work_area_group", "status", "opportunity_access", "excluded_reason"])
 class WorkArea(geo_models.Model):
     work_area_group = geo_models.ForeignKey(WorkAreaGroup, null=True, blank=True, on_delete=geo_models.SET_NULL)
     opportunity = geo_models.ForeignKey(Opportunity, on_delete=geo_models.CASCADE)
+    opportunity_access = geo_models.ForeignKey(OpportunityAccess, null=True, blank=True, on_delete=geo_models.SET_NULL)
     slug = geo_models.SlugField(
         max_length=255,
         help_text=(

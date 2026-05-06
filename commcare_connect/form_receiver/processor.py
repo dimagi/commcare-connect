@@ -280,9 +280,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
-        # TODO: CCCT-2277 moves the assignment directly to `WorkArea`, so this check should be updated
-        # depending on which PR gets merged first.
-        if not work_area.work_area_group or work_area.work_area_group.opportunity_access_id != access.id:
+        if work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
 
         requested_status = block.get("status", "").upper()
