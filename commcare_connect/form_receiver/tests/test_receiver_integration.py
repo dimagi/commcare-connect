@@ -1012,7 +1012,7 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED, None, True),
-        (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED, None, True),
+        (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED, 1, True),
         (WorkAreaStatus.UNASSIGNED, WorkAreaStatus.UNASSIGNED, None, True),
         (WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, WorkAreaStatus.REQUEST_FOR_INACCESSIBLE, None, True),
         (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE, None, True),
