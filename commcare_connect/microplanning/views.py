@@ -30,7 +30,10 @@ from django.views.generic.edit import UpdateView
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 
-from commcare_connect.commcarehq.api import create_or_update_case_by_work_area
+from commcare_connect.commcarehq.api import (
+    bulk_create_or_update_cases_by_work_areas,
+    create_or_update_case_by_work_area,
+)
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.microplanning.const import WORK_AREA_STATUS_COLORS
@@ -300,7 +303,7 @@ class WorkAreaVectorLayer(VectorLayer):
         qs = WorkArea.objects.filter(opportunity=self.opportunity).annotate(
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
-            assignee_name=F("work_area_group__opportunity_access__user__name"),
+            assignee_name=F("opportunity_access__user__name"),
         )
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
 
@@ -511,11 +514,7 @@ class ModifyWorkAreaUpdateView(UpdateView):
         try:
             with transaction.atomic(), pghistory.context(reason=reason):
                 work_area.save(update_fields=["expected_visit_count", "work_area_group"])
-                if (
-                    form.has_changed()
-                    and work_area.work_area_group
-                    and work_area.work_area_group.opportunity_access_id
-                ):
+                if form.has_changed() and work_area.opportunity_access_id:
                     # let exception bubble up if case update fails, to avoid saving work area without case sync
                     create_or_update_case_by_work_area(work_area)
         except CommCareHQAPIException as e:
@@ -562,7 +561,7 @@ def get_flw_work_areas_for_assignment(request, org_slug, opp_id, assignee_id):
     work_areas = list(
         WorkArea.objects.filter(
             opportunity=request.opportunity,
-            work_area_group__opportunity_access_id=assignee_id,
+            opportunity_access_id=assignee_id,
         ).values("id", "building_count", "expected_visit_count")
     )
     return JsonResponse({"work_areas": work_areas})
@@ -579,7 +578,7 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 
     qs = WorkArea.objects.filter(
         opportunity=request.opportunity,
-        work_area_group__opportunity_access_id=assignee_id,
+        opportunity_access_id=assignee_id,
     )
     stats = qs.aggregate(
         buildings=Sum("building_count"),
@@ -599,23 +598,70 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
 @opportunity_required
 @require_flag_for_opp(MICROPLANNING)
 def save_assignment(request, org_slug, opp_id):
-    """Stub endpoint for saving work area assignments. Accepts the payload but does not persist changes yet."""
     try:
-        payload = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "invalid json"}, status=400)
+        data = json.loads(request.body)
+        assignments = data["assignments"]
+        if not assignments:
+            raise ValueError
+        assignee_ids = {int(entry["assignee_id"]) for entry in assignments}
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return JsonResponse({"error": _("Invalid request body")}, status=400)
 
-    assignee_ids = {
-        a["assignee_id"]
-        for a in payload.get("assignments", [])
-        if isinstance(a, dict) and a.get("assignee_id") is not None
+    valid_accesses = {
+        access.id: access
+        for access in OpportunityAccess.objects.filter(
+            id__in=assignee_ids,
+            opportunity=request.opportunity,
+        ).select_related("user")
     }
-    valid_assignee_ids = list(
-        OpportunityAccess.objects.filter(pk__in=assignee_ids, opportunity=request.opportunity).values_list(
-            "pk", flat=True
-        )
+
+    invalid_ids = assignee_ids - valid_accesses.keys()
+    if invalid_ids:
+        return JsonResponse({"error": _("Invalid assignee IDs: %(ids)s") % {"ids": sorted(invalid_ids)}}, status=400)
+
+    try:
+        all_wa_ids = [int(wa_id) for entry in assignments for wa_id in entry.get("work_area_ids", [])]
+    except (TypeError, ValueError):
+        return JsonResponse({"error": _("Work area IDs must be integers")}, status=400)
+    requested_wa_ids = set(all_wa_ids)
+    if len(all_wa_ids) != len(requested_wa_ids):
+        return JsonResponse({"error": _("Duplicate work area IDs in request")}, status=400)
+
+    work_area_to_access = {
+        int(wa_id): valid_accesses[int(entry["assignee_id"])]
+        for entry in assignments
+        for wa_id in entry.get("work_area_ids", [])
+    }
+
+    all_work_areas = list(
+        WorkArea.objects.filter(
+            id__in=requested_wa_ids,
+            opportunity=request.opportunity,
+        ).select_for_update()
     )
-    for access_id in valid_assignee_ids:
+
+    found_ids = {wa.id for wa in all_work_areas}
+    invalid_wa_ids = requested_wa_ids - found_ids
+    if invalid_wa_ids:
+        return JsonResponse(
+            {"error": _("Invalid work area IDs: %(ids)s") % {"ids": sorted(invalid_wa_ids)}}, status=400
+        )
+
+    for work_area in all_work_areas:
+        work_area.opportunity_access = work_area_to_access[work_area.id]
+        if work_area.status == WorkAreaStatus.UNASSIGNED:
+            work_area.status = WorkAreaStatus.NOT_STARTED
+
+    WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access", "status"])
+
+    try:
+        bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
+    except CommCareHQAPIException:
+        transaction.set_rollback(True)
+        return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
+
+    notified_access_ids = {access.id for access in work_area_to_access.values()}
+    for access_id in notified_access_ids:
         transaction.on_commit(lambda aid=access_id: send_work_area_assignment_notification.delay(aid))
 
     return JsonResponse({"status": "ok"})

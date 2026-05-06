@@ -362,7 +362,7 @@
             </aside>
 
             <!-- Save and Confirm modal -->
-            <div x-show="showConfirmModal" x-cloak @click.self="showConfirmModal = false" class="modal-backdrop">
+            <div x-show="showConfirmModal" x-cloak @click.self="if (!isSaving) showConfirmModal = false" class="modal-backdrop">
                 <div class="modal relative p-6" @click.stop>
                     <h3 class="text-lg font-semibold mb-3">{% translate "Warning" %}</h3>
                     <p class="text-sm mb-4">
@@ -391,11 +391,12 @@
                         </template>
                     </div>
                     <div class="flex gap-2 justify-between">
-                        <button class="button button-md outline-style" @click="showConfirmModal = false">
+                        <button class="button button-md outline-style" @click="showConfirmModal = false" :disabled="isSaving">
                             {% translate "Back to Edit" %}
                         </button>
-                        <button class="button button-md primary-dark" @click="saveAssignment()">
-                            {% translate "Save and Confirm" %}
+                        <button class="button button-md primary-dark" @click="saveAssignment()" :disabled="isSaving">
+                            <i x-show="isSaving" class="fa-solid fa-spinner fa-spin mr-1"></i>
+                            <span x-text="isSaving ? '{% translate "Saving..." %}' : '{% translate "Save and Confirm" %}'"></span>
                         </button>
                     </div>
                 </div>

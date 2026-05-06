@@ -23,6 +23,7 @@
             flwSummaryLoading: false,
             showConfirmModal: false,
             showDiscardModal: false,
+            isSaving: false,
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
@@ -302,6 +303,7 @@
             },
 
             async saveAssignment() {
+                this.isSaving = true;
                 try {
                     const resp = await fetch('{{ assignment_save_url|escapejs }}', {
                         method: 'POST',
@@ -311,8 +313,8 @@
                         },
                         body: JSON.stringify({ assignments: this.assignmentQueue }),
                     });
+                    this.showConfirmModal = false;
                     if (resp.ok) {
-                        this.showConfirmModal = false;
                         this.showToast("{% translate 'Assignment saved successfully!' %}");
                         this.assignmentQueue = [];
                         this.clearSelection();
@@ -320,10 +322,14 @@
                         this.selectedAssigneeId = null;
                         this.flwSummary = null;
                     } else {
-                        this.showToast("{% translate 'Failed to save assignment' %}", true);
+                        const data = await resp.json().catch(() => ({}));
+                        this.showToast(data.error || "{% translate 'Failed to save assignment' %}", true);
                     }
                 } catch (e) {
+                    this.showConfirmModal = false;
                     this.showToast("{% translate 'Failed to save assignment' %}", true);
+                } finally {
+                    this.isSaving = false;
                 }
             },
 

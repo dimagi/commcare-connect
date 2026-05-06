@@ -13,7 +13,6 @@ from commcare_connect.opportunity.tests.factories import OpportunityAccessFactor
 
 class WorkAreaGroupFactory(DjangoModelFactory):
     opportunity = SubFactory(OpportunityFactory)
-    opportunity_access = SubFactory(OpportunityAccessFactory)
     ward = Sequence(lambda n: f"ward-{n}")
     name = Sequence(lambda n: f"group-{n}")
 

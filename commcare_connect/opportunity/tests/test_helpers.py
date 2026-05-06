@@ -724,23 +724,67 @@ def test_get_worker_work_area_table_data_multiple_workers_and_groups(opportunity
     access1 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     access2 = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
 
-    group1a = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access1)
-    group1b = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access1)
+    group1a = WorkAreaGroupFactory(opportunity=opportunity)
+    group1b = WorkAreaGroupFactory(opportunity=opportunity)
     area1a = WorkAreaFactory(
-        opportunity=opportunity, work_area_group=group1a, building_count=10, expected_visit_count=5
+        opportunity=opportunity,
+        work_area_group=group1a,
+        opportunity_access=access1,
+        building_count=10,
+        expected_visit_count=5,
     )
-    WorkAreaFactory(opportunity=opportunity, work_area_group=group1a, building_count=15, expected_visit_count=3)
-    WorkAreaFactory(opportunity=opportunity, work_area_group=group1b, building_count=20, expected_visit_count=7)
-    WorkAreaFactory(opportunity=opportunity, work_area_group=group1b, building_count=25, expected_visit_count=4)
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1a,
+        opportunity_access=access1,
+        building_count=15,
+        expected_visit_count=3,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1b,
+        opportunity_access=access1,
+        building_count=20,
+        expected_visit_count=7,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group1b,
+        opportunity_access=access1,
+        building_count=25,
+        expected_visit_count=4,
+    )
 
-    group2a = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access2)
-    group2b = WorkAreaGroupFactory(opportunity=opportunity, opportunity_access=access2)
+    group2a = WorkAreaGroupFactory(opportunity=opportunity)
+    group2b = WorkAreaGroupFactory(opportunity=opportunity)
     area2a = WorkAreaFactory(
-        opportunity=opportunity, work_area_group=group2a, building_count=30, expected_visit_count=10
+        opportunity=opportunity,
+        work_area_group=group2a,
+        opportunity_access=access2,
+        building_count=30,
+        expected_visit_count=10,
     )
-    WorkAreaFactory(opportunity=opportunity, work_area_group=group2a, building_count=5, expected_visit_count=2)
-    WorkAreaFactory(opportunity=opportunity, work_area_group=group2b, building_count=8, expected_visit_count=6)
-    WorkAreaFactory(opportunity=opportunity, work_area_group=group2b, building_count=12, expected_visit_count=1)
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2a,
+        opportunity_access=access2,
+        building_count=5,
+        expected_visit_count=2,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2b,
+        opportunity_access=access2,
+        building_count=8,
+        expected_visit_count=6,
+    )
+    WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=group2b,
+        opportunity_access=access2,
+        building_count=12,
+        expected_visit_count=1,
+    )
 
     UserVisitFactory(opportunity=opportunity, user=access1.user, opportunity_access=access1, work_area=area1a)
     UserVisitFactory(opportunity=opportunity, user=access1.user, opportunity_access=access1, work_area=area1a)
