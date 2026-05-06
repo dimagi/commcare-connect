@@ -490,7 +490,9 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if not is_a_uuid(work_area_case_id):
                 raise ProcessingError(f"Invalid work area case id specified: {work_area_case_id}")
             try:
-                work_area = WorkArea.objects.get(case_id=work_area_case_id, opportunity=access.opportunity)
+                work_area = WorkArea.objects.select_for_update().get(
+                    case_id=work_area_case_id, opportunity=access.opportunity
+                )
                 user_visit.work_area = work_area
             except WorkArea.DoesNotExist:
                 raise ProcessingError("Work area not found")
