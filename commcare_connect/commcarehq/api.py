@@ -7,7 +7,7 @@ from django.db import transaction
 
 from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
-from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess
+from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -86,14 +86,15 @@ def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
     return case
 
 
-def bulk_create_or_update_cases_by_work_areas(work_areas: list[WorkArea]) -> list[CommCareCase]:
+def bulk_create_or_update_cases_by_work_areas(
+    work_areas: list[WorkArea], opportunity: Opportunity
+) -> list[CommCareCase]:
     """Sync a batch of work areas to HQ in a single UPSERT call keyed on external_id."""
     if not work_areas:
         return []
 
-    first = work_areas[0]
-    api_key = first.opportunity_access.opportunity.api_key
-    domain = first.opportunity_access.opportunity.deliver_app.cc_domain
+    api_key = opportunity.api_key
+    domain = opportunity.deliver_app.cc_domain
 
     wa_by_username: dict[str, WorkArea] = {wa.opportunity_access.user.username.lower(): wa for wa in work_areas}
     owner_id_by_username: dict[str, str] = {

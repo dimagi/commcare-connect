@@ -601,7 +601,7 @@ def save_assignment(request, org_slug, opp_id):
         for access in OpportunityAccess.objects.filter(
             id__in=assignee_ids,
             opportunity=request.opportunity,
-        ).select_related("user", "opportunity__api_key__hq_server", "opportunity__deliver_app")
+        ).select_related("user")
     }
 
     invalid_ids = assignee_ids - valid_accesses.keys()
@@ -644,7 +644,7 @@ def save_assignment(request, org_slug, opp_id):
     WorkArea.objects.bulk_update(all_work_areas, ["opportunity_access", "status"])
 
     try:
-        bulk_create_or_update_cases_by_work_areas(all_work_areas)
+        bulk_create_or_update_cases_by_work_areas(all_work_areas, request.opportunity)
     except CommCareHQAPIException:
         transaction.set_rollback(True)
         return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
