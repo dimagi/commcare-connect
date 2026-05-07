@@ -1,29 +1,27 @@
 {% extends "base.html" %}
 {% load static %}
 {% load crispy_forms_tags %}
-
 {% block title %}Demo Tokens{% endblock %}
-
 {% block content %}
-<div class="container">
-  <h2 class="mb-4">Demo Users</h2>
-  <div class="card shadow-sm p-3">
-    <table class="table table-striped mb-0">
-      <thead>
-        <tr>
-          <th>Phone Number</th>
-          <th>Token</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for user in demo_users %}
-        <tr>
-          <td>{{ user.phone_number }}</td>
-          <td>{{ user.token }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="container">
+    <h2 class="mb-4">Demo Users</h2>
+    <div class="card shadow-sm p-3">
+      <table class="table table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Phone Number</th>
+            <th>Token</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in demo_users %}
+            <tr>
+              <td>{{ user.phone_number }}</td>
+              <td>{{ user.token }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-</div>
 {% endblock content %}
