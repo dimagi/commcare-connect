@@ -73,7 +73,7 @@
 {% if show_payment_invoice_invoice_ticket_link_form %}
   <br />
   <div class="card_bg">
-    <form method="POST"
+    <form method="post"
           action="{% url 'opportunity:update_invoice_invoice_ticket_link' org_slug=request.org.slug opp_id=opportunity.opportunity_id invoice_id=object.payment_invoice_id %}">
       {% csrf_token %}
       <div class="mb-4">

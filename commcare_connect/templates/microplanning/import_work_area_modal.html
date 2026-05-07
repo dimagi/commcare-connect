@@ -59,7 +59,7 @@
         </div>
       {% else %}
         <!-- Upload Form -->
-        <form method="POST"
+        <form method="post"
               enctype="multipart/form-data"
               action="{% url 'microplanning:upload_work_areas' request.org.slug request.opportunity.opportunity_id %}"
               class="content">
