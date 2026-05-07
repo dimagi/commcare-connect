@@ -33,5 +33,9 @@ module.exports = {
       },
     },
   ],
-  ignorePatterns: ['commcare_connect/static/bundles/', 'node_modules/'],
+  ignorePatterns: [
+    '.eslintrc.js',
+    'commcare_connect/static/bundles/',
+    'node_modules/',
+  ],
 };

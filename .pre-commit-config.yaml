@@ -64,7 +64,7 @@ repos:
         files: commcare_connect/static/js/.*\.js$
         exclude: commcare_connect/static/bundles/
         additional_dependencies:
-          - eslint@8.56.0
+          - eslint@8.57.1
 
 # sets up .pre-commit-ci.yaml to ensure pre-commit dependencies stay up to date
 ci:
