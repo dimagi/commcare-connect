@@ -31,6 +31,7 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
@@ -115,7 +116,20 @@ def start_learn_app(request):
     )
     app = opportunity.learn_app
     domain = app.cc_domain
-    user_created = create_hq_user_and_link(request.user, domain, opportunity)
+    try:
+        user_created = create_hq_user_and_link(request.user, domain, opportunity)
+    except CommCareHQAPIException as e:
+        # CCHQ rejected the mobile-worker create (commonly: 401/403 because
+        # the opp's stored HQApiKey is bad/expired/insufficient-permission).
+        # Without this guard the exception bubbles to Django's default 500
+        # handler and the CommCare client surfaces a generic "Failed to start
+        # learning" with no actionable signal. See ace#1162 for the original
+        # reproduction (literal `${ACE_HQ_API_KEY}` placeholder stored as the
+        # api_key bypassed validate-on-create and only failed at runtime).
+        return Response(
+            {"error_code": ErrorCodes.HQ_USER_CREATE_FAILED, "detail": str(e)},
+            status=502,
+        )
     if not user_created:
         return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
     try:
