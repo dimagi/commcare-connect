@@ -466,3 +466,97 @@ class TestFullPipeline:
         )
         assert response.status_code == 202
         mock_add_users.delay.assert_called_once()
+
+
+@pytest.mark.django_db
+class TestCreateOpportunityApiKeyValidation:
+    """Validates that the create-opportunity endpoint rejects api_key
+    payloads that look like unresolved env-var template placeholders.
+
+    Without this check a caller whose templating failed (e.g. an automation
+    client passing the literal `${ACE_HQ_API_KEY}` string verbatim) would
+    successfully create an HQApiKey row with bogus contents — opp creation
+    would pass on the validate-fetches-apps stub, but every downstream call
+    that uses the key (start_learn_app, mobile-worker create) would fail.
+    Regression test for ace#1162.
+    """
+
+    def _create_program_and_application(self, api_client, program_manager_org, program_manager_org_user_admin, organization):
+        """Bootstrap to the point where create-opportunity is the next step."""
+        delivery_type = DeliveryTypeFactory(slug="apikey-validation-delivery")
+        api_client.force_authenticate(program_manager_org_user_admin)
+        response = api_client.post(
+            "/api/programs/",
+            {
+                "name": "API Key Validation Program",
+                "description": "Test",
+                "organization": program_manager_org.slug,
+                "delivery_type": delivery_type.slug,
+                "budget": 500000,
+                "currency": "USD",
+                "country": "United States of America",
+                "start_date": "2026-05-01",
+                "end_date": "2026-12-31",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        program_id = response.data["program_id"]
+
+        response = api_client.post(
+            f"/api/programs/{program_id}/applications/",
+            {"organization": organization.slug},
+            format="json",
+        )
+        application_id = response.data["program_application_id"]
+        api_client.post(f"/api/programs/{program_id}/applications/{application_id}/accept/")
+        return program_id
+
+    @pytest.mark.parametrize(
+        "bad_api_key, expected_substring",
+        [
+            ("${ACE_HQ_API_KEY}", "unresolved template placeholder"),
+            ("", "unresolved template placeholder"),
+            ("prefix-${VAR}-suffix", "unresolved template placeholder"),
+        ],
+    )
+    def test_rejects_placeholder_api_key(
+        self, bad_api_key, expected_substring,
+        api_client, program_manager_org, program_manager_org_user_admin, organization,
+    ):
+        program_id = self._create_program_and_application(
+            api_client, program_manager_org, program_manager_org_user_admin, organization,
+        )
+        hq_server = HQServerFactory()
+        response = api_client.post(
+            f"/api/programs/{program_id}/opportunities/",
+            {
+                "name": "API Key Validation Opp",
+                "description": "Test",
+                "short_description": "Short",
+                "organization": organization.slug,
+                "start_date": "2026-05-01",
+                "end_date": "2026-12-31",
+                "total_budget": 100000,
+                "learn_app": {
+                    "hq_server_url": hq_server.url,
+                    "api_key": bad_api_key,
+                    "cc_domain": "test-domain",
+                    "cc_app_id": "learn-app",
+                    "description": "Learn desc",
+                    "passing_score": 75,
+                },
+                "deliver_app": {
+                    "hq_server_url": hq_server.url,
+                    "api_key": bad_api_key,
+                    "cc_domain": "test-domain",
+                    "cc_app_id": "deliver-app",
+                },
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        # Validation error nested under learn_app.api_key
+        body = response.json()
+        flat = str(body)
+        assert expected_substring in flat

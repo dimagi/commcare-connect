@@ -219,6 +219,25 @@ class TestStartLearnAppView:
         assert response.status_code == 200
         mock_create.assert_called_once()
 
+    def test_hq_user_create_exception_returns_502(self, opportunity, user, api_client):
+        """When create_hq_user_and_link raises CommCareHQAPIException (typically
+        because CCHQ rejected the opp's stored api_key), the view returns a
+        structured 502 instead of bubbling to Django's default 500 handler.
+        Regression test for ace#1162."""
+        from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+        api_client.force_authenticate(user)
+        with patch(
+            "commcare_connect.users.views.create_hq_user_and_link",
+            side_effect=CommCareHQAPIException("401 Error response - bad api key"),
+        ):
+            response = api_client.post(self.url, data={"opportunity": opportunity.id})
+
+        assert response.status_code == 502
+        body = response.json()
+        assert body["error_code"] == ErrorCodes.HQ_USER_CREATE_FAILED
+        assert "401" in body["detail"]
+
 
 class TestUserToggleView:
     def test_no_toggles(self, mobile_user: User, rf: RequestFactory):

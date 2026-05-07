@@ -175,6 +175,21 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
         return data
 
     def _resolve_api_key(self, user, hq_server, api_key_string):
+        # Reject obvious unresolved env-var placeholders before persisting an
+        # HQApiKey row. Without this, a caller that sends literal `${VAR}`
+        # text (e.g. an automation client whose template substitution failed)
+        # creates a permanent HQApiKey with bogus contents that passes opp
+        # creation but fails downstream at start_learn_app time when CCHQ
+        # rejects the auth header. See ace#1162.
+        if not api_key_string or "${" in api_key_string or "}" in api_key_string:
+            raise serializers.ValidationError(
+                {
+                    "api_key": _(
+                        "API key looks like an unresolved template placeholder. "
+                        "Substitute the value before sending."
+                    )
+                }
+            )
         try:
             api_key, __ = HQApiKey.objects.get_or_create(
                 user=user,
