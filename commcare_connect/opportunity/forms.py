@@ -794,8 +794,10 @@ class OpportunityFinalizeForm(forms.ModelForm):
                 if not (program.start_date <= end_date <= program.end_date):
                     self.add_error("end_date", "End date must be within the program's start and end dates.")
 
+                # EXEMPLAR (issue #1171): only count active sibling opps. See PR description
+                # for the activation-time TOCTOU caveat.
                 total_budget_sum = (
-                    ManagedOpportunity.objects.filter(program=program)
+                    ManagedOpportunity.objects.filter(program=program, active=True)
                     .exclude(id=managed_opportunity.id)
                     .aggregate(total=Sum("total_budget"))["total"]
                     or 0
