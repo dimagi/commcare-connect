@@ -57,7 +57,7 @@ No image rebuild. No GitHub Actions pipeline. Estimated time: ~10–20 min with 
 
 ---
 
-## Option 3: DB-backed config with Django admin
+## Option 3a: DB-backed config with Django admin + automatic sync
 
 Store replicated table names in a Django model (e.g. `SupersetReplicatedTable`).
 Override `save()`/`delete()` or use a post-save signal to immediately issue
@@ -80,8 +80,30 @@ Django admin provides a UI to add or remove tables — no dev or infra involveme
 
 ---
 
+## Option 3b: DB-backed config with Django admin + manual sync
+
+Same model and admin UI as 3a, but with no save hooks. The admin UI is only used to maintain the list of
+desired tables. A separate step — either a management command or an admin action — reads the model and
+applies the `ALTER PUBLICATION` + `ALTER SUBSCRIPTION REFRESH` when explicitly triggered.
+
+**To add a table**:
+1. Add the table name in Django admin
+2. Run `./manage.py setup_logical_replication` (or trigger an admin action) to apply the change
+
+**Pros**
+- Simpler to implement than 3a — no signal hooks, no DDL credentials in app settings
+- DDL is only issued on explicit operator intent, not as a side effect of a model save
+- Easier to reason about failures — the sync step is explicit and observable
+- Still decoupled from code deploys and the release cycle
+
+**Cons**
+- Not fully self-serve — applying the change still requires someone to run a command or trigger an action
+- Two-step process introduces a window where the admin shows a table that isn't yet replicated
+- `setup_logical_replication` is currently interactive (prompts for DB credentials); would need a
+  non-interactive mode or a dedicated admin action to be practical
+
+---
+
 ## Recommendation
 
-**Option 2** gives most of the benefit with minimal risk if the primary pain point is deploy speed.
-A 15-minute Ansible run is substantially faster than a full deploy pipeline, and the implementation
-is a one-line template change.
+**Option 3b** This option feels like the lowest effort when adding a new table. It's also very straight forward to do. 
