@@ -31,6 +31,7 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.opportunity.tasks import update_user_and_send_invite
 from commcare_connect.users.forms import ManualUserOTPForm
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
@@ -115,7 +116,20 @@ def start_learn_app(request):
     )
     app = opportunity.learn_app
     domain = app.cc_domain
-    user_created = create_hq_user_and_link(request.user, domain, opportunity)
+    try:
+        user_created = create_hq_user_and_link(request.user, domain, opportunity)
+    except CommCareHQAPIException as e:
+        # CCHQ rejected the mobile-worker create call. Without this catch, the
+        # exception bubbles as Django 500 with no actionable body, the Android
+        # client correctly logs the failed response and swallows it, and the
+        # opp-detail "Start" button appears to no-op silently from the FLW's
+        # point of view. Surface the underlying HQ error so callers can act
+        # on it. See CI-660. Same pattern as `ManagedOpportunityCreateView.post`
+        # in `commcare_connect/program/api/views.py`.
+        return Response(
+            {"error_code": ErrorCodes.FAILED_USER_CREATE, "hq_error": str(e)},
+            status=502,
+        )
     if not user_created:
         return Response({"error_code": ErrorCodes.FAILED_USER_CREATE}, status=400)
     try:
