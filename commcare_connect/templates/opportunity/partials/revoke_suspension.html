@@ -1,10 +1,6 @@
 {% load i18n %}
-
 {% if has_suspension_perm %}
-<button
-  hx-post="{{ revoke_url }}"
-  hx-vals='{"next": "{{ request.path }}"}'
-  class="button button-sm primary-light">
-  {% translate "Revoke" %}
-</button>
+  <button hx-post="{{ revoke_url }}"
+          hx-vals='{"next": "{{ request.path }}"}'
+          class="button button-sm primary-light">{% translate "Revoke" %}</button>
 {% endif %}

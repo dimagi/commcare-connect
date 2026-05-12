@@ -1,88 +1,69 @@
 {% extends "base.html" %}
 {% load static %}
 {% block css %}
-{{ block.super }}
-<link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 {% endblock css %}
 {% block javascript %}
-{{ block.super }}
-<script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
 {% endblock javascript %}
 {% block content %}
-{% load crispy_forms_tags %}
-
-{% include 'components/breadcrumbs.html' with path=path %}
-
-<div id="loadingIndicator" class="loading-indicator htmx-indicator">
+  {% load crispy_forms_tags %}
+  {% include 'components/breadcrumbs.html' with path=path %}
+  <div id="loadingIndicator" class="loading-indicator htmx-indicator">
     <div class="loading-content">
-    <div class="loading-spinner"></div>
-    <p class="loading-text">Loading...</p>
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Loading...</p>
     </div>
-</div>
-
-<div class="flex flex-col w-full gap-2" x-data="connectWorkers()">
+  </div>
+  <div class="flex flex-col w-full gap-2" x-data="connectWorkers()">
     <!-- Tabs -->
     <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
-    <ul id="tabs" class="tabs">
-      {% for tab in tabs %}
-      <li
-        id="{{ tab.key }}-tab"
-        hx-get="{{ tab.url }}"
-        hx-indicator="#loadingIndicator"
-        hx-push-url="true"
-        {% if tab.key == active_tab %}
-        hx-trigger="load"
-        {% endif %}
-        class="tab-item {% if tab.key == active_tab %}active{% endif %}"
-      >
-        <span>{{ tab.label }}</span>
-        {% if tab.key == active_tab %}
-        <div></div>
-        {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    <div class="flex justify-end gap-2">
+      <ul id="tabs" class="tabs">
+        {% for tab in tabs %}
+          <li id="{{ tab.key }}-tab"
+              hx-get="{{ tab.url }}"
+              hx-indicator="#loadingIndicator"
+              hx-push-url="true"
+              {% if tab.key == active_tab %}hx-trigger="load"{% endif %}
+              class="tab-item {% if tab.key == active_tab %}active{% endif %}">
+            <span>{{ tab.label }}</span>
+            {% if tab.key == active_tab %}<div></div>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <div class="flex justify-end gap-2">
         <!-- Tab Options -->
         {% if export_task_id %}
-        <div class="flex">
-            <div
-            hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
-            hx-target="this"
-            hx-trigger="load"
-            hx-swap="outerHTML"
-            class="flex items-center justify-center"
-            >
-            <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-            <span class="sr-only">Loading...</span>
+          <div class="flex">
+            <div hx-get="{% url 'opportunity:export_status' request.org.slug export_task_id %}"
+                 hx-target="this"
+                 hx-trigger="load"
+                 hx-swap="outerHTML"
+                 class="flex items-center justify-center">
+              <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+              <span class="sr-only">Loading...</span>
             </div>
-        </div>
+          </div>
         {% endif %}
-        <div id="tab-options" class="flex gap-x-4 items-center">
-        </div>
+        <div id="tab-options" class="flex gap-x-4 items-center"></div>
+      </div>
     </div>
-    </div>
-
     <!-- Tab Content Container -->
-    <div
-        id="table"
-        class="w-full"
-    ></div>
-</div>
+    <div id="table" class="w-full"></div>
+  </div>
 {% endblock content %}
-
 {% block inline_javascript %}
-
-{% if filter_usage_data %}
-<script>
+  {% if filter_usage_data %}
+    <script>
   window.addEventListener('DOMContentLoaded', () => {
     const data = {{ filter_usage_data|safe }};
     window.gtmSendEvent('filters_applied', data);
   });
-</script>
-{% endif %}
-
-<script>
+    </script>
+  {% endif %}
+  <script>
   document.addEventListener('alpine:init', () => {
     Alpine.data('connectWorkers', () => ({
       showWorkerExportModal: false,
@@ -107,5 +88,5 @@
       }
     }));
   });
-</script>
+  </script>
 {% endblock inline_javascript %}

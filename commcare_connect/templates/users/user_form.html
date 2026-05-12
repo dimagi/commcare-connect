@@ -1,11 +1,10 @@
 {% load crispy_forms_tags %}
-
 {% block content %}
-    <form method="post" action="{% url 'users:update' %}">
-      {% csrf_token %}
-      {{ form|crispy }}
-      <div class="mt-4 text-right">
-          <button type="submit" class="button button-md primary-dark">Update</button>
-      </div>
-    </form>
+  <form method="post" action="{% url 'users:update' %}">
+    {% csrf_token %}
+    {{ form|crispy }}
+    <div class="mt-4 text-right">
+      <button type="submit" class="button button-md primary-dark">Update</button>
+    </div>
+  </form>
 {% endblock %}
