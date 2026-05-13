@@ -54,6 +54,12 @@ if env("SECONDARY_DATABASE_URL", default=None):
     DATABASES[SECONDARY_DB_ALIAS]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
     DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
 
+# Superuser credentials for the secondary (subscriber) DB. Required to run
+# ALTER SUBSCRIPTION ... REFRESH PUBLICATION when the replicated table list
+# is changed via Django admin.
+SECONDARY_DB_SUPERUSER_NAME = env("SECONDARY_DB_SUPERUSER_NAME", default=None)
+SECONDARY_DB_SUPERUSER_PASSWORD = env("SECONDARY_DB_SUPERUSER_PASSWORD", default=None)
+
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
