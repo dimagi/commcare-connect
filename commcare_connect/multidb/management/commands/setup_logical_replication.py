@@ -4,6 +4,7 @@ import psycopg2
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
+from psycopg2 import sql
 
 from commcare_connect.multidb.constants import PUBLICATION_NAME, SUBSCRIPTION_NAME
 from commcare_connect.multidb.services import get_replicated_table_names
@@ -48,23 +49,22 @@ class Command(BaseCommand):
         with default_conn.cursor() as cursor:
             # Refresh SELECT permissions to replication user
             cursor.execute(
-                psycopg2.sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {};").format(
-                    psycopg2.sql.Identifier(replication_user)
-                )
+                sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {};").format(sql.Identifier(replication_user))
             )
             self.stdout.write("Creating publication in the default database...")
             # Check if publication exists
             cursor.execute("SELECT pubname FROM pg_publication WHERE pubname = %s;", [PUBLICATION_NAME])
             publication_exists = cursor.fetchone()
 
-            tables = ", ".join([f'"{table}"' for table in table_list])
+            publication_ident = sql.Identifier(PUBLICATION_NAME)
+            tables_sql = sql.SQL(", ").join(sql.Identifier(table) for table in table_list)
             if publication_exists:
                 self.stdout.write(f"Publication '{PUBLICATION_NAME}' already exists, refreshing it.")
-                cursor.execute(f"ALTER PUBLICATION {PUBLICATION_NAME} SET TABLE {tables};")
+                cursor.execute(sql.SQL("ALTER PUBLICATION {} SET TABLE {};").format(publication_ident, tables_sql))
                 self.stdout.write(self.style.SUCCESS(f"Publication '{PUBLICATION_NAME}' altered successfully."))
             else:
                 self.stdout.write(f"Creating new publication '{PUBLICATION_NAME}'.")
-                cursor.execute(f"CREATE PUBLICATION {PUBLICATION_NAME} FOR TABLE {tables};")
+                cursor.execute(sql.SQL("CREATE PUBLICATION {} FOR TABLE {};").format(publication_ident, tables_sql))
                 self.stdout.write(self.style.SUCCESS(f"Publication '{PUBLICATION_NAME}' created successfully."))
 
         self.stdout.write("Setting up subscription in the secondary database...")
