@@ -5,6 +5,7 @@ from django.apps import apps
 from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.utils import timezone
+from psycopg2 import sql
 
 from commcare_connect.multidb.constants import PUBLICATION_NAME, SUBSCRIPTION_NAME
 from commcare_connect.multidb.models import SupersetReplicatedTable
@@ -51,8 +52,10 @@ def alter_publication_on_primary(table_names):
                     f"Publication '{PUBLICATION_NAME}' does not exist on the primary. "
                     f"Run `manage.py setup_logical_replication` to create it."
                 )
-            tables = ", ".join(f'"{t}"' for t in table_names)
-            cursor.execute(f"ALTER PUBLICATION {PUBLICATION_NAME} SET TABLE {tables};")
+            tables_sql = sql.SQL(", ").join(sql.Identifier(t) for t in table_names)
+            cursor.execute(
+                sql.SQL("ALTER PUBLICATION {} SET TABLE {};").format(sql.Identifier(PUBLICATION_NAME), tables_sql)
+            )
 
 
 def refresh_subscription_on_secondary(username=None, password=None):
@@ -91,7 +94,9 @@ def refresh_subscription_on_secondary(username=None, password=None):
                     f"Subscription '{SUBSCRIPTION_NAME}' does not exist on the secondary. "
                     f"Run `manage.py setup_logical_replication` to create it."
                 )
-            cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} REFRESH PUBLICATION;")
+            cursor.execute(
+                sql.SQL("ALTER SUBSCRIPTION {} REFRESH PUBLICATION;").format(sql.Identifier(SUBSCRIPTION_NAME))
+            )
     except psycopg2.Error as e:
         raise ReplicationSyncError(f"ALTER SUBSCRIPTION REFRESH PUBLICATION failed: {e}")
     finally:

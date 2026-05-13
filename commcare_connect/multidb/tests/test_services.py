@@ -78,7 +78,7 @@ class TestAlterPublicationOnPrimary:
 
         alter_publication_on_primary(["opportunity_opportunity", "users_user"])
 
-        executed_sql = [call.args[0] for call in mock_cursor.execute.call_args_list]
+        executed_sql = [str(call.args[0]) for call in mock_cursor.execute.call_args_list]
         assert any("ALTER PUBLICATION" in sql and "opportunity_opportunity" in sql for sql in executed_sql)
 
 
