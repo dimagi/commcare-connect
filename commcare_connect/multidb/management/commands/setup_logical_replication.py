@@ -81,6 +81,7 @@ class Command(BaseCommand):
                 dbname=secondary_db_settings["NAME"],
                 user=secondary_user,
                 password=secondary_password,
+                connect_timeout=10,
             )
             secondary_conn.autocommit = True
         except Exception as e:

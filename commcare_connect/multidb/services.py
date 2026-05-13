@@ -77,6 +77,7 @@ def refresh_subscription_on_secondary(username=None, password=None):
             dbname=secondary_settings["NAME"],
             user=username,
             password=password,
+            connect_timeout=10,
         )
         conn.autocommit = True
     except psycopg2.Error as e:
