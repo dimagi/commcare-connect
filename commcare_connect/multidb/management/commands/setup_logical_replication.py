@@ -5,23 +5,15 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from commcare_connect.multidb.constants import REPLICATION_ALLOWED_MODELS
-
-PUBLICATION_NAME = "tables_for_superset_pub"
-SUBSCRIPTION_NAME = "tables_for_superset_sub"
+from commcare_connect.multidb.constants import PUBLICATION_NAME, SUBSCRIPTION_NAME
+from commcare_connect.multidb.services import get_replicated_table_names
 
 
 class Command(BaseCommand):
     help = "Create a publication for the default database and a subscription for the secondary database alias."
 
     def get_table_list(self):
-        table_list = []
-        for model in REPLICATION_ALLOWED_MODELS:
-            try:
-                table_list.append(model._meta.db_table)
-            except Exception as e:
-                raise CommandError(f"Error resolving model {model}: {e}")
-        return table_list
+        return get_replicated_table_names()
 
     def handle(self, *args, **options):
         secondary_db_alias = settings.SECONDARY_DB_ALIAS

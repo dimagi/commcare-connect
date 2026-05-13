@@ -5,9 +5,8 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from commcare_connect.multidb.constants import REPLICATION_ALLOWED_MODELS
-
-from .setup_logical_replication import PUBLICATION_NAME, SUBSCRIPTION_NAME
+from commcare_connect.multidb.constants import PUBLICATION_NAME, SUBSCRIPTION_NAME
+from commcare_connect.multidb.services import get_replicated_table_names
 
 
 class Command(BaseCommand):
@@ -123,8 +122,7 @@ class Command(BaseCommand):
         self.stdout.write(f"{'Table':<30}{'Primary DB Count':<20}{'Secondary DB Count'}")
         self.stdout.write("-" * 70)
 
-        for model in REPLICATION_ALLOWED_MODELS:
-            table_name = model._meta.db_table
+        for table_name in get_replicated_table_names():
             with default_conn.cursor() as cursor:
                 cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
                 primary_count = cursor.fetchone()[0]
