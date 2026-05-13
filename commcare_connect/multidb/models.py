@@ -2,8 +2,10 @@ from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from commcare_connect.utils.db import BaseModel
 
-class SupersetReplicatedTable(models.Model):
+
+class SupersetReplicatedTable(BaseModel):
     """A Django model whose table is included in the Superset logical replication set.
 
     Saving or deleting a row triggers an ALTER PUBLICATION on the primary and
