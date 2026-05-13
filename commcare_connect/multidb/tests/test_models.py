@@ -1,5 +1,6 @@
 import pytest
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 
 from commcare_connect.multidb.models import SupersetReplicatedTable
 
@@ -34,5 +35,5 @@ class TestSupersetReplicatedTable:
 
     def test_model_label_must_be_unique(self):
         SupersetReplicatedTable.objects.create(model_label="opportunity.opportunity")
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             SupersetReplicatedTable.objects.create(model_label="opportunity.opportunity")
