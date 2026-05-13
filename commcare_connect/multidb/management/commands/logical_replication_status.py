@@ -4,6 +4,7 @@ import psycopg2
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
+from psycopg2 import sql
 
 from commcare_connect.multidb.constants import PUBLICATION_NAME, SUBSCRIPTION_NAME
 from commcare_connect.multidb.services import get_replicated_table_names
@@ -124,12 +125,13 @@ class Command(BaseCommand):
         self.stdout.write("-" * 70)
 
         for table_name in get_replicated_table_names():
+            count_query = sql.SQL("SELECT COUNT(*) FROM {};").format(sql.Identifier(table_name))
             with default_conn.cursor() as cursor:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
+                cursor.execute(count_query)
                 primary_count = cursor.fetchone()[0]
 
             with secondary_conn.cursor() as cursor:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
+                cursor.execute(count_query)
                 secondary_count = cursor.fetchone()[0]
 
             self.stdout.write(f"{table_name:<30}{primary_count:<20}{secondary_count}")
