@@ -157,6 +157,7 @@ class OpportunityListFilterSet(django_filters.FilterSet):
             else:
                 del self.filters["program"]
 
+        self.form.helper.form_tag = False
         self.form.helper.layout = Layout(*modal_fields)
 
 

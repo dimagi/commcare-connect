@@ -446,7 +446,7 @@ class OpportunityData:
         base_filter = Q(organization=organization)
         if program_manager:
             base_filter |= Q(managedopportunity__program__organization=organization)
-        search = filters.get("search", "")
+        search = filters.get("search", "").strip()
         if search:
             base_filter &= Q(name__icontains=search)
         is_test = filters.get("is_test", None)

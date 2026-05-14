@@ -34,9 +34,11 @@
       <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
     <div class="flex gap-x-6 items-center" x-cloak x-data="{showFilterModal: false}">
       <div class="simple-input w-64">
+        <label for="id_search" class="sr-only">{% translate "Search by Opportunity name" %}</label>
         <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
         <input
           type="text"
+          id="id_search"
           name="search"
           value="{{ filter_form.search.value|default:'' }}"
           placeholder="{% translate 'Search by Opportunity name' %}"

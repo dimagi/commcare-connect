@@ -529,6 +529,7 @@ def test_user_visit_review(
         ({"program": ["test-program-2"]}, 1),
         ({"program": ["test-program-1", "test-program-2"]}, 2),
         ({"search": "opportunity 2"}, 1),
+        ({"search": "OpPoRtUnItY 2"}, 1),
         ({"search": "test opportunity"}, 3),
         ({"search": "nonexistent"}, 0),
     ],
