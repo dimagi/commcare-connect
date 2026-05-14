@@ -321,6 +321,7 @@
   x-data="{showRejectModal: false, showApproveModal: false}"
   id="visit-actions"
   hx-swap-oob="true">
+{% if not user_visit.opportunity.automatic_visit_verification %}
 {% if request.is_opportunity_pm %}
   {% if user_visit.review_created_on %}
   <div class="flex gap-4">
@@ -427,6 +428,7 @@
     </div>
   </div>
   {% endif %}
+{% endif %}
 {% endif %}
 </div>
 

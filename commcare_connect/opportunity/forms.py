@@ -865,6 +865,12 @@ class VisitExportForm(forms.Form):
             self.fields["status"].choices = status_choices
 
             visit_count_url = f"{visit_count_url}?{urlencode({'review_export': 'true'})}"
+        elif self.opportunity.automatic_visit_verification:
+            self.fields["status"].choices = [
+                (value, label)
+                for value, label in self.fields["status"].choices
+                if value != VisitValidationStatus.pending.value
+            ]
 
         hx_attrs = {
             "hx-get": visit_count_url,
@@ -1372,36 +1378,32 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
         }
         labels = {
-            "duplicate": "Check Duplicates",
-            "gps": "Check GPS",
-            "form_submission_start": "Start Time",
-            "form_submission_end": "End Time",
-            "location": "Location Distance",
-            "catchment_areas": "Catchment Area",
+            "duplicate": _("Check Duplicates"),
+            "gps": _("Check GPS"),
+            "form_submission_start": _("Start Time"),
+            "form_submission_end": _("End Time"),
+            "location": _("Location Distance"),
+            "catchment_areas": _("Catchment Area"),
         }
         help_texts = {
-            "location": "Minimum distance between form locations (metres)",
-            "duplicate": "Flag duplicate form submissions for an entity.",
-            "gps": "Flag forms with no location information.",
-            "catchment_areas": "Flag forms outside a users's assigned catchment area",
+            "location": _("Minimum distance between form locations (metres)"),
+            "duplicate": _("Flag duplicate form submissions for an entity."),
+            "gps": _("Flag forms with no location information."),
+            "catchment_areas": _("Flag forms outside a users's assigned catchment area"),
         }
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
 
-        self.helper.layout = Layout(
-            Row(
-                Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
-                Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
-                Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
-                css_class="grid grid-cols-3 gap-2",
-            ),
-            Row(Field("location")),
+        self.auto_verify = self.opportunity.automatic_visit_verification
+
+        form_submission_hour_fields = (
             Fieldset(
-                "Form Submission Hours",
+                _("Form Submission Hours"),
                 Row(
                     Field("form_submission_start"),
                     Field("form_submission_end"),
@@ -1410,38 +1412,85 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             ),
         )
 
-        self.fields["duplicate"].required = False
-        self.fields["gps"].required = False
-        self.fields["catchment_areas"].required = False
+        if self.auto_verify:
+            for hidden in ("duplicate", "gps", "catchment_areas", "location"):
+                self.fields.pop(hidden, None)
+            self.helper.layout = Layout(form_submission_hour_fields)
+        else:
+            self.helper.layout = Layout(
+                Row(
+                    Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
+                    Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
+                    Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
+                    css_class="grid grid-cols-3 gap-2",
+                ),
+                Row(Field("location")),
+                form_submission_hour_fields,
+            )
+            self.fields["duplicate"].required = False
+            self.fields["gps"].required = False
+            self.fields["catchment_areas"].required = False
         if self.instance:
             self.fields["form_submission_start"].initial = self.instance.form_submission_start
             self.fields["form_submission_end"].initial = self.instance.form_submission_end
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.auto_verify:
+            instance.duplicate = False
+            instance.gps = False
+            instance.catchment_areas = False
+            instance.location = 0
+        if commit:
+            instance.save()
+        return instance
 
 
 class DeliverUnitFlagsForm(forms.ModelForm):
     class Meta:
         model = DeliverUnitFlagRules
         fields = ("deliver_unit", "check_attachments", "duration")
-        help_texts = {"duration": "Minimum time to complete form (minutes)"}
-        labels = {"check_attachments": "Require Attachments"}
+        help_texts = {"duration": _("Minimum time to complete form (minutes)")}
+        labels = {"check_attachments": _("Require Attachments")}
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
+        self.auto_verify = bool(self.opportunity and self.opportunity.automatic_visit_verification)
+        if self.auto_verify:
+            self.fields.pop("check_attachments", None)
+
         self.helper = FormHelper(self)
         self.helper.form_tag = False
-        self.helper.layout = Layout(
-            Row(
-                Column(Field("deliver_unit")),
-                Column(Field("check_attachments", css_class=CHECKBOX_CLASS)),
-                Column(Field("duration")),
-                css_class="grid grid-cols-3 gap-2",
-            ),
-        )
+        if self.auto_verify:
+            self.helper.layout = Layout(
+                Row(
+                    Column(Field("deliver_unit")),
+                    Column(Field("duration")),
+                    css_class="grid grid-cols-2 gap-2",
+                ),
+            )
+        else:
+            self.helper.layout = Layout(
+                Row(
+                    Column(Field("deliver_unit")),
+                    Column(Field("check_attachments", css_class=CHECKBOX_CLASS)),
+                    Column(Field("duration")),
+                    css_class="grid grid-cols-3 gap-2",
+                ),
+            )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
             queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
         )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.auto_verify:
+            instance.check_attachments = False
+        if commit:
+            instance.save()
+        return instance
 
     def clean_deliver_unit(self):
         deliver_unit = self.cleaned_data["deliver_unit"]

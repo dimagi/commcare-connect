@@ -5,17 +5,21 @@
 {% block tab_options %}
   {% include "components/filter_modal.html" with form_id="filterForm" hx_indicator="#loadingIndicator" %}
   <div x-cloak x-data="{showVisitImportModal: false, showVisitExportModal: false}">
+    {% if not opportunity.automatic_visit_verification %}
     <button type="button" @click="showVisitImportModal = true" class="button-icon shadow-sm"
             {% if request.org_membership.is_viewer %} disabled {% endif %}>
       <i class="fa-solid fa-upload text-brand-deep-purple"></i>
     </button>
+    {% endif %}
     <button type="button" class="button-icon shadow-sm" @click="showVisitExportModal = true"
             {% if request.org_membership.is_viewer %} disabled {% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% block modals %}
+        {% if not opportunity.automatic_visit_verification %}
         {% url 'opportunity:visit_import' request.org.slug opportunity.opportunity_id as visit_import_url %}
         {% include "components/worker_page/import_modal.html" with modal_name="showVisitImportModal" modal_title=export_user_visit_title import_url=import_export_delivery_urls.import_url input_name="visits" input_help_text=import_visit_helper_text %}
+        {% endif %}
 
         <!--User visit export modal-->
         <div x-show="showVisitExportModal" class="modal-backdrop">
@@ -38,10 +42,10 @@
                                class="text-primary">
                         <span class="ml-2">User Visits Sheet</span>
                       </label>
-                      {% if opportunity.managed %}
+                      {% if opportunity.managed and not opportunity.automatic_visit_verification %}
                         <label class="inline-flex items-center mr-4">
                           <input type="radio" name="form_type" value="pm_review" x-model="selectedForm"  @change="htmx.process($root)"
-                                 class="text-primary" checked>
+                                 class="text-primary">
                           <span class="ml-2">PM Review Sheet</span>
                         </label>
                       {% endif %}

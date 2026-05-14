@@ -310,6 +310,7 @@ def program_manager_home(request, org):
             opportunity__managed=True,
             opportunity__managedopportunity__program__in=programs_qs,
         )
+        .exclude(opportunity__automatic_visit_verification=True)
         .values(
             "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
         )
@@ -382,6 +383,7 @@ def network_manager_home(request, org):
             opportunity__managed=True,
             opportunity__organization=org,
         )
+        .exclude(opportunity__automatic_visit_verification=True)
         .values(
             "opportunity__id", "opportunity__opportunity_id", "opportunity__name", "opportunity__organization__name"
         )
