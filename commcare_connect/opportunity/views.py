@@ -273,6 +273,8 @@ class OpportunityList(OrganizationUserMixin, FilterMixin, SingleTableView):
     def get_context_data(self, *args, **kwargs):
         context = super().get_context_data(*args, **kwargs)
         context.update(self.get_filter_context())
+        filter_values = {k: v for k, v in self.get_filter_values().items() if k != "search"}
+        context["filters_applied_count"] = len([v for v in filter_values.values() if v not in (None, "", [])])
         return context
 
     def get_table_class(self):
