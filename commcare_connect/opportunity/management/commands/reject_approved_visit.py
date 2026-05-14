@@ -44,11 +44,9 @@ Example
         --opportunity-id <opp-uuid> \\
         --visit-id <visit-uuid> \\
         --reason "Per CCCT-XXXX: stuck in agree state with null review_created_on" \\
-        --actor-email ops@dimagi.com \\
         --dry-run
 """
 
-import pghistory
 from django.core.management import BaseCommand, CommandError
 from django.db import transaction
 
@@ -68,7 +66,6 @@ class Command(BaseCommand):
         parser.add_argument("--opportunity-id", required=True, help="Opportunity UUID (opportunity_id field).")
         parser.add_argument("--visit-id", required=True, help="UserVisit UUID (user_visit_id field).")
         parser.add_argument("--reason", required=True, help="Rejection reason stored on the visit.")
-        parser.add_argument("--actor-email", required=True, help="Email recorded in the pghistory audit trail.")
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -89,10 +86,9 @@ class Command(BaseCommand):
             return
 
         with transaction.atomic():
-            with pghistory.context(username=options["actor_email"], user_email=options["actor_email"]):
-                visit.status = VisitValidationStatus.rejected
-                visit.reason = options["reason"]
-                visit.save(update_fields=["status", "reason", "status_modified_date"])
+            visit.status = VisitValidationStatus.rejected
+            visit.reason = options["reason"]
+            visit.save(update_fields=["status", "reason", "status_modified_date"])
             update_payment_accrued_for_user(visit.opportunity_access, incremental=False)
         self.stdout.write(
             self.style.SUCCESS(

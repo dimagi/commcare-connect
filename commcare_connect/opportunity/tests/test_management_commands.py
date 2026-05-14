@@ -105,8 +105,6 @@ class TestRejectApprovedVisit:
             str(visit.user_visit_id),
             "--reason",
             "Manual ops fix per CCCT-XXXX",
-            "--actor-email",
-            "ops@dimagi.com",
         ]
         for k, v in overrides.items():
             args.extend([f"--{k.replace('_', '-')}", v])
@@ -218,8 +216,6 @@ class TestRejectApprovedVisit:
             str(visit.user_visit_id),
             "--reason",
             "dry-run preview",
-            "--actor-email",
-            "ops@dimagi.com",
             "--dry-run",
         )
 
