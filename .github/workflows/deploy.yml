@@ -7,7 +7,7 @@ env:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 on:
   #  workflow_run:
@@ -112,6 +112,19 @@ jobs:
           set_commits: manual
           repo: dimagi/commcare-connect
           commit: ${{ github.sha }}
+
+      - name: Set release tag
+        if: ${{ success() && inputs.environment == 'production' }}
+        run: echo "RELEASE_TAG=$(date -u +'%Y-%m-%d_%H-%M-%S')" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        if: ${{ success() && inputs.environment == 'production' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
 
       - name: Notify Deploy End
         uses: slackapi/slack-github-action@v1.24.0
