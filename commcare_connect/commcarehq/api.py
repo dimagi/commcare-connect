@@ -14,9 +14,13 @@ from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 HQ_CASE_BULK_CHUNK_SIZE = 100
 
 
-class GetCaseDataAPIFilters(TypedDict):
-    case_type: str
-    case_name: str
+GetCaseDataAPIFilters = TypedDict(
+    "GetCaseDataAPIFilters",
+    {
+        "case_type": str,
+        "properties.username": str,
+    },
+)
 
 
 @dataclasses.dataclass
@@ -214,7 +218,7 @@ def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
         domain,
         filters={
             "case_type": "commcare-user",
-            "case_name": user.username.lower(),
+            "properties.username": user.username.lower(),
         },
     )
     usercase = next(iter(case_data), None)
