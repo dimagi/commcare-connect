@@ -56,8 +56,6 @@ TASK_XML_TEMPLATE = (
     """<data>
 <task xmlns="%s" id="{id}">
     <task_slug>{task_slug}</task_slug>
-    <name>{name}</name>
-    <description>{description}</description>
 </task>
 </data>
 """
@@ -131,14 +129,10 @@ class LearnModuleJsonFactory(factory.StubFactory):
 class TaskJsonFactory(factory.StubFactory):
     id = factory.Faker("uuid4")
     task_slug = factory.Faker("slug")
-    name = factory.Faker("name")
-    description = factory.Faker("text")
 
     @factory.lazy_attribute
     def json(self):
-        xml = TASK_XML_TEMPLATE.format(
-            id=self.id, task_slug=self.task_slug, name=self.name, description=self.description
-        )
+        xml = TASK_XML_TEMPLATE.format(id=self.id, task_slug=self.task_slug)
         _, task = xml2json(xml)
         return task
 
