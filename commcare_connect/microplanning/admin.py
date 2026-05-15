@@ -14,4 +14,6 @@ class WorkAreaAdmin(admin.ModelAdmin):
 
     @admin.display(description="Username")
     def get_username(self, obj):
-        return obj.opportunity_access.user.username
+        if obj.opportunity_access:
+            return obj.opportunity_access.user.username
+        return "-"
