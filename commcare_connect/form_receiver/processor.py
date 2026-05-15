@@ -152,7 +152,7 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
         updated_tasks = False
 
         for task_data in blocks:
-            task_slug = task_data.get("@id")
+            task_slug = task_data.get("task_slug")
             if not task_slug:
                 continue
 
