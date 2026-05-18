@@ -250,7 +250,14 @@ class LearnModule(models.Model):
         on_delete=models.CASCADE,
         related_name="learn_modules",
     )
-    slug = models.SlugField()
+    # Source: Nova's `compile_app` emits `<learn:module id="module_<idx>_<slugified-name>">`
+    # which is read back here by `extract_modules`. The default `SlugField()`
+    # max_length=50 traps any module whose `connect.learn_module.name` slugifies
+    # past ~40 chars (after the `module_<idx>_` prefix). `sync_learn_modules_and_deliver_units`
+    # then raises uncaught Postgres `DataError: value too long for type character
+    # varying(50)` which surfaces as opaque HTTP 500 from `/api/programs/<id>/opportunities/`.
+    # 255 mirrors `program/models.py:Program.slug` and gives ample headroom.
+    slug = models.SlugField(max_length=255)
     name = models.CharField(max_length=255)
     description = models.TextField()
     time_estimate = models.IntegerField(help_text="Estimated hours to complete the module")
@@ -263,7 +270,10 @@ class TaskType(models.Model):
     task_type_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, null=True, blank=True)
-    slug = models.SlugField()
+    # Same CCZ-extract pattern as LearnModule.slug — Nova's `compile_app` emits
+    # `<learn:task id="...">` which `extract_task_unit` reads back. Bumped to
+    # match LearnModule.slug for the same column-overflow class.
+    slug = models.SlugField(max_length=255)
     unit_name = models.CharField(max_length=255, null=True, blank=True)
     name = models.CharField(max_length=255)
     description = models.TextField()
