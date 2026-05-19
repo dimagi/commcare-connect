@@ -178,6 +178,9 @@ def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> N
 
     All entries in `updates` must belong to the same opportunity. The domain, API key, and
     HQ server are derived from the first entry and applied to the entire batch.
+
+    The value for each key is a case update payload. In practice callers only set
+    ``"properties"``, e.g. ``{"properties": {"some_property": "value"}}``.
     """
     if not updates:
         return
