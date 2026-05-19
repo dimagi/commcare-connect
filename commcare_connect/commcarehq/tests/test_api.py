@@ -12,7 +12,7 @@ from commcare_connect.commcarehq.api import (
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
 from commcare_connect.microplanning.const import WORK_AREA_CASE_TYPE
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
-from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityAccessFactory
+from commcare_connect.opportunity.tests.factories import HQApiKeyFactory, OpportunityAccessFactory, OpportunityFactory
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
@@ -194,6 +194,42 @@ class TestBulkCreateOrUpdateCasesByWorkAreas:
         opportunity, _ = self._make_opportunity_with_work_area()
 
         assert bulk_create_or_update_cases_by_work_areas([], opportunity) == []
+
+    def test_matches_cases_to_work_areas_by_external_id(self):
+        # Regression: HQ may return cases in a different order than they were
+        # sent. The function must match each returned case back to its
+        # WorkArea via external_id, not by list position.
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        opportunity = OpportunityFactory(api_key=api_key)
+        work_areas = [
+            WorkAreaFactory(
+                opportunity=opportunity,
+                opportunity_access=OpportunityAccessFactory(opportunity=opportunity),
+                case_id=None,
+            )
+            for _ in range(3)
+        ]
+
+        # Build HQ response in reversed order to prove ordering is not assumed.
+        expected_case_ids = {str(wa.pk): str(uuid.uuid4()) for wa in work_areas}
+        returned_cases = [
+            make_commcare_case(case_id=expected_case_ids[str(wa.pk)], external_id=str(wa.pk))
+            for wa in reversed(work_areas)
+        ]
+        user_case = make_commcare_case(case_id=str(uuid.uuid4()))
+
+        with (
+            patch("commcare_connect.commcarehq.api.get_usercase", return_value=user_case),
+            patch(
+                "commcare_connect.commcarehq.api.bulk_create_or_update_cases",
+                return_value=returned_cases,
+            ),
+        ):
+            bulk_create_or_update_cases_by_work_areas(work_areas, opportunity)
+
+        for wa in work_areas:
+            wa.refresh_from_db()
+            assert str(wa.case_id) == expected_case_ids[str(wa.pk)]
 
 
 @pytest.mark.django_db
