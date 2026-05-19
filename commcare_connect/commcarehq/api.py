@@ -183,8 +183,11 @@ def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> N
         return
 
     first_access = next(iter(updates))
-    domain = first_access.opportunity.deliver_app.cc_domain
-    api_key = first_access.opportunity.api_key
+    opportunity = first_access.opportunity
+    if any(access.opportunity_id != opportunity.id for access in updates.keys()):
+        raise ValueError("All entries in `updates` must belong to the same opportunity.")
+    domain = opportunity.deliver_app.cc_domain
+    api_key = opportunity.api_key
     hq_server = api_key.hq_server
 
     users = [access.user for access in updates]
