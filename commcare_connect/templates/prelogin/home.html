@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 {% load static %}
-{# Imported from dimagi-internal/connect-prelogin. Three import-time edits #}
-{# (search "import-time edit"): login link template var, asset paths wrapped #}
-{# in static template tags, and referrerpolicy on YouTube iframes (Django #}
-{# sends Referrer-Policy: same-origin by default, which strips the Referer #}
-{# on cross-origin requests; YouTube needs at least the origin or its player #}
-{# surfaces error 153). #}
+{# Imported from dimagi-internal/connect-prelogin via tools/export-to-django.py. #}
+{# Two import-time edits: asset paths wrapped in {% static 'prelogin/…' %}, and #}
+{# the login link href is replaced with {{ app_login_url }} (target/rel stripped). #}
+{# Do not edit by hand — re-run the script. #}
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connect by Dimagi, Mockup</title>
+<title>Connect by Dimagi</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -51,7 +49,7 @@
       <a href="#/insights" data-route="/insights">Insights</a>
       <a href="#/join" data-route="/join">Connect Network</a>
       <a href="https://connect.dimagi.com/accounts/signup/" class="cta cta-ghost" target="_blank" rel="noopener">Sign Up</a>
-      <a href="{{ app_login_url }}" class="cta">Login</a>{# import-time edit: login href templated #}
+      <a href="{{ app_login_url }}" class="cta">Login</a>
     </nav>
     <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
       <span class="nav-toggle-bar"></span>
@@ -451,7 +449,7 @@
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
             loading="lazy"
-            referrerpolicy="strict-origin-when-cross-origin">{# import-time edit: see provenance comment at top of file #}
+            referrerpolicy="strict-origin-when-cross-origin">
           </iframe>
         </div>
       </div>
@@ -1457,7 +1455,7 @@
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen
                 loading="lazy"
-            referrerpolicy="strict-origin-when-cross-origin">{# import-time edit: see provenance comment at top of file #}
+                referrerpolicy="strict-origin-when-cross-origin">
               </iframe>
             </div>
           </div>
