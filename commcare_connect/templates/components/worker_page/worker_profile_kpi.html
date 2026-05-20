@@ -6,7 +6,7 @@
       <div class="flex justify-between items-center">
         <a href="{% url 'opportunity:user_visits_list' request.org.slug opportunity.opportunity_id %}?user={{ opportunity_access.user.user_id }}" class="text-2xl hover:underline" x-data
           x-tooltip.raw="{% trans 'Includes all Deliver app forms submitted by this worker across all payment units including duplicates' %}">
-          {{ counts.total }}</a>
+          {{ counts.all }}</a>
         <div class="hidden lg:block">
           <i class="fa-solid fa-file-invoice text-xl"></i>
         </div>
