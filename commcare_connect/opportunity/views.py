@@ -65,6 +65,7 @@ from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
+from commcare_connect.opportunity.decorators import require_manual_visit_verification
 from commcare_connect.opportunity.exceptions import ListTooLongError
 from commcare_connect.opportunity.filters import (
     AssignedTaskFilterSet,
@@ -560,6 +561,7 @@ def export_user_visits(request, org_slug, opp_id):
 
 @org_member_required
 @opportunity_required
+@require_manual_visit_verification
 def review_visit_export(request, org_slug, opp_id):
     form = VisitExportForm(data=request.POST, opportunity=request.opportunity, org_slug=org_slug, review_export=True)
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
@@ -608,6 +610,7 @@ def download_export(request, org_slug, task_id):
 @org_member_required
 @opportunity_required
 @require_POST
+@require_manual_visit_verification
 def update_visit_status_import(request, org_slug=None, opp_id=None):
     file = request.FILES.get("visits")
     file_format = get_file_extension(file)
@@ -624,7 +627,10 @@ def update_visit_status_import(request, org_slug=None, opp_id=None):
     return redirect(redirect_url)
 
 
+@org_member_required
+@require_POST
 @opportunity_required
+@require_manual_visit_verification
 def review_visit_import(request, org_slug=None, opp_id=None):
     file = request.FILES.get("visits")
     redirect_url = reverse("opportunity:worker_deliver", args=(org_slug, opp_id))
@@ -1053,6 +1059,7 @@ def send_message_mobile_users(request, org_slug=None, opp_id=None):
 @org_member_required
 @require_POST
 @opportunity_required
+@require_manual_visit_verification
 def approve_visits(request, org_slug, opp_id):
     visit_ids = request.POST.getlist("visit_ids[]")
 
@@ -1100,6 +1107,7 @@ def approve_visits(request, org_slug, opp_id):
 @org_member_required
 @opportunity_required
 @require_POST
+@require_manual_visit_verification
 def reject_visits(request, org_slug=None, opp_id=None):
     visit_ids = request.POST.getlist("visit_ids[]")
     reason = request.POST.get("reason", "").strip()
@@ -1149,7 +1157,9 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
     if request.opportunity.managed and not request.is_opportunity_pm:
         return redirect("opportunity:detail", org_slug=org_slug, opp_id=opp_id)
     verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=request.opportunity).first()
-    form = OpportunityVerificationFlagsConfigForm(instance=verification_flags, data=request.POST or None)
+    form = OpportunityVerificationFlagsConfigForm(
+        instance=verification_flags, data=request.POST or None, opportunity=request.opportunity
+    )
     deliver_unit_count = DeliverUnit.objects.filter(app=request.opportunity.deliver_app).count()
     DeliverUnitFlagsFormset = modelformset_factory(
         DeliverUnitFlagRules, DeliverUnitFlagsForm, extra=deliver_unit_count, max_num=deliver_unit_count
@@ -1203,7 +1213,12 @@ def verification_flags_config(request, org_slug=None, opp_id=None):
             "title": request.opportunity.name,
             "url": reverse("opportunity:detail", args=(org_slug, request.opportunity.opportunity_id)),
         },
-        {"title": "Verification Flags Config", "url": request.path},
+        {
+            "title": _("Verification Rules Configuration")
+            if request.opportunity.automatic_visit_verification
+            else _("Verification Flags Configuration"),
+            "url": request.path,
+        },
     ]
     return render(
         request,
@@ -1460,6 +1475,7 @@ def opportunity_user_invite(request, org_slug=None, opp_id=None):
 
 @org_member_required
 @opportunity_required
+@require_manual_visit_verification
 def user_visit_review(request, org_slug, opp_id):
     if request.POST and request.is_opportunity_pm:
         review_status = request.POST.get("review_status").lower()
@@ -2268,7 +2284,7 @@ def get_user_visit_counts(opportunity, queryset):
         pending=Count("id", filter=Q(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])),
         rejected=Count("id", filter=Q(status=VisitValidationStatus.rejected)),
         flagged=Count("id", filter=Q(flagged=True)),
-        total=Count("*"),
+        all=Count("*"),
     )
     return user_visit_counts
 
@@ -2303,78 +2319,43 @@ class VisitVerificationTableView(WorkerVisitTableView):
         self.table = super().get_table(**kwargs)
         return self.table
 
-    def get_context_data(self, **kwargs):
+    def get_tab_display(self, **kwargs):
         user_visit_counts = get_user_visit_counts(self.opportunity, self.filter_queryset)
+        tabs_to_labels = {
+            "all": _("All"),
+            "approved": _("Approved"),
+            "rejected": _("Rejected"),
+            "pending": _("Pending NM Review"),
+            "pending_review": _("Pending PM Review"),
+            "agree": _("Agree") if self.request.is_opportunity_pm else _("Approved"),
+            "disagree": _("Disagree") if self.request.is_opportunity_pm else _("Revalidate"),
+        }
+        tabs_to_display = self.tabs
+        tabs = []
+        for tab in tabs_to_display:
+            tabs.append({"name": tab, "label": tabs_to_labels[tab], "count": user_visit_counts.get(tab, 0)})
+        return tabs
 
-        if self.request.is_opportunity_pm:
-            tabs = [
-                {
-                    "name": "pending_review",
-                    "label": "Pending PM Review",
-                    "count": user_visit_counts.get("pending_review", 0),
-                },
-                {
-                    "name": "disagree",
-                    "label": "Disagree",
-                    "count": user_visit_counts.get("disagree", 0),
-                },
-                {
-                    "name": "agree",
-                    "label": "Agree",
-                    "count": user_visit_counts.get("agree", 0),
-                },
-                {"name": "all", "label": "All", "count": user_visit_counts.get("total", 0)},
-            ]
-        else:
-            tabs = [
-                {
-                    "name": "pending",
-                    "label": "Pending NM Review",
-                    "count": user_visit_counts.get("pending", 0),
-                }
-            ]
-
-            if self.get_opportunity().managed:
-                dynamic_tabs = [
-                    {
-                        "name": "pending_review",
-                        "label": "Pending PM Review",
-                        "count": user_visit_counts.get("pending_review", 0),
-                    },
-                    {
-                        "name": "disagree",
-                        "label": "Revalidate",
-                        "count": user_visit_counts.get("disagree", 0),
-                    },
-                    {
-                        "name": "agree",
-                        "label": "Approved",
-                        "count": user_visit_counts.get("agree", 0),
-                    },
-                ]
+    @cached_property
+    def tabs(self):
+        opportunity = self.get_opportunity()
+        if opportunity.automatic_visit_verification:
+            if self.request.is_opportunity_pm:
+                return ["all"]
             else:
-                dynamic_tabs = [
-                    {
-                        "name": "approved",
-                        "label": "Approved",
-                        "count": user_visit_counts.get("approved", 0),
-                    },
-                ]
+                return ["approved", "rejected", "all"]
 
-            tabs.extend(dynamic_tabs)
-            tabs.extend(
-                [
-                    {
-                        "name": "rejected",
-                        "label": "Rejected",
-                        "count": user_visit_counts.get("rejected", 0),
-                    },
-                    {"name": "all", "label": "All", "count": user_visit_counts.get("total", 0)},
-                ]
-            )
+        if opportunity.managed:
+            if self.request.is_opportunity_pm:
+                return ["pending_review", "disagree", "agree", "all"]
+            else:
+                return ["pending", "pending_review", "disagree", "agree", "rejected", "all"]
 
+        return ["pending", "approved", "rejected", "all"]
+
+    def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["tabs"] = tabs
+        context["tabs"] = self.get_tab_display()
         persisted_filters = []
         for name, values in self.request.GET.lists():
             if name in {"page", "filter_status", "sort"}:
@@ -2390,7 +2371,9 @@ class VisitVerificationTableView(WorkerVisitTableView):
         self.exclude_columns = []
         self.filter_queryset = super().get_queryset()
 
-        self.filter_status = self.request.GET.get("filter_status")
+        requested_status = self.request.GET.get("filter_status")
+        allowed = set(self.tabs)
+        self.filter_status = requested_status if requested_status in allowed else None
         queryset = self.filter_queryset
         if self.filter_status == "pending":
             queryset = queryset.filter(status__in=[VisitValidationStatus.pending, VisitValidationStatus.duplicate])
@@ -2766,9 +2749,17 @@ class WorkerDeliverView(BaseWorkerListView, FilterMixin):
         context.update(self.get_filter_context())
         return context
 
+    def get_filter_kwargs(self):
+        kwargs = super().get_filter_kwargs()
+        kwargs["opportunity"] = self.get_opportunity()
+        return kwargs
+
     def get_table(self, opportunity, org_slug):
         data = get_annotated_opportunity_access_deliver_status(opportunity, self.get_filter_values())
-        table = WorkerDeliveryTable(data, org_slug=org_slug, opp_id=opportunity.opportunity_id)
+        table_kwargs = {"org_slug": org_slug, "opp_id": opportunity.opportunity_id}
+        if opportunity.automatic_visit_verification:
+            table_kwargs["exclude"] = ("pending",)
+        table = WorkerDeliveryTable(data, **table_kwargs)
         RequestConfig(self.request, paginate={"per_page": get_validated_page_size(self.request)}).configure(table)
         return table
 
