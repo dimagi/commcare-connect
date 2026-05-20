@@ -45,6 +45,7 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
     with httpx.Client(
         base_url=api_key.hq_server.url,
         headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+        timeout=300,
     ) as client:
         while url is not None:
             try:
@@ -137,7 +138,7 @@ def bulk_create_or_update_cases(
     url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
     headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
     cases = []
-    with httpx.Client(headers=headers) as client:
+    with httpx.Client(headers=headers, timeout=300) as client:
         for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
             chunk = [{**case, "create": create} for case in cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]]  # noqa: E203
             try:
@@ -159,7 +160,7 @@ def create_or_update_case(
     headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
 
     try:
-        with httpx.Client(base_url=base_url, headers=headers) as client:
+        with httpx.Client(base_url=base_url, headers=headers, timeout=300) as client:
             if case_id:
                 error_msg = f"Failed to update case data for {domain} with {case_id}."
                 response = client.put(f"{case_id}/", json=case_data)
