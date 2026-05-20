@@ -8,4 +8,4 @@ class AuditConfig(AppConfig):
     def ready(self):
         # Ensure calculation subclasses are registered at Django startup,
         # regardless of which code path first touches the registry.
-        from commcare_connect.audit import calculations  # noqa: F401
+        from commcare_connect.audit import calculations, chc_indicators  # noqa: F401
