@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.signals import m2m_changed
 from django.utils.translation import gettext_lazy
 from waffle.models import CACHE_EMPTY, AbstractUserFlag
 from waffle.utils import get_cache, get_setting, keyfmt
@@ -66,8 +67,28 @@ class Flag(AbstractUserFlag):
         user = getattr(request, "user", None)
         if not (user and user.is_authenticated):
             return False
-        active_flags_query = cls.active_flags_for_user(user, include_role_flags=True).filter(name=flag_name)
-        return active_flags_query.exists()
+        try:
+            flag = cls.objects.get(name=flag_name)
+        except cls.DoesNotExist:
+            return False
+
+        if flag.everyone:
+            return True
+        if flag.staff and user.is_staff:
+            return True
+        if flag.superusers and user.is_superuser:
+            return True
+        if flag.users.filter(pk=user.pk).exists():
+            return True
+
+        opportunity = getattr(request, "opportunity", None)
+        if opportunity and flag.is_active_for(opportunity):
+            return True
+        org = getattr(request, "org", None)
+        if org and flag.is_active_for(org):
+            return True
+
+        return False
 
     def is_active_for(self, obj: Organization | Opportunity | Program):
         if isinstance(obj, Organization):
@@ -106,3 +127,19 @@ class Flag(AbstractUserFlag):
 
         cache.add(cache_key, ids)
         return ids
+
+
+def _flush_flag_relation_cache(sender, instance, action, **kwargs):
+    from waffle.signals import flag_membership_changed
+
+    flag_membership_changed(sender, instance, action, **kwargs)
+
+
+# Ties the custom flag relationships to the m2m_changed signal
+# to ensure flag's cache is cleared after editing
+for _relation in ("organizations", "opportunities", "programs"):
+    m2m_changed.connect(
+        _flush_flag_relation_cache,
+        sender=getattr(Flag, _relation).through,
+        dispatch_uid=f"commcare_connect.flag.{_relation}.through",
+    )

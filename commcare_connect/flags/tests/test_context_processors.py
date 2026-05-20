@@ -76,3 +76,23 @@ class TestChatWidgetContext:
         assert context["chat_widget_enabled"] is True
         assert context["chatbot_id"] == "test-chatbot-id"
         assert context["chatbot_embed_key"] == "test-embed-key"
+
+    def test_flag_does_not_leak_across_orgs_for_multi_org_user(self, settings):
+        settings.CHATBOT_ID = "test-chatbot-id"
+        settings.CHATBOT_EMBED_KEY = "test-embed-key"
+
+        org_with_flag = OrganizationFactory()
+        org_without_flag = OrganizationFactory()
+
+        user = UserFactory()
+        MembershipFactory(user=user, organization=org_with_flag)
+        MembershipFactory(user=user, organization=org_without_flag)
+
+        flag = Flag.objects.create(name="open_chat_studio_widget")
+        flag.organizations.add(org_with_flag)
+
+        request = RequestFactory().get("/")
+        request.user = user
+        request.org = org_without_flag
+
+        assert chat_widget_context(request)["chat_widget_enabled"] is False
