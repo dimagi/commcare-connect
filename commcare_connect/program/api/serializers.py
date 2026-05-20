@@ -168,8 +168,15 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
                 {"end_date": _("End date must be within the program's start and end dates.")}
             )
 
+        # EXEMPLAR (issue #1171): only count active opps toward program-budget headroom so
+        # deactivated opps don't permanently consume budget. NOTE: managed opps are created
+        # with active=False (see ManagedOpportunityCreateSerializer.create), so the simple
+        # filter below introduces a TOCTOU at activation time — see PR description.
         other_budgets = (
-            ManagedOpportunity.objects.filter(program=program).aggregate(total=Sum("total_budget"))["total"] or 0
+            ManagedOpportunity.objects.filter(program=program, active=True).aggregate(total=Sum("total_budget"))[
+                "total"
+            ]
+            or 0
         )
         if other_budgets + data["total_budget"] > program.budget:
             raise serializers.ValidationError({"total_budget": _("Budget exceeds the program budget.")})
