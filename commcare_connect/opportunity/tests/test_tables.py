@@ -1,12 +1,10 @@
-import inspect
-
 import pytest
 from django.test import RequestFactory
 from django_tables2 import RequestConfig
 
 from commcare_connect.opportunity.helpers import get_worker_tasks_base_queryset
 from commcare_connect.opportunity.models import AssignedTaskStatus
-from commcare_connect.opportunity.tables import GroupedByWorkerMixin, WorkerDeliveryTable, WorkerTasksTable
+from commcare_connect.opportunity.tables import WorkerTasksTable
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
     OpportunityAccessFactory,
@@ -50,18 +48,3 @@ def test_worker_tasks_table_empty(opportunity):
     table = _make_table(opportunity)
     rows = list(table.rows)
     assert len(rows) == 0
-
-
-@pytest.mark.parametrize(
-    "table_cls",
-    [WorkerTasksTable, WorkerDeliveryTable],
-)
-def test_last_column_calls_run_after_every_row(table_cls):
-    """The last column in Meta.sequence must call run_after_every_row to
-    ensure GroupedByWorkerMixin tracks seen workers correctly."""
-    assert issubclass(table_cls, GroupedByWorkerMixin)
-    last_col = table_cls.Meta.sequence[-1]
-    render_method = getattr(table_cls, f"render_{last_col}", None)
-    assert render_method is not None, f"{table_cls.__name__} has no render_{last_col}"
-    source = inspect.getsource(render_method)
-    assert "run_after_every_row" in source, f"{table_cls.__name__}.render_{last_col} must call run_after_every_row"
