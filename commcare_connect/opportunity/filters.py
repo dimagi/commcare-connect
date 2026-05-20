@@ -127,6 +127,7 @@ class DeliverFilterSet(django_filters.FilterSet):
 
 
 class OpportunityListFilterSet(django_filters.FilterSet):
+    search = django_filters.CharFilter(label="Search", method="filter_noop")
     is_test = YesNoFilter(label="Is Test")
     status = django_filters.MultipleChoiceFilter(
         label="Status",
@@ -140,16 +141,24 @@ class OpportunityListFilterSet(django_filters.FilterSet):
     class Meta:
         form = CSRFExemptForm
 
+    def filter_noop(self, queryset, name, value):
+        return queryset
+
     def __init__(self, *args, **kwargs):
         request = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
 
+        modal_fields = ["is_test", "status"]
         if request:
             user_programs = Program.objects.filter(organization=request.org)
             if user_programs.exists():
                 self.filters["program"].extra["choices"] = [(p.slug, p.name) for p in user_programs]
+                modal_fields.append("program")
             else:
                 del self.filters["program"]
+
+        self.form.helper.form_tag = False
+        self.form.helper.layout = Layout(*modal_fields)
 
 
 TASK_STATUS_CHOICES = [

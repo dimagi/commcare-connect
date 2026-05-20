@@ -29,9 +29,21 @@
 {% load i18n %}
 <div class="flex items-center justify-center">
   <div class="flex flex-col gap-2 w-full">
+  <form id="filterForm" method="get">
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
       <p class="text-sm text-brand-deep-purple">{% translate "Opportunities List" %}</p>
     <div class="flex gap-x-6 items-center" x-cloak x-data="{showFilterModal: false}">
+      <div class="simple-input w-64">
+        <label for="id_search" class="sr-only">{% translate "Search by Opportunity name" %}</label>
+        <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
+        <input
+          type="text"
+          id="id_search"
+          name="search"
+          value="{{ filter_form.search.value|default:'' }}"
+          placeholder="{% translate 'Search by Opportunity name' %}"
+        >
+      </div>
       <button type="button" @click="showFilterModal = true" class="relative button-icon">
         <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
         {% if filters_applied_count %}
@@ -51,29 +63,26 @@
         <div class="modal">
           <div class="header text-lg font-semibold text-brand-deep-purple">
             <h1>Filters</h1>
-            <button @click="showFilterModal = false">
+            <button type="button" @click="showFilterModal = false">
               <i class="fa-solid fa-xmark text-xl"></i>
             </button>
           </div>
-          <form
-            id="filterForm"
-            class="content"
-          >
+          <div class="content">
             <div class="modal-body">
               {% crispy filter_form %}
             </div>
             <div class="footer">
               <button type="button" @click="showFilterModal = false" class="button button-md outline-style">Close</button>
-              <button
-                form="filterForm" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">
+              <button type="submit" @click="showFilterModal = false" class="button button-md primary-dark">
                 Apply
               </button>
             </div>
-          </form>
+          </div>
         </div>
       </div>
     </div>
     </div>
+  </form>
 
     <!-- Table Header -->
     <div class="flex flex-col w-full gap-2">
