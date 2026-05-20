@@ -17,6 +17,7 @@ from waffle.testutils import override_switch
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
+from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -2715,6 +2716,21 @@ class TestCreateTask:
         mock_update.assert_called_once_with({access: {"properties": {"some_prop": "1"}}})
         msgs = list(get_messages(response.wsgi_request))
         assert any("successfully" in str(m) for m in msgs)
+
+    def test_create_task_already_assigned_shows_error(self, client, org_user_member, opportunity, access):
+        client.force_login(org_user_member)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch.object(AssignedTask, "assign", side_effect=TaskAlreadyAssignedError):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("already assigned" in str(m) for m in msgs)
 
     def test_create_task_hq_failure_shows_error_and_no_row(self, client, org_user_member, opportunity, access):
         client.force_login(org_user_member)

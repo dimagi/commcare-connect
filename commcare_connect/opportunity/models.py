@@ -17,7 +17,7 @@ from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
-from commcare_connect.opportunity.exceptions import ListTooLongError
+from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -463,13 +463,14 @@ class AssignedTask(XFormBaseModel):
         from commcare_connect.opportunity.tasks import send_task_assignment_notification
 
         with transaction.atomic():
-            assigned_task = cls.objects.create(
+            assigned_task, created = cls.objects.get_or_create(
                 task_type=task_type,
                 opportunity_access=opportunity_access,
-                due_date=due_date,
                 status=AssignedTaskStatus.ASSIGNED,
-                assigned_by=assigned_by,
+                defaults={"due_date": due_date, "assigned_by": assigned_by},
             )
+            if not created:
+                raise TaskAlreadyAssignedError(f"Task type '{task_type}' is already assigned to this user.")
             case_property = task_type.case_property
             if case_property:
                 bulk_update_usercases({opportunity_access: {"properties": {case_property: "1"}}})

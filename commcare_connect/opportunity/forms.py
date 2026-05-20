@@ -22,6 +22,7 @@ from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OP
 from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
+    AssignedTaskStatus,
     CommCareApp,
     CompletedWork,
     CompletedWorkStatus,
@@ -1895,7 +1896,13 @@ class CreateTaskForm(forms.Form):
     def __init__(self, *args, opportunity=None, access=None, **kwargs):
         super().__init__(*args, **kwargs)
         if opportunity is not None:
-            self.fields["task"].queryset = TaskType.objects.filter(app=opportunity.deliver_app, is_active=True)
+            task_qs = TaskType.objects.filter(app=opportunity.deliver_app, is_active=True)
+            if access is not None:
+                task_qs = task_qs.exclude(
+                    assignedtask__opportunity_access=access,
+                    assignedtask__status=AssignedTaskStatus.ASSIGNED,
+                )
+            self.fields["task"].queryset = task_qs
             self.fields["access"].queryset = OpportunityAccess.objects.filter(
                 opportunity=opportunity,
                 accepted=True,

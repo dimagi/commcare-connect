@@ -65,7 +65,7 @@ from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.api.serializers.mobile import remove_opportunity_access_cache
 from commcare_connect.opportunity.app_xml import AppNoBuildException
-from commcare_connect.opportunity.exceptions import ListTooLongError
+from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.opportunity.filters import (
     AssignedTaskFilterSet,
     DeliverFilterSet,
@@ -3564,6 +3564,8 @@ def create_task(request, org_slug, opp_id):
             due_date=due_date,
             assigned_by=request.user,
         )
+    except TaskAlreadyAssignedError:
+        messages.error(request, _("This task type is already assigned to the selected worker."))
     except CommCareHQAPIException:
         messages.error(request, _("Task creation failed: could not update CommCare HQ. Please try again."))
     else:
