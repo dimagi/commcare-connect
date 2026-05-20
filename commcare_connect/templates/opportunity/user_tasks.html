@@ -10,8 +10,8 @@
      x-data="{
        showCreateTaskModal: false,
        showEditTaskModal: false,
-       showFilterModal: false,
        editTaskError: false,
+       ...resetFilterModalState('userTaskFilterForm'),
        ...selectableTable()
      }"
   >
@@ -44,7 +44,7 @@
     <div class="modal">
       <div class="header text-lg font-semibold text-brand-deep-purple">
         <h1>{% trans "Filters" %}</h1>
-        <button @click="showFilterModal = false">
+        <button @click="closeFilter()">
           <i class="fa-solid fa-xmark text-xl"></i>
         </button>
       </div>
@@ -54,7 +54,7 @@
           {% crispy filter_form %}
         </div>
         <div class="footer">
-          <button type="button" @click="showFilterModal = false" class="button button-md outline-style">{% trans "Close" %}</button>
+          <button type="button" @click="closeFilter()" class="button button-md outline-style">{% trans "Close" %}</button>
           <button form="userTaskFilterForm" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">
             {% trans "Apply" %}
           </button>

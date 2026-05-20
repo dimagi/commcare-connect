@@ -634,8 +634,8 @@ def test_filter_worker_tasks_by_task_status(opportunity):
 def test_filter_worker_tasks_by_task_type(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_a = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    task_b = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    task_a = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity, is_active=True)
+    task_b = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity, is_active=True)
     AssignedTaskFactory(opportunity_access=access, task_type=task_a)
     AssignedTaskFactory(opportunity_access=access, task_type=task_b)
 
@@ -648,7 +648,7 @@ def test_filter_worker_tasks_by_task_type(opportunity):
 def test_filter_worker_tasks_by_date_assigned_range(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app, is_active=True)
     old_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
     AssignedTask.objects.filter(pk=old_task.pk).update(date_created=date.today() - timedelta(days=30))
 

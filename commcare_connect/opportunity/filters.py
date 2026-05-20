@@ -1,3 +1,5 @@
+from datetime import date
+
 import django_filters
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Layout, Row
@@ -208,6 +210,9 @@ class TasksFilterSet(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
         if self.opportunity:
             active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
             self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
@@ -269,6 +274,9 @@ class UserTasksFilterSet(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
         if self.opportunity:
             active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
             self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
@@ -365,6 +373,9 @@ class AssignedTaskFilterSet(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_after"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_before"].extra["widget"].attrs["max"] = today
         if self.opportunity:
             self.filters["task_type"].extra["choices"] = self._get_task_type_choices()
             self.filters["worker_name"].extra["choices"] = self._get_worker_name_choices()

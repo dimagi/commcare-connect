@@ -929,6 +929,7 @@ class TestAddTaskTypeForm:
         task_type = form.save()
         assert task_type.slug == "task_1"
         assert task_type.app == opportunity.deliver_app
+        assert task_type.opportunity == opportunity
 
 
 @pytest.mark.django_db

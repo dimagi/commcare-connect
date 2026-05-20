@@ -20,7 +20,7 @@
 {% endcomment %}
 
 {% load i18n crispy_forms_tags %}
-<div x-cloak x-data="{showFilterModal: false}" {% if container_class %}class="{{ container_class }}"{% endif %}>
+<div x-cloak x-data="resetFilterModalState('{{ form_id }}')" {% if container_class %}class="{{ container_class }}"{% endif %}>
     <button type="button" @click="showFilterModal = true" class="relative button-icon shadow-sm">
         <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
         {% if filters_applied_count %}
@@ -33,7 +33,7 @@
         <div class="modal">
             <div class="header text-lg font-semibold text-brand-deep-purple">
                 <h1>{% trans "Filters" %}</h1>
-                <button @click="showFilterModal = false">
+                <button @click="closeFilter()">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
@@ -51,7 +51,7 @@
                     {% crispy filter_form %}
                 </div>
                 <div class="footer">
-                    <button type="button" @click="showFilterModal = false" class="button button-md outline-style">{% trans "Close" %}</button>
+                    <button type="button" @click="closeFilter()" class="button button-md outline-style">{% trans "Close" %}</button>
                     <button form="{{ form_id }}" type="submit" @click="showFilterModal = false" class="button button-md primary-dark">{% trans "Apply" %}</button>
                 </div>
             </form>

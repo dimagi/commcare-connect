@@ -56,8 +56,8 @@ def test_tasks_filterset_task_status_single():
 def test_tasks_filterset_task_type():
     opp = OpportunityFactory()
     access = OpportunityAccessFactory(opportunity=opp, accepted=True)
-    task_a = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Survey")
-    task_b = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Follow-up")
+    task_a = TaskTypeFactory(app=opp.deliver_app, opportunity=opp, is_active=True, name="Survey")
+    task_b = TaskTypeFactory(app=opp.deliver_app, opportunity=opp, is_active=True, name="Follow-up")
     AssignedTaskFactory(opportunity_access=access, task_type=task_a)
     AssignedTaskFactory(opportunity_access=access, task_type=task_b)
 
@@ -76,8 +76,8 @@ def test_tasks_filterset_task_type():
 @pytest.mark.django_db
 def test_tasks_filterset_task_type_excludes_inactive():
     opp = OpportunityFactory()
-    active_task = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=True, name="Active")
-    inactive_task = TaskTypeFactory(opportunity=opp, app=opp.deliver_app, is_active=False, name="Inactive")
+    active_task = TaskTypeFactory(app=opp.deliver_app, opportunity=opp, is_active=True, name="Active")
+    inactive_task = TaskTypeFactory(app=opp.deliver_app, opportunity=opp, is_active=False, name="Inactive")
 
     qs = get_worker_tasks_base_queryset(opp)
     filterset = TasksFilterSet(data={}, queryset=qs, opportunity=opp)
@@ -93,7 +93,7 @@ class TestUserTasksFilterSet:
     def setup(self):
         self.opp = OpportunityFactory()
         self.access = OpportunityAccessFactory(opportunity=self.opp, accepted=True)
-        self.task_type = TaskTypeFactory(opportunity=self.opp, app=self.opp.deliver_app, is_active=True)
+        self.task_type = TaskTypeFactory(app=self.opp.deliver_app, opportunity=self.opp, is_active=True)
 
     def _filterset(self, data):
         qs = AssignedTask.objects.filter(opportunity_access__opportunity=self.opp)
@@ -115,9 +115,9 @@ class TestUserTasksFilterSet:
         assert result[0].status == AssignedTaskStatus.ASSIGNED
 
     def test_task_type(self):
-        task_a = TaskTypeFactory(opportunity=self.opp, app=self.opp.deliver_app, is_active=True, name="Survey")
-        task_b = TaskTypeFactory(opportunity=self.opp, app=self.opp.deliver_app, is_active=True, name="Follow-up")
-        inactive = TaskTypeFactory(opportunity=self.opp, app=self.opp.deliver_app, is_active=False, name="Old")
+        task_a = TaskTypeFactory(app=self.opp.deliver_app, opportunity=self.opp, is_active=True, name="Survey")
+        task_b = TaskTypeFactory(app=self.opp.deliver_app, opportunity=self.opp, is_active=True, name="Follow-up")
+        inactive = TaskTypeFactory(app=self.opp.deliver_app, opportunity=self.opp, is_active=False, name="Old")
         AssignedTaskFactory(opportunity_access=self.access, task_type=task_a)
         AssignedTaskFactory(opportunity_access=self.access, task_type=task_b)
 
