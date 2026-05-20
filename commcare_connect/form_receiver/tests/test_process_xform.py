@@ -132,7 +132,7 @@ class TestProcessTaskModules:
             due_date=now() + datetime.timedelta(days=7),
         )
 
-        task_block = TaskJsonFactory(id=task_type.slug).json
+        task_block = TaskJsonFactory(task_slug=task_type.slug).json
         context["xform"] = get_form_model(form_block=task_block)
 
         self._process(context, [task_block["task"]])
@@ -146,7 +146,7 @@ class TestProcessTaskModules:
         assert assigned_task.duration == context["xform"].metadata.duration
 
     def test_missing_task(self, task_module_context):
-        task_block = TaskJsonFactory(id="unknown-task").json["task"]
+        task_block = TaskJsonFactory(task_slug="unknown-task").json["task"]
         self._process(task_module_context, [task_block])
         assert AssignedTask.objects.filter(opportunity_access=task_module_context["access"]).count() == 0
         self._assert_last_active_unchanged(task_module_context)
@@ -169,7 +169,7 @@ class TestProcessTaskModules:
             status=AssignedTaskStatus.ASSIGNED,
             due_date=now() + datetime.timedelta(days=7),
         )
-        task_block = TaskJsonFactory(id=task_type.slug).json["task"]
+        task_block = TaskJsonFactory(task_slug=task_type.slug).json["task"]
         self._process(task_module_context, [task_block])
         assert AssignedTask.objects.filter(opportunity_access=task_module_context["access"]).count() == 0
         self._assert_last_active_unchanged(task_module_context)
@@ -192,8 +192,8 @@ class TestProcessTaskModules:
             status=AssignedTaskStatus.COMPLETED,
             due_date=now() + datetime.timedelta(days=7),
         )
-        task_block = TaskJsonFactory(id=task_type.slug).json["task"]
-        self._process(task_module_context, [task_block, {"name": "missing @id"}])
+        task_block = TaskJsonFactory(task_slug=task_type.slug).json["task"]
+        self._process(task_module_context, [task_block, {"name": "missing task_slug"}])
         existing_assigned_task.refresh_from_db()
         assert existing_assigned_task.status == AssignedTaskStatus.COMPLETED
         assert existing_assigned_task.xform_id == "existing-form-id"
