@@ -31,6 +31,10 @@ In particular consider how existing data may be impacted by this change.
 - Link to QA Ticket
 -->
 
+### Schema Changes
+
+- [ ] Breaking database schema changes have been communicated in the superset channel on slack
+
 ### Labels & Review
 
 - [ ] The set of people pinged as reviewers is appropriate for the level of risk of the change
