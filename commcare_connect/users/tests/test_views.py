@@ -95,6 +95,30 @@ class TestUserRedirectView:
         assert view.get_redirect_url() == f"/a/{organization.slug}/opportunity/"
 
 
+class TestNoMembershipsView:
+    @property
+    def url(self):
+        return reverse("users:no_memberships")
+
+    def test_renders_invite_prompt_without_perm(self, user, client):
+        client.force_login(user)
+        response = client.get(self.url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "ask your administrator for an invite" in content
+        assert "Get started by creating a new workspace" not in content
+
+    def test_renders_create_workspace_cta_with_perm(self, user, client):
+        perm = Permission.objects.get(codename="workspace_entity_management_access")
+        user.user_permissions.add(perm)
+        client.force_login(user)
+        response = client.get(self.url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Get started by creating a new workspace" in content
+        assert "ask your administrator for an invite" not in content
+
+
 class TestCreateUserLinkView:
     def test_view(self, mobile_user: User, rf: RequestFactory):
         request = rf.post("/fake-url/", data={"commcare_username": "abc", "connect_username": mobile_user.username})
