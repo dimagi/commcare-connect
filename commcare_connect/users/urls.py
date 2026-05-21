@@ -10,6 +10,7 @@ from commcare_connect.users.views import (
     UserToggleView,
     create_user_link_view,
     demo_user_tokens,
+    no_memberships_view,
     start_learn_app,
     user_redirect_view,
     user_update_view,
@@ -18,6 +19,7 @@ from commcare_connect.users.views import (
 app_name = "users"
 urlpatterns = [
     path("redirect/", view=user_redirect_view, name="redirect"),
+    path("no_memberships/", view=no_memberships_view, name="no_memberships"),
     path("update/", view=user_update_view, name="update"),
     path("create_user_link/", view=create_user_link_view, name="create_user_link"),
     path("start_learn_app/", view=start_learn_app, name="start_learn_app"),

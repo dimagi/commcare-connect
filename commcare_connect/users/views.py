@@ -16,7 +16,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from django.views.generic import FormView, RedirectView, UpdateView, View
+from django.views.generic import FormView, RedirectView, TemplateView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -70,7 +70,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self):
         if not self.request.user.memberships.exists():
-            return reverse("prelogin:home")
+            return reverse("users:no_memberships")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
@@ -78,6 +78,13 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
 
 user_redirect_view = UserRedirectView.as_view()
+
+
+class NoMembershipsView(LoginRequiredMixin, TemplateView):
+    template_name = "users/no_memberships.html"
+
+
+no_memberships_view = NoMembershipsView.as_view()
 
 
 @method_decorator(csrf_exempt, name="dispatch")

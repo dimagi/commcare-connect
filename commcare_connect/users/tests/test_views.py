@@ -74,14 +74,14 @@ class TestUserUpdateView:
 
 
 class TestUserRedirectView:
-    def test_get_redirect_url(self, user: User, rf: RequestFactory):
+    def test_get_redirect_url_for_user_with_no_memberships(self, user: User, rf: RequestFactory):
         view = UserRedirectView()
         request = rf.get("/fake-url")
         request.user = user
         request.org = None
 
         view.request = request
-        assert view.get_redirect_url() == "/"
+        assert view.get_redirect_url() == "/users/no_memberships/"
 
     def test_get_redirect_url_for_org_user(
         self, organization: Organization, org_user_member: User, rf: RequestFactory
