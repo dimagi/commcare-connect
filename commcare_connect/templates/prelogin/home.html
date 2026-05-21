@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 {% load static %}
+{% load i18n %}
 {# Imported from dimagi-internal/connect-prelogin. Three import-time edits #}
 {# (search "import-time edit"): login link template var, asset paths wrapped #}
 {# in static template tags, and referrerpolicy on YouTube iframes (Django #}
@@ -50,8 +51,8 @@
       <a href="#/programs" data-route="/programs">Programs</a>
       <a href="#/insights" data-route="/insights">Insights</a>
       <a href="#/join" data-route="/join">Connect Network</a>
-      <a href="{% url 'account_signup' %}" class="cta cta-ghost">Sign Up</a>
-      <a href="{{ app_login_url }}" class="cta">Login</a>{# import-time edit: login href templated #}
+      <a href="{% url 'account_signup' %}" class="cta cta-ghost">{% trans "Sign Up" %}</a>
+      <a href="{{ app_login_url }}" class="cta">{% trans "Login" %}</a>{# import-time edit: login href templated #}
     </nav>
     <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
       <span class="nav-toggle-bar"></span>
@@ -65,8 +66,8 @@
     <a href="#/programs" data-route="/programs">Programs</a>
     <a href="#/insights" data-route="/insights">Insights</a>
     <a href="#/join" data-route="/join">Connect Network</a>
-    <a href="{% url 'account_signup' %}" class="mobile-nav-cta-secondary">Sign Up</a>
-    <a href="{{ app_login_url }}" class="mobile-nav-cta">Login</a>
+    <a href="{% url 'account_signup' %}" class="mobile-nav-cta-secondary">{% trans "Sign Up" %}</a>
+    <a href="{{ app_login_url }}" class="mobile-nav-cta">{% trans "Login" %}</a>
   </nav>
 </header>
 <main>
