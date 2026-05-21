@@ -62,9 +62,6 @@ class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
         return self.request.user
 
 
-user_update_view = UserUpdateView.as_view()
-
-
 class UserRedirectView(LoginRequiredMixin, RedirectView):
     permanent = False
 
@@ -77,14 +74,8 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
         return reverse("account_email")
 
 
-user_redirect_view = UserRedirectView.as_view()
-
-
 class NoMembershipsView(LoginRequiredMixin, TemplateView):
     template_name = "users/no_memberships.html"
-
-
-no_memberships_view = NoMembershipsView.as_view()
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -103,9 +94,6 @@ class CreateUserLinkView(ClientProtectedResourceMixin, View):
             return HttpResponse(status=201)
         else:
             return HttpResponse(status=200)
-
-
-create_user_link_view = CreateUserLinkView.as_view()
 
 
 @csrf_exempt

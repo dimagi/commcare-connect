@@ -17,7 +17,7 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.users.tests.factories import UserFactory
-from commcare_connect.users.views import UserRedirectView, UserToggleView, UserUpdateView, create_user_link_view
+from commcare_connect.users.views import CreateUserLinkView, UserRedirectView, UserToggleView, UserUpdateView
 from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
@@ -127,7 +127,7 @@ class TestCreateUserLinkView:
             "oauth2_provider.views.mixins.ClientProtectedResourceMixin.authenticate_client"
         ) as authenticate_client:
             authenticate_client.return_value = True
-            response = create_user_link_view(request)
+            response = CreateUserLinkView.as_view()(request)
         user_link = ConnectIDUserLink.objects.get(user=mobile_user)
         assert response.status_code == 201
         assert user_link.commcare_username == "abc"
