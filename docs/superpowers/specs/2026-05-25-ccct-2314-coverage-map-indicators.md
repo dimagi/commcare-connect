@@ -256,9 +256,19 @@ Mockup label changes (per Q9 + Q4 follow-up): rename `pct_visits_completed` → 
 |---|---|---|---|
 | `coverage:static:opp=X` | No | 15 min | Static targets per ward / WAG |
 | `coverage:last_week:opp=X` | No (always rolling 7 d) | 15 min | All `_last_week` numerators |
-| `coverage:filtered:opp=X:filter=Y` | Yes | 15 min | Date-filtered no-suffix numerators, keyed by the active filter selection (Overall, or a custom range hash). |
+| `coverage:filtered:opp=X` | Yes | 15 min | Date-filtered no-suffix numerators for the **Overall** selection only. Custom ranges bypass this slot (see note below). |
 
-Backend: existing `quickcache` (`commcare_connect/cache.py`). TTL-only invalidation. Custom-range filters may skip caching or use a shorter TTL — defer to implementation.
+Backend: existing `quickcache` (`commcare_connect/cache.py`). TTL-only invalidation. **Custom-range filters skip the filtered cache slot entirely** and recompute on every request — the slot only caches the Overall (no-filter) selection. Rationale: custom ranges are typically one-off PM explorations with a long tail of distinct values, so caching them would pollute the slot for low hit-rate entries. The other two slots (static and `_last_week`) are filter-independent and still serve their cached values regardless of the active range, so a custom-range request still avoids re-running ~2/3 of the underlying queries.
+
+**Freshness trade-off (custom range view).** On a custom-range view, the custom-range columns are live-queried (fresh), while the same page's static + `_last_week` columns can be up to 15 min stale from cache. Specifics:
+
+- **Worst case:** a CHW visit submitted within the last 15 min appears in a custom range that covers today but not yet in the `_last_week` comparator.
+- **Bound:** the 15 min TTL caps the divergence window.
+- **Static slot impact:** population targets, building counts, WA counts are functionally never stale at this cadence.
+- **`_last_week` slot impact:** the only practical concern.
+- **Usage pattern:** custom ranges are typically used to query past windows (historical exploration, not today's data), so the divergence is rarely visible in practice.
+
+Accepted as the cost of avoiding a full live-query page-load on every Overall request — flag for revisit if PMs report the divergence in practice.
 
 **Safeguards:**
 - **`statement_timeout = '30s'`** scoped to the view via `SET LOCAL` inside the request transaction (`ATOMIC_REQUESTS = True` is already on, so the setting auto-resets at commit). Aborts any runaway query before it ties up a connection; view catches `django.db.utils.OperationalError` and degrades gracefully. The error can be reported to Sentry. *Important:* the except block must also call `transaction.set_rollback(True)` — when `statement_timeout` fires, Postgres puts the transaction into an aborted state, and the ATOMIC_REQUESTS wrapper otherwise tries to COMMIT and fails the request anyway.
