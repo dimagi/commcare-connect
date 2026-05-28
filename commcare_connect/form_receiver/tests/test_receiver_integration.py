@@ -1113,7 +1113,6 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
 @pytest.mark.parametrize(
     "initial_status,updated_status,expected_visit_count,auto_approve_visits",
     [
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED, 1, True),
@@ -1122,9 +1121,9 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE, None, True),
         (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED, None, True),
         # pending visit (auto_approve_visits=False) should not trigger EXPECTED_VISIT_REACHED
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 1, False),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, 1, False),
         # expected_visit_count=0 (unconfigured) should never trigger EXPECTED_VISIT_REACHED
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 0, True),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, 0, True),
     ],
 )
 def test_receiver_deliver_form_work_area_status(
@@ -1178,7 +1177,7 @@ def test_receiver_deliver_form_expected_visit_count(
 ):
     work_area = WorkAreaFactory(
         opportunity=opportunity,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
         expected_visit_count=expected_visit_count,
     )
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
@@ -1214,7 +1213,7 @@ def test_work_area_update_inaccessible(
     work_area = WorkAreaFactory(
         opportunity=opportunity,
         work_area_group=work_area_group,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
         opportunity_access=access,
     )
     initial_event_count = (
@@ -1250,7 +1249,7 @@ def test_work_area_update_inaccessible(
     "status, assigned_to_user",
     [
         (WorkAreaStatus.VISITED, True),
-        (WorkAreaStatus.NOT_STARTED, False),
+        (WorkAreaStatus.NOT_VISITED, False),
     ],
     ids=["wrong_status", "unassigned_worker"],
 )
@@ -1323,7 +1322,7 @@ def test_work_area_update_inaccessible_creates_request_row(mobile_user_with_conn
         opportunity=opportunity,
         work_area_group=work_area_group,
         opportunity_access=access,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
     )
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(
@@ -1366,7 +1365,7 @@ def test_work_area_update_attachment_download_queued(mobile_user_with_connect_li
         opportunity=opportunity,
         work_area_group=work_area_group,
         opportunity_access=access,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
     )
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(
@@ -1415,7 +1414,7 @@ def test_work_area_update_invalid_reason(
         opportunity=opportunity,
         work_area_group=work_area_group,
         opportunity_access=access,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
     )
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", **stub_kwargs)
@@ -1459,7 +1458,7 @@ def test_work_area_update_invalid_photo_evidence(
         opportunity=opportunity,
         work_area_group=work_area_group,
         opportunity_access=access,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
     )
     oauth_application = opportunity.hq_server.oauth_application
     stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", **stub_kwargs)

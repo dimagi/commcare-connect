@@ -307,7 +307,7 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
             raise ProcessingError(f"Invalid work area status: {requested_status}")
 
         if not (
-            work_area.status == WorkAreaStatus.NOT_STARTED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+            work_area.status == WorkAreaStatus.NOT_VISITED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
         ):
             raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
 

@@ -13,12 +13,12 @@ class TestWorkAreaGroupBuildingCount:
         "work_areas, expected_count",
         [
             pytest.param(
-                [(10, WorkAreaStatus.NOT_STARTED), (20, WorkAreaStatus.NOT_STARTED)],
+                [(10, WorkAreaStatus.NOT_VISITED), (20, WorkAreaStatus.NOT_VISITED)],
                 30,
                 id="sums-non-excluded",
             ),
             pytest.param(
-                [(10, WorkAreaStatus.NOT_STARTED), (50, WorkAreaStatus.EXCLUDED)],
+                [(10, WorkAreaStatus.NOT_VISITED), (50, WorkAreaStatus.EXCLUDED)],
                 10,
                 id="ignores-excluded",
             ),

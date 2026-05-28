@@ -1,7 +1,6 @@
 from commcare_connect.microplanning.models import WorkAreaStatus
 
 WORK_AREA_STATUS_COLORS = {
-    WorkAreaStatus.NOT_STARTED: "bg-gray-200 text-gray-700",
     WorkAreaStatus.UNASSIGNED: "bg-gray-200 text-gray-700",
     WorkAreaStatus.NOT_VISITED: "bg-gray-200 text-gray-700",
     WorkAreaStatus.VISITED: "bg-yellow-200 text-yellow-900",

@@ -14,7 +14,6 @@ SRID = 4326
 
 
 class WorkAreaStatus(geo_models.TextChoices):
-    NOT_STARTED = "NOT_STARTED", _("Not Started")
     UNASSIGNED = "UNASSIGNED", _("Unassigned")
     NOT_VISITED = "NOT_VISITED", _("Not Visited")
     VISITED = "VISITED", _("Visited")
@@ -86,7 +85,6 @@ class WorkArea(geo_models.Model):
         return f"{self.slug}-{self.opportunity_id}"
 
     VISIT_TRACKABLE_STATUSES = {
-        WorkAreaStatus.NOT_STARTED,
         WorkAreaStatus.NOT_VISITED,
         WorkAreaStatus.VISITED,
         WorkAreaStatus.EXPECTED_VISIT_REACHED,

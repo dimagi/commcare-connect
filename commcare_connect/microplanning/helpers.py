@@ -30,7 +30,7 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
 
     for work_area_id in work_area_ids:
         work_area = work_areas_map.get(work_area_id)
-        if work_area is None or work_area.status != WorkAreaStatus.NOT_STARTED:
+        if work_area is None or work_area.status != WorkAreaStatus.NOT_VISITED:
             skipped += 1
             continue
 

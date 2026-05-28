@@ -264,7 +264,7 @@
                             <p x-show="selectedWorkAreas.size > 0 && Array.from(selectedWorkAreas).every(id => cannotExclude(id))"
                                class="text-xs text-amber-600 text-right max-w-48">
                                 <i class="fa-solid fa-circle-info"></i>
-                                {% translate "Only 'Not Started' work areas can be excluded." %}
+                                {% translate "Only 'Not Visited' work areas can be excluded." %}
                             </p>
                             <button type="button" @click="showUnassignModal = true"
                                 :disabled="selectedWorkAreas.size === 0 || Array.from(selectedWorkAreas).every(id => cannotUnassign(id))"

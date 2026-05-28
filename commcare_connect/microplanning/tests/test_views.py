@@ -264,7 +264,7 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
             # decreased below visit count → EXPECTED_VISIT_REACHED
             (WorkAreaStatus.VISITED, 3, 5, 2, WorkAreaStatus.EXPECTED_VISIT_REACHED),
             # no visits → status unchanged regardless of count change
-            (WorkAreaStatus.NOT_STARTED, 0, 5, 2, WorkAreaStatus.NOT_STARTED),
+            (WorkAreaStatus.NOT_VISITED, 0, 5, 2, WorkAreaStatus.NOT_VISITED),
             # only group changed, not expected_visit_count → status unchanged
             (WorkAreaStatus.VISITED, 3, 5, 5, WorkAreaStatus.VISITED),
         ],
@@ -333,25 +333,25 @@ class TestWorkAreaTileViewFiltering(BaseMicroplanningFlagTest):
 
     def test_unfiltered_returns_all_work_areas(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
-        WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+        WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
         qs = self._get_tile_queryset(client, org_user_admin, opportunity)
         assert qs.count() == 2
 
     def test_status_filter_forwarded(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.VISITED)
-        wa_not_started = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+        wa_not_visited = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
         qs = self._get_tile_queryset(
             client,
             org_user_admin,
             opportunity,
-            query_params={"status": WorkAreaStatus.NOT_STARTED},
+            query_params={"status": WorkAreaStatus.NOT_VISITED},
         )
-        assert list(qs.values_list("id", flat=True)) == [wa_not_started.id]
+        assert list(qs.values_list("id", flat=True)) == [wa_not_visited.id]
 
     def test_assignee_filter_forwarded(self, client, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         wa_assigned = WorkAreaFactory(
-            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_STARTED
+            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
         )
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
 
@@ -389,11 +389,11 @@ class TestWorkAreaMapFilterSet:
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity)
 
-        wa_not_started = WorkAreaFactory(
+        wa_not_visited = WorkAreaFactory(
             opportunity=opportunity,
             work_area_group=group,
             opportunity_access=access,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
         )
         wa_visited = WorkAreaFactory(
             opportunity=opportunity, work_area_group=group, opportunity_access=access, status=WorkAreaStatus.VISITED
@@ -402,7 +402,7 @@ class TestWorkAreaMapFilterSet:
         return SimpleNamespace(
             access=access,
             group=group,
-            wa_not_started=wa_not_started,
+            wa_not_visited=wa_not_visited,
             wa_visited=wa_visited,
             wa_unassigned=wa_unassigned,
         )
@@ -415,7 +415,7 @@ class TestWorkAreaMapFilterSet:
         "statuses, expected_attrs",
         [
             ([WorkAreaStatus.VISITED], ["wa_visited"]),
-            ([WorkAreaStatus.NOT_STARTED, WorkAreaStatus.UNASSIGNED], ["wa_not_started", "wa_unassigned"]),
+            ([WorkAreaStatus.NOT_VISITED, WorkAreaStatus.UNASSIGNED], ["wa_not_visited", "wa_unassigned"]),
         ],
         ids=["single_status", "multiple_statuses"],
     )
@@ -425,19 +425,19 @@ class TestWorkAreaMapFilterSet:
 
     def test_assignee_filter_excludes_unassigned(self, opportunity, work_areas):
         result = self._filter_ids({"assignee": [work_areas.access.user.pk]}, opportunity)
-        assert result == {work_areas.wa_not_started.id, work_areas.wa_visited.id}
+        assert result == {work_areas.wa_not_visited.id, work_areas.wa_visited.id}
 
     @pytest.mark.parametrize(
         "params, expected_attrs",
         [
-            ({"start_date": "2026-03-15"}, ["wa_not_started"]),
+            ({"start_date": "2026-03-15"}, ["wa_not_visited"]),
             ({"end_date": "2026-03-15"}, ["wa_visited"]),
-            ({"start_date": "2026-03-15", "end_date": "2026-03-22"}, ["wa_not_started"]),
+            ({"start_date": "2026-03-15", "end_date": "2026-03-22"}, ["wa_not_visited"]),
         ],
         ids=["start_date_gte", "end_date_lte", "date_range"],
     )
     def test_date_filters(self, opportunity, work_areas, params, expected_attrs):
-        for wa_attr, visit_date in [("wa_visited", "2026-03-10"), ("wa_not_started", "2026-03-20")]:
+        for wa_attr, visit_date in [("wa_visited", "2026-03-10"), ("wa_not_visited", "2026-03-20")]:
             UserVisitFactory(
                 opportunity=opportunity,
                 user=work_areas.access.user,
@@ -468,9 +468,9 @@ class TestWorkAreaMapFilterSet:
 
     def test_combined_status_and_assignee(self, opportunity, work_areas):
         result = self._filter_ids(
-            {"status": [WorkAreaStatus.NOT_STARTED], "assignee": [work_areas.access.user.pk]}, opportunity
+            {"status": [WorkAreaStatus.NOT_VISITED], "assignee": [work_areas.access.user.pk]}, opportunity
         )
-        assert result == {work_areas.wa_not_started.id}
+        assert result == {work_areas.wa_not_visited.id}
 
     def test_assignee_queryset_requires_opportunity(self):
         empty_qs = WorkArea.objects.none()
@@ -591,7 +591,7 @@ class TestUserVisitVectorLayer:
         visit_data.work_area.save()
         other_access = OpportunityAccessFactory(opportunity=opportunity)
         other_wa = WorkAreaFactory(
-            opportunity=opportunity, opportunity_access=other_access, status=WorkAreaStatus.NOT_STARTED
+            opportunity=opportunity, opportunity_access=other_access, status=WorkAreaStatus.NOT_VISITED
         )
         UserVisitFactory(
             opportunity=opportunity,
@@ -708,15 +708,15 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
 
     def test_status_filter(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.UNASSIGNED)
-        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
         client.force_login(org_user_admin)
 
-        rows = self._parse_csv(client.get(self.url(opportunity) + f"?status={WorkAreaStatus.NOT_STARTED}"))
+        rows = self._parse_csv(client.get(self.url(opportunity) + f"?status={WorkAreaStatus.NOT_VISITED}"))
         assert rows[1][0] == wa.slug
         assert len(rows) == 2
 
     def test_excludes_excluded_work_areas(self, client, org_user_admin, opportunity):
-        kept = WorkAreaFactory(opportunity=opportunity, slug="kept", status=WorkAreaStatus.NOT_STARTED)
+        kept = WorkAreaFactory(opportunity=opportunity, slug="kept", status=WorkAreaStatus.NOT_VISITED)
         WorkAreaFactory(opportunity=opportunity, slug="dropped", status=WorkAreaStatus.EXCLUDED)
         client.force_login(org_user_admin)
 
@@ -891,12 +891,11 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
     @pytest.mark.parametrize(
         "status",
         [
-            WorkAreaStatus.NOT_STARTED,
             WorkAreaStatus.NOT_VISITED,
             WorkAreaStatus.VISITED,
             WorkAreaStatus.INACCESSIBLE,
         ],
-        ids=["not_started", "not_visited", "visited", "inaccessible"],
+        ids=["not_visited", "visited", "inaccessible"],
     )
     def test_get_modal_404_for_non_pending_status(self, status, client, org_user_admin, opportunity, organization):
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
@@ -995,8 +994,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
 
     @pytest.mark.parametrize(
         "status",
-        [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.INACCESSIBLE],
-        ids=["not_started", "already_inaccessible"],
+        [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.INACCESSIBLE],
+        ids=["not_visited", "already_inaccessible"],
     )
     def test_action_404_when_wa_not_pending(self, status, client, org_user_admin, opportunity, organization):
         OpportunityAccessFactory(user=org_user_admin, opportunity=opportunity, accepted=True)
@@ -1279,7 +1278,7 @@ class TestExcludeWorkAreasView:
         return_value={"excluded_ids": [1], "skipped": 0, "failed": 0},
     )
     def test_valid_request_calls_exclude_and_returns_200(self, mock_exclude, client, org_user_admin, opportunity):
-        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -1397,8 +1396,8 @@ class TestGetMetricsForMicroplanningWorkAreas:
         wa_visited, wa_pending_only, wa_empty, wa_inaccessible, wa_excluded = self._make_work_areas(
             opp,
             [
-                WorkAreaStatus.NOT_STARTED,
-                WorkAreaStatus.NOT_STARTED,
+                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.INACCESSIBLE,  # counts as unvisited because 0 approved visits
                 WorkAreaStatus.EXCLUDED,
@@ -1420,9 +1419,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
         wa_visited_1, wa_visited_2, wa_no_visits, wa_excluded = self._make_work_areas(
             opp,
             [
-                WorkAreaStatus.NOT_STARTED,
-                WorkAreaStatus.NOT_STARTED,
-                WorkAreaStatus.NOT_STARTED,
+                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.EXCLUDED,
             ],
         )
@@ -1444,9 +1443,9 @@ class TestGetMetricsForMicroplanningWorkAreas:
         wa_reached, wa_partial, wa_over, wa_excluded_reached = self._make_work_areas(
             opp,
             [
-                WorkAreaStatus.NOT_STARTED,
-                WorkAreaStatus.NOT_STARTED,
-                WorkAreaStatus.NOT_STARTED,
+                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.NOT_VISITED,
+                WorkAreaStatus.NOT_VISITED,
                 WorkAreaStatus.EXCLUDED,
             ],
             expected_visit_counts=[5, 5, 5, 5],
@@ -1494,8 +1493,8 @@ class TestGetMetricsForMicroplanningWorkAreas:
         """Ratio uses approved UserVisits on non-excluded WAs only, and data-driven `visited` count.
 
         Setup:
-          - wa_visited (NOT_STARTED, expected=10): 1 approved → counted as visited
-          - wa_unvisited (NOT_STARTED, expected=10): 0 approved → not visited
+          - wa_visited (NOT_VISITED, expected=10): 1 approved → counted as visited
+          - wa_unvisited (NOT_VISITED, expected=10): 0 approved → not visited
           - wa_excluded (EXCLUDED, expected=10): 3 approved → excluded from both numerator and denominator
           pct_wa_visited = 1/2 = 0.5  (non_excluded = 2)
           total_approved (non_excluded) = 1
@@ -1505,7 +1504,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         """
         wa_visited, wa_unvisited, wa_excluded = self._make_work_areas(
             opp,
-            [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_STARTED, WorkAreaStatus.EXCLUDED],
+            [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.NOT_VISITED, WorkAreaStatus.EXCLUDED],
             expected_visit_counts=[10, 10, 10],
         )
         # 1 approved on visited WA
@@ -1534,7 +1533,7 @@ class TestGetMetricsForMicroplanningWorkAreas:
         """Approved visits with no work_area must not inflate the ratio's total_approved denominator."""
         wa_visited, wa_unvisited = self._make_work_areas(
             opp,
-            [WorkAreaStatus.NOT_STARTED, WorkAreaStatus.NOT_STARTED],
+            [WorkAreaStatus.NOT_VISITED, WorkAreaStatus.NOT_VISITED],
             expected_visit_counts=[10, 10],
         )
         self._make_visits(opp, wa_visited, approved=1)

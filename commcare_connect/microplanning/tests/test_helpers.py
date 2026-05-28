@@ -16,14 +16,14 @@ from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 @pytest.mark.django_db
 class TestExcludeWorkAreas:
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
-    def test_happy_path_excludes_not_started_areas(self, mock_bulk_hq, org_user_admin, opportunity):
+    def test_happy_path_excludes_not_visited_areas(self, mock_bulk_hq, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_areas = WorkAreaFactory.create_batch(
             2,
             opportunity=opportunity,
             opportunity_access=access,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             work_area_group=group,
         )
 
@@ -47,8 +47,8 @@ class TestExcludeWorkAreas:
         assert mock_bulk_hq.call_count == 1
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
-    def test_mixed_batch_only_not_started_is_excluded(self, mock_bulk_hq, org_user_admin, opportunity):
-        wa_valid = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+    def test_mixed_batch_only_not_visited_is_excluded(self, mock_bulk_hq, org_user_admin, opportunity):
+        wa_valid = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
         wa_inaccessible = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.INACCESSIBLE)
         wa_excluded = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.EXCLUDED)
 
@@ -78,7 +78,7 @@ class TestExcludeWorkAreas:
         work_areas = WorkAreaFactory.create_batch(
             2,
             opportunity=opportunity,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             opportunity_access=access,
             work_area_group=group,
         )
@@ -96,12 +96,12 @@ class TestExcludeWorkAreas:
 
         for wa in work_areas:
             wa.refresh_from_db()
-            assert wa.status == WorkAreaStatus.NOT_STARTED
+            assert wa.status == WorkAreaStatus.NOT_VISITED
             assert wa.work_area_group == group
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_no_case_id_excludes_locally_without_hq_call(self, mock_bulk_hq, org_user_admin, opportunity):
-        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, case_id=None)
+        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED, case_id=None)
 
         exclude_work_areas_for_opportunity(
             opportunity=opportunity,
@@ -116,7 +116,7 @@ class TestExcludeWorkAreas:
 
     @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_work_area_from_other_opportunity_is_ignored(self, mock_bulk_hq, org_user_admin, opportunity):
-        other_wa = WorkAreaFactory(status=WorkAreaStatus.NOT_STARTED)  # different opportunity
+        other_wa = WorkAreaFactory(status=WorkAreaStatus.NOT_VISITED)  # different opportunity
 
         exclude_work_areas_for_opportunity(
             opportunity=opportunity,
@@ -126,14 +126,13 @@ class TestExcludeWorkAreas:
         )
 
         other_wa.refresh_from_db()
-        assert other_wa.status == WorkAreaStatus.NOT_STARTED  # unchanged
+        assert other_wa.status == WorkAreaStatus.NOT_VISITED  # unchanged
         mock_bulk_hq.assert_not_called()
 
     @pytest.mark.parametrize(
         "status",
         [
             WorkAreaStatus.VISITED,
-            WorkAreaStatus.NOT_VISITED,
             WorkAreaStatus.UNASSIGNED,
             WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
             WorkAreaStatus.EXPECTED_VISIT_REACHED,
@@ -163,7 +162,7 @@ class TestExcludeWorkAreas:
         work_areas = WorkAreaFactory.create_batch(
             count,
             opportunity=opportunity,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             opportunity_access=access,
             work_area_group=group,
         )
@@ -192,7 +191,7 @@ class TestExcludeWorkAreas:
         work_areas = WorkAreaFactory.create_batch(
             count,
             opportunity=opportunity,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             opportunity_access=access,
             work_area_group=group,
         )
@@ -210,9 +209,9 @@ class TestExcludeWorkAreas:
             wa.refresh_from_db()
 
         excluded = [wa for wa in work_areas if wa.status == WorkAreaStatus.EXCLUDED]
-        not_started = [wa for wa in work_areas if wa.status == WorkAreaStatus.NOT_STARTED]
+        not_visited = [wa for wa in work_areas if wa.status == WorkAreaStatus.NOT_VISITED]
         assert len(excluded) == 2 * HQ_BULK_CHUNK_SIZE
-        assert len(not_started) == HQ_BULK_CHUNK_SIZE
+        assert len(not_visited) == HQ_BULK_CHUNK_SIZE
 
 
 @pytest.mark.django_db

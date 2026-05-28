@@ -37,7 +37,7 @@
             cannotExclude(id) {
                 if (this.excludedWorkAreaIds.has(id)) return true;
                 const status = this.workAreaProperties.get(id)?.status;
-                return status !== undefined && status !== 'NOT_STARTED';
+                return status !== undefined && status !== 'NOT_VISITED';
             },
 
             cannotUnassign(id) {
@@ -665,7 +665,6 @@
                             'VISITED', 0.85,
                             'NOT_VISITED', 0.65,
                             'UNASSIGNED', 0.55,
-                            'NOT_STARTED', 0.50,
                             'EXCLUDED', 0.45,
                             'INACCESSIBLE', 0.40,
                             'REQUEST_FOR_INACCESSIBLE', 0.35,
