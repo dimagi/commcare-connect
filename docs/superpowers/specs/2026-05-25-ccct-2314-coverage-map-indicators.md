@@ -1,6 +1,6 @@
 # CCCT-2314 — Coverage Map Indicators: Spec
 
-**Status:** Based on responses from the Product team, Top-table column layout now defers directly to the audit Excel (~30 columns); Coverage Map entry point switches from a tile link to a dedicated button. `INACCESSIBLE` WAs are confirmed to count in all canonical denominators.
+**Status:** Based on responses from the Product team, Top-table column layout now defers directly to the audit Excel (~30 columns); Coverage Map entry point switches from a tile link to a dedicated button. `INACCESSIBLE` WAs are confirmed to count in all canonical denominators; `EXCLUDED` WAs are confirmed to be left out of all population / building / visit calculations.
 
 ---
 
@@ -11,9 +11,9 @@
 ### Targets (denominators)
 | Column | Definition |
 |---|---|
-| `Number of Work Areas` | Count of WAs in the ward, **excluding** `EXCLUDED` WAs only — `INACCESSIBLE` WAs are included (per Q5 follow-up 2026-05-27). Final treatment of `EXCLUDED` is still pending Delivery clarification; working assumption is to exclude per the Excel header. |
+| `Number of Work Areas` | Count of WAs in the ward, **excluding** `EXCLUDED` WAs only — `INACCESSIBLE` WAs are included (per Q5 follow-up 2026-05-27, confirmed 2026-05-28). |
 
-All implicit denominators apply the same filter: `SUM(expected_visit_count)`, `SUM(building_count)`, and `SUM(target_population)` are taken **over WAs that are not `EXCLUDED`** — `INACCESSIBLE` WAs are included (per Q5 follow-up).
+All implicit denominators apply the same filter: `SUM(expected_visit_count)`, `SUM(building_count)`, and `SUM(target_population)` are taken **over WAs that are not `EXCLUDED`** — `INACCESSIBLE` WAs are included (per Q5 follow-up, confirmed 2026-05-28).
 
 ### Visits (throughput)
 | Column | Notes |
@@ -22,6 +22,8 @@ All implicit denominators apply the same filter: `SUM(expected_visit_count)`, `S
 | `pct_visits_approved` | `visits_approved / sum(expected_visit_count)` × 100 |
 
 ### WAs Visited (status = `VISITED`)
+*Strict — current status must be `VISITED`. A WA that has since been promoted to `EXPECTED_VISIT_REACHED` is **not** counted here; it's counted in the WAs EVC Reached bucket instead. The two buckets are mutually exclusive.*
+
 | Column | Notes |
 |---|---|
 | `WAs_Visited` | Count |
@@ -69,15 +71,19 @@ All implicit denominators apply the same filter: `SUM(expected_visit_count)`, `S
 
 Translating the locked product team decisions into the concrete page. The page is opportunity-scoped (per Q2) and contains a header, two tables, and a single page-level date filter (Overall / Custom range).
 
+**Column header convention.** UI shows Title Case display labels (e.g. "% WAs Visited"); the canonical Excel name remains the code/API/export identifier and is kept in the "Canonical metric" column for traceability.
+
 **Date filter scope (per Q7):** the filter applies to **every no-suffix metric on the page** — i.e., every column in both tables that is not a `_last_week` variant. The `_last_week` columns are always the rolling previous 7 days, never affected by the filter — they exist as a constant comparator alongside the filtered view. (With the top table now mirroring the Excel, both tables carry `_last_week` columns.)
 
 **Date filter semantics** — the "Filter behaviour" column in the tables below uses three tags:
 
 - **`visit_date`**: filters `UserVisit.visit_date` against the selected window. Used by visit-domain metrics (`visits_approved` and its derivatives).
-- **`visited-at`**: filters by the earliest date the WA's status transitioned to `VISITED`-or-above. Sourced from the pghistory event table (see Part 4 Option 1).
+- **`visited-at`**: filters by the earliest date the WA's status first transitioned to `VISITED`. Sourced from the pghistory event table (see Part 4 Option 1). Applies only to WAs whose current status is `VISITED` (per the strict-bucket definition in Part 1) — WAs that have since moved to `EXPECTED_VISIT_REACHED` are filtered by `evc-reached-at` in the EVC metrics instead.
 - **`evc-reached-at`**: filters by the earliest date the WA's status transitioned to `EXPECTED_VISIT_REACHED`. Same source.
 - **Pinned 7d**: same predicate type, but locked to the rolling previous 7 days regardless of filter selection.
 - **Ratio**: each numerator/denominator applies its own filter; the ratio is computed in Python from the two filtered values.
+
+**Zero-denominator handling.** Every `pct_…` and ratio column has a divisor that can legitimately be zero — e.g., a freshly opened opportunity with no approved visits yet (`pct_visits_approved` denominator = 0), or a ward with zero non-`EXCLUDED` WAs. The page must guard against divide-by-zero and render an empty/placeholder cell (e.g. `—`) rather than `NaN`, `Infinity`, or a server error. Applies to every percentage and ratio column in both tables, including their `_last_week` variants.
 
 ### 2.0 Coverage Map entry point
 
@@ -97,56 +103,60 @@ Scope: every ward in the opportunity, one row each (per Q1). The page-level date
 
 Per **Q4 follow-up (2026-05-27)**, the per-Ward column layout defers directly to the CHC RCT Audit Indicators Excel(You can see the doc link in the ticket) — we carry the 26 derived metrics from Part 1 in their Excel order, alongside the three target columns from Q3. Result: ~30 columns, horizontally scrollable.
 
-| # | Column header | Canonical metric | Filter behaviour |
+| # | Column header (display label) | Canonical metric | Filter behaviour |
 |---|---|---|---|
 | 1 | Ward | (ward name) | — |
 | 2 | Population Target | `SUM(target_population)` | Static; denominator per Part 1 rules |
 | 3 | Building Count | `SUM(WorkArea.building_count)` | Static; same denominator rules |
 | 4 | Number of Work Areas | (count) | Static; same denominator rules |
-| 5 | visits_approved | `visits_approved` | Filtered by `visit_date` |
-| 6 | pct_visits_approved | `pct_visits_approved` | Filtered by `visit_date` |
-| 7 | WAs_Visited | `WAs_Visited` | Filtered by `visited-at` |
-| 8 | pct_WAs_visited | `pct_WAs_visited` | Filtered by `visited-at` |
-| 9 | pct_WA_visited_to_pct_visits | `pct_WA_visited_to_pct_visits` | Ratio (col 8 / col 6) |
-| 10 | WAs_visited_last_week | (rolling 7d) | Pinned 7d (`visited-at`) |
-| 11 | pct_WAs_visited_last_week | (rolling 7d) | Pinned 7d (`visited-at`) |
-| 12 | pct_WA_visited_to_pct_visits_last_week | (rolling 7d) | Ratio (pinned 7d) |
-| 13 | WAs_evc_reached | `WAs_evc_reached` | Filtered by `evc-reached-at` |
-| 14 | pct_WAs_evc_reached *("Ward Saturation Goal")* | `pct_WAs_evc_reached` | Filtered by `evc-reached-at` |
-| 15 | pct_WA_evc_reached_to_pct_visit *("WA Coverage to Visit Ratio")* | `pct_WA_evc_reached_to_pct_visit` | Ratio (col 14 / col 6) |
-| 16 | WAs_evc_reached_last_week | (rolling 7d) | Pinned 7d (`evc-reached-at`) |
-| 17 | pct_WAs_evc_reached_last_week | (rolling 7d) | Pinned 7d (`evc-reached-at`) |
-| 18 | pct_WA_evc_reached_to_pct_visits_last_week | (rolling 7d) | Ratio (pinned 7d) |
-| 19 | Buildings_covered_in_WAs_evc_reached | (sum over WAs) | Filtered by `evc-reached-at` |
-| 20 | pct_Buildings_covered_in_WAs_evc_reached | (sum) | Filtered by `evc-reached-at` |
-| 21 | pct_buildings_covered_in_WA_evc_reached_to_pct_visit | (ratio) | Ratio (col 20 / col 6) |
-| 22 | Buildings_covered_in_WAs_evc_reached_last_week | (rolling 7d) | Pinned 7d (`evc-reached-at`) |
-| 23 | pct_buildings_covered_in_WAs_evc_reached_last_week | (rolling 7d) | Pinned 7d (`evc-reached-at`) |
-| 24 | pct_buildings_covered_in_WA_evc_reached_to_pct_visits_last_week | (rolling 7d) | Ratio (pinned 7d) |
-| 25 | Buildings_covered_in_WAs_visited | (sum over WAs) | Filtered by `visited-at` |
-| 26 | pct_Buildings_covered_in_WAs_visited | (sum) | Filtered by `visited-at` |
-| 27 | pct_buildings_covered_in_WA_visited_to_pct_visit | (ratio) | Ratio (col 26 / col 6) |
-| 28 | Buildings_covered_in_WAs_visited_last_week | (rolling 7d) | Pinned 7d (`visited-at`) |
-| 29 | pct_buildings_covered_in_WAs_visited_last_week | (rolling 7d) | Pinned 7d (`visited-at`) |
-| 30 | pct_buildings_covered_in_WA_visited_to_pct_visits_last_week | (rolling 7d) | Ratio (pinned 7d) |
+| 5 | Visits Approved | `visits_approved` | Filtered by `visit_date` |
+| 6 | % Visits Approved | `pct_visits_approved` | Filtered by `visit_date` |
+| 7 | WAs Visited | `WAs_Visited` | Filtered by `visited-at` |
+| 8 | % WAs Visited | `pct_WAs_visited` | Filtered by `visited-at` |
+| 9 | WA Visit to Visit Ratio | `pct_WA_visited_to_pct_visits` | Ratio (col 8 / col 6) |
+| 10 | WAs Visited (last 7d) | `WAs_visited_last_week` | Pinned 7d (`visited-at`) |
+| 11 | % WAs Visited (last 7d) | `pct_WAs_visited_last_week` | Pinned 7d (`visited-at`) |
+| 12 | WA Visit to Visit Ratio (last 7d) | `pct_WA_visited_to_pct_visits_last_week` | Ratio (pinned 7d) |
+| 13 | WAs EVC Reached | `WAs_evc_reached` | Filtered by `evc-reached-at` |
+| 14 | % WAs EVC Reached *("Ward Saturation Goal")* | `pct_WAs_evc_reached` | Filtered by `evc-reached-at` |
+| 15 | WA Coverage to Visit Ratio | `pct_WA_evc_reached_to_pct_visit` | Ratio (col 14 / col 6) |
+| 16 | WAs EVC Reached (last 7d) | `WAs_evc_reached_last_week` | Pinned 7d (`evc-reached-at`) |
+| 17 | % WAs EVC Reached (last 7d) | `pct_WAs_evc_reached_last_week` | Pinned 7d (`evc-reached-at`) |
+| 18 | WA Coverage to Visit Ratio (last 7d) | `pct_WA_evc_reached_to_pct_visits_last_week` | Ratio (pinned 7d) |
+| 19 | Buildings in EVC-Reached WAs | `Buildings_covered_in_WAs_evc_reached` | Filtered by `evc-reached-at` |
+| 20 | % Buildings in EVC-Reached WAs | `pct_Buildings_covered_in_WAs_evc_reached` | Filtered by `evc-reached-at` |
+| 21 | EVC Building to Visit Ratio | `pct_buildings_covered_in_WA_evc_reached_to_pct_visit` | Ratio (col 20 / col 6) |
+| 22 | Buildings in EVC-Reached WAs (last 7d) | `Buildings_covered_in_WAs_evc_reached_last_week` | Pinned 7d (`evc-reached-at`) |
+| 23 | % Buildings in EVC-Reached WAs (last 7d) | `pct_buildings_covered_in_WAs_evc_reached_last_week` | Pinned 7d (`evc-reached-at`) |
+| 24 | EVC Building to Visit Ratio (last 7d) | `pct_buildings_covered_in_WA_evc_reached_to_pct_visits_last_week` | Ratio (pinned 7d) |
+| 25 | Buildings in Visited WAs | `Buildings_covered_in_WAs_visited` | Filtered by `visited-at` |
+| 26 | % Buildings in Visited WAs | `pct_Buildings_covered_in_WAs_visited` | Filtered by `visited-at` |
+| 27 | Visited Building to Visit Ratio | `pct_buildings_covered_in_WA_visited_to_pct_visit` | Ratio (col 26 / col 6) |
+| 28 | Buildings in Visited WAs (last 7d) | `Buildings_covered_in_WAs_visited_last_week` | Pinned 7d (`visited-at`) |
+| 29 | % Buildings in Visited WAs (last 7d) | `pct_buildings_covered_in_WAs_visited_last_week` | Pinned 7d (`visited-at`) |
+| 30 | Visited Building to Visit Ratio (last 7d) | `pct_buildings_covered_in_WA_visited_to_pct_visits_last_week` | Ratio (pinned 7d) |
 
 Columns 2/3/4 remain three separate columns (per Q3), not stacked. Header-row groupings ("Visits", "WAs Visited", "WAs EVC Reached", "Buildings under EVC-Reached WAs", "Buildings under Visited WAs") mirror Part 1's section breakdown to keep the wide table navigable.
+
+**Sticky column.** The "Ward" column (col 1) is pinned to the left so the row identifier stays visible while scrolling horizontally across the ~30 metric columns.
 
 ### 2.3 Bottom table — "Metrics by Work Area Group" (one row per WorkAreaGroup)
 
 Scope: all WAGs across the entire opportunity, with no per-ward filter (per Q6). Each metric appears twice: a date-filtered column (responds to the same page-level filter as the top table) and a `_last_week` constant pinned to the rolling previous 7 days (per Q7).
 
-| # | Column header | Canonical metric | Filter behaviour |
+| # | Column header (display label) | Canonical metric | Filter behaviour |
 |---|---|---|---|
 | 1 | Work Area Group | (WAG name) | — |
 | 2 | Ward | (parent ward name) | — |
 | 3 | Population Target | `SUM(target_population)` (per WAG) | Static; denominator per Part 1 rules |
-| 4 | pct_visits_approved | `pct_visits_approved` | Filtered by `visit_date` |
-| 5 | pct_visits_approved_last_week | `pct_visits_approved_last_week` | Pinned 7d (`visit_date`) |
-| 6 | pct_WAs_evc_reached | `pct_WAs_evc_reached` | Filtered by `evc-reached-at` |
-| 7 | pct_WAs_evc_reached_last_week | `pct_WAs_evc_reached_last_week` | Pinned 7d (`evc-reached-at`) |
-| 8 | pct_WA_visited_to_pct_visits | `pct_WA_visited_to_pct_visits` | Ratio (`visited-at` numerator / col 4) |
-| 9 | pct_WA_visited_to_pct_visits_last_week | `pct_WA_visited_to_pct_visits_last_week` | Ratio (pinned 7d) |
+| 4 | % Visits Approved | `pct_visits_approved` | Filtered by `visit_date` |
+| 5 | % Visits Approved (last 7d) | `pct_visits_approved_last_week` | Pinned 7d (`visit_date`) |
+| 6 | % WAs EVC Reached | `pct_WAs_evc_reached` | Filtered by `evc-reached-at` |
+| 7 | % WAs EVC Reached (last 7d) | `pct_WAs_evc_reached_last_week` | Pinned 7d (`evc-reached-at`) |
+| 8 | WA Visit to Visit Ratio | `pct_WA_visited_to_pct_visits` | Ratio (`visited-at` numerator / col 4) |
+| 9 | WA Visit to Visit Ratio (last 7d) | `pct_WA_visited_to_pct_visits_last_week` | Ratio (pinned 7d) |
+
+**Sticky column.** The "Work Area Group" column (col 1) is pinned to the left so the row identifier stays visible while scrolling horizontally.
 
 Mockup label changes (per Q9 + Q4 follow-up): rename `pct_visits_completed` → `pct_visits_approved`, `pct_WAs_completed` → `pct_WAs_evc_reached`, and `pct_microplan_completion` → `pct_WA_visited_to_pct_visits` (per product team follow-up — `pct_microplan_completion` is conceptually closer to the WA-visited-to-visits ratio than to the building-coverage metric I originally mapped to) before frontend dev consumes the mockup.
 
@@ -184,14 +194,16 @@ Mockup label changes (per Q9 + Q4 follow-up): rename `pct_visits_completed` → 
 
 **Implication:** (1) Part 2.2 top table expanded to ~30 columns following the Excel order (26 derived metrics + 3 targets + ward name). (2) Part 2.3 bottom table's third metric pair changed from `pct_Buildings_covered_in_WAs_evc_reached` → `pct_WA_visited_to_pct_visits`.
 
-### Q5. EXCLUDED / INACCESSIBLE WAs in denominators — ⏳ PARTIALLY RESOLVED (follow-up 2026-05-27)
+### Q5. EXCLUDED / INACCESSIBLE WAs in denominators — ✅ RESOLVED (final confirmation 2026-05-28)
 **Question:** The Excel says "Number of Work Areas (not counting those marked as Excluded)". Apply the same `EXCLUDED` filter to other denominators (`SUM(target_population)`, `SUM(building_count)`, `SUM(expected_visit_count)`)? And what about `INACCESSIBLE`?
 
 **Initial product team response (2026-05-26):** Leave out both `EXCLUDED` and `INACCESSIBLE` WAs from all denominators, barring any inaccessibility-specific metric. Will confirm with Delivery.
 
 **Product team follow-up (2026-05-27):** **`INACCESSIBLE` WAs should still be included in all calculations**, except for one indicator that's part of the Audit workflow (exact indicator TBD; none of the canonical metrics in Part 1 are in that bucket). **`EXCLUDED` handling is still being clarified with Delivery.**
 
-**Implication:** Part 1 updated — `Number of Work Areas` and all `SUM(...)` denominators **include `INACCESSIBLE` WAs**. `EXCLUDED` filtering follows the Excel header as a working assumption (i.e., exclude `EXCLUDED` from `Number of Work Areas`); verify before final implementation. Reflected in Part 2 columns 2–4 (top table) and column 3 (bottom table).
+**Final confirmation (2026-05-28):** **`EXCLUDED` WAs are left out of all population / building / visit calculations** (i.e., excluded from `Number of Work Areas`, `SUM(target_population)`, `SUM(building_count)`, and `SUM(expected_visit_count)`). `INACCESSIBLE` treatment is unchanged from the 2026-05-27 follow-up: included everywhere except the one Audit-workflow indicator (which is not among the canonical 28).
+
+**Implication:** Part 1 finalized — `Number of Work Areas` and all `SUM(...)` denominators **exclude `EXCLUDED` WAs and include `INACCESSIBLE` WAs**. No further clarification pending. Reflected in Part 2 columns 2–4 (top table) and column 3 (bottom table).
 
 ### Q6. Bottom table — scope across wards — ✅ RESOLVED
 **Question:** The "Metrics by Work Area Group" table — does it show (a) all WAGs across the opportunity, (b) only WAGs for a selected ward, or (c) WAGs grouped by ward?
