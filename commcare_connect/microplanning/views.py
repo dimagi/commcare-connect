@@ -638,6 +638,9 @@ class ModifyWorkAreaUpdateView(UpdateView):
                     create_or_update_case_by_work_area(work_area)
         except CommCareHQAPIException as e:
             logger.info(f"Failed to update case for work area {work_area.id} after form submission. Error: {e}")
+            import sentry_sdk
+
+            sentry_sdk.capture_exception(e)
             form.add_error(
                 None,
                 _("Failed to update the work area. Please try again, and if the issue persists, contact support."),
