@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from django.db.models import Count, F, Max, Q, Sum
+from django.db.models import Count, F, IntegerField, Max, Q, Sum, Value
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Cast, NullIf
 
 from commcare_connect.audit.calculations import AuditCalculation, register_calculation
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
@@ -23,21 +25,24 @@ TERMINAL_STATUSES = [
 ]
 
 # form_json field path constants — paths are relative to form_json["form"], using __ for nesting
-GENDER_FIELD = "additional_case_info__childs_gender"  # values: "female_child" / "male_child"
-FEMALE = "female_child"
-AGE_FIELD = "additional_case_info__childs_age_in_month"  # integer months
+GENDER_FIELD = "additional_case_info__childs_gender"  # values: "female" / "male"
+FEMALE = "female"
+AGE_FIELD = "additional_case_info__childs_age_in_months"  # string months, e.g. "12"
 DOB_FIELD = "additional_case_info__childs_dob"
 
-MUAC_MEASUREMENT_FIELD = "muac_group__muac_display_group_1__soliciter_muac_cm"  # float cm
+MUAC_MEASUREMENT_FIELD = (
+    "muac_group__muac_display_group_2__muac_colour_display__soliciter_muac_cm"  # float cm (string)
+)
 MUAC_PHOTO_LINK_FIELD = "muac_group__muac_photo_link"  # URL (non-empty = photo taken)
 MUAC_CONSENT_FIELD = "muac_group__muac_consent_group__muac_consent"
 
-VACCINE_FIELD = "pictures__received_any_vaccine"  # values: "yes" / "no"
+VACCINE_FIELD = "child_vaccine_group__vaccines_ql__received_any_vaccine"  # values: "yes" / "no"
 YES = "yes"
-VACCINE_CARD_LINK_FIELD = "immunization_photo_group__photo_link_vaccine"  # URL (non-empty = photo taken)
+# URL (non-empty = photo taken)
+VACCINE_CARD_LINK_FIELD = "child_vaccine_group__vaccine_photo_folder__photo_link_vaccine"
 
 MUAC_BIN_EDGES = [9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5]
-AGE_HEAPING_VALUES = [12, 24, 36, 48]
+AGE_HEAPING_VALUES = ["12", "24", "36", "48"]
 MAX_VISITS_PER_BUILDING = 12  # threshold above which a WA is flagged as "camping"
 
 
@@ -45,6 +50,19 @@ def _q_link_present(form_field) -> Q:
     """Return a Q that matches when a form URL link field is non-null and non-empty."""
     path = f"form_json__form__{form_field}"
     return Q(**{f"{path}__isnull": False}) & ~Q(**{path: ""})
+
+
+def _json_int(form_field) -> Cast:
+    """Cast a __-delimited form_json field to an integer for numeric comparison.
+
+    The form stores numbers as JSON strings (e.g. "12"), so a raw __gt lookup would
+    compare lexicographically ("12" < "6"). KeyTextTransform extracts the value as text
+    (->>), NullIf maps "" to NULL so the cast skips blanks, then Cast yields a real int.
+    """
+    expr = "form_json"
+    for key in ("form", *form_field.split("__")):
+        expr = KeyTextTransform(key, expr)
+    return Cast(NullIf(expr, Value("")), IntegerField())
 
 
 def _find_active_wag(opportunity_access, period_end) -> WorkAreaGroup | None:
@@ -172,14 +190,18 @@ class MUACPhotoCompliance(AuditCalculation):
     lower_bound = 0.72
 
     def compute(self, opportunity_access, period_start, period_end):
-        result = UserVisit.objects.filter(
-            opportunity_access=opportunity_access,
-            visit_date__date__range=(period_start, period_end),
-            **{f"form_json__form__{AGE_FIELD}__gt": 6},
-            **{f"form_json__form__{MUAC_CONSENT_FIELD}": YES},
-        ).aggregate(
-            total=Count("id"),
-            with_photo=Count("id", filter=_q_link_present(MUAC_PHOTO_LINK_FIELD)),
+        result = (
+            UserVisit.objects.filter(
+                opportunity_access=opportunity_access,
+                visit_date__date__range=(period_start, period_end),
+                **{f"form_json__form__{MUAC_CONSENT_FIELD}": YES},
+            )
+            .annotate(age_months=_json_int(AGE_FIELD))
+            .filter(age_months__gt=6)
+            .aggregate(
+                total=Count("id"),
+                with_photo=Count("id", filter=_q_link_present(MUAC_PHOTO_LINK_FIELD)),
+            )
         )
         total = result["total"]
         if not total:

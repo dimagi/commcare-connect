@@ -96,7 +96,8 @@ def _visit_with_gender(access, gender, **kwargs):
 
 
 def _visit_with_age(access, age, dob=None, **kwargs):
-    additional = {"childs_age_in_month": age}
+    # Real forms store age in months as a string under the plural key.
+    additional = {"childs_age_in_months": str(age)}
     if dob is not None:
         additional["childs_dob"] = dob
     return make_form_visit(access, {"additional_case_info": additional}, **kwargs)
@@ -108,24 +109,33 @@ def _visit_with_muac_photo(access, has_photo=True, age_months=12, **kwargs):
         muac_group["muac_photo_link"] = "https://example.com/photo.jpg"
     return make_form_visit(
         access,
-        {"additional_case_info": {"childs_age_in_month": age_months}, "muac_group": muac_group},
+        {"additional_case_info": {"childs_age_in_months": str(age_months)}, "muac_group": muac_group},
         **kwargs,
     )
 
 
 def _visit_with_vaccine(access, given=True, **kwargs):
-    return make_form_visit(access, {"pictures": {"received_any_vaccine": YES if given else "no"}}, **kwargs)
+    return make_form_visit(
+        access,
+        {"child_vaccine_group": {"vaccines_ql": {"received_any_vaccine": YES if given else "no"}}},
+        **kwargs,
+    )
 
 
 def _visit_with_vaccine_card(access, has_photo=True, **kwargs):
-    form = {"pictures": {"received_any_vaccine": YES}}
+    child_vaccine_group = {"vaccines_ql": {"received_any_vaccine": YES}}
     if has_photo:
-        form["immunization_photo_group"] = {"photo_link_vaccine": "https://example.com/card.jpg"}
-    return make_form_visit(access, form, **kwargs)
+        child_vaccine_group["vaccine_photo_folder"] = {"photo_link_vaccine": "https://example.com/card.jpg"}
+    return make_form_visit(access, {"child_vaccine_group": child_vaccine_group}, **kwargs)
 
 
 def _visit_with_muac(access, muac_cm, **kwargs):
-    return make_form_visit(access, {"muac_group": {"muac_display_group_1": {"soliciter_muac_cm": muac_cm}}}, **kwargs)
+    # Real forms store the MUAC measurement as a string under muac_group.
+    return make_form_visit(
+        access,
+        {"muac_group": {"muac_display_group_2": {"muac_colour_display": {"soliciter_muac_cm": str(muac_cm)}}}},
+        **kwargs,
+    )
 
 
 # Bell-shaped distribution centred around 13.5 cm — passes all 6 MUAC features
@@ -298,7 +308,7 @@ class TestMUACPhotoCompliance(BaseIndicatorTest):
 
     def test_no_consent_not_in_denominator(self):
         access = OpportunityAccessFactory()
-        make_visit(access, form_json={"form": {"additional_case_info": {"childs_age_in_month": 12}}})
+        make_visit(access, form_json={"form": {"additional_case_info": {"childs_age_in_months": "12"}}})
         self.assert_insufficient_data(access)
 
     @pytest.mark.parametrize(
@@ -323,7 +333,7 @@ class TestMUACPhotoCompliance(BaseIndicatorTest):
             access,
             form_json={
                 "form": {
-                    "additional_case_info": {"childs_age_in_month": 12},
+                    "additional_case_info": {"childs_age_in_months": "12"},
                     "muac_group": {"muac_consent_group": {"muac_consent": "yes"}, "muac_photo_link": ""},
                 }
             },
@@ -676,8 +686,10 @@ class TestVaccineCardPhotoCompliance(BaseIndicatorTest):
             access,
             form_json={
                 "form": {
-                    "pictures": {"received_any_vaccine": YES},
-                    "immunization_photo_group": {"photo_link_vaccine": ""},
+                    "child_vaccine_group": {
+                        "vaccines_ql": {"received_any_vaccine": YES},
+                        "vaccine_photo_folder": {"photo_link_vaccine": ""},
+                    },
                 }
             },
         )
