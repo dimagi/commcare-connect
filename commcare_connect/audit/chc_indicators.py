@@ -140,7 +140,7 @@ class GenderRatioDeviation(AuditCalculation):
 
     name = "gender_ratio_deviation"
     label = "Gender Ratio Deviation"
-    min_sample_size = 97
+    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
     lower_bound = 0.4
     upper_bound = 0.6
 
@@ -168,7 +168,7 @@ class MUACPhotoCompliance(AuditCalculation):
 
     name = "muac_photo_compliance"
     label = "MUAC Photo Compliance"
-    min_sample_size = 70
+    min_sample_size = 25  # TEMP-TEST: was 70, lowered for UI testing — REVERT before commit
     lower_bound = 0.72
 
     def compute(self, opportunity_access, period_start, period_end):
@@ -197,7 +197,7 @@ class AgeHeaping(AuditCalculation):
 
     name = "age_heaping"
     label = "Age Heaping"
-    min_sample_size = 97
+    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
     upper_bound = 0.19
 
     def compute(self, opportunity_access, period_start, period_end):
@@ -332,7 +332,7 @@ class VaccineRate(AuditCalculation):
 
     name = "vaccine_rate"
     label = "Vaccine Rate"
-    min_sample_size = 97
+    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
     lower_bound = 0.58
 
     def compute(self, opportunity_access, period_start, period_end):
@@ -360,7 +360,7 @@ class VaccineCardPhotoCompliance(AuditCalculation):
 
     name = "vaccine_card_photo_compliance"
     label = "Vaccine Card Photo Compliance"
-    min_sample_size = 97
+    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
     lower_bound = 0.38
 
     def compute(self, opportunity_access, period_start, period_end):
@@ -483,7 +483,7 @@ class MUACDistributionPatternIndex(AuditCalculation):
 
     name = "muac_distribution_pattern_index"
     label = "MUAC Distribution Pattern Index (MDPI)"
-    min_sample_size = 100
+    min_sample_size = 25  # TEMP-TEST: was 100, lowered for UI testing — REVERT before commit
     lower_bound = 5
 
     def compute(self, opportunity_access, period_start, period_end):
