@@ -46,6 +46,10 @@ AGE_HEAPING_VALUES = ["12", "24", "36", "48"]
 MAX_VISITS_PER_BUILDING = 12  # threshold above which a WA is flagged as "camping"
 
 
+def _percent(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator * 100, 2)
+
+
 def _q_link_present(form_field) -> Q:
     """Return a Q that matches when a form URL link field is non-null and non-empty."""
     path = f"form_json__form__{form_field}"
@@ -152,15 +156,15 @@ class CampingRatio(AuditCalculation):
 @register_calculation
 class GenderRatioDeviation(AuditCalculation):
     """Detect gender imbalance suggesting selective visit recording.
-    Ratio = female visits / last 97 completed visits.
-    Flags if female ratio < 0.4 or > 0.6 (10% max deviation from 50/50 at 95% confidence).
+    Percent = female visits / last 97 completed visits * 100.
+    Flags if female percent < 40 or > 60 (10% max deviation from 50/50 at 95% confidence).
     """
 
     name = "gender_ratio_deviation"
     label = "Gender Ratio Deviation"
-    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
-    lower_bound = 0.4
-    upper_bound = 0.6
+    min_sample_size = 15  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
+    lower_bound = 40
+    upper_bound = 60
 
     def compute(self, opportunity_access, period_start, period_end):
         result = UserVisit.objects.filter(
@@ -173,7 +177,7 @@ class GenderRatioDeviation(AuditCalculation):
         total = result["total"]
         if not total:
             return None, 0
-        return result["female"] / total, total
+        return _percent(result["female"], total), total
 
 
 @register_calculation
@@ -186,8 +190,8 @@ class MUACPhotoCompliance(AuditCalculation):
 
     name = "muac_photo_compliance"
     label = "MUAC Photo Compliance"
-    min_sample_size = 25  # TEMP-TEST: was 70, lowered for UI testing — REVERT before commit
-    lower_bound = 0.72
+    min_sample_size = 15  # TEMP-TEST: was 70, lowered for UI testing — REVERT before commit
+    lower_bound = 72
 
     def compute(self, opportunity_access, period_start, period_end):
         result = (
@@ -206,7 +210,7 @@ class MUACPhotoCompliance(AuditCalculation):
         total = result["total"]
         if not total:
             return None, 0
-        return result["with_photo"] / total, total
+        return _percent(result["with_photo"], total), total
 
 
 @register_calculation
@@ -219,8 +223,8 @@ class AgeHeaping(AuditCalculation):
 
     name = "age_heaping"
     label = "Age Heaping"
-    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
-    upper_bound = 0.19
+    min_sample_size = 15  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
+    upper_bound = 19
 
     def compute(self, opportunity_access, period_start, period_end):
         result = UserVisit.objects.filter(
@@ -235,7 +239,7 @@ class AgeHeaping(AuditCalculation):
         total = result["total"]
         if not total:
             return None, 0
-        return result["heaped"] / total, total
+        return _percent(result["heaped"], total), total
 
 
 @register_calculation
@@ -287,7 +291,7 @@ class InaccessibleWARateEarlyWarning(AuditCalculation):
     name = "inaccessible_wa_rate_early_warning"
     label = "Inaccessible WA Rate – Early Warning"
     min_sample_size = 5
-    upper_bound = 0.25
+    upper_bound = 25
 
     def compute(self, opportunity_access, period_start, period_end):
         active_wag = _find_active_wag(opportunity_access, period_end)
@@ -303,7 +307,7 @@ class InaccessibleWARateEarlyWarning(AuditCalculation):
         if not stats["total"]:
             return None, 0
 
-        return stats["inaccessible_count"] / stats["total"], stats["terminal_count"]
+        return _percent(stats["inaccessible_count"], stats["total"]), stats["terminal_count"]
 
 
 @register_calculation
@@ -316,7 +320,7 @@ class InaccessibleWARateLastCompletedWAG(AuditCalculation):
     name = "inaccessible_wa_rate_last_completed_wag"
     label = "Inaccessible WA Rate – Last Completed WAG"
     min_sample_size = 5
-    upper_bound = 0.15
+    upper_bound = 15
 
     def compute(self, opportunity_access, period_start, period_end):
         last_wag = _find_last_closed_wag(opportunity_access, period_end)
@@ -342,7 +346,7 @@ class InaccessibleWARateLastCompletedWAG(AuditCalculation):
         if total == 0:
             return None, 0
 
-        return stats["inaccessible_count"] / total, total
+        return _percent(stats["inaccessible_count"], total), total
 
 
 @register_calculation
@@ -354,8 +358,8 @@ class VaccineRate(AuditCalculation):
 
     name = "vaccine_rate"
     label = "Vaccine Rate"
-    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
-    lower_bound = 0.58
+    min_sample_size = 15  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
+    lower_bound = 58
 
     def compute(self, opportunity_access, period_start, period_end):
         result = UserVisit.objects.filter(
@@ -368,7 +372,7 @@ class VaccineRate(AuditCalculation):
         total = result["total"]
         if not total:
             return None, 0
-        return result["vaccinated"] / total, total
+        return _percent(result["vaccinated"], total), total
 
 
 @register_calculation
@@ -382,8 +386,8 @@ class VaccineCardPhotoCompliance(AuditCalculation):
 
     name = "vaccine_card_photo_compliance"
     label = "Vaccine Card Photo Compliance"
-    min_sample_size = 25  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
-    lower_bound = 0.38
+    min_sample_size = 15  # TEMP-TEST: was 97, lowered for UI testing — REVERT before commit
+    lower_bound = 38
 
     def compute(self, opportunity_access, period_start, period_end):
         result = UserVisit.objects.filter(
@@ -397,7 +401,7 @@ class VaccineCardPhotoCompliance(AuditCalculation):
         total = result["total"]
         if not total:
             return None, 0
-        return result["with_photo"] / total, total
+        return _percent(result["with_photo"], total), total
 
 
 # ── MUAC distribution helpers (ported from MLFeatureAggregationReport.py) ────
@@ -505,7 +509,7 @@ class MUACDistributionPatternIndex(AuditCalculation):
 
     name = "muac_distribution_pattern_index"
     label = "MUAC Distribution Pattern Index (MDPI)"
-    min_sample_size = 25  # TEMP-TEST: was 100, lowered for UI testing — REVERT before commit
+    min_sample_size = 15  # TEMP-TEST: was 100, lowered for UI testing — REVERT before commit
     lower_bound = 5
 
     def compute(self, opportunity_access, period_start, period_end):

@@ -269,20 +269,20 @@ class TestGenderRatioDeviation(BaseIndicatorTest):
     calc = GenderRatioDeviation()
 
     @pytest.mark.parametrize(
-        "female, male, expected_ratio, in_range",
+        "female, male, expected_percent, in_range",
         [
-            (5, 5, 0.5, True),  # 50/50 — within 0.4–0.6
-            (10, 0, 1.0, False),  # all female — above 0.6
+            (5, 5, 50.0, True),  # 50/50 — within 40–60
+            (10, 0, 100.0, False),  # all female — above 60
         ],
         ids=["balanced", "all_female"],
     )
-    def test_ratio_threshold(self, female, male, expected_ratio, in_range):
+    def test_ratio_threshold(self, female, male, expected_percent, in_range):
         access = OpportunityAccessFactory()
         for _ in range(female):
             _visit_with_gender(access, FEMALE)
         for _ in range(male):
             _visit_with_gender(access, "male_child")
-        self.assert_compute_result(access, sample=female + male, value=expected_ratio, in_range=in_range)
+        self.assert_compute_result(access, sample=female + male, value=expected_percent, in_range=in_range)
 
     @pytest.mark.parametrize("visit_date", [AFTER_PERIOD, OUT_OF_PERIOD], ids=["after_period", "before_period"])
     def test_visits_outside_period_excluded(self, visit_date):
@@ -294,7 +294,7 @@ class TestGenderRatioDeviation(BaseIndicatorTest):
         access = OpportunityAccessFactory()
         make_visit(access)  # no gender field
         _visit_with_gender(access, FEMALE)
-        self.assert_compute_result(access, sample=2, value=0.5)
+        self.assert_compute_result(access, sample=2, value=50.0)
 
 
 @pytest.mark.django_db
@@ -314,8 +314,8 @@ class TestMUACPhotoCompliance(BaseIndicatorTest):
     @pytest.mark.parametrize(
         "with_photo, without_photo, expected_value, in_range",
         [
-            (5, 0, 1.0, True),  # 100% compliance
-            (1, 4, 0.2, False),  # 20% compliance, below 72% threshold
+            (5, 0, 100.0, True),  # 100% compliance
+            (1, 4, 20.0, False),  # 20% compliance, below 72% threshold
         ],
         ids=["full_compliance", "below_threshold"],
     )
@@ -349,7 +349,7 @@ class TestAgeHeaping(BaseIndicatorTest):
         "ages, expected_rate, in_range",
         [
             ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.0, True),  # no round years
-            ([12, 24, 36, 48, 1, 2, 3, 4, 5, 6], 0.4, False),  # 4/10 heaped, above 19%
+            ([12, 24, 36, 48, 1, 2, 3, 4, 5, 6], 40.0, False),  # 4/10 heaped, above 19%
         ],
         ids=["no_round_years", "high_heaping"],
     )
@@ -498,8 +498,8 @@ class TestInaccessibleWARateEarlyWarning(BaseIndicatorTest):
     @pytest.mark.parametrize(
         "inaccessible, reached, not_visited, expected_value, in_range",
         [
-            (1, 5, 1, 1 / 7, True),  # ~14%, below 25% threshold
-            (4, 1, 1, 4 / 6, False),  # ~67%, above 25% threshold
+            (1, 5, 1, 14.29, True),  # ~14%, below 25% threshold
+            (4, 1, 1, 66.67, False),  # ~67%, above 25% threshold
         ],
         ids=["below_threshold", "above_threshold"],
     )
@@ -540,7 +540,7 @@ class TestInaccessibleWARateEarlyWarning(BaseIndicatorTest):
         )
         make_visit(access, work_area=wa_inaccessible, visit_date=IN_PERIOD)
 
-        self.assert_compute_result(access, sample=6, value=1 / 7)
+        self.assert_compute_result(access, sample=6, value=14.29)
 
 
 @pytest.mark.django_db
@@ -584,8 +584,8 @@ class TestInaccessibleWARateLastCompletedWAG(BaseIndicatorTest):
     @pytest.mark.parametrize(
         "inaccessible, reached, expected_value, in_range",
         [
-            (1, 6, 1 / 7, True),  # ~14%, below 15% threshold
-            (4, 2, 4 / 6, False),  # ~67%, above 15% threshold
+            (1, 6, 14.29, True),  # ~14%, below 15% threshold
+            (4, 2, 66.67, False),  # ~67%, above 15% threshold
         ],
         ids=["below_threshold", "above_threshold"],
     )
@@ -604,7 +604,7 @@ class TestInaccessibleWARateLastCompletedWAG(BaseIndicatorTest):
             status=WorkAreaStatus.EXCLUDED,
         )
         visit_all_was(access, wag)
-        self.assert_compute_result(access, sample=7, value=1 / 7)  # EXCLUDED WA not counted in sample
+        self.assert_compute_result(access, sample=7, value=14.29)  # EXCLUDED WA not counted in sample
 
     def test_most_recently_completed_wag_selected(self):
         """When two WAGs are closed, the one with the more recent visits is chosen."""
@@ -635,9 +635,9 @@ class TestVaccineRate(BaseIndicatorTest):
     @pytest.mark.parametrize(
         "given, not_given, expected_value, in_range",
         [
-            (7, 3, 0.7, True),  # 70% — above 58% threshold
+            (7, 3, 70.0, True),  # 70% — above 58% threshold
             (0, 10, 0.0, False),  # 0% — below threshold
-            (10, 0, 1.0, True),  # 100% — no upper bound
+            (10, 0, 100.0, True),  # 100% — no upper bound
         ],
         ids=["above_threshold", "zero_rate", "full_rate"],
     )
@@ -667,8 +667,8 @@ class TestVaccineCardPhotoCompliance(BaseIndicatorTest):
     @pytest.mark.parametrize(
         "with_photo, without_photo, expected_value, in_range",
         [
-            (5, 0, 1.0, True),  # 100% compliance
-            (1, 4, 0.2, False),  # 20% compliance, below 38% threshold
+            (5, 0, 100.0, True),  # 100% compliance
+            (1, 4, 20.0, False),  # 20% compliance, below 38% threshold
         ],
         ids=["full_compliance", "below_threshold"],
     )
