@@ -95,11 +95,9 @@ def _visit_with_gender(access, gender, **kwargs):
     return make_form_visit(access, {"additional_case_info": {"childs_gender": gender}}, **kwargs)
 
 
-def _visit_with_age(access, age, dob=None, **kwargs):
+def _visit_with_age(access, age, **kwargs):
     # Real forms store age in months as a string under the plural key.
     additional = {"childs_age_in_months": str(age)}
-    if dob is not None:
-        additional["childs_dob"] = dob
     return make_form_visit(access, {"additional_case_info": additional}, **kwargs)
 
 
@@ -358,12 +356,6 @@ class TestAgeHeaping(BaseIndicatorTest):
         for age in ages:
             _visit_with_age(access, age)
         self.assert_compute_result(access, sample=len(ages), value=expected_rate, in_range=in_range)
-
-    def test_visits_with_dob_excluded(self):
-        access = OpportunityAccessFactory()
-        _visit_with_age(access, 12, dob="2025-04-15")  # has DOB → excluded
-        _visit_with_age(access, 13)  # no DOB → included
-        self.assert_compute_result(access, sample=1)
 
     def test_visits_after_period_end_excluded(self):
         access = OpportunityAccessFactory()

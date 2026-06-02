@@ -28,7 +28,6 @@ TERMINAL_STATUSES = [
 GENDER_FIELD = "additional_case_info__childs_gender"  # values: "female" / "male"
 FEMALE = "female"
 AGE_FIELD = "additional_case_info__childs_age_in_months"  # string months, e.g. "12"
-DOB_FIELD = "additional_case_info__childs_dob"
 
 MUAC_MEASUREMENT_FIELD = (
     "muac_group__muac_display_group_2__muac_colour_display__soliciter_muac_cm"  # float cm (string)
@@ -217,7 +216,7 @@ class MUACPhotoCompliance(AuditCalculation):
 class AgeHeaping(AuditCalculation):
     """Detect rounding/shortcut age entry at exact whole-year values.
     Flags when visits with childs_age_in_month in (12, 24, 36, 48) exceed 19%
-    of the last 97 visits without a recorded DOB.
+    of the last 97 visits.
     Threshold: p=0.134, n=97, one-sided 95% CI upper bound.
     """
 
@@ -231,7 +230,6 @@ class AgeHeaping(AuditCalculation):
             opportunity_access=opportunity_access,
             visit_date__date__range=(period_start, period_end),
             **{f"form_json__form__{AGE_FIELD}__isnull": False},
-            **{f"form_json__form__{DOB_FIELD}__isnull": True},
         ).aggregate(
             total=Count("id"),
             heaped=Count("id", filter=Q(**{f"form_json__form__{AGE_FIELD}__in": AGE_HEAPING_VALUES})),
