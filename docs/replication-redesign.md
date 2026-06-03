@@ -234,6 +234,14 @@ def is_publication_in_sync() -> bool:
     return desired == actual
 ```
 
+#### Gating: an env flag for whether replication runs on deploy
+
+Since not all environments have replication set up we should gate when
+this happens. We can thus add a `REPLICATION_ENABLED = env.bool("REPLICATION_ENABLED",
+default=False)` in `base.py` — set to `True` only on the environment(s)
+that should replicate (via the per-environment `docker.env`). The refresh
+command checks it first and skips as a no-op when it's `False`.
+
 ---
 
 ### D3. How are credentials handled in a non-interactive context?
@@ -348,6 +356,7 @@ The following options are recommended:
 1. Developer adds a new model in the code.
 2. A Django system check (run by `manage.py check` locally and in CI) fails unless the new model is specified in either `REPLICATION_INCLUDED_MODELS` or `REPLICATION_EXCLUDED_MODELS`.
 3. On deploy, after `migrate_multi` has executed, a new command will be run which
+   - skips as a no-op if `REPLICATION_ENABLED` is `False`
    - checks to see if the publication is in sync with the codebase
    - if so: exit (noop)
    - if not: invoke `setup_logical_replication` command (which obtains credentials from django settings)
