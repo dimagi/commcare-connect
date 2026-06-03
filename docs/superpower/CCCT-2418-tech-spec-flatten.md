@@ -88,7 +88,7 @@ At that point, all application code can safely assume that `Opportunity.program`
 
 Delete the `ManagedOpportunity` model, which will also remove the `program_managedopportunity` table.
 
-> **Note:** I am not proposing to remove the `managed` column at this time, as it can serve as the original source of truth for whether an opportunity was historically managed or non-managed. However, I am happy to remove it as well if the team agrees that this information is no longer needed.
+> **Note:** I am not proposing to remove the `managed` column at this time, as it can serve as the original source of truth for whether an opportunity was historically managed or non-managed.
 
 
 ### Work areas
@@ -111,7 +111,7 @@ Remove all managed/non-managed conditional logic throughout the codebase and sta
 
 Simplify opportunity permissions by using is_opportunity_pm for all opportunity-level actions. Introduce is_opportunity_nm for organization-level access patterns where needed.
 
-### Sequencing
+## Release Plan
 Two releases, to keep the schema drop safe:
 
 **Release 1**
@@ -136,6 +136,26 @@ This approach is lower risk in the short term because it only requires a data mi
 * It introduces awkward interim semantics for the `managed` flag, where promoted opportunities would have a `ManagedOpportunity` child row while still retaining `managed=False`.
 
 While flattening the model requires additional work up front (a schema migration, reference updates, and a more careful deployment), it results in less overall effort and lands directly on the desired end state. The child-table promotion approach remains a fallback option if a schema change becomes undesirable.
+
+
+## Rollback and Risk
+
+**Overall risk is low** — there are no active real-world non-managed opportunities in production, so the migration affects only test data and one inactive demo opportunity.
+
+
+**Release 1 is fully reversible.** Each step can be undone cleanly:
+
+- *Migration 1*: drop `Opportunity.program`, rename `program_old` back to `program`.
+- *Migration 2*: the legacy LLO entity, PM organizations, and Programs are freshly created with no organic user data (no memberships, no real interactions). They can be deleted in reverse order and `Opportunity.program` NULLed for the affected rows.
+- *Code revert (Areas 1–4)*: a git revert of the release branch restores all `managed` branching and `.managedopportunity` accessor calls. These still work because the `ManagedOpportunity` rows and the `managed` flag are untouched throughout Release 1.
+
+**The only irreversible step is Migration 3 (Release 2).** Dropping the `ManagedOpportunity` table cannot be undone without a database restore. This is why Migration 3 is intentionally deferred to a separate release, after Release 1 is verified in production.
+
+
+## Test Plan
+
+Smoke testing should be performed before release 1 to validate the critical flows, including opportunity creation, program assignment, and permission checks after the migration changes.
+
 
 
 ## Implementation Tickets
