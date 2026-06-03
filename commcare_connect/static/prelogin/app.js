@@ -215,3 +215,21 @@ document.addEventListener('click', (e) => {
     showStep(node.dataset.step);
   }
 });
+
+// Mobile-only toggle on the "What's different" comparison table. CSS hides
+// the unselected column at the same breakpoint where the table goes 1fr.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.compare-toggle-btn');
+  if (!btn) return;
+  const show = btn.dataset.show;
+  const toggle = btn.closest('.compare-toggle');
+  const tableId = toggle && toggle.getAttribute('aria-controls');
+  const table = tableId && document.getElementById(tableId);
+  if (!show || !table) return;
+  table.setAttribute('data-mobile-show', show);
+  toggle.querySelectorAll('.compare-toggle-btn').forEach((b) => {
+    const active = b === btn;
+    b.classList.toggle('is-active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+});
