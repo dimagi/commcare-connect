@@ -237,10 +237,8 @@ def is_publication_in_sync() -> bool:
 #### Gating: an env flag for whether replication runs on deploy
 
 Since not all environments have replication set up we should gate when
-this happens. We can thus add a `REPLICATION_ENABLED = env.bool("REPLICATION_ENABLED",
-default=False)` in `base.py` — set to `True` only on the environment(s)
-that should replicate (via the per-environment `docker.env`). The refresh
-command checks it first and skips as a no-op when it's `False`.
+this happens. We can check the `SECONDARY_DATABASE_URL` value to decide if
+replication should happen. The refresh skips as a no-op when it's not populated.
 
 ---
 
@@ -340,7 +338,19 @@ The following options are recommended:
 - D2: deploy-pipeline command, sequenced after `migrate_multi` returns
   (the only safe trigger — see D2 background on the ordering constraint
   imposed by logical replication)
-- D3.A: Since we already have the command written, swapping the inputs for reading the necessary credentials should be minimum effort while accepting the trade-off that the secondary superuser password (and primary replication user password) stay in env on every deploy host, rather than doing the ownership-transfer work D3.B would require.
+- D3.B: split the lifecycle into a one-time **bootstrap** (interactive,
+  operator-run: `CREATE PUBLICATION` / `CREATE SUBSCRIPTION`, the GRANTs,
+  and the ownership transfers) and a fully non-interactive **refresh**
+  that the deploy pipeline runs after `migrate_multi`. Bootstrap transfers
+  ownership of `tables_for_superset_pub` to the app's primary role and
+  `tables_for_superset_sub` to the app's secondary role, so the recurring
+  refresh runs `ALTER PUBLICATION ... SET TABLE` and `ALTER SUBSCRIPTION
+  ... REFRESH PUBLICATION` using only the connections `migrate_multi`
+  already has — **no superuser and no new secrets anywhere in the
+  recurring path**. The high-privilege secondary superuser credential is
+  typed by an operator once at bootstrap and never persisted. The cost is
+  two code paths to maintain and a documented "run bootstrap once per
+  environment" step.
 
 ### Out of scope
 
@@ -349,16 +359,25 @@ The following options are recommended:
   silently flow to the secondary; this redesign does not address that.
 - **`logical_replication_status.py`.** This command also imports
   `REPLICATION_ALLOWED_MODELS` and prompts for secondary superuser
-  credentials. It will need the same rename and the same env-var
-  treatment as `setup_logical_replication` for consistency.
+  credentials. It will need the same auto-discovery rename; under D3.B its
+  read-only status checks can run on the app's existing connections
+  without the superuser prompt.
 
 ### Example flow for adding a new model
 1. Developer adds a new model in the code.
 2. A Django system check (run by `manage.py check` locally and in CI) fails unless the new model is specified in either `REPLICATION_INCLUDED_MODELS` or `REPLICATION_EXCLUDED_MODELS`.
-3. On deploy, after `migrate_multi` has executed, a new command will be run which
+3. On deploy, after `migrate_multi` has executed, the non-interactive
+   `refresh_replication` command runs, which
    - skips as a no-op if `REPLICATION_ENABLED` is `False`
-   - checks to see if the publication is in sync with the codebase
+   - checks whether the publication is in sync with the codebase
    - if so: exit (noop)
-   - if not: invoke `setup_logical_replication` command (which obtains credentials from django settings)
+   - if not: runs `ALTER PUBLICATION ... SET TABLE` on the primary and
+     `ALTER SUBSCRIPTION ... REFRESH PUBLICATION` on the secondary, using
+     the connections Django already has configured (no superuser, no new
+     credentials — ownership was transferred at bootstrap)
+
+The one-time `bootstrap` command (interactive, operator-run) is a
+prerequisite, run once per environment before the first deploy that
+enables replication.
 
 
