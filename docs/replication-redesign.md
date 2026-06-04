@@ -329,6 +329,41 @@ anywhere in the recurring path.
   and runs bootstrap; documenting "you must run bootstrap once" is
   a process risk. 
 
+#### ⚠️ Hard prerequisite — Postgres ≥ 16 on the secondary
+
+D3.B's "no superuser in the recurring path" property depends entirely on
+the secondary's subscription being **owned by an ordinary (non-superuser)
+role** — the app's secondary role that `migrate_multi` already connects
+as. However, that ownership is only legal on **Postgres 16+**; earlier
+versions do not allow non-superusers to own subscriptions. The PG15
+[`ALTER SUBSCRIPTION`](https://www.postgresql.org/docs/15/sql-altersubscription.html)
+reference says so directly in its Description:
+
+> The new owner has to be a superuser. (Currently, all subscription owners
+> must be superusers, so the owner checks will be bypassed in practice. But
+> this might change in the future.)
+
+So `ALTER SUBSCRIPTION ... OWNER TO <app_role>` cannot hand the subscription
+to an ordinary role on PG15, and `REFRESH PUBLICATION` (which requires
+ownership) stays superuser-only. PG16 is the "might change in the future"
+above: it added the
+[`pg_create_subscription`](https://www.postgresql.org/docs/16/predefined-roles.html)
+predefined role and non-superuser subscription ownership.
+
+The primary/publication leg (`ALTER PUBLICATION ... SET TABLE` via
+ownership transfer) works on any version; only the subscriber leg is
+gated by this.
+
+**Current state:** our **production secondary DB runs Postgres 15**, so
+D3.B is *not* implementable as-is today.
+
+**Plan to unblock:** upgrade the secondary to Postgres 16+ via a
+**blue/green** approach — stand up the PG16 instance in parallel,
+replicate/validate against it, cut over once it's confirmed working, and
+decommission the old PG15 instance. D3.B can only be rolled out *after*
+that cutover completes; until then the recurring subscriber refresh still
+requires a superuser (D3.A behaviour).
+
 ---
 
 ## Recommendation
@@ -350,7 +385,10 @@ The following options are recommended:
   recurring path**. The high-privilege secondary superuser credential is
   typed by an operator once at bootstrap and never persisted. The cost is
   two code paths to maintain and a documented "run bootstrap once per
-  environment" step.
+  environment" step. **Prerequisite:** the secondary must run Postgres
+  16+; our production secondary is currently Postgres 15, so this requires
+  a blue/green upgrade of the secondary first (see the D3.B prerequisite
+  note above).
 
 ### Out of scope
 
