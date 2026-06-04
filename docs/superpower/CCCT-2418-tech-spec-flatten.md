@@ -1,4 +1,4 @@
-# Tech Spec: Remove Non-Managed Opportunities (Flatten `ManagedOpportunity` into `Opportunity`)
+# Tech Spec: Remove Non-Managed Opportunities (Flatten ManagedOpportunity into Opportunity)
 
 **Ticket:** [CCCT-2418: Remove Non-Managed Opportunities from Connect](https://dimagi.atlassian.net/browse/CCCT-2418)
 
