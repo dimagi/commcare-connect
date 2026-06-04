@@ -52,7 +52,7 @@ Three small migrations replace the MTI promotion entirely:
 **Migration 1 — Schema:** Add `program` to `Opportunity`.
 
 * Rename the `ManagedOpportunity.program` field to `program_old` and make it nullable.
-* Add a new `program` field directly to `Opportunity`.
+* Add a new `program` field directly to `Opportunity` as **nullable** initially, to allow zero-downtime deployment. Once Migration 2 completes and every opportunity has a program assigned, a follow-up migration in Release 2 will add a `NOT NULL` constraint.
 * Backfill the new `Opportunity.program` field from the existing `ManagedOpportunity.program_old` values.
 
   This approach minimizes code changes. The primary impact is that reverse relationship queries will need to be updated from `program__managedopportunity` to `program__opportunity`. We currently use this reverse relationship in only a few places (4), so the required code changes should be small. All other access patterns should continue to work with little or no modification.
@@ -123,6 +123,7 @@ Two releases, to keep the schema drop safe:
 
 **Release 2**
 1. **Migration 3:** Drop the `ManagedOpportunity` model and the underlying `program_managedopportunity` table once Release 1 is verified in production.
+2. **Migration: NOT NULL constraint** — Add a `NOT NULL` constraint to `Opportunity.program` now that every row is guaranteed to have a program assigned.
 
 ### Alternative Approach Considered — Promote Non-Managed Opportunities into the MTI Child Table
 
