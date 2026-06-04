@@ -67,7 +67,7 @@ class WorkArea(geo_models.Model):
         choices=WorkAreaStatus.choices,
         default=WorkAreaStatus.UNASSIGNED,
     )
-    case_id = geo_models.UUIDField(null=True, blank=True, unique=True)
+    case_id = geo_models.CharField(max_length=255, unique=True, null=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
     excluded_by = geo_models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -119,11 +119,7 @@ class WorkAreaInaccessibilityRequest(geo_models.Model):
     additional_details = geo_models.TextField(blank=True, default="")
 
     class Meta:
-        constraints = [
-            geo_models.UniqueConstraint(
-                fields=["xform_id", "work_area"], name="unique_xform_work_area_inaccessibility"
-            )
-        ]
+        constraints = [geo_models.UniqueConstraint(fields=["work_area"], name="unique_work_area_inaccessibility")]
 
     def __str__(self):
         return f"WorkAreaInaccessibilityRequest {self.xform_id} - {self.work_area}"

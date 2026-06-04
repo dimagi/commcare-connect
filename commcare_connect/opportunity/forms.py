@@ -226,20 +226,27 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         ]
 
         if switch_is_active(OPPORTUNITY_CREDENTIALS):
+            _cred_config = (
+                CredentialConfiguration.objects.filter(opportunity=self.instance).first() if self.instance else None
+            )
             layout_fields.append(
                 Row(
                     HTML(
                         format_html(
                             """
                             <div class='col-span-2'>
-                                <h6 class='title-sm'>{}</h6>
+                                <div class='flex items-center gap-3 mb-1'>
+                                    <h6 class='title-sm'>{heading}</h6>
+                                    <input type='checkbox' name='enable_credentials'
+                                           class='simple-toggle' x-model='credentialsEnabled'>
+                                </div>
                                 <span class='hint'>
-                                    {}
+                                    {hint}
                                 </span>
                             </div>
                             """,
-                            _("Manage Credentials"),
-                            format_html(
+                            heading=_("Manage Credentials"),
+                            hint=format_html(
                                 _(
                                     "Configure credential requirements for learning and delivery. For more "
                                     "information, please refer to the {link_start}following documentation{link_end}."
@@ -255,14 +262,17 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                     ),
                     Column(
                         Field("learn_level"),
+                        **{"x-show": "credentialsEnabled"},
                     ),
                     Column(
                         Field("delivery_level"),
+                        **{"x-show": "credentialsEnabled"},
                     ),
                     css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                    **{"x-data": f"{{ credentialsEnabled: {'true' if _cred_config else 'false'} }}"},
                 )
             )
-            self.add_credential_fields()
+            self.add_credential_fields(_cred_config)
 
         layout_fields.append(
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
@@ -283,24 +293,24 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
 
-    def add_credential_fields(self):
-        credential_issuer = None
-        if self.instance:
-            credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
-
+    def add_credential_fields(self, credential_config=None):
+        self.fields["enable_credentials"] = forms.BooleanField(
+            required=False,
+            initial=credential_config is not None,
+        )
         self.fields["learn_level"] = forms.ChoiceField(
             choices=[("", _("None"))] + UserCredential.LearnLevel.choices,
             required=False,
             label=_("Learn Level"),
             help_text=_("Credential level required for completing the learning phase."),
-            initial=credential_issuer.learn_level if credential_issuer else "",
+            initial=credential_config.learn_level if credential_config else "",
         )
         self.fields["delivery_level"] = forms.ChoiceField(
             choices=[("", _("None"))] + UserCredential.DeliveryLevel.choices,
             required=False,
             label=_("Delivery Level"),
             help_text=_("Credential level required for completing deliveries."),
-            initial=credential_issuer.delivery_level if credential_issuer else "",
+            initial=credential_config.delivery_level if credential_config else "",
         )
 
     def clean_users(self):
@@ -328,19 +338,19 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         if not switch_is_active(OPPORTUNITY_CREDENTIALS):
             return instance
 
+        if not self.cleaned_data.get("enable_credentials"):
+            CredentialConfiguration.objects.filter(opportunity=instance).delete()
+            return instance
+
         learn_level = self.cleaned_data.get("learn_level") or None
         delivery_level = self.cleaned_data.get("delivery_level") or None
-        if learn_level or delivery_level:
-            CredentialConfiguration.objects.update_or_create(
-                opportunity=instance,
-                defaults={
-                    "learn_level": learn_level,
-                    "delivery_level": delivery_level,
-                },
-            )
-        else:
-            CredentialConfiguration.objects.filter(opportunity=instance).delete()
-
+        CredentialConfiguration.objects.update_or_create(
+            opportunity=instance,
+            defaults={
+                "learn_level": learn_level,
+                "delivery_level": delivery_level,
+            },
+        )
         return instance
 
 
@@ -597,6 +607,14 @@ class OpportunityInitForm(forms.ModelForm):
 
         if commit:
             opportunity.save()
+            if switch_is_active(OPPORTUNITY_CREDENTIALS):
+                CredentialConfiguration.objects.get_or_create(
+                    opportunity=opportunity,
+                    defaults={
+                        "learn_level": UserCredential.LearnLevel.LEARN_PASSED,
+                        "delivery_level": UserCredential.DeliveryLevel.TWENTY_FIVE,
+                    },
+                )
         return opportunity
 
 

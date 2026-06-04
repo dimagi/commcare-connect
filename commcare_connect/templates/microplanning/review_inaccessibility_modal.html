@@ -43,11 +43,17 @@
         {% endif %}
     </div>
 
+    <div id="review-inaccessibility-error"
+         class="hidden mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        {% translate "Something went wrong. Please try again." %}
+    </div>
+
     <form hx-post="{% url 'microplanning:act_on_inaccessibility_request' request.org.slug request.opportunity.opportunity_id work_area.id %}"
           hx-swap="none"
           hx-indicator="#review-submit-spinner"
-          hx-on:htmx:before-request="this.querySelectorAll('button').forEach(b => b.disabled = true)"
-          hx-on:htmx:after-request="this.querySelectorAll('button').forEach(b => b.disabled = false)">
+          hx-on:htmx:before-request="reviewFormBeforeRequest(this)"
+          hx-on:htmx:after-request="reviewFormAfterRequest(this)"
+          hx-on:htmx:response-error="reviewFormResponseError(event)">
         <div class="mt-6 flex justify-between gap-3">
             <button type="button"
                     @click="showReviewInaccessibilityModal = false"

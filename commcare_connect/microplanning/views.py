@@ -36,7 +36,11 @@ from commcare_connect.commcarehq.api import (
 )
 from commcare_connect.flags.decorators import require_flag_for_opp
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.microplanning.const import MAX_EXCLUDE_WORK_AREAS, WORK_AREA_STATUS_COLORS
+from commcare_connect.microplanning.const import (
+    MAX_EXCLUDE_WORK_AREAS,
+    MAX_UNASSIGN_WORK_AREAS,
+    WORK_AREA_STATUS_COLORS,
+)
 from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
 from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
@@ -702,19 +706,19 @@ def get_flw_summary_for_assignment(request, org_slug, opp_id):
     if not assignee_id:
         return JsonResponse({"error": "assignee_id required"}, status=400)
 
-    qs = WorkArea.objects.filter(
+    stats = WorkArea.objects.filter(
         opportunity=request.opportunity,
         opportunity_access_id=assignee_id,
-    )
-    stats = qs.aggregate(
+    ).aggregate(
         buildings=Sum("building_count"),
         visits=Sum("expected_visit_count"),
+        work_areas=Count("id"),
     )
     return JsonResponse(
         {
             "assigned_buildings": stats["buildings"] or 0,
             "assigned_visits": stats["visits"] or 0,
-            "assigned_work_areas": qs.count(),
+            "assigned_work_areas": stats["work_areas"],
         }
     )
 
@@ -803,9 +807,21 @@ def unassign_work_areas(request, org_slug, opp_id):
         raw_ids = data["work_area_ids"]
         if not isinstance(raw_ids, list) or not raw_ids:
             raise ValueError
-        work_area_ids = [int(i) for i in raw_ids]
+        # Reject bool/float/str — JSON ints arrive as `int`, anything else is a client bug.
+        if any(type(i) is not int for i in raw_ids):
+            raise ValueError
+        if len(set(raw_ids)) != len(raw_ids):
+            raise ValueError
+        work_area_ids = raw_ids
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return JsonResponse({"error": _("Invalid request body")}, status=400)
+
+    # Unassignment is a synchronous HQ sync; cap the request size to keep it bounded.
+    if len(work_area_ids) > MAX_UNASSIGN_WORK_AREAS:
+        return JsonResponse(
+            {"error": _("Work Area IDs must contain at most %(max)d items") % {"max": MAX_UNASSIGN_WORK_AREAS}},
+            status=400,
+        )
 
     result = unassign_work_areas_for_opportunity(
         opportunity=request.opportunity,
@@ -813,15 +829,15 @@ def unassign_work_areas(request, org_slug, opp_id):
         user=request.user,
     )
 
-    if result["failed"] and not result["unassigned_ids"]:
+    if result["failed_ids"] and not result["unassigned_ids"]:
         return JsonResponse({"error": _("Failed to sync with CommCare HQ. Please try again.")}, status=502)
 
     return JsonResponse(
         {
             "status": "ok",
-            "unassigned": len(result["unassigned_ids"]),
+            "unassigned_ids": result["unassigned_ids"],
             "skipped": result["skipped"],
-            "failed": result["failed"],
+            "failed_ids": result["failed_ids"],
         }
     )
 

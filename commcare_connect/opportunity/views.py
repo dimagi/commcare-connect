@@ -410,7 +410,7 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationProgramManagerMixi
 
     def dispatch(self, request, *args, **kwargs):
         self.object = self.get_object()
-        if self.object.paymentunit_set.count() == 0:
+        if not self.object.paymentunit_set.exists():
             messages.warning(request, "Please configure payment units before setting budget")
             return redirect(
                 "opportunity:add_payment_units", org_slug=request.org.slug, opp_id=self.object.opportunity_id

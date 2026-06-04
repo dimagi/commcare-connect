@@ -1163,12 +1163,12 @@ class TestUnassignWorkAreas:
     ):
         access = OpportunityAccessFactory(opportunity=managed_opportunity)
         wa1 = WorkAreaFactory(
-            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_STARTED
+            opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
         )
         wa2 = WorkAreaFactory(
             opportunity=managed_opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
         )
-        mock_unassign.return_value = {"unassigned_ids": [wa1.id, wa2.id], "skipped": 0, "failed": 0}
+        mock_unassign.return_value = {"unassigned_ids": [wa1.id, wa2.id], "skipped": 0, "failed_ids": []}
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(
@@ -1179,7 +1179,12 @@ class TestUnassignWorkAreas:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "unassigned": 2, "skipped": 0, "failed": 0}
+        assert response.json() == {
+            "status": "ok",
+            "unassigned_ids": [wa1.id, wa2.id],
+            "skipped": 0,
+            "failed_ids": [],
+        }
         mock_unassign.assert_called_once()
         kwargs = mock_unassign.call_args.kwargs
         assert kwargs["opportunity"].pk == managed_opportunity.pk
@@ -1196,7 +1201,7 @@ class TestUnassignWorkAreas:
         managed_opportunity,
     ):
         wa = WorkAreaFactory(opportunity=managed_opportunity)
-        mock_unassign.return_value = {"unassigned_ids": [], "skipped": 0, "failed": 1}
+        mock_unassign.return_value = {"unassigned_ids": [], "skipped": 0, "failed_ids": [wa.id]}
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, [wa.id])
@@ -1213,12 +1218,12 @@ class TestUnassignWorkAreas:
         managed_opportunity,
     ):
         wa = WorkAreaFactory(opportunity=managed_opportunity)
-        mock_unassign.return_value = {"unassigned_ids": [], "skipped": 1, "failed": 0}
+        mock_unassign.return_value = {"unassigned_ids": [], "skipped": 1, "failed_ids": []}
         client.force_login(program_manager_org_user_admin)
 
         response = self._post(client, program_manager_org.slug, managed_opportunity.opportunity_id, [wa.id])
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "unassigned": 0, "skipped": 1, "failed": 0}
+        assert response.json() == {"status": "ok", "unassigned_ids": [], "skipped": 1, "failed_ids": []}
 
     @pytest.mark.parametrize(
         "payload, expected_status",
@@ -1226,8 +1231,11 @@ class TestUnassignWorkAreas:
             ({}, 400),
             ({"work_area_ids": []}, 400),
             ({"work_area_ids": ["abc"]}, 400),
+            ({"work_area_ids": [1.9]}, 400),
+            ({"work_area_ids": [True]}, 400),
+            ({"work_area_ids": [1, 1]}, 400),
         ],
-        ids=["missing_key", "empty_list", "non_int_ids"],
+        ids=["missing_key", "empty_list", "str_ids", "float_ids", "bool_ids", "duplicate_ids"],
     )
     def test_invalid_payload(
         self,
@@ -1254,6 +1262,27 @@ class TestUnassignWorkAreas:
             content_type="application/json",
         )
         assert response.status_code == 400
+
+    @patch("commcare_connect.microplanning.views.unassign_work_areas_for_opportunity")
+    def test_too_many_work_area_ids_returns_400(
+        self,
+        mock_unassign,
+        client,
+        program_manager_org,
+        program_manager_org_user_admin,
+        managed_opportunity,
+    ):
+        from commcare_connect.microplanning.views import MAX_UNASSIGN_WORK_AREAS
+
+        client.force_login(program_manager_org_user_admin)
+        response = client.post(
+            self.url(program_manager_org.slug, managed_opportunity.opportunity_id),
+            data=json.dumps({"work_area_ids": list(range(1, MAX_UNASSIGN_WORK_AREAS + 2))}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert str(MAX_UNASSIGN_WORK_AREAS) in response.json()["error"]
+        mock_unassign.assert_not_called()
 
     def test_non_program_manager_blocked(self, client, organization, org_user_admin, managed_opportunity):
         wa = WorkAreaFactory(opportunity=managed_opportunity)

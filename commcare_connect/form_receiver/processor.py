@@ -297,6 +297,9 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
+        if WorkAreaInaccessibilityRequest.objects.filter(work_area=work_area).exists():
+            raise ProcessingError("Only one inaccessibility request per work area")
+
         if work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
 

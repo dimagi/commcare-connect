@@ -131,7 +131,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_setup_complete(self):
-        if not (self.paymentunit_set.count() > 0 and self.total_budget and self.start_date and self.end_date):
+        if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
             if not (pu.max_total and pu.max_daily):

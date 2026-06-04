@@ -190,9 +190,8 @@ class TestWorkAreaGrouper:
         assert work_area.work_area_group is None
 
     def test_cluster_corner_sharing_work_areas(self, opportunity):
-        """Work areas sharing only a corner (point) must NOT be grouped together.
-        Diagonal-only neighbors aren't meaningfully contiguous — adjacency requires
-        a shared edge (dim >= 1) or strictly-positive distance within buffer_distance."""
+        """Work areas sharing only a corner (point) should be grouped together
+        because their distance is 0, which is within the default buffer_distance."""
         size = 0.01
         # Create two squares that touch only at a corner point
         wa1 = WorkAreaFactory(
@@ -228,11 +227,11 @@ class TestWorkAreaGrouper:
         grouper.cluster_work_areas()
 
         groups = WorkAreaGroup.objects.filter(opportunity=opportunity)
-        assert groups.count() == 2
+        assert groups.count() == 1
 
         wa1.refresh_from_db()
         wa2.refresh_from_db()
-        assert wa1.work_area_group != wa2.work_area_group
+        assert wa1.work_area_group == wa2.work_area_group
 
     def test_cluster_single_work_area_exceeding_max_buildings(self, opportunity):
         work_area = WorkAreaFactory(
@@ -255,124 +254,3 @@ class TestWorkAreaGrouper:
         assert group.building_count == 500
         work_area.refresh_from_db()
         assert work_area.work_area_group == group
-
-    def test_cluster_respects_max_work_areas(self, opportunity):
-        """4 adjacent WAs (200 buildings total) with max_work_areas=2 should split into 2 groups
-        of 2 WAs each. The building cap (default 300) does not trip — only the count cap does."""
-        work_areas = self.create_adjacent_work_areas(opportunity, ward="ward-1")
-        # create_adjacent_work_areas sets building_count=50 per WA; total = 200, well under 300.
-
-        grouper = WorkAreaGrouper(
-            opportunity_id=opportunity.id,
-            max_buildings=300,
-            max_work_areas=2,
-        )
-        grouper.cluster_work_areas()
-
-        groups = WorkAreaGroup.objects.filter(opportunity=opportunity)
-        assert groups.count() == 2
-        for group in groups:
-            assert group.workarea_set.count() == 2
-
-        for work_area in work_areas:
-            work_area.refresh_from_db()
-            assert work_area.work_area_group is not None
-
-    def test_cluster_no_bridging_across_wide_gap(self, opportunity):
-        """Two pairs of edge-sharing WAs separated by a ~33m gap should produce 2 groups, not 1.
-
-        Input coordinates are in EPSG:4326 (degrees); the clustering algorithm projects them
-        to EPSG:3857 (Web Mercator meters) for distance math. At the equator the conversion
-        is ~0.0003° longitude → ~33 m of projected distance — wider than the default
-        buffer_distance (10 m) but narrower than the previous default (100 m). Pins the fix
-        for CCCT-2392 Part 1: clusters must not bridge realistic inter-region gaps."""
-        size = 0.001  # 4326 degrees; projects to ~111 m squares in EPSG:3857
-        gap = 0.0003  # 4326 degrees; ~33 m gap in EPSG:3857 — between new (10 m) and old (100 m) defaults
-
-        start_a = 77.0
-        start_b = start_a + 2 * size + gap
-
-        for x_start, slug in [
-            (start_a, "a1"),
-            (start_a + size, "a2"),
-            (start_b, "b1"),
-            (start_b + size, "b2"),
-        ]:
-            x_end = x_start + size
-            WorkAreaFactory(
-                opportunity=opportunity,
-                slug=f"area-{slug}",
-                ward="ward-1",
-                centroid=Point(x_start + size / 2, 28.0 + size / 2, srid=SRID),
-                boundary=Polygon(
-                    ((x_start, 28.0), (x_end, 28.0), (x_end, 28.0 + size), (x_start, 28.0 + size), (x_start, 28.0)),
-                    srid=SRID,
-                ),
-                building_count=50,
-            )
-
-        grouper = WorkAreaGrouper(opportunity_id=opportunity.id)
-        grouper.cluster_work_areas()
-
-        groups = WorkAreaGroup.objects.filter(opportunity=opportunity)
-        assert groups.count() == 2
-        for group in groups:
-            assert group.workarea_set.count() == 2
-
-    def test_cluster_does_not_bridge_across_intervening_wa(self, opportunity):
-        """5 WAs in a row, all sharing edges (A1-A2-X-B1-B2). X has a high building count
-        that prevents BFS expansion through it.
-
-        Without the blocker check: A2↔B1 forms an over-the-top adjacency edge (their nearest
-        corners are within buffer_distance), letting BFS from A1 reach B1 by skipping over X.
-        That would cluster {A1, A2, B1} together — physically separated by X — which is the
-        bug this test pins.
-
-        With the blocker check: the line from A2's nearest point to B1's nearest point passes
-        through X's polygon, so the A2↔B1 edge is filtered. BFS routes only through shared
-        edges. Result: {A1, A2}, {X}, {B1, B2}."""
-        size = 0.00008  # 4326 degrees; ~8.9 m in EPSG:3857 — within default buffer_distance=10m
-        layout = [
-            ("a1", 0, 50),
-            ("a2", 1, 50),
-            ("x", 2, 200),
-            ("b1", 3, 50),
-            ("b2", 4, 50),
-        ]
-
-        created = []
-        for slug, idx, buildings in layout:
-            x_start = idx * size
-            x_end = x_start + size
-            wa = WorkAreaFactory(
-                opportunity=opportunity,
-                slug=f"area-{slug}",
-                ward="ward-1",
-                centroid=Point(x_start + size / 2, 28.0 + size / 2, srid=SRID),
-                boundary=Polygon(
-                    (
-                        (x_start, 28.0),
-                        (x_end, 28.0),
-                        (x_end, 28.0 + size),
-                        (x_start, 28.0 + size),
-                        (x_start, 28.0),
-                    ),
-                    srid=SRID,
-                ),
-                building_count=buildings,
-            )
-            created.append(wa)
-
-        grouper = WorkAreaGrouper(opportunity_id=opportunity.id, max_buildings=150)
-        grouper.cluster_work_areas()
-
-        for wa in created:
-            wa.refresh_from_db()
-        a1, a2, x, b1, b2 = created
-
-        assert a1.work_area_group_id == a2.work_area_group_id
-        assert b1.work_area_group_id == b2.work_area_group_id
-        assert a1.work_area_group_id != b1.work_area_group_id
-        assert x.work_area_group_id != a1.work_area_group_id
-        assert x.work_area_group_id != b1.work_area_group_id
-        assert WorkAreaGroup.objects.filter(opportunity=opportunity).count() == 3

@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from django.db import transaction
 from pyproj import Transformer
 from shapely import get_dimensions, wkb
-from shapely.geometry import LineString
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import nearest_points, transform
+from shapely.ops import transform
 from shapely.strtree import STRtree
 
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
@@ -54,15 +53,10 @@ class WorkAreaGrouper:
     Args:
         opportunity_id:  The ID of the opportunity whose work areas should be grouped
         max_buildings:   Maximum total building count allowed per work area group.
-                         Default is 300.
-        max_work_areas:  Maximum number of work areas allowed per work area group.
-                         Default is 60. Either cap (max_buildings or max_work_areas)
-                         stops cluster growth — whichever trips first.
+                         Default is 200.
         buffer_distance: Distance in meters to consider work areas as adjacent even if
-                         they don't share a boundary. Default is 10 meters — large
-                         enough to tolerate minor topology slivers in input polygons,
-                         small enough to avoid bridging clusters across real gaps
-                         between distinct regions.
+                         they don't share a boundary. Default is 100 meters. This helps
+                         connect work areas that are close but separated by small gaps.
 
     Note:
         - Only work areas without an existing work_area_group are processed
@@ -74,13 +68,11 @@ class WorkAreaGrouper:
     def __init__(
         self,
         opportunity_id: int,
-        max_buildings: int = 300,
-        max_work_areas: int = 60,
-        buffer_distance: int = 10,
+        max_buildings: int = 200,
+        buffer_distance: int = 100,
     ):
         self.opportunity_id = opportunity_id
         self.max_buildings = max_buildings
-        self.max_work_areas = max_work_areas
         self.buffer_distance = buffer_distance
         self.transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 
@@ -98,13 +90,11 @@ class WorkAreaGrouper:
             wards[wa_data.ward].append(wa_id)
 
         logger.info(
-            "Opportunity %s: clustering %d work areas across %d wards "
-            "(max_buildings=%d, max_work_areas=%d, buffer_distance=%d)",
+            "Opportunity %s: clustering %d work areas across %d wards (max_buildings=%d, buffer_distance=%d)",
             self.opportunity_id,
             len(work_areas),
             len(wards),
             self.max_buildings,
-            self.max_work_areas,
             self.buffer_distance,
         )
 
@@ -201,39 +191,17 @@ class WorkAreaGrouper:
                 shared_edge = geom.intersection(candidate_geom)
                 dist = geom.distance(candidate_geom)
 
-                is_shared_edge = not shared_edge.is_empty and get_dimensions(shared_edge) >= 1
-                is_close_enough = 0 < dist <= self.buffer_distance
-                if not is_shared_edge and not is_close_enough:
-                    continue
-
-                if not is_shared_edge and self._has_blocker(
-                    geom, candidate_geom, spatial_index, wa_ids_list, work_area_id, neighbour_id
-                ):
-                    continue
-
-                adjacency[work_area_id].add(neighbour_id)
-                adjacency[neighbour_id].add(work_area_id)
-                pair = (min(work_area_id, neighbour_id), max(work_area_id, neighbour_id))
-                distances[pair] = dist
+                if get_dimensions(shared_edge) >= 1 or dist <= self.buffer_distance:
+                    adjacency[work_area_id].add(neighbour_id)
+                    adjacency[neighbour_id].add(work_area_id)
+                    pair = (min(work_area_id, neighbour_id), max(work_area_id, neighbour_id))
+                    distances[pair] = dist
 
         def _dist(wa_id, neighbour_id):
             pair = (min(wa_id, neighbour_id), max(wa_id, neighbour_id))
             return distances[pair]
 
         return {wa_id: sorted(neighbours, key=lambda n: _dist(wa_id, n)) for wa_id, neighbours in adjacency.items()}
-
-    @staticmethod
-    def _has_blocker(geom, candidate_geom, spatial_index, wa_ids_list, work_area_id, neighbour_id):
-        # Distance-based adjacency: skip if another work area's polygon sits on the line
-        # between the two nearest points. Prevents BFS from forming an over-the-top edge
-        # that bridges two regions separated by an intervening work area.
-        near_a, near_b = nearest_points(geom, candidate_geom)
-        connector = LineString([near_a, near_b])
-        for idx in spatial_index.query(connector, predicate="intersects"):
-            blocker_id = wa_ids_list[idx]
-            if blocker_id != work_area_id and blocker_id != neighbour_id:
-                return True
-        return False
 
     def _bfs_cluster(
         self,
@@ -255,7 +223,7 @@ class WorkAreaGrouper:
 
             building_count = work_areas[current].building_count
 
-            if total_buildings + building_count > self.max_buildings or len(cluster) >= self.max_work_areas:
+            if total_buildings + building_count > self.max_buildings:
                 seen.discard(current)
                 continue
 

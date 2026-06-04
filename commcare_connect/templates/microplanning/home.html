@@ -343,13 +343,13 @@
                                 <div class="grid grid-cols-2 items-center gap-2 text-sm">
                                     <dt class="text-gray-500">{% translate "Count of Assigned Buildings" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_buildings + getQueuedStatsForAssignee().buildings + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStats().buildings : 0)"></dd>
+                                        x-text="flwSummary.assigned_buildings + getQueuedStatsForAssignee().buildings + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStatsForSummary().buildings : 0)"></dd>
                                     <dt class="text-gray-500">{% translate "Count of Assigned Visits" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_visits + getQueuedStatsForAssignee().visits + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStats().visits : 0)"></dd>
+                                        x-text="flwSummary.assigned_visits + getQueuedStatsForAssignee().visits + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStatsForSummary().visits : 0)"></dd>
                                     <dt class="text-gray-500">{% translate "Count of Assigned Work Areas" %}</dt>
                                     <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                                        x-text="flwSummary.assigned_work_areas + getQueuedStatsForAssignee().workAreas + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? selectedWorkAreas.size : 0)"></dd>
+                                        x-text="flwSummary.assigned_work_areas + getQueuedStatsForAssignee().workAreas + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStatsForSummary().workAreas : 0)"></dd>
                                 </div>
                             </dl>
                             <div class="flex gap-2 mt-3">

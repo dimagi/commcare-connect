@@ -1,5 +1,6 @@
 import httpx
 
+from commcare_connect.opportunity.models import HQApiKey
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import ConnectIDUserLink
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -24,12 +25,41 @@ def create_hq_user_and_link(user, domain, opportunity):
     hq_server = opportunity.hq_server
     api_key = opportunity.api_key
     if not ConnectIDUserLink.objects.filter(user=user, domain=domain, hq_server=hq_server).exists():
-        user_created = _create_hq_user(user, domain, api_key)
-        if not user_created:
+        response = _create_hq_user(user, domain, api_key)
+        if response is None:
             return False
+        hq_user_uuid = response.json().get("id") if response.status_code == 201 else None
         cc_username = f"{user.username.lower()}@{domain}.commcarehq.org"
-        ConnectIDUserLink.objects.create(commcare_username=cc_username, user=user, domain=domain, hq_server=hq_server)
+        ConnectIDUserLink.objects.create(
+            commcare_username=cc_username,
+            user=user,
+            domain=domain,
+            hq_server=hq_server,
+            hq_user_uuid=hq_user_uuid,
+        )
     return True
+
+
+def fetch_hq_user_uuid(link: ConnectIDUserLink, api_key: HQApiKey) -> str | None:
+    hq_username = link.commcare_username
+    domain = link.domain
+    headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
+    next_url = f"{api_key.hq_server.url}/a/{domain}/api/v0.5/user/?limit=200"
+    while next_url:
+        response = httpx.get(next_url, headers=headers, timeout=30)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise CommCareHQAPIException(
+                f"{e.response.status_code} Error response {e.response.text} while fetching users for {domain}"
+            )
+        data = response.json()
+        for obj in data.get("objects", []):
+            if obj.get("username") == hq_username:
+                return obj.get("id")
+        next_path = data.get("meta", {}).get("next")
+        next_url = f"{api_key.hq_server.url}{next_path}" if next_path else None
+    return None
 
 
 def _create_hq_user(user, domain, api_key):
@@ -44,12 +74,12 @@ def _create_hq_user(user, domain, api_key):
         hq_request.raise_for_status()
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 400 and "already taken" in e.response.text:
-            return True
+            return e.response
         raise CommCareHQAPIException(
             f"{e.response.status_code} Error response {e.response.text} while creating user {user.username}"
         )
 
-    return hq_request.status_code == 201
+    return hq_request if hq_request.status_code == 201 else None
 
 
 def build_hq_user_payload(user):

@@ -40,6 +40,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
+from commcare_connect.users.models import UserCredential
 
 
 @pytest.fixture
@@ -74,6 +75,7 @@ class TestOpportunityChangeForm:
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": (datetime.date.today() + datetime.timedelta(days=60)).isoformat(),
             "users": "+1234567890\n+9876543210",
+            "enable_credentials": True,
             "learn_level": None,
             "deliver_level": None,
         }
@@ -229,17 +231,20 @@ class TestOpportunityChangeForm:
 
     @override_switch(OPPORTUNITY_CREDENTIALS, active=True)
     @pytest.mark.parametrize(
-        "learn_level,delivery_level",
+        "enable_credentials,learn_level,delivery_level",
         [
-            ("LEARN_PASSED", "25_DELIVERIES"),
-            ("LEARN_PASSED", "1000_DELIVERIES"),
-            ("", "50_DELIVERIES"),
-            ("LEARN_PASSED", ""),
-            ("", ""),
+            (True, "LEARN_PASSED", "25_DELIVERIES"),
+            (True, "LEARN_PASSED", "1000_DELIVERIES"),
+            (True, "", "50_DELIVERIES"),
+            (True, "LEARN_PASSED", ""),
+            (False, "", ""),  # opt-out via toggle
         ],
     )
-    def test_save_credential_issuer(self, valid_opportunity, base_form_data, learn_level, delivery_level):
+    def test_save_credential_issuer(
+        self, valid_opportunity, base_form_data, enable_credentials, learn_level, delivery_level
+    ):
         data = base_form_data.copy()
+        data["enable_credentials"] = enable_credentials
         data["learn_level"] = learn_level
         data["delivery_level"] = delivery_level
 
@@ -247,7 +252,7 @@ class TestOpportunityChangeForm:
         assert form.is_valid(), form.errors
         form.save()
 
-        if learn_level or delivery_level:
+        if enable_credentials:
             credential_issuer = CredentialConfiguration.objects.get(opportunity=valid_opportunity)
             assert credential_issuer.learn_level == (learn_level or None)
             assert credential_issuer.delivery_level == (delivery_level or None)
@@ -265,14 +270,21 @@ class TestOpportunityChangeForm:
         assert "learn_level" in form.errors or "delivery_level" in form.errors
 
     def test_credential_switch(self, valid_opportunity):
+        cache.clear()
         form = OpportunityChangeForm(instance=valid_opportunity)
         assert "learn_level" not in form.fields
         assert "delivery_level" not in form.fields
+        assert "enable_credentials" not in form.fields
 
         with override_switch(OPPORTUNITY_CREDENTIALS, active=True):
             form = OpportunityChangeForm(instance=valid_opportunity)
             assert "learn_level" in form.fields
             assert "delivery_level" in form.fields
+            assert "enable_credentials" in form.fields
+            # No credential config exists for valid_opportunity → toggle defaults to False (opted out)
+            assert form.fields["enable_credentials"].initial is False
+            assert form.fields["learn_level"].initial == ""
+            assert form.fields["delivery_level"].initial == ""
 
 
 @pytest.mark.django_db
@@ -512,6 +524,44 @@ class TestOpportunityInitForm:
         new_opportunity.refresh_from_db()
         assert new_opportunity.pk != opportunity.pk
         assert new_opportunity.automatic_visit_verification is switch_active
+
+    @pytest.mark.parametrize("switch_active", [True, False])
+    def test_default_credential_config_on_new_opportunity(self, opportunity, switch_active):
+        cache.clear()
+        learn_app = opportunity.learn_app
+        deliver_app = opportunity.deliver_app
+        data = {
+            "name": "New opportunity with credentials",
+            "description": "Description",
+            "short_description": "Short",
+            "currency": opportunity.currency.code,
+            "country": opportunity.country.code,
+            "hq_server": opportunity.hq_server.id,
+            "api_key": str(opportunity.api_key.id),
+            "learn_app_domain": learn_app.cc_domain,
+            "learn_app": json.dumps({"id": learn_app.cc_app_id, "name": learn_app.name}),
+            "learn_app_description": "Learn description",
+            "learn_app_passing_score": 70,
+            "deliver_app_domain": deliver_app.cc_domain,
+            "deliver_app": json.dumps({"id": deliver_app.cc_app_id, "name": deliver_app.name}),
+        }
+        form = OpportunityInitForm(
+            data=data,
+            user=opportunity.api_key.user,
+            org_slug=opportunity.organization.slug,
+        )
+        assert form.is_valid(), form.errors
+
+        with override_switch(OPPORTUNITY_CREDENTIALS, active=switch_active):
+            new_opportunity = form.save()
+
+        credential_config = CredentialConfiguration.objects.filter(opportunity=new_opportunity).first()
+        if switch_active:
+            assert credential_config is not None
+            assert credential_config.learn_level == UserCredential.LearnLevel.LEARN_PASSED
+            assert credential_config.delivery_level == UserCredential.DeliveryLevel.TWENTY_FIVE
+        else:
+            assert credential_config is None
 
 
 class TestAddBudgetNewUsersForm:

@@ -31,7 +31,7 @@ def slugify_uniquely(value, model, slugfield="slug"):
         if suffix:
             potential = "-".join([base, str(suffix)])
 
-        if not model.objects.filter(**{slugfield: potential}).count():
+        if not model.objects.filter(**{slugfield: potential}).exists():
             return potential
         # we hit a conflicting slug, so bump the suffix & try again
         suffix += 1
