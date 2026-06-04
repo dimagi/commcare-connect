@@ -24,12 +24,24 @@ Concretely:
 The MTI layer itself is very thin: `ManagedOpportunity` adds only a single field, `program` (a foreign key to `Program`), and no other model has a foreign key to `ManagedOpportunity`; visits, accesses, claims, and invoices all reference `Opportunity` directly. As a result, flattening the child table into the parent is a relatively straightforward change.
 
 
-### Current Production State
+### Current Production and Staging State
 
 There are currently no active, real-world non-managed opportunities in production.
 
-- The only `active=True, managed=False` opportunity is an incomplete demo [opportunity](https://connect.dimagi.com/a/ai-demo-space/opportunity/01022406-a4a8-4374-8b9e-e1885c75de50/payment_units/create).
-- All other non-managed opportunities are test opportunities.
+- The only active opportunity is an incomplete setup [opportunity](https://connect.dimagi.com/a/ai-demo-space/opportunity/01022406-a4a8-4374-8b9e-e1885c75de50/payment_units/create), so it can also be considered inactive.
+- All other non-managed opportunities either are test opportunities or inactive
+
+ **Summary of non-managed opportunities**
+
+| Filter (`managed = FALSE`) | Production | Staging |
+|---|---|---|
+| Total | 1108 | 444 |
+| `active = True` | 327 | 93 |
+| `active = False` | 781 | 351 |
+| `active = False, is_test = True` | 746 | 343 |
+| `active = False, is_test = False` | 35 | 8 |
+| `active = True, is_test = False` | 1 | 0 |
+
 
 ### Codebase footprint
 
@@ -141,7 +153,7 @@ While flattening the model requires additional work up front (a schema migration
 
 ## Rollback and Risk
 
-**Overall risk is low** — there are no active real-world non-managed opportunities in production, so the migration affects only test data and one inactive demo opportunity.
+**Overall risk is low** — there are no active real-world non-managed opportunities in production, so the migration affects only test and inactive opportunities.
 
 
 **Release 1 is fully reversible.** Each step can be undone cleanly:
