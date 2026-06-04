@@ -83,7 +83,10 @@ class Command(BaseCommand):
             try:
                 with default_storage.open(saved) as fh:
                     assert fh.read() == payload, "read-back mismatch"
-                return f"backend={type(default_storage).__module__} key={saved}"
+                # default_storage is a LazyObject proxy; .__class__ resolves to the real
+                # backend (e.g. MediaRootS3Boto3Storage), whereas type() returns the proxy.
+                backend = default_storage.__class__
+                return f"backend={backend.__module__}.{backend.__qualname__} key={saved}"
             finally:
                 if not keep:
                     default_storage.delete(saved)
