@@ -182,7 +182,7 @@ class GenderRatioDeviation(AuditCalculation):
 @register_calculation
 class MUACPhotoCompliance(AuditCalculation):
     """Detect missing MUAC measurement photos for eligible children.
-    Denominator: last 70 visits where child is >6 months old and MUAC consent was given.
+    Denominator: last 70 visits where child is >6 months old (regardless of consent).
     Numerator: visits where muac_photo_link is non-empty.
     Flags if compliance < 72% (p=0.80, n=70, one-sided 95% CI lower bound).
     """
@@ -197,7 +197,6 @@ class MUACPhotoCompliance(AuditCalculation):
             UserVisit.objects.filter(
                 opportunity_access=opportunity_access,
                 visit_date__date__range=(period_start, period_end),
-                **{f"form_json__form__{MUAC_CONSENT_FIELD}": YES},
             )
             .annotate(age_months=_json_int(AGE_FIELD))
             .filter(age_months__gt=6)

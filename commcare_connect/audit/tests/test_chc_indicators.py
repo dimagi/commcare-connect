@@ -304,10 +304,11 @@ class TestMUACPhotoCompliance(BaseIndicatorTest):
         _visit_with_muac_photo(access, age_months=3)  # age <= 6, excluded
         self.assert_insufficient_data(access)
 
-    def test_no_consent_not_in_denominator(self):
+    def test_no_consent_still_in_denominator(self):
         access = OpportunityAccessFactory()
         make_visit(access, form_json={"form": {"additional_case_info": {"childs_age_in_months": "12"}}})
-        self.assert_insufficient_data(access)
+        _, sample = self.compute(access)
+        assert sample == 1  # consent is irrelevant; age ≥6 makes this visit eligible
 
     @pytest.mark.parametrize(
         "with_photo, without_photo, expected_value, in_range",
