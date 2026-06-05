@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "No Workspaces" %}{% endblock title %}
+
+{% block content %}
+  <div class="container md:max-w-screen-md mx-auto flex flex-col gap-6 items-center text-center py-16">
+    <i class="fa-solid fa-box-open text-5xl text-gray-400"></i>
+    <h1 class="title text-brand-deep-purple">
+      {% trans "You're not in any workspaces yet" %}
+    </h1>
+    {% if perms.users.workspace_entity_management_access %}
+      <p class="text-gray-600">
+        {% blocktrans %}
+          Get started by creating a new workspace for your organization.
+        {% endblocktrans %}
+      </p>
+      <a href="{% url 'organization_create' %}" class="button button-md primary-dark">
+        {% trans "Create a Workspace" %}
+      </a>
+    {% else %}
+      <p class="text-gray-600">
+        {% blocktrans %}
+          You are not currently a member of any workspaces. Please ask your administrator for an invite.
+        {% endblocktrans %}
+      </p>
+    {% endif %}
+  </div>
+{% endblock content %}

@@ -17,7 +17,7 @@ from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.users.tests.factories import UserFactory
-from commcare_connect.users.views import UserRedirectView, UserToggleView, UserUpdateView, create_user_link_view
+from commcare_connect.users.views import CreateUserLinkView, UserRedirectView, UserToggleView, UserUpdateView
 from commcare_connect.utils.error_codes import ErrorCodes
 
 pytestmark = pytest.mark.django_db
@@ -74,14 +74,14 @@ class TestUserUpdateView:
 
 
 class TestUserRedirectView:
-    def test_get_redirect_url(self, user: User, rf: RequestFactory):
+    def test_get_redirect_url_for_user_with_no_memberships(self, user: User, rf: RequestFactory):
         view = UserRedirectView()
         request = rf.get("/fake-url")
         request.user = user
         request.org = None
 
         view.request = request
-        assert view.get_redirect_url() == "/"
+        assert view.get_redirect_url() == "/users/no_memberships/"
 
     def test_get_redirect_url_for_org_user(
         self, organization: Organization, org_user_member: User, rf: RequestFactory
@@ -95,6 +95,30 @@ class TestUserRedirectView:
         assert view.get_redirect_url() == f"/a/{organization.slug}/opportunity/"
 
 
+class TestNoMembershipsView:
+    @property
+    def url(self):
+        return reverse("users:no_memberships")
+
+    def test_renders_invite_prompt_without_perm(self, user, client):
+        client.force_login(user)
+        response = client.get(self.url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "ask your administrator for an invite" in content
+        assert "Get started by creating a new workspace" not in content
+
+    def test_renders_create_workspace_cta_with_perm(self, user, client):
+        perm = Permission.objects.get(codename="workspace_entity_management_access")
+        user.user_permissions.add(perm)
+        client.force_login(user)
+        response = client.get(self.url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Get started by creating a new workspace" in content
+        assert "ask your administrator for an invite" not in content
+
+
 class TestCreateUserLinkView:
     def test_view(self, mobile_user: User, rf: RequestFactory):
         request = rf.post("/fake-url/", data={"commcare_username": "abc", "connect_username": mobile_user.username})
@@ -103,7 +127,7 @@ class TestCreateUserLinkView:
             "oauth2_provider.views.mixins.ClientProtectedResourceMixin.authenticate_client"
         ) as authenticate_client:
             authenticate_client.return_value = True
-            response = create_user_link_view(request)
+            response = CreateUserLinkView.as_view()(request)
         user_link = ConnectIDUserLink.objects.get(user=mobile_user)
         assert response.status_code == 201
         assert user_link.commcare_username == "abc"
