@@ -5,7 +5,6 @@
      hx-trigger="refreshDetail from:body"
      hx-swap="outerHTML"
      class="flex flex-col gap-4">
-
   <div class="metric-container flex items-center justify-between">
     <div class="flex flex-col gap-2">
       <h1 class="text-2xl font-medium text-white">{% trans "Weekly Performance Report" %}</h1>
@@ -16,7 +15,6 @@
       <span class="text-xs text-white mt-1">{% trans "Workers reviewed" %}</span>
     </div>
   </div>
-
   <div>
     <input type="text"
            name="filter"
@@ -29,13 +27,10 @@
            hx-swap="outerHTML"
            hx-vals='{"review-page": "1", "noaction-page": "1"}' />
   </div>
-
   <h2 class="text-xl font-semibold">{% trans "Workers to Review" %}</h2>
   {% render_table review_table %}
-
   <h2 class="text-xl font-semibold mt-4">{% trans "No Action" %}</h2>
   {% render_table no_action_table %}
-
   <div class="flex justify-end mt-6">
     <button type="button"
             class="button button-md primary-dark"

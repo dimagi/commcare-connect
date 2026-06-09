@@ -37,6 +37,7 @@ from commcare_connect.utils.tables import (
     TEXT_CENTER_ATTR,
     DMYTColumn,
     DurationColumn,
+    GroupedTable,
     IndexColumn,
     OrgContextTable,
     merge_attrs,
@@ -1369,14 +1370,18 @@ class GroupedByWorkerMixin:
         return next(self._row_counter)
 
 
-class WorkerTasksTable(GroupedByWorkerMixin, OrgContextTable):
+class WorkerTasksTable(GroupedTable, OrgContextTable):
     index = IndexColumn()
     worker_status = StatusIndicatorColumn(verbose_name=_("Status"), empty_values=())
-    user = tables.Column(verbose_name=_("Name"), orderable=True, order_by="user__name")
+    user = UserInfoColumn(verbose_name=_("Name"), orderable=True, order_by="user__name")
     task_name = tables.Column(verbose_name=_("Task Name"), empty_values=())
     date_assigned = DMYTColumn(verbose_name=_("Date Assigned"))
     due_date = DMYTColumn(verbose_name=_("Due Date"), accessor="task_due_date")
     task_status = TaskStatusColumn(verbose_name=_("Task Status"), empty_values=())
+
+    group_item_order_by = ("user__name", "assignedtask__date_created")
+    header_columns = ("index", "worker_status", "user")
+    group_item_label = (gettext_lazy("task"), gettext_lazy("tasks"))
 
     class Meta:
         fields = ()
@@ -1390,24 +1395,12 @@ class WorkerTasksTable(GroupedByWorkerMixin, OrgContextTable):
             "due_date",
             "task_status",
         )
-        row_attrs = {"class": "group"}
         empty_text = gettext_lazy("No tasks assigned for this opportunity.")
+        template_name = "grouped_table.html"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, data, *args, **kwargs):
         self.opp_id = kwargs.pop("opp_id")
-        super().__init__(*args, **kwargs)
-
-    def render_worker_status(self, record, value):
-        if self._is_seen(record):
-            return ""
-        return StatusIndicatorColumn.render(self.columns["worker_status"].column, record)
-
-    def render_task_name(self, value):
-        return value
-
-    def render_task_status(self, value, record):
-        self.run_after_every_row(record)
-        return TaskStatusColumn.render(self.columns["task_status"].column, value)
+        super().__init__(data, *args, **kwargs)
 
 
 class WorkerLearnTable(OrgContextTable):
@@ -1908,7 +1901,7 @@ class WorkerCompletedTaskTable(tables.Table):
     use_view_url = True
 
     select = select_column(td_extra=_task_select_td_extra)
-    task_type = tables.Column(verbose_name=_("Task Type"), accessor="task", orderable=False)
+    task_type = tables.Column(verbose_name=_("Task Type"), accessor="task_type", orderable=False)
     assigned_by = tables.Column(
         verbose_name=_("Assigned By"),
         accessor="assigned_by__name",

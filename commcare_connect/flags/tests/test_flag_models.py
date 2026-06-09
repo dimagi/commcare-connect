@@ -78,6 +78,15 @@ class TestFlagModel:
         assert active_flags.count() == 3
         assert set(active_flags) == {org_flag, opportunity_flag, program_flag}
 
+    def test_cache_is_invalidated_when_relation_membership_changes(self, flag, organization):
+        assert flag.is_active_for(organization) is False  # populates cache with CACHE_EMPTY
+
+        flag.organizations.add(organization)
+        assert flag.is_active_for(organization) is True
+
+        flag.organizations.remove(organization)
+        assert flag.is_active_for(organization) is False
+
     def test_active_flags_for_user_role_flags(self):
         user = UserFactory(is_staff=True)
         staff_flag = FlagFactory(staff=True)

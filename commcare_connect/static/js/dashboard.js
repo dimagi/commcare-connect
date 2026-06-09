@@ -1,4 +1,5 @@
-console.log('dashboard.js loaded');
+/* global Chart, mapboxgl */
+// `Chart` (Chart.js) and `mapboxgl` are loaded as globals by other bundles/scripts.
 
 // colors to use for the categories
 // soft green, yellow, red
@@ -91,7 +92,7 @@ function createDonutChart(props, map) {
   el.style.cursor = 'pointer';
 
   // Click handler to zoom and navigate to the cluster
-  el.addEventListener('click', (e) => {
+  el.addEventListener('click', () => {
     map
       .getSource('visits')
       .getClusterExpansionZoom(props.cluster_id, (err, zoom) => {

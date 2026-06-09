@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% load i18n %}
 {% load django_tables2 %}
-{% block title %}{% blocktrans with name=opportunity.name %}Audits — {{ name }}{% endblocktrans %}{% endblock %}
+{% block title %}
+  {% blocktrans with name=opportunity.name %}Audits — {{ name }}{% endblocktrans %}
+{% endblock %}
 {% block content %}
   <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
     {% include 'components/breadcrumbs.html' with path=path %}
-
     <div class="metric-container flex items-center justify-between">
       <div class="flex flex-col gap-2">
         <h1 class="text-2xl font-medium text-white">{% trans "Audits" %}</h1>
@@ -26,7 +27,6 @@
         </div>
       </div>
     </div>
-
     {% render_table table %}
   </div>
 {% endblock %}

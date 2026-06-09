@@ -130,7 +130,7 @@ class LearnAppInputSerializer(CommCareAppInputSerializer):
 class ManagedOpportunityCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField()
-    short_description = serializers.CharField(max_length=255)
+    short_description = serializers.CharField(max_length=50)
     organization = serializers.SlugRelatedField(slug_field="slug", queryset=Organization.objects.all())
     start_date = serializers.DateField()
     end_date = serializers.DateField()

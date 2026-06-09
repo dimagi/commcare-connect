@@ -9,35 +9,35 @@ from commcare_connect.opportunity.tests.factories import OpportunityFactory
 
 @pytest.mark.django_db
 class TestWorkAreaGroupBuildingCount:
-    def test_sums_building_counts_of_non_excluded_work_areas(self):
+    @pytest.mark.parametrize(
+        "work_areas, expected_count",
+        [
+            pytest.param(
+                [(10, WorkAreaStatus.NOT_VISITED), (20, WorkAreaStatus.NOT_VISITED)],
+                30,
+                id="sums-non-excluded",
+            ),
+            pytest.param(
+                [(10, WorkAreaStatus.NOT_VISITED), (50, WorkAreaStatus.EXCLUDED)],
+                10,
+                id="ignores-excluded",
+            ),
+            pytest.param(
+                [(15, WorkAreaStatus.EXCLUDED)],
+                0,
+                id="zero-when-all-excluded",
+            ),
+        ],
+    )
+    def test_building_count(self, work_areas, expected_count):
         opp = OpportunityFactory()
         group = WorkAreaGroupFactory(opportunity=opp)
-        WorkAreaFactory(opportunity=opp, work_area_group=group, building_count=10)
-        WorkAreaFactory(opportunity=opp, work_area_group=group, building_count=20)
+        for building_count, status in work_areas:
+            WorkAreaFactory(
+                opportunity=opp,
+                work_area_group=group,
+                building_count=building_count,
+                status=status,
+            )
 
-        assert group.building_count == 30
-
-    def test_excludes_excluded_work_areas_from_building_count(self):
-        opp = OpportunityFactory()
-        group = WorkAreaGroupFactory(opportunity=opp)
-        WorkAreaFactory(opportunity=opp, work_area_group=group, building_count=10)
-        WorkAreaFactory(
-            opportunity=opp,
-            work_area_group=group,
-            building_count=50,
-            status=WorkAreaStatus.EXCLUDED,
-        )
-
-        assert group.building_count == 10
-
-    def test_building_count_is_zero_when_all_work_areas_excluded(self):
-        opp = OpportunityFactory()
-        group = WorkAreaGroupFactory(opportunity=opp)
-        WorkAreaFactory(
-            opportunity=opp,
-            work_area_group=group,
-            building_count=15,
-            status=WorkAreaStatus.EXCLUDED,
-        )
-
-        assert group.building_count == 0
+        assert group.building_count == expected_count

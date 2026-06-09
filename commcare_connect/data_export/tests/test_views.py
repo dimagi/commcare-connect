@@ -8,8 +8,9 @@ from django.utils.timezone import now
 
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
+from commcare_connect.opportunity.models import LabsRecord
 from commcare_connect.opportunity.tests.factories import AssignedTaskFactory, OpportunityAccessFactory, TaskTypeFactory
-from commcare_connect.users.tests.factories import LLOEntityFactory
+from commcare_connect.users.tests.factories import LLOEntityFactory, OrgWithUsersFactory
 
 
 def _add_export_credentials(api_client, user):
@@ -279,3 +280,41 @@ class TestAuditReportEntryDataView:
         url = reverse("data_export:audit_report_entry_data", kwargs={"opp_id": opportunity.id})
         response = api_client.get(url)
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestLabsRecordDataViewAuthorization:
+    LABS_RECORD_URL = reverse("data_export:labs_record_data")
+
+    def test_delete_cross_org_record_by_bare_id_returns_404(self, organization, api_client, org_user_member):
+        other_org = OrgWithUsersFactory()
+        record = LabsRecord.objects.create(experiment="test", organization=other_org, type="test", data={})
+        _add_export_credentials(api_client, org_user_member)
+        response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": record.id}], format="json")
+        assert response.status_code == 404
+        assert LabsRecord.objects.filter(pk=record.pk).exists(), "Cross-org record must not be deleted"
+
+    def test_delete_own_org_record_by_bare_id_succeeds(self, organization, api_client, org_user_member):
+        record = LabsRecord.objects.create(experiment="test", organization=organization, type="test", data={})
+        _add_export_credentials(api_client, org_user_member)
+        response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": record.id}], format="json")
+        assert response.status_code == 200
+        assert not LabsRecord.objects.filter(pk=record.pk).exists()
+
+    def test_delete_nonexistent_id_returns_404(self, api_client, org_user_member):
+        _add_export_credentials(api_client, org_user_member)
+        response = api_client.delete(self.LABS_RECORD_URL, data=[{"id": 999999}], format="json")
+        assert response.status_code == 404
+
+    def test_post_cross_org_record_by_bare_id_returns_404(self, organization, api_client, org_user_member):
+        other_org = OrgWithUsersFactory()
+        record = LabsRecord.objects.create(experiment="original", organization=other_org, type="test", data={})
+        _add_export_credentials(api_client, org_user_member)
+        response = api_client.post(
+            self.LABS_RECORD_URL,
+            data=[{"id": record.id, "experiment": "hijacked", "type": "x", "data": {}}],
+            format="json",
+        )
+        assert response.status_code == 404
+        record.refresh_from_db()
+        assert record.experiment == "original", "Cross-org record must not be overwritten"

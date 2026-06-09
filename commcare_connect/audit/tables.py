@@ -2,12 +2,13 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _l
-from django_tables2 import columns, tables
+from django_tables2 import columns
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
+from commcare_connect.utils.tables import OrgContextTable
 
 
-class AuditReportTable(tables.Table):
+class AuditReportTable(OrgContextTable):
     audit_id = columns.Column(
         accessor="serial",
         verbose_name=_l("Audit ID"),
@@ -46,7 +47,7 @@ class AuditReportTable(tables.Table):
         url = reverse(
             "opportunity:audit:audit_report_detail",
             kwargs={
-                "org_slug": self.opportunity.organization.slug,
+                "org_slug": self.org_slug,
                 "opp_id": self.opportunity.opportunity_id,
                 "audit_report_id": record.audit_report_id,
             },
@@ -69,7 +70,7 @@ class AuditReportTable(tables.Table):
         url = reverse(
             "opportunity:audit:audit_report_detail",
             kwargs={
-                "org_slug": self.opportunity.organization.slug,
+                "org_slug": self.org_slug,
                 "opp_id": self.opportunity.opportunity_id,
                 "audit_report_id": record.audit_report_id,
             },
@@ -118,7 +119,7 @@ class ActionColumn(columns.Column):
             url = reverse(
                 "opportunity:audit:audit_report_task_modal",
                 kwargs={
-                    "org_slug": table.opportunity.organization.slug,
+                    "org_slug": table.org_slug,
                     "opp_id": table.opportunity.opportunity_id,
                     "audit_report_id": table.report.audit_report_id,
                     "entry_id": record.audit_report_entry_id,
@@ -135,7 +136,7 @@ class ActionColumn(columns.Column):
         return ""
 
 
-class AuditReportEntryTable(tables.Table):
+class AuditReportEntryTable(OrgContextTable):
     user = columns.Column(
         accessor="opportunity_access__user__name",
         verbose_name=_l("Connect Worker"),

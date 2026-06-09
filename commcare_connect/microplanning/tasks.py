@@ -36,8 +36,7 @@ class WorkAreaCSVImporter:
         "boundary": "Boundary",
         "building_count": "Building Count",
         "visit_count": "Expected Visit Count",
-        "max_wag": "Max WAG",
-        "wag_serial_number": "WAG Serial Number",
+        "target_population": "Target Population",
         "lga": "LGA",
         "state": "State",
     }
@@ -81,9 +80,8 @@ class WorkAreaCSVImporter:
                     boundary=self.get_boundary(row),
                     building_count=buildings,
                     expected_visit_count=visits,
+                    target_population=self.get_target_population(row),
                     case_properties={
-                        "max_wag": extra_props.get("max_wag"),
-                        "wag_serial_number": extra_props.get("wag_serial_number"),
                         "lga": extra_props.get("lga"),
                         "state": extra_props.get("state"),
                     },
@@ -157,21 +155,20 @@ class WorkAreaCSVImporter:
         slug = (row.get(self.HEADERS.get("slug")) or "").strip()
         return strip_tags(slug)
 
+    def _get_int(self, row, key):
+        raw = row.get(self.HEADERS.get(key))
+        return int(raw) if raw else 0
+
     def get_building_and_visit(self, row):
-        building_raw = row.get(self.HEADERS.get("building_count"))
-        visit_raw = row.get(self.HEADERS.get("visit_count"))
-        building = int(building_raw) if building_raw else 0
-        visit = int(visit_raw) if visit_raw else 0
-        return building, visit
+        return self._get_int(row, "building_count"), self._get_int(row, "visit_count")
+
+    def get_target_population(self, row):
+        return self._get_int(row, "target_population")
 
     def get_extra_properties(self, row):
-        max_wag = row.get(self.HEADERS.get("max_wag"))
-        wag_serial_number = row.get(self.HEADERS.get("wag_serial_number"))
         lga = row.get(self.HEADERS.get("lga"))
         state = row.get(self.HEADERS.get("state"))
         return {
-            "max_wag": max_wag,
-            "wag_serial_number": wag_serial_number,
             "lga": lga,
             "state": state,
         }
@@ -229,13 +226,16 @@ class WorkAreaCSVImporter:
         invalid = True
         try:
             building, visit = self.get_building_and_visit(row)
-            if building >= 0 and visit >= 0:
+            target_population = self.get_target_population(row)
+            if building >= 0 and visit >= 0 and target_population >= 0:
                 invalid = False
         except ValueError:
             pass
 
         if invalid:
-            self._add_error(line_num, _("Building count and Expected visit count must be positive integers"))
+            self._add_error(
+                line_num, _("Building count, Expected visit count, and Target population must be positive integers")
+            )
         return invalid
 
     def _validate_extra_properties(self, row, line_num):
@@ -278,8 +278,7 @@ class WorkAreaCSVExporter:
         "boundary": lambda wa: wa.boundary.wkt,
         "building_count": lambda wa: wa.building_count,
         "visit_count": lambda wa: wa.expected_visit_count,
-        "max_wag": lambda wa: (wa.case_properties or {}).get("max_wag", ""),
-        "wag_serial_number": lambda wa: (wa.case_properties or {}).get("wag_serial_number", ""),
+        "target_population": lambda wa: wa.target_population,
         "lga": lambda wa: (wa.case_properties or {}).get("lga", ""),
         "state": lambda wa: (wa.case_properties or {}).get("state", ""),
         "group_name": lambda wa: wa.group_name or "",

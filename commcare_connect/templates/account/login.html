@@ -1,85 +1,84 @@
 {% extends "account/base.html" %}
-
 {% load static %}
 {% load i18n %}
 {% load socialaccount %}
-
-{% block head_title %}{% translate "Sign In" %}{% endblock %}
-
+{% block head_title %}
+  {% translate "Sign In" %}
+{% endblock %}
 {% block inner %}
-<div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
-  <form method="post" class="w-full flex flex-col gap-4">
-    {% csrf_token %}
-    {% if redirect_field_value %}
-      <input type="hidden"
-             name="{{ redirect_field_name }}"
-             value="{{ redirect_field_value }}" />
-    {% endif %}
-    <h6 class="title text-brand-deep-purple">Login</h6>
-    <span class="text-sm text-gray-600">Please enter your details</span>
-    {% if messages %}
-      {% for message in messages %}<p class="text-sm text-red-600">* {{ message }}</p>{% endfor %}
-    {% endif %}
-    {% if form.non_field_errors %}
-      {% for error in form.non_field_errors %}<p class="text-sm text-red-600">* {{ error }}</p>{% endfor %}
-    {% endif %}
-    <div class="input-group {% if form.login.errors %}error{% endif %}">
-      <div class="simple-input">
-        <input type="email"
-               placeholder="Enter Email ID"
-               required
-               id="{{ form.login.auto_id }}"
-               {% if form.login.value != None %}value="{{ form.login.value|stringformat:'s' }}"{% endif %}
-               name="{{ form.login.html_name }}">
-        <i class="fa-solid fa-envelope"></i>
-        <span class="error-icon fa-solid fa-circle-exclamation"></span>
-      </div>
-      {% for error in form.login.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
-    </div>
-    <div class="input-group {% if form.password.errors %}error{% endif %}">
-      <div class="simple-input">
-        <input type="password"
-               placeholder="Password"
-               required
-               id="{{ form.password.auto_id }}"
-               {% if form.password.value != None %}value="{{ form.password.value|stringformat:'s' }}"{% endif %}
-               name="{{ form.password.html_name }}">
-        <i class="fa-solid fa-lock"></i>
-        <span class="error-icon fa-solid fa-circle-exclamation"></span>
-      </div>
-      {% for error in form.password.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
-    </div>
-    <div class="flex justify-between items-center">
-      <p class="text-sm text-gray-400">
-        Forgot Password?
-        <a href="{% url 'account_reset_password' %}"
-           type="button"
-           class="block text-brand-indigo font-medium">Reset</a>
-      </p>
-      <button class="button button-md primary-dark" type="submit">
-        <span class="relative z-20">Login</span>
-      </button>
-    </div>
-  </form>
-  <span class="text-sm text-gray-400 text-center">or</span>
-  <div class="space-y-2 place-items-center">
-    <form method="post"
-          action="{% provider_login_url "commcarehq" process="login" %}">
-      <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer"
-              type="submit">
-        {% csrf_token %}
-        <div class="w-6 h-6">
-          <img src="{% static 'images/commcare-logo-color.svg' %}"
-               alt="Compact Logo"
-               class="w-full">
+  <div class="w-full min-h-[620px] h-fit flex flex-col gap-4">
+    <form method="post" class="w-full flex flex-col gap-4">
+      {% csrf_token %}
+      {% if redirect_field_value %}
+        <input type="hidden"
+               name="{{ redirect_field_name }}"
+               value="{{ redirect_field_value }}" />
+      {% endif %}
+      <h6 class="title text-brand-deep-purple">Login</h6>
+      <span class="text-sm text-gray-600">Please enter your details</span>
+      {% if messages %}
+        {% for message in messages %}<p class="text-sm text-red-600">* {{ message }}</p>{% endfor %}
+      {% endif %}
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}<p class="text-sm text-red-600">* {{ error }}</p>{% endfor %}
+      {% endif %}
+      <div class="input-group {% if form.login.errors %}error{% endif %}">
+        <div class="simple-input">
+          <input type="email"
+                 placeholder="Enter Email ID"
+                 required
+                 id="{{ form.login.auto_id }}"
+                 {% if form.login.value != None %}value="{{ form.login.value|stringformat:'s' }}"{% endif %}
+                 name="{{ form.login.html_name }}">
+          <i class="fa-solid fa-envelope"></i>
+          <span class="error-icon fa-solid fa-circle-exclamation"></span>
         </div>
-        <span class="text-sm">Login with CommCareHQ</span>
-      </button>
+        {% for error in form.login.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+      </div>
+      <div class="input-group {% if form.password.errors %}error{% endif %}">
+        <div class="simple-input">
+          <input type="password"
+                 placeholder="Password"
+                 required
+                 id="{{ form.password.auto_id }}"
+                 {% if form.password.value != None %}value="{{ form.password.value|stringformat:'s' }}"{% endif %}
+                 name="{{ form.password.html_name }}">
+          <i class="fa-solid fa-lock"></i>
+          <span class="error-icon fa-solid fa-circle-exclamation"></span>
+        </div>
+        {% for error in form.password.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
+      </div>
+      <div class="flex justify-between items-center">
+        <p class="text-sm text-gray-400">
+          Forgot Password?
+          <a href="{% url 'account_reset_password' %}"
+             type="button"
+             class="block text-brand-indigo font-medium">Reset</a>
+        </p>
+        <button class="button button-md primary-dark" type="submit">
+          <span class="relative z-20">Login</span>
+        </button>
+      </div>
     </form>
+    <span class="text-sm text-gray-400 text-center">or</span>
+    <div class="space-y-2 place-items-center">
+      <form method="post"
+            action="{% provider_login_url "commcarehq" process="login" %}">
+        <button class="flex gap-2 rounded-full bg-gray-100 items-center p-2 pr-4 cursor-pointer"
+                type="submit">
+          {% csrf_token %}
+          <div class="w-6 h-6">
+            <img src="{% static 'images/commcare-logo-color.svg' %}"
+                 alt="Compact Logo"
+                 class="w-full">
+          </div>
+          <span class="text-sm">Login with CommCareHQ</span>
+        </button>
+      </form>
+    </div>
+    <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
+      Don't have an account?
+      <a href="{{ signup_url }}" class="text-brand-indigo font-medium">Signup</a>
+    </div>
   </div>
-  <div class="text-sm text-gray-400 text-center mt-auto border-t-gray-200 border-t-2 pt-4 ">
-    Don't have an account?
-    <a href="{{ signup_url }}" class="text-brand-indigo font-medium">Signup</a>
-  </div>
-</div>
 {% endblock %}

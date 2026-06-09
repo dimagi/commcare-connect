@@ -112,6 +112,7 @@ LOCAL_APPS = [
     "commcare_connect.users",
     "commcare_connect.web",
     "commcare_connect.microplanning",
+    "commcare_connect.prelogin",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

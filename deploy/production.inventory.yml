@@ -10,3 +10,17 @@ webservers:
     secrets_file: 'Ansible Secrets - Production'
     commcare_hq_url: 'https://www.commcarehq.org'
     deploy_environment: 'production'
+    env_file: 'connect.docker.env.j2'
+
+connectid:
+  hosts:
+    connectid_web0:
+      ansible_host: i-01d4755cad044dcae
+    connectid_celery0:
+      ansible_host: i-090b0c432298694c5
+  vars:
+    secrets_file: 'Ansible Secrets - Production'
+    commcare_hq_url: 'https://www.commcarehq.org'
+    deploy_environment: 'production'
+    env_file: 'connectid.docker.env.j2'
+    docker_env_file: '/home/connect/www/docker.env'

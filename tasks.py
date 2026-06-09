@@ -80,7 +80,15 @@ def restart_django(c: Context, env="staging", verbose=False, diff=False):
 
 @task
 def run_ansible(
-    c: Context, play="play.yml", env="staging", tags=None, verbose=False, diff=False, user="ubuntu", become=True
+    c: Context,
+    play="play.yml",
+    env="staging",
+    tags=None,
+    verbose=False,
+    diff=False,
+    user="ubuntu",
+    become=True,
+    limit=None,
 ):
     ansible_cmd = f"ansible-playbook {play} -i {env}.inventory.yml"
     if tags:
@@ -93,6 +101,8 @@ def run_ansible(
         ansible_cmd += f" -u {user}"
     if become:
         ansible_cmd += " -b"
+    if limit:
+        ansible_cmd += f" --limit {limit}"
 
     with c.cd(PROJECT_DIR / "deploy"):
         c.run(ansible_cmd)

@@ -401,6 +401,19 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
                 programs.add(item["program_id"])
             if item.get("organization_id"):
                 orgs.add(item["organization_id"])
+            if not any(item.get(k) for k in ("opportunity_id", "program_id", "organization_id")) and item.get("id"):
+                # No explicit scope provided — resolve ownership from the existing record so that a
+                # bare {"id": N} cannot bypass the ownership check and target any record by raw PK.
+                try:
+                    record = LabsRecord.objects.get(pk=item["id"])
+                except LabsRecord.DoesNotExist:
+                    raise NotFound()
+                if record.opportunity_id:
+                    opps.add(record.opportunity_id)
+                elif record.program_id:
+                    programs.add(record.program_id)
+                elif record.organization_id:
+                    orgs.add(record.organization_id)
         for opp_id in opps:
             _get_opportunity_or_404(request.user, opp_id)
         for program_id in programs:
@@ -453,7 +466,20 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
 
     def delete(self, request, *args, **kwargs):
         ids = [item["id"] for item in self.data]
-        LabsRecord.objects.filter(pk__in=ids).delete()
+        user = request.user
+        accessible_ids = (
+            LabsRecord.objects.filter(
+                Q(opportunity__organization__memberships__user=user)
+                | Q(opportunity__managedopportunity__program__organization__memberships__user=user)
+                | Q(program__organization__memberships__user=user)
+                | Q(organization__memberships__user=user)
+                | Q(opportunity__isnull=True, program__isnull=True, organization__isnull=True),
+                pk__in=ids,
+            )
+            .distinct()
+            .values_list("pk", flat=True)
+        )
+        LabsRecord.objects.filter(pk__in=accessible_ids).delete()
         return Response(status=status.HTTP_200_OK)
 
 

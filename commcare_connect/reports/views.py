@@ -221,7 +221,7 @@ class InvoiceReportFilter(django_filters.FilterSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if not self.request.user.has_perm(ALL_ORG_ACCESS):
+        if self.request and not self.request.user.has_perm(ALL_ORG_ACCESS):
             self.filters["opportunity_name"].queryset = (
                 ManagedOpportunity.objects.filter(program__organization__memberships__user=self.request.user)
                 .distinct()
@@ -312,7 +312,7 @@ class InvoiceReportView(
 @login_required
 @permission_required(INVOICE_REPORT_ACCESS, raise_exception=True)
 def export_invoice_report(request):
-    filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none())
+    filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none(), request=request)
     if not filterset.is_valid():
         return HttpResponse("Invalid filters", status=400)
 

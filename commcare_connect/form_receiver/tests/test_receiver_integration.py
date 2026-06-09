@@ -14,13 +14,14 @@ from rest_framework.test import APIClient
 from commcare_connect.form_receiver.processor import update_completed_learn_date
 from commcare_connect.form_receiver.tests.test_receiver_endpoint import add_credentials
 from commcare_connect.form_receiver.tests.xforms import (
+    FORM_META,
     AssessmentStubFactory,
     DeliverUnitStubFactory,
     LearnModuleJsonFactory,
     WorkAreaUpdateStubFactory,
     get_form_json,
 )
-from commcare_connect.microplanning.models import WorkAreaStatus
+from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import (
     Assessment,
@@ -1112,7 +1113,6 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
 @pytest.mark.parametrize(
     "initial_status,updated_status,expected_visit_count,auto_approve_visits",
     [
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.VISITED, WorkAreaStatus.VISITED, None, True),
         (WorkAreaStatus.EXPECTED_VISIT_REACHED, WorkAreaStatus.EXPECTED_VISIT_REACHED, 1, True),
@@ -1121,9 +1121,9 @@ def test_receiver_deliver_form_with_invalid_work_area_id(
         (WorkAreaStatus.INACCESSIBLE, WorkAreaStatus.INACCESSIBLE, None, True),
         (WorkAreaStatus.EXCLUDED, WorkAreaStatus.EXCLUDED, None, True),
         # pending visit (auto_approve_visits=False) should not trigger EXPECTED_VISIT_REACHED
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 1, False),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, 1, False),
         # expected_visit_count=0 (unconfigured) should never trigger EXPECTED_VISIT_REACHED
-        (WorkAreaStatus.NOT_STARTED, WorkAreaStatus.VISITED, 0, True),
+        (WorkAreaStatus.NOT_VISITED, WorkAreaStatus.VISITED, 0, True),
     ],
 )
 def test_receiver_deliver_form_work_area_status(
@@ -1177,7 +1177,7 @@ def test_receiver_deliver_form_expected_visit_count(
 ):
     work_area = WorkAreaFactory(
         opportunity=opportunity,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
         expected_visit_count=expected_visit_count,
     )
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
@@ -1213,7 +1213,7 @@ def test_work_area_update_inaccessible(
     work_area = WorkAreaFactory(
         opportunity=opportunity,
         work_area_group=work_area_group,
-        status=WorkAreaStatus.NOT_STARTED,
+        status=WorkAreaStatus.NOT_VISITED,
         opportunity_access=access,
     )
     initial_event_count = (
@@ -1225,6 +1225,10 @@ def test_work_area_update_inaccessible(
         form_block={**stub.json},
         domain=opportunity.deliver_app.cc_domain,
         app_id=opportunity.deliver_app.cc_app_id,
+        attachments={
+            "form.xml": {"content_type": "text/xml", "length": 1000, "url": "https://example.com/form.xml"},
+            "photo.jpg": {"content_type": "image/jpeg", "length": 20, "url": "https://example.com/photo.jpg"},
+        },
     )
 
     make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
@@ -1245,7 +1249,7 @@ def test_work_area_update_inaccessible(
     "status, assigned_to_user",
     [
         (WorkAreaStatus.VISITED, True),
-        (WorkAreaStatus.NOT_STARTED, False),
+        (WorkAreaStatus.NOT_VISITED, False),
     ],
     ids=["wrong_status", "unassigned_worker"],
 )
@@ -1308,3 +1312,169 @@ def test_work_area_update_unresolvable_id(
         expected_status_code=400,
         oauth_application=oauth_application,
     )
+
+
+@pytest.mark.django_db
+def test_work_area_update_inaccessible_creates_request_row(mobile_user_with_connect_link, api_client, opportunity):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=work_area_group,
+        opportunity_access=access,
+        status=WorkAreaStatus.NOT_VISITED,
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(
+        work_area_id=work_area.case_id,
+        status="request_for_inaccessible",
+        reason="Flood",
+        additional_details="Road is blocked.",
+    )
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+        metadata={**FORM_META, "location": "20.09 40.09 20 40"},
+        attachments={
+            "form.xml": {"content_type": "text/xml", "length": 1000, "url": "https://example.com/form.xml"},
+            "photo.jpg": {"content_type": "image/jpeg", "length": 20, "url": "https://example.com/photo.jpg"},
+        },
+    )
+
+    make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    assert WorkAreaInaccessibilityRequest.objects.count() == 1
+    req = WorkAreaInaccessibilityRequest.objects.get()
+    assert req.work_area == work_area
+    assert req.opportunity_access.user == mobile_user_with_connect_link
+    assert req.xform_id == form_json["id"]
+    assert req.date_of_visit == datetime.date(2023, 6, 7)
+    assert req.reason == "Flood"
+    assert req.additional_details == "Road is blocked."
+    assert req.location is not None
+    assert abs(req.location.y - 20.09) < 0.01  # lat
+    assert abs(req.location.x - 40.09) < 0.01  # lng
+
+
+@pytest.mark.django_db(transaction=True)
+def test_work_area_update_attachment_download_queued(mobile_user_with_connect_link, api_client, opportunity):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=work_area_group,
+        opportunity_access=access,
+        status=WorkAreaStatus.NOT_VISITED,
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(
+        work_area_id=work_area.case_id, status="request_for_inaccessible", photo_evidence="evidence.jpg"
+    )
+    photo_attachment = {"content_type": "image/jpeg", "length": 20, "url": "https://example.com/evidence.jpg"}
+    other_attachment = {"content_type": "audio/mpeg", "length": 30, "url": "https://example.com/audio.mp3"}
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+        attachments={
+            "form.xml": {"content_type": "text/xml", "length": 1000, "url": "https://example.com/form.xml"},
+            "evidence.jpg": photo_attachment,
+            "audio.mp3": other_attachment,
+        },
+    )
+
+    with patch("commcare_connect.opportunity.tasks.download_inaccessibility_request_attachments.delay") as mock_delay:
+        make_request(api_client, form_json, mobile_user_with_connect_link, oauth_application=oauth_application)
+
+    mock_delay.assert_called_once()
+    assert mock_delay.call_args[0][0] == form_json["id"]  # xform_id is first arg
+    assert mock_delay.call_args[0][1] == {"evidence.jpg": photo_attachment}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "reason_value, stub_kwargs",
+    [
+        pytest.param("missing", {}, id="missing"),
+        pytest.param("empty_string", {"reason": ""}, id="empty_string"),
+        pytest.param("whitespace_only", {"reason": "   "}, id="whitespace_only"),
+    ],
+)
+def test_work_area_update_invalid_reason(
+    reason_value,
+    stub_kwargs,
+    mobile_user_with_connect_link,
+    api_client,
+    opportunity,
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=work_area_group,
+        opportunity_access=access,
+        status=WorkAreaStatus.NOT_VISITED,
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", **stub_kwargs)
+    if reason_value == "missing":
+        del stub.json["work_area_update"]["reason"]
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+    assert WorkAreaInaccessibilityRequest.objects.count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "photo_value, stub_kwargs",
+    [
+        pytest.param("missing", {}, id="missing"),
+        pytest.param("empty_string", {"photo_evidence": ""}, id="empty_string"),
+        pytest.param("whitespace_only", {"photo_evidence": "   "}, id="whitespace_only"),
+    ],
+)
+def test_work_area_update_invalid_photo_evidence(
+    photo_value,
+    stub_kwargs,
+    mobile_user_with_connect_link,
+    api_client,
+    opportunity,
+):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    work_area_group = WorkAreaGroupFactory(opportunity=opportunity)
+    work_area = WorkAreaFactory(
+        opportunity=opportunity,
+        work_area_group=work_area_group,
+        opportunity_access=access,
+        status=WorkAreaStatus.NOT_VISITED,
+    )
+    oauth_application = opportunity.hq_server.oauth_application
+    stub = WorkAreaUpdateStubFactory(work_area_id=work_area.case_id, status="request_for_inaccessible", **stub_kwargs)
+    if photo_value == "missing":
+        del stub.json["work_area_update"]["photo_evidence"]
+    form_json = get_form_json(
+        form_block={**stub.json},
+        domain=opportunity.deliver_app.cc_domain,
+        app_id=opportunity.deliver_app.cc_app_id,
+    )
+
+    make_request(
+        api_client,
+        form_json,
+        mobile_user_with_connect_link,
+        expected_status_code=400,
+        oauth_application=oauth_application,
+    )
+    assert WorkAreaInaccessibilityRequest.objects.count() == 0

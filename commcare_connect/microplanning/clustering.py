@@ -53,7 +53,7 @@ class WorkAreaGrouper:
     Args:
         opportunity_id:  The ID of the opportunity whose work areas should be grouped
         max_buildings:   Maximum total building count allowed per work area group.
-                         Default is 300.
+                         Default is 200.
         buffer_distance: Distance in meters to consider work areas as adjacent even if
                          they don't share a boundary. Default is 100 meters. This helps
                          connect work areas that are close but separated by small gaps.
@@ -68,7 +68,7 @@ class WorkAreaGrouper:
     def __init__(
         self,
         opportunity_id: int,
-        max_buildings: int = 300,
+        max_buildings: int = 200,
         buffer_distance: int = 100,
     ):
         self.opportunity_id = opportunity_id

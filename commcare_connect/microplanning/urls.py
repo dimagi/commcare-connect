@@ -33,6 +33,16 @@ urlpatterns = [
     path("<slug:opp_id>/download_work_areas/", views.download_work_areas, name="download_work_areas"),
     path("<slug:opp_id>/exclude_work_areas/", views.exclude_work_areas, name="exclude_work_areas"),
     path(
+        "<slug:opp_id>/review_inaccessibility/<int:work_area_id>/",
+        views.review_inaccessibility_request,
+        name="review_inaccessibility_request",
+    ),
+    path(
+        "<slug:opp_id>/review_inaccessibility/<int:work_area_id>/action/",
+        views.act_on_inaccessibility_request,
+        name="act_on_inaccessibility_request",
+    ),
+    path(
         "<slug:opp_id>/assignment/group_work_areas/<int:group_id>/",
         views.get_work_areas_for_assignment,
         name="get_work_areas_for_assignment",
@@ -51,5 +61,10 @@ urlpatterns = [
         "<slug:opp_id>/assignment/save/",
         views.save_assignment,
         name="save_assignment",
+    ),
+    path(
+        "<slug:opp_id>/assignment/unassign/",
+        views.unassign_work_areas,
+        name="unassign_work_areas",
     ),
 ]

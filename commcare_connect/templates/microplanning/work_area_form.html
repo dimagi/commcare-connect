@@ -1,37 +1,32 @@
 {% load i18n crispy_forms_tags %}
-
 <div>
-    <div
-        class="w-full flex flex-col items-center justify-center gap-3 mb-6 text-lg font-semibold text-brand-deep-purple my-4">
-        <i class="fa-regular fa-pen-to-square text-2xl"></i>
-        <h1>{% translate "Modify Work Area" %}</h1>
-    </div>
-    <!-- Info alert -->
-    <div
-        class="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-md max-w-xl mx-auto mb-6">
-        <i class="fa-solid fa-circle-exclamation text-xl"></i>
-        <p class="text-sm">
-            {% translate "Changes to this Work Area will update coverage calculations" %}
-        </p>
-    </div>
-    <form
-        hx-post="{% url 'microplanning:modify_work_area' request.org.slug request.opportunity.opportunity_id work_area.id %}"
+  <div class="w-full flex flex-col items-center justify-center gap-3 mb-6 text-lg font-semibold text-brand-deep-purple my-4">
+    <i class="fa-regular fa-pen-to-square text-2xl"></i>
+    <h1>{% translate "Modify Work Area" %}</h1>
+  </div>
+  <!-- Info alert -->
+  <div class="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-md max-w-xl mx-auto mb-6">
+    <i class="fa-solid fa-circle-exclamation text-xl"></i>
+    <p class="text-sm">{% translate "Changes to this Work Area will update coverage calculations" %}</p>
+  </div>
+  <form hx-post="{% url 'microplanning:modify_work_area' request.org.slug request.opportunity.opportunity_id work_area.id %}"
         hx-indicator="#submit-spinner"
         hx-on:htmx:before-request="this.querySelectorAll('button').forEach(b => b.disabled = true)"
         hx-on:htmx:after-request="this.querySelectorAll('button').forEach(b => b.disabled = false)"
-        hx-target="#work-area-form" hx-swap="innerHTML">
-        {% crispy form %}
-        <div class="mt-6 flex justify-between gap-3">
-            <button type="button" @click="showWorkAreaEditModal = false" class="button button-md outline-style">
-                {% translate "Cancel" %}
-            </button>
-            <button type="submit" class="button button-md primary-dark flex items-center justify-center gap-2">
-                <span>{% translate "Save" %}</span>
-                <i id="submit-spinner"
-                    class="fa-solid fa-spinner animate-spin !hidden [&.htmx-request]:!inline-block htmx-indicator"></i>
-            </button>
-        </div>
-    </form>
+        hx-target="#work-area-form"
+        hx-swap="innerHTML">
+    {% crispy form %}
+    <div class="mt-6 flex justify-between gap-3">
+      <button type="button"
+              @click="showWorkAreaEditModal = false"
+              class="button button-md outline-style">{% translate "Cancel" %}</button>
+      <button type="submit"
+              class="button button-md primary-dark flex items-center justify-center gap-2">
+        <span>{% translate "Save" %}</span>
+        <i id="submit-spinner"
+           class="fa-solid fa-spinner animate-spin !hidden [&.htmx-request]:!inline-block htmx-indicator"></i>
+      </button>
+    </div>
+  </form>
 </div>
-
 {% include "components/tomselect_init.html" %}

@@ -26,8 +26,7 @@ class TestWorkAreaCSVImporter:
         "Boundary",
         "Building Count",
         "Expected Visit Count",
-        "Max WAG",
-        "WAG Serial Number",
+        "Target Population",
         "LGA",
         "State",
     ]
@@ -52,8 +51,7 @@ class TestWorkAreaCSVImporter:
                     self.POLYGON,
                     5,
                     "6",
-                    "3",
-                    "WAG123",
+                    "100",
                     "LGA1",
                     "State1",
                 ]
@@ -142,8 +140,7 @@ class TestWorkAreaCSVImporter:
             "Centroid",
             "Ward",
             "Building Count",
-            "Max WAG",
-            "WAG Serial Number",
+            "Target Population",
             "State",
             "LGA",
         ]
@@ -155,8 +152,7 @@ class TestWorkAreaCSVImporter:
             self.CENTROID,
             "ward-1",
             "5",
-            "7",
-            "WAG456",
+            "50",
             "State2",
             "LGA2",
         ]
@@ -179,7 +175,7 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, csv).run()
         assert "errors" in result
         error_keys = " ".join(result["errors"].keys()).lower()
-        expected_error = "Missing values for properties: max_wag, wag_serial_number, lga, state"
+        expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
 
 

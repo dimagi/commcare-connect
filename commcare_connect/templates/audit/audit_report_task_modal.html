@@ -10,11 +10,8 @@
       <h3 class="text-lg font-semibold text-white">
         {% blocktrans with name=entry.opportunity_access.user.name %}{{ name }}: Weekly Performance Report{% endblocktrans %}
       </h3>
-      <p class="text-sm text-gray-100">
-        {{ report.period_start }} – {{ report.period_end }}
-      </p>
+      <p class="text-sm text-gray-100">{{ report.period_start }} – {{ report.period_end }}</p>
     </div>
-
     <form method="post"
           hx-post="{% url 'opportunity:audit:audit_report_task_action' org_slug=opportunity.organization.slug opp_id=opportunity.opportunity_id audit_report_id=report.audit_report_id entry_id=entry.audit_report_entry_id %}"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
@@ -36,7 +33,6 @@
             <p class="text-sm text-gray-500">{% trans "No failed calculations for this worker." %}</p>
           {% endif %}
         </div>
-
         <div>
           <h4 class="font-semibold mb-2">{% trans "Suggested Tasks" %}</h4>
           {% if task_types %}
@@ -55,27 +51,22 @@
           {% endif %}
         </div>
       </div>
-
       <div x-show="error"
            x-cloak
            role="alert"
            class="mx-6 mb-4 p-3 rounded-lg border border-message-error-border bg-message-error text-message-error-text text-sm"
            x-text="error"></div>
-
       <div class="px-6 pb-6 flex justify-end gap-2">
-        <button type="button" class="button button-md outline-style" @click="open = false">{% trans "Cancel" %}</button>
         <button type="button"
                 class="button button-md outline-style"
-                @click="action='none'; confirm=true;">
-          {% trans "No Action Needed" %}
-        </button>
+                @click="open = false">{% trans "Cancel" %}</button>
+        <button type="button"
+                class="button button-md outline-style"
+                @click="action='none'; confirm = true;">{% trans "No Action Needed" %}</button>
         <button type="button"
                 class="button button-md primary-dark"
-                @click="action='tasks_assigned'; confirm=true;">
-          {% trans "Complete Review" %}
-        </button>
+                @click="action='tasks_assigned'; confirm = true;">{% trans "Complete Review" %}</button>
       </div>
-
       <!-- Confirmation overlay -->
       <div x-show="confirm"
            x-cloak
@@ -86,7 +77,9 @@
           </p>
           <input type="hidden" name="action" :value="action" />
           <div class="flex justify-end gap-2">
-            <button type="button" class="button button-md outline-style" @click="confirm=false">{% trans "Cancel" %}</button>
+            <button type="button"
+                    class="button button-md outline-style"
+                    @click="confirm=false">{% trans "Cancel" %}</button>
             <button type="submit" class="button button-md primary-dark">{% trans "Assign Tasks" %}</button>
           </div>
         </div>

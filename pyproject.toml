@@ -6,7 +6,7 @@ dependencies = [
     "argon2-cffi>=21.3.0",
     "celery>=5.3.4",
     "crispy-tailwind>=1.0.3",
-    "django>=4.2.5",
+    "django>=4.2.30,<5.0",
     "django-allauth>=0.54.0",
     "django-autocomplete-light>=3.11.0",
     "django-celery-beat>=2.5.0",
@@ -40,7 +40,6 @@ dependencies = [
     "shapely>=2.1.2",
     "tablib[xlsx]>=3.5.0",
     "twilio>=8.8.0",
-    "urllib3<2.0.0",
     "whitenoise>=6.5.0",
 ]
 
@@ -123,7 +122,7 @@ dev = [
     "git-build-branch",
     "invoke>=2.2.0",
     "ipdb>=0.13.13",
-    "pre-commit>=3.3.3",
+    "prek>=0.4.3",
     "psycopg2-binary>=2.9.6",
     "pylint-celery>=0.3",
     "pylint-django>=2.5.3",

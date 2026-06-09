@@ -28,7 +28,7 @@ pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
 # Linting (runs black, isort, flake8, pyupgrade, django-upgrade, prettier)
-pre-commit run -a
+prek run -a
 
 # Requirements (uv)
 uv sync
@@ -76,7 +76,7 @@ config/
 
 - **Python**: black + isort (line length 119, target py311). flake8 for linting
 - **JS/CSS**: prettier (tab-width 2, single-quote). Templates excluded from prettier
-- **Pre-commit hooks enforce all of the above** plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
+- **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)
 - Custom `User` model uses single `name` field instead of `first_name`/`last_name`
 - **Single Responsibility**: Functions should do one thing (or a few closely related things). If a function is doing too much, split it

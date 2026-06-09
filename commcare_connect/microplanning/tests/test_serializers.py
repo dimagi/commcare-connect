@@ -1,5 +1,7 @@
 import pytest
+from django.contrib.gis.geos import Point
 
+from commcare_connect.microplanning.models import SRID
 from commcare_connect.microplanning.serializers import WORK_AREA_CASE_TYPE, WorkAreaCaseSerializer
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 
@@ -14,30 +16,31 @@ def test_work_area_case_serializer():
         building_count=5,
         expected_visit_count=10,
         case_properties={
-            "max_wag": "3",
-            "wag_serial_number": "WAG123",
             "lga": "LGA1",
             "state": "State1",
         },
+        centroid=Point(77, 29, srid=SRID),
     )
 
     data = WorkAreaCaseSerializer(work_area).data
+
     assert data == {
         "case_name": "my-area",
         "case_type": WORK_AREA_CASE_TYPE,
         "external_id": str(work_area.id),
         "owner_id": None,
         "properties": {
-            "bounding_box": str(work_area.boundary),
+            "bounding_box": "28.00000 77.00000 28.00000 78.00000 29.00000"
+            " 78.00000 29.00000 77.00000 28.00000 77.00000",
+            "bounding_box_wkt": str(work_area.boundary),
             "building_count": "5",
-            "centroid": str(work_area.centroid),
+            "centroid": "29.00000 77.00000",
+            "centroid_wkt": str(work_area.centroid),
             "expected_visit_count": "10",
             "wa_status": work_area.status,
             "ward": "ward-x",
             "work_area_group": "group-a",
             "work_area_group_id": str(group.id),
-            "max_wag": "3",
-            "wag_serial_number": "WAG123",
             "lga": "LGA1",
             "state": "State1",
         },

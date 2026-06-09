@@ -33,29 +33,34 @@
   tags:
     - packages
 
-- name: Add Docker GPG apt Key
-  apt_key:
+- name: Download Docker GPG key
+  get_url:
     url: https://download.docker.com/linux/ubuntu/gpg
-    state: present
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+    force: true
 
-- name: Add Docker Repository
+- name: De-armor Docker GPG key for APT
+  command: gpg --dearmor --yes --output /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
+  args:
+    creates: /etc/apt/keyrings/docker.gpg
+
+- name: Add Docker repository
   apt_repository:
-    repo: deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+    repo: 'deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable'
     state: present
+    filename: docker
 
-- name: Update apt and install docker-ce
+- name: Update apt and install docker-ce and python module
   apt:
     pkg:
       - docker-ce
       - docker-ce-cli
       - containerd.io
       - docker-buildx-plugin
+      - python3-docker
     state: latest
     update_cache: true
-
-- name: Install Docker Module for Python
-  pip:
-    name: docker
 
 - name: Create the app group.
   group:
@@ -99,7 +104,7 @@
 
 - name: Create Docker Env
   template:
-    src: 'docker.env.j2'
+    src: '{{ env_file }}'
     dest: '{{ docker_env_file }}'
     owner: '{{ app_user }}'
     group: '{{ app_group }}'

@@ -4,18 +4,19 @@ from functools import partial
 from uuid import UUID
 
 import pghistory
+from django.contrib.gis.geos import Point
 from django.db import transaction
 from django.db.models import Count, Min, Q
 from django.utils.timezone import now
 from geopy.distance import distance
-from jsonpath_ng import JSONPathError
+from jsonpath_ng.exceptions import JSONPathError
 from jsonpath_ng.ext import parse
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaInaccessibilityRequest, WorkAreaStatus
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -37,7 +38,11 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.tasks import download_user_visit_attachments, notify_user_for_scored_assessment
+from commcare_connect.opportunity.tasks import (
+    download_inaccessibility_request_attachments,
+    download_user_visit_attachments,
+    notify_user_for_scored_assessment,
+)
 from commcare_connect.opportunity.visit_import import update_payment_accrued_for_user
 from commcare_connect.users.models import User
 from commcare_connect.utils.lock import try_redis_lock
@@ -261,10 +266,22 @@ def process_deliver_form(user, xform: XForm, app: CommCareApp, opportunity: Oppo
 
     work_area_blocks = _get_matching_blocks(WORK_AREA_UPDATE_JSONPATH, xform)
     if work_area_blocks:
-        process_work_area_update(user, opportunity, work_area_blocks)
+        process_work_area_update(user, opportunity, xform, work_area_blocks)
 
 
-def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[dict]):
+def _parse_xform_location(location_str):
+    if not location_str:
+        return None
+    try:
+        parts = location_str.split()
+        lat, lng = float(parts[0]), float(parts[1])
+        return Point(lng, lat, srid=SRID)
+    except (ValueError, IndexError):
+        logger.warning("Failed to parse xform location string: %r", location_str)
+        return None
+
+
+def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm, blocks: list[dict]):
     try:
         access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
     except OpportunityAccess.DoesNotExist:
@@ -280,6 +297,9 @@ def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
+        if WorkAreaInaccessibilityRequest.objects.filter(work_area=work_area).exists():
+            raise ProcessingError("Only one inaccessibility request per work area")
+
         if work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
 
@@ -290,9 +310,35 @@ def process_work_area_update(user: User, opportunity: Opportunity, blocks: list[
             raise ProcessingError(f"Invalid work area status: {requested_status}")
 
         if not (
-            work_area.status == WorkAreaStatus.NOT_STARTED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
+            work_area.status == WorkAreaStatus.NOT_VISITED and new_status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
         ):
             raise ProcessingError(f"Cannot transition work area from {work_area.status} to {new_status}")
+
+        reason = block.get("reason", "").strip()
+        if not reason:
+            raise ProcessingError("reason is required for request_for_inaccessible")
+
+        photo_evidence = block.get("photo_evidence", "").strip()
+        if not photo_evidence:
+            raise ProcessingError("photo_evidence is required for request_for_inaccessible")
+
+        additional_details = block.get("additional_details", "")
+        location = _parse_xform_location(xform.metadata.location)
+
+        WorkAreaInaccessibilityRequest.objects.create(
+            work_area=work_area,
+            opportunity_access=access,
+            xform_id=xform.id,
+            date_of_visit=xform.metadata.timeStart.date(),
+            location=location,
+            reason=reason,
+            additional_details=additional_details,
+        )
+        all_attachments = xform.raw_form.get("attachments", {})
+        photo_attachments = {name: meta for name, meta in all_attachments.items() if name == photo_evidence}
+        if not photo_attachments:
+            raise ProcessingError(f"photo_evidence attachment '{photo_evidence}' not found on form")
+        transaction.on_commit(partial(download_inaccessibility_request_attachments.delay, xform.id, photo_attachments))
 
         work_area.status = new_status
         with pghistory.context(username=user.username, user_email=user.email):

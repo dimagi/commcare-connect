@@ -2,100 +2,95 @@
 {% load i18n %}
 {% load crispy_forms_tags %}
 {% load render_table from django_tables2 %}
-
-{% block title %}{{ request.org }} - {{ opportunity.name }} - {% trans "Task List" %}{% endblock %}
-
-{% block content %}
-    <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4"
-         x-data="{
-           showEditTaskModal: false,
-           editTaskError: false,
-           showCreateTaskModal: false,
-           ...selectableTable()
-         }">
-        {% include 'components/breadcrumbs.html' with path=path %}
-
-        <div class="flex flex-col gap-8 metric-container">
-            <div class="flex justify-between items-start">
-                <div class="flex flex-col gap-2">
-                    <h1 class="text-2xl font-medium text-white">{% trans "Task List" %}</h1>
-                    <p class="text-sm text-gray-100">{% trans "Manage Connect Worker actions and interventions" %}</p>
-                    <p class="text-xs text-gray-300">{% trans "General action tracking system" %}</p>
-                </div>
-                <div class="flex gap-4">
-                    <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
-                        <span class="text-2xl font-bold text-white">{{ total_tasks }}</span>
-                        <div class="flex flex-col items-center gap-1 mt-1">
-                            <i class="fa-solid fa-list-check text-white text-sm"></i>
-                            <span class="text-xs text-white">{% trans "Total Tasks" %}</span>
-                        </div>
-                    </div>
-                    <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
-                        <span class="text-2xl font-bold text-white">{{ open_tasks }}</span>
-                        <div class="flex flex-col items-center gap-1 mt-1">
-                            <i class="fa-regular fa-calendar text-white text-sm"></i>
-                            <span class="text-xs text-white">{% trans "Open Tasks" %}</span>
-                        </div>
-                    </div>
-                    <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
-                        <span class="text-2xl font-bold text-white">{{ complete_tasks }}</span>
-                        <div class="flex flex-col items-center gap-1 mt-1">
-                            <i class="fa-solid fa-circle-check text-white text-sm"></i>
-                            <span class="text-xs text-white">{% trans "Complete" %}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div x-show="editTaskError" x-cloak role="alert"
-          class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
-          <div class="flex items-center gap-2">
-            <i class="fa-solid fa-circle-exclamation"></i>
-            <span>{% trans "Failed to load task. Please try again." %}</span>
-          </div>
-          <button type="button" class="ml-4 text-xl font-light hover:font-normal focus:outline-none" aria-label="{% trans "Close" %}"
-            @click="editTaskError = false">&times;</button>
-        </div>
-
-        <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4">
-            <div class="flex gap-x-4 items-center justify-end mb-4">
-                {% if can_manage_tasks %}
-                <button type="button" class="button-icon shadow-sm" @click="showCreateTaskModal = true"
-                    x-tooltip.raw="{% trans 'Create Task' %}">
-                    <i class="fa-solid fa-plus text-brand-deep-purple"></i>
-                </button>
-                <form x-ref="deleteTasksForm"
-                    hx-post="{% url 'opportunity:delete_tasks' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
-                    hx-trigger="submit" class="hidden">
-                    {% csrf_token %}
-                    <template x-for="id in selected">
-                        <input type="hidden" name="task_ids" :value="id">
-                    </template>
-                </form>
-                <button type="button" class="button-icon hover:bg-red-600 hover:text-white shadow-sm" @click="$store.confirmModal.show({
-                                            title: '{% trans "Delete Tasks" %}',
-                                            message: `{% blocktrans %}Are you sure you want to delete __count__ task(s)? This action cannot be undone.{% endblocktrans %}`.replace('__count__', selected.length),
-                                            confirmBtnText: '{% trans "Delete" %}',
-                                            confirmBtnRed: true,
-                                            formRef: $refs.deleteTasksForm,
-                                        })" :disabled="selected.length === 0" x-tooltip.raw="{% trans 'Delete Task(s)' %}">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-                {% endif %}
-                {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" %}
-            </div>
-            {% render_table table %}
-        </div>
-
-        {% if can_manage_tasks %}
-            {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
-        {% endif %}
-        {% include 'components/confirm_modal.html' %}
-        {% include "opportunity/edit_assigned_task_modal.html" %}
-    </div>
+{% block title %}
+  {{ request.org }} - {{ opportunity.name }} - {% trans "Task List" %}
 {% endblock %}
-
+{% block content %}
+  <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4"
+       x-data="{ showEditTaskModal: false, editTaskError: false, showCreateTaskModal: false, ...selectableTable() }">
+    {% include 'components/breadcrumbs.html' with path=path %}
+    <div class="flex flex-col gap-8 metric-container">
+      <div class="flex justify-between items-start">
+        <div class="flex flex-col gap-2">
+          <h1 class="text-2xl font-medium text-white">{% trans "Task List" %}</h1>
+          <p class="text-sm text-gray-100">{% trans "Manage Connect Worker actions and interventions" %}</p>
+          <p class="text-xs text-gray-300">{% trans "General action tracking system" %}</p>
+        </div>
+        <div class="flex gap-4">
+          <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
+            <span class="text-2xl font-bold text-white">{{ total_tasks }}</span>
+            <div class="flex flex-col items-center gap-1 mt-1">
+              <i class="fa-solid fa-list-check text-white text-sm"></i>
+              <span class="text-xs text-white">{% trans "Total Tasks" %}</span>
+            </div>
+          </div>
+          <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
+            <span class="text-2xl font-bold text-white">{{ open_tasks }}</span>
+            <div class="flex flex-col items-center gap-1 mt-1">
+              <i class="fa-regular fa-calendar text-white text-sm"></i>
+              <span class="text-xs text-white">{% trans "Open Tasks" %}</span>
+            </div>
+          </div>
+          <div class="flex flex-col items-center justify-center min-w-32 px-4 py-3 metric-card">
+            <span class="text-2xl font-bold text-white">{{ complete_tasks }}</span>
+            <div class="flex flex-col items-center gap-1 mt-1">
+              <i class="fa-solid fa-circle-check text-white text-sm"></i>
+              <span class="text-xs text-white">{% trans "Complete" %}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div x-show="editTaskError"
+         x-cloak
+         role="alert"
+         class="flex items-center justify-between p-4 rounded-lg border-[0.5px] bg-message-error text-message-error-text border-message-error-border">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span>{% trans "Failed to load task. Please try again." %}</span>
+      </div>
+      <button type="button"
+              class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+              aria-label="{% trans "Close" %}"
+              @click="editTaskError = false">&times;</button>
+    </div>
+    <div id="task-list-table" class="bg-white rounded-lg shadow-xs p-4">
+      <div class="flex gap-x-4 items-center justify-end mb-4">
+        {% if can_manage_tasks %}
+          <button type="button"
+                  class="button-icon shadow-sm"
+                  @click.stop="showCreateTaskModal = true"
+                  x-tooltip.raw="{% trans 'Create Task' %}">
+            <i class="fa-solid fa-plus text-brand-deep-purple"></i>
+          </button>
+          <form x-ref="deleteTasksForm"
+                hx-post="{% url 'opportunity:delete_tasks' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}"
+                hx-trigger="submit"
+                class="hidden">
+            {% csrf_token %}
+            <template x-for="id in selected">
+              <input type="hidden" name="task_ids" :value="id">
+            </template>
+          </form>
+          <button type="button"
+                  class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
+                  @click="$store.confirmModal.show({ title: '{% trans "Delete Tasks" %}', message: `{% blocktrans %}Are you sure you want to delete __count__ task(s)? This action cannot be undone.{% endblocktrans %}`.replace('__count__', selected.length), confirmBtnText: '{% trans "Delete" %}', confirmBtnRed: true, formRef: $refs.deleteTasksForm, })"
+                  :disabled="selected.length === 0"
+                  x-tooltip.raw="{% trans 'Delete Task(s)' %}">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        {% endif %}
+        {% include "components/filter_modal.html" with form_id="assignedTaskFilterForm" hx_target="#task-list-table" %}
+      </div>
+      {% render_table table %}
+    </div>
+    {% if can_manage_tasks %}
+      {% include 'tasks/new_task_modal.html' with modal_name="showCreateTaskModal" form=create_task_form %}
+    {% endif %}
+    {% include 'components/confirm_modal.html' %}
+    {% include "opportunity/edit_assigned_task_modal.html" %}
+  </div>
+{% endblock %}
 {% block inline_javascript %}
-{% include "components/tables/selectable_table.html" %}
+  {% include "components/tables/selectable_table.html" %}
 {% endblock %}

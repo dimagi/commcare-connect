@@ -567,6 +567,12 @@ class TestInvoiceReportFilter:
         assert getattr(self, expected_in).id in ids
         assert getattr(self, expected_out).id not in ids
 
+    def test_instantiation_without_request(self):
+        qs = InvoiceReportView.get_invoice_queryset(user=self.user)
+        f = InvoiceReportFilter(data={}, queryset=qs)
+        assert f.is_valid()
+        assert set(f.qs.values_list("id", flat=True)) == {self.invoice1.id, self.invoice2.id}
+
     @pytest.mark.parametrize(
         "use_member_user, other_opp_visible",
         [

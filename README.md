@@ -31,8 +31,8 @@ need to edit some settings.
     venv
 
     # install git hooks
-    $ pre-commit install
-    $ pre-commit run -a
+    $ prek install
+    $ prek run -a
 
     # create env file and edit the settings as needed (or export settings directly)
     $ cp .env_template .env

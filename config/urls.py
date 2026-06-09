@@ -12,8 +12,24 @@ from commcare_connect.organization.views import organization_create
 from . import views
 
 urlpatterns = [
-    path("", TemplateView.as_view(template_name="pages/home.html"), name="home"),
+    path("", include("commcare_connect.prelogin.urls")),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
+    # Marketing robots.txt + sitemap.xml. Exported (verbatim) from
+    # dimagi-internal/connect-prelogin into templates/prelogin/ by
+    # tools/export-to-django.py; they must be served from the SITE ROOT
+    # (connect.dimagi.com/robots.txt, /sitemap.xml), so a TemplateView at root
+    # — not the static/prelogin copy — is what satisfies them. Keep sitemap.xml's
+    # URL list in sync with the prelogin marketing routes.
+    path(
+        "robots.txt",
+        TemplateView.as_view(template_name="prelogin/robots.txt", content_type="text/plain"),
+        name="robots_txt",
+    ),
+    path(
+        "sitemap.xml",
+        TemplateView.as_view(template_name="prelogin/sitemap.xml", content_type="application/xml"),
+        name="sitemap_xml",
+    ),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     # Django Admin, use {% url 'admin:index' %}
     path(settings.ADMIN_URL, admin.site.urls),

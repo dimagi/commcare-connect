@@ -1,5 +1,4 @@
 {% load i18n %}
-
 <script>
     document.addEventListener("alpine:init", () => {
         Alpine.data("mapController", () => ({
@@ -7,6 +6,7 @@
             selectedFeature: null,
             highlightedWorkAreaId: null,
             showWorkAreaEditModal: false,
+            showReviewInaccessibilityModal: false,
             showVisits: false,
             filterQuery: '',
 
@@ -24,7 +24,9 @@
             showConfirmModal: false,
             showDiscardModal: false,
             showExcludeModal: false,
+            showUnassignModal: false,
             isSaving: false,
+            isUnassigning: false,
             showOnlyUnassigned: false,
             assignees: [],
             workAreaProperties: new Map(),
@@ -34,7 +36,12 @@
             cannotExclude(id) {
                 if (this.excludedWorkAreaIds.has(id)) return true;
                 const status = this.workAreaProperties.get(id)?.status;
-                return status !== undefined && status !== 'NOT_STARTED';
+                return status !== undefined && status !== 'NOT_VISITED';
+            },
+
+            cannotUnassign(id) {
+                const status = this.workAreaProperties.get(id)?.status;
+                return status !== undefined && status !== 'NOT_VISITED';
             },
 
             openWorkAreaEditModal(workAreaId) {
@@ -120,6 +127,16 @@
                         );
                     }
                 }
+            },
+
+            openReviewInaccessibilityModal(workAreaId) {
+                const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
+                const url = reviewUrl + workAreaId + '/';
+                htmx.ajax('GET', url, { target: '#review-inaccessibility-fragment', swap: 'innerHTML' })
+                    .then(() => {
+                        this.showReviewInaccessibilityModal = true;
+                        setTimeout(() => window.reviewInaccessibilityMap?.resize(), 0);
+                    });
             },
 
             getDownloadUrl() {
@@ -320,6 +337,27 @@
                 return { buildings, visits };
             },
 
+            getSelectedStatsForSummary() {
+                // Live preview of pending changes for the FLW summary. Only count
+                // selected work areas that are NOT already assigned to this FLW.
+                // selectByAssignee() auto-selects the FLW's existing areas (tracked in
+                // flwFilterWorkAreaIds); those are already reflected in flwSummary, so
+                // including them here would double-count buildings/visits/work areas.
+                let buildings = 0;
+                let visits = 0;
+                let workAreas = 0;
+                for (const id of this.selectedWorkAreas) {
+                    if (this.flwFilterWorkAreaIds.has(id)) continue;
+                    const props = this.workAreaProperties.get(id);
+                    if (props) {
+                        buildings += parseInt(props.building_count) || 0;
+                        visits += parseInt(props.expected_visit_count) || 0;
+                    }
+                    workAreas += 1;
+                }
+                return { buildings, visits, workAreas };
+            },
+
             getQueuedStatsForAssignee() {
                 let buildings = 0;
                 let visits = 0;
@@ -341,12 +379,12 @@
 
             getAssigneeUserId() {
                 const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
-                return a ? a.user_id : '';
+                return a ? a.user__user_id : '';
             },
 
             getFlwSummaryUserId() {
                 const a = this.assignees.find(a => String(a.id) === String(this.flwSummaryAssigneeId));
-                return a ? a.user_id : '';
+                return a ? a.user__user_id : '';
             },
 
             addToQueue() {
@@ -405,6 +443,69 @@
                     this.showToast("{% translate 'Failed to save assignment' %}", true);
                 } finally {
                     this.isSaving = false;
+                }
+            },
+
+            async unassignWorkAreas() {
+                const eligibleIds = Array.from(this.selectedWorkAreas).filter(id => !this.cannotUnassign(id));
+                if (eligibleIds.length === 0) {
+                    this.showUnassignModal = false;
+                    this.showToast("{% translate 'No eligible work areas to unassign.' %}");
+                    return;
+                }
+                this.isUnassigning = true;
+                try {
+                    const resp = await fetch('{{ assignment_unassign_url|escapejs }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}',
+                        },
+                        body: JSON.stringify({ work_area_ids: eligibleIds }),
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        // Only repaint work areas the server actually unassigned. On a partial HQ
+                        // failure the failed IDs stay assigned in DB and must keep their existing status.
+                        const unassignedIds = data.unassigned_ids || [];
+                        const failedIds = data.failed_ids || [];
+                        for (const id of unassignedIds) {
+                            this.map.setFeatureState(
+                                { source: 'workareas', sourceLayer: 'workareas', id },
+                                { status: 'UNASSIGNED' }
+                            );
+                            const props = this.workAreaProperties.get(id);
+                            if (props) {
+                                props.status = 'UNASSIGNED';
+                                props.assignee_name = null;
+                            }
+                        }
+                        this.showUnassignModal = false;
+                        // Clear the selection, then re-select any failed areas so they stay highlighted
+                        // on the map for the user to inspect and retry.
+                        this.clearSelection();
+                        for (const id of failedIds) {
+                            this.selectedWorkAreas.add(id);
+                            this.map.setFeatureState(
+                                { source: 'workareas', sourceLayer: 'workareas', id },
+                                { assignment_selected: true }
+                            );
+                        }
+                        const msg = data.skipped || failedIds.length
+                            ? "{% translate 'Unassigned' %} " + unassignedIds.length + " " + "{% translate 'work area(s).' %}"
+                              + (data.skipped ? " " + data.skipped + " " + "{% translate 'skipped.' %}" : "")
+                              + (failedIds.length ? " " + failedIds.length + " " + "{% translate 'failed to sync and remain selected for retry.' %}" : "")
+                            : "{% translate 'Work area(s) unassigned successfully.' %}";
+                        this.showToast(msg, failedIds.length > 0);
+                        if (this.flwSummaryAssigneeId) this.updateFlwSummary();
+                    } else {
+                        const data = await resp.json().catch(() => ({}));
+                        this.showToast(data.error || "{% translate 'Failed to unassign work areas' %}", true);
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to unassign work areas' %}", true);
+                } finally {
+                    this.isUnassigning = false;
                 }
             },
 
@@ -473,8 +574,22 @@
                     this.showToast("{% translate 'Work area updated successfully!' %}");
                 });
 
+                document.addEventListener('inaccessibilityReviewed', (e) => {
+                    const data = e.detail;
+                    if (this.selectedFeature && this.selectedFeature._id === data.id) {
+                        this.selectedFeature = { ...this.selectedFeature, status: data.status };
+                    }
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id: data.id },
+                        { status: data.status }
+                    );
+                    this.showReviewInaccessibilityModal = false;
+                    this.showToast("{% translate 'Work area review saved.' %}");
+                });
+
                 document.addEventListener('work_areas_excluded', (e) => {
                     const excluded = e.detail?.excluded ?? [];
+                    const skipped = e.detail?.skipped ?? 0;
                     for (const id of excluded) {
                         this.map.setFeatureState(
                             { source: 'workareas', sourceLayer: 'workareas', id },
@@ -484,7 +599,13 @@
                     }
                     this.showExcludeModal = false;
                     this.clearSelection();
-                    this.showToast(`{% translate "Work area(s) excluded successfully." %}`);
+                    if (excluded.length > 0 && skipped === 0) {
+                        this.showToast(`{% translate "Work area(s) excluded successfully." %}`);
+                    } else if (excluded.length > 0 && skipped > 0) {
+                        this.showToast(`${excluded.length} {% translate "excluded" %}, ${skipped} {% translate "skipped (already excluded or not 'Not Visited')." %}`);
+                    } else if (skipped > 0) {
+                        this.showToast(`{% translate "No work areas were excluded. Only 'Not Visited' work areas can be excluded." %}`, true);
+                    }
                 });
             },
 
@@ -585,7 +706,6 @@
                             'VISITED', 0.85,
                             'NOT_VISITED', 0.65,
                             'UNASSIGNED', 0.55,
-                            'NOT_STARTED', 0.50,
                             'EXCLUDED', 0.45,
                             'INACCESSIBLE', 0.40,
                             'REQUEST_FOR_INACCESSIBLE', 0.35,

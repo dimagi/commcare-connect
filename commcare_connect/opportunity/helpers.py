@@ -28,6 +28,8 @@ from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
+    AssignedTaskStatus,
     CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
@@ -36,7 +38,6 @@ from commcare_connect.opportunity.models import (
     OpportunityClaim,
     OpportunityClaimLimit,
     Payment,
-    TaskType,
     UserInvite,
     UserInviteStatus,
     UserVisit,
@@ -698,8 +699,11 @@ def get_opportunity_delivery_progress(opp_id):
     )
     active_tasks_count = Coalesce(
         Subquery(
-            TaskType.objects.filter(opportunity_id=OuterRef("pk"), is_active=True)
-            .values("opportunity_id")
+            AssignedTask.objects.filter(
+                opportunity_access__opportunity_id=OuterRef("pk"),
+                status=AssignedTaskStatus.ASSIGNED,
+            )
+            .values("opportunity_access__opportunity_id")
             .annotate(total=Count("pk"))
             .values("total"),
             output_field=IntegerField(),

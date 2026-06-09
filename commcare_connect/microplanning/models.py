@@ -14,7 +14,6 @@ SRID = 4326
 
 
 class WorkAreaStatus(geo_models.TextChoices):
-    NOT_STARTED = "NOT_STARTED", _("Not Started")
     UNASSIGNED = "UNASSIGNED", _("Unassigned")
     NOT_VISITED = "NOT_VISITED", _("Not Visited")
     VISITED = "VISITED", _("Visited")
@@ -62,12 +61,13 @@ class WorkArea(geo_models.Model):
     ward = geo_models.SlugField(max_length=255)
     building_count = geo_models.PositiveIntegerField(default=0)
     expected_visit_count = geo_models.PositiveIntegerField(default=0)
+    target_population = geo_models.PositiveIntegerField(default=0)
     status = geo_models.CharField(
         max_length=50,
         choices=WorkAreaStatus.choices,
         default=WorkAreaStatus.UNASSIGNED,
     )
-    case_id = geo_models.UUIDField(null=True, blank=True, unique=True)
+    case_id = geo_models.CharField(max_length=255, unique=True, null=True)
     case_properties = geo_models.JSONField(default=dict, null=True, blank=True)
     excluded_by = geo_models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -85,7 +85,6 @@ class WorkArea(geo_models.Model):
         return f"{self.slug}-{self.opportunity_id}"
 
     VISIT_TRACKABLE_STATUSES = {
-        WorkAreaStatus.NOT_STARTED,
         WorkAreaStatus.NOT_VISITED,
         WorkAreaStatus.VISITED,
         WorkAreaStatus.EXPECTED_VISIT_REACHED,
@@ -108,3 +107,19 @@ class WorkArea(geo_models.Model):
             self.status = new_status
             with pghistory.context(username=user.username, user_email=user.email):
                 self.save(update_fields=["status"])
+
+
+class WorkAreaInaccessibilityRequest(geo_models.Model):
+    work_area = geo_models.ForeignKey(WorkArea, on_delete=geo_models.CASCADE)
+    opportunity_access = geo_models.ForeignKey(OpportunityAccess, on_delete=geo_models.CASCADE)
+    xform_id = geo_models.CharField(max_length=50)
+    date_of_visit = geo_models.DateField()
+    location = geo_models.PointField(null=True, blank=True, srid=SRID)
+    reason = geo_models.CharField(max_length=256)
+    additional_details = geo_models.TextField(blank=True, default="")
+
+    class Meta:
+        constraints = [geo_models.UniqueConstraint(fields=["work_area"], name="unique_work_area_inaccessibility")]
+
+    def __str__(self):
+        return f"WorkAreaInaccessibilityRequest {self.xform_id} - {self.work_area}"

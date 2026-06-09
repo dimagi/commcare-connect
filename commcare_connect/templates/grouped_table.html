@@ -1,0 +1,67 @@
+{% extends "base_table.html" %}
+{% load l10n %}
+{% block table.tbody %}
+  {% for row in table.paginated_rows %}
+    <tbody x-data="{open: false}">
+      <tr @click="open = !open" class="cursor-pointer select-none">
+        {% block group_header_row %}
+          {% for column, cell in row.items %}
+            {% if column.name in table.header_columns %}
+              <td {{ column.attrs.td.as_html }}>
+                {% if column.localize == None %}
+                  {{ cell }}
+                {% elif column.localize %}
+                  {{ cell|localize }}
+                {% else %}
+                  {{ cell|unlocalize }}
+                {% endif %}
+              </td>
+            {% endif %}
+          {% endfor %}
+        {% endblock group_header_row %}
+        {% block group_header_extra %}
+          <td colspan="{{ table.non_header_column_count }}" class="pr-4">
+            <div class="flex items-center justify-end gap-2">
+              {% if table.group_item_label %}
+                {% with count=row.record.sub_rows|length %}
+                  <span class="text-xs text-slate-400">{{ count }}
+                    {% if count == 1 %}
+                      {{ table.group_item_label.0 }}
+                    {% else %}
+                      {{ table.group_item_label.1 }}
+                    {% endif %}
+                  </span>
+                {% endwith %}
+              {% endif %}
+              <i class="fa-solid fa-chevron-down text-slate-400 transition-transform duration-200"
+                 :class="{'rotate-180': open}"></i>
+            </div>
+          </td>
+        {% endblock group_header_extra %}
+      </tr>
+      {% for sub_row in row.record.sub_rows %}
+        <tr x-show="open" x-cloak>
+          {% block group_item_row %}
+            {% for column, cell in sub_row.items %}
+              <td {{ column.attrs.td.as_html }}>
+                {% if column.localize == None %}
+                  {{ cell }}
+                {% elif column.localize %}
+                  {{ cell|localize }}
+                {% else %}
+                  {{ cell|unlocalize }}
+                {% endif %}
+              </td>
+            {% endfor %}
+          {% endblock group_item_row %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  {% empty %}
+    <tbody>
+      <tr>
+        <td colspan="{{ table.columns|length }}" class="text-center py-4">{{ table.empty_text }}</td>
+      </tr>
+    </tbody>
+  {% endfor %}
+{% endblock table.tbody %}

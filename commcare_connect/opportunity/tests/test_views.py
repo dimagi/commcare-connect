@@ -16,6 +16,8 @@ from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
 from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
+from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
+from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
 from commcare_connect.opportunity.helpers import OpportunityData, TieredQueryset
 from commcare_connect.opportunity.models import (
@@ -999,6 +1001,43 @@ class TestFetchAttachmentView:
         response = client.get(url)
         assert response.status_code == 200
         storage_handler_getitem_mock.assert_called_once()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_user_can_fetch_blob_from_inaccessibility_request(
+        self, storage_handler_getitem_mock, org_user_member, organization, client, opportunity
+    ):
+        inacc_request = WorkAreaInaccessibilityRequestFactory(
+            work_area__opportunity=opportunity,
+        )
+        blob_meta = BlobMetaFactory(parent_id=inacc_request.xform_id)
+
+        url = reverse(
+            "opportunity:fetch_attachment",
+            args=(organization.slug, opportunity.id, blob_meta.blob_id),
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 200
+        storage_handler_getitem_mock.assert_called_once()
+
+    @mock.patch.object(StorageHandler, "__getitem__")
+    def test_cannot_fetch_inaccessibility_blob_for_different_opportunity(
+        self, storage_handler_getitem_mock, org_user_member, organization, client
+    ):
+        other_opp_inacc_request = WorkAreaInaccessibilityRequestFactory()
+        blob_meta = BlobMetaFactory(parent_id=other_opp_inacc_request.xform_id)
+
+        my_opportunity = OpportunityFactory(organization=organization)
+        url = reverse(
+            "opportunity:fetch_attachment",
+            args=(organization.slug, my_opportunity.id, blob_meta.blob_id),
+        )
+        client.force_login(org_user_member)
+
+        response = client.get(url)
+        assert response.status_code == 404
+        storage_handler_getitem_mock.assert_not_called()
 
 
 def test_views_use_opportunity_decorator_or_mixin():
@@ -2282,10 +2321,9 @@ class TestAssignedTaskListView:
         self, organization: Organization, org_user_member: User, opportunity: Opportunity, client: Client
     ):
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
-        task_type = TaskTypeFactory(app=opportunity.deliver_app)
-        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
-        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
-        AssignedTaskFactory(task_type=task_type, opportunity_access=access, status=AssignedTaskStatus.COMPLETED)
+        AssignedTaskFactory(opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        AssignedTaskFactory(opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
+        AssignedTaskFactory(opportunity_access=access, status=AssignedTaskStatus.COMPLETED)
 
         client.force_login(org_user_member)
         url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
@@ -2328,9 +2366,8 @@ class TestAssignedTaskListView:
 
     def test_page_size_param_is_respected(self, organization, org_user_member, opportunity, client):
         access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
-        task = TaskTypeFactory(app=opportunity.deliver_app)
         for _ in range(30):
-            AssignedTaskFactory(task_type=task, opportunity_access=access)
+            AssignedTaskFactory(opportunity_access=access)
 
         client.force_login(org_user_member)
         url = reverse("opportunity:assigned_task_list", args=(organization.slug, opportunity.opportunity_id))
@@ -2662,7 +2699,7 @@ class TestCreateTask:
         task = TaskTypeFactory(app=opportunity.deliver_app, case_property="some_prop")
         due_date = date.today() + timedelta(days=7)
 
-        with mock.patch("commcare_connect.commcarehq.api.update_usercase") as mock_update:
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
             response = client.post(
                 self._url(opportunity),
                 data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
@@ -2674,9 +2711,24 @@ class TestCreateTask:
         assert assigned.due_date == due_date
         assert assigned.status == AssignedTaskStatus.ASSIGNED
         assert assigned.assigned_by == org_user_member
-        mock_update.assert_called_once_with(access, data={"properties": {"some_prop": "1"}})
+        mock_update.assert_called_once_with({access: {"properties": {"some_prop": "1"}}})
         msgs = list(get_messages(response.wsgi_request))
         assert any("successfully" in str(m) for m in msgs)
+
+    def test_create_task_already_assigned_shows_error(self, client, org_user_member, opportunity, access):
+        client.force_login(org_user_member)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch.object(AssignedTask, "assign", side_effect=TaskAlreadyAssignedError):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("already assigned" in str(m) for m in msgs)
 
     def test_create_task_hq_failure_shows_error_and_no_row(self, client, org_user_member, opportunity, access):
         client.force_login(org_user_member)
@@ -2684,7 +2736,7 @@ class TestCreateTask:
         due_date = date.today() + timedelta(days=7)
 
         with mock.patch(
-            "commcare_connect.commcarehq.api.update_usercase",
+            "commcare_connect.commcarehq.api.bulk_update_usercases",
             side_effect=CommCareHQAPIException("boom"),
         ):
             response = client.post(
@@ -2742,12 +2794,7 @@ class TestDeleteTasks:
     @pytest.fixture
     def assigned_tasks(self, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        return AssignedTaskFactory.create_batch(
-            3,
-            opportunity_access=access,
-            task_type=TaskTypeFactory(app=opportunity.deliver_app),
-            status=AssignedTaskStatus.ASSIGNED,
-        )
+        return AssignedTaskFactory.create_batch(3, opportunity_access=access, status=AssignedTaskStatus.ASSIGNED)
 
     def _url(self, opportunity):
         return reverse("opportunity:delete_tasks", args=(opportunity.organization.slug, opportunity.opportunity_id))
@@ -2826,3 +2873,42 @@ class TestDeleteTasks:
         client.force_login(user)
         response = client.post(self._url(opp), data={"task_ids": [1]})
         assert response.status_code == HTTPStatus.NOT_FOUND
+
+    def test_delete_tasks_resets_hq_case_property(self, client, org_user_member, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="needs_assessment")
+        task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=task_type,
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        client.force_login(org_user_member)
+
+        with mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update:
+            response = client.post(self._url(opportunity), data={"task_ids": [task.pk]})
+
+        assert response.status_code == HTTPStatus.OK
+        assert not AssignedTask.objects.filter(pk=task.pk).exists()
+        mock_update.assert_called_once_with({access: {"properties": {"needs_assessment": ""}}})
+
+    def test_delete_tasks_hq_failure_shows_error_and_keeps_tasks(self, client, org_user_member, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        task_type = TaskTypeFactory(app=opportunity.deliver_app, case_property="needs_assessment")
+        task = AssignedTaskFactory(
+            opportunity_access=access,
+            task_type=task_type,
+            status=AssignedTaskStatus.ASSIGNED,
+        )
+        client.force_login(org_user_member)
+
+        with mock.patch(
+            "commcare_connect.commcarehq.api.bulk_update_usercases",
+            side_effect=CommCareHQAPIException("boom"),
+        ):
+            response = client.post(self._url(opportunity), data={"task_ids": [task.pk]})
+
+        assert response.status_code == HTTPStatus.OK
+        assert "HX-Redirect" in response
+        assert AssignedTask.objects.filter(pk=task.pk).exists()
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("could not update CommCare HQ" in str(m) for m in msgs)

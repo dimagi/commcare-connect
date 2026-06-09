@@ -397,6 +397,12 @@ def test_opportunity_delivery_stats(opportunity):
     PaymentFactory(opportunity_access=oa1, date_paid=yesterday, amount=100)
     PaymentFactory(opportunity_access=oa2, date_paid=today, amount=50)
 
+    # active_tasks_count counts AssignedTask rows with status ASSIGNED on this opportunity
+    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    AssignedTaskFactory(opportunity_access=oa1, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=oa2, task_type=task_type, status=AssignedTaskStatus.ASSIGNED)
+    AssignedTaskFactory(opportunity_access=oa2, task_type=task_type, status=AssignedTaskStatus.COMPLETED)
+
     result = get_opportunity_delivery_progress(opportunity.id)
 
     assert opportunity.id == result.id
@@ -411,6 +417,7 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.recent_payment == today
     assert result.workers_invited == 3
     assert result.pending_invites == 1
+    assert result.active_tasks_count == 2
 
 
 @pytest.mark.django_db
@@ -591,9 +598,8 @@ def _filter_worker_tasks(opportunity, filters):
 def test_get_worker_tasks_base_queryset(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task_type=task_type)
-    AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+    AssignedTaskFactory(opportunity_access=access)
+    AssignedTaskFactory(opportunity_access=access)
 
     result = list(get_worker_tasks_base_queryset(opportunity))
     assert len(result) == 2
@@ -634,8 +640,8 @@ def test_filter_worker_tasks_by_task_status(opportunity):
 def test_filter_worker_tasks_by_task_type(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_a = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    task_b = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    task_a = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity, is_active=True)
+    task_b = TaskTypeFactory(app=opportunity.deliver_app, opportunity=opportunity, is_active=True)
     AssignedTaskFactory(opportunity_access=access, task_type=task_a)
     AssignedTaskFactory(opportunity_access=access, task_type=task_b)
 
@@ -648,11 +654,11 @@ def test_filter_worker_tasks_by_task_type(opportunity):
 def test_filter_worker_tasks_by_date_assigned_range(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
+    task_type = TaskTypeFactory(app=opportunity.deliver_app, is_active=True)
     old_task = AssignedTaskFactory(opportunity_access=access, task_type=task_type)
     AssignedTask.objects.filter(pk=old_task.pk).update(date_created=date.today() - timedelta(days=30))
 
-    AssignedTaskFactory(opportunity_access=access, task_type=task_type)
+    AssignedTaskFactory(opportunity_access=access)
 
     result = _filter_worker_tasks(opportunity, {"date_assigned_from": date.today() - timedelta(days=7)})
     assert len(result) == 1
@@ -662,9 +668,8 @@ def test_filter_worker_tasks_by_date_assigned_range(opportunity):
 def test_filter_worker_tasks_by_due_date_range(opportunity):
     access = OpportunityAccessFactory(opportunity=opportunity, accepted=True)
     UserInviteFactory(opportunity=opportunity, opportunity_access=access, status="accepted")
-    task_type = TaskTypeFactory(opportunity=opportunity, app=opportunity.deliver_app, is_active=True)
-    AssignedTaskFactory(opportunity_access=access, task_type=task_type, due_date=date.today() + timedelta(days=1))
-    AssignedTaskFactory(opportunity_access=access, task_type=task_type, due_date=date.today() + timedelta(days=30))
+    AssignedTaskFactory(opportunity_access=access, due_date=date.today() + timedelta(days=1))
+    AssignedTaskFactory(opportunity_access=access, due_date=date.today() + timedelta(days=30))
 
     result = _filter_worker_tasks(opportunity, {"due_date_to": date.today() + timedelta(days=7)})
     assert len(result) == 1

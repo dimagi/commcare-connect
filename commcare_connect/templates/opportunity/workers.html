@@ -1,6 +1,5 @@
 {% extends "opportunity/worker_list_base.html" %}
 {% load i18n %}
-
 {% block tab_options %}
   {% if search_term %}
     <span class="text-sm text-slate-600 italic whitespace-nowrap">
@@ -8,8 +7,10 @@
     </span>
   {% endif %}
   {# hx-preserve keeps the input (and its focus/value) alive across #tab-options OOB swaps. #}
-  <div id="worker-search" hx-preserve="true"
-       class="relative" x-data="{ search: '{{ search_term|escapejs }}' }">
+  <div id="worker-search"
+       hx-preserve="true"
+       class="relative"
+       x-data="{ search: '{{ search_term|escapejs }}' }">
     <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
     <input type="text"
            name="q"
@@ -31,22 +32,25 @@
     </button>
   </div>
   <div id="worker-tab-options" class="flex gap-x-4 items-center">
-    <button type="button" class="button-icon shadow-sm" @click="showWorkerExportModal = true"
-            {% if request.org_membership.is_viewer %} disabled {% endif %}
-    >
+    <button type="button"
+            class="button-icon shadow-sm"
+            @click="showWorkerExportModal = true"
+            {% if request.org_membership.is_viewer %}disabled{% endif %}>
       <i class="fa-solid fa-download text-brand-deep-purple"></i>
     </button>
     {% block modals %}
-        {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.opportunity_id as user_status_export_url %}
-        {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Connect Workers") export_url=user_status_export_url export_form=export_form %}
-        {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
+      {% url 'opportunity:user_status_export' org_slug=request.org.slug opp_id=opportunity.opportunity_id as user_status_export_url %}
+      {% include "components/worker_page/export_modal.html" with modal_name="showWorkerExportModal" modal_title=_("Export Connect Workers") export_url=user_status_export_url export_form=export_form %}
+      {% include "components/worker_page/delete_invites_confirm_modal.html" with modal_name="showConfirmDeleteInvitesModal" modal_title=_("Delete Selected Invites") %}
     {% endblock %}
     {% if request.org_membership.is_viewer or opportunity.has_ended %}
       <button disabled class="button-icon shadow-sm">
         <i class="fa-solid fa-plus"></i>
       </button>
     {% else %}
-      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}" class="button-icon shadow-sm" x-tooltip.raw="{% trans 'Add Worker' %}">
+      <a href="{% url 'opportunity:user_invite' request.org.slug opportunity.opportunity_id %}"
+         class="button-icon shadow-sm"
+         x-tooltip.raw="{% trans 'Add Worker' %}">
         <i class="fa-solid fa-plus"></i>
       </a>
     {% endif %}

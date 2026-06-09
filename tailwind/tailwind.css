@@ -675,9 +675,13 @@
   }
 }
 
-@layer {
+@layer components {
   .modal {
     @apply relative z-50 mx-auto my-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl;
+  }
+
+  .modal-lg {
+    @apply max-w-2xl;
   }
 
   .modal-backdrop {
@@ -714,7 +718,7 @@
 
 .better-tabs {
   .tabs {
-    @apply flex h-full gap-x-8 overflow-x-scroll px-2;
+    @apply flex h-full gap-x-8 overflow-x-auto px-2;
   }
 
   .tab {

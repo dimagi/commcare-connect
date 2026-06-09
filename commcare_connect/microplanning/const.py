@@ -1,7 +1,6 @@
 from commcare_connect.microplanning.models import WorkAreaStatus
 
 WORK_AREA_STATUS_COLORS = {
-    WorkAreaStatus.NOT_STARTED: "bg-gray-200 text-gray-700",
     WorkAreaStatus.UNASSIGNED: "bg-gray-200 text-gray-700",
     WorkAreaStatus.NOT_VISITED: "bg-gray-200 text-gray-700",
     WorkAreaStatus.VISITED: "bg-yellow-200 text-yellow-900",
@@ -12,4 +11,6 @@ WORK_AREA_STATUS_COLORS = {
 }
 WORK_AREA_CASE_TYPE = "work-area"
 MAX_EXCLUDE_WORK_AREAS = 200
+MAX_UNASSIGN_WORK_AREAS = 200
 HQ_BULK_CHUNK_SIZE = 50
+HQ_UNASSIGN_BULK_CHUNK_SIZE = 200

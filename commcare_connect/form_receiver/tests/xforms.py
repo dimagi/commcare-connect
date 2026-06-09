@@ -90,6 +90,8 @@ WORK_AREA_UPDATE_XML_TEMPLATE = (
     <work_area_id>{work_area_id}</work_area_id>
     <status>{status}</status>
     <reason>{reason}</reason>
+    <photo_evidence>{photo_evidence}</photo_evidence>
+    <additional_details>{additional_details}</additional_details>
 </work_area_update>
 </data>"""
     % CCC_LEARN_XMLNS
@@ -174,7 +176,9 @@ class WorkAreaUpdateStubFactory(factory.StubFactory):
     id = factory.Faker("slug")
     work_area_id = factory.Faker("uuid4")
     status = "request_for_inaccessible"
-    reason = factory.Faker("sentence")
+    reason = factory.Faker("sentence", nb_words=3)
+    photo_evidence = "photo.jpg"
+    additional_details = ""
 
     @factory.lazy_attribute
     def json(self):
@@ -183,6 +187,8 @@ class WorkAreaUpdateStubFactory(factory.StubFactory):
             work_area_id=self.work_area_id,
             status=self.status,
             reason=self.reason,
+            photo_evidence=self.photo_evidence,
+            additional_details=self.additional_details,
         )
         _, block = xml2json(xml)
         return block

@@ -3,7 +3,10 @@ from unittest.mock import patch
 import pytest
 
 from commcare_connect.microplanning.const import HQ_BULK_CHUNK_SIZE
-from commcare_connect.microplanning.helpers import exclude_work_areas_for_opportunity
+from commcare_connect.microplanning.helpers import (
+    exclude_work_areas_for_opportunity,
+    unassign_work_areas_for_opportunity,
+)
 from commcare_connect.microplanning.models import WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
@@ -12,15 +15,15 @@ from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 
 @pytest.mark.django_db
 class TestExcludeWorkAreas:
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
-    def test_happy_path_excludes_not_started_areas(self, mock_bulk_hq, org_user_admin, opportunity):
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_happy_path_excludes_not_visited_areas(self, mock_bulk_hq, org_user_admin, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_areas = WorkAreaFactory.create_batch(
             2,
             opportunity=opportunity,
             opportunity_access=access,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             work_area_group=group,
         )
 
@@ -43,9 +46,9 @@ class TestExcludeWorkAreas:
 
         assert mock_bulk_hq.call_count == 1
 
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
-    def test_mixed_batch_only_not_started_is_excluded(self, mock_bulk_hq, org_user_admin, opportunity):
-        wa_valid = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_mixed_batch_only_not_visited_is_excluded(self, mock_bulk_hq, org_user_admin, opportunity):
+        wa_valid = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED)
         wa_inaccessible = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.INACCESSIBLE)
         wa_excluded = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.EXCLUDED)
 
@@ -67,7 +70,7 @@ class TestExcludeWorkAreas:
         assert wa_inaccessible.status == WorkAreaStatus.INACCESSIBLE  # unchanged
         assert wa_excluded.status == WorkAreaStatus.EXCLUDED  # unchanged
 
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_hq_batch_failure_skips_local_exclusion_for_whole_chunk(self, mock_bulk_hq, org_user_admin, opportunity):
         """When the HQ bulk call fails, no work area in that chunk is excluded."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -75,7 +78,7 @@ class TestExcludeWorkAreas:
         work_areas = WorkAreaFactory.create_batch(
             2,
             opportunity=opportunity,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             opportunity_access=access,
             work_area_group=group,
         )
@@ -93,12 +96,12 @@ class TestExcludeWorkAreas:
 
         for wa in work_areas:
             wa.refresh_from_db()
-            assert wa.status == WorkAreaStatus.NOT_STARTED
+            assert wa.status == WorkAreaStatus.NOT_VISITED
             assert wa.work_area_group == group
 
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_no_case_id_excludes_locally_without_hq_call(self, mock_bulk_hq, org_user_admin, opportunity):
-        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_STARTED, case_id=None)
+        wa = WorkAreaFactory(opportunity=opportunity, status=WorkAreaStatus.NOT_VISITED, case_id=None)
 
         exclude_work_areas_for_opportunity(
             opportunity=opportunity,
@@ -111,9 +114,9 @@ class TestExcludeWorkAreas:
         wa.refresh_from_db()
         assert wa.status == WorkAreaStatus.EXCLUDED
 
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_work_area_from_other_opportunity_is_ignored(self, mock_bulk_hq, org_user_admin, opportunity):
-        other_wa = WorkAreaFactory(status=WorkAreaStatus.NOT_STARTED)  # different opportunity
+        other_wa = WorkAreaFactory(status=WorkAreaStatus.NOT_VISITED)  # different opportunity
 
         exclude_work_areas_for_opportunity(
             opportunity=opportunity,
@@ -123,20 +126,19 @@ class TestExcludeWorkAreas:
         )
 
         other_wa.refresh_from_db()
-        assert other_wa.status == WorkAreaStatus.NOT_STARTED  # unchanged
+        assert other_wa.status == WorkAreaStatus.NOT_VISITED  # unchanged
         mock_bulk_hq.assert_not_called()
 
     @pytest.mark.parametrize(
         "status",
         [
             WorkAreaStatus.VISITED,
-            WorkAreaStatus.NOT_VISITED,
             WorkAreaStatus.UNASSIGNED,
             WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
             WorkAreaStatus.EXPECTED_VISIT_REACHED,
         ],
     )
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_work_started_statuses_are_not_excluded(self, mock_bulk_hq, org_user_admin, opportunity, status):
         wa = WorkAreaFactory(opportunity=opportunity, status=status)
 
@@ -151,7 +153,7 @@ class TestExcludeWorkAreas:
         assert wa.status == status  # unchanged
         mock_bulk_hq.assert_not_called()
 
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_work_areas_over_chunk_size_are_split_into_batches(self, mock_bulk_hq, org_user_admin, opportunity):
         """125 work areas → 3 HQ calls (50, 50, 25); all excluded on success."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -160,7 +162,7 @@ class TestExcludeWorkAreas:
         work_areas = WorkAreaFactory.create_batch(
             count,
             opportunity=opportunity,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             opportunity_access=access,
             work_area_group=group,
         )
@@ -180,7 +182,7 @@ class TestExcludeWorkAreas:
             wa.refresh_from_db()
             assert wa.status == WorkAreaStatus.EXCLUDED
 
-    @patch("commcare_connect.microplanning.helpers.bulk_update_cases")
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
     def test_one_failed_chunk_does_not_block_other_chunks(self, mock_bulk_hq, org_user_admin, opportunity):
         """Chunk 2 fails; chunks 1 and 3 still excluded."""
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -189,7 +191,7 @@ class TestExcludeWorkAreas:
         work_areas = WorkAreaFactory.create_batch(
             count,
             opportunity=opportunity,
-            status=WorkAreaStatus.NOT_STARTED,
+            status=WorkAreaStatus.NOT_VISITED,
             opportunity_access=access,
             work_area_group=group,
         )
@@ -207,6 +209,252 @@ class TestExcludeWorkAreas:
             wa.refresh_from_db()
 
         excluded = [wa for wa in work_areas if wa.status == WorkAreaStatus.EXCLUDED]
-        not_started = [wa for wa in work_areas if wa.status == WorkAreaStatus.NOT_STARTED]
+        not_visited = [wa for wa in work_areas if wa.status == WorkAreaStatus.NOT_VISITED]
         assert len(excluded) == 2 * HQ_BULK_CHUNK_SIZE
-        assert len(not_started) == HQ_BULK_CHUNK_SIZE
+        assert len(not_visited) == HQ_BULK_CHUNK_SIZE
+
+
+@pytest.mark.django_db
+class TestUnassignWorkAreas:
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_happy_path_unassigns_and_syncs_to_hq(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_areas = WorkAreaFactory.create_batch(
+            2,
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            work_area_group=group,
+        )
+
+        res = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id for wa in work_areas],
+            user=org_user_admin,
+        )
+        assert set(res["unassigned_ids"]) == {wa.id for wa in work_areas}
+        assert res["skipped"] == 0
+        assert res["failed_ids"] == []
+
+        for wa in work_areas:
+            wa.refresh_from_db()
+            assert wa.status == WorkAreaStatus.UNASSIGNED
+            assert wa.opportunity_access is None
+            assert wa.work_area_group == group  # group is preserved (unlike exclude)
+
+        assert mock_bulk_hq.call_count == 1
+        sent_updates = mock_bulk_hq.call_args.args[2]
+        assert all(u["owner_id"] == "-" for u in sent_updates)
+        assert all(u["create"] is False for u in sent_updates)
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_already_unassigned_areas_are_skipped(self, mock_bulk_hq, org_user_admin, opportunity):
+        wa_unassigned = WorkAreaFactory(
+            opportunity=opportunity, opportunity_access=None, status=WorkAreaStatus.UNASSIGNED
+        )
+
+        res = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa_unassigned.id],
+            user=org_user_admin,
+        )
+        assert res["unassigned_ids"] == []
+        assert res["skipped"] == 1
+        mock_bulk_hq.assert_not_called()
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_excluded_areas_are_skipped(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        wa_excluded = WorkAreaFactory(
+            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.EXCLUDED
+        )
+
+        res = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa_excluded.id],
+            user=org_user_admin,
+        )
+        assert res["unassigned_ids"] == []
+        assert res["skipped"] == 1
+        wa_excluded.refresh_from_db()
+        assert wa_excluded.status == WorkAreaStatus.EXCLUDED
+        assert wa_excluded.opportunity_access == access
+        mock_bulk_hq.assert_not_called()
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_only_not_visited_assigned_areas_are_unassigned(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        wa_not_visited = WorkAreaFactory(
+            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED
+        )
+        wa_visited = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.VISITED)
+        wa_reached = WorkAreaFactory(
+            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.EXPECTED_VISIT_REACHED
+        )
+        wa_unassigned = WorkAreaFactory(
+            opportunity=opportunity, opportunity_access=None, status=WorkAreaStatus.UNASSIGNED
+        )
+        wa_excluded = WorkAreaFactory(
+            opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.EXCLUDED
+        )
+
+        res = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa_not_visited.id, wa_visited.id, wa_reached.id, wa_unassigned.id, wa_excluded.id],
+            user=org_user_admin,
+        )
+        # Only the assigned, not-yet-visited area is unassigned; started/terminal areas are skipped.
+        assert res["unassigned_ids"] == [wa_not_visited.id]
+        assert res["skipped"] == 4
+
+        wa_not_visited.refresh_from_db()
+        assert wa_not_visited.status == WorkAreaStatus.UNASSIGNED
+        assert wa_not_visited.opportunity_access is None
+
+        for wa, expected_status in [
+            (wa_visited, WorkAreaStatus.VISITED),
+            (wa_reached, WorkAreaStatus.EXPECTED_VISIT_REACHED),
+        ]:
+            wa.refresh_from_db()
+            assert wa.status == expected_status
+            assert wa.opportunity_access == access
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_hq_failure_rolls_back_chunk(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        work_areas = WorkAreaFactory.create_batch(
+            2,
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+        )
+        mock_bulk_hq.side_effect = CommCareHQAPIException("HQ down")
+
+        res = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id for wa in work_areas],
+            user=org_user_admin,
+        )
+        assert res["unassigned_ids"] == []
+        assert set(res["failed_ids"]) == {wa.id for wa in work_areas}
+
+        for wa in work_areas:
+            wa.refresh_from_db()
+            assert wa.status == WorkAreaStatus.NOT_VISITED
+            assert wa.opportunity_access == access
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_no_case_id_unassigns_locally_without_hq_call(self, mock_bulk_hq, org_user_admin, opportunity):
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        wa = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            case_id=None,
+        )
+
+        unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id],
+            user=org_user_admin,
+        )
+
+        mock_bulk_hq.assert_not_called()
+        wa.refresh_from_db()
+        assert wa.status == WorkAreaStatus.UNASSIGNED
+        assert wa.opportunity_access is None
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_work_area_from_other_opportunity_is_ignored(self, mock_bulk_hq, org_user_admin, opportunity):
+        other_access = OpportunityAccessFactory()
+        other_wa = WorkAreaFactory(
+            opportunity=other_access.opportunity,
+            opportunity_access=other_access,
+            status=WorkAreaStatus.NOT_VISITED,
+        )
+
+        unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[other_wa.id],
+            user=org_user_admin,
+        )
+
+        other_wa.refresh_from_db()
+        assert other_wa.status == WorkAreaStatus.NOT_VISITED
+        assert other_wa.opportunity_access == other_access
+        mock_bulk_hq.assert_not_called()
+
+    @patch("commcare_connect.microplanning.helpers.HQ_UNASSIGN_BULK_CHUNK_SIZE", 50)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_chunking_splits_large_batches(self, mock_bulk_hq, org_user_admin, opportunity):
+        chunk_size = 50
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        count = chunk_size * 2 + 25
+        work_areas = WorkAreaFactory.create_batch(
+            count,
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+        )
+
+        unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id for wa in work_areas],
+            user=org_user_admin,
+        )
+
+        assert mock_bulk_hq.call_count == 3
+        chunk_sizes = [len(call.args[2]) for call in mock_bulk_hq.call_args_list]
+        assert chunk_sizes == [chunk_size, chunk_size, 25]
+
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_duplicate_ids_are_deduped(self, mock_bulk_hq, org_user_admin, opportunity):
+        """Passing the same work area ID twice should only unassign + HQ-update it once."""
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        wa = WorkAreaFactory(opportunity=opportunity, opportunity_access=access, status=WorkAreaStatus.NOT_VISITED)
+
+        res = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id, wa.id, wa.id],
+            user=org_user_admin,
+        )
+
+        assert res["unassigned_ids"] == [wa.id]
+        assert res["skipped"] == 0
+        assert mock_bulk_hq.call_count == 1
+        assert len(mock_bulk_hq.call_args.args[2]) == 1
+
+    @patch("commcare_connect.microplanning.helpers.HQ_UNASSIGN_BULK_CHUNK_SIZE", 50)
+    @patch("commcare_connect.microplanning.helpers.bulk_create_or_update_cases")
+    def test_failed_batch_does_not_block_other_batches(self, mock_bulk_hq, org_user_admin, opportunity):
+        """A failed HQ batch rolls back only its own chunk; other batches still succeed."""
+        chunk_size = 50
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        count = chunk_size * 3
+        work_areas = WorkAreaFactory.create_batch(
+            count,
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+        )
+        # Second of three chunks fails; the first and third commit independently.
+        mock_bulk_hq.side_effect = [None, CommCareHQAPIException("HQ down"), None]
+
+        result = unassign_work_areas_for_opportunity(
+            opportunity=opportunity,
+            work_area_ids=[wa.id for wa in work_areas],
+            user=org_user_admin,
+        )
+
+        assert len(result["unassigned_ids"]) == 2 * chunk_size
+        assert len(result["failed_ids"]) == chunk_size
+        # The failed batch's areas stay assigned; nothing leaks between the success/failure sets.
+        assert set(result["unassigned_ids"]).isdisjoint(result["failed_ids"])
+
+        for wa in work_areas:
+            wa.refresh_from_db()
+        unassigned = {wa.id for wa in work_areas if wa.status == WorkAreaStatus.UNASSIGNED}
+        still_assigned = {wa.id for wa in work_areas if wa.status == WorkAreaStatus.NOT_VISITED}
+        assert unassigned == set(result["unassigned_ids"])
+        assert still_assigned == set(result["failed_ids"])

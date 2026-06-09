@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -5,7 +7,7 @@ from uuid import uuid4
 
 import pghistory
 from django.core.validators import MinValueValidator
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 from django.db.models import Count, F, Q, Sum
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
@@ -15,6 +17,7 @@ from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -128,7 +131,7 @@ class Opportunity(BaseModel):
 
     @property
     def is_setup_complete(self):
-        if not (self.paymentunit_set.count() > 0 and self.total_budget and self.start_date and self.end_date):
+        if not (self.paymentunit_set.exists() and self.total_budget and self.start_date and self.end_date):
             return False
         for pu in self.paymentunit_set.all():
             if not (pu.max_total and pu.max_daily):
@@ -451,27 +454,81 @@ class AssignedTask(XFormBaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["xform_id", "task_type", "opportunity_access"], name="unique_xform_assigned_task"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["task_type", "opportunity_access"],
+                condition=Q(status=AssignedTaskStatus.ASSIGNED),
+                name="unique_assigned_task_type_per_access",
+            ),
         ]
 
     @classmethod
-    def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> "AssignedTask":
-        from commcare_connect.commcarehq.api import update_usercase
+    def assign(cls, *, task_type, opportunity_access, due_date, assigned_by=None) -> AssignedTask:
+        from commcare_connect.commcarehq.api import bulk_update_usercases
         from commcare_connect.opportunity.tasks import send_task_assignment_notification
 
         with transaction.atomic():
-            assigned_task = cls.objects.create(
-                task_type=task_type,
-                opportunity_access=opportunity_access,
-                due_date=due_date,
-                status=AssignedTaskStatus.ASSIGNED,
-                assigned_by=assigned_by,
-            )
+            try:
+                assigned_task = cls.objects.create(
+                    task_type=task_type,
+                    opportunity_access=opportunity_access,
+                    status=AssignedTaskStatus.ASSIGNED,
+                    due_date=due_date,
+                    assigned_by=assigned_by,
+                )
+            except IntegrityError:
+                raise TaskAlreadyAssignedError(f"Task type '{task_type}' could not be assigned.")
             case_property = task_type.case_property
             if case_property:
-                update_usercase(opportunity_access, data={"properties": {case_property: "1"}})
+                bulk_update_usercases({opportunity_access: {"properties": {case_property: "1"}}})
             transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
         return assigned_task
+
+    @classmethod
+    def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
+        from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_update_usercases
+
+        tasks = list(
+            cls.objects.filter(
+                pk__in=task_ids,
+                opportunity_access__opportunity=opportunity,
+            )
+            .exclude(status=AssignedTaskStatus.COMPLETED)
+            .select_related("task_type", "opportunity_access")
+        )
+        if not tasks:
+            return 0
+
+        hq_updates: dict[tuple[int, str], OpportunityAccess] = {}
+        for task in tasks:
+            if prop := task.task_type.case_property:
+                hq_updates.setdefault((task.opportunity_access_id, prop), task.opportunity_access)
+
+        with transaction.atomic():
+            deleted_count, _ = (
+                cls.objects.filter(pk__in=[t.pk for t in tasks]).exclude(status=AssignedTaskStatus.COMPLETED).delete()
+            )
+            if hq_updates:
+                still_assigned = set(
+                    cls.objects.filter(
+                        opportunity_access_id__in={access_id for access_id, _ in hq_updates},
+                        status=AssignedTaskStatus.ASSIGNED,
+                        task_type__case_property__in={p for _, p in hq_updates},
+                    ).values_list("opportunity_access_id", "task_type__case_property")
+                )
+                to_reset: dict[OpportunityAccess, dict] = {}
+                for access_id, prop in hq_updates.keys() - still_assigned:
+                    access = hq_updates[access_id, prop]
+                    to_reset.setdefault(access, {"properties": {}})["properties"][prop] = ""
+                if len(to_reset) > HQ_CASE_BULK_CHUNK_SIZE:
+                    raise ListTooLongError(
+                        f"Too many HQ case property resets ({len(to_reset)}); "
+                        "split the delete into smaller batches."
+                    )
+                if to_reset:
+                    bulk_update_usercases(to_reset)
+
+        return deleted_count
 
 
 class Assessment(XFormBaseModel):
@@ -875,7 +932,7 @@ class UserVisit(XFormBaseModel):
     def duration(self):
         duration = None
         start = self.form_json["metadata"].get("timeStart")
-        end = self.form_json["metatdata"].get("timeEnd")
+        end = self.form_json["metadata"].get("timeEnd")
         if start and end:
             try:
                 duration = parse_datetime(end) - parse_datetime(start)

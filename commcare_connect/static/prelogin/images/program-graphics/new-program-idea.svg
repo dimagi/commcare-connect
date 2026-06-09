@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 167" width="464" height="167">
+  <!-- soft indigo-tint background -->
+  <rect width="464" height="167" fill="#E8EEFA"/>
+
+  <!-- gentle ground shadow -->
+  <path d="M 0 158 C 120 153, 344 153, 464 158 L 464 167 L 0 167 Z" fill="#8EA1FF" opacity="0.18"/>
+
+  <!-- glowing halo behind centre mark -->
+  <circle cx="232" cy="88" r="62" fill="#8EA1FF" opacity="0.12"/>
+  <circle cx="232" cy="88" r="44" fill="#8EA1FF" opacity="0.12"/>
+  <circle cx="232" cy="88" r="28" fill="#3843D0" opacity="0.07"/>
+
+  <!-- dashed orbit ring -->
+  <circle cx="232" cy="88" r="72" fill="none" stroke="#3843D0" stroke-width="1" stroke-dasharray="5 6" opacity="0.22"/>
+
+  <!-- ── CENTRAL LARGE QUESTION MARK ── -->
+  <g transform="translate(232,88)">
+    <!-- arc of the ? -->
+    <path d="M -16 -28 C -16 -44, 16 -44, 16 -28 C 16 -16, 4 -10, 4 4" fill="none" stroke="#3843D0" stroke-width="9" stroke-linecap="round"/>
+    <!-- dot -->
+    <circle cx="4" cy="20" r="5.5" fill="#3843D0"/>
+  </g>
+
+  <!-- ── SMALLER QUESTION MARKS scattered around ── -->
+  <!-- top-left -->
+  <g transform="translate(96,44)" opacity="0.45">
+    <path d="M -7 -12 C -7 -19, 7 -19, 7 -12 C 7 -7, 2 -4, 2 2" fill="none" stroke="#3843D0" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="2" cy="8.5" r="2.5" fill="#3843D0"/>
+  </g>
+  <!-- top-right -->
+  <g transform="translate(370,38)" opacity="0.38">
+    <path d="M -7 -12 C -7 -19, 7 -19, 7 -12 C 7 -7, 2 -4, 2 2" fill="none" stroke="#5C6FE8" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="2" cy="8.5" r="2.5" fill="#5C6FE8"/>
+  </g>
+  <!-- bottom-left -->
+  <g transform="translate(70,122)" opacity="0.32">
+    <path d="M -5 -9 C -5 -14, 5 -14, 5 -9 C 5 -5, 1.5 -3, 1.5 1.5" fill="none" stroke="#8EA1FF" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="1.5" cy="6.5" r="2" fill="#8EA1FF"/>
+  </g>
+  <!-- bottom-right -->
+  <g transform="translate(392,118)" opacity="0.35">
+    <path d="M -5 -9 C -5 -14, 5 -14, 5 -9 C 5 -5, 1.5 -3, 1.5 1.5" fill="none" stroke="#3843D0" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="1.5" cy="6.5" r="2" fill="#3843D0"/>
+  </g>
+  <!-- mid-left -->
+  <g transform="translate(144,96)" opacity="0.28">
+    <path d="M -4 -7 C -4 -11, 4 -11, 4 -7 C 4 -4, 1 -2, 1 1" fill="none" stroke="#8EA1FF" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="1" cy="5" r="1.6" fill="#8EA1FF"/>
+  </g>
+  <!-- mid-right -->
+  <g transform="translate(322,98)" opacity="0.30">
+    <path d="M -4 -7 C -4 -11, 4 -11, 4 -7 C 4 -4, 1 -2, 1 1" fill="none" stroke="#5C6FE8" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="1" cy="5" r="1.6" fill="#5C6FE8"/>
+  </g>
+
+  <!-- ── SPARKLE DOTS ── -->
+  <g fill="#3843D0">
+    <circle cx="42"  cy="28"  r="2"   opacity="0.35"/>
+    <circle cx="180" cy="20"  r="1.8" opacity="0.30"/>
+    <circle cx="290" cy="18"  r="2.2" opacity="0.28"/>
+    <circle cx="430" cy="44"  r="1.8" opacity="0.32"/>
+    <circle cx="52"  cy="148" r="1.6" opacity="0.28"/>
+    <circle cx="420" cy="148" r="2"   opacity="0.30"/>
+    <circle cx="164" cy="148" r="1.4" opacity="0.22"/>
+    <circle cx="310" cy="145" r="1.6" opacity="0.24"/>
+  </g>
+
+  <!-- ── FOUR-POINT SPARKLE STARS ── -->
+  <g fill="#FC5F36" opacity="0.55">
+    <!-- star top-left -->
+    <path d="M 118 22 L 120 28 L 126 30 L 120 32 L 118 38 L 116 32 L 110 30 L 116 28 Z"/>
+  </g>
+  <g fill="#FC5F36" opacity="0.40">
+    <!-- star top-right -->
+    <path d="M 342 26 L 343.5 31 L 348.5 32.5 L 343.5 34 L 342 39 L 340.5 34 L 335.5 32.5 L 340.5 31 Z"/>
+  </g>
+  <g fill="#8EA1FF" opacity="0.50">
+    <!-- tiny star bottom-centre-left -->
+    <path d="M 155 134 L 156.2 138 L 160 139 L 156.2 140 L 155 144 L 153.8 140 L 150 139 L 153.8 138 Z"/>
+  </g>
+</svg>

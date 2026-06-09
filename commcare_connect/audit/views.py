@@ -47,7 +47,7 @@ def audit_report_list(request, org_slug, opp_id):
     pending_count = queryset.filter(status=AuditReport.Status.PENDING).count()
     completed_count = queryset.filter(status=AuditReport.Status.COMPLETED).count()
 
-    table = AuditReportTable(queryset, opportunity=opportunity)
+    table = AuditReportTable(queryset, opportunity=opportunity, org_slug=org_slug)
     RequestConfig(request, paginate={"per_page": DEFAULT_PAGE_SIZE}).configure(table)
 
     path = [
@@ -109,10 +109,20 @@ def audit_report_detail(request, org_slug, opp_id, audit_report_id):
     reviewed_count = sum(1 for e in all_entries if e.flagged and e.reviewed)
 
     review_table = AuditReportEntryTable(
-        to_review, opportunity=opportunity, report=report, columns_spec=columns_spec, prefix="review-"
+        to_review,
+        opportunity=opportunity,
+        report=report,
+        columns_spec=columns_spec,
+        prefix="review-",
+        org_slug=org_slug,
     )
     no_action_table = AuditReportEntryTable(
-        no_action, opportunity=opportunity, report=report, columns_spec=columns_spec, prefix="noaction-"
+        no_action,
+        opportunity=opportunity,
+        report=report,
+        columns_spec=columns_spec,
+        prefix="noaction-",
+        org_slug=org_slug,
     )
     RequestConfig(request, paginate={"per_page": DEFAULT_PAGE_SIZE}).configure(review_table)
     RequestConfig(request, paginate={"per_page": DEFAULT_PAGE_SIZE}).configure(no_action_table)
