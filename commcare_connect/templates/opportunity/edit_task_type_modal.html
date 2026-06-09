@@ -1,0 +1,29 @@
+{% load i18n %}
+<div x-show="showEditTaskTypeModal"
+     x-cloak
+     x-transition.opacity
+     class="modal-backdrop"
+     role="dialog"
+     aria-modal="true"
+     @keydown.escape.window="showEditTaskTypeModal = false">
+  <div @click.outside="showEditTaskTypeModal = false"
+       class="modal w-full !max-w-2xl">
+    <div class="header flex justify-between items-center">
+      <h2 class="title">{% translate "Edit Task Type" %}</h2>
+      <button @click="showEditTaskTypeModal = false"
+              class="button-icon"
+              aria-label="{% translate 'Close' %}">
+        <i class="fa-solid fa-xmark text-xl"></i>
+      </button>
+    </div>
+    <div id="edit-task-form" class="modal-body">{# htmx will load the edit form here #}</div>
+    <div class="footer flex justify-end gap-3">
+      <button type="button"
+              @click="showEditTaskTypeModal = false"
+              class="button button-md outline-style">{% translate "Cancel" %}</button>
+      <button type="submit"
+              form="edit-task-form-el"
+              class="button button-md primary-dark">{% translate "Save" %}</button>
+    </div>
+  </div>
+</div>

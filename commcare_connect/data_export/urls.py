@@ -24,6 +24,11 @@ urlpatterns = [
         views.ImageView.as_view(),
         name="image_export",
     ),
+    path(
+        "opportunity/<int:opp_id>/app_structure/",
+        views.AppStructureView.as_view(),
+        name="app_structure",
+    ),
     path("labs_record/", views.LabsRecordDataView.as_view(), name="labs_record_data"),
     path(
         "program/<int:program_id>/opportunity/",
@@ -35,4 +40,19 @@ urlpatterns = [
         views.OrganizationProgramDataView.as_view(),
         name="organization_program_data",
     ),
+    path("opportunity/<int:opp_id>/task_types/", views.TaskTypeDataView.as_view(), name="task_type_data"),
+    path("opportunity/<int:opp_id>/audit_reports/", views.AuditReportDataView.as_view(), name="audit_report_data"),
+    path(
+        "opportunity/<int:opp_id>/audit_report_entries/",
+        views.AuditReportEntryDataView.as_view(),
+        name="audit_report_entry_data",
+    ),
+    path("opportunity/<int:opp_id>/assigned_tasks/", views.AssignedTaskDataView.as_view(), name="assigned_task_data"),
+    path(
+        "opportunity/<int:opp_id>/work_area_groups/",
+        views.WorkAreaGroupDataView.as_view(),
+        name="work_area_group_data",
+    ),
+    path("opportunity/<int:opp_id>/work_areas/", views.WorkAreaDataView.as_view(), name="work_area_data"),
+    path("llo_entity/", views.LLOEntityDataView.as_view(), name="llo_entity_data"),
 ]

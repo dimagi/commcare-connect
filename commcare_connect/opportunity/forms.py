@@ -1,8 +1,10 @@
 import datetime
 import json
+import logging
 from functools import cached_property
 from urllib.parse import urlencode
 
+import httpx
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import HTML, Column, Div, Field, Fieldset, Layout, Row, Submit
 from dateutil.relativedelta import relativedelta
@@ -16,8 +18,11 @@ from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from waffle import switch_is_active
 
-from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
+from commcare_connect.flags.switch_names import AUTOMATIC_VISIT_VERIFICATION, OPPORTUNITY_CREDENTIALS
+from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
+    AssignedTask,
+    AssignedTaskStatus,
     CommCareApp,
     CompletedWork,
     CompletedWorkStatus,
@@ -37,7 +42,7 @@ from commcare_connect.opportunity.models import (
     OpportunityVerificationFlags,
     PaymentInvoice,
     PaymentUnit,
-    Task,
+    TaskType,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -51,6 +56,9 @@ from commcare_connect.opportunity.utils.invoice import (
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import ManagedOpportunity
 from commcare_connect.users.models import User, UserCredential
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+logger = logging.getLogger(__name__)
 
 FILTER_COUNTRIES = [("+276", "Malawi"), ("+234", "Nigeria"), ("+27", "South Africa"), ("+91", "India")]
 
@@ -97,10 +105,11 @@ class OpportunityUserInviteForm(forms.Form):
             ),
         )
 
-    def clean_users(self):
-        user_data = self.cleaned_data["users"]
+    def _validate_and_parse_users(self, user_data):
+        if not user_data:
+            return []
 
-        if user_data and self.opportunity and not self.opportunity.is_setup_complete:
+        if self.opportunity and not self.opportunity.is_setup_complete:
             raise ValidationError(gettext("Please finish setting up the opportunity before inviting users."))
 
         user_numbers = [line.strip() for line in user_data.splitlines() if line.strip()]
@@ -111,6 +120,12 @@ class OpportunityUserInviteForm(forms.Form):
                 )
 
         return user_numbers
+
+    def clean_users(self):
+        user_data = self.cleaned_data["users"]
+        if user_data and self.opportunity and self.opportunity.has_ended:
+            raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
+        return self._validate_and_parse_users(user_data)
 
 
 class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
@@ -142,11 +157,11 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         ]
 
     def __init__(self, *args, **kwargs):
+        self.latest_active_history_event = kwargs.pop("latest_active_history_event", None)
         super().__init__(*args, **kwargs)
         self.opportunity = self.instance
 
         self.fields["users"].required = False
-
         layout_fields = [
             Row(
                 HTML(
@@ -168,6 +183,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                         "active",
                         css_class=CHECKBOX_CLASS,
                         wrapper_class="bg-slate-100 flex items-center justify-between p-4 rounded-lg",
+                    ),
+                    HTML(
+                        "{% load i18n %}"
+                        "{% with latest_active_event=form.latest_active_history_event %}"
+                        '{% include "opportunity/partials/active_toggle_metadata.html" %}'
+                        "{% endwith %}"
                     ),
                     Field(
                         "is_test",
@@ -206,20 +227,27 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         ]
 
         if switch_is_active(OPPORTUNITY_CREDENTIALS):
+            _cred_config = (
+                CredentialConfiguration.objects.filter(opportunity=self.instance).first() if self.instance else None
+            )
             layout_fields.append(
                 Row(
                     HTML(
                         format_html(
                             """
                             <div class='col-span-2'>
-                                <h6 class='title-sm'>{}</h6>
+                                <div class='flex items-center gap-3 mb-1'>
+                                    <h6 class='title-sm'>{heading}</h6>
+                                    <input type='checkbox' name='enable_credentials'
+                                           class='simple-toggle' x-model='credentialsEnabled'>
+                                </div>
                                 <span class='hint'>
-                                    {}
+                                    {hint}
                                 </span>
                             </div>
                             """,
-                            _("Manage Credentials"),
-                            format_html(
+                            heading=_("Manage Credentials"),
+                            hint=format_html(
                                 _(
                                     "Configure credential requirements for learning and delivery. For more "
                                     "information, please refer to the {link_start}following documentation{link_end}."
@@ -235,14 +263,17 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                     ),
                     Column(
                         Field("learn_level"),
+                        **{"x-show": "credentialsEnabled"},
                     ),
                     Column(
                         Field("delivery_level"),
+                        **{"x-show": "credentialsEnabled"},
                     ),
                     css_class="grid grid-cols-2 gap-4 p-6 card_bg",
+                    **{"x-data": f"{{ credentialsEnabled: {'true' if _cred_config else 'false'} }}"},
                 )
             )
-            self.add_credential_fields()
+            self.add_credential_fields(_cred_config)
 
         layout_fields.append(
             Row(Submit("submit", "Submit", css_class="button button-md primary-dark"), css_class="flex justify-end")
@@ -263,25 +294,33 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                 self.initial["end_date"] = self.instance.end_date.isoformat()
             self.currently_active = self.instance.active
 
-    def add_credential_fields(self):
-        credential_issuer = None
-        if self.instance:
-            credential_issuer = CredentialConfiguration.objects.filter(opportunity=self.instance).first()
-
+    def add_credential_fields(self, credential_config=None):
+        self.fields["enable_credentials"] = forms.BooleanField(
+            required=False,
+            initial=credential_config is not None,
+        )
         self.fields["learn_level"] = forms.ChoiceField(
             choices=[("", _("None"))] + UserCredential.LearnLevel.choices,
             required=False,
             label=_("Learn Level"),
             help_text=_("Credential level required for completing the learning phase."),
-            initial=credential_issuer.learn_level if credential_issuer else "",
+            initial=credential_config.learn_level if credential_config else "",
         )
         self.fields["delivery_level"] = forms.ChoiceField(
             choices=[("", _("None"))] + UserCredential.DeliveryLevel.choices,
             required=False,
             label=_("Delivery Level"),
             help_text=_("Credential level required for completing deliveries."),
-            initial=credential_issuer.delivery_level if credential_issuer else "",
+            initial=credential_config.delivery_level if credential_config else "",
         )
+
+    def clean_users(self):
+        user_data = self.cleaned_data.get("users")
+        if user_data and self.opportunity and self.opportunity.has_ended:
+            submitted_end_date = self.cleaned_data.get("end_date")
+            if not submitted_end_date or datetime.date.fromisoformat(submitted_end_date) < now().date():
+                raise ValidationError(gettext("This opportunity has ended. You cannot invite more workers."))
+        return self._validate_and_parse_users(user_data)
 
     def clean_active(self):
         active = self.cleaned_data["active"]
@@ -300,19 +339,19 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
         if not switch_is_active(OPPORTUNITY_CREDENTIALS):
             return instance
 
+        if not self.cleaned_data.get("enable_credentials"):
+            CredentialConfiguration.objects.filter(opportunity=instance).delete()
+            return instance
+
         learn_level = self.cleaned_data.get("learn_level") or None
         delivery_level = self.cleaned_data.get("delivery_level") or None
-        if learn_level or delivery_level:
-            CredentialConfiguration.objects.update_or_create(
-                opportunity=instance,
-                defaults={
-                    "learn_level": learn_level,
-                    "delivery_level": delivery_level,
-                },
-            )
-        else:
-            CredentialConfiguration.objects.filter(opportunity=instance).delete()
-
+        CredentialConfiguration.objects.update_or_create(
+            opportunity=instance,
+            defaults={
+                "learn_level": learn_level,
+                "delivery_level": delivery_level,
+            },
+        )
         return instance
 
 
@@ -556,6 +595,9 @@ class OpportunityInitForm(forms.ModelForm):
         else:
             opportunity.organization = organization
 
+        if not opportunity.pk and switch_is_active(AUTOMATIC_VISIT_VERIFICATION):
+            opportunity.automatic_visit_verification = True
+
         opportunity.api_key, _ = HQApiKey.objects.get_or_create(
             id=self.cleaned_data["api_key"],
             defaults={
@@ -566,6 +608,14 @@ class OpportunityInitForm(forms.ModelForm):
 
         if commit:
             opportunity.save()
+            if switch_is_active(OPPORTUNITY_CREDENTIALS):
+                CredentialConfiguration.objects.get_or_create(
+                    opportunity=opportunity,
+                    defaults={
+                        "learn_level": UserCredential.LearnLevel.LEARN_PASSED,
+                        "delivery_level": UserCredential.DeliveryLevel.TWENTY_FIVE,
+                    },
+                )
         return opportunity
 
 
@@ -802,14 +852,8 @@ class DateRanges(TextChoices):
 
 class VisitExportForm(forms.Form):
     format = forms.ChoiceField(choices=(("csv", "CSV"), ("xlsx", "Excel")), initial="csv")
-    from_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date"}),
-    )
-    to_date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date"}),
-        required=False,
-        initial=datetime.date.today().strftime("%Y-%m-%d"),
-    )
+    from_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    to_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     status = forms.MultipleChoiceField(
         choices=[("all", "All")] + VisitValidationStatus.choices,
         widget=forms.SelectMultiple(
@@ -840,6 +884,12 @@ class VisitExportForm(forms.Form):
             self.fields["status"].choices = status_choices
 
             visit_count_url = f"{visit_count_url}?{urlencode({'review_export': 'true'})}"
+        elif self.opportunity.automatic_visit_verification:
+            self.fields["status"].choices = [
+                (value, label)
+                for value, label in self.fields["status"].choices
+                if value != VisitValidationStatus.pending.value
+            ]
 
         hx_attrs = {
             "hx-get": visit_count_url,
@@ -1347,36 +1397,32 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             "form_submission_end": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
         }
         labels = {
-            "duplicate": "Check Duplicates",
-            "gps": "Check GPS",
-            "form_submission_start": "Start Time",
-            "form_submission_end": "End Time",
-            "location": "Location Distance",
-            "catchment_areas": "Catchment Area",
+            "duplicate": _("Check Duplicates"),
+            "gps": _("Check GPS"),
+            "form_submission_start": _("Start Time"),
+            "form_submission_end": _("End Time"),
+            "location": _("Location Distance"),
+            "catchment_areas": _("Catchment Area"),
         }
         help_texts = {
-            "location": "Minimum distance between form locations (metres)",
-            "duplicate": "Flag duplicate form submissions for an entity.",
-            "gps": "Flag forms with no location information.",
-            "catchment_areas": "Flag forms outside a users's assigned catchment area",
+            "location": _("Minimum distance between form locations (metres)"),
+            "duplicate": _("Flag duplicate form submissions for an entity."),
+            "gps": _("Flag forms with no location information."),
+            "catchment_areas": _("Flag forms outside a users's assigned catchment area"),
         }
 
     def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
 
-        self.helper.layout = Layout(
-            Row(
-                Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
-                Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
-                Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
-                css_class="grid grid-cols-3 gap-2",
-            ),
-            Row(Field("location")),
+        self.auto_verify = self.opportunity.automatic_visit_verification
+
+        form_submission_hour_fields = (
             Fieldset(
-                "Form Submission Hours",
+                _("Form Submission Hours"),
                 Row(
                     Field("form_submission_start"),
                     Field("form_submission_end"),
@@ -1385,38 +1431,85 @@ class OpportunityVerificationFlagsConfigForm(forms.ModelForm):
             ),
         )
 
-        self.fields["duplicate"].required = False
-        self.fields["gps"].required = False
-        self.fields["catchment_areas"].required = False
+        if self.auto_verify:
+            for field_name in ("duplicate", "gps", "catchment_areas", "location"):
+                self.fields.pop(field_name, None)
+            self.helper.layout = Layout(form_submission_hour_fields)
+        else:
+            self.helper.layout = Layout(
+                Row(
+                    Field("duplicate", css_class=f"{CHECKBOX_CLASS} block"),
+                    Field("gps", css_class=f"{CHECKBOX_CLASS} block"),
+                    Field("catchment_areas", css_class=f"{CHECKBOX_CLASS} block"),
+                    css_class="grid grid-cols-3 gap-2",
+                ),
+                Row(Field("location")),
+                form_submission_hour_fields,
+            )
+            self.fields["duplicate"].required = False
+            self.fields["gps"].required = False
+            self.fields["catchment_areas"].required = False
         if self.instance:
             self.fields["form_submission_start"].initial = self.instance.form_submission_start
             self.fields["form_submission_end"].initial = self.instance.form_submission_end
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.auto_verify:
+            instance.duplicate = False
+            instance.gps = False
+            instance.catchment_areas = False
+            instance.location = 0
+        if commit:
+            instance.save()
+        return instance
 
 
 class DeliverUnitFlagsForm(forms.ModelForm):
     class Meta:
         model = DeliverUnitFlagRules
         fields = ("deliver_unit", "check_attachments", "duration")
-        help_texts = {"duration": "Minimum time to complete form (minutes)"}
-        labels = {"check_attachments": "Require Attachments"}
+        help_texts = {"duration": _("Minimum time to complete form (minutes)")}
+        labels = {"check_attachments": _("Require Attachments")}
 
     def __init__(self, *args, **kwargs):
         self.opportunity = kwargs.pop("opportunity")
         super().__init__(*args, **kwargs)
 
+        self.auto_verify = self.opportunity.automatic_visit_verification
+        if self.auto_verify:
+            self.fields.pop("check_attachments", None)
+
         self.helper = FormHelper(self)
         self.helper.form_tag = False
-        self.helper.layout = Layout(
-            Row(
-                Column(Field("deliver_unit")),
-                Column(Field("check_attachments", css_class=CHECKBOX_CLASS)),
-                Column(Field("duration")),
-                css_class="grid grid-cols-3 gap-2",
-            ),
-        )
+        if self.auto_verify:
+            self.helper.layout = Layout(
+                Row(
+                    Column(Field("deliver_unit")),
+                    Column(Field("duration")),
+                    css_class="grid grid-cols-2 gap-2",
+                ),
+            )
+        else:
+            self.helper.layout = Layout(
+                Row(
+                    Column(Field("deliver_unit")),
+                    Column(Field("check_attachments", css_class=CHECKBOX_CLASS)),
+                    Column(Field("duration")),
+                    css_class="grid grid-cols-3 gap-2",
+                ),
+            )
         self.fields["deliver_unit"] = forms.ModelChoiceField(
             queryset=DeliverUnit.objects.filter(app=self.opportunity.deliver_app), disabled=True, empty_label=None
         )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.auto_verify:
+            instance.check_attachments = False
+        if commit:
+            instance.save()
+        return instance
 
     def clean_deliver_unit(self):
         deliver_unit = self.cleaned_data["deliver_unit"]
@@ -1853,13 +1946,13 @@ class AutomatedPaymentInvoiceForm(forms.ModelForm):
 class CreateTaskForm(forms.Form):
     task = forms.ModelChoiceField(
         label=_("Task"),
-        queryset=Task.objects.none(),
+        queryset=TaskType.objects.none(),
         empty_label=_("Select a task"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
-    connect_worker = forms.ModelChoiceField(
+    access = forms.ModelChoiceField(
         label=_("Connect Worker"),
-        queryset=User.objects.none(),
+        queryset=OpportunityAccess.objects.none(),
         empty_label=_("Select a Connect Worker"),
         widget=forms.Select(attrs={"data-tomselect": "1"}),
     )
@@ -1868,22 +1961,35 @@ class CreateTaskForm(forms.Form):
         widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
     )
 
-    def __init__(self, *args, opportunity=None, **kwargs):
+    def __init__(self, *args, opportunity=None, access=None, **kwargs):
         super().__init__(*args, **kwargs)
         if opportunity is not None:
-            self.fields["task"].queryset = Task.objects.filter(app=opportunity.deliver_app)
-            self.fields["connect_worker"].queryset = User.objects.filter(
-                opportunityaccess__opportunity=opportunity,
-                opportunityaccess__accepted=True,
-                opportunityaccess__suspended=False,
-            )
+            task_qs = TaskType.objects.filter(app=opportunity.deliver_app, is_active=True)
+            if access is not None:
+                already_assigned = AssignedTask.objects.filter(
+                    opportunity_access=access,
+                    status=AssignedTaskStatus.ASSIGNED,
+                ).values_list("task_type_id", flat=True)
+                task_qs = task_qs.exclude(pk__in=already_assigned)
+            self.fields["task"].queryset = task_qs
+            self.fields["access"].queryset = OpportunityAccess.objects.filter(
+                opportunity=opportunity,
+                accepted=True,
+                suspended=False,
+            ).select_related("user")
+            self.fields["access"].label_from_instance = lambda obj: obj.user.display_name_with_username()
+
+        if access is not None:
+            self.fields["access"].initial = access.pk
+            self.fields["access"].widget = forms.HiddenInput()
+
         self.fields["due_date"].widget.attrs["min"] = datetime.date.today().isoformat()
 
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
             Field("task"),
-            Field("connect_worker"),
+            Field("access"),
             Field("due_date"),
         )
 
@@ -1892,3 +1998,139 @@ class CreateTaskForm(forms.Form):
         if due_date < datetime.date.today():
             raise ValidationError(_("Due date cannot be in the past."))
         return due_date
+
+
+class AddTaskTypeForm(forms.ModelForm):
+    task_unit_id = forms.ChoiceField(
+        label=_("Task unit"),
+        choices=[],
+        widget=forms.Select(attrs={"@change": "onTaskUnitSelectChange($event.target.value)"}),
+    )
+
+    class Meta:
+        model = TaskType
+        fields = ["name", "description", "case_property"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
+
+    def __init__(self, *args, opportunity, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.opportunity = opportunity
+        self._populate_task_unit_choices()
+
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Div(
+                Field("task_unit_id"),
+                Field("name"),
+                css_class="grid grid-cols-2 gap-6",
+            ),
+            Field("case_property"),
+            Field("description"),
+        )
+
+    def _populate_task_unit_choices(self):
+        try:
+            task_units = get_task_units_for_app(self.opportunity.deliver_app)
+        except (httpx.TimeoutException, httpx.ConnectError, CommCareHQAPIException):
+            logger.exception("Failed to fetch task units for app %s", self.opportunity.deliver_app.pk)
+            self.fields["task_unit_id"].choices = [("", _("Failed to load task units"))]
+            self.fields["task_unit_id"].widget.attrs["disabled"] = True
+            self.task_units_data = json.dumps({})
+            return
+        already_used_slugs = set(
+            TaskType.objects.filter(app=self.opportunity.deliver_app).values_list("slug", flat=True)
+        )
+        available_units = [tu for tu in task_units if tu.id not in already_used_slugs]
+        if available_units:
+            self.fields["task_unit_id"].choices = [("", _("Select a task unit"))] + [
+                (tu.id, tu.name) for tu in available_units
+            ]
+        else:
+            self.fields["task_unit_id"].choices = [("", _("No available task units"))]
+            self.fields["task_unit_id"].widget.attrs["disabled"] = True
+        self.task_units_data = json.dumps(
+            {tu.id: {"name": tu.name, "description": tu.description} for tu in available_units}
+        )
+
+    def save(self, commit=True):
+        task_type = super().save(commit=False)
+        task_type.app = self.opportunity.deliver_app
+        task_type.opportunity = self.opportunity
+        task_type.slug = self.cleaned_data["task_unit_id"]
+        unit_name = dict(self.fields["task_unit_id"].choices).get(task_type.slug, "")
+        task_type.unit_name = unit_name[:255]
+        if commit:
+            task_type.save()
+        return task_type
+
+    def clean(self):
+        cleaned_data = super().clean()
+        task_unit_id = cleaned_data.get("task_unit_id")
+        if not task_unit_id:
+            return cleaned_data
+
+        if TaskType.objects.filter(app=self.opportunity.deliver_app, slug=task_unit_id).exists():
+            self.add_error("task_unit_id", _("A task with this task unit ID already exists."))
+        return cleaned_data
+
+
+class EditTaskTypeForm(forms.ModelForm):
+    is_archived = forms.BooleanField(required=False, label=_("Archive this task type"))
+
+    class Meta:
+        model = TaskType
+        fields = ["name", "description"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.archived:
+            self.fields["is_archived"].initial = True
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.cleaned_data["is_archived"]:
+            if not instance.archived:
+                instance.archived = now()
+            instance.is_active = False
+        else:
+            instance.archived = None
+            instance.is_active = True
+        if commit:
+            instance.save()
+        return instance
+
+
+class EditAssignedTaskForm(forms.ModelForm):
+    reason = forms.CharField(
+        required=False,
+        label=_("Reason for change (Optional)"),
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": _("Enter reason...")}),
+    )
+
+    class Meta:
+        model = AssignedTask
+        fields = ["due_date"]
+        widgets = {
+            "due_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["due_date"].label = _("New End Date")
+        self.fields["due_date"].widget.attrs["min"] = datetime.date.today().isoformat()
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+
+    def clean_due_date(self):
+        due_date = self.cleaned_data["due_date"]
+        if due_date < datetime.date.today():
+            raise ValidationError(_("Due date cannot be in the past."))
+        return due_date
+
+    def has_changed(self):
+        # Ignore "reason" field if no updated due date is given
+        return "due_date" in self.changed_data

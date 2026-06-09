@@ -1,14 +1,614 @@
+{% load i18n %}
 <script>
     document.addEventListener("alpine:init", () => {
         Alpine.data("mapController", () => ({
             map: null,
             selectedFeature: null,
+            highlightedWorkAreaId: null,
+            showWorkAreaEditModal: false,
+            showReviewInaccessibilityModal: false,
+            showVisits: false,
+            filterQuery: '',
+
+            // Assignment mode state
+            assignmentMode: {{ assignment_mode|yesno:'true,false' }},
+            selectedWorkAreas: new Set(),
+            groupWorkAreaIds: new Set(),
+            flwFilterWorkAreaIds: new Set(),
+            selectedGroupId: null,
+            selectedFlwFilterId: null,
+            selectedAssigneeId: null,
+            flwSummaryAssigneeId: null,
+            flwSummary: null,
+            flwSummaryLoading: false,
+            showConfirmModal: false,
+            showDiscardModal: false,
+            showExcludeModal: false,
+            showUnassignModal: false,
+            isSaving: false,
+            isUnassigning: false,
+            showOnlyUnassigned: false,
+            assignees: [],
+            workAreaProperties: new Map(),
+            assignmentQueue: [],
+            excludedWorkAreaIds: new Set(),
+
+            cannotExclude(id) {
+                if (this.excludedWorkAreaIds.has(id)) return true;
+                const status = this.workAreaProperties.get(id)?.status;
+                return status !== undefined && status !== 'NOT_VISITED';
+            },
+
+            cannotUnassign(id) {
+                const status = this.workAreaProperties.get(id)?.status;
+                return status !== undefined && status !== 'NOT_VISITED';
+            },
+
+            openWorkAreaEditModal(workAreaId) {
+                const editWorkAreaUrl = '{{ edit_work_area_url|escapejs }}';
+                const url = editWorkAreaUrl + workAreaId + '/';
+                htmx.ajax('GET', url, { target: '#work-area-form', swap: 'innerHTML' })
+                .then(() => this.showWorkAreaEditModal = true)
+            },
+
+            updateHighlightedWorkAreaId() {
+                this.highlightedWorkAreaId = (this.assignmentMode || !this.selectedFeature)
+                    ? null
+                    : this.selectedFeature._id;
+            },
+
+            buildVisitCirclePaint() {
+                const hasSelection = this.highlightedWorkAreaId !== null;
+                return {
+                    'circle-radius': [
+                        'interpolate', ['linear'], ['zoom'],
+                        8, 2,
+                        14, 5,
+                    ],
+                    'circle-color': '#e74c3c',
+                    'circle-opacity': hasSelection ? 0.2 : 0.7,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-stroke-opacity': 0.5,
+                };
+            },
+
+            addVisitHighlightLayer() {
+                if (!this.map || this.map.getLayer('user-visits-highlight')) return;
+                this.map.addLayer({
+                    id: 'user-visits-highlight',
+                    type: 'symbol',
+                    source: 'user-visits',
+                    'source-layer': 'user-visits',
+                    layout: {
+                        'text-field': '◆',
+                        'text-size': [
+                            'interpolate', ['linear'], ['zoom'],
+                            8, 13,
+                            14, 22,
+                        ],
+                        'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+                        'text-allow-overlap': true,
+                        'text-ignore-placement': true,
+                        'visibility': 'none',
+                    },
+                    paint: {
+                        'text-color': '#22c55e',
+                        'text-halo-color': '#000000',
+                        'text-halo-width': 2.5,
+                    },
+                });
+            },
+
+            refreshVisitStyling() {
+                if (!this.map) return;
+
+                if (this.map.getLayer('user-visits-circle')) {
+                    this.map.setPaintProperty(
+                        'user-visits-circle',
+                        'circle-opacity',
+                        this.highlightedWorkAreaId !== null ? 0.2 : 0.7,
+                    );
+                }
+
+                if (this.map.getLayer('user-visits-highlight')) {
+                    const id = this.highlightedWorkAreaId;
+                    if (id === null) {
+                        this.map.setLayoutProperty('user-visits-highlight', 'visibility', 'none');
+                    } else {
+                        this.map.setFilter(
+                            'user-visits-highlight',
+                            ['==', ['get', 'work_area_id'], id],
+                        );
+                        this.map.setLayoutProperty(
+                            'user-visits-highlight',
+                            'visibility',
+                            this.showVisits ? 'visible' : 'none',
+                        );
+                    }
+                }
+            },
+
+            openReviewInaccessibilityModal(workAreaId) {
+                const reviewUrl = '{{ review_inaccessibility_url|escapejs }}';
+                const url = reviewUrl + workAreaId + '/';
+                htmx.ajax('GET', url, { target: '#review-inaccessibility-fragment', swap: 'innerHTML' })
+                    .then(() => {
+                        this.showReviewInaccessibilityModal = true;
+                        setTimeout(() => window.reviewInaccessibilityMap?.resize(), 0);
+                    });
+            },
+
+            getDownloadUrl() {
+                const baseUrl = '{{ download_url|escapejs }}';
+                return this.filterQuery ? `${baseUrl}?${this.filterQuery}` : baseUrl;
+            },
+
+            showToast(message, isError = false, duration = 3000) {
+                const toast = document.getElementById('toast-container');
+                if (!toast) return;
+                document.getElementById('toast-message').innerText = message;
+                document.getElementById('toast-icon').className = `fa-solid ${isError ? 'fa-circle-xmark' : 'fa-circle-check'} text-lg`;
+                toast.classList.remove('bg-green-600', 'bg-red-600', 'opacity-0');
+                toast.classList.add(isError ? 'bg-red-600' : 'bg-green-600', 'opacity-100');
+                setTimeout(() => {
+                    toast.classList.remove('opacity-100');
+                    toast.classList.add('opacity-0');
+                }, duration);
+            },
+
+            applyFilters() {
+                if (!this.map) return;
+                const form = this.$refs.filterForm;
+                const query = new URLSearchParams(new FormData(form)).toString();
+                this.filterQuery = query;
+                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
+                const newUrl = query ? `${baseUrl}?${query}` : baseUrl;
+                const source = this.map.getSource('workareas');
+                if (source) {
+                    source.setTiles([newUrl]);
+                    this.selectedFeature = null; // Clear selection on filter change
+                }
+                const visitSource = this.map.getSource('user-visits');
+                if (visitSource) {
+                    const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
+                    const visitNewUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
+                    visitSource.setTiles([visitNewUrl]);
+                }
+                this.showToast("{% translate 'Filters updated!' %}", false, 500);
+            },
+
+            clearFilters() {
+                const form = this.$refs.filterForm;
+                form.reset();
+                // Clear TomSelect instances
+                form.querySelectorAll('select[data-tomselect]').forEach(el => {
+                    if (el.tomselect) el.tomselect.clear();
+                });
+                this.applyFilters();
+            },
+
+            // --- Assignment mode methods ---
+
+            toggleWorkAreaSelection(id, properties) {
+                const isDeselecting = this.selectedWorkAreas.has(id);
+                if (isDeselecting) {
+                    this.selectedWorkAreas.delete(id);
+                    this.flwFilterWorkAreaIds.delete(id);
+                } else {
+                    this.selectedWorkAreas.add(id);
+                    if (properties) {
+                        this.workAreaProperties.set(id, properties);
+                    }
+                }
+
+                // Clear group dropdown if the map click breaks the group selection:
+                // either deselecting a WA inside the group, or selecting one outside it
+                if (this.selectedGroupId) {
+                    const isGroupWa = this.groupWorkAreaIds.has(id);
+                    if ((isDeselecting && isGroupWa) || (!isDeselecting && !isGroupWa)) {
+                        this.groupWorkAreaIds.clear();
+                        this.selectedGroupId = null;
+                        if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                    }
+                }
+
+                this.map.setFeatureState(
+                    { source: 'workareas', sourceLayer: 'workareas', id },
+                    { assignment_selected: this.selectedWorkAreas.has(id) }
+                );
+                this.updateFlwSummary();
+            },
+
+            async selectGroup(groupId) {
+                // Clear previous group selections
+                for (const id of this.groupWorkAreaIds) {
+                    this.selectedWorkAreas.delete(id);
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id },
+                        { assignment_selected: false }
+                    );
+                }
+                this.groupWorkAreaIds.clear();
+                this.selectedGroupId = groupId || null;
+
+                if (!groupId) {
+                    this.updateFlwSummary();
+                    return;
+                }
+
+                try {
+                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    for (const wa of data.work_areas) {
+                        this.selectedWorkAreas.add(wa.id);
+                        this.groupWorkAreaIds.add(wa.id);
+                        this.workAreaProperties.set(wa.id, wa);
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id: wa.id },
+                            { assignment_selected: true }
+                        );
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
+                }
+                this.updateFlwSummary();
+            },
+
+            async selectByAssignee(assigneeId) {
+                // Clear previous FLW-filter selections
+                for (const id of this.flwFilterWorkAreaIds) {
+                    this.selectedWorkAreas.delete(id);
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id },
+                        { assignment_selected: false }
+                    );
+                }
+                this.flwFilterWorkAreaIds.clear();
+                this.selectedFlwFilterId = assigneeId || null;
+
+                if (!assigneeId) {
+                    this.updateFlwSummary();
+                    return;
+                }
+
+                try {
+                    const url = '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId);
+                    const resp = await fetch(url);
+                    const data = await resp.json();
+                    for (const wa of data.work_areas) {
+                        this.selectedWorkAreas.add(wa.id);
+                        this.flwFilterWorkAreaIds.add(wa.id);
+                        this.workAreaProperties.set(wa.id, wa);
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id: wa.id },
+                            { assignment_selected: true }
+                        );
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load FLW work areas' %}", true);
+                }
+                this.updateFlwSummary();
+            },
+
+            clearSelection() {
+                for (const id of this.selectedWorkAreas) {
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id },
+                        { assignment_selected: false }
+                    );
+                }
+                this.selectedWorkAreas.clear();
+                this.groupWorkAreaIds.clear();
+                this.flwFilterWorkAreaIds.clear();
+                if (this.$refs.groupSelect) this.$refs.groupSelect.value = '';
+                this.selectedGroupId = null;
+                this.selectedFlwFilterId = null;
+                this.updateFlwSummary();
+            },
+
+            async updateFlwSummary() {
+                if (!this.flwSummaryAssigneeId) {
+                    this.flwSummary = null;
+                    return;
+                }
+                this.flwSummaryLoading = true;
+                try {
+                    const url = `{{ flw_summary_url|escapejs }}?assignee_id=${this.flwSummaryAssigneeId}`;
+                    const resp = await fetch(url);
+                    this.flwSummary = await resp.json();
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to load FLW summary' %}", true);
+                }
+                this.flwSummaryLoading = false;
+            },
+
+            getSelectedStats() {
+                let buildings = 0;
+                let visits = 0;
+                for (const id of this.selectedWorkAreas) {
+                    const props = this.workAreaProperties.get(id);
+                    if (props) {
+                        buildings += parseInt(props.building_count) || 0;
+                        visits += parseInt(props.expected_visit_count) || 0;
+                    }
+                }
+                return { buildings, visits };
+            },
+
+            getSelectedStatsForSummary() {
+                // Live preview of pending changes for the FLW summary. Only count
+                // selected work areas that are NOT already assigned to this FLW.
+                // selectByAssignee() auto-selects the FLW's existing areas (tracked in
+                // flwFilterWorkAreaIds); those are already reflected in flwSummary, so
+                // including them here would double-count buildings/visits/work areas.
+                let buildings = 0;
+                let visits = 0;
+                let workAreas = 0;
+                for (const id of this.selectedWorkAreas) {
+                    if (this.flwFilterWorkAreaIds.has(id)) continue;
+                    const props = this.workAreaProperties.get(id);
+                    if (props) {
+                        buildings += parseInt(props.building_count) || 0;
+                        visits += parseInt(props.expected_visit_count) || 0;
+                    }
+                    workAreas += 1;
+                }
+                return { buildings, visits, workAreas };
+            },
+
+            getQueuedStatsForAssignee() {
+                let buildings = 0;
+                let visits = 0;
+                let workAreas = 0;
+                for (const entry of this.assignmentQueue) {
+                    if (String(entry.assignee_id) === String(this.flwSummaryAssigneeId)) {
+                        buildings += entry.buildings;
+                        visits += entry.visits;
+                        workAreas += entry.work_area_ids.length;
+                    }
+                }
+                return { buildings, visits, workAreas };
+            },
+
+            getAssigneeName() {
+                const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
+                return a ? a.user__name : '';
+            },
+
+            getAssigneeUserId() {
+                const a = this.assignees.find(a => String(a.id) === String(this.selectedAssigneeId));
+                return a ? a.user__user_id : '';
+            },
+
+            getFlwSummaryUserId() {
+                const a = this.assignees.find(a => String(a.id) === String(this.flwSummaryAssigneeId));
+                return a ? a.user__user_id : '';
+            },
+
+            addToQueue() {
+                if (this.selectedWorkAreas.size === 0 || !this.selectedAssigneeId) return;
+                this.assignmentQueue.push({
+                    assignee_id: this.selectedAssigneeId,
+                    assignee_name: this.getAssigneeName(),
+                    work_area_ids: Array.from(this.selectedWorkAreas),
+                    buildings: this.getSelectedStats().buildings,
+                    visits: this.getSelectedStats().visits,
+                });
+                this.clearSelection();
+                if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
+                this.selectedAssigneeId = null;
+                this.flwSummary = null;
+            },
+
+            removeFromQueue(index) {
+                this.assignmentQueue.splice(index, 1);
+            },
+
+            handleSaveAndConfirm() {
+                if (this.selectedWorkAreas.size > 0 && this.selectedAssigneeId) {
+                    this.addToQueue();
+                }
+                if (this.assignmentQueue.length > 0) {
+                    this.showConfirmModal = true;
+                }
+            },
+
+            async saveAssignment() {
+                this.isSaving = true;
+                try {
+                    const resp = await fetch('{{ assignment_save_url|escapejs }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}',
+                        },
+                        body: JSON.stringify({ assignments: this.assignmentQueue }),
+                    });
+                    this.showConfirmModal = false;
+                    if (resp.ok) {
+                        this.showToast("{% translate 'Assignment saved successfully!' %}");
+                        this.assignmentQueue = [];
+                        this.clearSelection();
+                        if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
+                        this.selectedAssigneeId = null;
+                        this.flwSummary = null;
+                    } else {
+                        const data = await resp.json().catch(() => ({}));
+                        this.showToast(data.error || "{% translate 'Failed to save assignment' %}", true);
+                    }
+                } catch (e) {
+                    this.showConfirmModal = false;
+                    this.showToast("{% translate 'Failed to save assignment' %}", true);
+                } finally {
+                    this.isSaving = false;
+                }
+            },
+
+            async unassignWorkAreas() {
+                const eligibleIds = Array.from(this.selectedWorkAreas).filter(id => !this.cannotUnassign(id));
+                if (eligibleIds.length === 0) {
+                    this.showUnassignModal = false;
+                    this.showToast("{% translate 'No eligible work areas to unassign.' %}");
+                    return;
+                }
+                this.isUnassigning = true;
+                try {
+                    const resp = await fetch('{{ assignment_unassign_url|escapejs }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}',
+                        },
+                        body: JSON.stringify({ work_area_ids: eligibleIds }),
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        // Only repaint work areas the server actually unassigned. On a partial HQ
+                        // failure the failed IDs stay assigned in DB and must keep their existing status.
+                        const unassignedIds = data.unassigned_ids || [];
+                        const failedIds = data.failed_ids || [];
+                        for (const id of unassignedIds) {
+                            this.map.setFeatureState(
+                                { source: 'workareas', sourceLayer: 'workareas', id },
+                                { status: 'UNASSIGNED' }
+                            );
+                            const props = this.workAreaProperties.get(id);
+                            if (props) {
+                                props.status = 'UNASSIGNED';
+                                props.assignee_name = null;
+                            }
+                        }
+                        this.showUnassignModal = false;
+                        // Clear the selection, then re-select any failed areas so they stay highlighted
+                        // on the map for the user to inspect and retry.
+                        this.clearSelection();
+                        for (const id of failedIds) {
+                            this.selectedWorkAreas.add(id);
+                            this.map.setFeatureState(
+                                { source: 'workareas', sourceLayer: 'workareas', id },
+                                { assignment_selected: true }
+                            );
+                        }
+                        const msg = data.skipped || failedIds.length
+                            ? "{% translate 'Unassigned' %} " + unassignedIds.length + " " + "{% translate 'work area(s).' %}"
+                              + (data.skipped ? " " + data.skipped + " " + "{% translate 'skipped.' %}" : "")
+                              + (failedIds.length ? " " + failedIds.length + " " + "{% translate 'failed to sync and remain selected for retry.' %}" : "")
+                            : "{% translate 'Work area(s) unassigned successfully.' %}";
+                        this.showToast(msg, failedIds.length > 0);
+                        if (this.flwSummaryAssigneeId) this.updateFlwSummary();
+                    } else {
+                        const data = await resp.json().catch(() => ({}));
+                        this.showToast(data.error || "{% translate 'Failed to unassign work areas' %}", true);
+                    }
+                } catch (e) {
+                    this.showToast("{% translate 'Failed to unassign work areas' %}", true);
+                } finally {
+                    this.isUnassigning = false;
+                }
+            },
+
+            handleCancel() {
+                if (this.assignmentQueue.length > 0 || this.selectedWorkAreas.size > 0 || this.selectedAssigneeId) {
+                    this.showDiscardModal = true;
+                } else {
+                    window.location.href = window.location.pathname;
+                }
+            },
+
+            applyUnassignedFilter() {
+                if (!this.map) return;
+                const baseUrl = `${window.location.origin}{{ tiles_url|escapejs }}`;
+                const newUrl = this.showOnlyUnassigned ? `${baseUrl}?unassigned_only=true` : baseUrl;
+                const source = this.map.getSource('workareas');
+                if (source) {
+                    source.setTiles([newUrl]);
+                }
+            },
 
             init() {
                 this.$nextTick(() => {
                     this.initializeMap();
                 });
+
+                this.$watch('selectedFeature', () => this.updateHighlightedWorkAreaId());
+                this.$watch('highlightedWorkAreaId', () => this.refreshVisitStyling());
+
+                if (this.assignmentMode) {
+                    const assigneesEl = document.getElementById('assignees-data');
+                    if (assigneesEl) this.assignees = JSON.parse(assigneesEl.textContent);
+
+                    this.$watch('showOnlyUnassigned', () => {
+                        this.applyUnassignedFilter();
+                    });
+                }
+
+                document.addEventListener('workAreaUpdated', (e) => {
+                    const data = e.detail;
+
+                    // Update sidebar if selected
+                    if (this.selectedFeature && this.selectedFeature._id === data.id) {
+                        this.selectedFeature = {
+                            ...this.selectedFeature,
+                            expected_visit_count: data.expected_visit_count,
+                            group_id: data.group_id,
+                            group_name: data.group_name,
+                        };
+                    }
+
+                    // Always update map feature state
+                    this.map.setFeatureState(
+                        {
+                            source: 'workareas',
+                            sourceLayer: 'workareas',
+                            id: data.id
+                        },
+                        {
+                            group_id: data.group_id,
+                            expected_visit_count: data.expected_visit_count,
+                        }
+                    );
+
+                    this.showWorkAreaEditModal = false;
+                    this.showToast("{% translate 'Work area updated successfully!' %}");
+                });
+
+                document.addEventListener('inaccessibilityReviewed', (e) => {
+                    const data = e.detail;
+                    if (this.selectedFeature && this.selectedFeature._id === data.id) {
+                        this.selectedFeature = { ...this.selectedFeature, status: data.status };
+                    }
+                    this.map.setFeatureState(
+                        { source: 'workareas', sourceLayer: 'workareas', id: data.id },
+                        { status: data.status }
+                    );
+                    this.showReviewInaccessibilityModal = false;
+                    this.showToast("{% translate 'Work area review saved.' %}");
+                });
+
+                document.addEventListener('work_areas_excluded', (e) => {
+                    const excluded = e.detail?.excluded ?? [];
+                    const skipped = e.detail?.skipped ?? 0;
+                    for (const id of excluded) {
+                        this.map.setFeatureState(
+                            { source: 'workareas', sourceLayer: 'workareas', id },
+                            { status: 'EXCLUDED' }
+                        );
+                        this.excludedWorkAreaIds.add(id);
+                    }
+                    this.showExcludeModal = false;
+                    this.clearSelection();
+                    if (excluded.length > 0 && skipped === 0) {
+                        this.showToast(`{% translate "Work area(s) excluded successfully." %}`);
+                    } else if (excluded.length > 0 && skipped > 0) {
+                        this.showToast(`${excluded.length} {% translate "excluded" %}, ${skipped} {% translate "skipped (already excluded or not 'Not Visited')." %}`);
+                    } else if (skipped > 0) {
+                        this.showToast(`{% translate "No work areas were excluded. Only 'Not Visited' work areas can be excluded." %}`, true);
+                    }
+                });
             },
+
 
             async initializeMap() {
                 const accessToken = '{{ mapbox_api_key|escapejs }}';
@@ -54,21 +654,58 @@
                             'case',
                             ['boolean', ['feature-state', 'hovered'], false],
                             '#ffffff',
-                            ['!', ['has', 'group_id']], '#cccccc',  // gray for no group
+
+                            // Excluded areas are always grey regardless of group — supports
+                            // live update via setFeatureState without waiting for tile reload.
+                            ['==', ['coalesce', ['feature-state', 'status'], ['get', 'status']], 'EXCLUDED'],
+                            '#9ca3af',
+
                             [
-                                'hsl',
-                                ['%', ['*', ['to-number', ['get', 'group_id']], 137.508], 360], // visually distinct colors for sequential group IDs
-                                65,
-                                55
+                                'case',
+                                [
+                                    '==',
+                                    [
+                                        'coalesce',
+                                        ['feature-state', 'group_id'],   // feature-state is the live state that can be updated with setFeatureState
+                                        ['get', 'group_id'],           // get is the original value from the tile data
+                                    ],
+                                    null
+                                ],
+                                '#cccccc',  // gray for no group
+                                [
+                                    'hsl',
+                                    [
+                                        '%',
+                                        [
+                                            '*',
+                                            [
+                                                'to-number',
+                                                [
+                                                    'coalesce',
+                                                    ['feature-state', 'group_id'],
+                                                    ['get', 'group_id']
+                                                ]
+                                            ],
+                                            137.508
+                                        ],
+                                        360  // visually distinct colors for sequential group IDs
+                                    ],
+                                    65,
+                                    55
+                                ]
                             ]
                         ],
                         'fill-opacity': [
-                            'match', ['get', 'status'],
+                            'match',
+                            [
+                                'coalesce',
+                                ['feature-state', 'status'],
+                                ['get', 'status']
+                            ],
                             'EXPECTED_VISIT_REACHED', 1.0,
                             'VISITED', 0.85,
                             'NOT_VISITED', 0.65,
                             'UNASSIGNED', 0.55,
-                            'NOT_STARTED', 0.50,
                             'EXCLUDED', 0.45,
                             'INACCESSIBLE', 0.40,
                             'REQUEST_FOR_INACCESSIBLE', 0.35,
@@ -77,7 +714,7 @@
                     }
                 });
 
-                 // Thin white lines between workareas, only visible when zoomed in (z>=8)
+                // Thin white lines between workareas, only visible when zoomed in (z>=8)
                 this.map.addLayer({
                     id: 'workareas-outline',
                     type: 'line',
@@ -107,6 +744,76 @@
                             1,
                             0
                         ]
+                    }
+                });
+
+                // Black highlight for assignment mode multi-select
+                if (this.assignmentMode) {
+                    this.map.addLayer({
+                        id: 'workareas-assignment-selected',
+                        type: 'line',
+                        source: 'workareas',
+                        'source-layer': 'workareas',
+                        minzoom: 8,
+                        paint: {
+                            'line-color': '#000000',
+                            'line-width': 3,
+                            'line-opacity': [
+                                'case',
+                                ['boolean', ['feature-state', 'assignment_selected'], false],
+                                1,
+                                0
+                            ]
+                        }
+                    });
+
+                    // Reapply assignment_selected state when tiles reload (pan/zoom)
+                    this.map.on('sourcedata', (e) => {
+                        if (e.sourceId === 'workareas' && e.isSourceLoaded) {
+                            for (const id of this.selectedWorkAreas) {
+                                this.map.setFeatureState(
+                                    { source: 'workareas', sourceLayer: 'workareas', id },
+                                    { assignment_selected: true }
+                                );
+                            }
+                        }
+                    });
+                }
+
+                // Source and layer are added lazily on first toggle to avoid
+                // fetching tiles while the layer is hidden.
+                const visitBaseUrl = `${window.location.origin}{{ visit_tiles_url|escapejs }}`;
+                let visitsLayerAdded = false;
+
+                this.$watch('showVisits', (visible) => {
+                    if (visible && !visitsLayerAdded) {
+                        const form = this.$refs.filterForm;
+                        const query = new URLSearchParams(new FormData(form)).toString();
+                        const visitTilesUrl = query ? `${visitBaseUrl}?${query}` : visitBaseUrl;
+                        this.map.addSource('user-visits', {
+                            type: 'vector',
+                            tiles: [visitTilesUrl],
+                            minzoom: minZoom,
+                        });
+                        this.map.addLayer({
+                            id: 'user-visits-circle',
+                            type: 'circle',
+                            source: 'user-visits',
+                            'source-layer': 'user-visits',
+                            paint: this.buildVisitCirclePaint(),
+                        });
+                        this.addVisitHighlightLayer();
+                        visitsLayerAdded = true;
+                        this.refreshVisitStyling();
+                    } else if (visitsLayerAdded) {
+                        this.map.setLayoutProperty('user-visits-circle', 'visibility', visible ? 'visible' : 'none');
+                        if (this.map.getLayer('user-visits-highlight')) {
+                            if (!visible) {
+                                this.map.setLayoutProperty('user-visits-highlight', 'visibility', 'none');
+                            } else {
+                                this.refreshVisitStyling();
+                            }
+                        }
                     }
                 });
 
@@ -169,6 +876,13 @@
                     const feature = e.features?.[0];
                     if (!feature || feature.id == null) return;
                     const id = feature.id;
+
+                    // In assignment mode, toggle multi-select instead of single-select
+                    if (this.assignmentMode) {
+                        this.toggleWorkAreaSelection(id, feature.properties);
+                        return;
+                    }
+
                     if (this.selectedFeature) {
                         this.map.setFeatureState(
                             {
@@ -183,8 +897,18 @@
                         this.selectedFeature = null;
                         return;
                     }
+
+                    // Merge tile properties with feature-state so sidebar reflects
+                    // any local edits applied via setFeatureState.
+                    const state = this.map.getFeatureState({
+                        source: 'workareas',
+                        sourceLayer: 'workareas',
+                        id
+                    });
+
                     this.selectedFeature = {
                         ...e.features[0].properties,
+                        ...state,
                         _id: id
                     };
 

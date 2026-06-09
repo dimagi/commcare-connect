@@ -1,5 +1,4 @@
 {% load static i18n %}
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -8,82 +7,70 @@
     {% include 'favicon.html' %}
     <title>Connect</title>
     {% block css %}
-       <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
-       <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
-       <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="{% static 'bundles/css/vendors.css' %}">
+      <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+      <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap"
+            rel="stylesheet">
     {% endblock %}
     {% block javascript %}
       {{ GTM_VARS_JSON|json_script:"gtm-data" }}
-       <script src="{% static 'js/gtx.js' %}" defer></script>
-       <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
-       <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
+      <script src="{% static 'js/gtx.js' %}" defer></script>
+      <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
+      <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
+      {% if session_tracking_enabled %}
+        {{ tracker_data|json_script:"tracker-data" }}
+        <script src="{% static 'js/livesession.js' %}" defer></script>
+      {% endif %}
     {% endblock javascript %}
   </head>
-  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="flex flex-col justify-center pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
+  <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' x-data="{ sidebarOpen: $persist(false).as('sidebarOpen'), hasSidebar:
+    {% block has_sidebar %}true{% endblock %}
+    }" x-init="$nextTick(() => $el.classList.add('transition-[padding-left]', 'duration-300'))" :class="hasSidebar ? (sidebarOpen ? 'pl-64' : 'pl-16') : ''" class="flex flex-col justify-center overflow-x-hidden bg-stone-100 font-work-sans">
     {% block sidenav %}
-      {% include 'layouts/sidenav.html'%}
+      {% include 'layouts/sidenav.html' %}
     {% endblock %}
     <div class="flex-1  px-4">
-      {% include 'layouts/header.html'%}
+      {% include 'layouts/header.html' %}
       <div class="h-5 w-full mt-16"></div>
       <main id="content" class="md:max-w-screen-2xl mx-auto">
         {% if messages %}
           {% for message in messages %}
-          <div class="flex items-center justify-between p-4 mb-4 rounded-lg border-[0.5px]
-                    {% if message.tags == 'success' %}bg-message-success text-message-success-text border-message-success-border
-                    {% elif message.tags == 'error' or message.tags == 'danger' %}bg-message-error text-message-error-text border-message-error-border
-                    {% elif message.tags == 'warning' %}bg-message-warning text-message-warning-text border-message-warning-border
-                    {% elif message.tags == 'info' %}bg-message-info text-message-info-text border-message-info-border
-                    {% else %}bg-gray-500 text-white{% endif %}">
-            <div class="flex items-center gap-2">
-              {% if message.tags == 'success' %}
-                <i class="fa-regular fa-circle-check"></i>
-              {% elif message.tags == 'warning' %}
-                <i class="fa-solid fa-triangle-exclamation"></i>
-              {% elif message.tags == 'error' or message.tags == 'danger' %}
-                <i class="fa-solid fa-circle-exclamation"></i>
-              {% elif message.tags == 'info' %}
-                <i class="fa-solid fa-circle-info"></i>
-              {% endif %}
-              <span>{{ message }}</span>
+            <div class="flex items-center justify-between p-4 mb-4 rounded-lg border-[0.5px] {% if message.tags == 'success' %}bg-message-success text-message-success-text border-message-success-border {% elif message.tags == 'error' or message.tags == 'danger' %}bg-message-error text-message-error-text border-message-error-border {% elif message.tags == 'warning' %}bg-message-warning text-message-warning-text border-message-warning-border {% elif message.tags == 'info' %}bg-message-info text-message-info-text border-message-info-border {% else %}bg-gray-500 text-white{% endif %}">
+              <div class="flex items-center gap-2">
+                {% if message.tags == 'success' %}
+                  <i class="fa-regular fa-circle-check"></i>
+                {% elif message.tags == 'warning' %}
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                {% elif message.tags == 'error' or message.tags == 'danger' %}
+                  <i class="fa-solid fa-circle-exclamation"></i>
+                {% elif message.tags == 'info' %}
+                  <i class="fa-solid fa-circle-info"></i>
+                {% endif %}
+                <span>{{ message }}</span>
+              </div>
+              <button type="button"
+                      class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
+                      aria-label="Close"
+                      onclick="this.parentElement.remove()">&times;</button>
             </div>
-            <button type="button"
-                    class="ml-4 text-xl font-light hover:font-normal focus:outline-none"
-                    aria-label="Close"
-                    onclick="this.parentElement.remove()">
-              &times;
-            </button>
-          </div>
           {% endfor %}
         {% endif %}
-
-        {% block content %}
-        {% endblock %}
+        {% block content %}{% endblock %}
       </main>
     </div>
-
     {% if request.user.is_authenticated and chat_widget_enabled %}
-      <div class="chat-widget-container">
-        <open-chat-studio-widget
-          visible="false"
-          chatbot-id="{{ chatbot_id }}"
-          embed-key="{{ chatbot_embed_key }}"
-          button-text="{% translate 'Need help?' %}"
-          position="right"
-          expanded="false">
-        </open-chat-studio-widget>
-      </div>
+      <open-chat-studio-widget class="z-50" visible="false" chatbot-id="{{ chatbot_id }}" embed-key="{{ chatbot_embed_key }}" button-text="{% translate 'Need help?' %}" position="right" expanded="false">
+      </open-chat-studio-widget>
     {% endif %}
-
-  {% block inline_javascript %}
-    {% comment %}
+    {% block inline_javascript %}
+      {% comment %}
       Script tags with only code, no src (defer by default). To run
       with a "defer" so that you run inline code:
       <script>
         window.addEventListener('DOMContentLoaded', () => {/* Run whatever you want */
         });
-      </script>
-    {% endcomment %}
-  {% endblock inline_javascript %}
+</script>
+      {% endcomment %}
+    {% endblock inline_javascript %}
   </body>
 </html>

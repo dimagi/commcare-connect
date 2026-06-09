@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 167" width="464" height="167">
+  <!-- pale gray background -->
+  <rect width="464" height="167" fill="#e9ecef"/>
+
+  <!-- soft ground -->
+  <path d="M 0 158 C 120 152, 344 152, 464 158 L 464 167 L 0 167 Z" fill="#adb5bd" opacity="0.5"/>
+
+  <!-- decorative dots -->
+  <g fill="#6c757d">
+    <circle cx="22" cy="22" r="2.2" opacity="0.45"/>
+    <circle cx="48" cy="50" r="1.6" opacity="0.4"/>
+    <circle cx="380" cy="22" r="2" opacity="0.45"/>
+    <circle cx="438" cy="58" r="1.6" opacity="0.4"/>
+    <circle cx="40" cy="125" r="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- house silhouette in background (right side) -->
+  <g opacity="0.85">
+    <!-- roof -->
+    <polygon points="290,90 360,55 430,90" fill="#6c757d"/>
+    <!-- house body -->
+    <rect x="296" y="90" width="128" height="68" fill="#adb5bd"/>
+    <!-- door -->
+    <rect x="346" y="118" width="28" height="40" rx="1" fill="#495057"/>
+    <!-- window -->
+    <rect x="306" y="100" width="16" height="14" rx="1" fill="#495057"/>
+    <rect x="400" y="100" width="16" height="14" rx="1" fill="#495057"/>
+    <!-- door handle -->
+    <circle cx="370" cy="138" r="1.5" fill="#FEAF31"/>
+  </g>
+
+  <!-- ============ CHW (left, with tablet) ============ -->
+  <ellipse cx="116" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <ellipse cx="146" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+
+  <path d="M 102 110 C 102 130, 100 152, 104 158 Q 116 162, 128 158 L 130 110 Z" fill="#252D54"/>
+  <path d="M 132 110 L 134 158 Q 146 162, 158 158 C 162 152, 160 130, 160 110 Z" fill="#252D54"/>
+
+  <rect x="100" y="106" width="62" height="5" rx="1.5" fill="#13162A"/>
+
+  <!-- shirt (CommCare blue) -->
+  <path d="M 104 60 C 104 54, 112 50, 124 50 L 132 50 C 144 50, 152 54, 152 60 Q 158 80, 160 110 L 102 110 Q 104 80, 104 60 Z" fill="#5D70D2"/>
+  <path d="M 104 60 C 104 54, 112 50, 122 50 L 122 110 L 102 110 Q 104 80, 104 60 Z" fill="#38437E" opacity="0.3"/>
+  <path d="M 118 50 L 128 64 L 138 50 L 134 50 L 128 60 L 122 50 Z" fill="#fff" opacity="0.85"/>
+
+  <!-- left arm hanging at side -->
+  <path d="M 100 62 C 92 80, 92 100, 96 110 L 108 110 Q 110 80, 108 62 Z" fill="#5D70D2"/>
+  <ellipse cx="101" cy="111" rx="6" ry="3" fill="#38437E"/>
+  <circle cx="100" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- right arm bent forward holding tablet -->
+  <path d="M 152 62 C 162 70, 170 80, 168 94 Q 162 98, 156 94 C 156 80, 152 70, 148 64 Z" fill="#5D70D2"/>
+  <ellipse cx="164" cy="94" rx="7" ry="4" fill="#38437E" transform="rotate(20 164 94)"/>
+  <path d="M 158 92 Q 162 100, 172 102 Q 178 100, 178 96 Q 174 90, 162 88 Z" fill="#B5825D"/>
+  <circle cx="176" cy="100" r="6" fill="#B5825D"/>
+
+  <!-- neck -->
+  <rect x="123" y="48" width="10" height="8" fill="#B5825D"/>
+  <rect x="123" y="48" width="4" height="8" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head -->
+  <circle cx="128" cy="32" r="18" fill="#B5825D"/>
+  <path d="M 110 32 A 18 18 0 0 1 128 14 L 128 50 A 18 18 0 0 1 110 32 Z" fill="#9c6b48" opacity="0.3"/>
+  <ellipse cx="111" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+  <ellipse cx="145" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+
+  <!-- hair -->
+  <path d="M 110 28 C 110 12, 118 8, 128 8 C 138 8, 146 12, 146 28 C 144 22, 138 20, 134 22 C 130 16, 122 16, 118 22 C 114 20, 112 22, 110 28 Z" fill="#2D2825"/>
+
+  <!-- ============ TABLET WITH SURVEY FORM ============ -->
+  <g transform="translate(186,98) rotate(-12)">
+    <!-- shadow -->
+    <ellipse cx="0" cy="28" rx="20" ry="3" fill="#252D54" opacity="0.2"/>
+    <!-- tablet body -->
+    <rect x="-16" y="-22" width="32" height="48" rx="3" fill="#252D54"/>
+    <!-- screen -->
+    <rect x="-13" y="-19" width="26" height="38" rx="1" fill="#fff"/>
+    <!-- screen header bar -->
+    <rect x="-13" y="-19" width="26" height="6" rx="1" fill="#5D70D2"/>
+    <!-- form rows (simulating survey questions) -->
+    <line x1="-10" y1="-9" x2="6" y2="-9" stroke="#6c757d" stroke-width="1"/>
+    <rect x="-10" y="-7" width="4" height="4" rx="0.5" fill="#358623"/>
+    <line x1="-4" y1="-3" x2="10" y2="-3" stroke="#adb5bd" stroke-width="0.8"/>
+
+    <line x1="-10" y1="2" x2="6" y2="2" stroke="#6c757d" stroke-width="1"/>
+    <rect x="-10" y="4" width="4" height="4" rx="0.5" fill="#fff" stroke="#adb5bd" stroke-width="0.6"/>
+    <line x1="-4" y1="8" x2="10" y2="8" stroke="#adb5bd" stroke-width="0.8"/>
+
+    <line x1="-10" y1="13" x2="6" y2="13" stroke="#6c757d" stroke-width="1"/>
+    <rect x="-10" y="15" width="4" height="4" rx="0.5" fill="#358623"/>
+    <line x1="-4" y1="19" x2="10" y2="19" stroke="#adb5bd" stroke-width="0.8"/>
+    <!-- home button -->
+    <circle cx="0" cy="22" r="1.5" fill="#fff" stroke="#adb5bd" stroke-width="0.4"/>
+  </g>
+
+  <!-- ============ COMMUNITY MEMBER (at doorway) ============ -->
+  <ellipse cx="335" cy="161" rx="11" ry="3" fill="#291213"/>
+  <ellipse cx="361" cy="161" rx="11" ry="3" fill="#291213"/>
+
+  <path d="M 322 124 C 322 140, 320 154, 324 158 Q 335 162, 346 158 L 348 124 Z" fill="#5c314f"/>
+  <path d="M 350 124 L 352 158 Q 363 162, 374 158 C 378 154, 376 140, 376 124 Z" fill="#5c314f"/>
+
+  <rect x="320" y="120" width="58" height="4" rx="1" fill="#3e2034"/>
+
+  <!-- shirt -->
+  <path d="M 324 78 C 324 72, 332 68, 342 68 L 350 68 C 360 68, 368 72, 368 78 Q 374 96, 376 124 L 320 124 Q 324 96, 324 78 Z" fill="#9a5183"/>
+  <path d="M 324 78 C 324 72, 332 68, 340 68 L 340 124 L 320 124 Q 324 96, 324 78 Z" fill="#5c314f" opacity="0.3"/>
+  <path d="M 336 68 L 346 82 L 356 68 L 352 68 L 346 78 L 340 68 Z" fill="#fff" opacity="0.85"/>
+
+  <!-- arms -->
+  <path d="M 320 80 C 314 96, 314 116, 318 124 L 328 124 Q 330 96, 328 80 Z" fill="#9a5183"/>
+  <circle cx="320" cy="128" r="4.5" fill="#C99B7A"/>
+  <path d="M 368 80 C 374 96, 374 116, 370 124 L 360 124 Q 358 96, 360 80 Z" fill="#9a5183"/>
+  <circle cx="368" cy="128" r="4.5" fill="#C99B7A"/>
+
+  <rect x="343" y="66" width="10" height="6" fill="#C99B7A"/>
+
+  <!-- head -->
+  <circle cx="348" cy="50" r="16" fill="#C99B7A"/>
+  <path d="M 332 50 A 16 16 0 0 1 348 34 L 348 66 A 16 16 0 0 1 332 50 Z" fill="#9c6b48" opacity="0.3"/>
+
+  <!-- head wrap -->
+  <path d="M 332 46 C 332 28, 340 24, 348 24 C 356 24, 364 28, 364 46 Q 362 42, 358 40 Q 354 36, 348 36 Q 342 36, 338 40 Q 334 42, 332 46 Z" fill="#FEAF31"/>
+  <path d="M 333 42 C 340 36, 356 36, 363 42 C 360 44, 354 42, 348 42 C 342 42, 336 44, 333 42 Z" fill="#cb585d" opacity="0.55"/>
+
+  <!-- speech-bubble cluster (data being shared) -->
+  <g fill="#5D70D2" opacity="0.7">
+    <ellipse cx="250" cy="38" rx="8" ry="6"/>
+    <circle cx="244" cy="46" r="3"/>
+    <circle cx="240" cy="52" r="2"/>
+  </g>
+  <!-- check mark in bubble -->
+  <path d="M 246 38 L 249 41 L 254 35" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>

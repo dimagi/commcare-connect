@@ -324,4 +324,4 @@ webpack-stats.json
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 
-.claude
+.worktrees/

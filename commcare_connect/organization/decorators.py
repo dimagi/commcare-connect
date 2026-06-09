@@ -3,12 +3,46 @@ from functools import wraps
 from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from rest_framework.permissions import BasePermission
 
 from commcare_connect.opportunity.models import Opportunity
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 from .models import UserOrganizationMembership
+
+
+def user_is_org_admin(user, organization):
+    """Check if user is admin of the given org, or has ALL_ORG_ACCESS."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization=organization,
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+def user_is_program_manager_by_slug(user, org_slug):
+    """Check if user is admin of a program-manager org identified by slug, or has ALL_ORG_ACCESS."""
+    if user.has_perm(ALL_ORG_ACCESS):
+        return True
+    return UserOrganizationMembership.objects.filter(
+        user=user,
+        organization__slug=org_slug,
+        organization__program_manager=True,
+        role=UserOrganizationMembership.Role.ADMIN,
+    ).exists()
+
+
+class IsProgramManagerAdmin(BasePermission):
+    """DRF permission: user must be admin of a program-manager organization."""
+
+    def has_permission(self, request, view):
+        org_slug = request.data.get("organization") or view.kwargs.get("org_slug")
+        if not org_slug:
+            return False
+        return user_is_program_manager_by_slug(request.user, org_slug)
 
 
 def _request_user_is_member(request):
@@ -23,7 +57,7 @@ def _request_user_is_admin(request):
     ) or request.user.has_perm(ALL_ORG_ACCESS)
 
 
-def _request_user_is_program_manager(request):
+def request_user_is_program_manager(request):
     return (
         request.org and request.org_membership and request.org_membership.is_admin and request.org.program_manager
     ) or request.user.has_perm(ALL_ORG_ACCESS)
@@ -46,7 +80,17 @@ def org_viewer_required(view_func):
 
 
 def org_program_manager_required(view_func):
-    return _get_decorated_function(view_func, _request_user_is_program_manager)
+    return _get_decorated_function(view_func, request_user_is_program_manager)
+
+
+def opportunity_program_manager_required(view_func):
+    return _get_decorated_function(view_func, lambda request: request.is_opportunity_pm)
+
+
+def managed_opportunity_pm_required(view_func):
+    return _get_decorated_function(
+        view_func, lambda request: not request.opportunity.managed or request.is_opportunity_pm
+    )
 
 
 def _get_decorated_function(view_func, permission_test_function):

@@ -1,11 +1,11 @@
-FROM python:3.11-slim-bookworm as build-python
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS build-python
 RUN apt-get update \
   # dependencies for building Python packages
   && apt-get install -y build-essential libpq-dev
-COPY ./requirements /requirements
-RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels \
-    -r /requirements/base.txt \
-    -r /requirements/production.txt
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project --group production
 
 FROM node:18-bullseye AS build-node
 #RUN apt-get update && apt-get -y install curl
@@ -34,13 +34,8 @@ RUN addgroup --system django \
 ENV DJANGO_SETTINGS_MODULE=config.settings.staging
 
 COPY --from=build-node /app/commcare_connect/static/bundles /app/commcare_connect/static/bundles
-COPY --from=build-python /wheels /wheels
-COPY ./requirements /requirements
-RUN pip install --no-index --find-links=/wheels \
-    -r /requirements/base.txt \
-    -r /requirements/production.txt \
-    && rm -rf /wheels \
-    && rm -rf /root/.cache/pip/*
+COPY --from=build-python /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 

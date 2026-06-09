@@ -3,6 +3,8 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
@@ -13,7 +15,7 @@ from django.utils.html import format_html
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import FormView, RedirectView, UpdateView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
@@ -32,9 +34,10 @@ from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
 from commcare_connect.utils.permission_const import (
-    ALL_ORG_ACCESS,
     DEMO_USER_ACCESS,
+    INVOICE_REPORT_ACCESS,
     KPI_REPORT_ACCESS,
+    MANAGE_INTERNAL_PERMISSIONS,
     OTP_ACCESS,
     PRODUCT_FEATURES_ACCESS,
 )
@@ -67,7 +70,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self):
         if not self.request.user.memberships.exists():
-            return reverse("home")
+            return reverse("prelogin:home")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
@@ -332,7 +335,7 @@ def internal_features(request):
             "url": reverse("reports:delivery_stats_report"),
         },
         {
-            "perm": ALL_ORG_ACCESS,
+            "perm": INVOICE_REPORT_ACCESS,
             "name": "Invoice Report",
             "description": "Access the Invoice reports dashboard.",
             "url": reverse("reports:invoice_report"),
@@ -343,6 +346,96 @@ def internal_features(request):
             "description": "Manage feature flags and switches.",
             "url": reverse("flags:feature_flags"),
         },
+        {
+            "perm": MANAGE_INTERNAL_PERMISSIONS,
+            "name": "Permission Management",
+            "description": "Manage internal permissions for users.",
+            "url": reverse("users:permission_management"),
+        },
     ]
 
     return render(request, "users/internal_features.html", context={"features": features})
+
+
+_DEFAULT_MODEL_PERMS = {"add_user", "change_user", "delete_user", "view_user"}
+
+
+def _get_user_custom_permissions(user):
+    """Get the custom permissions defined on the User model."""
+    ct = ContentType.objects.get_for_model(User)
+    custom_perms = Permission.objects.filter(content_type=ct).exclude(codename__in=_DEFAULT_MODEL_PERMS)
+    user_perm_codenames = set(user.user_permissions.values_list("codename", flat=True))
+    return [
+        {
+            "codename": perm.codename,
+            "name": perm.name,
+            "has_perm": perm.codename in user_perm_codenames,
+        }
+        for perm in custom_perms
+    ]
+
+
+@login_required
+@permission_required(MANAGE_INTERNAL_PERMISSIONS, raise_exception=True)
+@require_GET
+def permission_management(request):
+    return render(request, "users/permission_management.html")
+
+
+@login_required
+@permission_required(MANAGE_INTERNAL_PERMISSIONS, raise_exception=True)
+@require_GET
+def permission_management_search(request):
+    email = request.GET.get("email", "").strip()
+    context = {}
+    if email:
+        target_user = User.objects.filter(email__iexact=email).first()
+        if target_user:
+            context["target_user"] = target_user
+            context["permissions"] = _get_user_custom_permissions(target_user)
+            context["is_self"] = target_user == request.user
+        else:
+            context["not_found"] = True
+    return render(request, "users/permission_management_results.html", context)
+
+
+@login_required
+@permission_required(MANAGE_INTERNAL_PERMISSIONS, raise_exception=True)
+@require_POST
+def permission_management_update(request):
+    user_id = request.POST.get("user_id")
+    try:
+        target_user = User.objects.get(id=user_id)
+    except (User.DoesNotExist, ValueError):
+        return render(
+            request,
+            "users/permission_management_results.html",
+            {"not_found": True},
+        )
+
+    selected_codenames = set(request.POST.getlist("permissions"))
+    ct = ContentType.objects.get_for_model(User)
+    custom_perms = Permission.objects.filter(content_type=ct).exclude(codename__in=_DEFAULT_MODEL_PERMS)
+
+    is_self = target_user == request.user
+    perms_to_add = []
+    perms_to_remove = []
+    for perm in custom_perms:
+        if is_self and perm.codename == "manage_internal_permissions":
+            continue
+        if perm.codename in selected_codenames:
+            perms_to_add.append(perm)
+        else:
+            perms_to_remove.append(perm)
+    if perms_to_add:
+        target_user.user_permissions.add(*perms_to_add)
+    if perms_to_remove:
+        target_user.user_permissions.remove(*perms_to_remove)
+
+    context = {
+        "target_user": target_user,
+        "permissions": _get_user_custom_permissions(target_user),
+        "is_self": is_self,
+        "success": True,
+    }
+    return render(request, "users/permission_management_results.html", context)

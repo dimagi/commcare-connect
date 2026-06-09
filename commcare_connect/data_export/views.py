@@ -1,4 +1,5 @@
 import csv
+import uuid
 from collections import defaultdict
 
 from django.core.files.storage import storages
@@ -6,30 +7,50 @@ from django.db.models import Count, F, Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from drf_spectacular.utils import extend_schema, inline_serializer
 from oauth2_provider.contrib.rest_framework.permissions import TokenHasScope
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.versioning import AcceptHeaderVersioning
 from rest_framework.views import APIView
 
+from commcare_connect.audit.models import AuditReport, AuditReportEntry
+from commcare_connect.data_export.const import (
+    APP_TYPE_BOTH,
+    APP_TYPE_DELIVER,
+    APP_TYPE_LEARN,
+    DELIVER_APP_KEY,
+    LEARN_APP_KEY,
+    VALID_APP_TYPES,
+)
+from commcare_connect.data_export.pagination import IdKeysetPagination
 from commcare_connect.data_export.serializer import (
     AssessmentDataSerializer,
+    AssignedTaskDataSerializer,
+    AuditReportDataSerializer,
+    AuditReportEntryDataSerializer,
     CompletedModuleDataSerializer,
     CompletedWorkDataSerializer,
     InvoiceDataSerializer,
     LabsRecordDataSerializer,
+    LLOEntityDataSerializer,
     OpportunityDataExportSerializer,
     OpportunitySerializer,
     OpportunityUserDataSerializer,
     OrganizationDataExportSerializer,
     PaymentDataSerializer,
     ProgramDataExportSerializer,
+    TaskTypeDataSerializer,
     UserVisitDataSerializer,
     UserVisitDataWithImagesSerializer,
+    WorkAreaDataSerializer,
+    WorkAreaGroupDataSerializer,
 )
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
     BlobMeta,
     CompletedModule,
     CompletedWork,
@@ -38,11 +59,16 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     Payment,
     PaymentInvoice,
+    TaskType,
     UserVisit,
 )
-from commcare_connect.organization.models import Organization
+from commcare_connect.organization.models import LLOEntity, Organization
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException, get_app_structure
+from commcare_connect.utils.permission_const import WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+
+STREAM_CHUNK_SIZE = 2000
 
 
 class BaseDataExportView(APIView):
@@ -67,8 +93,9 @@ class EchoWriter:
         return value
 
 
-class BaseStreamingCSVExportView(BaseDataExportView):
+class BaseDataExportListView(BaseDataExportView):
     serializer_class = None
+    pagination_class = IdKeysetPagination
 
     def get_serializer_class(self, *args, **kwargs):
         return self.serializer_class
@@ -80,21 +107,56 @@ class BaseStreamingCSVExportView(BaseDataExportView):
         serializer_class = self.get_serializer_class()
         fieldnames = serializer_class().get_fields().keys()
         writer = csv.DictWriter(EchoWriter(), fieldnames=fieldnames)
-        objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=2000)
+        objects = self.get_queryset(*args, **kwargs).iterator(chunk_size=STREAM_CHUNK_SIZE)
         yield writer.writeheader()
 
         for obj in objects:
             serialized_data = serializer_class(obj).data
             yield writer.writerow(serialized_data)
 
+    def paginate_queryset(self, queryset):
+        self._paginator = self.pagination_class()
+        return self._paginator.paginate_queryset(queryset, self.request)
+
+    def get_paginated_response(self, data):
+        return self._paginator.get_paginated_response(data)
+
+    def post_paginate(self, page):
+        """Hook called after pagination, before serialization. Override to modify the page list in-place.
+
+        Note: this hook is only called for v2.0 requests (paginated JSON). It is not invoked
+        for v1.0 requests, which use streaming CSV via ``get_data_generator``.
+        """
+        pass
+
     @extend_schema(
         description=(
-            "This API returns a CSV text StreamingHttpResponse. "
-            "The values shown in the example will be in CSV text format."
+            "v1.0: Returns CSV text StreamingHttpResponse. " "v2.0: Returns paginated JSON with 'next' and 'results'."
         )
     )
     def get(self, *args, **kwargs):
+        if self.request.version == "2.0":
+            queryset = self.get_queryset(*args, **kwargs)
+            page = self.paginate_queryset(queryset)
+            self.post_paginate(page)
+            serializer_class = self.get_serializer_class()
+            serializer = serializer_class(page, many=True)
+            return self.get_paginated_response(serializer.data)
         return StreamingHttpResponse(self.get_data_generator(*args, **kwargs), content_type="text/csv")
+
+
+class V2OnlyVersioning(AcceptHeaderVersioning):
+    # DRF's is_allowed_version() always permits the default_version, even if it's
+    # not in allowed_versions. Setting None ensures requests without a version header
+    # are rejected with 406 instead of falling through to the CSV streaming response.
+    default_version = None
+    allowed_versions = ["2.0"]
+
+
+class BaseDataExportListViewV2(BaseDataExportListView):
+    """V2-only export view. Returns 406 for non-v2 requests."""
+
+    versioning_class = V2OnlyVersioning
 
 
 def _get_opportunity_or_404(user, opp_id):
@@ -175,7 +237,7 @@ class SingleOpportunityDataView(RetrieveAPIView, BaseDataExportView):
         return _get_opportunity_or_404(self.request.user, self.kwargs.get("opp_id"))
 
 
-class OpportunityScopedDataView(OpportunityDataExportView, BaseStreamingCSVExportView):
+class OpportunityScopedDataView(OpportunityDataExportView, BaseDataExportListView):
     pass
 
 
@@ -210,6 +272,10 @@ class UserVisitDataView(OpportunityScopedDataView):
             .select_related("user")
         )
 
+    def post_paginate(self, page):
+        if self._include_images():
+            self._prefetch_images(page)
+
     def get_data_generator(self, *args, **kwargs):
         serializer_class = self.get_serializer_class()
         fieldnames = serializer_class().get_fields().keys()
@@ -220,13 +286,13 @@ class UserVisitDataView(OpportunityScopedDataView):
         include_images = self._include_images()
 
         if not include_images:
-            for obj in queryset.iterator(chunk_size=2000):
+            for obj in queryset.iterator(chunk_size=STREAM_CHUNK_SIZE):
                 yield writer.writerow(serializer_class(obj).data)
         else:
             batch = []
-            for obj in queryset.iterator(chunk_size=2000):
+            for obj in queryset.iterator(chunk_size=STREAM_CHUNK_SIZE):
                 batch.append(obj)
-                if len(batch) >= 2000:
+                if len(batch) >= STREAM_CHUNK_SIZE:
                     self._prefetch_images(batch)
                     for visit in batch:
                         yield writer.writerow(serializer_class(visit).data)
@@ -335,6 +401,19 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
                 programs.add(item["program_id"])
             if item.get("organization_id"):
                 orgs.add(item["organization_id"])
+            if not any(item.get(k) for k in ("opportunity_id", "program_id", "organization_id")) and item.get("id"):
+                # No explicit scope provided — resolve ownership from the existing record so that a
+                # bare {"id": N} cannot bypass the ownership check and target any record by raw PK.
+                try:
+                    record = LabsRecord.objects.get(pk=item["id"])
+                except LabsRecord.DoesNotExist:
+                    raise NotFound()
+                if record.opportunity_id:
+                    opps.add(record.opportunity_id)
+                elif record.program_id:
+                    programs.add(record.program_id)
+                elif record.organization_id:
+                    orgs.add(record.organization_id)
         for opp_id in opps:
             _get_opportunity_or_404(request.user, opp_id)
         for program_id in programs:
@@ -387,7 +466,20 @@ class LabsRecordDataView(BaseDataExportView, ListCreateAPIView):
 
     def delete(self, request, *args, **kwargs):
         ids = [item["id"] for item in self.data]
-        LabsRecord.objects.filter(pk__in=ids).delete()
+        user = request.user
+        accessible_ids = (
+            LabsRecord.objects.filter(
+                Q(opportunity__organization__memberships__user=user)
+                | Q(opportunity__managedopportunity__program__organization__memberships__user=user)
+                | Q(program__organization__memberships__user=user)
+                | Q(organization__memberships__user=user)
+                | Q(opportunity__isnull=True, program__isnull=True, organization__isnull=True),
+                pk__in=ids,
+            )
+            .distinct()
+            .values_list("pk", flat=True)
+        )
+        LabsRecord.objects.filter(pk__in=accessible_ids).delete()
         return Response(status=status.HTTP_200_OK)
 
 
@@ -401,14 +493,43 @@ class ImageView(OpportunityDataExportView):
         return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
 
 
-class OrganizationProgramDataView(BaseStreamingCSVExportView):
+class AppStructureView(OpportunityDataExportView):
+    def get(self, request, opp_id):
+        app_type = request.query_params.get("app_type", APP_TYPE_BOTH)
+        if app_type not in VALID_APP_TYPES:
+            return Response(
+                {"error": f"Invalid app_type. Must be one of: {', '.join(VALID_APP_TYPES)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not self.opportunity.api_key:
+            raise NotFound("Opportunity does not have an associated API key.")
+
+        result = {LEARN_APP_KEY: None, DELIVER_APP_KEY: None}
+
+        try:
+            if app_type in (APP_TYPE_LEARN, APP_TYPE_BOTH) and self.opportunity.learn_app:
+                result[LEARN_APP_KEY] = get_app_structure(self.opportunity.api_key, self.opportunity.learn_app)
+
+            if app_type in (APP_TYPE_DELIVER, APP_TYPE_BOTH) and self.opportunity.deliver_app:
+                result[DELIVER_APP_KEY] = get_app_structure(self.opportunity.api_key, self.opportunity.deliver_app)
+        except CommCareHQAPIException:
+            return Response(
+                {"error": "Failed to fetch app structure from CommCare HQ."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(result)
+
+
+class OrganizationProgramDataView(BaseDataExportListView):
     serializer_class = ProgramDataExportSerializer
 
     def get_queryset(self, request, org_slug):
         return Program.objects.filter(organization__slug=org_slug, organization__memberships__user=self.request.user)
 
 
-class ProgramOpportunityDataView(BaseStreamingCSVExportView):
+class ProgramOpportunityDataView(BaseDataExportListView):
     serializer_class = OpportunitySerializer
 
     def get_queryset(self, request, program_id):
@@ -420,3 +541,70 @@ class ProgramOpportunityDataView(BaseStreamingCSVExportView):
             .select_related("learn_app", "deliver_app")
             .prefetch_related("paymentunit_set", "opportunityverificationflags")
         )
+
+
+class TaskTypeDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = TaskTypeDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return TaskType.objects.filter(opportunity=self.opportunity)
+
+
+class AuditReportDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = AuditReportDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return AuditReport.objects.filter(opportunity=self.opportunity).select_related("completed_by")
+
+
+class AuditReportEntryDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = AuditReportEntryDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        qs = AuditReportEntry.objects.filter(
+            audit_report__opportunity=self.opportunity,
+        ).select_related("audit_report", "opportunity_access__user")
+
+        audit_report_id = self.request.query_params.get("audit_report_id")
+        if audit_report_id:
+            try:
+                parsed_uuid = uuid.UUID(audit_report_id)
+            except ValueError:
+                raise serializers.ValidationError({"audit_report_id": "Must be a valid UUID."})
+            qs = qs.filter(audit_report__audit_report_id=parsed_uuid)
+        return qs
+
+
+class AssignedTaskDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = AssignedTaskDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return AssignedTask.objects.filter(opportunity_access__opportunity=self.opportunity).select_related(
+            "task_type", "opportunity_access__user"
+        )
+
+
+class WorkAreaGroupDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = WorkAreaGroupDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return WorkAreaGroup.objects.filter(opportunity=self.opportunity)
+
+
+class WorkAreaDataView(OpportunityDataExportView, BaseDataExportListViewV2):
+    serializer_class = WorkAreaDataSerializer
+
+    def get_queryset(self, *args, **kwargs):
+        return WorkArea.objects.filter(opportunity=self.opportunity).select_related("work_area_group")
+
+
+class LLOEntityDataView(BaseDataExportListViewV2):
+    serializer_class = LLOEntityDataSerializer
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if not request.user.has_perm(WORKSPACE_ENTITY_MANAGEMENT_ACCESS):
+            raise NotFound
+
+    def get_queryset(self, *args, **kwargs):
+        return LLOEntity.objects.all()

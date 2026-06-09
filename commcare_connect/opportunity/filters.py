@@ -1,19 +1,14 @@
+from datetime import date
+
 import django_filters
 from crispy_forms.helper import FormHelper
+from crispy_forms.layout import HTML, Column, Div, Layout, Row
 from django import forms
-from waffle import switch_is_active
+from django.utils.translation import gettext_lazy as _
 
-from commcare_connect.flags.switch_names import USER_VISIT_FILTERS
-from commcare_connect.opportunity.models import (
-    DeliverUnitFlagRules,
-    OpportunityAccess,
-    OpportunityVerificationFlags,
-    UserVisit,
-    VisitValidationStatus,
-)
+from commcare_connect.opportunity.models import AssignedTaskStatus, OpportunityAccess, TaskType
 from commcare_connect.program.models import Program
 from commcare_connect.users.models import User
-from commcare_connect.utils.flags import FlagLabels, Flags
 
 
 class FilterMixin:
@@ -41,10 +36,13 @@ class FilterMixin:
         }
 
     def _get_filter(self):
-        filter_class = self._get_filter_class()
-        if filter_class:
-            return filter_class(self.request.GET, **self.get_filter_kwargs())
-        return None
+        if not hasattr(self, "_filter_instance"):
+            filter_class = self._get_filter_class()
+            if filter_class:
+                self._filter_instance = filter_class(self.request.GET, **self.get_filter_kwargs())
+            else:
+                self._filter_instance = None
+        return self._filter_instance
 
     def get_filter_form(self):
         f = self._get_filter()
@@ -129,6 +127,13 @@ class DeliverFilterSet(django_filters.FilterSet):
     class Meta:
         form = CSRFExemptForm
 
+    def __init__(self, *args, **kwargs):
+        opportunity = kwargs.pop("opportunity")
+        super().__init__(*args, **kwargs)
+        if opportunity.automatic_visit_verification:
+            self.filters.pop("review_pending")
+            self.filters.pop("has_duplicates")
+
 
 class OpportunityListFilterSet(django_filters.FilterSet):
     is_test = YesNoFilter(label="Is Test")
@@ -156,99 +161,259 @@ class OpportunityListFilterSet(django_filters.FilterSet):
                 del self.filters["program"]
 
 
-class UserVisitFilterSet(django_filters.FilterSet):
-    user = django_filters.ChoiceFilter(
-        label="Worker",
+TASK_STATUS_CHOICES = [
+    (AssignedTaskStatus.ASSIGNED, _("To Do")),
+    (AssignedTaskStatus.COMPLETED, _("Completed")),
+]
+
+
+class TasksFilterSet(django_filters.FilterSet):
+    worker_name = django_filters.MultipleChoiceFilter(
+        label="Worker Name",
         choices=[],
-        empty_label="All",
-        widget=forms.Select(attrs={"data-tomselect": "1"}),
-        method="filter_user",
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="user__id",
     )
-    visit_date = django_filters.DateFilter(
-        label="Visit Date",
-        field_name="visit_date",
-        lookup_expr="date",
+    task_status = django_filters.MultipleChoiceFilter(
+        label=_("Task Status"),
+        choices=TASK_STATUS_CHOICES,
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="task_status",
+    )
+    task_type = django_filters.MultipleChoiceFilter(
+        label=_("Task Type"),
+        choices=[],
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="task_id",
+    )
+    date_assigned_from = django_filters.DateFilter(
+        label=_("Date Assigned From"),
         widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_assigned",
+        lookup_expr="gte",
     )
-    status = django_filters.MultipleChoiceFilter(
-        label="Visit Status",
-        choices=[
-            (c.value, c.label)
-            for c in [VisitValidationStatus.over_limit, VisitValidationStatus.duplicate, VisitValidationStatus.trial]
-        ],
-        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+    date_assigned_to = django_filters.DateFilter(
+        label=_("Date Assigned Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_assigned",
+        lookup_expr="lt",
     )
-    flagged = YesNoFilter(label="Flagged")
-    flags = django_filters.MultipleChoiceFilter(
-        label="Flags",
-        choices=[],
-        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
-        method="filter_flags",
+    due_date_from = django_filters.DateFilter(
+        label=_("Due Date From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="task_due_date",
+        lookup_expr="gte",
+    )
+    due_date_to = django_filters.DateFilter(
+        label=_("Due Date Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="task_due_date",
+        lookup_expr="lt",
     )
 
     class Meta:
-        model = UserVisit
-        fields = ["user", "visit_date", "status", "flagged", "flags"]
         form = CSRFExemptForm
 
     def __init__(self, *args, **kwargs):
-        opportunity = kwargs.pop("opportunity", None)
+        self.opportunity = kwargs.pop("opportunity", None)
         super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
+        if self.opportunity:
+            active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
+            self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
 
-        if not switch_is_active(USER_VISIT_FILTERS):
-            self._restrict_to_user_filter()
-
-        if opportunity and "user" in self.filters:
-            user_filter = self.filters["user"]
-            user_queryset = (
-                User.objects.filter(opportunityaccess__opportunity=opportunity).distinct().order_by("name", "username")
+            worker_queryset = (
+                User.objects.filter(
+                    opportunityaccess__opportunity=self.opportunity,
+                    opportunityaccess__accepted=True,
+                )
+                .distinct()
+                .order_by("name", "username")
             )
-            user_choices = [(str(user.user_id), f"{user.name} ({user.username})") for user in user_queryset]
-            user_filter.extra["choices"] = user_choices
+            self.filters["worker_name"].extra["choices"] = [
+                (str(user.pk), user.display_name_with_username()) for user in worker_queryset
+            ]
 
-        if opportunity and "flags" in self.filters:
-            flag_choices = self._get_flag_choices(opportunity)
-            if flag_choices:
-                self.filters["flags"].extra["choices"] = flag_choices
-            else:
-                del self.filters["flags"]
 
-    def filter_flags(self, queryset, name, value):
-        if not value:
-            return queryset
-        return queryset.with_any_flags(value)
+class UserTasksFilterSet(django_filters.FilterSet):
+    task_status = django_filters.MultipleChoiceFilter(
+        label=_("Task Status"),
+        choices=TASK_STATUS_CHOICES,
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="status",
+    )
+    task_type = django_filters.MultipleChoiceFilter(
+        label=_("Task Type"),
+        choices=[],
+        widget=forms.SelectMultiple(attrs={"data-tomselect": "1"}),
+        field_name="task_type_id",
+    )
+    date_assigned_from = django_filters.DateFilter(
+        label="",
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        lookup_expr="gte",
+    )
+    date_assigned_to = django_filters.DateFilter(
+        label="",
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        lookup_expr="lte",
+    )
+    due_date_from = django_filters.DateFilter(
+        label="",
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="gte",
+    )
+    due_date_to = django_filters.DateFilter(
+        label="",
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="lte",
+    )
 
-    def filter_user(self, queryset, name, value):
-        if not value:
-            return queryset
-        return queryset.filter(user__user_id=value)
+    class Meta:
+        form = CSRFExemptForm
 
-    def _restrict_to_user_filter(self):
-        for filter_name in list(self.filters.keys()):
-            if filter_name != "user":
-                del self.filters[filter_name]
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_from"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_to"].extra["widget"].attrs["max"] = today
+        if self.opportunity:
+            active_tasks = TaskType.objects.filter(opportunity=self.opportunity, is_active=True)
+            self.filters["task_type"].extra["choices"] = [(str(t.pk), t.name) for t in active_tasks]
+        self.form.helper.layout = Layout(
+            "task_status",
+            "task_type",
+            Div(
+                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Date Assigned</p>'),
+                Div(
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
+                        "date_assigned_from",
+                        css_class="flex-1",
+                    ),
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
+                        "date_assigned_to",
+                        css_class="flex-1",
+                    ),
+                    css_class="flex gap-2",
+                ),
+                css_class="mb-3",
+            ),
+            Div(
+                HTML('<p class="block text-gray-700 text-sm font-bold mb-2">Due Date</p>'),
+                Div(
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">From</p>'),
+                        "due_date_from",
+                        css_class="flex-1",
+                    ),
+                    Div(
+                        HTML('<p class="text-gray-600 text-sm mb-1">To</p>'),
+                        "due_date_to",
+                        css_class="flex-1",
+                    ),
+                    css_class="flex gap-2",
+                ),
+                css_class="mb-3",
+            ),
+        )
 
-    def _get_flag_choices(self, opportunity):
-        verification_flags = OpportunityVerificationFlags.objects.filter(opportunity=opportunity).first()
-        if not verification_flags:
-            return []
 
-        enabled_flags = []
-        if verification_flags.duplicate:
-            enabled_flags.append(Flags.DUPLICATE.value)
-        if verification_flags.gps:
-            enabled_flags.append(Flags.GPS.value)
-        if verification_flags.location and verification_flags.location > 0:
-            enabled_flags.append(Flags.LOCATION.value)
-        if verification_flags.catchment_areas:
-            enabled_flags.append(Flags.CATCHMENT.value)
-        if verification_flags.form_submission_start or verification_flags.form_submission_end:
-            enabled_flags.append(Flags.FORM_SUBMISSION_PERIOD.value)
+class AssignedTaskFilterSet(django_filters.FilterSet):
+    worker_name = django_filters.ChoiceFilter(
+        label=_("Worker Name"),
+        choices=[],
+        field_name="opportunity_access__user__id",
+    )
+    task_status = django_filters.ChoiceFilter(
+        label=_("Task Status"),
+        choices=TASK_STATUS_CHOICES,
+        field_name="status",
+    )
+    task_type = django_filters.ChoiceFilter(
+        label=_("Task Type"),
+        choices=[],
+        field_name="task_type__id",
+    )
+    is_active = django_filters.BooleanFilter(
+        label=_("Is Active"),
+        field_name="task_type__is_active",
+    )
+    date_assigned_after = django_filters.DateFilter(
+        label=_("Date Assigned From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        # date_created is a DateTimeField; cast to date before comparing to avoid TZ fragility
+        lookup_expr="date__gte",
+    )
+    date_assigned_before = django_filters.DateFilter(
+        label=_("Date Assigned Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="date_created",
+        # date_created is a DateTimeField; cast to date before comparing to avoid TZ fragility
+        lookup_expr="date__lt",
+    )
+    due_date_after = django_filters.DateFilter(
+        label=_("Due Date From"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="gte",
+    )
+    due_date_before = django_filters.DateFilter(
+        label=_("Due Date Before"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+        field_name="due_date",
+        lookup_expr="lt",
+    )
 
-        deliver_unit_flag_rules = DeliverUnitFlagRules.objects.filter(opportunity=opportunity).all()
-        for rule in deliver_unit_flag_rules:
-            if rule.duration > 0:
-                enabled_flags.append(Flags.DURATION.value)
-            if rule.check_attachments:
-                enabled_flags.append(Flags.ATTACHMENT_MISSING.value)
-        return [(flag, FlagLabels.get_label(flag)) for flag in set(enabled_flags)]
+    class Meta:
+        form = CSRFExemptForm
+
+    def __init__(self, *args, **kwargs):
+        self.opportunity = kwargs.pop("opportunity", None)
+        super().__init__(*args, **kwargs)
+        today = date.today().isoformat()
+        self.filters["date_assigned_after"].extra["widget"].attrs["max"] = today
+        self.filters["date_assigned_before"].extra["widget"].attrs["max"] = today
+        if self.opportunity:
+            self.filters["task_type"].extra["choices"] = self._get_task_type_choices()
+            self.filters["worker_name"].extra["choices"] = self._get_worker_name_choices()
+        # Layout must be set after dynamic choices are populated above; accessing self.form
+        # triggers lazy field creation which caches choices — ChoiceFilter validates strictly.
+        self.form.helper.layout = Layout(
+            "worker_name",
+            "task_status",
+            "task_type",
+            "is_active",
+            Row(Column("date_assigned_after"), Column("date_assigned_before")),
+            Row(Column("due_date_after"), Column("due_date_before")),
+        )
+
+    def _get_task_type_choices(self):
+        """
+        Fetch task types with at least one `AssignedTask` for this opportunity
+        """
+        tasks = TaskType.objects.filter(assignedtask__opportunity_access__opportunity=self.opportunity).distinct()
+        return [(str(t.pk), t.name) for t in tasks]
+
+    def _get_worker_name_choices(self):
+        """
+        Fetch workers with at least one assigned task for this opportunity
+        """
+        workers = (
+            User.objects.filter(
+                opportunityaccess__opportunity=self.opportunity,
+                opportunityaccess__assignedtask__isnull=False,
+            )
+            .distinct()
+            .order_by("name", "username")
+        )
+        return [(str(u.pk), u.display_name_with_username()) for u in workers]

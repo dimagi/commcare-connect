@@ -16,7 +16,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
 )
 from commcare_connect.organization.models import Organization
-from commcare_connect.program.tests.factories import ManagedOpportunityFactory
+from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import (
     ConnectIdUserLinkFactory,
@@ -115,8 +115,12 @@ def mobile_user_with_connect_link(db, opportunity, paymentunit_options) -> User:
     payment_units = PaymentUnitFactory.create_batch(
         2, opportunity=opportunity, parent_payment_unit=None, **(paymentunit_options)
     )
-    budget_per_user = sum([p.max_total * p.amount for p in payment_units])
+    if opportunity.managed:
+        budget_per_user = sum(p.max_total * (p.amount + p.org_amount) for p in payment_units)
+    else:
+        budget_per_user = sum(p.max_total * p.amount for p in payment_units)
     opportunity.total_budget = budget_per_user
+    opportunity.save(update_fields=["total_budget"])
     OpportunityClaimLimit.create_claim_limits(opportunity, claim)
     ConnectIdUserLinkFactory(user=user, commcare_username=f"test@{opportunity.learn_app.cc_domain}.commcarehq.org")
     if opportunity.learn_app.cc_domain != opportunity.deliver_app.cc_domain:
@@ -139,6 +143,12 @@ def org_user_admin(organization) -> User:
 @pytest.fixture
 def program_manager_org(db) -> Organization:
     return ProgramManagerOrgWithUsersFactory()
+
+
+@pytest.fixture
+def managed_opportunity(organization, program_manager_org):
+    program = ProgramFactory(organization=program_manager_org)
+    return ManagedOpportunityFactory(program=program, organization=organization)
 
 
 @pytest.fixture

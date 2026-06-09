@@ -7,14 +7,17 @@ from django.db import transaction
 
 from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.microplanning.serializers import WorkAreaCaseSerializer
-from commcare_connect.opportunity.models import HQApiKey, OpportunityAccess
-from commcare_connect.users.models import ConnectIDUserLink
+from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess
+from commcare_connect.users.helpers import fetch_hq_user_uuid
+from commcare_connect.users.models import ConnectIDUserLink, User
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+
+HQ_CASE_BULK_CHUNK_SIZE = 100
 
 
 class GetCaseDataAPIFilters(TypedDict):
     case_type: str
-    case_name: str
+    external_id: str
 
 
 @dataclasses.dataclass
@@ -58,20 +61,15 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
 
 
 def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
-    if not (work_area.work_area_group and work_area.work_area_group.assigned_user):
-        raise ValueError("Work Area must have an assigned Opportunity Access through its Work Area Group")
+    if not work_area.opportunity_access:
+        raise ValueError("Work Area must have an assigned Opportunity Access")
 
-    opp_access = work_area.work_area_group.assigned_user
+    opp_access = work_area.opportunity_access
     api_key = opp_access.opportunity.api_key
     domain = opp_access.opportunity.deliver_app.cc_domain
     user = opp_access.user
     case_data = WorkAreaCaseSerializer(work_area).data
-    connect_id_user_link = ConnectIDUserLink.objects.filter(commcare_username=user.username.lower()).first()
-    if connect_id_user_link and connect_id_user_link.hq_case_id:
-        case_data["owner_id"] = connect_id_user_link.hq_case_id
-    else:
-        user_case = get_usercase(opp_access)
-        case_data["owner_id"] = user_case.case_id
+    case_data["owner_id"] = _resolve_hq_user_uuid(user, domain, api_key)
 
     with transaction.atomic():
         # Re-fetch with a row-level lock to prevent a race condition where two
@@ -82,6 +80,76 @@ def create_or_update_case_by_work_area(work_area: WorkArea) -> CommCareCase:
             locked_work_area.case_id = case.case_id
             locked_work_area.save(update_fields=["case_id"])
     return case
+
+
+def _resolve_hq_user_uuid(user: User, domain: str, api_key: HQApiKey) -> str:
+    link = ConnectIDUserLink.objects.get(user=user, domain=domain, hq_server=api_key.hq_server)
+    if link.hq_user_uuid:
+        return link.hq_user_uuid
+    hq_user_uuid = fetch_hq_user_uuid(link, api_key)
+    if hq_user_uuid is None:
+        raise CommCareHQAPIException(f"Failed to find HQ user for {user.username.lower()} on {domain} HQ domain.")
+    link.hq_user_uuid = hq_user_uuid
+    link.save(update_fields=["hq_user_uuid"])
+    return hq_user_uuid
+
+
+def bulk_create_or_update_cases_by_work_areas(
+    work_areas: list[WorkArea], opportunity: Opportunity
+) -> list[CommCareCase]:
+    """Sync a batch of work areas to HQ in a single UPSERT call keyed on external_id."""
+    if not work_areas:
+        return []
+
+    api_key = opportunity.api_key
+    domain = opportunity.deliver_app.cc_domain
+
+    wa_by_username: dict[str, WorkArea] = {wa.opportunity_access.user.username.lower(): wa for wa in work_areas}
+    owner_id_by_username: dict[str, str] = {
+        username: _resolve_hq_user_uuid(wa.opportunity_access.user, domain, api_key)
+        for username, wa in wa_by_username.items()
+    }
+
+    cases_data = []
+    for wa in work_areas:
+        case_data = dict(WorkAreaCaseSerializer(wa).data)
+        case_data["owner_id"] = owner_id_by_username[wa.opportunity_access.user.username.lower()]
+        case_data["create"] = None  # UPSERT: HQ decides create vs update via external_id
+        cases_data.append(case_data)
+
+    cases = bulk_create_or_update_cases(api_key, domain, cases_data)
+
+    wa_by_id = {str(wa.pk): wa for wa in work_areas if wa.case_id is None}
+    newly_created = []
+    for case in cases:
+        if case.external_id in wa_by_id:
+            wa = wa_by_id[case.external_id]
+            wa.case_id = case.case_id
+            newly_created.append(wa)
+    if newly_created:
+        WorkArea.objects.bulk_update(newly_created, ["case_id"])
+
+    return cases
+
+
+def bulk_create_or_update_cases(
+    api_key: HQApiKey,
+    domain: str,
+    cases_data: list[dict[str, Any]],
+) -> list[CommCareCase]:
+    url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
+    headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
+    cases = []
+    with httpx.Client(headers=headers) as client:
+        for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
+            chunk = cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]  # noqa: E203
+            try:
+                response = client.post(url, json=chunk)
+                response.raise_for_status()
+            except (httpx.HTTPStatusError, httpx.RequestError) as e:
+                raise CommCareHQAPIException(f"Failed to bulk update cases for {domain}. HQ Error: {e}") from e
+            cases.extend(CommCareCase(**case_data) for case_data in response.json().get("cases", []))
+    return cases
 
 
 def create_or_update_case(
@@ -109,30 +177,51 @@ def create_or_update_case(
     return CommCareCase(**data.get("case", {}))
 
 
-def update_usercase(opportunity_access: OpportunityAccess, data: dict[str, Any]) -> CommCareCase:
-    domain = opportunity_access.opportunity.deliver_app.cc_domain
-    api_key = opportunity_access.opportunity.api_key
+def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> None:
+    """Update usercase properties on CommCare HQ for multiple users in a single bulk request.
+
+    All entries in `updates` must belong to the same opportunity. The domain, API key, and
+    HQ server are derived from the first entry and applied to the entire batch.
+    """
+    if not updates:
+        return
+
+    first_access = next(iter(updates))
+    domain = first_access.opportunity.deliver_app.cc_domain
+    api_key = first_access.opportunity.api_key
     hq_server = api_key.hq_server
 
-    link = ConnectIDUserLink.objects.get(user=opportunity_access.user, domain=domain, hq_server=hq_server)
-    if link.hq_case_id is None:
-        usercase = get_usercase(opportunity_access)
-        link.hq_case_id = usercase.case_id
-        link.save()
+    users = [access.user for access in updates]
+    links = ConnectIDUserLink.objects.filter(user__in=users, domain=domain, hq_server=hq_server)
+    links_by_user = {link.user_id: link for link in links}
 
-    return create_or_update_case(api_key, domain, data, case_id=link.hq_case_id)
+    cases_data = []
+    for access, data in updates.items():
+        link = links_by_user.get(access.user_id)
+        if link is None:
+            hq_case_id = get_usercase(access).case_id
+        elif link.hq_case_id is None:
+            hq_case_id = get_usercase(access).case_id
+            link.hq_case_id = hq_case_id
+            link.save()
+        else:
+            hq_case_id = link.hq_case_id
+        cases_data.append({"case_id": hq_case_id, "create": False, **data})
+
+    bulk_create_or_update_cases(api_key, domain, cases_data)
 
 
 def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
     domain = opportunity_access.opportunity.deliver_app.cc_domain
     api_key = opportunity_access.opportunity.api_key
     user = opportunity_access.user
+    hq_user_uuid = _resolve_hq_user_uuid(user, domain, api_key)
     case_data = get_case_list(
         api_key,
         domain,
         filters={
             "case_type": "commcare-user",
-            "case_name": user.username.lower(),
+            "external_id": hq_user_uuid,
         },
     )
     usercase = next(iter(case_data), None)

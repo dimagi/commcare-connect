@@ -28,7 +28,14 @@ document.addEventListener('DOMContentLoaded', () => {
       let data = el.getAttribute('data-tomselect:settings');
       Object.assign(settings, JSON.parse(data));
     }
-    new TomSelect(el, settings);
+    if (settings.create === true) {
+      // Must match TOMSELECT_NEW_ENTRY_PREFIX in commcare_connect/utils/forms.py
+      settings.create = (input) => ({ value: 'new:' + input, text: input });
+    }
+    const ts = new TomSelect(el, settings);
+    ts.on('change', () => {
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   });
 
   document.dispatchEvent(new CustomEvent('tomselect-elements:initialized'));

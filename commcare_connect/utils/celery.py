@@ -1,5 +1,4 @@
 from celery.result import AsyncResult
-from django.core.files.storage import storages
 from django.http import FileResponse, Http404
 from django.shortcuts import render
 from django_tables2.export import TableExport
@@ -7,6 +6,7 @@ from django_tables2.export import TableExport
 CELERY_TASK_SUCCESS = "SUCCESS"
 CELERY_TASK_IN_PROGRESS = "PROGRESS"
 CELERY_TASK_PENDING = "PENDING"
+CELERY_TASK_FAILURE = "FAILURE"
 
 
 def set_task_progress(task, message, is_complete=False):
@@ -43,7 +43,7 @@ def render_export_status(
         "message": get_task_progress_message(task),
     }
 
-    if status == "FAILURE":
+    if status == CELERY_TASK_FAILURE:
         progress["error"] = task_meta.get("result")
 
     return render(
@@ -75,7 +75,12 @@ def download_export_file(
         raise Http404("Export file not found")
 
     export_format = saved_filename.split(".")[-1]
-    export_file = storages["default"].open(saved_filename)
+    from commcare_connect.utils.storages import ExportS3Boto3Storage
+
+    try:
+        export_file = ExportS3Boto3Storage().open(saved_filename)
+    except FileNotFoundError as e:
+        raise Http404("Export file no longer available") from e
 
     return FileResponse(
         export_file,

@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from commcare_connect.opportunity.app_xml import Module, get_connect_blocks_for_app, get_form_xml_for_app
+from commcare_connect.opportunity.app_xml import (
+    Module,
+    TaskUnit,
+    get_connect_blocks_for_app,
+    get_form_xml_for_app,
+    get_task_units_for_app,
+)
 from commcare_connect.opportunity.tests.factories import CommCareAppFactory
 
 
@@ -28,7 +34,7 @@ def test_get_form_xml_for_app(httpx_mock, demo_app_ccz_content):
     httpx_mock.add_response(content=demo_app_ccz_content)
     app = CommCareAppFactory(cc_domain="demo_domain", cc_app_id="app_id")
     form_xml = get_form_xml_for_app(app)
-    assert len(form_xml) == 4
+    assert len(form_xml) == 5
     assert "http://openrosa.org/formdesigner/52F02F3E-320D-4D91-9EBF-FF4F06226E98" in form_xml[0]
     assert "http://openrosa.org/formdesigner/EC1AD740-D2C9-4532-AECC-2D5CF5364696" in form_xml[1]
     assert "http://openrosa.org/formdesigner/11151AA2-1599-4C5E-8013-5E2197B6C68E" in form_xml[2]
@@ -60,4 +66,15 @@ def test_get_connect_blocks_for_app(httpx_mock, demo_app_ccz_content):
             description="Module 3 in the series",
             time_estimate=3,
         ),
+    ]
+
+
+@pytest.mark.django_db
+def test_get_task_units_for_app(httpx_mock, demo_app_ccz_content):
+    httpx_mock.add_response(content=demo_app_ccz_content)
+    app = CommCareAppFactory(cc_domain="demo_domain", cc_app_id="app_id")
+    task_units = get_task_units_for_app(app)
+    assert task_units == [
+        TaskUnit(id="task_1", name="Task One", description="Description for task one"),
+        TaskUnit(id="task_2", name="Task Two", description="Description for task two"),
     ]

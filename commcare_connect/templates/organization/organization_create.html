@@ -2,12 +2,10 @@
 {% load i18n %}
 {% load static %}
 {% load crispy_forms_tags %}
-
 {% block css %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 {% endblock %}
-
 {% block javascript %}
   {{ block.super }}
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
@@ -18,6 +16,7 @@
         orgSelect: null,
         selectedEntity: '',
         selectedWorkspaceSlug: '',
+        isNewEntity: false,
 
 
         init() {
@@ -30,6 +29,7 @@
 
             this.$refs.llo_entity.tomselect.on('change', (value) => {
               this.selectedEntity = value;
+              this.isNewEntity = value ? value.startsWith('new:') : false;
               this.selectedWorkspaceSlug = '';
               this.updateWorkspaceOptions(value);
             });
@@ -68,34 +68,27 @@
     });
   </script>
 {% endblock javascript %}
-
 {% block title %}
   {% trans "Connect - New Workspace" %}
 {% endblock title %}
-
 {% block content %}
-<div class="container md:max-w-screen-lg mx-auto flex flex-col gap-4">
-  <div class="title text-brand-deep-purple">
-    {% trans "Create a New Workspace" %}
+  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-4">
+    <div class="title text-brand-deep-purple">{% trans "Create a New Workspace" %}</div>
+    <form action="{% url 'organization_create' %}" method="post">
+      {% csrf_token %}
+      {{ form.get_entity_wise_orgs|json_script:"entity-wise-orgs" }}
+      <div x-data="createOrgHandler(JSON.parse(document.getElementById('entity-wise-orgs').textContent))">
+        <div class="mb-4">{{ form.llo_entity|as_crispy_field }}</div>
+        <div class="mb-4" x-show="isNewEntity" x-cloak x-transition>{{ form.llo_entity_short_name|as_crispy_field }}</div>
+        <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>{{ form.org|as_crispy_field }}</div>
+        <button class="button button-md primary-dark float-end"
+                x-show="!selectedWorkspaceSlug"
+                type="submit">{% trans "Create Workspace" %}</button>
+        <a :href="`{% url 'opportunity:list' 'SLUG_PLACEHOLDER' %}`.replace('SLUG_PLACEHOLDER', selectedWorkspaceSlug)"
+           class="button button-md primary-dark float-end"
+           x-show="selectedWorkspaceSlug"
+           x-cloak>{% trans "Switch to Selected Workspace" %}</a>
+      </div>
+    </form>
   </div>
-  <form action="{% url 'organization_create' %}" method="post">
-    {% csrf_token %}
-    {{ form.get_entity_wise_orgs|json_script:"entity-wise-orgs" }}
-    <div x-data="createOrgHandler(JSON.parse(document.getElementById('entity-wise-orgs').textContent))">
-      <div class="mb-4" >
-        {{ form.llo_entity|as_crispy_field }}
-      </div>
-      <div class="mb-4" x-show="selectedEntity" x-cloak x-transition>
-        {{ form.org|as_crispy_field }}
-      </div>
-      <button class="button button-md primary-dark float-end" x-show="!selectedWorkspaceSlug" type="submit">
-        {% trans "Create Workspace" %}
-      </button>
-      <a :href="`{% url 'opportunity:list' 'SLUG_PLACEHOLDER' %}`.replace('SLUG_PLACEHOLDER', selectedWorkspaceSlug)"
-         class="button button-md primary-dark float-end" x-show="selectedWorkspaceSlug" x-cloak>
-        {% trans "Switch to Selected Workspace" %}
-      </a>
-    </div>
-  </form>
-</div>
 {% endblock content %}

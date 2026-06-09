@@ -30,4 +30,11 @@ urlpatterns = [
     path("connect_user_otp/", RetrieveUserOTPView.as_view(), name="connect_user_otp"),
     path("toggles/", UserToggleView.as_view(), name="user_toggle_view"),
     path("internal_features/", views.internal_features, name="internal_features"),
+    path("permission_management/", view=views.permission_management, name="permission_management"),
+    path(
+        "permission_management_search/", view=views.permission_management_search, name="permission_management_search"
+    ),
+    path(
+        "permission_management_update/", view=views.permission_management_update, name="permission_management_update"
+    ),
 ]

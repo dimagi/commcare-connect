@@ -28,6 +28,8 @@ from django.utils.timezone import now
 
 from commcare_connect.opportunity.models import (
     Assessment,
+    AssignedTask,
+    AssignedTaskStatus,
     CompletedModule,
     CompletedWork,
     CompletedWorkStatus,
@@ -288,6 +290,7 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
         total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
         queryset = queryset.annotate(
+            status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
             payment_unit_id=Value(payment_unit.pk, output_field=IntegerField()),
             payment_unit_payment_unit_id=Value(payment_unit.payment_unit_id, output_field=UUIDField()),
             payment_unit=Value(payment_unit.name, output_field=CharField()),
@@ -552,31 +555,32 @@ class OpportunityData:
         return [qs_by_id[oid] for oid in opp_ids if oid in qs_by_id]
 
 
-def get_worker_table_data(opportunity):
-    return (
-        UserInvite.objects.filter(opportunity=opportunity)
-        .annotate(
-            days_to_complete_learn=ExpressionWrapper(
-                F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
-                output_field=DurationField(),
-            ),
-            first_delivery=Min(
-                "opportunity_access__uservisit__visit_date",
-            ),
-            days_to_start_delivery=Case(
-                When(
-                    opportunity_access__date_learn_started__isnull=False,
-                    first_delivery__isnull=False,
-                    then=ExpressionWrapper(
-                        F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
-                    ),
-                ),
-                default=None,
-                output_field=DurationField(),
-            ),
+def get_worker_table_data(opportunity, search_term=None):
+    qs = UserInvite.objects.filter(opportunity=opportunity)
+    if search_term:
+        qs = qs.filter(
+            Q(opportunity_access__user__name__icontains=search_term) | Q(phone_number__icontains=search_term)
         )
-        .select_related("opportunity_access", "opportunity_access__user")
-    )
+    return qs.annotate(
+        days_to_complete_learn=ExpressionWrapper(
+            F("opportunity_access__completed_learn_date") - F("opportunity_access__date_learn_started"),
+            output_field=DurationField(),
+        ),
+        first_delivery=Min(
+            "opportunity_access__uservisit__visit_date",
+        ),
+        days_to_start_delivery=Case(
+            When(
+                opportunity_access__date_learn_started__isnull=False,
+                first_delivery__isnull=False,
+                then=ExpressionWrapper(
+                    F("first_delivery") - F("opportunity_access__date_learn_started"), output_field=DurationField()
+                ),
+            ),
+            default=None,
+            output_field=DurationField(),
+        ),
+    ).select_related("opportunity_access", "opportunity_access__user")
 
 
 def get_worker_learn_table_data(opportunity):
@@ -592,6 +596,7 @@ def get_worker_learn_table_data(opportunity):
         .values("total_duration")[:1]
     )
     queryset = OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True).annotate(
+        status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
         completed_modules_count=Count("completedmodule__module", distinct=True),
         assesment_count=Count("assessment", distinct=True),
         learning_hours=Subquery(duration_subquery, output_field=DurationField()),
@@ -606,6 +611,55 @@ def get_worker_learn_table_data(opportunity):
         ),
     )
     return queryset
+
+
+def get_worker_tasks_base_queryset(opportunity):
+    """Return the annotated queryset for the worker tasks table.
+
+    One row per (worker, active task) pair. Only workers with active tasks
+    are included. Ordered by user name then task creation date, as required
+    by `GroupedByWorkerMixin` for correct row grouping.
+    """
+    return (
+        OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
+        .select_related("user")
+        .annotate(
+            status=Subquery(UserInvite.objects.filter(opportunity_access=OuterRef("pk")).values("status")[:1]),
+            task_name=F("assignedtask__task_type__name"),
+            task_id=F("assignedtask__task_type__id"),
+            date_assigned=F("assignedtask__date_created"),
+            task_due_date=F("assignedtask__due_date"),
+            task_status=F("assignedtask__status"),
+            task_is_active=F("assignedtask__task_type__is_active"),
+        )
+        .filter(task_is_active=True)
+        .order_by("user__name", "assignedtask__date_created")
+    )
+
+
+def get_worker_work_area_table_data(opportunity):
+    visits_done_subquery = (
+        UserVisit.objects.filter(
+            opportunity=opportunity,
+            opportunity_access=OuterRef("pk"),
+            work_area__isnull=False,
+        )
+        .values("opportunity_access")
+        .annotate(total=Count("id"))
+        .values("total")[:1]
+    )
+
+    return (
+        OpportunityAccess.objects.filter(opportunity=opportunity, accepted=True)
+        .select_related("user")
+        .annotate(
+            assigned_buildings=Coalesce(Sum("workarea__building_count"), Value(0)),
+            assigned_visits=Coalesce(Sum("workarea__expected_visit_count"), Value(0)),
+            assigned_work_areas=Count("workarea"),
+            assigned_work_area_groups=Count("workarea__work_area_group", distinct=True),
+            visits_done=Coalesce(Subquery(visits_done_subquery), Value(0), output_field=IntegerField()),
+        )
+    )
 
 
 def get_opportunity_delivery_progress(opp_id):
@@ -636,74 +690,25 @@ def get_opportunity_delivery_progress(opp_id):
         output_field=DateTimeField(),
     )
 
-    flagged_deliveries_waiting_review_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__status=VisitValidationStatus.pending,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
-    flagged_deliveries_since_yesterday_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__status=VisitValidationStatus.pending,
-                uservisit__visit_date__gte=yesterday,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
-    deliveries_pending_pm_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__review_status=VisitReviewStatus.pending,
-                uservisit__status=VisitValidationStatus.approved,
-                uservisit__review_created_on__isnull=False,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
-    deliveries_pending_pm_yesterday_sq = Coalesce(
-        Subquery(
-            CompletedWork.objects.filter(
-                opportunity_access__opportunity_id=OuterRef("pk"),
-                uservisit__review_status=VisitReviewStatus.pending,
-                uservisit__review_created_on__isnull=False,
-                uservisit__status=VisitValidationStatus.approved,
-                uservisit__review_created_on__gte=yesterday,
-            )
-            .values("opportunity_access__opportunity_id")
-            .annotate(count=Count("id", distinct=True))
-            .values("count"),
-            output_field=IntegerField(),
-        ),
-        0,
-    )
-
     recent_payment_sq = Subquery(
         Payment.objects.filter(opportunity_access__opportunity_id=OuterRef("pk"))
         .values("opportunity_access__opportunity_id")
         .annotate(latest=Max("date_paid"))
         .values("latest")[:1],
         output_field=DateTimeField(),
+    )
+    active_tasks_count = Coalesce(
+        Subquery(
+            AssignedTask.objects.filter(
+                opportunity_access__opportunity_id=OuterRef("pk"),
+                status=AssignedTaskStatus.ASSIGNED,
+            )
+            .values("opportunity_access__opportunity_id")
+            .annotate(total=Count("pk"))
+            .values("total"),
+            output_field=IntegerField(),
+        ),
+        0,
     )
 
     annotated_opportunity = Opportunity.objects.filter(id=opp_id).annotate(
@@ -712,16 +717,13 @@ def get_opportunity_delivery_progress(opp_id):
         accrued_since_yesterday=accrued_since_yesterday_sq,
         most_recent_delivery=most_recent_delivery_sq,
         total_deliveries=get_deliveries_count_subquery(),
-        flagged_deliveries_waiting_for_review=flagged_deliveries_waiting_review_sq,
-        flagged_deliveries_waiting_for_review_since_yesterday=flagged_deliveries_since_yesterday_sq,
-        deliveries_pending_for_pm_review=deliveries_pending_pm_sq,
-        deliveries_pending_for_pm_review_since_yesterday=deliveries_pending_pm_yesterday_sq,
         recent_payment=recent_payment_sq,
         workers_invited=workers_invited_subquery(),
         pending_invites=pending_invites_subquery(),
         total_accrued=total_accrued_sq(),
         total_paid=total_paid_sq(),
         payments_due=ExpressionWrapper(F("total_accrued") - F("total_paid"), output_field=DecimalField()),
+        active_tasks_count=active_tasks_count,
     )
 
     return annotated_opportunity.first()

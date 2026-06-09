@@ -48,6 +48,7 @@ class MobileUserFactory(DjangoModelFactory):
 
 class LLOEntityFactory(DjangoModelFactory):
     name = Faker("company")
+    short_name = Faker("company_suffix")
 
     class Meta:
         model = LLOEntity

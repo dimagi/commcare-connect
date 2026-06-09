@@ -22,7 +22,7 @@ class AdminReportTable(tables.Table):
     max_time_to_payment = columns.Column(verbose_name="Max Time to Payment")
     avg_top_earned_flws = SumColumn(verbose_name="Average Earned by Top FLWs")
     intervention_funding_deployed = SumColumn(verbose_name="Intervention Funding Deployed")
-    organization_funding_deployed = SumColumn(verbose_name="Workspace Funding Deployed")
+    organization_funding_deployed = SumColumn(verbose_name="Organization Funding Deployed")
     services = SumColumn(verbose_name="Verified Services")
 
     class Meta:
@@ -57,6 +57,10 @@ class InvoiceReportTable(tables.Table):
         accessor="opportunity__name",
         verbose_name=_("Opportunity Name"),
     )
+    program_name = columns.Column(
+        accessor="program_name",
+        verbose_name=_("Program Name"),
+    )
     invoice_number = columns.Column(orderable=False, verbose_name=_("Invoice Number"))
     amount = columns.Column(verbose_name=_("Amount"))
     amount_usd = columns.Column(verbose_name=_("Amount (USD)"))
@@ -74,6 +78,7 @@ class InvoiceReportTable(tables.Table):
         fields = (
             "opportunity_id",
             "opportunity_name",
+            "program_name",
             "invoice_number",
             "amount",
             "amount_usd",

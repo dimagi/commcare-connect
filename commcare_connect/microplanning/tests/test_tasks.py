@@ -1,11 +1,13 @@
 import csv
 import io
+from unittest import mock
 
 import pytest
 
 from commcare_connect.microplanning.models import WorkArea
-from commcare_connect.microplanning.tasks import WorkAreaCSVImporter
+from commcare_connect.microplanning.tasks import WorkAreaCSVImporter, send_work_area_assignment_notification
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
 
 @pytest.fixture
@@ -24,8 +26,7 @@ class TestWorkAreaCSVImporter:
         "Boundary",
         "Building Count",
         "Expected Visit Count",
-        "Max WAG",
-        "WAG Serial Number",
+        "Target Population",
         "LGA",
         "State",
     ]
@@ -50,8 +51,7 @@ class TestWorkAreaCSVImporter:
                     self.POLYGON,
                     5,
                     "6",
-                    "3",
-                    "WAG123",
+                    "100",
                     "LGA1",
                     "State1",
                 ]
@@ -140,8 +140,7 @@ class TestWorkAreaCSVImporter:
             "Centroid",
             "Ward",
             "Building Count",
-            "Max WAG",
-            "WAG Serial Number",
+            "Target Population",
             "State",
             "LGA",
         ]
@@ -153,8 +152,7 @@ class TestWorkAreaCSVImporter:
             self.CENTROID,
             "ward-1",
             "5",
-            "7",
-            "WAG456",
+            "50",
             "State2",
             "LGA2",
         ]
@@ -177,5 +175,20 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, csv).run()
         assert "errors" in result
         error_keys = " ".join(result["errors"].keys()).lower()
-        expected_error = "Missing values for properties: max_wag, wag_serial_number, lga, state"
+        expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
+
+
+@pytest.mark.django_db
+def test_send_work_area_assignment_notification(opportunity):
+    access = OpportunityAccessFactory(opportunity=opportunity)
+    with mock.patch("commcare_connect.microplanning.tasks.send_message") as send_message_mock:
+        send_work_area_assignment_notification(access.pk)
+
+    send_message_mock.assert_called_once()
+    message = send_message_mock.call_args.args[0]
+    assert message.usernames == [access.user.username]
+    assert message.data["key"] == "work_area_assignment"
+    assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
+    assert message.data["title"]
+    assert message.data["body"]

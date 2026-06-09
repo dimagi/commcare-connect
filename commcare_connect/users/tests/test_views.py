@@ -16,6 +16,7 @@ from commcare_connect.opportunity.tests.factories import OpportunityAccessFactor
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.forms import UserAdminChangeForm
 from commcare_connect.users.models import ConnectIDUserLink, User
+from commcare_connect.users.tests.factories import UserFactory
 from commcare_connect.users.views import UserRedirectView, UserToggleView, UserUpdateView, create_user_link_view
 from commcare_connect.utils.error_codes import ErrorCodes
 
@@ -274,3 +275,130 @@ class TestUserToggleView:
         assert inactive_flag_response["active"] is False
         assert "created" in inactive_flag_response
         assert "modified" in inactive_flag_response
+
+
+class TestPermissionManagement:
+    """Tests for the internal permission management page."""
+
+    @pytest.fixture
+    def admin_user(self):
+        user = UserFactory(email="admin@dimagi.com")
+        perm = Permission.objects.get(codename="manage_internal_permissions")
+        user.user_permissions.add(perm)
+        return user
+
+    @pytest.fixture
+    def target_user(self):
+        return UserFactory(email="target@example.com")
+
+    @property
+    def page_url(self):
+        return reverse("users:permission_management")
+
+    @property
+    def search_url(self):
+        return reverse("users:permission_management_search")
+
+    @property
+    def update_url(self):
+        return reverse("users:permission_management_update")
+
+    def test_unauthenticated_user_cannot_access(self, client):
+        response = client.get(self.page_url)
+        assert response.status_code == 302  # redirect to login
+
+    def test_user_without_permission_gets_403(self, user, client):
+        client.force_login(user)
+        response = client.get(self.page_url)
+        assert response.status_code == 403
+
+    def test_user_without_permission_gets_403_on_search(self, user, client):
+        client.force_login(user)
+        response = client.get(self.search_url, {"email": "test@example.com"})
+        assert response.status_code == 403
+
+    def test_user_without_permission_gets_403_on_update(self, user, client):
+        client.force_login(user)
+        response = client.post(self.update_url, {"user_id": user.id})
+        assert response.status_code == 403
+
+    def test_admin_can_access_page(self, admin_user, client):
+        client.force_login(admin_user)
+        response = client.get(self.page_url)
+        assert response.status_code == 200
+
+    def test_search_finds_user_by_email(self, admin_user, target_user, client):
+        client.force_login(admin_user)
+        response = client.get(self.search_url, {"email": target_user.email})
+        assert response.status_code == 200
+        assert target_user.email in response.content.decode()
+
+    def test_search_case_insensitive(self, admin_user, target_user, client):
+        client.force_login(admin_user)
+        response = client.get(self.search_url, {"email": target_user.email.upper()})
+        assert response.status_code == 200
+        assert target_user.email in response.content.decode()
+
+    def test_search_no_match(self, admin_user, client):
+        client.force_login(admin_user)
+        response = client.get(self.search_url, {"email": "nonexistent@example.com"})
+        assert response.status_code == 200
+        assert "No user found" in response.content.decode()
+
+    def test_grant_permission(self, admin_user, target_user, client):
+        client.force_login(admin_user)
+        response = client.post(
+            self.update_url,
+            {"user_id": target_user.id, "permissions": ["otp_access"]},
+        )
+        assert response.status_code == 200
+        # Re-fetch to clear cached permissions
+        target_user = User.objects.get(pk=target_user.pk)
+        assert target_user.has_perm("users.otp_access")
+
+    def test_revoke_permission(self, admin_user, target_user, client):
+        perm = Permission.objects.get(codename="otp_access")
+        target_user.user_permissions.add(perm)
+        client.force_login(admin_user)
+        response = client.post(
+            self.update_url,
+            {"user_id": target_user.id},
+        )
+        assert response.status_code == 200
+        # Re-fetch to clear cached permissions
+        target_user = User.objects.get(pk=target_user.pk)
+        assert not target_user.has_perm("users.otp_access")
+
+    def test_revoke_one_of_multiple_permissions(self, admin_user, target_user, client):
+        otp_perm = Permission.objects.get(codename="otp_access")
+        demo_perm = Permission.objects.get(codename="demo_users_access")
+        target_user.user_permissions.add(otp_perm, demo_perm)
+        client.force_login(admin_user)
+        # Keep otp_access, remove demo_users_access
+        response = client.post(
+            self.update_url,
+            {"user_id": target_user.id, "permissions": ["otp_access"]},
+        )
+        assert response.status_code == 200
+        target_user = User.objects.get(pk=target_user.pk)
+        assert target_user.has_perm("users.otp_access")
+        assert not target_user.has_perm("users.demo_users_access")
+
+    def test_cannot_remove_own_manage_permission(self, admin_user, client):
+        client.force_login(admin_user)
+        # POST without manage_internal_permissions in the list — should not remove it from self
+        # but other submitted permissions should still be applied
+        response = client.post(
+            self.update_url,
+            {"user_id": admin_user.id, "permissions": ["otp_access"]},
+        )
+        assert response.status_code == 200
+        admin_user = User.objects.get(pk=admin_user.pk)
+        assert admin_user.has_perm("users.manage_internal_permissions")
+        assert admin_user.has_perm("users.otp_access")
+
+    def test_internal_features_shows_permission_management_card(self, admin_user, client):
+        client.force_login(admin_user)
+        response = client.get(reverse("users:internal_features"))
+        assert response.status_code == 200
+        assert "Permission Management" in response.content.decode()

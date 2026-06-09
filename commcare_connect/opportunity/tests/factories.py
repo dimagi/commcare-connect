@@ -1,11 +1,11 @@
-from datetime import timezone
+from datetime import date, timedelta, timezone
 
 from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.opportunity.models import Country, Currency, VisitValidationStatus
-from commcare_connect.users.tests.factories import OrganizationFactory
+from commcare_connect.opportunity.models import AssignedTaskStatus, Country, Currency, VisitValidationStatus
+from commcare_connect.users.tests.factories import OrganizationFactory, UserFactory
 
 
 class ApplicationFactory(DictFactory):
@@ -267,15 +267,27 @@ class PaymentInvoiceFactory(DjangoModelFactory):
         model = "opportunity.PaymentInvoice"
 
 
-class TaskFactory(DjangoModelFactory):
+class TaskTypeFactory(DjangoModelFactory):
     app = SubFactory(CommCareAppFactory)
     slug = Faker("slug")
     name = Faker("name")
     description = Faker("text")
-    time_estimate = Faker("pyint", min_value=1, max_value=8)
 
     class Meta:
-        model = "opportunity.Task"
+        model = "opportunity.TaskType"
+
+
+class AssignedTaskFactory(DjangoModelFactory):
+    task_type = SubFactory(TaskTypeFactory)
+    opportunity_access = SubFactory(OpportunityAccessFactory)
+    completed_at = Faker("date_time", tzinfo=timezone.utc)
+    duration = LazyFunction(lambda: timedelta(hours=1))
+    status = AssignedTaskStatus.ASSIGNED
+    due_date = LazyFunction(lambda: (date.today() + timedelta(days=7)))
+    assigned_by = SubFactory(UserFactory)
+
+    class Meta:
+        model = "opportunity.AssignedTask"
 
 
 class ExchangeRateFactory(DjangoModelFactory):

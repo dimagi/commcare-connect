@@ -43,10 +43,7 @@ def organization_home(request, org_slug):
         if form.is_valid():
             messages.success(request, gettext("Workspace details saved!"))
             form.save()
-            # This form needs to be repopulated with the cleaned_data due to the
-            # newly created choice, since the form data field is not updated when
-            # creating new instances of objects in ModelChoiceFields.
-            form = OrganizationChangeForm(form.cleaned_data, instance=org, user=request.user)
+            return redirect("organization:home", org_slug)
 
     if not form:
         form = OrganizationChangeForm(instance=org, user=request.user)
