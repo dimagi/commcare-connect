@@ -1,8 +1,6 @@
-Hi,
+{% extends "email/base.txt" %}
+{% block content %}Hi,
 
 You have been invited to join the Program "{{ application.program.name }}".
 
-Click here ({{ program_url }}) to review and apply for the Program.
-
-Thank you,
-Connect
+Click here ({{ program_url }}) to review and apply for the Program.{% endblock %}

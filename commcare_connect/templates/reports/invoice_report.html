@@ -1,0 +1,106 @@
+    {% extends 'base.html' %}
+    {% load static i18n %}
+    {% load render_table from django_tables2 %}
+    {% load crispy_forms_tags %}
+
+    {% block css %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+    {% endblock css %}
+    {% block javascript %}
+    {{ block.super }}
+    <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+    {% endblock javascript %}
+
+    {% block content %}
+    <div class="flex items-center justify-center">
+        <div class="flex flex-col gap-2 w-full">
+
+            <!-- Header -->
+            <div
+                class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
+                <p class="text-brand-deep-purple">
+                    {{ title }}
+                </p>
+
+                <div class="flex gap-x-4" x-cloak x-data="{ showFilterModal: false }">
+
+                    {% if task_id %}
+                    <div class="flex">
+                        <div
+                        hx-get="{% url 'reports:export_status' task_id  %}"
+                        hx-target="this"
+                        hx-trigger="load"
+                        hx-swap="outerHTML"
+                        class="flex items-center justify-center"
+                        >
+                        <div class="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                        <span class="sr-only">{% trans "Loading..." %}</span>
+                        </div>
+                    </div>
+                    {% else %}
+                       <button
+                            type="button"
+                            x-tooltip.raw="Export uses the currently applied filters."
+                            hx-post="{% url 'reports:export_invoice_report' %}"
+                            hx-include="#filterForm"
+                            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                            class="relative button-icon"
+                        >
+                            <i class="fa-solid fa-download text-brand-deep-purple"></i>
+                        </button>
+                    {% endif %}
+
+                    <!-- Filter button -->
+                    <button title="Filters" type="button" @click="showFilterModal = true" class="relative button-icon">
+                        <i class="fa-solid fa-sliders text-brand-deep-purple"></i>
+
+                        {% if filters_applied_count %}
+                        <span class="absolute flex items-center justify-center
+                            w-5 h-5 text-xs font-bold text-white
+                            bg-brand-marigold border-2 border-white rounded-full
+                            transform translate-x-1/2 -translate-y-1/2">
+                            {{ filters_applied_count }}
+                        </span>
+                        {% endif %}
+                    </button>
+
+                    <!-- Filter Modal -->
+                    <div x-show="showFilterModal" class="modal-backdrop">
+                        <div class="modal">
+                            <div class="header text-lg font-semibold text-brand-deep-purple">
+                                <h1>{% trans "Filters" %}</h1>
+                                <button @click="showFilterModal = false">
+                                    <i class="fa-solid fa-xmark text-xl"></i>
+                                </button>
+                            </div>
+
+                            <form id="filterForm" method="get">
+                                <div class="modal-body">
+                                    {% crispy filter.form %}
+                                </div>
+
+                                <div class="footer">
+                                    <button type="button" @click="showFilterModal = false"
+                                        class="button button-md outline-style">
+                                        {% trans "Close" %}
+                                    </button>
+
+                                    <button type="submit" @click="showFilterModal = false"
+                                        class="button button-md primary-dark">
+                                        {% trans "Apply" %}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <!-- Table -->
+            {% render_table table %}
+
+        </div>
+
+</div>
+{% endblock %}

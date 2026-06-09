@@ -1,10 +1,10 @@
 from datetime import timezone
 
-from factory import DictFactory, Faker, LazyAttribute, SelfAttribute, SubFactory
+from factory import DictFactory, Faker, LazyAttribute, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.commcarehq.tests.factories import HQServerFactory
-from commcare_connect.opportunity.models import VisitValidationStatus
+from commcare_connect.opportunity.models import Country, Currency, VisitValidationStatus
 from commcare_connect.users.tests.factories import OrganizationFactory
 
 
@@ -45,6 +45,7 @@ class DeliveryTypeFactory(DjangoModelFactory):
 
 
 class OpportunityFactory(DjangoModelFactory):
+    opportunity_id = Faker("uuid4")
     organization = SubFactory(OrganizationFactory)
     name = Faker("name")
     description = Faker("text")
@@ -57,7 +58,8 @@ class OpportunityFactory(DjangoModelFactory):
     total_budget = Faker("pyint", min_value=1000, max_value=10000)
     api_key = SubFactory(HQApiKeyFactory)
     delivery_type = SubFactory(DeliveryTypeFactory)
-    currency = "USD"
+    currency = LazyFunction(lambda: Currency.objects.get(code="USD"))
+    country = LazyFunction(lambda: Country.objects.get(code="USA"))
     hq_server = SubFactory(HQServerFactory)
 
     class Meta:
@@ -98,6 +100,7 @@ class PaymentUnitFactory(DjangoModelFactory):
     name = Faker("name")
     description = Faker("text")
     amount = Faker("pyint", min_value=1, max_value=10)
+    org_amount = Faker("pyint", min_value=0, max_value=10)
     max_daily = Faker("pyint", min_value=1, max_value=10)
     max_total = LazyAttribute(lambda o: o.max_daily * 2)
 
@@ -262,6 +265,17 @@ class PaymentInvoiceFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.PaymentInvoice"
+
+
+class TaskFactory(DjangoModelFactory):
+    app = SubFactory(CommCareAppFactory)
+    slug = Faker("slug")
+    name = Faker("name")
+    description = Faker("text")
+    time_estimate = Faker("pyint", min_value=1, max_value=8)
+
+    class Meta:
+        model = "opportunity.Task"
 
 
 class ExchangeRateFactory(DjangoModelFactory):

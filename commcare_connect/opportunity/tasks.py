@@ -4,13 +4,16 @@ from decimal import Decimal
 
 import httpx
 import sentry_sdk
+import waffle
 from allauth.utils import build_absolute_uri
+from dateutil.relativedelta import relativedelta
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.timezone import now
@@ -20,7 +23,9 @@ from tablib import Dataset
 from commcare_connect.cache import quickcache
 from commcare_connect.connect_id_client import fetch_users, send_message, send_message_bulk
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
+from commcare_connect.flags.switch_names import AUTOMATED_INVOICES_MONTHLY
 from commcare_connect.opportunity.app_xml import get_connect_blocks_for_app, get_deliver_units_for_app
+from commcare_connect.opportunity.deletion import delete_opportunity
 from commcare_connect.opportunity.export import (
     UserVisitExporter,
     export_catchment_area_table,
@@ -31,10 +36,12 @@ from commcare_connect.opportunity.export import (
     export_work_status_table,
 )
 from commcare_connect.opportunity.models import (
+    Assessment,
     BlobMeta,
     CompletedWorkStatus,
     DeliverUnit,
     ExchangeRate,
+    InvoiceStatus,
     LearnModule,
     Opportunity,
     OpportunityAccess,
@@ -47,12 +54,17 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.opportunity.utils.completed_work import update_status
+from commcare_connect.opportunity.utils.completed_work import (
+    get_uninvoiced_visit_items,
+    link_invoice_to_completed_works,
+    update_status,
+)
+from commcare_connect.opportunity.utils.invoice import generate_invoice_number, get_start_date_for_invoice
 from commcare_connect.users.models import User
 from commcare_connect.users.user_credentials import UserCredentialIssuer
 from commcare_connect.utils.analytics import Event, GATrackingInfo, _serialize_events, send_event_task
 from commcare_connect.utils.celery import set_task_progress
-from commcare_connect.utils.datetime import is_date_before
+from commcare_connect.utils.datetime import get_end_date_previous_month, is_date_before
 from commcare_connect.utils.sms import send_sms
 from config import celery_app
 
@@ -132,6 +144,7 @@ def invite_user(user_id, opportunity_access_id):
         data={
             "action": "ccc_opportunity_summary_page",
             "opportunity_id": str(opportunity_access.opportunity.id),
+            "opportunity_uuid": str(opportunity_access.opportunity.opportunity_id),
             "title": gettext(
                 f"You have been invited to a CommCare Connect opportunity - {opportunity_access.opportunity.name}"
             ),
@@ -141,6 +154,30 @@ def invite_user(user_id, opportunity_access_id):
         },
     )
     send_message(message)
+
+
+@celery_app.task()
+def delete_stale_opportunities():
+    cutoff = now() - relativedelta(months=6)
+    visit_exists = UserVisit.objects.filter(opportunity=OuterRef("pk"))
+    stale_opportunities = (
+        Opportunity.objects.filter(date_created__lt=cutoff)
+        .annotate(has_visits=Exists(visit_exists))
+        .filter(has_visits=False)
+        .order_by("id")
+    )
+    count = 0
+    for opportunity in stale_opportunities:
+        logger.info(
+            "Deleting stale opportunity %s (%s) created on %s",
+            opportunity.id,
+            opportunity.name,
+            opportunity.date_created,
+        )
+        deleted = delete_opportunity(opportunity)
+        if deleted:
+            count += 1
+    logger.info("Deleted %s stale opportunities created before %s", count, cutoff)
 
 
 @celery_app.task()
@@ -240,6 +277,7 @@ def _get_learn_message(access: OpportunityAccess):
             data={
                 "action": "ccc_learn_progress",
                 "opportunity_id": str(access.opportunity.id),
+                "opportunity_uuid": str(access.opportunity.opportunity_id),
                 "title": gettext(f"Resume your learning journey for {access.opportunity.name}"),
                 "body": gettext(
                     f"You have not completed your learning for {access.opportunity.name}. "
@@ -261,6 +299,7 @@ def _get_deliver_message(access: OpportunityAccess):
         data={
             "action": "ccc_delivery_progress",
             "opportunity_id": str(access.opportunity.id),
+            "opportunity_uuid": str(access.opportunity.opportunity_id),
             "title": gettext(f"Resume your job for {access.opportunity.name}"),
             "body": gettext(
                 f"You have not completed your delivery visits for {access.opportunity.name}. "
@@ -281,12 +320,11 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
                 data={
                     "action": "ccc_payment",
                     "opportunity_id": str(opportunity.id),
+                    "opportunity_uuid": str(opportunity.opportunity_id),
                     "title": gettext("Payment received"),
-                    "body": gettext(
-                        "You have received a payment of "
-                        f"{opportunity.currency} {payment.amount} for {opportunity.name}.",
-                    ),
+                    "body": gettext(f"A payment is now available for {opportunity.name} Opportunity."),
                     "payment_id": str(payment.id),
+                    "payment_uuid": str(payment.payment_id),
                 },
             )
         )
@@ -294,15 +332,32 @@ def send_payment_notification(opportunity_id: int, payment_ids: list[int]):
 
 
 @celery_app.task()
-def send_push_notification_task(user_ids: list[int], title: str, body: str):
+def send_push_notification_task(
+    user_ids: list[int],
+    title: str,
+    body: str,
+    extra_data: dict[str, str] = None,
+):
     usernames = list(User.objects.filter(id__in=user_ids).values_list("username", flat=True))
     data = {"title": title, "body": body}
+    if extra_data is not None:
+        data.update(extra_data)
     message = Message(usernames, data=data)
     send_message(message)
 
 
-@celery_app.task()
-def download_user_visit_attachments(user_visit_id: id):
+RETRYABLE_EXCS = (httpx.ReadTimeout, httpx.ConnectTimeout)
+
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=RETRYABLE_EXCS,
+    retry_kwargs={"max_retries": 5},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def download_user_visit_attachments(self, user_visit_id: int):
     user_visit = UserVisit.objects.get(id=user_visit_id)
     api_key = user_visit.opportunity.api_key
     blobs = user_visit.form_json.get("attachments", {})
@@ -459,7 +514,7 @@ def fetch_exchange_rates(date=None, currency=None):
     rates = request_rates(url)
 
     if currency is None:
-        currencies = Opportunity.objects.values_list("currency", flat=True).distinct()
+        currencies = Opportunity.objects.values_list("currency__code", flat=True).distinct()
         for currency in currencies:
             rate = rates.get(currency)
             if rate is None:
@@ -500,7 +555,7 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
         None,
         reverse(
             "opportunity:invoice_list",
-            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.id},
+            kwargs={"org_slug": nm_org.slug, "opp_id": opportunity.opportunity_id},
         ),
     )
 
@@ -528,3 +583,144 @@ def send_invoice_paid_mail(opportunity_id, invoice_ids):
             recipient_list=recipient_emails,
             html_message=html_body,
         )
+
+
+@celery_app.task()
+def generate_automated_service_delivery_invoice():
+    if not waffle.switch_is_active(AUTOMATED_INVOICES_MONTHLY):
+        return
+
+    CHUNK_SIZE = 100
+    invoices_chunk = []
+    end_date_prev_month = get_end_date_previous_month()
+
+    opp_start_date = datetime.date(2026, 1, 1)
+    created_invoices_ids = []
+
+    for opportunity in Opportunity.objects.filter(active=True, managed=True, start_date__gte=opp_start_date).iterator(
+        chunk_size=CHUNK_SIZE
+    ):
+        start_date = get_start_date_for_invoice(opportunity)
+        # Below indicates there are no uninvoiced completed works to invoice in previous month or earlier
+        if start_date > end_date_prev_month:
+            continue
+
+        invoice_number = generate_invoice_number()
+        line_items = get_uninvoiced_visit_items(opportunity, start_date, end_date_prev_month)
+        if not line_items:
+            continue
+
+        total_local_amount = sum(item["total_amount_local"] for item in line_items)
+        total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+        exchange_rate = ExchangeRate.latest_exchange_rate(line_items[-1]["currency"], line_items[-1]["month"])
+
+        payment_invoice = PaymentInvoice(
+            opportunity=opportunity,
+            amount=total_local_amount,
+            amount_usd=total_usd_amount,
+            date=datetime.datetime.utcnow(),
+            start_date=start_date,
+            end_date=end_date_prev_month,
+            status=InvoiceStatus.PENDING_NM_REVIEW,
+            invoice_number=invoice_number,
+            service_delivery=True,
+            exchange_rate=exchange_rate,
+        )
+        invoices_chunk.append(payment_invoice)
+
+        if len(invoices_chunk) == CHUNK_SIZE:
+            created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
+            invoices_chunk = []
+
+    if invoices_chunk:
+        created_invoices_ids += _bulk_create_and_link_invoices(invoices_chunk)
+
+    _send_auto_invoice_created_notification(created_invoices_ids)
+
+
+def _bulk_create_and_link_invoices(invoices_chunk):
+    invoice_ids = []
+    with transaction.atomic():
+        invoice_objs = PaymentInvoice.objects.bulk_create(invoices_chunk)
+        for invoice in invoice_objs:
+            link_invoice_to_completed_works(invoice, start_date=invoice.start_date, end_date=invoice.end_date)
+            invoice_ids.append(invoice.id)
+    return invoice_ids
+
+
+def _send_auto_invoice_created_notification(invoice_ids):
+    invoices = PaymentInvoice.objects.filter(id__in=invoice_ids).select_related("opportunity__organization")
+    org_invoices_map = {}
+    for invoice in invoices:
+        org = invoice.opportunity.organization
+        if org.id not in org_invoices_map:
+            org_invoices_map[org.id] = {"organization": org, "invoices": []}
+
+        org_invoices_map[org.id]["invoices"].append(
+            {
+                "opportunity": invoice.opportunity,
+                "invoice": invoice,
+                "invoice_url": build_absolute_uri(
+                    None,
+                    reverse(
+                        "opportunity:invoice_review",
+                        kwargs={
+                            "org_slug": org.slug,
+                            "opp_id": invoice.opportunity.opportunity_id,
+                            "pk": invoice.payment_invoice_id,
+                        },
+                    ),
+                ),
+            }
+        )
+
+    for org_item in org_invoices_map.values():
+        try:
+            organization = org_item["organization"]
+            recipient_emails = organization.get_member_emails()
+            if not recipient_emails:
+                continue
+
+            subject = f"[{organization.name}] Automated Service Delivery Invoices Created"
+            context = {
+                "organization": organization,
+                "invoices_items": org_item["invoices"],
+            }
+
+            text_body = render_to_string(
+                "opportunity/email/automated_invoice_created.txt",
+                context,
+            )
+            html_body = render_to_string(
+                "opportunity/email/automated_invoice_created.html",
+                context,
+            )
+            send_mail(
+                subject=subject,
+                message=text_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=recipient_emails,
+                html_message=html_body,
+            )
+        except Exception as e:
+            logger.error(f"Error sending automated invoice created email for organization {organization.slug}: {e}")
+
+
+@celery_app.task()
+def notify_user_for_scored_assessment(assessment_pk):
+    assessment = Assessment.objects.get(pk=assessment_pk)
+    user = assessment.user
+    opportunity = assessment.opportunity
+    message = Message(
+        usernames=[user.username],
+        data={
+            "action": "ccc_generic_opportunity",
+            "key": "scored_assessment",
+            "opportunity_status": "learn",
+            "opportunity_id": str(opportunity.id),  # added for backward compatibility
+            "opportunity_uuid": str(opportunity.opportunity_id),
+            "title": "Update on your Assessment",
+            "body": f"Assessment for opportunity '{opportunity.name}' scored, check your status",
+        },
+    )
+    send_message(message)

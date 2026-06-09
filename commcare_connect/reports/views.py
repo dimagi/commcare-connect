@@ -1,27 +1,45 @@
 from datetime import date, timedelta
+from urllib.parse import urlencode
 
 import django_filters
 import django_tables2 as tables
+import waffle
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Column, Layout, Row
+from crispy_forms.layout import Column, Field, Layout, Row
+from django import forms
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.db.models import F, Max
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.functional import cached_property
+from django.utils.translation import gettext as _
+from django.views.decorators.http import require_GET, require_POST
 from django_filters.views import FilterView
+from django_tables2.views import SingleTableMixin
 
-from commcare_connect.opportunity.models import CompletedWork, DeliveryType, Opportunity
-from commcare_connect.organization.models import Organization
-from commcare_connect.program.models import Program
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.models import (
+    CompletedWork,
+    Country,
+    DeliveryType,
+    InvoiceStatus,
+    Opportunity,
+    PaymentInvoice,
+)
+from commcare_connect.organization.models import LLOEntity
+from commcare_connect.program.models import ManagedOpportunity, Program
 from commcare_connect.reports.decorators import KPIReportMixin
 from commcare_connect.reports.helpers import get_table_data_for_year_month
+from commcare_connect.reports.tables import AdminReportTable, InvoiceReportTable
+from commcare_connect.reports.tasks import export_invoice_report_task
+from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
+from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, get_validated_page_size
 
-from .tables import AdminReportTable
-
-COUNTRY_CURRENCY_CHOICES = [
-    ("ETB", "Ethiopia"),
-    ("KES", "Kenya"),
-    ("MWK", "Malawi"),
-    ("MZN", "Mozambique"),
-    ("NGN", "Nigeria"),
+PERIOD_CHOICES = [
+    ("monthly", "Monthly"),
+    ("quarterly", "Quarterly"),
 ]
 
 
@@ -30,19 +48,30 @@ class DeliveryReportFilters(django_filters.FilterSet):
         choices=DeliveryType.objects.values_list("slug", "name"),
         label="Delivery Type",
     )
+    period = django_filters.ChoiceFilter(
+        choices=PERIOD_CHOICES,
+        label="Period",
+        empty_label=None,
+        # No-op: period is read from filter_values in the view and passed directly
+        # to get_table_data_for_year_month — it doesn't filter a queryset.
+        method=lambda qs, name, value: qs,
+    )
     program = django_filters.ModelChoiceFilter(
         queryset=Program.objects.all(),
         label="Program",
     )
-    network_manager = django_filters.ModelChoiceFilter(
-        queryset=Organization.objects.filter(program_manager=False),
-        label="Network Manager",
+    llo = django_filters.ModelChoiceFilter(
+        queryset=LLOEntity.objects.all(),
+        label="LLO",
     )
     opportunity = django_filters.ModelChoiceFilter(
         queryset=Opportunity.objects.filter(is_test=False),
         label="Opportunity",
     )
-    country_currency = django_filters.ChoiceFilter(choices=COUNTRY_CURRENCY_CHOICES, label="Country")
+    country = django_filters.ModelChoiceFilter(
+        queryset=Country.objects.filter(opportunity__isnull=False).distinct(),
+        label="Country",
+    )
     from_date = django_filters.DateFilter(
         label="From Date",
         required=False,
@@ -61,14 +90,15 @@ class DeliveryReportFilters(django_filters.FilterSet):
         self.form.helper.layout = Layout(
             Row(
                 Column("program", css_class="col-md-3"),
-                Column("network_manager", css_class="col-md-3"),
+                Column("llo", css_class="col-md-3"),
                 Column("opportunity", css_class="col-md-3"),
-                Column("country_currency", css_class="col-md-3"),
+                Column("country", css_class="col-md-3"),
             ),
             Row(
-                Column("delivery_type", css_class="col-md-4"),
-                Column("from_date", css_class="col-md-4"),
-                Column("to_date", css_class="col-md-4"),
+                Column("delivery_type", css_class="col-md-3"),
+                Column("period", css_class="col-md-3"),
+                Column("from_date", css_class="col-md-3"),
+                Column("to_date", css_class="col-md-3"),
             ),
         )
 
@@ -78,6 +108,7 @@ class DeliveryReportFilters(django_filters.FilterSet):
             default_from = today - timedelta(days=30)
             self.data["to_date"] = today.strftime("%Y-%m")
             self.data["from_date"] = default_from.strftime("%Y-%m")
+            self.data["period"] = "monthly"
             self.form.is_bound = True
             self.form.data = self.data
 
@@ -85,10 +116,11 @@ class DeliveryReportFilters(django_filters.FilterSet):
         model = None
         fields = [
             "delivery_type",
+            "period",
             "from_date",
             "to_date",
             "program",
-            "network_manager",
+            "llo",
             "opportunity",
         ]
         unknown_field_behavior = django_filters.UnknownFieldBehavior.IGNORE
@@ -165,6 +197,177 @@ class DeliveryStatsReportView(tables.SingleTableMixin, KPIReportMixin, NonModelT
             filters.update(self.filterset.form.cleaned_data)
         return filters
 
+    def get_table_kwargs(self):
+        kwargs = super().get_table_kwargs()
+        kwargs["period"] = self.filter_values.get("period", "monthly")
+        return kwargs
+
     @property
     def object_list(self):
         return get_table_data_for_year_month(**self.filter_values)
+
+
+class InvoiceReportFilter(django_filters.FilterSet):
+    opportunity_name = django_filters.ModelChoiceFilter(
+        field_name="opportunity",
+        queryset=ManagedOpportunity.objects.only("id", "name"),
+        label=_("Opportunity"),
+        widget=forms.Select(
+            attrs={
+                "data-tomselect": "1",
+                "placeholder": "Select Opportunity (Name - ID)",
+            }
+        ),
+    )
+
+    status = django_filters.MultipleChoiceFilter(
+        choices=lambda: InvoiceStatus.get_choices(),
+        label=_("Status"),
+        widget=forms.SelectMultiple(
+            attrs={
+                "data-tomselect": "1",
+                "placeholder": "Select status",
+            }
+        ),
+    )
+
+    from_date = django_filters.DateFilter(
+        field_name="date_paid__date",
+        lookup_expr="gte",
+        label=_("From Payment Date"),
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+        input_formats=["%Y-%m-%d"],
+    )
+
+    to_date = django_filters.DateFilter(
+        field_name="date_paid__date",
+        lookup_expr="lte",
+        label=_("To Payment Date"),
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        required=False,
+        input_formats=["%Y-%m-%d"],
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.filters["opportunity_name"].field.label_from_instance = lambda obj: f"{obj.name} - {obj.id}"
+        self.form.helper = FormHelper()
+        self.form.helper.form_tag = False
+        self.form.helper.disable_csrf = True
+        self.form.helper.layout = Layout(
+            Field("opportunity_name"),
+            Field("status"),
+            Row(
+                Field("from_date"),
+                Field("to_date"),
+                css_class="grid grid-cols-2 gap-4",
+            ),
+        )
+
+    class Meta:
+        model = PaymentInvoice
+        fields = ["opportunity_name", "status", "from_date", "to_date"]
+
+
+class InvoiceReportView(
+    LoginRequiredMixin,
+    PermissionRequiredMixin,
+    SingleTableMixin,
+    FilterView,
+):
+    model = PaymentInvoice
+    table_class = InvoiceReportTable
+    filterset_class = InvoiceReportFilter
+    permission_required = ALL_ORG_ACCESS
+    paginate_by = DEFAULT_PAGE_SIZE
+
+    def get_paginate_by(self, table):
+        return get_validated_page_size(self.request)
+
+    def get_template_names(self):
+        return ["reports/invoice_report.html"]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["title"] = "Invoice Report"
+        context["task_id"] = self.request.GET.get("task_id")
+
+        if self.filterset:
+            filter_fields = self.filterset.form.fields.keys()
+            context["filters_applied_count"] = sum(
+                1 for key in filter_fields if self.filterset.data.get(key) not in ("", None)
+            )
+        else:
+            context["filters_applied_count"] = 0
+
+        return context
+
+    @classmethod
+    def get_invoice_queryset(cls):
+        queryset = (
+            PaymentInvoice.objects.select_related(
+                "opportunity__managedopportunity__program__organization",
+                "payment",
+                "exchange_rate",
+            )
+            .annotate(
+                date_paid=F("payment__date_paid"),
+                org_slug=F("opportunity__managedopportunity__program__organization__slug"),
+            )
+            .order_by("-date")
+        )
+        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
+        return queryset
+
+    def get_queryset(self):
+        return self.get_invoice_queryset()
+
+
+@require_POST
+@login_required
+@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+def export_invoice_report(request):
+    filterset = InvoiceReportFilter(request.POST, queryset=PaymentInvoice.objects.none())
+    if not filterset.is_valid():
+        return HttpResponse("Invalid filters", status=400)
+
+    filters_data = filterset.form.cleaned_data
+    if filters_data.get("opportunity_name"):
+        filters_data["opportunity_name"] = filters_data["opportunity_name"].id
+    if filters_data.get("from_date"):
+        filters_data["from_date"] = filters_data["from_date"].isoformat()
+    if filters_data.get("to_date"):
+        filters_data["to_date"] = filters_data["to_date"].isoformat()
+
+    task = export_invoice_report_task.delay(filters_data)
+
+    #  Build redirect URL preserving applied filters
+    query_params = {k: v for k, v in filters_data.items() if v not in [None, "", []]}
+    query_params["task_id"] = task.id
+    redirect_url = f"{reverse('reports:invoice_report')}?{urlencode(query_params, doseq=True)}"
+    response = HttpResponse(status=204)
+    response["HX-Redirect"] = redirect_url
+    return response
+
+
+@require_GET
+@login_required
+@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+def export_status(request, task_id):
+    return render_export_status(
+        request,
+        task_id=task_id,
+        download_url=reverse("reports:download_export", args=(task_id,)),
+        export_status_url=reverse("reports:export_status", args=(task_id,)),
+        ownership_check=None,
+    )
+
+
+@require_GET
+@login_required
+@permission_required(ALL_ORG_ACCESS, raise_exception=True)
+def download_export(request, task_id):
+    return download_export_file(task_id=task_id, filename_without_ext=f"invoice_export_{request.user.name}")

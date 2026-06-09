@@ -2,8 +2,14 @@
 With these settings, tests run faster.
 """
 
+import platform
+
 from .base import *  # noqa
 from .base import env
+
+if platform.system() == "Darwin":
+    GDAL_LIBRARY_PATH = env("GDAL_LIBRARY_PATH")
+    GEOS_LIBRARY_PATH = env("GEOS_LIBRARY_PATH")
 
 # GENERAL
 # ------------------------------------------------------------------------------

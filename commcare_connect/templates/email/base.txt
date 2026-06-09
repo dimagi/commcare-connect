@@ -1,0 +1,6 @@
+{% block content %}{% endblock %}
+
+Thank you,
+Connect
+
+This inbox is not monitored. Please do not respond to this email.

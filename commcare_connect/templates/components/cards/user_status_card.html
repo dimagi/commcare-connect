@@ -6,7 +6,7 @@
     <div>
       {% if opportunity_access.suspended and not request.org_membership.is_viewer %}
         <button
-          hx-post="{% url 'opportunity:revoke_user_suspension' org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}"
+          hx-post="{% url 'opportunity:revoke_user_suspension' org_slug=request.org.slug opp_id=opportunity_access.opportunity.opportunity_id pk=opportunity_access.opportunity_access_id %}"
           hx-vals='{"next": "{{ request.path }}"}'
           class="button button-sm primary-light">
           {% translate "Revoke Suspension" %}
@@ -33,7 +33,7 @@
         </button>
       </div>
       <form method="post"
-          action="{% url "opportunity:suspend_user" org_slug=request.org.slug opp_id=opportunity_access.opportunity_id pk=opportunity_access.pk %}"
+          action="{% url "opportunity:suspend_user" org_slug=request.org.slug opp_id=opportunity_access.opportunity.opportunity_id pk=opportunity_access.opportunity_access_id %}"
           @submit="showSuspendModal = false">
           {% csrf_token %}
           <div class="mb-2">

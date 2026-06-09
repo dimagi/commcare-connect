@@ -20,6 +20,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     Payment,
     PaymentInvoice,
+    PaymentInvoiceStatusEvent,
     PaymentUnit,
     UserInvite,
     UserVisit,
@@ -33,6 +34,7 @@ admin.site.register(DeliveryType)
 admin.site.register(DeliverUnitFlagRules)
 admin.site.register(FormJsonValidationRules)
 admin.site.register(HQApiKey)
+admin.site.register(PaymentInvoiceStatusEvent)
 
 
 @admin.register(Opportunity)

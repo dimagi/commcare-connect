@@ -1,11 +1,11 @@
 from functools import wraps
 
 from django.http import Http404, HttpResponseRedirect
-from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 
 from commcare_connect.opportunity.models import Opportunity
+from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.permission_const import ALL_ORG_ACCESS
 
 from .models import UserOrganizationMembership
@@ -79,13 +79,13 @@ def opportunity_required(view_func):
         if not org_slug:
             raise Http404("Organization slug not provided.")
 
-        opp = get_object_or_404(Opportunity, id=opp_id)
+        opp = get_object_by_uuid_or_int(Opportunity.objects.all(), opp_id, uuid_field="opportunity_id")
 
         if (opp.organization and opp.organization.slug == org_slug) or (
             opp.managed and opp.managedopportunity.program.organization.slug == org_slug
         ):
             request.opportunity = opp
-            return view_func(request, org_slug, opp_id, *args, **kwargs)
+            return view_func(request, org_slug=org_slug, opp_id=opp_id, *args, **kwargs)
 
         raise Http404("Opportunity not found.")
 
@@ -97,6 +97,14 @@ class OrganizationUserMixin:
     """Mixin version of org_viewer_required decorator"""
 
     @method_decorator(org_viewer_required)
+    def dispatch(self, request, *args, **kwargs):
+        return super().dispatch(request, *args, **kwargs)
+
+
+class OrganizationProgramManagerMixin:
+    """Mixin version of org_program_manager_required decorator"""
+
+    @method_decorator(org_program_manager_required)
     def dispatch(self, request, *args, **kwargs):
         return super().dispatch(request, *args, **kwargs)
 

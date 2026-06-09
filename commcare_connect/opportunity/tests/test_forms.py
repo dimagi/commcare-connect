@@ -10,6 +10,7 @@ from commcare_connect.flags.switch_names import OPPORTUNITY_CREDENTIALS
 from commcare_connect.opportunity.forms import (
     AddBudgetNewUsersForm,
     AutomatedPaymentInvoiceForm,
+    CreateTaskForm,
     OpportunityChangeForm,
     OpportunityInitUpdateForm,
 )
@@ -27,6 +28,7 @@ from commcare_connect.opportunity.tests.factories import (
     OpportunityFactory,
     PaymentInvoiceFactory,
     PaymentUnitFactory,
+    TaskFactory,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 
@@ -41,7 +43,6 @@ def valid_opportunity(organization):
         name="Test Opportunity",
         description="Test Description",
         short_description="Short Description",
-        currency="USD",
         is_test=False,
         end_date=datetime.date.today() + datetime.timedelta(days=30),
     )
@@ -59,6 +60,7 @@ class TestOpportunityChangeForm:
             "short_description": "Updated Short Description",
             "active": True,
             "currency": "EUR",
+            "country": valid_opportunity.country,
             "is_test": False,
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": (datetime.date.today() + datetime.timedelta(days=60)).isoformat(),
@@ -75,6 +77,7 @@ class TestOpportunityChangeForm:
             "short_description",
             "active",
             "currency",
+            "country",
             "is_test",
             "delivery_type",
             "end_date",
@@ -87,7 +90,8 @@ class TestOpportunityChangeForm:
             "description": valid_opportunity.description,
             "short_description": valid_opportunity.short_description,
             "active": valid_opportunity.active,
-            "currency": valid_opportunity.currency,
+            "currency": valid_opportunity.currency.code,
+            "country": valid_opportunity.country.code,
             "is_test": valid_opportunity.is_test,
             "delivery_type": valid_opportunity.delivery_type.id,
             "end_date": valid_opportunity.end_date.isoformat(),
@@ -101,6 +105,7 @@ class TestOpportunityChangeForm:
             "description",
             "short_description",
             "currency",
+            "country",
         ],
     )
     def test_required_fields(self, valid_opportunity, field, base_form_data):
@@ -299,7 +304,7 @@ class TestOpportunityInitUpdateForm:
         deliver_payload,
         deliver_domain,
         name="updated opportunity",
-        currency="EUR",
+        currency_code="EUR",
         include_disabled_fields=True,
         hq_server=None,
     ):
@@ -307,7 +312,8 @@ class TestOpportunityInitUpdateForm:
             "name": name,
             "description": "updated opportunity description",
             "short_description": "updated short description",
-            "currency": currency,
+            "currency": currency_code,
+            "country": opportunity.country,
             "learn_app_description": learn_description,
             "learn_app_passing_score": learn_score,
         }
@@ -364,7 +370,7 @@ class TestOpportunityInitUpdateForm:
         assert updated_opportunity.deliver_app_id == deliver_app.id
         assert deliver_app.name == "updated deliver app"
 
-        assert updated_opportunity.currency == "EUR"
+        assert updated_opportunity.currency.code == "EUR"
 
     def test_switching_to_new_apps_creates_fresh_records(self, opportunity):
         original_learn_app = opportunity.learn_app
@@ -480,10 +486,9 @@ class TestAddBudgetNewUsersForm:
             program=self.program,
             organization=organization,
             total_budget=self.opp_total_budget_initially,
-            org_pay_per_visit=org_pay,
             managed=True,
         )
-        PaymentUnitFactory(opportunity=self.opportunity, max_total=max_total, amount=amount)
+        PaymentUnitFactory(opportunity=self.opportunity, max_total=max_total, amount=amount, org_amount=org_pay)
 
     @pytest.mark.parametrize("num_new_users, expected_budget", [(3, 60), (5, 84)])
     def test_valid_add_users(self, setup, num_new_users, expected_budget):
@@ -543,7 +548,7 @@ class TestAutomatedPaymentInvoiceForm:
         valid_opportunity.start_date = datetime.date(2025, 1, 15)
         valid_opportunity.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity)
+        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, is_opportunity_pm=False)
 
         assert form.fields["invoice_number"].initial
         assert form.fields["date"].initial == str(datetime.date.today())
@@ -562,7 +567,9 @@ class TestAutomatedPaymentInvoiceForm:
         cw.status_modified_date = datetime.date(2025, 10, 1)
         cw.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity, invoice_type="service_delivery", is_opportunity_pm=False
+        )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
         invoice = PaymentInvoiceFactory(opportunity=valid_opportunity)
@@ -576,7 +583,9 @@ class TestAutomatedPaymentInvoiceForm:
         cw.status_modified_date = datetime.date(2025, 10, 20)
         cw.save()
 
-        form = AutomatedPaymentInvoiceForm(opportunity=valid_opportunity, invoice_type="service_delivery")
+        form = AutomatedPaymentInvoiceForm(
+            opportunity=valid_opportunity, invoice_type="service_delivery", is_opportunity_pm=False
+        )
         assert form.fields["start_date"].initial == str(datetime.date(2025, 10, 1))
 
     def test_duplicate_invoice_number(self, valid_opportunity):
@@ -593,9 +602,10 @@ class TestAutomatedPaymentInvoiceForm:
                 "local_amount": 100.0,
                 "start_date": None,
                 "end_date": None,
-                "notes": "",
+                "description": "",
                 "title": "",
             },
+            is_opportunity_pm=False,
         )
         assert not form.is_valid()
         assert form.errors["invoice_number"][0] == "Please use a different invoice number"
@@ -612,9 +622,11 @@ class TestAutomatedPaymentInvoiceForm:
                 "amount": 100.0,
                 "start_date": None,
                 "end_date": None,
-                "notes": "",
+                "description": "A mandatory description",
                 "title": "",
+                "date_of_expense": "2025-11-05",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
@@ -636,15 +648,16 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
-                "notes": "Monthly consulting services rendered.",
+                "description": "Monthly consulting services rendered.",
+                "date_of_expense": "2025-11-05",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
         assert not invoice.service_delivery
         assert invoice.start_date is None
         assert invoice.end_date is None
-        assert invoice.notes is None
         assert invoice.title is None
         mock_link_invoice.assert_not_called()
 
@@ -662,15 +675,16 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
-                "notes": "Monthly consulting services rendered.",
+                "description": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
         assert form.is_valid()
         invoice = form.save()
         assert invoice.service_delivery
         assert str(invoice.start_date) == "2025-10-01"
         assert str(invoice.end_date) == "2025-10-31"
-        assert invoice.notes == "Monthly consulting services rendered."
+        assert invoice.description == "Monthly consulting services rendered."
 
         mock_link_invoice.assert_called_once()
 
@@ -695,8 +709,9 @@ class TestAutomatedPaymentInvoiceForm:
                 "title": "Consulting Services Invoice",
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
-                "notes": "Monthly consulting services rendered.",
+                "description": "Monthly consulting services rendered.",
             },
+            is_opportunity_pm=False,
         )
 
         assert form.is_valid()
@@ -720,10 +735,14 @@ class TestAutomatedPaymentInvoiceForm:
             opportunity=valid_opportunity,
             invoice_type="service_delivery",
             read_only=True,
+            is_opportunity_pm=False,
         )
 
-        for field in form.fields.values():
-            assert field.widget.attrs.get("readonly") == "readonly"
+        for name, field in form.fields.items():
+            if name == "description":
+                assert field.widget.attrs.get("readonly") is None
+            else:
+                assert field.widget.attrs.get("readonly") == "readonly"
 
         assert form.fields["start_date"].initial == "2025-10-01"
         assert form.fields["end_date"].initial == "2025-10-31"
@@ -746,6 +765,36 @@ class TestAutomatedPaymentInvoiceForm:
             invoice_type="service_delivery",
             read_only=True,
             line_items_table=mock_table,
+            is_opportunity_pm=False,
         )
 
         assert form.line_items_table == mock_table
+
+
+@pytest.mark.django_db
+class TestCreateTaskForm:
+    @pytest.fixture
+    def task(self, opportunity):
+        return TaskFactory(app=opportunity.deliver_app)
+
+    def test_invalid_past_date(self, opportunity, task):
+        access = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False)
+        data = {
+            "task": task.pk,
+            "connect_worker": access.user.pk,
+            "due_date": (datetime.date.today() - datetime.timedelta(days=1)).isoformat(),
+        }
+        form = CreateTaskForm(data, opportunity=opportunity)
+        assert not form.is_valid()
+        assert "due_date" in form.errors
+
+    def test_flw_queryset_filtering(self, opportunity):
+        active = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=False).user
+        unaccepted = OpportunityAccessFactory(opportunity=opportunity, accepted=False, suspended=False).user
+        suspended = OpportunityAccessFactory(opportunity=opportunity, accepted=True, suspended=True).user
+
+        flw_queryset = CreateTaskForm(opportunity=opportunity).fields["connect_worker"].queryset
+
+        assert active in flw_queryset
+        assert unaccepted not in flw_queryset
+        assert suspended not in flw_queryset

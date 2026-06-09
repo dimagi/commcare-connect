@@ -30,6 +30,7 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
+from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import ConnectIdUserLinkFactory, MobileUserFactory
 from commcare_connect.utils.error_codes import ErrorCodes
@@ -65,10 +66,10 @@ def test_claim_endpoint_success(mobile_user: User, api_client: APIClient):
 @pytest.mark.django_db
 @pytest.mark.parametrize("opportunity", [{}, {"opp_options": {"managed": True}}], indirect=["opportunity"])
 def test_claim_endpoint_budget_exhausted(opportunity: Opportunity, api_client: APIClient):
-    PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
+    pu = PaymentUnitFactory(opportunity=opportunity, amount=10, max_total=100)
     opportunity.total_budget = 10 * 100
     if opportunity.managed:
-        opportunity.total_budget += 100 * opportunity.managedopportunity.org_pay_per_visit
+        opportunity.total_budget += 100 * pu.org_amount
     opportunity.end_date = datetime.date.today() + datetime.timedelta(days=100)
     opportunity.save()
 
@@ -218,7 +219,7 @@ def test_opportunity_list_endpoint(
     assert response.data[0]["verification_flags"]["form_submission_end"] == str(verification_flags.form_submission_end)
     payment_units = response.data[0]["payment_units"]
 
-    payment_unit_fields = ["id", "name", "max_total", "max_daily", "amount", "end_date"]
+    payment_unit_fields = ["id", "payment_unit_id", "name", "max_total", "max_daily", "amount", "end_date"]
     assert all(all(field in unit for field in payment_unit_fields) for unit in payment_units)
 
 
@@ -260,28 +261,168 @@ def test_delivery_progress_endpoint(
     assert response.data["payments"][0].keys() == PaymentSerializer().get_fields().keys()
 
 
-def test_confirm_payment(mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity):
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "endpoint_func, payload_func",
+    [
+        # Single payment
+        (lambda payment: f"/api/payment/{payment.pk}/confirm", lambda payment: {"confirmed": "true"}),
+        # Bulk payment
+        (
+            lambda payment: "/api/payment/confirm",
+            lambda payment: {"payments": [{"id": payment.pk, "confirmed": "true"}]},
+        ),
+    ],
+)
+class TestConfirmPaymentView:
+    def test_confirm_payment_for_opp_user(
+        self,
+        mobile_user_with_connect_link: User,
+        api_client: APIClient,
+        opportunity: Opportunity,
+        endpoint_func,
+        payload_func,
+    ):
+        access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+        api_client.force_authenticate(mobile_user_with_connect_link)
+        payment = Payment.objects.create(amount=10, date_paid=datetime.date.today(), opportunity_access=access)
+        response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+        assert response.status_code == 200
+        assert len(response.data["payments"]) == 1
+        assert response.data["payments"][0]["confirmed"] is False
+
+        # test confirmation
+        response = api_client.post(endpoint_func(payment), payload_func(payment), format="json")
+        assert response.status_code == 200
+        response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+        assert response.status_code == 200
+        payment_data = response.data["payments"][0]
+        assert payment_data["confirmed"] is True
+        assert payment_data["confirmation_date"] is not None
+
+        # test undo
+        undo_payload = (
+            {"confirmed": "false"}
+            if "payments" not in payload_func(payment)
+            else {"payments": [{"id": payment.pk, "confirmed": "false"}]}
+        )
+        response = api_client.post(endpoint_func(payment), undo_payload, format="json")
+        assert response.status_code == 200
+        response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+        assert response.status_code == 200
+        payment_data = response.data["payments"][0]
+        assert payment_data["confirmed"] is False
+
+    def test_confirm_payment_for_nm_org(
+        self,
+        program_manager_org_user_admin: User,
+        program_manager_org: Organization,
+        api_client: APIClient,
+        endpoint_func,
+        payload_func,
+    ):
+        api_client.force_authenticate(program_manager_org_user_admin)
+        payment = Payment.objects.create(amount=10, date_paid=datetime.date.today(), organization=program_manager_org)
+
+        assert not payment.confirmed
+        assert payment.confirmation_date is None
+
+        # # test confirmation
+        response = api_client.post(endpoint_func(payment), payload_func(payment), format="json")
+        assert response.status_code == 200
+
+        payment.refresh_from_db()
+        assert payment.confirmed
+        assert payment.confirmation_date is not None
+
+    def test_confirm_payment_unauthorized(
+        self,
+        mobile_user: User,
+        api_client: APIClient,
+        endpoint_func,
+        payload_func,
+    ):
+        other_user = MobileUserFactory()
+        api_client.force_authenticate(mobile_user)
+        payment = Payment.objects.create(
+            amount=10, date_paid=datetime.date.today(), opportunity_access=OpportunityAccessFactory(user=other_user)
+        )
+        response = api_client.post(endpoint_func(payment), payload_func(payment), format="json")
+        assert response.status_code == 404
+
+    def test_confirm_payment_unauthenticated(
+        self,
+        mobile_user: User,
+        api_client: APIClient,
+        opportunity: Opportunity,
+        endpoint_func,
+        payload_func,
+    ):
+        access = OpportunityAccessFactory(user=mobile_user, opportunity=opportunity)
+        payment = Payment.objects.create(
+            amount=10,
+            date_paid=datetime.date.today(),
+            opportunity_access=access,
+        )
+
+        response = api_client.post(endpoint_func(payment), payload_func(payment), format="json")
+
+        assert response.status_code == 401
+
+    def test_confirm_payment_invalid_flag(
+        self,
+        mobile_user_with_connect_link: User,
+        api_client: APIClient,
+        opportunity: Opportunity,
+        endpoint_func,
+        payload_func,
+    ):
+        access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+        api_client.force_authenticate(mobile_user_with_connect_link)
+        payment = Payment.objects.create(amount=10, date_paid=datetime.date.today(), opportunity_access=access)
+
+        invalid_payload = (
+            {"confirmed": "yes"}
+            if "payments" not in payload_func(payment)
+            else {"payments": [{"id": payment.pk, "confirmed": "yes"}]}
+        )
+        response = api_client.post(endpoint_func(payment), invalid_payload, format="json")
+        assert response.status_code == 400
+        assert response.data["error_code"] == ErrorCodes.INVALID_FLAG
+
+
+@pytest.mark.django_db
+def test_confirm_payment_request_v2(
+    mobile_user_with_connect_link: User,
+    api_client: APIClient,
+    opportunity: Opportunity,
+):
     access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
     api_client.force_authenticate(mobile_user_with_connect_link)
     payment = Payment.objects.create(amount=10, date_paid=datetime.date.today(), opportunity_access=access)
-    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
-    assert response.status_code == 200
-    assert len(response.data["payments"]) == 1
-    assert response.data["payments"][0]["confirmed"] is False
 
-    # test confirmation
-    response = api_client.post(f"/api/payment/{payment.pk}/confirm", {"confirmed": "true"})
+    # Single
+    endpoint = f"/api/payment/{payment.payment_id}/confirm"
+    payload = {"confirmed": "true"}
+    response = api_client.post(
+        endpoint,
+        payload,
+        format="json",
+        HTTP_ACCEPT="application/json; version=2.0",
+    )
     assert response.status_code == 200
-    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
-    assert response.status_code == 200
-    payment_data = response.data["payments"][0]
-    assert payment_data["confirmed"] is True
-    assert payment_data["confirmation_date"] is not None
 
-    # test undo
-    response = api_client.post(f"/api/payment/{payment.pk}/confirm", {"confirmed": "false"})
+    # Bulk
+    endpoint = "/api/payment/confirm"
+    payload = {
+        "payments": [
+            {"id": str(payment.payment_id), "confirmed": "true"},
+        ],
+    }
+    response = api_client.post(
+        endpoint,
+        payload,
+        format="json",
+        HTTP_ACCEPT="application/json; version=2.0",
+    )
     assert response.status_code == 200
-    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
-    assert response.status_code == 200
-    payment_data = response.data["payments"][0]
-    assert payment_data["confirmed"] is False

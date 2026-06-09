@@ -38,6 +38,7 @@ class TestProgramForm:
             "delivery_type": delivery_type.id,
             "budget": 10000,
             "currency": "USD",
+            "country": "USA",
             "start_date": timezone.now().date(),
             "end_date": timezone.now().date() + timezone.timedelta(days=30),
         }
@@ -64,7 +65,7 @@ class TestProgramForm:
     def test_program_form_currency_length(self, program_manager_org_user_admin, program_manager_org, delivery_type):
         program_data = self._get_program_data(delivery_type)
         program_data.update(
-            currency="USDA",
+            currency="INVALID",
         )
 
         form = ProgramForm(user=program_manager_org_user_admin, organization=program_manager_org, data=program_data)
@@ -86,6 +87,7 @@ class TestProgramForm:
         assert program.organization == program_manager_org
         assert program.created_by == program_manager_org_user_admin.email
         assert program.modified_by == program_manager_org_user_admin.email
+        assert program.currency.code == program_data["currency"]
 
 
 @pytest.mark.django_db
@@ -193,7 +195,6 @@ class TestOpportunityFinalizeForm:
             "end_date": timezone.now().date() + timezone.timedelta(days=20),
             "total_budget": 5000,
             "max_users": 3,
-            "org_pay_per_visit": 7,
         }
         form = self.get_form(**form_data)
         assert form.is_valid()
@@ -237,19 +238,6 @@ class TestOpportunityFinalizeForm:
         form = self.get_form(**form_data)
         assert not form.is_valid()
         assert form.errors["total_budget"] == ["Budget exceeds the program budget."]
-
-    def test_form_invalid_org_pay_per_visit(self):
-        self.opportunity.managed = True
-        self.opportunity.save()
-        form_data = {
-            "start_date": timezone.now().date() + timezone.timedelta(days=2),
-            "end_date": timezone.now().date() + timezone.timedelta(days=20),
-            "total_budget": 5000,
-            "org_pay_per_visit": "invalid",  # Invalid value
-        }
-        form = self.get_form(**form_data)
-        assert not form.is_valid()
-        assert "org_pay_per_visit" in form.errors
 
     def test_form_no_org_pay_per_visit_field(self):
         self.opportunity.managed = False

@@ -66,6 +66,7 @@ ANYMAIL = {}
 # Sentry
 # ------------------------------------------------------------------------------
 SENTRY_DSN = env("SENTRY_DSN", default="")
+APP_RELEASE = env("APP_RELEASE", default=None)
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.celery import CeleryIntegration
@@ -88,6 +89,7 @@ if SENTRY_DSN:
         dsn=SENTRY_DSN,
         integrations=integrations,
         environment=env("DEPLOY_ENVIRONMENT", default="production"),
+        release=APP_RELEASE,
         traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
     )
 

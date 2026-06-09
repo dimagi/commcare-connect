@@ -319,6 +319,17 @@ def test_opportunity_delivery_stats(opportunity):
         review_created_on=now(),
     )
 
+    # case nm approved first but rejected later so review_created_on will not be null in this case.
+    cw = CompletedWorkFactory(opportunity_access=oa2, status_modified_date=now(), status=CompletedWorkStatus.pending)
+    UserVisitFactory.create(
+        opportunity=opportunity,
+        opportunity_access=oa2,
+        status=VisitValidationStatus.rejected,
+        completed_work=cw,
+        visit_date=day_before_yesterday,
+        review_created_on=now(),
+    )
+
     # recent date paid will be today total paid should be 150
     PaymentFactory(opportunity_access=oa1, date_paid=yesterday, amount=100)
     PaymentFactory(opportunity_access=oa2, date_paid=today, amount=50)
@@ -333,7 +344,7 @@ def test_opportunity_delivery_stats(opportunity):
     assert result.deliveries_from_yesterday == 3
     assert result.accrued_since_yesterday == 10
     assert result.most_recent_delivery == today
-    assert result.total_deliveries == 4
+    assert result.total_deliveries == 5
     assert result.flagged_deliveries_waiting_for_review == 2
     assert result.flagged_deliveries_waiting_for_review_since_yesterday == 2
     assert result.deliveries_pending_for_pm_review == 2

@@ -28,7 +28,6 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     program = serializers.SerializerMethodField()
     visit_count = serializers.SerializerMethodField()
-    org_pay_per_visit = serializers.SerializerMethodField()
 
     class Meta:
         model = Opportunity
@@ -41,7 +40,6 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
             "is_active",
             "program",
             "visit_count",
-            "org_pay_per_visit",
         ]
 
     def get_program(self, obj) -> int:
@@ -49,9 +47,6 @@ class OpportunityDataExportSerializer(serializers.ModelSerializer):
 
     def get_visit_count(self, obj) -> int:
         return getattr(obj, "visit_count", 0)
-
-    def get_org_pay_per_visit(self, obj) -> int:
-        return obj.org_pay_per_visit
 
 
 class OrganizationDataExportSerializer(serializers.ModelSerializer):
@@ -63,6 +58,7 @@ class OrganizationDataExportSerializer(serializers.ModelSerializer):
 class ProgramDataExportSerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     delivery_type = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    currency = serializers.CharField(source="currency_id", read_only=True)
 
     class Meta:
         model = Program
@@ -92,9 +88,8 @@ class OpportunityUserDataSerializer(serializers.Serializer):
         return [dict(row) for row in data]
 
 
-class UserVisitDataSerialier(serializers.ModelSerializer):
+class UserVisitDataSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
-    images = serializers.SerializerMethodField()
 
     class Meta:
         model = UserVisit
@@ -120,14 +115,23 @@ class UserVisitDataSerialier(serializers.ModelSerializer):
             "date_created",
             "completed_work_id",
             "deliver_unit_id",
-            "images",
         ]
 
     def get_username(self, obj) -> str:
         return obj.username
 
+
+class UserVisitDataWithImagesSerializer(UserVisitDataSerializer):
+    images = serializers.SerializerMethodField()
+
+    class Meta(UserVisitDataSerializer.Meta):
+        fields = UserVisitDataSerializer.Meta.fields + ["images"]
+
     def get_images(self, obj):
-        return [{"blob_id": blob.blob_id, "name": blob.name, "parent_id": blob.parent_id} for blob in obj.images]
+        blobs = getattr(obj, "_prefetched_images", None)
+        if blobs is None:
+            blobs = obj.images
+        return [{"blob_id": b.blob_id, "name": b.name, "parent_id": b.parent_id} for b in blobs]
 
 
 class CompletedWorkDataSerializer(serializers.ModelSerializer):
@@ -233,6 +237,7 @@ class LabsRecordDataSerializer(serializers.ModelSerializer):
             "labs_record_id",
             "type",
             "data",
+            "public",
         ]
 
     def get_username(self, obj) -> str:
@@ -252,6 +257,7 @@ class CompletedModuleDataSerializer(serializers.ModelSerializer):
 
 class OpportunitySerializer(serializers.ModelSerializer):
     organization = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    currency = serializers.CharField(source="currency_id", read_only=True)
     learn_app = CommCareAppSerializer()
     deliver_app = CommCareAppSerializer()
     payment_units = PaymentUnitSerializer(source="paymentunit_set", many=True)

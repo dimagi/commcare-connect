@@ -67,6 +67,7 @@ DELIVER_UNIT_XML_TEMPLATE = (
     <name>{name}</name>
     <entity_id>{entity_id}</entity_id>
     <entity_name>{entity_name}</entity_name>
+    <work_area_id>{work_area_id}</work_area_id>
 </deliver>
 </data>"""
     % CCC_LEARN_XMLNS
@@ -120,11 +121,16 @@ class DeliverUnitStubFactory(factory.StubFactory):
     name = factory.Faker("name")
     entity_id = factory.Faker("uuid4")
     entity_name = factory.Faker("name")
+    work_area_id = ""
 
     @factory.lazy_attribute
     def json(self):
         xml = DELIVER_UNIT_XML_TEMPLATE.format(
-            id=self.id, name=self.name, entity_id=self.entity_id, entity_name=self.entity_name
+            id=self.id,
+            name=self.name,
+            entity_id=self.entity_id,
+            entity_name=self.entity_name,
+            work_area_id=self.work_area_id,
         )
         _, module = xml2json(xml)
         return module

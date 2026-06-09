@@ -1,11 +1,11 @@
 {% load crispy_forms_tags %}
 
-<form {% if form.instance.pk %}
-  action="{% url "program:edit" request.org.slug form.instance.pk %}"
-  {% else %}
-  action="{% url "program:init" request.org.slug %}"
-  {% endif %}
-  method="post">
-  {% csrf_token %}
-  {% crispy form %}
+<form
+    hx-post="{{ hx_post_url }}"
+    hx-target="{{ hx_target }}"
+    hx-swap="innerHTML"
+    method="post"
+>
+    {% csrf_token %}
+    {% crispy form %}
 </form>

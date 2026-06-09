@@ -9,6 +9,10 @@ servers:
       options:
         awslogs-group: 'commcare-connect-staging-web'
         tag: 'web-{{.ID}}'
+    labels:
+      traefik.http.middlewares.commcare-compress.compress: true
+      traefik.http.routers.commcare-connect-web-staging.middlewares: commcare-connect-web-staging-retry@docker,commcare-compress
+
   celery:
     hosts:
       - i-08bbcc89fcb90b8c7

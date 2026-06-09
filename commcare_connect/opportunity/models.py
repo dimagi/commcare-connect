@@ -3,15 +3,19 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
+import pghistory
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Count, F, Q, Sum
+from django.db.models.expressions import RawSQL
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
-from django.utils.translation import gettext
+from django.utils.translation import gettext, gettext_lazy
+from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
@@ -58,7 +62,25 @@ class DeliveryType(models.Model):
         return self.name
 
 
+class Currency(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 4217
+    name = models.CharField(max_length=64)
+
+    def __str__(self):
+        return f"{self.code} ({self.name})"
+
+
+class Country(models.Model):
+    code = models.CharField(max_length=3, primary_key=True)  # ISO 3166-1 alpha-3
+    name = models.CharField(max_length=128)
+    currency = models.ForeignKey(Currency, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Opportunity(BaseModel):
+    opportunity_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -86,7 +108,8 @@ class Opportunity(BaseModel):
     # Whether users payment phone numbers are required or not
     payment_info_required = models.BooleanField(default=False)
     api_key = models.ForeignKey(HQApiKey, on_delete=models.DO_NOTHING, null=True)
-    currency = models.CharField(max_length=3, null=True)
+    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     auto_approve_visits = models.BooleanField(default=True)
     auto_approve_payments = models.BooleanField(default=True)
     is_test = models.BooleanField(default=True)
@@ -98,8 +121,11 @@ class Opportunity(BaseModel):
         return self.name
 
     @property
-    def org_pay_per_visit(self):
-        return self.managedopportunity.org_pay_per_visit if self.managed else 0
+    def currency_code(self):
+        if self.currency:
+            return self.currency.code
+        else:
+            return None
 
     @property
     def is_setup_complete(self):
@@ -125,24 +151,19 @@ class Opportunity(BaseModel):
         opp_access = OpportunityAccess.objects.filter(opportunity=self)
         opportunity_claim = OpportunityClaim.objects.filter(opportunity_access__in=opp_access)
         claim_limits = OpportunityClaimLimit.objects.filter(opportunity_claim__in=opportunity_claim)
-        org_pay = self.org_pay_per_visit
 
         payment_unit_counts = claim_limits.values("payment_unit").annotate(
-            visits_count=Sum("max_visits"), amount=F("payment_unit__amount")
+            visits_count=Sum("max_visits"), amount=F("payment_unit__amount"), org_amount=F("payment_unit__org_amount")
         )
         claimed = 0
+
         for count in payment_unit_counts:
             visits_count = count["visits_count"]
             amount = count["amount"]
-            claimed += visits_count * (amount + org_pay)
+            org_amount = count["org_amount"] if self.managed else 0
+            claimed += visits_count * (amount + org_amount)
 
         return claimed
-
-    @property
-    def utilised_budget(self):
-        completed_works = CompletedWork.objects.filter(opportunity_access__opportunity=self)
-        org_pay = self.org_pay_per_visit
-        return sum(cw.saved_payment_accrued + org_pay for cw in completed_works)
 
     @property
     def claimed_visits(self):
@@ -170,9 +191,8 @@ class Opportunity(BaseModel):
 
         budget_per_user = 0
         payment_units = self.paymentunit_set.all()
-        org_pay = self.org_pay_per_visit
         for pu in payment_units:
-            budget_per_user += pu.max_total * (pu.amount + org_pay)
+            budget_per_user += pu.max_total * (pu.amount + pu.org_amount)
 
         return self.total_budget / budget_per_user
 
@@ -240,6 +260,20 @@ class LearnModule(models.Model):
         return self.name
 
 
+class Task(models.Model):
+    app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
+    slug = models.SlugField()
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    time_estimate = models.IntegerField(help_text="Estimated hours to complete the task")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["app_id", "slug"], name="unique_task_per_app")]
+
+
 class XFormBaseModel(models.Model):
     xform_id = models.CharField(max_length=50)
     app_build_id = models.CharField(max_length=50, null=True, blank=True)
@@ -250,6 +284,7 @@ class XFormBaseModel(models.Model):
 
 
 class OpportunityAccess(models.Model):
+    opportunity_access_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     date_learn_started = models.DateTimeField(null=True)
@@ -377,6 +412,31 @@ class CompletedModule(XFormBaseModel):
         ]
 
 
+class CompletedTaskStatus(models.TextChoices):
+    ASSIGNED = "assigned", gettext("assigned")
+    COMPLETED = "completed", gettext("completed")
+
+
+class CompletedTask(XFormBaseModel):
+    task = models.ForeignKey(Task, on_delete=models.PROTECT)
+    opportunity_access = models.ForeignKey(OpportunityAccess, on_delete=models.CASCADE)
+    date = models.DateTimeField()
+    duration = models.DurationField()
+    xform_id = models.CharField(max_length=50, null=True)
+    status = models.CharField(
+        choices=CompletedTaskStatus.choices,
+        default=CompletedTaskStatus.ASSIGNED,
+        max_length=50,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["xform_id", "task", "opportunity_access"], name="unique_xform_completed_task"
+            )
+        ]
+
+
 class Assessment(XFormBaseModel):
     user = models.ForeignKey(
         User,
@@ -393,8 +453,10 @@ class Assessment(XFormBaseModel):
 
 
 class PaymentUnit(models.Model):
+    payment_unit_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.PROTECT)
     amount = models.PositiveIntegerField()
+    org_amount = models.PositiveIntegerField(default=0)
     name = models.CharField(max_length=255)
     description = models.TextField()
     max_total = models.IntegerField(null=True)
@@ -466,11 +528,56 @@ class ExchangeRate(models.Model):
             return fetch_exchange_rates(date, currency_code)
 
 
+class InvoiceStatus(models.TextChoices):
+    PENDING_NM_REVIEW = "pending_nm_review", gettext("Pending Network Manager Review")
+    PENDING_PM_REVIEW = "pending_pm_review", gettext("Pending Program Manager Review")
+    CANCELLED_BY_NM = "cancelled_by_nm", gettext("Cancelled by Network Manager")
+    READY_TO_PAY = "ready_to_pay", gettext("Ready to Pay")
+    REJECTED_BY_PM = "rejected_by_pm", gettext("Rejected by Program Manager")
+    PAID = "paid", gettext("Paid")
+    ARCHIVED = "archived", gettext("Archived")
+
+    @staticmethod
+    def old_labels_map():
+        # Uses the new statuses, but returns the relevant label:
+        # either the one used previously or else the new label for statuses added later.
+        return {
+            "pending_nm_review": gettext("Pending"),
+            "pending_pm_review": gettext("Submitted"),
+            "ready_to_pay": gettext("Ready to Pay"),
+            "cancelled_by_nm": gettext("Cancelled by Network Manager"),
+            "rejected_by_pm": gettext("Rejected by Program Manager"),
+            "paid": gettext("Approved"),
+            "archived": gettext("Archived"),
+        }
+
+    @classmethod
+    def get_label(cls, status):
+        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            return cls.old_labels_map()[status]
+        return cls(status).label
+
+    @classmethod
+    def get_choices(cls):
+        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+            old_labels = cls.old_labels_map()
+            allowed_statuses = [
+                cls.PENDING_NM_REVIEW,
+                cls.PENDING_PM_REVIEW,
+                cls.PAID,
+                cls.ARCHIVED,
+            ]
+            return [(status.value, old_labels.get(status.value, status.label)) for status in allowed_statuses]
+        return cls.choices
+
+
+@pghistory.track(fields=["status"])
 class PaymentInvoice(models.Model):
     class InvoiceType(models.TextChoices):
         service_delivery = "service_delivery", gettext("Service Delivery")
         custom = "custom", gettext("Custom")
 
+    payment_invoice_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -481,13 +588,34 @@ class PaymentInvoice(models.Model):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
-    notes = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    date_of_expense = models.DateField(null=True, blank=True)
+    status = models.CharField(choices=InvoiceStatus.choices, default=InvoiceStatus.PENDING_NM_REVIEW, max_length=50)
+    archived_date = models.DateTimeField(null=True, blank=True)
+    invoice_ticket_link = models.URLField(null=True, blank=True)
 
     class Meta:
         unique_together = ("opportunity", "invoice_number")
 
+    @property
+    def invoice_type(self):
+        if self.service_delivery:
+            return PaymentInvoice.InvoiceType.service_delivery
+        return PaymentInvoice.InvoiceType.custom
+
+    @cached_property
+    def is_paid(self):
+        return Payment.objects.filter(invoice=self).exists()
+
+    def get_status_display(self):
+        return InvoiceStatus.get_label(self.status)
+
+    def unlink_completed_works(self):
+        CompletedWork.objects.filter(invoice=self).update(invoice=None)
+
 
 class Payment(models.Model):
+    payment_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     amount_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True)
@@ -542,9 +670,11 @@ class CompletedWork(models.Model):
     saved_payment_accrued_usd = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the FLW in USD."
     )
-    saved_org_payment_accrued = models.IntegerField(default=0, help_text="Payment accrued for the organization")
+    saved_org_payment_accrued = models.IntegerField(
+        default=0, help_text=gettext_lazy("Payment accrued for the workspace")
+    )
     saved_org_payment_accrued_usd = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0, help_text="Payment accrued for the organization in USD."
+        max_digits=10, decimal_places=2, default=0, help_text=gettext_lazy("Payment accrued for the workspace in USD.")
     )
     invoice = models.ForeignKey(PaymentInvoice, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -644,7 +774,38 @@ class VisitReviewStatus(models.TextChoices):
     disagree = "disagree", gettext("Disagree")
 
 
+class UserVisitQuerySet(models.QuerySet):
+    def with_any_flags(self, flags):
+        from commcare_connect.utils.flags import Flags
+
+        # flags should be a subset of Flags
+        allowed_flags = {flag.value for flag in Flags}
+        flags = list(set(flags) & allowed_flags)
+
+        if not flags:
+            return self
+
+        conditions = " || ".join([f"@[0] == $f{i}" for i in range(len(flags))])
+
+        params = []
+        for i, f in enumerate(flags):
+            params.extend([f"f{i}", f])
+
+        sql = f"""
+            jsonb_path_exists(
+                flag_reason,
+                '$.flags[*] ? ({conditions})',
+                jsonb_build_object({', '.join(['%s'] * len(params))})
+            )
+        """
+
+        return self.annotate(has_flag=RawSQL(sql, params)).filter(has_flag=True)
+
+
 class UserVisit(XFormBaseModel):
+    objects = UserVisitQuerySet.as_manager()
+
+    user_visit_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     opportunity = models.ForeignKey(
         Opportunity,
         on_delete=models.CASCADE,
@@ -667,6 +828,12 @@ class UserVisit(XFormBaseModel):
     flagged = models.BooleanField(default=False)
     flag_reason = models.JSONField(null=True, blank=True)
     completed_work = models.ForeignKey(CompletedWork, on_delete=models.DO_NOTHING, null=True, blank=True)
+    work_area = models.ForeignKey(
+        "microplanning.WorkArea",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
     status_modified_date = models.DateTimeField(null=True)
     review_status = models.CharField(
         max_length=50, choices=VisitReviewStatus.choices, default=VisitReviewStatus.pending
@@ -769,8 +936,10 @@ class OpportunityClaimLimit(models.Model):
             OpportunityClaimLimit.objects.get_or_create(
                 opportunity_claim=claim,
                 payment_unit=payment_unit,
-                defaults={"max_visits": min(remaining, payment_unit.max_total)},
-                end_date=payment_unit.end_date,
+                defaults={
+                    "max_visits": min(remaining, payment_unit.max_total),
+                    "end_date": payment_unit.end_date,
+                },
             )
 
 
@@ -809,6 +978,7 @@ class UserInvite(models.Model):
 
 
 class FormJsonValidationRules(models.Model):
+    form_json_validation_rules_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     slug = models.SlugField()
     name = models.CharField(max_length=25)
     deliver_unit = models.ManyToManyField(DeliverUnit)
@@ -878,6 +1048,7 @@ class LabsRecord(models.Model):
     labs_record = models.ForeignKey("LabsRecord", on_delete=models.CASCADE, null=True)
     type = models.CharField(max_length=255)
     data = models.JSONField()
+    public = models.BooleanField(default=False)
 
     def __str__(self):
         return f"ExperimentRecord({self.user}, {self.organization}, {self.opportunity}, {self.experiment})"
