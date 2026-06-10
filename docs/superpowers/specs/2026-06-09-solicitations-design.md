@@ -197,7 +197,7 @@ the only non-org-scoped UI element.
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
 | Solicitations dashboard (org) | Program Manager | New **"Solicitations"** item in the org sidebar, beside Programs | At-a-glance list of the org's solicitations: status, deadline, response counts. *(Part 2, Step 4)* |
-| Create / edit solicitation | Program Manager | From the Solicitations dashboard | Multi-part form: scope/budget/dates + question builder + criteria editor (weights) + program link + public/private + reviewer assignment. Draft vs publish. *(Part 2, Step 1)* |
+| Create / edit solicitation | Program Manager | From the Solicitations dashboard | Multi-part form: scope/budget/dates + contact email + question builder + criteria editor (weights) + program link + public/private + reviewer assignment + score-visibility toggle (`hide_scores_until_submit`, default on). Draft vs publish. *(Part 2, Step 1)* |
 | Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
 | Application review detail (PM view) | Program Manager | From the Applications dashboard | Read one application + all reviewers' scores/notes (PM sees everything). |
 | Award screen | Program Manager | From the Applications dashboard | Award one or more applicants — drawn from the shortlist, or directly from under-review for a clear-cut RFP: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
@@ -243,6 +243,19 @@ the award step simply creates/updates the `ProgramApplication` for that org.
 `llo_entity` values of the orgs they belong to (a user with no orgs simply creates one
 inline).
 
+> **Open question (revisit before the apply-flow tickets):** `Organization.llo_entity` is a
+> plain FK (`organization/models.py`), and the existing org forms already let two orgs point at
+> the same `LLOEntity` — there is no 1:1 enforcement today. That breaks two assumptions here:
+> (a) "picking an existing LLO reuses the org you reached it through" is ambiguous if a user
+> belongs to two orgs sharing that LLO, and (b) the `unique(solicitation, llo_entity)`
+> constraint would block a second, genuinely distinct org that shares the LLO from applying.
+> We need to decide whether to assume/enforce 1:1 org↔LLO for the apply flow or key the
+> `Application` on `Organization` instead. **Deferred.**
+>
+> **Note (inline-create collision):** `LLOEntity.name` is `unique=True`, so inline creation can
+> hit a name clash with an unrelated existing LLO. Handling (surface the existing one, or
+> disambiguate) is left to the implementer.
+
 **Decision 3 — Reuse the existing `program_manager` capability to decide who can post.**
 *Problem it solves:* who is a "Funder" allowed to post solicitations? *Decision:* for v1,
 reuse the existing rule — admins of an organization flagged `program_manager=True`, via the
@@ -272,8 +285,8 @@ reviewers — never on public pages or the apply form.
 *Problem it solves:* reviewers need to know which criterion an answer informs, and the PM
 sets relative importance. *Decision:* a `SolicitationQuestion` links to at most one
 `EvaluationCriterion` (and one criterion can cover several questions — matching the
-prototype's shared "Technical Expertise (25%)"). Reviewers score each criterion on a **1–10**
-scale; each criterion's **weight is a percentage**, and a solicitation's weights are
+prototype's shared "Technical Expertise (25%)"). Reviewers score each criterion on a **fixed
+1–10** scale (not configurable per criterion); each criterion's **weight is a percentage**, and a solicitation's weights are
 **validated to total 100% on publish** (so the PM reads the relative importance straight off
 the form). The review's overall score is the weighted average of the criterion scores,
 **normalized to /100**. The dashboard's "reviewer-averaged score" is the mean of submitted
@@ -331,8 +344,7 @@ class Solicitation(BaseModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     public = models.BooleanField(default=False)
 
-    description = models.TextField()
-    scope_of_work = models.TextField()
+    description = models.TextField()  # the scope of work; UI may label this "Scope of work" or "Description"
 
     budget_min = models.PositiveBigIntegerField(null=True, blank=True)
     budget_max = models.PositiveBigIntegerField(null=True, blank=True)
@@ -362,9 +374,8 @@ class EvaluationCriterion(BaseModel):
     label = models.CharField(max_length=255)
     description = models.TextField(blank=True)  # reviewer guidance ("what good looks like")
     weight = models.DecimalField(max_digits=5, decimal_places=2)  # percentage; weights total 100% per solicitation (Decision 6)
-    score_min = models.PositiveSmallIntegerField(default=1)
-    score_max = models.PositiveSmallIntegerField(default=10)
     display_order = models.PositiveSmallIntegerField(default=0)
+    # Scoring scale is a fixed 1–10 (Decision 6); see CriterionScore.score.
 
 
 class SolicitationQuestion(BaseModel):
@@ -495,7 +506,7 @@ class CriterionScore(BaseModel):
 
     review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name="criterion_scores")
     criterion = models.ForeignKey(EvaluationCriterion, on_delete=models.CASCADE)
-    score = models.PositiveSmallIntegerField()
+    score = models.PositiveSmallIntegerField()  # fixed 1–10 scale (validators MinValue(1)/MaxValue(10))
     comment = models.TextField(blank=True)
 
 
@@ -522,14 +533,20 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
 ### 3.5 Status lifecycles
 
 - **Solicitation:** `draft` → `active` (on publish) → `closed` (deadline passed, or PM
-  closes early with a reason) → `awarded` (once ≥1 award is made). `cancelled` is a
-  reason-tagged terminal action from `draft`/`active`. Drafts are freely editable; once
-  `active`, structural fields (questions/criteria) lock while descriptive copy and deadline
-  extensions stay editable.
+  closes early with a reason). `awarded` is set once ≥1 award is made, and can be reached from
+  either `active` (a PM may award before the deadline — Part 2, Step 4) or `closed`.
+  `cancelled` is a reason-tagged terminal action from `draft`/`active`. Drafts are freely
+  editable; once `active`, structural fields (questions/criteria) lock while descriptive copy
+  and deadline extensions stay editable.
+  - **Deadline close is automatic.** A daily Celery-beat task flips `active → closed` for any
+    solicitation whose `application_deadline` has passed (PMs can also close early by hand).
 - **Application:** `draft` → `submitted` → `under_review` → `shortlisted` →
   `awarded` | `rejected`. The PM may also award or reject directly from `under_review`
   (shortlisting is the normal path, not a gate). `withdrawn` is an applicant action allowed
   only before the window closes. Submission is one-shot.
+  - **`submitted → under_review` is a manual reviewer action.** A reviewer moves an
+    application into `under_review` when they pick it up to score (this triggers the
+    applicant's "under review" email, §3.7); it is not flipped automatically.
   - **Shortlisting** is a PM-only curation step, done **in bulk** from the per-solicitation
     Applications dashboard (reviewers cannot shortlist). It moves the selected applications
     `under_review → shortlisted` and **emails each affected applicant** (§3.7).
