@@ -120,9 +120,10 @@ scores until they've submitted their own, to reduce anchoring bias.
 ### Step 4 — The PM shortlists and awards
 
 The PM sees a dashboard of all applications with their status, the reviewer-averaged score,
-and recommendations. They can move a subset to **shortlisted** (and notify those
-applicants), then **award** one or more applicants — RFPs usually produce one award, EOIs
-often several. Awarding records the award amount per winner. The PM can **bulk-reject** the
+and recommendations. They can **shortlist** a subset in bulk (which emails those applicants),
+refine that set freely — shortlisting is reversible and reviewers keep scoring throughout —
+and then **award** one or more applicants; for a clear-cut RFP they can also award straight
+from review without shortlisting. RFPs usually produce one award, EOIs often several. Awarding records the award amount per winner. The PM can **bulk-reject** the
 rest with a templated email, and can **close** a solicitation early (with a reason) if the
 scope is cancelled.
 
@@ -191,7 +192,7 @@ The screens below, grouped by the four URL surfaces above. "Audience" is who the
 | Create / edit solicitation | Program Manager | Multi-part form: scope/budget/dates + question builder + criteria editor (weights) + program link + public/private + reviewer assignment. Draft vs publish. *(Part 2, Step 1)* |
 | Applications dashboard (per solicitation) | Program Manager | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
 | Application review detail (PM view) | Program Manager | Read one application + all reviewers' scores/notes (PM sees everything). |
-| Award screen | Program Manager | Award one or more applicants: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
+| Award screen | Program Manager | Award one or more applicants — drawn from the shortlist, or directly from under-review for a clear-cut RFP: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
 | Reviewer management | Program Manager | Add/remove reviewers (and observers) on a solicitation. *(Decision 4)* |
 | Close / cancel dialog | Program Manager | Close early or cancel with a reason. |
 
@@ -516,8 +517,22 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
   `active`, structural fields (questions/criteria) lock while descriptive copy and deadline
   extensions stay editable.
 - **Application:** `draft` → `submitted` → `under_review` → `shortlisted` →
-  `awarded` | `rejected`. `withdrawn` is an applicant action allowed only before the window
-  closes. Submission is one-shot.
+  `awarded` | `rejected`. The PM may also award or reject directly from `under_review`
+  (shortlisting is the normal path, not a gate). `withdrawn` is an applicant action allowed
+  only before the window closes. Submission is one-shot.
+  - **Shortlisting** is a PM-only curation step, done **in bulk** from the per-solicitation
+    Applications dashboard (reviewers cannot shortlist). It moves the selected applications
+    `under_review → shortlisted` and **emails each affected applicant** (§3.7).
+  - **Not mandatory before award.** `under_review → awarded` is allowed, so a PM can award a
+    clear-cut RFP without shortlisting first; the dashboard still nudges toward the
+    shortlist-then-award path.
+  - **Reversible.** `shortlisted → under_review` (un-shortlist) is allowed any time before the
+    application is awarded or rejected. Un-shortlisting sends **no** applicant email, to avoid
+    status whiplash.
+  - **Does not freeze review.** Reviewers can keep scoring a shortlisted application —
+    shortlisting is PM curation, not a review lock.
+  - **No completion gate.** The PM can shortlist at any time, even on partial reviews; the
+    dashboard surfaces per-application review-completion progress so the call is informed.
 - **Review:** `draft` (saved) → `submitted` (finalized). Other reviewers' scores stay hidden
   until submission when `hide_scores_until_submit` is on.
 - **Contract:** none in v1 (Phase 2).
