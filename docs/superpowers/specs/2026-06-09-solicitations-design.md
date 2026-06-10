@@ -3,16 +3,13 @@
 **Status:** Draft for review
 **Date:** 2026-06-09
 **Author:** Charl Smit (with Claude)
-**Release path:** 3 — gated by a global **feature switch** (`solicitations`, via
-`flags/switch_names.py`), not a per-org feature flag. The switch is a simple on/off for the
-whole module, which also covers the anonymous public marketplace (an org-scoped flag can't
-be evaluated for unauthenticated visitors).
+**Release path:** 3 — gated by a global **feature switch**.
 
-This document is split into three parts:
-  - Part 1 — Overview: explains the problem - no public discovery; Delivery team stuck on Google Forms + a manual spreadsheet - the idea, and v1 goals.
-  - Part 2 — The flow by persona: a single narrative walk through the whole lifecycle — PM creates → org discovers & applies → reviewers score → PM shortlists & awards → awarded LLOs flow into onboarding — with the four personas introduced up front and why each step works the way
+This document is split into three parts to aid building a mental model before detailing the lower level solution. As such it's recommended to read it from top to bottom:
+  - [Part 1](#part-1--overview-the-problem-and-the-idea) — Overview: explains the problem - no public discovery; Delivery team stuck on Google Forms + a manual spreadsheet - the idea, and v1 goals.
+  - [Part 2](#part-2--how-it-works-the-flow-by-persona) — The flow by persona: a single narrative walk through the whole lifecycle — PM creates → org discovers & applies → reviewers score → PM shortlists & awards → awarded LLOs flow into onboarding — with the four personas introduced up front and why each step works the way
   it does.
-  - Part 3 — Technical design: module/URLs, the key decisions each framed as "problem it solves → decision → benefit", the data model, lifecycles, permissions, notifications, and Phase 2
+  - [Part 3](#part-3--technical-design) — Technical design (start here if you already have context on the problem): module/URLs, the key decisions each framed as "problem it solves → decision → benefit", the data model, lifecycles, permissions, notifications, and Phase 2
 
 ---
 
@@ -61,8 +58,7 @@ parallel system.
 
 ## Part 2 — How it works: the flow, by persona
 
-This section walks the whole lifecycle once, in order, so a reviewer can follow the
-journey before meeting the data model. The four people involved:
+This section walks the whole lifecycle once, in order, before meeting the data model. The four people involved:
 
 | Persona | Who they are |
 |---|---|
@@ -104,7 +100,7 @@ then choose who they're applying *as*: they **pick an LLO they're affiliated wit
 the organizations they already belong to) or **create a new one inline** — just a name and
 short name. Creating one inline also sets up the backing Connect organization behind the
 scenes, so a brand-new user becomes a normal org from then on. The application is keyed on
-that LLO (Decision 2). They answer the questions and either save a draft or submit.
+that LLO. They answer the questions and either save a draft or submit.
 After submitting they can track status (*submitted → under review → shortlisted →
 awarded/rejected*) and can withdraw before the deadline. They're emailed on every status
 change.
@@ -138,10 +134,10 @@ This is the hand-off to the existing system. When a winner is awarded:
   opportunity-setup flow the platform already has. The marketplace deliberately stops there;
   it does not try to auto-build the opportunity itself.
 - If the solicitation has **no Program** (a standalone EOI), the award is simply recorded.
-  There's nothing to onboard into yet, which is the correct outcome for an expression of
-  interest.
 
-> v1 ends at the award. There is **no contract/signing step** in v1 (that's Phase 2).
+> v1 ends at the award. There is **no contract *generation* or e-signature** in v1 (that's
+> Phase 2) — but the award carries a placeholder field where a PM can **manually upload an
+> out-of-band signed contract PDF**.
 
 ---
 
@@ -157,9 +153,9 @@ app. The feature has four distinct audiences, so it has four URL surfaces:
 | Surface | URL | Why it's separate |
 |---|---|---|
 | **Public marketplace** | top-level `/solicitations/`, `/solicitations/<id>/` | Must be reachable with no login, like the existing `prelogin` marketing pages. Shows only public, active solicitations. |
-| **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login; the applicant then picks an `LLOEntity` they're affiliated with or creates one inline (which also creates a backing org). The application is keyed on that LLO (Decision 2). |
+| **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login; the applicant then picks an `LLOEntity` they're affiliated with or creates one inline (which also creates a backing org). The application is keyed on that LLO. |
 | **PM workspace** | `/a/<org_slug>/solicitations/…` | Org-scoped management screens; reuses Connect's standard per-org URL pattern and permissions. |
-| **Review screens** | top-level `/solicitations/reviews/` (list), `/solicitations/<id>/review/` (scoring) | Authorized by `ReviewerAssignment`, **not** org membership — so a reviewer assigned across several orgs sees *all* their assigned solicitations in one non-org-scoped list (Decision 4). |
+| **Review screens** | top-level `/solicitations/reviews/` (list), `/solicitations/<id>/review/` (scoring) | Authorized by `ReviewerAssignment`, **not** org membership — so a reviewer assigned across several orgs sees *all* their assigned solicitations in one non-org-scoped list. |
 
 The whole module sits behind a global **feature switch** named `solicitations`, following
 the existing `flags/switch_names.py` pattern (Release Path 3).
@@ -188,7 +184,7 @@ the only non-org-scoped UI element.
 
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
-| Application form | Applicant (LLO) | **"Apply" CTA** on the public detail page (routes through login) | Pick an affiliated `LLOEntity` or create one inline (name, short name), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2; Decision 2)* |
+| Application form | Applicant (LLO) | **"Apply" CTA** on the public detail page (routes through login) | Pick an affiliated `LLOEntity` or create one inline (name, short name), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2;)* |
 | "My applications" list | Applicant (LLO) | **Header user-profile dropdown** | All applications the user submitted, with status; filter by type. |
 | Application status / detail | Applicant (LLO) | From "My applications" | View one application's status + answers; withdraw before deadline. |
 
@@ -201,7 +197,7 @@ the only non-org-scoped UI element.
 | Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
 | Application review detail (PM view) | Program Manager | From the Applications dashboard | Read one application + all reviewers' scores/notes (PM sees everything). |
 | Award screen | Program Manager | From the Applications dashboard | Award one or more applicants — drawn from the shortlist, or directly from under-review for a clear-cut RFP: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
-| Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. *(Decision 4)* |
+| Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. |
 | Close / cancel dialog | Program Manager | From the Solicitations dashboard | Close early or cancel with a reason. |
 
 **Review screens** (top-level, non-org-scoped; gated by `ReviewerAssignment`)
@@ -302,11 +298,14 @@ reviews' overall scores.
 | Local Presence | 30% | 7 | 21.0 |
 | **Overall** | **100%** | | **74 / 100** |
 
-**Decision 7 — No AI features and no contracts in v1.**
+**Decision 7 — No AI features in v1; contracts limited to a manual upload placeholder.**
 The prototype teased "Generate criteria with AI" and "AI Comparative Review"; the brief
-lists AI as future scope, so they're excluded. Contracts (record, upload, and later
-e-signature) are also excluded from v1 — the award is the terminal artifact. Model space for
-both is described in Phase 2 but nothing is built.
+lists AI as future scope, so they're excluded. Contract *automation* (generate-on-award,
+e-signature, counter-signature) is also out of v1 — but the `Award` carries a single
+`contract_file` field so a PM can **manually upload an out-of-band signed PDF** (the brief's
+v1 placeholder). Because it's just a file on the award, it also serves solicitations that
+were run off-platform. The fuller contract model (a dedicated `Contract` record +
+program-level `ContractTemplate`) is reserved for Phase 2.
 
 ### 3.4 Data model
 
@@ -373,9 +372,9 @@ class EvaluationCriterion(BaseModel):
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="criteria")
     label = models.CharField(max_length=255)
     description = models.TextField(blank=True)  # reviewer guidance ("what good looks like")
-    weight = models.DecimalField(max_digits=5, decimal_places=2)  # percentage; weights total 100% per solicitation (Decision 6)
+    weight = models.DecimalField(max_digits=5, decimal_places=2)  # percentage; weights total 100% per solicitation
     display_order = models.PositiveSmallIntegerField(default=0)
-    # Scoring scale is a fixed 1–10 (Decision 6); see CriterionScore.score.
+    # Scoring scale is a fixed 1–10; see CriterionScore.score.
 
 
 class SolicitationQuestion(BaseModel):
@@ -395,7 +394,7 @@ class SolicitationQuestion(BaseModel):
     choice_options = models.JSONField(null=True, blank=True)  # for CHOICE types
     required = models.BooleanField(default=True)
     display_order = models.PositiveSmallIntegerField(default=0)
-    # Internal link only (Decision 6): a question maps to at most one criterion;
+    # Internal link only: a question maps to at most one criterion;
     # a criterion may cover many questions.
     criterion = models.ForeignKey(
         EvaluationCriterion, on_delete=models.SET_NULL, null=True, blank=True, related_name="questions"
@@ -424,7 +423,7 @@ class Application(BaseModel):
 
     application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")
-    # The applicant identity: an LLOEntity, picked or created inline at apply (Decision 2).
+    # The applicant identity: an LLOEntity, picked or created inline at apply.
     llo_entity = models.ForeignKey(LLOEntity, on_delete=models.PROTECT, related_name="solicitation_applications")
     # The backing Connect org (created or linked inline at apply); carried for the award handoff.
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="solicitation_applications")
@@ -456,7 +455,7 @@ class ApplicationAnswer(BaseModel):
 
 
 class ReviewerAssignment(BaseModel):
-    """Grants a user scoped access to review ONE solicitation (Decision 4)."""
+    """Grants a user scoped access to review ONE solicitation."""
 
     class Role(models.TextChoices):
         REVIEWER = "reviewer", _("Reviewer")   # can score
@@ -520,6 +519,10 @@ class Award(BaseModel):
     award_amount = models.PositiveBigIntegerField()
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     notes = models.TextField(blank=True)
+    # v1 placeholder: PM manually uploads an out-of-band signed contract PDF.
+    # Also covers contracts for solicitations run off-platform. Phase 2 replaces this
+    # with generated documents + e-signature (a dedicated Contract model).
+    contract_file = models.FileField(upload_to="solicitations/contracts/", null=True, blank=True)
     # Back-linked later once the existing flow spins up the opportunity (Part 2, Step 5).
     linked_managed_opportunity = models.ForeignKey(
         ManagedOpportunity, on_delete=models.SET_NULL, null=True, blank=True
@@ -562,7 +565,7 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
     dashboard surfaces per-application review-completion progress so the call is informed.
 - **Review:** `draft` (saved) → `submitted` (finalized). Other reviewers' scores stay hidden
   until submission when `hide_scores_until_submit` is on.
-- **Contract:** none in v1 (Phase 2).
+- **Contract:** no contract *lifecycle* in v1 — the `Award` just holds a manually-uploaded `contract_file`. Generation, status tracking, and e-signature are Phase 2.
 
 ### 3.6 Permissions & access (summary)
 
@@ -590,10 +593,105 @@ links into the relevant screen.
 
 ### 3.8 Phase 2 (reserved, not built now)
 
-Contract management: first a manual signed-PDF upload per award, then a program-level
+Contract management, building on v1's manual `contract_file` upload: a program-level
 versioned `ContractTemplate`, generate-on-award draft documents, e-signature provider
 integration with status-callback webhooks, and two-party counter-signature. Designed to also
 support contracts for solicitations that happened off-platform. (Google Docs signing is one
 option to explore.) Other future scope from the brief: AI criteria generation and AI
 application/review helpers, reviewer blinding, opt-in notifications for new solicitations,
 external-funder posting, per-RFP FAQs, and a funder analytics dashboard.
+
+---
+
+## Assumptions
+
+This section reconciles this design doc against the source brief ("*Solicitations on
+Connect*", Mary Rocheleau / Claude). It has two parts: **(A)** decisions this doc made where
+the brief was silent or ambiguous, and **(B)** points where the two documents actively
+disagree (including places the brief contradicts *itself* and this doc had to pick a side).
+Items already flagged inline above are noted as such.
+
+### A. Assumptions made (brief silent or ambiguous → this doc decided)
+
+- **Who may post = `program_manager` org admins.** The brief says "any permissioned user"
+  with a generic "Funder" role "assigned to any Connect user (Dimagi or external) in a
+  funding organization." This doc (Decision 3) assumes that means **admins of an org flagged
+  `program_manager=True`** via the existing `@org_program_manager_required` decorator — no new
+  permission concept, and the "Funder" persona is collapsed into "PM."
+
+- **Inline LLO creation also creates a backing `Organization`.** The brief lists the applicant
+  identity as "LLO entity, Organization, User" but never says where the `Organization` comes
+  from. This doc (Decision 2) assumes creating an `LLOEntity` inline **also provisions a
+  Connect `Organization`** (with the user as member), so a real org always exists by submit
+  time and the award handoff needs nothing created lazily. *Affiliation* is assumed to mean org
+  membership (the LLOs a user can pick = `llo_entity` of orgs they belong to).
+
+- **`Application` is keyed on `LLOEntity`, one per LLO per solicitation.** The brief implies
+  one submission per applicant but doesn't define the key. This doc assumes a
+  `unique(solicitation, llo_entity)` constraint. *(Tension with non-1:1 org↔LLO already flagged
+  as a deferred open question in Decision 2.)*
+
+- **Scoring scale is a fixed 1–10; weights are percentages totalling 100%; overall score is
+  normalized to /100.** The brief says only "evaluation criteria with weights." This doc
+  (Decision 6) assumes a non-configurable 1–10 per-criterion scale, weights validated to sum to
+  100% on publish, and a weighted-average overall score scaled to 100.
+
+- **Reviewers must be members of the posting org; no cross-org reviewers in v1.** The brief's
+  Reviewer persona allows "any Connect user (Dimagi or external)." This doc (Decision 4)
+  assumes reviewers are members of the funding org and defers external/cross-org reviewers.
+
+- **Award stops at `ProgramApplication = accepted`; the opportunity is not auto-built.** The
+  brief says awarded LLOs flow in "via ProgramApplication **and/or ManagedOpportunity**." This
+  doc assumes the marketplace deliberately stops at flipping `ProgramApplication` to *accepted*
+  (Step 5) and lets the existing flow build the `ManagedOpportunity`.
+
+- **Program-less solicitations: award is just recorded.** The brief always speaks of "updating
+  the ProgramApplication" on award. This doc assumes that for a standalone (no-Program) EOI
+  there is no `ProgramApplication` to touch and the `Award` is simply recorded.
+
+- **Automatic deadline close.** The brief only mentions PMs closing early. This doc assumes a
+  daily Celery-beat task auto-flips `active → closed` when `application_deadline` passes.
+
+- **`submitted → under_review` is a manual reviewer action** (triggers the applicant email),
+  and **structural fields lock once `active`** (questions/criteria freeze; descriptive copy and
+  deadline extensions stay editable). The brief specifies neither.
+
+- **Cross-org lists live in the header user-profile dropdown.** Because Connect has no central
+  cross-org dashboard, this doc assumes "My applications" and "My reviews" hang off the only
+  non-org-scoped UI element. The brief doesn't address placement.
+
+- **Added Solicitation fields not named in the brief:** `contact_email`, `estimated_scale`,
+  `expected_start_date` / `expected_end_date`, and `hide_scores_until_submit` as a stored
+  toggle. The brief implies score-visibility is "configurable" but doesn't name the rest.
+
+- **Naming/placement specifics:** the Django app is `solicitation`, the feature switch is
+  `solicitations`, and the public nav label is provisionally **"Explore opportunities"**
+  (flagged TBC with Product in §3.2). The brief specifies none of these.
+
+### B. Where the two documents disagree
+
+- **Evaluation-criteria visibility.** The brief's PM story says criteria "are available to be
+  viewed along with the solicitation," implying applicant/public visibility. **This doc makes
+  criteria strictly internal** (Decision 5) — never on public pages or the apply form. *Direct
+  conflict; this doc sides with the brief's "internal scoring tool" framing over its
+  "viewable" wording.*
+
+- **Is a solicitation always scoped to a Program?** The brief contradicts itself: the Goals say
+  "EOI/RFP can be created with no Program affiliation," but the *Reuse vs. new entities* table
+  says "Each solicitation **is** scoped to a Program." **This doc makes `program` optional**
+  (`null=True`), siding with the Goals.
+
+- **Private-solicitation access model.** The brief defines private as "only visible to invited
+  orgs" — an access-control mechanism. The data model here has only a `public` boolean and **no
+  invited-org gating**; this doc leans toward private = *unlisted* (reachable by direct link).
+  *Unresolved — already flagged in §Part 2 Step 1 and noted as needing its own spec.*
+
+- **"Invite users/orgs to apply" as a formal mechanism.** The brief lists PM stories to "invite
+  one or more users and/or organizations to apply." This doc reduces invitation to **emailing a
+  link to the public page** (§3.7) — there is no invitation/access-grant record. Coupled to the
+  private-access gap above.
+
+- **Download-a-template / upload-a-markdown-draft collaboration flow.** The brief's PM story
+  ("download a template and upload a draft … suggested file type markdown") describes authoring
+  the RFP/EOI *language* off-product. **This doc does not spec it** — `SolicitationAttachment`
+  covers supporting docs *for applicants*, not round-tripping the solicitation's own copy.
