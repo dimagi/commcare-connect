@@ -85,6 +85,11 @@ have no program yet — that's allowed). They mark it **public** (shows on the o
 marketplace) or **private** (only invited orgs), assign one or more reviewers, and
 **publish**. They can also email selected existing orgs a link to the public page.
 
+> **Note:** the exact **public vs. private** access semantics (likely "private" = *unlisted* —
+> not on the marketplace but reachable by direct link — for v1) are still being worked out and
+> will be specced shortly. The narrative above and the data model don't yet fully agree on how
+> private solicitations are gated.
+
 
 ### Step 2 — An organization discovers it and applies
 
@@ -101,7 +106,7 @@ short name. Creating one inline also sets up the backing Connect organization be
 scenes, so a brand-new user becomes a normal org from then on. The application is keyed on
 that LLO (Decision 2). They answer the questions and either save a draft or submit.
 After submitting they can track status (*submitted → under review → shortlisted →
-approved/rejected*) and can withdraw before the deadline. They're emailed on every status
+awarded/rejected*) and can withdraw before the deadline. They're emailed on every status
 change.
 
 ### Step 3 — Reviewers score the applications
@@ -345,7 +350,7 @@ class EvaluationCriterion(BaseModel):
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="criteria")
     label = models.CharField(max_length=255)
     description = models.TextField(blank=True)  # reviewer guidance ("what good looks like")
-    weight = models.DecimalField(max_digits=5, decimal_places=2)  # relative importance
+    weight = models.DecimalField(max_digits=5, decimal_places=2)  # percentage; weights total 100% per solicitation (Decision 6)
     score_min = models.PositiveSmallIntegerField(default=1)
     score_max = models.PositiveSmallIntegerField(default=10)
     display_order = models.PositiveSmallIntegerField(default=0)
@@ -493,7 +498,7 @@ class Award(BaseModel):
     award_amount = models.PositiveBigIntegerField()
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     notes = models.TextField(blank=True)
-    # Back-linked later once the existing flow spins up the opportunity (Decision 6, downstream).
+    # Back-linked later once the existing flow spins up the opportunity (Part 2, Step 5).
     linked_managed_opportunity = models.ForeignKey(
         ManagedOpportunity, on_delete=models.SET_NULL, null=True, blank=True
     )
