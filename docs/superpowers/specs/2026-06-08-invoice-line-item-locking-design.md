@@ -100,7 +100,7 @@ recording how much of that work was billed on that invoice:
 
 ```
 CompletedWorkInvoice
-  invoice         FK → PaymentInvoice  (related_name="work_items", on_delete=CASCADE)
+  invoice         FK → PaymentInvoice  (related_name="work_items", on_delete=PROTECT)
   completed_work  FK → CompletedWork   (on_delete=PROTECT)
   payment_unit    FK → PaymentUnit     (snapshot, for display grouping)
   month           DateField            (period attribution, §1.4)
@@ -129,14 +129,13 @@ CompletedWorkInvoice
 - Maintained on create ([§1.3](#13-creation--snapshot--bump-watermark-atomic)) and cancel/reject
   ([§1.6](#16-lifecycle--cancel--reject--pay)).
 
-**Watermark integrity** — it's a cached copy, so guard it:
-
-- **Reconciliation check** (management command or data-integrity test): assert
-  `invoiced_approved_count == SUM(billed_count over live invoices)` per work.
-- **Hard-delete caveat:** `invoice on_delete=CASCADE` means hard-deleting a `PaymentInvoice` drops its
-  rows but leaves the watermark stale. No such path exists today (invoices are cancelled/archived,
-  never deleted), so the precondition is "invoices are never hard-deleted"; switch to `PROTECT` if
-  that changes.
+**Watermark integrity** — it's a cached copy, kept correct by enforcing the invariant in code at the
+call site: the value is written solely by the atomic, `select_for_update`-locked create/rollback code
+(§1.3/§1.6), which is the single writer and where correctness comes from.
+- **Delete guard:** `invoice on_delete=PROTECT` blocks hard-deleting a `PaymentInvoice` while it has
+  rows — the only sanctioned teardown is the §1.6 cancel/reject rollback, which decrements the
+  watermark and deletes the rows atomically. PROTECT forces any other delete path (Django admin,
+  shell) through that rollback, so the watermark can never be left stale.
 
 ### 1.2 Selection — delta-based
 
