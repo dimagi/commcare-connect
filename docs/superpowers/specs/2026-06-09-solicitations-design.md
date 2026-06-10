@@ -167,44 +167,54 @@ the existing `flags/switch_names.py` pattern (Release Path 3).
 ### 3.2 Pages to build and their audiences
 
 The screens below, grouped by the four URL surfaces above. "Audience" is who the page is
-*for*; auth requirements follow the surface it belongs to. Each maps back to a step in Part 2.
+*for*; "Reached via" is how a user navigates to it; auth requirements follow the surface it
+belongs to. Each maps back to a step in Part 2.
+
+Connect has three nav surfaces — the public marketing nav (`prelogin/home.html`), the
+org-scoped left sidebar (`layouts/sidenav.html`), and the header with the org switcher +
+user-profile dropdown (`layouts/header.html`). There is **no central cross-org dashboard**
+(login drops a user into their first org's workspace), so the two authenticated *cross-org*
+lists — "My applications" and "My reviews" — live in the **header user-profile dropdown**,
+the only non-org-scoped UI element.
 
 **Public marketplace** (unauthenticated; shows only `public` + `active` solicitations)
 
-| Page | Audience | Purpose |
-|---|---|---|
-| Marketplace list | Public visitor / prospective applicant | Browse + filter (type, country, delivery type, deadline) published solicitations as scannable cards. *(Part 2, Step 2)* |
-| Solicitation detail (public) | Public visitor / prospective applicant | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. |
+| Page | Audience | Reached via | Purpose |
+|---|---|---|---|
+| Marketplace list | Public visitor / prospective applicant | New **"Explore opportunities"** item in the public site nav + home CTA | Browse + filter (type, country, delivery type, deadline) published solicitations as scannable cards. *(Part 2, Step 2)* |
+| Solicitation detail (public) | Public visitor / prospective applicant | Marketplace cards → detail | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. |
 
 **Apply flow** (authenticated applicant; standard sign-up/login, applies as an `LLOEntity` — picked or created inline)
 
-| Page | Audience | Purpose |
-|---|---|---|
-| Application form | Applicant (LLO) | Pick an affiliated `LLOEntity` or create one inline (name, short name), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2; Decision 2)* |
-| "My applications" list | Applicant (LLO) | All applications the user submitted, with status; filter by type. |
-| Application status / detail | Applicant (LLO) | View one application's status + answers; withdraw before deadline. |
+| Page | Audience | Reached via | Purpose |
+|---|---|---|---|
+| Application form | Applicant (LLO) | **"Apply" CTA** on the public detail page (routes through login) | Pick an affiliated `LLOEntity` or create one inline (name, short name), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2; Decision 2)* |
+| "My applications" list | Applicant (LLO) | **Header user-profile dropdown** | All applications the user submitted, with status; filter by type. |
+| Application status / detail | Applicant (LLO) | From "My applications" | View one application's status + answers; withdraw before deadline. |
 
 **PM workspace** (`@org_program_manager_required`)
 
-| Page | Audience | Purpose |
-|---|---|---|
-| Solicitations dashboard (org) | Program Manager | At-a-glance list of the org's solicitations: status, deadline, response counts. *(Part 2, Step 4)* |
-| Create / edit solicitation | Program Manager | Multi-part form: scope/budget/dates + question builder + criteria editor (weights) + program link + public/private + reviewer assignment. Draft vs publish. *(Part 2, Step 1)* |
-| Applications dashboard (per solicitation) | Program Manager | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
-| Application review detail (PM view) | Program Manager | Read one application + all reviewers' scores/notes (PM sees everything). |
-| Award screen | Program Manager | Award one or more applicants — drawn from the shortlist, or directly from under-review for a clear-cut RFP: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
-| Reviewer management | Program Manager | Add/remove reviewers (and observers) on a solicitation. *(Decision 4)* |
-| Close / cancel dialog | Program Manager | Close early or cancel with a reason. |
+| Page | Audience | Reached via | Purpose |
+|---|---|---|---|
+| Solicitations dashboard (org) | Program Manager | New **"Solicitations"** item in the org sidebar, beside Programs | At-a-glance list of the org's solicitations: status, deadline, response counts. *(Part 2, Step 4)* |
+| Create / edit solicitation | Program Manager | From the Solicitations dashboard | Multi-part form: scope/budget/dates + question builder + criteria editor (weights) + program link + public/private + reviewer assignment. Draft vs publish. *(Part 2, Step 1)* |
+| Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
+| Application review detail (PM view) | Program Manager | From the Applications dashboard | Read one application + all reviewers' scores/notes (PM sees everything). |
+| Award screen | Program Manager | From the Applications dashboard | Award one or more applicants — drawn from the shortlist, or directly from under-review for a clear-cut RFP: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
+| Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. *(Decision 4)* |
+| Close / cancel dialog | Program Manager | From the Solicitations dashboard | Close early or cancel with a reason. |
 
 **Review screens** (top-level, non-org-scoped; gated by `ReviewerAssignment`)
 
-| Page | Audience | Purpose |
-|---|---|---|
-| My assigned solicitations | Reviewer / Observer | One page listing **every** solicitation the user is assigned to, **across all orgs** — not scoped to a single org. *(Part 2, Step 3)* |
-| Application scoring | Reviewer | Score each criterion (with guidance), notes/tags, suggested reward, recommendation; submit. Other reviewers' scores hidden until own submitted. Observers get read-only. |
+| Page | Audience | Reached via | Purpose |
+|---|---|---|---|
+| My assigned solicitations | Reviewer / Observer | New **"My reviews"** entry in the header user-profile dropdown | One page listing **every** solicitation the user is assigned to, **across all orgs** — not scoped to a single org. *(Part 2, Step 3)* |
+| Application scoring | Reviewer | From "My assigned solicitations" | Score each criterion (with guidance), notes/tags, suggested reward, recommendation; submit. Other reviewers' scores hidden until own submitted. Observers get read-only. |
 
-> Notification **emails** are templated content, not pages, and are listed under
-> Notifications & emails rather than here.
+> **Note:** the public nav label **"Explore opportunities"** is provisional and **to be
+> confirmed with Product** — it overlaps with Connect's existing "Opportunities" concept, so
+> the wording may change. The URL stays `/solicitations/` and the internal/PM naming stays
+> "Solicitations" regardless.
 
 ### 3.3 Key design decisions (with the reasoning behind each)
 
