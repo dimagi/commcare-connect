@@ -357,7 +357,7 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
     auto_verify_defaults = {}
     if user_visit.opportunity.automatic_visit_verification:
         auto_verify_defaults = {"location": 0, "gps": False, "duplicate": False, "catchment_areas": False}
-        
+
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(
         opportunity=user_visit.opportunity,
         defaults=auto_verify_defaults,
