@@ -354,10 +354,10 @@ def clean_form_submission(access: OpportunityAccess, user_visit: UserVisit, xfor
     side effect (e.g., resetting duplicate status when the duplicate flag is disabled).
     """
     flags = []
+    auto_verify_defaults = {}
     if user_visit.opportunity.automatic_visit_verification:
         auto_verify_defaults = {"location": 0, "gps": False, "duplicate": False, "catchment_areas": False}
-    else:
-        auto_verify_defaults = {}
+        
     opportunity_flags, _ = OpportunityVerificationFlags.objects.get_or_create(
         opportunity=user_visit.opportunity,
         defaults=auto_verify_defaults,
