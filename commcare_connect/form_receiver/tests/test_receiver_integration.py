@@ -450,6 +450,25 @@ def test_automatic_visit_verification_does_not_reject_clean_visit(
     assert visit.status == VisitValidationStatus.approved
 
 
+@pytest.mark.django_db
+def test_automatic_visit_verification_no_flags_row_does_not_flag_location(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    assert not OpportunityVerificationFlags.objects.filter(opportunity=opportunity).exists()
+    opportunity.automatic_visit_verification = True
+    opportunity.auto_approve_visits = True
+    opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    form_json["metadata"]["timeEnd"] = "2023-06-07T12:36:10.178000Z"
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    visit = UserVisit.objects.get(user=user_with_connectid_link)
+    assert not visit.flagged
+    assert visit.status == VisitValidationStatus.approved
+    flags_row = OpportunityVerificationFlags.objects.get(opportunity=opportunity)
+    assert flags_row.location == 0
+
+
 def _trigger_over_limit_visit(opportunity, user, api_client):
     form_json = _create_opp_and_form_json(opportunity, user=user, daily_max_per_user=0)
     deliver_unit = opportunity.deliver_app.deliver_units.first()
