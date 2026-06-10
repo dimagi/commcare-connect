@@ -454,7 +454,9 @@ def test_automatic_visit_verification_does_not_reject_clean_visit(
 def test_automatic_visit_verification_no_flags_row_does_not_flag_location(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
-    assert not OpportunityVerificationFlags.objects.filter(opportunity=opportunity).exists()
+    # The opportunity fixture always creates a flags row; delete it to simulate the case
+    # where automatic_visit_verification is enabled before the config form has ever been saved.
+    OpportunityVerificationFlags.objects.filter(opportunity=opportunity).delete()
     opportunity.automatic_visit_verification = True
     opportunity.auto_approve_visits = True
     opportunity.save()
