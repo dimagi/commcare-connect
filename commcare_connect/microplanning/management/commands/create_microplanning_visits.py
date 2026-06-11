@@ -1,5 +1,6 @@
 import random
 from datetime import timedelta
+from uuid import uuid4
 
 from django.contrib.gis.geos import Point, Polygon
 from django.core.exceptions import ValidationError
@@ -7,10 +8,16 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.timezone import now
 
-from commcare_connect.conftest import MobileUserFactory
 from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaStatus
-from commcare_connect.opportunity.models import DeliverUnit, Opportunity, OpportunityAccess, VisitValidationStatus
-from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, OpportunityAccessFactory, UserVisitFactory
+from commcare_connect.opportunity.models import (
+    DeliverUnit,
+    Opportunity,
+    OpportunityAccess,
+    PaymentUnit,
+    UserVisit,
+    VisitValidationStatus,
+)
+from commcare_connect.users.models import User
 
 # Default region to drop generated work areas into when the opportunity has
 # none of its own (lon/lat around Delhi, matching WorkAreaFactory).
@@ -107,16 +114,29 @@ class Command(BaseCommand):
         if opportunity.deliver_app is None:
             raise CommandError("Opportunity has no deliver_app; cannot create a DeliverUnit for visits.")
         deliver_unit = DeliverUnit.objects.filter(app=opportunity.deliver_app).first()
-        return deliver_unit or DeliverUnitFactory(app=opportunity.deliver_app)
+        if deliver_unit:
+            return deliver_unit
+
+        payment_unit = PaymentUnit.objects.create(
+            opportunity=opportunity,
+            name="Demo payment unit",
+            description="Auto-created for sample microplanning visits.",
+            amount=1,
+            max_daily=10,
+            max_total=20,
+        )
+        return DeliverUnit.objects.create(
+            app=opportunity.deliver_app,
+            slug=f"demo-deliver-unit-{uuid4().hex[:8]}",
+            name="Demo deliver unit",
+            payment_unit=payment_unit,
+        )
 
     def _get_or_create_accesses(self, opportunity, work_areas):
         accesses = list(OpportunityAccess.objects.filter(opportunity=opportunity))
         if not accesses:
             self.stdout.write("No opportunity access found; creating sample mobile workers.")
-            accesses = [
-                OpportunityAccessFactory(opportunity=opportunity, user=MobileUserFactory())
-                for _ in range(min(3, len(work_areas)) or 1)
-            ]
+            accesses = [self._create_access(opportunity, i) for i in range(min(3, len(work_areas)) or 1)]
         # Make sure every work area has an assignee for nicer map display.
         for i, work_area in enumerate(work_areas):
             if work_area.opportunity_access is None:
@@ -124,12 +144,16 @@ class Command(BaseCommand):
                 work_area.save(update_fields=["opportunity_access"])
         return accesses
 
+    def _create_access(self, opportunity, index):
+        user = User.objects.create(username=f"demo-mobile-{uuid4().hex[:12]}", name=f"Demo Worker {index + 1}")
+        return OpportunityAccess.objects.create(opportunity=opportunity, user=user)
+
     def _create_visit(self, opportunity, work_area, access, deliver_unit):
         point = self._random_point_in(work_area.boundary)
         location = f"{point.y:.7f} {point.x:.7f} 0.0 5.0"  # "<lat> <lon> <altitude> <accuracy>"
         visit_date = now() - timedelta(days=random.randint(0, 14), minutes=random.randint(0, 1440))
 
-        UserVisitFactory(
+        UserVisit.objects.create(
             opportunity=opportunity,
             user=access.user,
             opportunity_access=access,
@@ -140,6 +164,7 @@ class Command(BaseCommand):
             visit_date=visit_date,
             location=location,
             form_json={"metadata": {"location": location}},
+            xform_id=uuid4().hex,
         )
 
     @staticmethod
