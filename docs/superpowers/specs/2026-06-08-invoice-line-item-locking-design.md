@@ -17,10 +17,9 @@ to completed work.
 - **Late approvals** bill on the **next** invoice, never retro-added to the issued one. On an
   already-billed work the delta is always a duplicate (the only way a work's approved count exceeds 1
   — see [Background](#background--how-a-works-approved-count-exceeds-1)).
-- **Late rejection is blocked** once a work is billed, so an issued invoice can't be silently lowered.
 
 **Decision:** chosen over the "drop late approvals" alternative (appendix) because product confirmed
-late approvals must be paid ([Open question 1](#open-questions-pending-product)).
+late approvals must be paid ([Open question 1](#open-questions-resolved)).
 
 ## Non-goals
 
@@ -41,11 +40,10 @@ every visit approve/reject, with no invoiced-check. This breaks three ways:
 2. **Late approval lost** — a post-invoice approval raises the work's count, but the work is excluded
    from future invoices, so the increase is never billed.
 3. **Late rejection corrupts** — a post-invoice rejection lowers the count (to 0 under
-   `auto_approve_payments`), silently changing an invoice that may be approved/paid.
+   `auto_approve_payments`), silently changing an invoice that may be approved/paid. Fixed by billing
+   only PM-agreed units, which can't be rejected ([§1.10](#110-agreement-gated-billable-count-managed--oq2-fix),
+   [Why no rejection guard is needed](#shared--why-no-rejection-guard-is-needed)).
 
-*What makes an approved visit rejectable:* `review_status != agree` — an approved-but-not-yet-agreed
-visit, via the visit-detail Reject button. (An agreed visit is never rejectable — see
-[Rejection-guard enforcement](#shared--rejection-guard-enforcement).)
 
 ## Background — how a work's approved count exceeds 1
 
@@ -64,16 +62,16 @@ duplicate. Duplicate approvals are routine, not an edge case, and arise via two 
 
 - **Live invoice** = any `InvoiceStatus` except `CANCELLED_BY_NM` and `REJECTED_BY_PM` (these unlink
   their works, rolling them back to editable). `ARCHIVED` counts as live ([§1.6](#16-lifecycle--cancel--reject--pay)).
-- **Locked work** = a completed work covered by a live invoice. The lock is **whole-work**: if *any*
-  part of the work is billed, *none* of its approved visits are rejectable (incl. a freshly arrived
-  duplicate).
+- **Billed work** = a completed work with `invoiced_approved_count > 0` (covered by a live invoice).
+  Cancel/reject rolls its watermark back and re-opens it ([§1.6](#16-lifecycle--cancel--reject--pay)).
 
 ## Invariants
 
 Relied on by later sections rather than re-derived:
 
-- **Delta never negative:** `saved_approved_count >= invoiced_approved_count` always — because
-  rejection is blocked once any unit is billed ([§1.5](#15-late-approval--rejection-guard)).
+- **Delta never negative:** `saved_approved_count >= invoiced_approved_count` always — billing counts
+  only agreed units ([§1.10](#110-agreement-gated-billable-count-managed--oq2-fix)) and agreed visits
+  can't be rejected, so the billed count never drops.
 - **Watermark = billed-state source of truth:** `invoiced_approved_count` = `SUM(billed_count)` over
   the work's live-invoice rows (stored for fast lookups; kept in sync and guarded in [§1.1](#11-model-changes)).
 - **Snapshots immutable:** a `CompletedWorkInvoice` row never changes once created; an invoice's
@@ -169,10 +167,11 @@ def get_billable_completed_works_qs(opportunity, start_date=None, end_date=None)
 - Billable delta per work = `saved_approved_count − invoiced_approved_count` (≥ 1).
 - Brand-new works bill their full count via the same path.
 
-> **Depends on [Open question 2](#open-questions-pending-product):** this query (and the
-> [§1.4](#14-when-a-late-approved-visit-gets-billed-and-under-which-month) `invoiced_approved_count ==
-> 0` test) use `saved_approved_count`. If managed billing must require PM agreement, the billable
-> count changes — resolve before finalizing.
+> **[Open question 2](#open-questions-resolved) resolved — see
+> [§1.10](#110-agreement-gated-billable-count-managed--oq2-fix).** Managed billing counts PM-**agreed**
+> units, so `saved_approved_count` is agreement-gated; this query and the
+> [§1.4](#14-when-a-late-approved-visit-gets-billed-and-under-which-month) `invoiced_approved_count == 0`
+> test use it unchanged.
 
 **Why late deltas bypass the date window.** A late duplicate keeps the work at `approved`, so its
 `status_modified_date` never moves off the original approval (e.g. January). If that stale date were
@@ -219,7 +218,7 @@ On invoice creation (`InvoiceForm.save`, `tasks.py` auto-generate), in a transac
    [§1.4](#14-when-a-late-approved-visit-gets-billed-and-under-which-month) reads it in step 2).
 
 > **Concurrency:** `select_for_update()` serializes two concurrent creations for the same opp and stops a
-> double-billed delta (the reject guard reads the watermark under the same lock).
+> double-billed delta.
 
 - **`amount` is server-computed (step 4) — the source of truth.** Safe: the manual form's
   service-delivery `amount` is a **read-only, auto-computed** field (`forms.py:1747`), not
@@ -260,22 +259,19 @@ month = TruncMonth(status_modified_date)   if invoiced_approved_count == 0   # f
 - `invoice.end_date` is nullable but always set for service-delivery invoices (the only kind with
   rows), so the late-delta arm always has a date.
 
-### 1.5 Late approval & rejection guard
+### 1.5 Late approval
 
-- **Late approval:** `CompletedWorkUpdater` keeps recomputing `saved_approved_count` (it rises);
-  display reads frozen snapshots, so the current invoice is unaffected and the next invoice bills the
-  delta. No special handling.
-- **Rejection guard:** a locked work (`invoiced_approved_count > 0`) can't have its approved visits
-  rejected. Enforced via a single `completed_work_is_locked(work)` helper called from every reject
-  write path — see [Rejection-guard enforcement](#shared--rejection-guard-enforcement).
+`CompletedWorkUpdater` keeps recomputing `saved_approved_count` (it rises); display reads frozen
+snapshots, so the current invoice is unaffected and the next invoice bills the delta. No special
+handling.
 
 ### 1.6 Lifecycle — cancel / reject / pay
 
 - **Cancel / reject** (`CANCELLED_BY_NM`, `REJECTED_BY_PM`): replace `unlink_completed_works` with a
   step that atomically deletes this invoice's `CompletedWorkInvoice` rows and decrements each
   affected work's `invoiced_approved_count` by that row's `billed_count`. Works whose billed total
-  returns to 0 become rejectable and fully re-billable.
-- **Paid:** terminal for money; no clawback (rejection already blocked); rows immutable.
+  returns to 0 are fully re-billable.
+- **Paid:** terminal for money; no clawback (agreed units can't be rejected); rows immutable.
 - **Archived:** out of scope — a one-off historical management command
   (`archive_pending_and_submitted_invoices.py`, hardcoded 2025-11-01 cutoff) bulk-sets `status →
   ARCHIVED` with no unlink/rollback. No watermark rollback added; archived invoices' works stay
@@ -291,7 +287,7 @@ month = TruncMonth(status_modified_date)   if invoiced_approved_count == 0   # f
   - Several covering invoices (original + deltas) → cancelling one drops the watermark to the
     **remaining** billed total; only that invoice's portion re-bills. Reaches 0 only when every
     covering invoice is cancelled.
-- **Pre-invoice rejection:** watermark 0 → allowed → count may drop → fine.
+- **Pre-invoice rejection:** watermark 0, nothing billed yet → count may drop → fine.
 - **Child/optional deliver units:** `saved_approved_count` already encodes the min-across-required /
   child-constrained count (`completed_work.py:99-128`); the watermark tracks that number, so deltas
   inherit it with no extra logic.
@@ -319,6 +315,11 @@ The FK drop ships in a *separate, later release*, not with the cutover — safe 
 (old pods still reference the FK mid-deploy), preserves clean rollback (a dropped column can't be
 restored), and keeps a replicated-column drop (`multidb`) as its own deliberate step.
 
+**Independent — agreement-gated count ([§1.10](#110-agreement-gated-billable-count-managed--oq2-fix)).**
+A standalone bug fix that makes the managed billable count agreement-based; ships before or with
+Release 1. It also means the rejection guard an earlier draft planned is never built. Once it lands,
+the watermark and delta rely on the agreed count.
+
 **Release 1 — expand (cutover, keep the FK):**
 
 1. **Schema add** — add `CompletedWorkInvoice`; add `CompletedWork.invoiced_approved_count`
@@ -342,26 +343,29 @@ restored), and keeps a replicated-column drop (`multidb`) as its own deliberate 
 
 ---
 
-## Shared — Rejection-guard enforcement
+### 1.10 Agreement-gated billable count (managed) — OQ2 fix
 
-**Why the guard is needed.** A billed work can also hold an approved-but-not-yet-agreed visit, and
-the count includes *all* approved visits. That visit is still rejectable (`reject_visits` only blocks
-`review_status=agree`, `views.py:1123`), so rejecting it drops `saved_approved_count` and **drifts
-the already-billed invoice**. The guard stops this: once a work is billed, none of its approved
-visits can be rejected.
+**Bug (confirmed by product — [Open question 2](#open-questions-resolved)).** Today a managed
+work's billable count includes every *approved* visit, even ones the PM has not *agreed* to. So once a
+work is billed, a later approved-but-unagreed duplicate bills on the next invoice without the PM ever
+agreeing to it.
 
-**Enforcement.** A single `completed_work_is_locked(work)` predicate (Approach 1 checks the
-watermark; the appendix checks the FK + live status), called from both reject paths:
+**Fix (part of this spec).** Billing must count only PM-**agreed** units. The approval gate already
+requires agreement for managed opps; the billable count is brought in line with it, so a managed work
+bills only what the PM has agreed to — first billing and later duplicates alike. This agreed count is
+the value the watermark and delta compare against ([§1.2](#12-selection--delta-based)), so the
+selection query needs no other change.
 
-- `reject_visits` (`views.py:1111`) — bulk reject.
-- `bulk_update_visit_review_status` (`visit_import.py`) — CSV reject.
+## Shared — Why no rejection guard is needed
 
-**PM disagree needs no guard:** an agreed visit can never be disagreed (`views.py:1483`,
-`visit_import.py:760-762`), so disagree can't reduce a billed work's count.
+An earlier draft added a guard blocking rejection of a billed work's visits. With the
+[§1.10](#110-agreement-gated-billable-count-managed--oq2-fix) fix it is unnecessary: billing counts
+only PM-**agreed** units, and an agreed visit can never be disagreed or rejected (already enforced on
+every path). So a billed amount can never be lowered — there is nothing to guard against.
 
-**Covers the `auto_approve_payments` cascade too:** there, rejecting any one visit flips the whole
-work to `rejected` (`completed_work.py:142-147`). Blocking the rejection at the source means that
-flip never fires — no separate whole-work guard needed.
+(Rejecting a *non-agreed* sibling can still flip the whole work to `rejected` under
+`auto_approve_payments` and zero the worker's accrued pay — a pre-existing effect that leaves the
+agreed count, the watermark, and the snapshot invoice untouched.)
 
 ---
 
@@ -380,23 +384,19 @@ Expected to be a small minority — drift only arises where a post-invoice appro
 
 ---
 
-## Open questions (pending product)
+## Open questions (resolved)
 
 **1. Must late approvals be billed? — RESOLVED: yes.** Product confirmed that duplicate approvals are
 a requirement, so we must account for new approvals post-invoice for a completed work. We proceed
 with Approach 1 and reject the appendix alternative; the snapshot + watermark work
 ([§1.1](#11-model-changes)–[§1.3](#13-creation--snapshot--bump-watermark-atomic)) is required. (The
-drift fix and rejection lock are shared regardless and can be built first.)
+drift fix is shared regardless and can be built first.)
 
-**2. Bill on approval or on PM agreement?** Once a completed work has its required visits both
-**approved** and **agreed**, any later duplicate set needs only to be **approved** to be counted
-toward billing — the PM never has to agree to it. What's the reason for this? Shouldn't the duplicate
-visits also be agreed before they bill? Pre-existing behavior, not introduced by this design. *If
-billing must require agreement:* [§1.2](#12-selection--delta-based)'s billable count changes.
-
-*Code path:* the count ignores `review_status` (`completed_work.py:83-86`, `:100-102`); the agree-gate
-is `_is_delivery_approved` (`completed_work.py:157-161`); `review_status=agree` is set only by the PM
-flow `user_visit_review` (`views.py:1477`).
+**2. Bill on approval or on PM agreement? — RESOLVED: require agreement (it was a bug).** Product
+confirmed a managed work must not bill un-agreed units; counting any approved visit regardless of
+`review_status` was a bug, not intended behavior. Fixed in
+[§1.10](#110-agreement-gated-billable-count-managed--oq2-fix), which also removes the need for a
+rejection guard ([Why no rejection guard is needed](#shared--why-no-rejection-guard-is-needed)).
 
 ---
 
