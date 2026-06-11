@@ -1,18 +1,27 @@
 from unittest.mock import patch
 
 import pytest
+from waffle.testutils import override_switch
 
-from commcare_connect.opportunity.models import CompletedWorkStatus, VisitReviewStatus, VisitValidationStatus
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
+from commcare_connect.opportunity.models import (
+    CompletedWorkStatus,
+    InvoiceStatus,
+    VisitReviewStatus,
+    VisitValidationStatus,
+)
 from commcare_connect.opportunity.tests.factories import (
     CompletedWorkFactory,
     OpportunityAccessFactory,
     OpportunityFactory,
+    PaymentInvoiceFactory,
     UserVisitFactory,
 )
 from commcare_connect.program.tasks import (
     get_org_managed_opps_for_review,
     get_org_opps_for_review,
     send_monthly_delivery_reminder_email,
+    send_pm_invoice_review_reminder,
 )
 from commcare_connect.program.tests.factories import ManagedOpportunityFactory, ProgramFactory
 from commcare_connect.users.tests.factories import (
@@ -275,3 +284,71 @@ class TestSendMonthlyDeliveryReminderEmail:
         expected_opps = {nm_opportunity.id, managed_opportunity_1.id}
         actual_opps = {nm_call_args["opportunities"][0].id, nm_call_args["opportunities"][1].id}
         assert expected_opps == actual_opps
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.program.tasks.send_mail_async")
+class TestSendPmInvoiceReviewReminder:
+    def _make_invoice(self, pm_org, status, is_test=False):
+        nm_org = OrganizationFactory()
+        program = ProgramFactory(organization=pm_org)
+        opp = ManagedOpportunityFactory(
+            organization=nm_org,
+            program=program,
+            is_test=is_test,
+        )
+        return PaymentInvoiceFactory(
+            opportunity=opp,
+            status=status,
+        )
+
+    @pytest.mark.parametrize(
+        "switch_enabled,status,is_test,expected_sent",
+        [
+            # switch disabled
+            (False, InvoiceStatus.PENDING_PM_REVIEW, False, False),
+            # actionable statuses
+            (True, InvoiceStatus.PENDING_PM_REVIEW, False, True),
+            (True, InvoiceStatus.READY_TO_PAY, False, True),
+            # non-actionable statuses
+            (True, InvoiceStatus.PENDING_NM_REVIEW, False, False),
+            (True, InvoiceStatus.CANCELLED_BY_NM, False, False),
+            (True, InvoiceStatus.REJECTED_BY_PM, False, False),
+            (True, InvoiceStatus.PAID, False, False),
+            (True, InvoiceStatus.ARCHIVED, False, False),
+            # test opportunities
+            (True, InvoiceStatus.PENDING_PM_REVIEW, True, False),
+        ],
+    )
+    def test_send_behavior(self, send_mock, switch_enabled, status, is_test, expected_sent):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        self._make_invoice(pm_org, status, is_test=is_test)
+
+        with override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=switch_enabled):
+            send_pm_invoice_review_reminder()
+
+        if expected_sent:
+            send_mock.delay.assert_called_once()
+        else:
+            send_mock.delay.assert_not_called()
+
+    def test_groups_multiple_invoices_into_one_email_per_pm_org(self, send_mock):
+        pm_org = ProgramManagerOrgWithUsersFactory()
+        self._make_invoice(pm_org, InvoiceStatus.PENDING_PM_REVIEW)
+        self._make_invoice(pm_org, InvoiceStatus.READY_TO_PAY)
+
+        with override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True):
+            send_pm_invoice_review_reminder()
+
+        send_mock.delay.assert_called_once()
+
+    def test_sends_separate_emails_per_pm_org(self, send_mock):
+        pm_org_1 = ProgramManagerOrgWithUsersFactory()
+        pm_org_2 = ProgramManagerOrgWithUsersFactory()
+        self._make_invoice(pm_org_1, InvoiceStatus.PENDING_PM_REVIEW)
+        self._make_invoice(pm_org_2, InvoiceStatus.READY_TO_PAY)
+
+        with override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True):
+            send_pm_invoice_review_reminder()
+
+        assert send_mock.delay.call_count == 2

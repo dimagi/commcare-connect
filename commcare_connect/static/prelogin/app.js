@@ -913,10 +913,7 @@ document.addEventListener('click', (e) => {
 
     if (!flwTabs.length) return;
 
-    var currentFlw = 0;
-
     function activateFlw(idx) {
-      currentFlw = idx;
       flwTabs.forEach(function (t, i) {
         t.setAttribute('aria-selected', i === idx ? 'true' : 'false');
       });

@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import CharField, Count, F, Max, Prefetch, Q, Sum, Value
+from django.db.models import CharField, Count, DecimalField, F, Max, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce, Concat
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -392,10 +392,23 @@ def network_manager_home(request, org):
     pending_review = _make_recent_activity_data(pending_review_data, org.slug, "opportunity:worker_deliver")
     access_qs = OpportunityAccess.objects.filter(opportunity__managed=True, opportunity__organization=org)
 
+    payment_accrued_sum_sq = (
+        OpportunityAccess.objects.filter(opportunity_id=OuterRef("id"))
+        .values("opportunity_id")
+        .annotate(total=Sum("payment_accrued"))
+        .values("total")[:1]
+    )
+    payment_amount_sum_sq = (
+        OpportunityAccess.objects.filter(opportunity_id=OuterRef("id"))
+        .values("opportunity_id")
+        .annotate(total=Sum("payment__amount"))
+        .values("total")[:1]
+    )
     pending_payments_data_opps = (
         Opportunity.objects.filter(managed=True, organization=org)
         .annotate(
-            pending_payment=Sum("opportunityaccess__payment_accrued") - Sum("opportunityaccess__payment__amount")
+            pending_payment=Coalesce(Subquery(payment_accrued_sum_sq), 0, output_field=DecimalField())
+            - Coalesce(Subquery(payment_amount_sum_sq), 0, output_field=DecimalField())
         )
         .filter(pending_payment__gte=0)
     )

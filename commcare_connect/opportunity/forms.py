@@ -249,8 +249,10 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                             heading=_("Manage Credentials"),
                             hint=format_html(
                                 _(
-                                    "Configure credential requirements for learning and delivery. For more "
-                                    "information, please refer to the {link_start}following documentation{link_end}."
+                                    "Configure credential requirements for learning and delivery."
+                                    " Disabling this section means no credential requirements will"
+                                    " be set for the opportunity. For more information,"
+                                    " please refer to the {link_start}following documentation{link_end}."
                                 ),
                                 link_start=format_html(
                                     '<a href="{}" target="_blank" class="text-blue-600 hover:underline">',

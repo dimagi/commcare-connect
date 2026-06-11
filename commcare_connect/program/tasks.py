@@ -7,10 +7,14 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
+from waffle import switch_is_active
 
+from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
+    InvoiceStatus,
     Opportunity,
+    PaymentInvoice,
     VisitReviewStatus,
     VisitValidationStatus,
 )
@@ -261,3 +265,71 @@ def send_opportunity_expiry_reminder_emails(days_before: int):
 def send_opportunity_expiry_reminders():
     send_opportunity_expiry_reminder_emails(7)
     send_opportunity_expiry_reminder_emails(3)
+
+
+@celery_app.task()
+def send_pm_invoice_review_reminder():
+    if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
+        return
+
+    invoices = PaymentInvoice.objects.filter(
+        status__in=[InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.READY_TO_PAY],
+        opportunity__managed=True,
+        opportunity__is_test=False,
+    ).select_related(
+        "opportunity",
+        "opportunity__managedopportunity__program__organization",
+        "opportunity__managedopportunity__program",
+    )
+
+    pm_org_invoices = defaultdict(lambda: {"organization": None, "invoices": []})
+    for invoice in invoices:
+        pm_org = invoice.opportunity.managedopportunity.program.organization
+        pm_org_invoices[pm_org.id]["organization"] = pm_org
+        pm_org_invoices[pm_org.id]["invoices"].append(invoice)
+
+    for org_data in pm_org_invoices.values():
+        _send_pm_invoice_review_reminder_email(org_data["organization"], org_data["invoices"])
+
+
+def _send_pm_invoice_review_reminder_email(pm_org, invoices):
+    recipient_emails = pm_org.get_member_emails()
+    if not recipient_emails:
+        return
+
+    invoice_items = []
+    for invoice in invoices:
+        invoice_url = build_absolute_uri(
+            None,
+            reverse(
+                "opportunity:invoice_review",
+                kwargs={
+                    "org_slug": pm_org.slug,
+                    "opp_id": invoice.opportunity.opportunity_id,
+                    "pk": invoice.payment_invoice_id,
+                },
+            ),
+        )
+        invoice_items.append(
+            {
+                "invoice": invoice,
+                "opportunity": invoice.opportunity,
+                "program": invoice.opportunity.managedopportunity.program,
+                "status_label": invoice.get_status_display(),
+                "invoice_url": invoice_url,
+            }
+        )
+
+    context = {
+        "organization": pm_org,
+        "invoice_items": invoice_items,
+    }
+    message = render_to_string("program/email/pm_invoice_review_reminder.txt", context)
+    html_message = render_to_string("program/email/pm_invoice_review_reminder.html", context)
+
+    send_mail_async.delay(
+        subject=_("[%(org)s] Action Required: Program Invoices Awaiting Review") % {"org": pm_org.name},
+        message=message,
+        recipient_list=recipient_emails,
+        html_message=html_message,
+    )

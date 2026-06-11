@@ -43,52 +43,31 @@ class UserVisitExporter:
             self.exclude_columns.remove("justification")
 
     def _get_table_metadata(self):
-        def _schema_sort(item):
-            return len(item.split(".")), item
-
-        uvs = []
-        if self.flatten:
-            for deliver_unit in self.opportunity.deliver_app.deliver_units.all():
-                uv = UserVisit.objects.filter(opportunity=self.opportunity, deliver_unit=deliver_unit).first()
-                if uv is not None:
-                    uvs.append(uv)
-        else:
-            uvs.append(UserVisit.objects.filter(opportunity=self.opportunity).first())
-
-        table = UserVisitTable(uvs)
-        columns = [
+        uv = UserVisit.objects.filter(opportunity=self.opportunity).first()
+        table = UserVisitTable([uv] if uv else [])
+        self.columns = [
             column
             for column in table.columns.iterall()
             if not (column.column.exclude_from_export or column.name in self.exclude_columns)
         ]
-        headers = [force_str(column.header, strings_only=True) for column in columns]
-        form_json_schema = set()
-        base_data = [
-            # form_json must be the last column in the row
-            [row.get_cell_value(column.name) for column in columns] + [row.get_cell_value("form_json")]
-            for row in table.rows
-        ]
-        if self.flatten:
-            for row in base_data:
-                form_json = row.pop()
-                form_json.pop("attachments", None)
-                flat_json = flatten_json(form_json, reducer="dot", enumerate_types=(list,))
-                form_json_schema.update(flat_json.keys())
+        self.headers = [force_str(column.header, strings_only=True) for column in self.columns]
+        if not self.flatten:
+            self.headers.append("form_json")
+        self.form_json_schema = []
 
-            form_json_schema = sorted(form_json_schema, key=_schema_sort)
-            headers += form_json_schema
-        else:
-            headers.append("form_json")
-
-        self.columns = columns
-        self.headers = headers
-        self.form_json_schema = form_json_schema
-
-    def _process_row(self, row):
+    def _process_row(self, row, dataset, schema_set):
         form_json = row.pop()
         form_json.pop("attachments", None)
         if self.flatten:
             flat_json = flatten_json(form_json, reducer="dot", enumerate_types=(list,))
+            for key in flat_json:
+                if key not in schema_set:
+                    schema_set.add(key)
+                    self.form_json_schema.append(key)
+                    if len(dataset) > 0:
+                        dataset.append_col([""] * len(dataset), header=key)
+                    else:
+                        dataset.headers.append(key)
             row.extend(flat_json.get(key, "") for key in self.form_json_schema)
         else:
             row.append(json.dumps(form_json))
@@ -106,6 +85,7 @@ class UserVisitExporter:
         self._get_table_metadata()
 
         dataset = Dataset(title="Export User Visits", headers=self.headers)
+        schema_set = set()
         for page in Paginator(user_visits, per_page=500):
             table = UserVisitTable(page.object_list)
             base_data = [
@@ -114,7 +94,7 @@ class UserVisitExporter:
                 for row in table.rows
             ]
             for row in base_data:
-                row = self._process_row(row)
+                row = self._process_row(row, dataset, schema_set)
                 dataset.append([force_str(col, strings_only=True) for col in row])
         return dataset
 

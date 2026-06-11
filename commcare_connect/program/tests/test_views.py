@@ -6,7 +6,7 @@ from django.http import HttpResponseRedirect
 from django.test import Client
 from django.urls import reverse
 
-from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory
+from commcare_connect.opportunity.tests.factories import DeliveryTypeFactory, OpportunityAccessFactory, PaymentFactory
 from commcare_connect.organization.models import Organization
 from commcare_connect.program.models import Program, ProgramApplication, ProgramApplicationStatus
 from commcare_connect.program.tests.factories import (
@@ -188,3 +188,61 @@ class TestProgramHomeBudgetData(BaseProgramTest):
         for application in applications:
             expected_budget = self.expected_application_budgets[application.organization_id]
             assert application.current_budget == expected_budget
+
+
+@pytest.mark.django_db
+class TestNetworkManagerPendingPayments:
+    """The network manager home (`network_manager_home`) is served to non-program-manager
+    org admins. It surfaces a "Pending Payments" figure per managed opportunity, computed as
+    sum(payment_accrued) - sum(payment.amount) across the opportunity's accesses."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, organization: Organization, org_user_admin: User, client: Client):
+        # A regular (non program-manager) org admin lands on the network manager home.
+        self.organization = organization
+        self.client = client
+        client.force_login(org_user_admin)
+        self.url = reverse("program:home", kwargs={"org_slug": self.organization.slug})
+
+    def _pending_payment_count(self, opportunity):
+        response = self.client.get(self.url)
+        assert response.status_code == HTTPStatus.OK
+        pending_payments = next(
+            section["rows"]
+            for section in response.context["recent_activities"]
+            if section["title"] == "Pending Payments"
+        )
+        row = next((r for r in pending_payments if r["opportunity__name"] == opportunity.name), None)
+        return row["count"] if row else None
+
+    def test_pending_payment_not_inflated_by_payment_fan_out(self):
+        """Regression: with multiple payments on a single access, joining payment_accrued and
+        payment.amount in one query multiplies payment_accrued by the number of payment rows.
+        The figure must reflect each sum computed independently."""
+        opportunity = ManagedOpportunityFactory.create(organization=self.organization)
+        # access_a has TWO payments -> this is what triggered the fan-out double-counting.
+        access_a = OpportunityAccessFactory.create(opportunity=opportunity, payment_accrued=100)
+        access_b = OpportunityAccessFactory.create(opportunity=opportunity, payment_accrued=50)
+        PaymentFactory.create(opportunity_access=access_a, amount=30)
+        PaymentFactory.create(opportunity_access=access_a, amount=30)
+        PaymentFactory.create(opportunity_access=access_b, amount=20)
+
+        # accrued (100 + 50) - paid (30 + 30 + 20) = 70.
+        # The fan-out bug would instead report (100 + 100 + 50) - (30 + 30 + 20) = 170.
+        assert self._pending_payment_count(opportunity) == f"{opportunity.currency_code} 70.00"
+
+    def test_pending_payment_with_no_payments(self):
+        """No payments yet: the full accrued amount is still pending."""
+        opportunity = ManagedOpportunityFactory.create(organization=self.organization)
+        OpportunityAccessFactory.create(opportunity=opportunity, payment_accrued=100)
+        OpportunityAccessFactory.create(opportunity=opportunity, payment_accrued=50)
+
+        assert self._pending_payment_count(opportunity) == f"{opportunity.currency_code} 150"
+
+    def test_fully_paid_opportunity_excluded(self):
+        """Opportunities with a negative pending balance (overpaid) are filtered out."""
+        opportunity = ManagedOpportunityFactory.create(organization=self.organization)
+        access = OpportunityAccessFactory.create(opportunity=opportunity, payment_accrued=100)
+        PaymentFactory.create(opportunity_access=access, amount=150)
+
+        assert self._pending_payment_count(opportunity) is None

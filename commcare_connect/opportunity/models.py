@@ -241,9 +241,9 @@ class Opportunity(BaseModel):
 class OpportunityVerificationFlags(models.Model):
     opportunity = models.OneToOneField(Opportunity, on_delete=models.CASCADE)
     duration = models.PositiveIntegerField(default=1)
-    gps = models.BooleanField(default=True)
-    duplicate = models.BooleanField(default=True)
-    location = models.PositiveIntegerField(default=10)
+    gps = models.BooleanField(default=False)
+    duplicate = models.BooleanField(default=False)
+    location = models.PositiveIntegerField(default=0)
     form_submission_start = models.TimeField(null=True, blank=True)
     form_submission_end = models.TimeField(null=True, blank=True)
     catchment_areas = models.BooleanField(default=False)

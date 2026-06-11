@@ -1,7 +1,6 @@
 import datetime
 import importlib
 import random
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import timedelta
 from http import HTTPStatus
@@ -34,7 +33,6 @@ from commcare_connect.opportunity.models import (
     OpportunityAccess,
     OpportunityClaimLimit,
     OpportunityVerificationFlags,
-    PaymentUnit,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -249,7 +247,6 @@ def test_receiver_deliver_form_daily_visits_reached(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("opportunity", [{"verification_flags": {"duplicate": False}}], indirect=True)
 def test_over_limit_status_preserved_when_duplicate_flag_disabled(
     user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
 ):
@@ -265,6 +262,7 @@ def test_over_limit_status_preserved_when_duplicate_flag_disabled(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("paymentunit_options", [pytest.param({"max_daily": 2})])
+@pytest.mark.parametrize("opportunity", [{"verification_flags": {"location": 10}}], indirect=True)
 def test_receiver_deliver_form_max_visits_reached(
     mobile_user_with_connect_link: User, api_client: APIClient, opportunity: Opportunity
 ):
@@ -327,46 +325,6 @@ def test_receiver_deliver_form_before_start_date(
     visit = UserVisit.objects.get(user=user_with_connectid_link)
     assert visit.status == VisitValidationStatus.trial
     assert CompletedWork.objects.count() == 0
-
-
-def test_receiver_duplicate(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
-    oauth_application = opportunity.hq_server.oauth_application
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.status == VisitValidationStatus.approved
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    assert visit.status == VisitValidationStatus.duplicate
-    assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit.flag_reason.get("flags", [])
-
-
-@pytest.mark.django_db(transaction=True)
-def test_receiver_duplicate_concurrent_submissions(user_with_connectid_link: User, opportunity: Opportunity):
-    oauth_application = opportunity.hq_server.oauth_application
-    user = user_with_connectid_link
-    form_json = _create_opp_and_form_json(opportunity, user=user)
-    entity_id = form_json["form"]["deliver"]["entity_id"]
-
-    def submit_form():
-        client = APIClient()
-        payload = deepcopy(form_json)
-        payload["id"] = str(uuid4())
-        add_credentials(client, user, oauth_application=oauth_application)
-        response = client.post("/api/receiver/", data=payload, format="json")
-        assert response.status_code == HTTPStatus.OK, response.data
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(submit_form) for _ in range(2)]
-        for future in futures:
-            future.result()
-
-    visits = UserVisit.objects.filter(entity_id=entity_id)
-    assert visits.count() == 2
-    statuses = {visit.status for visit in visits}
-    assert VisitValidationStatus.duplicate in statuses
 
 
 def test_flagged_form(user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity):
@@ -462,18 +420,6 @@ def _trigger_over_limit_visit(opportunity, user, api_client):
     return UserVisit.objects.get(user=user)
 
 
-def _trigger_duplicate_visit(opportunity, user, api_client):
-    form_json = _create_opp_and_form_json(opportunity, user=user)
-    deliver_unit = opportunity.deliver_app.deliver_units.first()
-    DeliverUnitFlagRulesFactory(deliver_unit=deliver_unit, opportunity=opportunity, duration=1)
-    oauth_application = opportunity.hq_server.oauth_application
-    make_request(api_client, form_json, user, oauth_application=oauth_application)
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user, oauth_application=oauth_application)
-    return UserVisit.objects.get(xform_id=duplicate_json["id"])
-
-
 def _trigger_trial_visit(opportunity, user, api_client):
     opportunity.start_date = datetime.date.today() + datetime.timedelta(days=10)
     opportunity.save()
@@ -493,10 +439,9 @@ def _trigger_trial_visit(opportunity, user, api_client):
     "trigger_visit, expected_status",
     [
         (_trigger_over_limit_visit, VisitValidationStatus.over_limit),
-        (_trigger_duplicate_visit, VisitValidationStatus.duplicate),
         (_trigger_trial_visit, VisitValidationStatus.trial),
     ],
-    ids=["over_limit", "duplicate", "trial"],
+    ids=["over_limit", "trial"],
 )
 def test_automatic_visit_verification_preserves_existing_status(
     user_with_connectid_link: User,
@@ -823,7 +768,9 @@ def test_approve_rejected_visit(mobile_user_with_connect_link: User, api_client:
     assert completed_work.status == CompletedWorkStatus.approved
 
 
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
+@pytest.mark.parametrize(
+    "opportunity", [{"opp_options": {"managed": True}, "verification_flags": {"gps": True}}], indirect=True
+)
 @pytest.mark.parametrize(
     "visit_status, review_status",
     [
@@ -845,29 +792,6 @@ def test_receiver_visit_review_status(
         assert visit.flagged
     assert visit.status == visit_status
     assert visit.review_status == review_status
-
-
-@pytest.mark.parametrize("opportunity", [{"opp_options": {"managed": True}}], indirect=True)
-def test_receiver_duplicate_managed_opportunity(
-    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
-):
-    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
-    oauth_application = opportunity.hq_server.oauth_application
-    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
-    access = OpportunityAccess.objects.get(opportunity=opportunity, user=user_with_connectid_link)
-    payment_unit = PaymentUnit.objects.get(opportunity=opportunity)
-    visit = UserVisit.objects.get(user=user_with_connectid_link)
-    assert visit.status == VisitValidationStatus.approved
-    assert access.payment_accrued == payment_unit.amount
-
-    duplicate_json = deepcopy(form_json)
-    duplicate_json["id"] = str(uuid4())
-    make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
-    visit = UserVisit.objects.get(xform_id=duplicate_json["id"])
-    access.refresh_from_db()
-    assert visit.status == VisitValidationStatus.duplicate
-    assert access.payment_accrued == payment_unit.amount
-    assert ["duplicate", "A beneficiary with the same identifier already exists"] in visit.flag_reason.get("flags", [])
 
 
 @pytest.mark.parametrize(

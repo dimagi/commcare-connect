@@ -1,0 +1,13 @@
+{% extends "email/base.txt" %}
+{% load i18n %}
+{% block content %}{% trans "Hi," %}
+
+{% blocktrans with org_name=organization.name %}The following invoices for your workspace {{ org_name }} require your attention.{% endblocktrans %}
+
+{% for item in invoice_items %}
+    {% trans "Program:" %} {{ item.program.name }}
+    {% trans "Opportunity:" %} {{ item.opportunity.name }}
+    {% trans "Invoice Number:" %} {{ item.invoice.invoice_number }}
+    {% trans "Status:" %} {{ item.status_label }}
+    {% trans "Review Invoice:" %} {{ item.invoice_url }}
+{% endfor %}{% endblock %}

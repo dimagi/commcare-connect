@@ -67,6 +67,42 @@ def test_export_user_visit_data(mobile_user_with_connect_link):
     )
 
 
+def test_export_user_visit_data_disjoint_fields(mobile_user_with_connect_link):
+    opportunity = OpportunityFactory()
+    deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app)
+    date1 = now()
+    date2 = date1 + timedelta(minutes=10)
+    UserVisit.objects.bulk_create(
+        [
+            UserVisit(
+                opportunity=opportunity,
+                user=mobile_user_with_connect_link,
+                visit_date=date1,
+                deliver_unit=deliver_unit,
+                form_json={"form": {"field_a": "value_a"}},
+            ),
+            UserVisit(
+                opportunity=opportunity,
+                user=mobile_user_with_connect_link,
+                visit_date=date2,
+                deliver_unit=deliver_unit,
+                form_json={"form": {"field_b": "value_b"}},
+            ),
+        ]
+    )
+    exporter = UserVisitExporter(opportunity, True)
+    dataset = exporter.get_dataset(date1, date2, [])
+
+    assert "form.field_a" in dataset.headers
+    assert "form.field_b" in dataset.headers
+
+    rows = dataset.dict
+    row1 = next(r for r in rows if r["form.field_a"] == "value_a")
+    row2 = next(r for r in rows if r["form.field_b"] == "value_b")
+    assert row1["form.field_b"] == ""
+    assert row2["form.field_a"] == ""
+
+
 def test_export_user_visit_data_no_flatten(mobile_user_with_connect_link):
     opportunity = OpportunityFactory()
     deliver_units = DeliverUnitFactory.create_batch(2, app=opportunity.deliver_app)
