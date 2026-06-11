@@ -40,6 +40,13 @@ class Command(BaseCommand):
             default=4,
             help="Number of work areas to create if the opportunity has none (default: 4)",
         )
+        parser.add_argument(
+            "--create-users",
+            action="store_true",
+            default=False,
+            help="Create new sample mobile workers for the visits. By default, reuse users that "
+            "already have access to the opportunity.",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -48,7 +55,7 @@ class Command(BaseCommand):
 
         work_areas = self._get_or_create_work_areas(opportunity, options["work_areas"])
         deliver_unit = self._get_or_create_deliver_unit(opportunity)
-        accesses = self._get_or_create_accesses(opportunity, work_areas)
+        accesses = self._get_accesses(opportunity, work_areas, options["create_users"])
 
         self.stdout.write(f"Creating {count} visits for '{opportunity.name}' across {len(work_areas)} work area(s)...")
         for i in range(count):
@@ -132,11 +139,18 @@ class Command(BaseCommand):
             payment_unit=payment_unit,
         )
 
-    def _get_or_create_accesses(self, opportunity, work_areas):
-        accesses = list(OpportunityAccess.objects.filter(opportunity=opportunity))
-        if not accesses:
-            self.stdout.write("No opportunity access found; creating sample mobile workers.")
+    def _get_accesses(self, opportunity, work_areas, create_users):
+        if create_users:
+            self.stdout.write("Creating sample mobile workers.")
             accesses = [self._create_access(opportunity, i) for i in range(min(3, len(work_areas)) or 1)]
+        else:
+            accesses = list(OpportunityAccess.objects.filter(opportunity=opportunity))
+            if not accesses:
+                raise CommandError(
+                    "No existing users have access to this opportunity. "
+                    "Pass --create-users to create sample mobile workers."
+                )
+            self.stdout.write(f"Reusing {len(accesses)} existing opportunity access(es).")
         # Make sure every work area has an assignee for nicer map display.
         for i, work_area in enumerate(work_areas):
             if work_area.opportunity_access is None:
