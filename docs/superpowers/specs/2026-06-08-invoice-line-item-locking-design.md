@@ -302,10 +302,11 @@ Populate `CompletedWorkInvoice` rows for every existing invoice, so legacy invoi
 new table once the FK is gone:
 
 - For each existing invoice with linked works (read via the still-present `CompletedWork.invoice`
-  FK), create one row per work from the work's **current** `saved_*` (best available snapshot) and
-  set `invoiced_approved_count = saved_approved_count`. Set `month = TruncMonth(invoice.end_date)`
-  (original billing period) and `exchange_rate = PaymentInvoice.exchange_rate` (the frozen rate, not
-  a re-fetched current one).
+  FK), create one row per work from the work's **current** `saved_*` and set
+  `invoiced_approved_count = saved_approved_count`. Use `month = TruncMonth(status_modified_date)` and
+  `exchange_rate = get_exchange_rate(currency, month)` — matching how `get_invoice_items`
+  (`utils/completed_work.py:330,352`) groups and prices line items today, so backfilled rows reproduce
+  the current display exactly. (This is §1.4's first-billing arm; only *late deltas* use `end_date`.)
 - **Pre-existing drift is frozen as-is, not corrected.** For an already-drifted legacy invoice
   `Σ(rows)` equals the *current* line items, not necessarily the original `PaymentInvoice.amount`.
   The design stops *future* drift; reconciling history is a non-goal and is generally impossible (the
