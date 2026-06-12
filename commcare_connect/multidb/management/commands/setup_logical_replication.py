@@ -5,23 +5,16 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from commcare_connect.multidb.replication import get_replicated_models
+from commcare_connect.multidb.replication import get_replicated_models, quote_identifier
 
 PUBLICATION_NAME = "tables_for_superset_pub"
 SUBSCRIPTION_NAME = "tables_for_superset_sub"
 
 
-def _quote_ident(name):
-    escaped = name.replace('"', '""')
-    return f'"{escaped}"'
-
-
 def transfer_subscription_ownership(cursor, secondary_role):
     """Hand subscription ownership to the app's secondary role so the
     recurring refresh can REFRESH PUBLICATION without a superuser (PG16+)."""
-    cursor.execute(
-        f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} OWNER TO {_quote_ident(secondary_role)}"
-    )  # noqa: E231,E702
+    cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} OWNER TO {quote_identifier(secondary_role)}")
 
 
 class Command(BaseCommand):
