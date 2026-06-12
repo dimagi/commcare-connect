@@ -3,6 +3,17 @@
 This document expands on the recommendation reached in
 [`replication-redesign.md`](./replication-redesign.md).
 
+> **Implementation status (2026-06):** Code landed — twin lists
+> (`REPLICATION_INCLUDED_MODELS` / `REPLICATION_EXCLUDED_MODELS`) with a
+> test-enforced classification guard over local app models, the
+> non-interactive `refresh_replication` command, the bootstrap subscription
+> ownership transfer, and the deploy wiring (`docker/start_migrate` runs
+> `refresh_replication` after `migrate_multi`). Classification enforcement is
+> a pytest (fails in CI), not a Django system check. **Not yet rolled out to
+> production:** gated behind `REPLICATION_ENABLED=False` pending the
+> secondary's Postgres 15 → 16 blue/green upgrade (see
+> [Postgres version prerequisite](#postgres-version-prerequisite)).
+
 ## Recommended options (recap)
 
 - **D1.B — maintain 2 lists defining replicated and non-replicated tables.** `REPLICATION_INCLUDED_MODELS` and
