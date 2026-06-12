@@ -5,7 +5,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from commcare_connect.multidb.constants import REPLICATION_ALLOWED_MODELS
+from commcare_connect.multidb.replication import get_replicated_models
 
 from .setup_logical_replication import PUBLICATION_NAME, SUBSCRIPTION_NAME
 
@@ -120,20 +120,20 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Replication delay check completed."))
 
         self.stdout.write(self.style.SUCCESS("\nFetching table counts from both databases..."))
-        self.stdout.write(f"{'Table':<30}{'Primary DB Count':<20}{'Secondary DB Count'}")
+        self.stdout.write(f"{'Table':<30}{'Primary DB Count':<20}{'Secondary DB Count'}")  # noqa: E231
         self.stdout.write("-" * 70)
 
-        for model in REPLICATION_ALLOWED_MODELS:
+        for model in get_replicated_models():
             table_name = model._meta.db_table
             with default_conn.cursor() as cursor:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")  # noqa: E702,E231
                 primary_count = cursor.fetchone()[0]
 
             with secondary_conn.cursor() as cursor:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")  # noqa: E702,E231
                 secondary_count = cursor.fetchone()[0]
 
-            self.stdout.write(f"{table_name:<30}{primary_count:<20}{secondary_count}")
+            self.stdout.write(f"{table_name:<30}{primary_count:<20}{secondary_count}")  # noqa: E231
 
         self.stdout.write(self.style.SUCCESS("Table counts fetched successfully."))
         # Close the manually created connection

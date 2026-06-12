@@ -5,7 +5,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from commcare_connect.multidb.constants import REPLICATION_ALLOWED_MODELS
+from commcare_connect.multidb.replication import get_replicated_models
 
 PUBLICATION_NAME = "tables_for_superset_pub"
 SUBSCRIPTION_NAME = "tables_for_superset_sub"
@@ -16,7 +16,7 @@ class Command(BaseCommand):
 
     def get_table_list(self):
         table_list = []
-        for model in REPLICATION_ALLOWED_MODELS:
+        for model in get_replicated_models():
             try:
                 table_list.append(model._meta.db_table)
             except Exception as e:
@@ -68,11 +68,11 @@ class Command(BaseCommand):
             tables = ", ".join([f'"{table}"' for table in table_list])
             if publication_exists:
                 self.stdout.write(f"Publication '{PUBLICATION_NAME}' already exists, refreshing it.")
-                cursor.execute(f"ALTER PUBLICATION {PUBLICATION_NAME} SET TABLE {tables};")
+                cursor.execute(f"ALTER PUBLICATION {PUBLICATION_NAME} SET TABLE {tables};")  # noqa: E702,E231
                 self.stdout.write(self.style.SUCCESS(f"Publication '{PUBLICATION_NAME}' altered successfully."))
             else:
                 self.stdout.write(f"Creating new publication '{PUBLICATION_NAME}'.")
-                cursor.execute(f"CREATE PUBLICATION {PUBLICATION_NAME} FOR TABLE {tables};")
+                cursor.execute(f"CREATE PUBLICATION {PUBLICATION_NAME} FOR TABLE {tables};")  # noqa: E702,E231
                 self.stdout.write(self.style.SUCCESS(f"Publication '{PUBLICATION_NAME}' created successfully."))
 
         self.stdout.write("Setting up subscription in the secondary database...")
@@ -100,7 +100,7 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.WARNING(f"Subscription '{SUBSCRIPTION_NAME}' already exists. Refreshing it.")
                 )
-                cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} REFRESH PUBLICATION;")
+                cursor.execute(f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} REFRESH PUBLICATION;")  # noqa: E702,E231
                 self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' refreshed successfully."))
             else:
                 # Create new subscription
@@ -120,7 +120,7 @@ class Command(BaseCommand):
                     CREATE SUBSCRIPTION {SUBSCRIPTION_NAME}
                     CONNECTION '{primary_conn_info}'
                     PUBLICATION {PUBLICATION_NAME};
-                    """
+                    """  # noqa: E702,E231
                 )
                 self.stdout.write(self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' created successfully."))
             self.stdout.write("Granting select permissions to superset postgres user...")
