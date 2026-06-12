@@ -1,10 +1,8 @@
-import waffle
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
 from django_tables2 import columns, tables
 
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import PaymentInvoice
 from commcare_connect.opportunity.tables import SumColumn
 from commcare_connect.utils.tables import DMYTColumn
@@ -88,13 +86,6 @@ class InvoiceReportTable(tables.Table):
             "invoice_creation_date",
             "date",
         )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            self.columns.hide("exchange_rate")
-            self.columns.hide("invoice_creation_date")
-            self.columns.hide("last_status_modified_at")
 
     def render_invoice_number(self, value, record):
         url = reverse(

@@ -2,7 +2,6 @@ import itertools
 from urllib.parse import urlencode
 
 import django_tables2 as tables
-import waffle
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -12,7 +11,6 @@ from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django_tables2 import columns
 
-from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
@@ -397,7 +395,6 @@ class PaymentReportTable(tables.Table):
 
 class PaymentInvoiceTable(OpportunityContextTable):
     amount = tables.Column(verbose_name="Amount")
-    payment_status = columns.Column(verbose_name="Payment Status", accessor="payment", empty_values=())
     payment_date = columns.Column(verbose_name="Payment Date", accessor="payment", empty_values=(None))
     actions = tables.Column(empty_values=(), orderable=False, verbose_name="Actions")
     exchange_rate = tables.Column(orderable=False, empty_values=(None,), accessor="exchange_rate__rate")
@@ -411,6 +408,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
     )
     status = tables.Column(verbose_name="Invoice Status")
     invoice_type = tables.Column(verbose_name="Invoice Type", accessor="service_delivery", empty_values=())
+    date = tables.Column(verbose_name=gettext_lazy("Invoice Generation Date"))
     last_status_modified_at = tables.Column(
         verbose_name=gettext_lazy("Invoice Last Updated Date"), accessor="last_status_modified_at"
     )
@@ -426,7 +424,6 @@ class PaymentInvoiceTable(OpportunityContextTable):
             "date",
             "invoice_number",
             "status",
-            "payment_status",
             "last_status_modified_at",
             "payment_date",
             "invoice_type",
@@ -446,24 +443,9 @@ class PaymentInvoiceTable(OpportunityContextTable):
         self.is_pm = kwargs.pop("is_pm", False)
         super().__init__(*args, **kwargs)
         self.base_columns["amount"].verbose_name = f"Amount ({self.opportunity.currency_code})"
-        # These changes can be done at class level when this switch is fully rolled out and no longer needed.
-        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            self.columns["date"].column.verbose_name = _("Invoice Generation Date")
-            self.columns.hide("payment_status")
-        else:
-            self.columns.hide("last_status_modified_at")
 
     def render_exchange_rate(self, value):
-        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            return f"{round(value, 2)} {self.opportunity.currency_code} per USD"
-        return value
-
-    def render_payment_status(self, record, value):
-        if record.status == InvoiceStatus.ARCHIVED:
-            return "Archived"
-        if value is not None:
-            return "Paid"
-        return "Pending"
+        return f"{round(value, 2)} {self.opportunity.currency_code} per USD"
 
     def render_payment_date(self, value):
         if value is not None:
@@ -476,37 +458,21 @@ class PaymentInvoiceTable(OpportunityContextTable):
         return _("Other")
 
     def render_status(self, record):
-        if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            tooltips = {
-                "Pending": _("Under review by Program Manager."),
-                "Approved": _("Invoice Approved and Paid."),
-                "Submitted": _("Submitted to Program Manager for Approval."),
-                "Archived": _("Invoice Archived. No User Actions Allowed."),
-            }
-            status = record.get_status_display()
-            return format_html('<span x-data x-tooltip.raw="{}">{}</span>', tooltips.get(status, ""), status)
         return record.get_status_display()
 
     def render_actions(self, record):
-        review_button = ""
-        if waffle.switch_is_active(INVOICE_REVIEW):
-            invoice_review_url = reverse(
-                "opportunity:invoice_review",
-                args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
-            )
-            review_button = (
-                f'<a href="{invoice_review_url}" '
-                f'class="button button-md outline-style !inline-flex justify-center">'
-                f'{_("Review")}</a>'
-            )
+        invoice_review_url = reverse(
+            "opportunity:invoice_review",
+            args=[self.org_slug, str(self.opportunity.opportunity_id), str(record.payment_invoice_id)],
+        )
+        review_button = (
+            f'<a href="{invoice_review_url}" '
+            f'class="button button-md outline-style !inline-flex justify-center">'
+            f'{_("Review")}</a>'
+        )
         pay_button = ""
         if self.is_pm:
-            required_status_for_pay = (
-                InvoiceStatus.READY_TO_PAY
-                if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
-                else InvoiceStatus.PENDING_PM_REVIEW
-            )
-            if record.status == required_status_for_pay:
+            if record.status == InvoiceStatus.READY_TO_PAY:
                 invoice_pay_url = reverse(
                     "opportunity:invoice_pay", args=[self.org_slug, self.opportunity.opportunity_id]
                 )

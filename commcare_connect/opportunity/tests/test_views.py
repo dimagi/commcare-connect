@@ -15,7 +15,7 @@ from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
-from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
+from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.forms import AddBudgetExistingUsersForm, AutomatedPaymentInvoiceForm, PaymentUnitForm
@@ -1197,22 +1197,6 @@ class BaseTestInvoiceView:
 
 @pytest.mark.django_db
 class TestInvoiceReviewView(BaseTestInvoiceView):
-    def test_switch_not_active(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        client.force_login(user)
-        url = reverse(
-            "opportunity:invoice_review",
-            args=(opportunity.organization.slug, opportunity.opportunity_id, invoice.payment_invoice_id),
-        )
-        with override_switch(INVOICE_REVIEW, active=False):
-            response = client.get(url)
-        assert response.status_code == 404
-        assert b"Invoice review feature is not available" in response.content
-
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_get_invoice_review_view_success(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1237,7 +1221,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         assert path[2]["title"] == "Invoices"
         assert path[3]["title"] == "Review Service Delivery Invoice"
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_invoice_not_found(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1250,7 +1233,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         response = client.get(url)
         assert response.status_code == 404
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_invoice_wrong_opportunity(self, client, setup_invoice, organization):
         invoice = setup_invoice["invoice"]
         user = setup_invoice["user"]
@@ -1271,7 +1253,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
 
         assert response.status_code == 404
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_form_is_readonly(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1294,7 +1275,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         response = client.get(url)
         assert_readonly_form(response)
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_custom_invoice_no_line_items(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1316,7 +1296,6 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         form = response.context["form"]
         assert form.line_items_table is None
 
-    @override_switch(INVOICE_REVIEW, active=True)
     def test_unauthorized_user_cannot_access(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1332,8 +1311,7 @@ class TestInvoiceReviewView(BaseTestInvoiceView):
         # Should redirect (permission denied) or return 403/404
         assert response.status_code in [302, 403, 404]
 
-    @override_switch(INVOICE_REVIEW, active=True)
-    def test_automated_form_when_switch_active(self, client, setup_invoice):
+    def test_uses_automated_payment_invoice_form(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1362,17 +1340,6 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
         url = self._url(opportunity, invoice_id)
         return client.get(url)
 
-    def test_switch_inactive(self, client, setup_invoice):
-        invoice = setup_invoice["invoice"]
-        opportunity = setup_invoice["opportunity"]
-        user = setup_invoice["user"]
-
-        response = self._send_request(client, user, opportunity, invoice.payment_invoice_id)
-
-        assert response.status_code == 404
-        assert "Invoice download feature is not available" in str(response.content)
-
-    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
     def test_successful_download(self, client, setup_invoice):
         invoice = setup_invoice["invoice"]
         opportunity = setup_invoice["opportunity"]
@@ -1386,7 +1353,6 @@ class TestDownloadInvoiceView(BaseTestInvoiceView):
             invoice.payment_invoice_id
         )
 
-    @override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
     def test_missing_invoice(self, client, setup_invoice):
         opportunity = setup_invoice["opportunity"]
         user = setup_invoice["user"]
@@ -1554,7 +1520,6 @@ class TestEditPaymentUnit:
 
 
 @pytest.mark.django_db
-@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_restricted_access(
     client, program_manager_org, program_manager_org_user_member
 ):
@@ -1572,7 +1537,6 @@ def test_update_invoice_invoice_ticket_link_restricted_access(
 
 
 @pytest.mark.django_db
-@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, program_manager_org_user_admin):
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     assert invoice.invoice_ticket_link is None
@@ -1592,22 +1556,6 @@ def test_update_invoice_invoice_ticket_link_access(client, program_manager_org, 
 
 
 @pytest.mark.django_db
-def test_update_invoice_invoice_ticket_link_switch_check(client, program_manager_org, program_manager_org_user_admin):
-    invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
-    assert invoice.invoice_ticket_link is None
-
-    url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)
-
-    client.force_login(program_manager_org_user_admin)
-    response = client.post(url, data={"invoice_ticket_link": "https://www.home.com"})
-    assert response.status_code == HTTPStatus.NOT_FOUND
-
-    invoice.refresh_from_db()
-    assert invoice.invoice_ticket_link is None
-
-
-@pytest.mark.django_db
-@override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True)
 def test_update_invoice_invoice_ticket_link_failure(client, program_manager_org, program_manager_org_user_admin):
     invoice, opportunity = _setup_data_for_invoice_ticket_link_update(program_manager_org)
     url = _update_invoice_invoice_ticket_link_url(program_manager_org, opportunity, invoice)

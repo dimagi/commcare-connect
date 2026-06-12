@@ -1,9 +1,7 @@
 from unittest.mock import patch
 
 import pytest
-from waffle.testutils import override_switch
 
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     InvoiceStatus,
@@ -303,29 +301,26 @@ class TestSendPmInvoiceReviewReminder:
         )
 
     @pytest.mark.parametrize(
-        "switch_enabled,status,is_test,expected_sent",
+        "status,is_test,expected_sent",
         [
-            # switch disabled
-            (False, InvoiceStatus.PENDING_PM_REVIEW, False, False),
             # actionable statuses
-            (True, InvoiceStatus.PENDING_PM_REVIEW, False, True),
-            (True, InvoiceStatus.READY_TO_PAY, False, True),
+            (InvoiceStatus.PENDING_PM_REVIEW, False, True),
+            (InvoiceStatus.READY_TO_PAY, False, True),
             # non-actionable statuses
-            (True, InvoiceStatus.PENDING_NM_REVIEW, False, False),
-            (True, InvoiceStatus.CANCELLED_BY_NM, False, False),
-            (True, InvoiceStatus.REJECTED_BY_PM, False, False),
-            (True, InvoiceStatus.PAID, False, False),
-            (True, InvoiceStatus.ARCHIVED, False, False),
+            (InvoiceStatus.PENDING_NM_REVIEW, False, False),
+            (InvoiceStatus.CANCELLED_BY_NM, False, False),
+            (InvoiceStatus.REJECTED_BY_PM, False, False),
+            (InvoiceStatus.PAID, False, False),
+            (InvoiceStatus.ARCHIVED, False, False),
             # test opportunities
-            (True, InvoiceStatus.PENDING_PM_REVIEW, True, False),
+            (InvoiceStatus.PENDING_PM_REVIEW, True, False),
         ],
     )
-    def test_send_behavior(self, send_mock, switch_enabled, status, is_test, expected_sent):
+    def test_send_behavior(self, send_mock, status, is_test, expected_sent):
         pm_org = ProgramManagerOrgWithUsersFactory()
         self._make_invoice(pm_org, status, is_test=is_test)
 
-        with override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=switch_enabled):
-            send_pm_invoice_review_reminder()
+        send_pm_invoice_review_reminder()
 
         if expected_sent:
             send_mock.delay.assert_called_once()
@@ -337,8 +332,7 @@ class TestSendPmInvoiceReviewReminder:
         self._make_invoice(pm_org, InvoiceStatus.PENDING_PM_REVIEW)
         self._make_invoice(pm_org, InvoiceStatus.READY_TO_PAY)
 
-        with override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True):
-            send_pm_invoice_review_reminder()
+        send_pm_invoice_review_reminder()
 
         send_mock.delay.assert_called_once()
 
@@ -348,7 +342,6 @@ class TestSendPmInvoiceReviewReminder:
         self._make_invoice(pm_org_1, InvoiceStatus.PENDING_PM_REVIEW)
         self._make_invoice(pm_org_2, InvoiceStatus.READY_TO_PAY)
 
-        with override_switch(UPDATES_TO_MARK_AS_PAID_WORKFLOW, active=True):
-            send_pm_invoice_review_reminder()
+        send_pm_invoice_review_reminder()
 
         assert send_mock.delay.call_count == 2

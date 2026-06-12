@@ -9,7 +9,6 @@ from http import HTTPStatus
 from urllib.parse import urlencode, urlparse
 
 import pghistory
-import waffle
 from celery.result import AsyncResult
 from crispy_forms.utils import render_crispy_form
 from django.conf import settings
@@ -59,7 +58,7 @@ from waffle import switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
 from commcare_connect.flags.flag_names import MICROPLANNING
-from commcare_connect.flags.switch_names import INVOICE_REVIEW, UPDATES_TO_MARK_AS_PAID_WORKFLOW, WORKER_VISITS_TASKS
+from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
 from commcare_connect.microplanning.models import WorkAreaInaccessibilityRequest
@@ -1564,9 +1563,12 @@ def invoice_list(request, org_slug, opp_id):
 
     highlight_invoice_number = request.GET.get("highlight")
 
-    queryset = PaymentInvoice.objects.filter(**filter_kwargs).select_related("exchange_rate").order_by("date")
-    if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-        queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
+    queryset = (
+        PaymentInvoice.objects.filter(**filter_kwargs)
+        .select_related("exchange_rate")
+        .annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
+        .order_by("date")
+    )
 
     if highlight_invoice_number:  # make sure highlighted invoice is on page 1
         queryset = queryset.annotate(
@@ -1579,15 +1581,11 @@ def invoice_list(request, org_slug, opp_id):
 
     csrf_token = get_token(request)
 
-    exclude_actions = (
-        ("actions",) if not request.is_opportunity_pm and not waffle.switch_is_active(INVOICE_REVIEW) else ()
-    )
     table = PaymentInvoiceTable(
         queryset,
         org_slug=org_slug,
         opportunity=request.opportunity,
         csrf_token=csrf_token,
-        exclude=exclude_actions,
         highlight_invoice_number=highlight_invoice_number,
         is_pm=request.is_opportunity_pm,
     )
@@ -1675,10 +1673,7 @@ class InvoiceCreateView(OrganizationUserMixin, OpportunityObjectMixin, CreateVie
         kwargs = super().get_form_kwargs()
         kwargs["opportunity"] = self.get_opportunity()
         kwargs["invoice_type"] = self.request.GET.get("invoice_type", PaymentInvoice.InvoiceType.service_delivery)
-        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
-        else:
-            kwargs["status"] = InvoiceStatus.PENDING_PM_REVIEW
+        kwargs["status"] = InvoiceStatus.PENDING_NM_REVIEW
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
         return kwargs
 
@@ -1691,8 +1686,6 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
     template_name = "opportunity/invoice_detail.html"
 
     def get_object(self, queryset=None):
-        if not waffle.switch_is_active(INVOICE_REVIEW):
-            raise Http404("Invoice review feature is not available")
         opportunity = self.get_opportunity()
         return get_object_or_404(
             PaymentInvoice,
@@ -1711,7 +1704,6 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 "form": self.get_form(),
                 "is_service_delivery": invoice.service_delivery,
                 "invoice_status": invoice.status,
-                "updates_to_mark_as_paid_workflow_switch": switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW),
                 "path": [
                     {"title": "Opportunities", "url": reverse("opportunity:list", args=(org_slug,))},
                     {
@@ -1732,9 +1724,7 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
                 ],
             }
         )
-        context["show_payment_invoice_invoice_ticket_link_form"] = (
-            switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW) and self.request.is_opportunity_pm
-        )
+        context["show_payment_invoice_invoice_ticket_link_form"] = self.request.is_opportunity_pm
         return context
 
     def get_form(self):
@@ -1770,9 +1760,6 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
 @opportunity_required
 @require_POST
 def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
-    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-        raise Http404(_("Feature unavailable"))
-
     invoice = get_object_or_404(
         PaymentInvoice,
         payment_invoice_id=invoice_id,
@@ -1792,8 +1779,6 @@ def update_invoice_invoice_ticket_link(request, org_slug, opp_id, invoice_id):
 @org_member_required
 @opportunity_required
 def download_invoice(request, org_slug, opp_id, invoice_id):
-    if not waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-        raise Http404(_("Invoice download feature is not available"))
     invoice = get_object_or_404(PaymentInvoice, opportunity=request.opportunity, payment_invoice_id=invoice_id)
     return WeasyTemplateResponse(
         request=request,
@@ -1866,11 +1851,7 @@ def invoice_pay(request, org_slug, opp_id):
 
     paid_invoice_ids = []
     payments = []
-    required_status = (
-        InvoiceStatus.READY_TO_PAY
-        if switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW)
-        else InvoiceStatus.PENDING_PM_REVIEW
-    )
+    required_status = InvoiceStatus.READY_TO_PAY
     for inv in invoices:
         if inv.status != required_status:
             label = InvoiceStatus.get_label(required_status)

@@ -3,7 +3,6 @@ from urllib.parse import urlencode
 
 import django_filters
 import django_tables2 as tables
-import waffle
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Field, Layout, Row
 from django import forms
@@ -18,7 +17,6 @@ from django.views.decorators.http import require_GET, require_POST
 from django_filters.views import FilterView
 from django_tables2.views import SingleTableMixin
 
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CompletedWork,
     Country,
@@ -292,12 +290,10 @@ class InvoiceReportView(
                 date_paid=F("payment__date_paid"),
                 org_slug=F("opportunity__managedopportunity__program__organization__slug"),
                 program_name=F("opportunity__managedopportunity__program__name"),
+                last_status_modified_at=Max("status_events__pgh_created_at"),
             )
             .order_by("-date")
         )
-        if waffle.switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            queryset = queryset.annotate(last_status_modified_at=Max("status_events__pgh_created_at"))
-
         if not user.has_perm(ALL_ORG_ACCESS):
             queryset = queryset.filter(
                 opportunity__managedopportunity__program__organization__memberships__user=user
