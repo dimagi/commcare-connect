@@ -6,6 +6,7 @@ from commcare_connect.multidb.constants import (
     PUBLICATION_NAME,
     REPLICATION_EXCLUDED_MODELS,
     REPLICATION_INCLUDED_MODELS,
+    SUBSCRIPTION_NAME,
 )
 
 
@@ -69,3 +70,29 @@ def _current_publication_tables(connection) -> set[str]:
 
 def is_publication_in_sync(connection) -> bool:
     return get_replicated_tables() == _current_publication_tables(connection)
+
+
+def _quote_ident(name: str) -> str:
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _grant_select_all(cursor, role: str):
+    cursor.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {_quote_ident(role)}")  # noqa: E231,E702
+
+
+def refresh_publication(connection, *, desired_tables: set[str], repl_user: str):
+    """On the primary: make the publication's table set match `desired_tables`
+    and let the replication role read the (possibly new) tables."""
+    tables = ", ".join(_quote_ident(t) for t in sorted(desired_tables))
+    with connection.cursor() as cursor:
+        cursor.execute(f"ALTER PUBLICATION {_quote_ident(PUBLICATION_NAME)} SET TABLE {tables}")  # noqa: E231,E702
+        _grant_select_all(cursor, repl_user)
+
+
+def refresh_subscription(connection, *, superset_user: str):
+    """On the secondary: re-read the publication (COPY new tables, drop
+    removed) and let the Superset reader see the newly arrived tables."""
+    with connection.cursor() as cursor:
+        cursor.execute(f"ALTER SUBSCRIPTION {_quote_ident(SUBSCRIPTION_NAME)} REFRESH PUBLICATION")  # noqa: E231,E702
+        _grant_select_all(cursor, superset_user)
