@@ -486,7 +486,7 @@ class AssignedTask(XFormBaseModel):
 
     @classmethod
     def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
-        from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_update_usercases
+        from commcare_connect.commcarehq.api import bulk_update_usercases
 
         tasks = list(
             cls.objects.filter(
@@ -499,36 +499,54 @@ class AssignedTask(XFormBaseModel):
         if not tasks:
             return 0
 
-        hq_updates: dict[tuple[int, str], OpportunityAccess] = {}
-        for task in tasks:
-            if prop := task.task_type.case_property:
-                hq_updates.setdefault((task.opportunity_access_id, prop), task.opportunity_access)
+        hq_updates = cls._collect_hq_updates(tasks)
 
         with transaction.atomic():
             deleted_count, _ = (
                 cls.objects.filter(pk__in=[t.pk for t in tasks]).exclude(status=AssignedTaskStatus.COMPLETED).delete()
             )
-            if hq_updates:
-                still_assigned = set(
-                    cls.objects.filter(
-                        opportunity_access_id__in={access_id for access_id, _ in hq_updates},
-                        status=AssignedTaskStatus.ASSIGNED,
-                        task_type__case_property__in={p for _, p in hq_updates},
-                    ).values_list("opportunity_access_id", "task_type__case_property")
-                )
-                to_reset: dict[OpportunityAccess, dict] = {}
-                for access_id, prop in hq_updates.keys() - still_assigned:
-                    access = hq_updates[access_id, prop]
-                    to_reset.setdefault(access, {"properties": {}})["properties"][prop] = ""
-                if len(to_reset) > HQ_CASE_BULK_CHUNK_SIZE:
-                    raise ListTooLongError(
-                        f"Too many HQ case property resets ({len(to_reset)}); "
-                        "split the delete into smaller batches."
-                    )
-                if to_reset:
-                    bulk_update_usercases(to_reset)
+            to_reset = cls._compute_hq_resets(hq_updates)
+            if to_reset:
+                bulk_update_usercases(to_reset)
 
         return deleted_count
+
+    @classmethod
+    def _collect_hq_updates(cls, tasks: list[AssignedTask]) -> dict[tuple[int, str], OpportunityAccess]:
+        """Map (opportunity_access_id, case_property) -> OpportunityAccess for tasks with an HQ case property."""
+        hq_updates: dict[tuple[int, str], OpportunityAccess] = {}
+        for task in tasks:
+            if prop := task.task_type.case_property:
+                hq_updates.setdefault((task.opportunity_access_id, prop), task.opportunity_access)
+        return hq_updates
+
+    @classmethod
+    def _compute_hq_resets(cls, hq_updates: dict[tuple[int, str], OpportunityAccess]) -> dict[OpportunityAccess, dict]:
+        """Return case property resets for any (access, property) pairs no longer covered by an assigned task."""
+        from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE
+
+        if not hq_updates:
+            return {}
+
+        still_assigned = set(
+            cls.objects.filter(
+                opportunity_access_id__in={access_id for access_id, _ in hq_updates},
+                status=AssignedTaskStatus.ASSIGNED,
+                task_type__case_property__in={p for _, p in hq_updates},
+            ).values_list("opportunity_access_id", "task_type__case_property")
+        )
+
+        to_reset: dict[OpportunityAccess, dict] = {}
+        for access_id, prop in hq_updates.keys() - still_assigned:
+            access = hq_updates[access_id, prop]
+            to_reset.setdefault(access, {"properties": {}})["properties"][prop] = ""
+
+        if len(to_reset) > HQ_CASE_BULK_CHUNK_SIZE:
+            raise ListTooLongError(
+                f"Too many HQ case property resets ({len(to_reset)}); " "split the delete into smaller batches."
+            )
+
+        return to_reset
 
 
 class Assessment(XFormBaseModel):

@@ -56,11 +56,11 @@ def exclude_work_areas_for_opportunity(opportunity, work_area_ids, user, exclusi
     for i in range(0, len(needs_hq), HQ_BULK_CHUNK_SIZE):
         chunk = needs_hq[i : i + HQ_BULK_CHUNK_SIZE]  # noqa: E203
         # HQ's "unassigned" convention is "-"; empty string falls back to the submitting user.
-        updates = [{"case_id": str(wa.case_id), "owner_id": "-", "create": False} for wa in chunk]
+        updates = [{"case_id": str(wa.case_id), "owner_id": "-"} for wa in chunk]
         try:
             with transaction.atomic(), pghistory.context(**pghistory_ctx):
                 _bulk_exclude(chunk, user, exclusion_reason)
-                bulk_create_or_update_cases(api_key, domain, updates)
+                bulk_create_or_update_cases(api_key, domain, updates, create=False)
         except CommCareHQAPIException as e:
             logger.warning("Failed to unassign HQ case chunk (size=%d): %s", len(chunk), e)
             failed += len(chunk)
