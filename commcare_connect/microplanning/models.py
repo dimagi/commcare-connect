@@ -97,11 +97,11 @@ class WorkArea(geo_models.Model):
         WorkAreaStatus.EXPECTED_VISIT_REACHED,
     }
 
-    def update_status(self, user):
-        if self.status not in self.VISIT_TRACKABLE_STATUSES:
+    def update_status(self):
+        if self.status not in self.VISIT_TRACKABLE_STATUSES or self.opportunity_access is None:
             return
 
-        counts = UserVisit.objects.filter(work_area=self).aggregate(
+        counts = UserVisit.objects.filter(opportunity_access=self.opportunity_access, work_area=self).aggregate(
             total=Count("id"),
             approved=Count("id", filter=Q(status=VisitValidationStatus.approved)),
         )
@@ -111,6 +111,7 @@ class WorkArea(geo_models.Model):
             new_status = WorkAreaStatus.EXPECTED_VISIT_REACHED
 
         if new_status != self.status:
+            user = self.opportunity_access.user
             self.status = new_status
             with pghistory.context(username=user.username, user_email=user.email):
                 self.save(update_fields=["status"])

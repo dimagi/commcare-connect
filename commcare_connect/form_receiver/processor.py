@@ -551,7 +551,7 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
         user_visit.save()
 
         if work_area:
-            work_area.update_status(user)
+            work_area.update_status()
 
         if not access.last_active or access.last_active < user_visit.visit_date:
             access.last_active = user_visit.visit_date

@@ -1066,7 +1066,8 @@ def test_receiver_deliver_form_work_area_status(
         opportunity.auto_approve_visits = False
         opportunity.save(update_fields=["auto_approve_visits"])
 
-    factory_kwargs = {"opportunity": opportunity, "status": initial_status}
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
+    factory_kwargs = {"opportunity": opportunity, "opportunity_access": access, "status": initial_status}
     if expected_visit_count is not None:
         factory_kwargs["expected_visit_count"] = expected_visit_count
     work_area = WorkAreaFactory(**factory_kwargs)
@@ -1102,13 +1103,14 @@ def test_receiver_deliver_form_expected_visit_count(
     prior_visit_count,
     expected_status,
 ):
+    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
     work_area = WorkAreaFactory(
         opportunity=opportunity,
+        opportunity_access=access,
         status=WorkAreaStatus.NOT_VISITED,
         expected_visit_count=expected_visit_count,
     )
     deliver_unit = DeliverUnitFactory(app=opportunity.deliver_app, payment_unit=opportunity.paymentunit_set.first())
-    access = OpportunityAccess.objects.get(user=mobile_user_with_connect_link, opportunity=opportunity)
     for _ in range(prior_visit_count):
         UserVisitFactory(
             opportunity_access=access,

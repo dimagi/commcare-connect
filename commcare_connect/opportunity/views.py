@@ -1066,7 +1066,8 @@ def approve_visits(request, org_slug, opp_id):
         UserVisit.objects.filter(id__in=visit_ids, opportunity=request.opportunity)
         .filter(~Q(status=VisitValidationStatus.approved) | Q(review_status=VisitReviewStatus.disagree))
         .prefetch_related("opportunity")
-        .only("status", "review_status", "flagged", "justification", "review_created_on")
+        .select_related("work_area", "work_area__opportunity_access")
+        .only("status", "review_status", "flagged", "justification", "review_created_on", "work_area")
     )
 
     if len(visits) > max(PAGE_SIZE_OPTIONS):
@@ -1075,6 +1076,7 @@ def approve_visits(request, org_slug, opp_id):
             headers={"HX-Trigger": "form_error"},
         )
 
+    work_areas_to_update = []
     today = now()
     for visit in visits:
         visit.status = VisitValidationStatus.approved
@@ -1091,6 +1093,8 @@ def approve_visits(request, org_slug, opp_id):
                         headers={"HX-Trigger": "form_error"},
                     )
                 visit.justification = justification
+        if visit.work_area:
+            work_areas_to_update.append(visit.work_area)
 
     user_ids = list(visits.values_list("user_id", flat=True).distinct())
     approved_count = UserVisit.objects.bulk_update(
@@ -1099,6 +1103,9 @@ def approve_visits(request, org_slug, opp_id):
     if user_ids:
         update_payment_accrued(opportunity=request.opportunity, users=user_ids, incremental=True)
     send_event_to_ga(request, Event("bulk_approve_confirm", {"updated": approved_count, "total": len(visit_ids)}))
+
+    for work_area in work_areas_to_update:
+        work_area.update_status()
 
     return HttpResponse(status=200, headers={"HX-Trigger": "reload_table"})
 

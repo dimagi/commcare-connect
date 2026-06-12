@@ -284,7 +284,12 @@ class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
         expected_status,
     ):
         access = OpportunityAccessFactory(opportunity=opportunity)
-        work_area = WorkAreaFactory(opportunity=opportunity, status=initial_status, expected_visit_count=old_count)
+        work_area = WorkAreaFactory(
+            opportunity=opportunity,
+            opportunity_access=access,
+            status=initial_status,
+            expected_visit_count=old_count,
+        )
         for _ in range(prior_visits):
             UserVisitFactory(
                 opportunity_access=access,
