@@ -99,8 +99,7 @@ recording how much of that work was billed on that invoice:
 ```
 CompletedWorkInvoice
   invoice         FK → PaymentInvoice  (related_name="work_items", on_delete=PROTECT)
-  completed_work  FK → CompletedWork   (on_delete=PROTECT)
-  payment_unit    FK → PaymentUnit     (snapshot, for display grouping)
+  completed_work  FK → CompletedWork   (on_delete=PROTECT)   # payment_unit reached via this
   month           DateField            (period attribution, §1.4)
   billed_count    IntegerField         (delta billed on THIS invoice; > 0)
   amount_local    DecimalField         (frozen)
@@ -110,8 +109,8 @@ CompletedWorkInvoice
 ```
 
 - Each row is **one work (one user, one entity)**.
-- Displayed line items = `GROUP BY payment_unit, month` over these rows — today's `get_invoice_items`
-  shape, but reading frozen rows instead of recomputing.
+- Displayed line items = `GROUP BY completed_work__payment_unit, month` over these rows — today's
+  `get_invoice_items` shape, but reading frozen rows instead of recomputing. 
 
 **Why a join table, not the existing `CompletedWork.invoice` FK?**
 
@@ -224,12 +223,12 @@ On invoice creation (`InvoiceForm.save`, `tasks.py` auto-generate), in a transac
   service-delivery `amount` is a **read-only, auto-computed** field (`forms.py:1747`), not
   user-entered; computing it from the rows at submit also closes the render-to-submit window. (Custom
   invoices are user-entered but link no works → no snapshot rows.)
-- **Per-row amount.** `amount_local = billed_count × payment_unit.amount`; `amount_usd = amount_local
-  / rate`, where `rate` is for the row's `month` ([§1.4](#14-when-a-late-approved-visit-gets-billed-and-under-which-month):
+- **Per-row amount.** `amount_local = billed_count × completed_work.payment_unit.amount`; `amount_usd =
+  amount_local / rate`, where `rate` is for the row's `month` ([§1.4](#14-when-a-late-approved-visit-gets-billed-and-under-which-month):
   billing-month rate for a late delta, approval-month rate for a first billing). `exchange_rate`
   stores that `ExchangeRate` row.
-- **Display.** `get_invoiced_visit_items` becomes a `GROUP BY payment_unit, month` aggregation over
-  `invoice.work_items` — same shape as today but frozen → **drift eliminated**.
+- **Display.** `get_invoiced_visit_items` becomes a `GROUP BY completed_work__payment_unit, month`
+  aggregation over `invoice.work_items` — same shape as today but frozen → **drift eliminated**.
 
 ### 1.4 When a late-approved visit gets billed, and under which month
 
