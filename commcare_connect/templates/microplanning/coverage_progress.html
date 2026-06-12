@@ -25,11 +25,34 @@
         </div>
       </div>
     </header>
+    {# Date filter — Overall / Last week / Custom range #}
+    <form method="get"
+          x-data="{ range: '{{ selected_range }}' }"
+          class="card_bg mb-6 flex flex-wrap items-end gap-4">
+      <div>
+        <label for="{{ filter_form.range.id_for_label }}"
+               class="block text-sm font-medium text-gray-700 mb-1">{{ filter_form.range.label }}</label>
+        {{ filter_form.range }}
+      </div>
+      <div x-show="range === 'custom'" x-cloak class="flex flex-wrap items-end gap-4">
+        <div>
+          <label for="{{ filter_form.start.id_for_label }}"
+                 class="block text-sm font-medium text-gray-700 mb-1">{{ filter_form.start.label }}</label>
+          {{ filter_form.start }}
+        </div>
+        <div>
+          <label for="{{ filter_form.end.id_for_label }}"
+                 class="block text-sm font-medium text-gray-700 mb-1">{{ filter_form.end.label }}</label>
+          {{ filter_form.end }}
+        </div>
+      </div>
+      <button type="submit" class="button button-md primary-dark">{% translate "Apply" %}</button>
+    </form>
     {# Core Metrics — per-ward rows #}
     <section class="mb-8">
       <div class="flex items-center justify-between mb-3">
         <h2 class="title text-xl">{% translate "Core Metrics" %}</h2>
-        {% include 'microplanning/coverage_download_button.html' with table_key='ward' %}
+        {% include 'microplanning/coverage_download_button.html' with hrefs=export_hrefs.ward %}
       </div>
       <div class="card_bg !p-0 overflow-hidden">{% render_table ward_table %}</div>
     </section>
@@ -37,7 +60,7 @@
     <section class="mb-8">
       <div class="flex items-center justify-between mb-3">
         <h2 class="title text-xl">{% translate "Metrics by Work Area Group" %}</h2>
-        {% include 'microplanning/coverage_download_button.html' with table_key='wag' %}
+        {% include 'microplanning/coverage_download_button.html' with hrefs=export_hrefs.wag %}
       </div>
       <div class="card_bg !p-0 overflow-hidden">{% render_table wag_table %}</div>
     </section>
