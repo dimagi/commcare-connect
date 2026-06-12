@@ -1,6 +1,3 @@
-import getpass
-
-import psycopg2
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS, connections
@@ -8,6 +5,22 @@ from django.db import DEFAULT_DB_ALIAS, connections
 from commcare_connect.multidb.replication import get_replicated_models
 
 from .setup_logical_replication import PUBLICATION_NAME, SUBSCRIPTION_NAME
+
+
+def table_count_rows(primary_conn, secondary_conn):
+    """Return [(table_name, primary_count, secondary_count), ...] for all
+    replicated models."""
+    rows = []
+    for model in get_replicated_models():
+        table_name = model._meta.db_table
+        with primary_conn.cursor() as cursor:
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name};")  # noqa: E702,E231
+            primary_count = cursor.fetchone()[0]
+        with secondary_conn.cursor() as cursor:
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name};")  # noqa: E702,E231
+            secondary_count = cursor.fetchone()[0]
+        rows.append((table_name, primary_count, secondary_count))
+    return rows
 
 
 class Command(BaseCommand):
@@ -29,25 +42,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Checking logical replication status...\n"))
 
         default_conn = connections[DEFAULT_DB_ALIAS]
-
-        secondary_db_settings = connections[secondary_db_alias].settings_dict
-        self.stdout.write(
-            self.style.SUCCESS("Enter the superuser credentials for the secondary (subscriber) database:")
-        )
-        secondary_user = input("Enter username: ")
-        secondary_password = getpass.getpass("Enter password: ")
-
-        try:
-            secondary_conn = psycopg2.connect(
-                host=secondary_db_settings["HOST"],
-                port=secondary_db_settings["PORT"],
-                dbname=secondary_db_settings["NAME"],
-                user=secondary_user,
-                password=secondary_password,
-            )
-            secondary_conn.autocommit = True
-        except Exception as e:
-            raise CommandError(f"Could not connect to the secondary database: {e}")
+        secondary_conn = connections[secondary_db_alias]
 
         # Check publication details
         self.stdout.write(self.style.SUCCESS("Publication Status (Primary Database):"))
@@ -123,18 +118,7 @@ class Command(BaseCommand):
         self.stdout.write(f"{'Table':<30}{'Primary DB Count':<20}{'Secondary DB Count'}")  # noqa: E231
         self.stdout.write("-" * 70)
 
-        for model in get_replicated_models():
-            table_name = model._meta.db_table
-            with default_conn.cursor() as cursor:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")  # noqa: E702,E231
-                primary_count = cursor.fetchone()[0]
-
-            with secondary_conn.cursor() as cursor:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name};")  # noqa: E702,E231
-                secondary_count = cursor.fetchone()[0]
-
+        for table_name, primary_count, secondary_count in table_count_rows(default_conn, secondary_conn):
             self.stdout.write(f"{table_name:<30}{primary_count:<20}{secondary_count}")  # noqa: E231
 
         self.stdout.write(self.style.SUCCESS("Table counts fetched successfully."))
-        # Close the manually created connection
-        secondary_conn.close()

@@ -31,3 +31,36 @@ def test_unclassified_excludes_pghistory_events_and_m2m():
     for model in must_classify:
         assert not model._meta.auto_created
         assert not issubclass(model, pghistory.models.Event)
+
+
+def test_table_count_rows_uses_replicated_models():
+    from commcare_connect.multidb.management.commands import logical_replication_status
+
+    class C:
+        def __init__(self, n):
+            self.n = n
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, params=None):
+            self.executed.append(sql)
+
+        def fetchone(self):
+            return (self.n,)
+
+    class Conn:
+        def __init__(self, n):
+            self.n = n
+
+        def cursor(self):
+            return C(self.n)
+
+    rows = logical_replication_status.table_count_rows(Conn(5), Conn(3))
+    tables = {r[0] for r in rows}
+    assert "opportunity_opportunity" in tables
+    assert all(r[1] == 5 and r[2] == 3 for r in rows)
