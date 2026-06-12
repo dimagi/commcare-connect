@@ -73,7 +73,7 @@ class UserRedirectView(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self):
         if not self.request.user.memberships.exists():
-            return reverse("prelogin:home")
+            return reverse("home")
         organization = self.request.org
         if organization:
             return reverse("opportunity:list", kwargs={"org_slug": organization.slug})

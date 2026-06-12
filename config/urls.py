@@ -13,6 +13,7 @@ from . import views
 
 urlpatterns = [
     path("", include("commcare_connect.prelogin.urls")),
+    path("home/", TemplateView.as_view(template_name="pages/home.html"), name="home"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     # Marketing robots.txt + sitemap.xml. Exported (verbatim) from
     # dimagi-internal/connect-prelogin into templates/prelogin/ by
