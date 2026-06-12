@@ -355,6 +355,12 @@ bills only what the PM has agreed to — first billing and later duplicates alik
 the value the watermark and delta compare against ([§1.2](#12-selection--delta-based)), so the
 selection query needs no other change.
 
+### 1.11 Display — late-delta (catch-up) count on the invoice
+
+A read-only form field on the invoice showing how many of the billed units are **late deltas** — units
+billed against a delivery that was already billed on an earlier invoice — with a tooltip giving a short
+description (e.g. *"Follow-up units for deliveries first billed in an earlier period. "*).
+
 ## Shared — Why no rejection guard is needed
 
 An earlier draft added a guard blocking rejection of a billed work's visits. With the
