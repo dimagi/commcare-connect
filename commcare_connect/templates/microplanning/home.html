@@ -23,7 +23,7 @@
             </h1>
           </div>
           <div class="w-full border-t border-white/20 pt-4 lg:w-auto lg:border-t-0 lg:border-l lg:border-white/20 lg:pl-8 lg:pt-0">
-            <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-4xl xl:grid-cols-[repeat(7,minmax(0,1fr))]">
+            <div class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto lg:max-w-5xl xl:grid-cols-[repeat(8,minmax(0,1fr))]">
               {% for metric in metrics %}
                 <div class="metric-card rounded-md p-3 text-center">
                   {% if "percentage" in metric %}
@@ -46,6 +46,13 @@
                   <div class="mt-0.5 text-xs text-white/80">{{ metric.name }}</div>
                 </div>
               {% endfor %}
+              <a href="{% url 'microplanning:coverage_progress' request.org.slug opportunity.opportunity_id %}"
+                 class="metric-card flex flex-col justify-center rounded-md p-3 text-center transition hover:bg-white/20">
+                <div class="text-base font-semibold text-white">{% translate "Coverage" %}</div>
+                <div class="mt-0.5 text-xs text-white/90">
+                  {% translate "See more" %}<i class="fa-solid fa-arrow-right ml-1"></i>
+                </div>
+              </a>
             </div>
           </div>
         </div>

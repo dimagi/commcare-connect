@@ -24,11 +24,13 @@ from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, Stre
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.utils.text import slugify
 from django.utils.timezone import localdate
 from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic.edit import UpdateView
+from django_tables2.export import TableExport
 from vectortiles import VectorLayer
 from vectortiles.views import MVTView
 from waffle.decorators import waffle_flag
@@ -57,6 +59,7 @@ from commcare_connect.microplanning.models import (
     WorkAreaInaccessibilityRequest,
     WorkAreaStatus,
 )
+from commcare_connect.microplanning.tables import CoverageWAGTable, CoverageWardTable
 from commcare_connect.opportunity.models import BlobMeta, OpportunityAccess, UserVisit, VisitValidationStatus
 from commcare_connect.opportunity.tasks import send_push_notification_task
 from commcare_connect.organization.decorators import (
@@ -942,21 +945,19 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
 @opportunity_required
 @waffle_flag(MICROPLANNING)
 def coverage_progress(request, *args, **kwargs):
-    # Renders an empty page shell for now, but fetches the report data (and exercises the safeguard)
-    # so the endpoint is live. CCCT-2268 (https://dimagi.atlassian.net/browse/CCCT-2268) adds
-    # the two tables to the template, consuming the context built below.
+    """Coverage Progress Tracker page: a header saturation goal plus the per-ward "Core Metrics"
+    table and the per-work-area-group "Metrics by Work Area Group" table. Each table has its own
+    download button, handled via the ``_export``/``_table`` query params (see ``_export_coverage_table``).
+    """
     opportunity = request.opportunity
     date_filter = _get_coverage_date_filter(request)
     try:
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL statement_timeout = %s", [STATEMENT_TIMEOUT])
         report = CoverageProgressReport(opportunity, date_filter)
-        context = {
-            "opportunity": opportunity,
-            "header": report.header(),
-            "ward_rows": report.ward_rows(),
-            "wag_rows": report.wag_rows(),
-        }
+        header = report.header()
+        ward_table = CoverageWardTable(report.ward_rows())
+        wag_table = CoverageWAGTable(report.wag_rows())
     except OperationalError as exc:
         # Only a statement_timeout (QueryCanceled) is an expected degradation; re-raise anything else
         # (e.g. a real connection error) so it isn't masked as a timeout.
@@ -971,7 +972,56 @@ def coverage_progress(request, *args, **kwargs):
             status=503,
             content_type="text/plain",
         )
+
+    export_response = _export_coverage_table(request, opportunity, {"ward": ward_table, "wag": wag_table})
+    if export_response is not None:
+        return export_response
+
+    context = {
+        "opportunity": opportunity,
+        "header": header,
+        "ward_table": ward_table,
+        "wag_table": wag_table,
+        "path": [
+            {
+                "title": _("Progress Map"),
+                "url": reverse(
+                    "microplanning:microplanning_home", args=(request.org.slug, opportunity.opportunity_id)
+                ),
+            },
+            {"title": _("Progress Tracker")},
+        ],
+    }
     return render(request, "microplanning/coverage_progress.html", context)
+
+
+# Query params used by the per-table download buttons: ``?_export=<format>&_table=<ward|wag>``.
+COVERAGE_EXPORT_FORMAT_PARAM = "_export"
+COVERAGE_EXPORT_TABLE_PARAM = "_table"
+DEFAULT_COVERAGE_EXPORT_TABLE = "ward"
+# Maps each ``_table`` value to the file-name stem used in the download.
+COVERAGE_EXPORT_FILENAME_STEMS = {"ward": "core_metrics", "wag": "metrics_by_work_area_group"}
+
+
+def _export_coverage_table(request, opportunity, tables):
+    """Return a file response for the requested table/format, or None if no export was requested.
+
+    ``tables`` maps a ``_table`` value (e.g. "ward"/"wag") to its built table. An unsupported
+    ``_export`` format or an unknown ``_table`` value returns a 400 rather than silently serving
+    the wrong table.
+    """
+    export_format = request.GET.get(COVERAGE_EXPORT_FORMAT_PARAM)
+    if not export_format:
+        return None
+    if not TableExport.is_valid_format(export_format):
+        return HttpResponseBadRequest(_("Unsupported export format."))
+
+    which = request.GET.get(COVERAGE_EXPORT_TABLE_PARAM, DEFAULT_COVERAGE_EXPORT_TABLE)
+    if which not in tables:
+        return HttpResponseBadRequest(_("Unknown table."))
+
+    exporter = TableExport(export_format, tables[which])
+    return exporter.response(f"{slugify(opportunity.name)}_{COVERAGE_EXPORT_FILENAME_STEMS[which]}.{export_format}")
 
 
 def _get_coverage_date_filter(request):

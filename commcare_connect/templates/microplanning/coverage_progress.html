@@ -1,3 +1,45 @@
 {% extends 'base.html' %}
-{# Coverage Progress Tracker — table markup added in CCCT-2268; context (header, ward_rows, wag_rows) is already supplied by the view. #}
-{% block content %}{% endblock %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+{% block content %}
+  <div class="p-4">
+    {% include 'components/breadcrumbs.html' with path=path %}
+    {# Page header: title + the opportunity-wide Ward Saturation Goal #}
+    <header class="metric-container text-white mb-6">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold">{% translate "Coverage Progress Tracker" %}</h1>
+          <p class="mt-1 text-sm text-white/80">{% translate "Track progress of Coverage by unit" %}</p>
+        </div>
+        <div class="w-full lg:max-w-sm">
+          <div class="rounded-md bg-white/10 p-3">
+            <div class="flex items-center gap-4">
+              <div class="w-full bg-brand-indigo rounded-full h-3 flex-1">
+                <div class="bg-white h-3 rounded-full"
+                     style="width: {{ header.ward_saturation_goal|floatformat:'0' }}%"></div>
+              </div>
+              <div>{{ header.ward_saturation_goal|floatformat:'0' }}%</div>
+            </div>
+            <p class="mt-1 text-sm text-white/80">{% translate "Ward Saturation Goal" %}</p>
+          </div>
+        </div>
+      </div>
+    </header>
+    {# Core Metrics — per-ward rows #}
+    <section class="mb-8">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="title text-xl">{% translate "Core Metrics" %}</h2>
+        {% include 'microplanning/coverage_download_button.html' with table_key='ward' %}
+      </div>
+      <div class="card_bg !p-0 overflow-hidden">{% render_table ward_table %}</div>
+    </section>
+    {# Metrics by Work Area Group — per-work-area-group rows #}
+    <section class="mb-8">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="title text-xl">{% translate "Metrics by Work Area Group" %}</h2>
+        {% include 'microplanning/coverage_download_button.html' with table_key='wag' %}
+      </div>
+      <div class="card_bg !p-0 overflow-hidden">{% render_table wag_table %}</div>
+    </section>
+  </div>
+{% endblock %}

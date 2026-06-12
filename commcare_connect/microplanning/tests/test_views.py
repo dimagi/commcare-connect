@@ -1626,14 +1626,50 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
     def url(self, org_slug, opp_id):
         return reverse("microplanning:coverage_progress", args=(org_slug, opp_id))
 
-    def test_renders_page_with_rows_in_context(self, client, org_user_admin, opportunity):
+    def test_renders_page_with_tables_in_context(self, client, org_user_admin, opportunity):
         WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
         client.force_login(org_user_admin)
         resp = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
         assert resp.status_code == 200
         assert "microplanning/coverage_progress.html" in {t.name for t in resp.templates}
         assert set(resp.context["header"].keys()) == {"ward_saturation_goal"}
-        assert any(r["ward"] == "w1" for r in resp.context["ward_rows"])
+        ward_table = resp.context["ward_table"]
+        assert any(row.get_cell_value("ward") == "w1" for row in ward_table.rows)
+        assert "wag_table" in resp.context
+
+    def test_export_returns_csv_of_requested_table(self, client, org_user_admin, opportunity):
+        WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+        client.force_login(org_user_admin)
+        resp = client.get(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id)),
+            {"_export": "csv", "_table": "ward"},
+        )
+        assert resp.status_code == 200
+        assert resp["Content-Type"].startswith("text/csv")
+        assert "attachment" in resp["Content-Disposition"]
+        body = resp.getvalue().decode()
+        assert "Ward Population Target" in body
+        assert "w1" in body
+
+    def test_export_returns_xlsx_of_wag_table(self, client, org_user_admin, opportunity):
+        group = WorkAreaGroupFactory(opportunity=opportunity, ward="w1", name="G1")
+        WorkAreaFactory(opportunity=opportunity, ward="w1", work_area_group=group, status=WorkAreaStatus.VISITED)
+        client.force_login(org_user_admin)
+        resp = client.get(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id)),
+            {"_export": "xlsx", "_table": "wag"},
+        )
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp["Content-Type"]  # .xlsx
+        assert "metrics_by_work_area_group.xlsx" in resp["Content-Disposition"]
+
+    def test_export_unknown_table_returns_400(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        resp = client.get(
+            self.url(opportunity.organization.slug, str(opportunity.opportunity_id)),
+            {"_export": "csv", "_table": "bogus"},
+        )
+        assert resp.status_code == 400
 
     def test_statement_timeout_degrades_gracefully(self, client, org_user_admin, opportunity):
         client.force_login(org_user_admin)
