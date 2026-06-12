@@ -8,6 +8,7 @@ import pytest
 
 from commcare_connect.audit.chc_indicators import (
     FEMALE,
+    SERVICE_DELIVERY_SLUG,
     YES,
     AgeHeaping,
     CampingRatio,
@@ -22,7 +23,7 @@ from commcare_connect.audit.chc_indicators import (
 )
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
-from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, UserVisitFactory
+from commcare_connect.opportunity.tests.factories import DeliverUnitFactory, OpportunityAccessFactory, UserVisitFactory
 
 PERIOD_START = datetime.date(2026, 4, 13)  # Monday
 PERIOD_END = datetime.date(2026, 4, 19)  # Sunday
@@ -32,6 +33,7 @@ AFTER_PERIOD = datetime.datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)
 
 
 def make_visit(access, work_area=None, visit_date=IN_PERIOD, **kwargs):
+    kwargs.setdefault("deliver_unit", DeliverUnitFactory(slug=SERVICE_DELIVERY_SLUG))
     return UserVisitFactory(
         opportunity=access.opportunity,
         user=access.user,
