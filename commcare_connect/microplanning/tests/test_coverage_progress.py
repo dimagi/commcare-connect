@@ -19,7 +19,8 @@ from commcare_connect.microplanning.coverage_progress import (
     status_event_model,
     ward_saturation_goal,
 )
-from commcare_connect.microplanning.models import WorkAreaStatus
+from commcare_connect.microplanning.filters import CoverageProgressFilterSet
+from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory, WorkAreaGroupFactory
 from commcare_connect.opportunity.models import VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import UserVisitFactory
@@ -394,6 +395,27 @@ def test_custom_range_bypasses_filtered_cache_slot(opportunity):
         overall_slot.assert_not_called()
 
 
+def test_last_week_filter_reuses_cached_slot_instead_of_recomputing(opportunity):
+    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+    with patch("commcare_connect.microplanning.coverage_progress._compute_filtered") as compute_filtered:
+        CoverageProgressReport(opportunity, CoverageDateFilter.last_week()).ward_rows()
+        # Last week is served by the cached _last_week_slot, not the uncached _compute_filtered path.
+        compute_filtered.assert_not_called()
+
+
+def test_cache_reuse_keys_on_preset_flag_not_matching_dates(opportunity):
+    # A custom range whose dates happen to equal last week's is NOT the preset: routing keys on the
+    # explicit flag, so it recomputes rather than depending on a time-sensitive date comparison.
+    WorkAreaFactory(opportunity=opportunity, ward="w1", status=WorkAreaStatus.VISITED)
+    lw = CoverageDateFilter.last_week()
+    same_dates_custom = CoverageDateFilter(start=lw.start, end=lw.end)
+    assert same_dates_custom.is_last_week is False
+    with patch("commcare_connect.microplanning.coverage_progress._compute_filtered") as compute_filtered:
+        compute_filtered.return_value = {"ward_status": {}, "ward_visits": {}, "wag_status": {}, "wag_visits": {}}
+        CoverageProgressReport(opportunity, same_dates_custom).ward_rows()
+        compute_filtered.assert_called_once()
+
+
 def test_slot_computes_once_then_serves_cache(opportunity):
     key = f"coverage:static:opp={opportunity.id}"
     cache.delete(key)
@@ -407,3 +429,60 @@ def test_slot_computes_once_then_serves_cache(opportunity):
             assert get_target.call_count == 2  # only the cold call recomputed
     finally:
         cache.delete(key)
+
+
+def _coverage_filter(data):
+    return CoverageProgressFilterSet(data, queryset=WorkArea.objects.none())
+
+
+def test_filterset_no_params_is_overall():
+    assert _coverage_filter({}).to_date_filter().is_overall is True
+
+
+def test_filterset_last_week_maps_to_last_week_filter():
+    assert _coverage_filter({"range": "last_week"}).to_date_filter() == CoverageDateFilter.last_week()
+
+
+def test_filterset_custom_range_maps_to_custom_window():
+    result = _coverage_filter({"range": "custom", "start": "2026-01-01", "end": "2026-01-31"}).to_date_filter()
+    assert result == CoverageDateFilter(start=datetime.date(2026, 1, 1), end=datetime.date(2026, 1, 31))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"range": "custom", "start": "2026-01-31", "end": "2026-01-01"},  # reversed
+        {"range": "custom", "start": "2026-01-01"},  # incomplete (no end)
+        {"range": "custom", "start": "not-a-date", "end": "2026-01-31"},  # invalid date
+    ],
+)
+def test_filterset_invalid_custom_range_falls_back_to_overall(data):
+    assert _coverage_filter(data).to_date_filter().is_overall is True
+
+
+@pytest.mark.parametrize(
+    "raw_range, expected",
+    [
+        (None, "overall"),
+        ("last_week", "last_week"),
+        ("custom", "custom"),
+        ("'+alert(1)+'", "overall"),  # XSS payload is not a valid choice -> collapses to overall
+        ("garbage", "overall"),
+    ],
+)
+def test_filterset_selected_range_is_whitelisted(raw_range, expected):
+    data = {"range": raw_range} if raw_range is not None else {}
+    assert _coverage_filter(data).selected_range == expected
+
+
+def test_filterset_export_querystring_carries_known_params_plus_export_args():
+    qs = _coverage_filter(
+        {"range": "custom", "start": "2026-01-01", "end": "2026-01-31", "bogus": "x"}
+    ).export_querystring(_export="csv", _table="ward")
+    assert qs == "range=custom&start=2026-01-01&end=2026-01-31&_export=csv&_table=ward"
+
+
+def test_filterset_export_querystring_drops_invalid_range():
+    assert _coverage_filter({"range": "garbage"}).export_querystring(_export="csv", _table="ward") == (
+        "_export=csv&_table=ward"
+    )

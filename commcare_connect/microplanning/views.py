@@ -2,7 +2,6 @@ import csv
 import json
 import logging
 import uuid
-from datetime import date
 from functools import partial
 from http import HTTPStatus
 
@@ -45,8 +44,12 @@ from commcare_connect.microplanning.const import (
     MAX_UNASSIGN_WORK_AREAS,
     WORK_AREA_STATUS_COLORS,
 )
-from commcare_connect.microplanning.coverage_progress import CoverageDateFilter, CoverageProgressReport
-from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
+from commcare_connect.microplanning.coverage_progress import CoverageProgressReport
+from commcare_connect.microplanning.filters import (
+    CoverageProgressFilterSet,
+    UserVisitMapFilterSet,
+    WorkAreaMapFilterSet,
+)
 from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
     exclude_work_areas_for_opportunity,
@@ -950,7 +953,8 @@ def coverage_progress(request, *args, **kwargs):
     download button, handled via the ``_export``/``_table`` query params (see ``_export_coverage_table``).
     """
     opportunity = request.opportunity
-    date_filter = _get_coverage_date_filter(request)
+    filterset = CoverageProgressFilterSet(request.GET, queryset=WorkArea.objects.none())
+    date_filter = filterset.to_date_filter()
     try:
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL statement_timeout = %s", [STATEMENT_TIMEOUT])
@@ -977,11 +981,21 @@ def coverage_progress(request, *args, **kwargs):
     if export_response is not None:
         return export_response
 
+    # Pre-build the per-table download links so each carries the active filter (a download then
+    # matches the on-screen filtered view rather than silently exporting the overall report).
+    export_hrefs = {
+        table: {fmt: "?" + filterset.export_querystring(_export=fmt, _table=table) for fmt in ("csv", "xlsx")}
+        for table in ("ward", "wag")
+    }
+
     context = {
         "opportunity": opportunity,
         "header": header,
         "ward_table": ward_table,
         "wag_table": wag_table,
+        "filter_form": filterset.form,
+        "selected_range": filterset.selected_range,
+        "export_hrefs": export_hrefs,
         "path": [
             {
                 "title": _("Progress Map"),
@@ -1022,19 +1036,3 @@ def _export_coverage_table(request, opportunity, tables):
 
     exporter = TableExport(export_format, tables[which])
     return exporter.response(f"{slugify(opportunity.name)}_{COVERAGE_EXPORT_FILENAME_STEMS[which]}.{export_format}")
-
-
-def _get_coverage_date_filter(request):
-    raw_from = request.GET.get("from")
-    raw_to = request.GET.get("to")
-    if raw_from and raw_to:
-        try:
-            start = date.fromisoformat(raw_from)
-            end = date.fromisoformat(raw_to)
-        except ValueError:
-            pass
-        else:
-            # Ignore a reversed range (start after end), which would otherwise read as zero coverage.
-            if start <= end:
-                return CoverageDateFilter(start=start, end=end)
-    return CoverageDateFilter.overall()
