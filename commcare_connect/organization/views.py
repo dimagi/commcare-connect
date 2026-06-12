@@ -69,6 +69,10 @@ def add_members_form(request, org_slug):
         form.instance.organization = org
         form.save()
         send_org_invite(membership_id=form.instance.pk, host_user_id=request.user.pk)
+        messages.success(request, gettext("Invite sent to {email}.").format(email=form.cleaned_data["email"]))
+    else:
+        error = next(iter(form.errors.values()))[0] if form.errors else gettext("Unable to send invite.")
+        messages.error(request, error)
     url = reverse("organization:home", args=(org_slug,)) + "?active_tab=members"
     return redirect(url)
 

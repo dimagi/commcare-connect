@@ -58,6 +58,24 @@ class TestAddMembersView:
             membership = organization.memberships.get(**membership_filter)
             assert membership.role == expected_role
 
+    @pytest.mark.django_db
+    def test_invalid_invite_shows_error_message(self):
+        response = self.client.post(self.url, {"email": "nonexistent@example.com", "role": "member"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "error"
+        assert "does not exist or is already a member" in str(messages[0])
+
+    @pytest.mark.django_db
+    def test_valid_invite_shows_success_message(self):
+        UserFactory(email="newmember@example.com")
+        response = self.client.post(self.url, {"email": "newmember@example.com", "role": "member"}, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "success"
+
 
 @pytest.mark.django_db
 class TestOrganizationChangeForm:
