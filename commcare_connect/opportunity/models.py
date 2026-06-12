@@ -13,10 +13,8 @@ from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext, gettext_lazy
-from waffle import switch_is_active
 
 from commcare_connect.commcarehq.models import HQServer
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
@@ -633,37 +631,12 @@ class InvoiceStatus(models.TextChoices):
     PAID = "paid", gettext("Paid")
     ARCHIVED = "archived", gettext("Archived")
 
-    @staticmethod
-    def old_labels_map():
-        # Uses the new statuses, but returns the relevant label:
-        # either the one used previously or else the new label for statuses added later.
-        return {
-            "pending_nm_review": gettext("Pending"),
-            "pending_pm_review": gettext("Submitted"),
-            "ready_to_pay": gettext("Ready to Pay"),
-            "cancelled_by_nm": gettext("Cancelled by Network Manager"),
-            "rejected_by_pm": gettext("Rejected by Program Manager"),
-            "paid": gettext("Approved"),
-            "archived": gettext("Archived"),
-        }
-
     @classmethod
     def get_label(cls, status):
-        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            return cls.old_labels_map()[status]
         return cls(status).label
 
     @classmethod
     def get_choices(cls):
-        if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-            old_labels = cls.old_labels_map()
-            allowed_statuses = [
-                cls.PENDING_NM_REVIEW,
-                cls.PENDING_PM_REVIEW,
-                cls.PAID,
-                cls.ARCHIVED,
-            ]
-            return [(status.value, old_labels.get(status.value, status.label)) for status in allowed_statuses]
         return cls.choices
 
 

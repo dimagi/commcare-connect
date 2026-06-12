@@ -7,9 +7,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
-from waffle import switch_is_active
 
-from commcare_connect.flags.switch_names import UPDATES_TO_MARK_AS_PAID_WORKFLOW
 from commcare_connect.opportunity.models import (
     CompletedWorkStatus,
     InvoiceStatus,
@@ -269,9 +267,6 @@ def send_opportunity_expiry_reminders():
 
 @celery_app.task()
 def send_pm_invoice_review_reminder():
-    if not switch_is_active(UPDATES_TO_MARK_AS_PAID_WORKFLOW):
-        return
-
     invoices = PaymentInvoice.objects.filter(
         status__in=[InvoiceStatus.PENDING_PM_REVIEW, InvoiceStatus.READY_TO_PAY],
         opportunity__managed=True,
