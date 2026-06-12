@@ -11,6 +11,19 @@ PUBLICATION_NAME = "tables_for_superset_pub"
 SUBSCRIPTION_NAME = "tables_for_superset_sub"
 
 
+def _quote_ident(name):
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def transfer_subscription_ownership(cursor, secondary_role):
+    """Hand subscription ownership to the app's secondary role so the
+    recurring refresh can REFRESH PUBLICATION without a superuser (PG16+)."""
+    cursor.execute(
+        f"ALTER SUBSCRIPTION {SUBSCRIPTION_NAME} OWNER TO {_quote_ident(secondary_role)}"
+    )  # noqa: E231,E702
+
+
 class Command(BaseCommand):
     help = "Create a publication for the default database and a subscription for the secondary database alias."
 
@@ -130,6 +143,12 @@ class Command(BaseCommand):
                 psycopg2.sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public TO {};").format(
                     psycopg2.sql.Identifier(superset_user)
                 )
+            )
+            self.stdout.write("Transferring subscription ownership to the app secondary role...")
+            secondary_role = secondary_db_settings["USER"]
+            transfer_subscription_ownership(cursor, secondary_role)
+            self.stdout.write(
+                self.style.SUCCESS(f"Subscription '{SUBSCRIPTION_NAME}' now owned by '{secondary_role}'.")
             )
 
         # Close the manually created connection
