@@ -43,8 +43,8 @@ SUBSCRIPTION_NAME = "tables_for_superset_sub"
 
 # Models whose tables are replicated to the secondary (Superset) database.
 # Every local app model must appear in exactly ONE of the two lists below;
-# a Django system check (see checks.py) fails otherwise. Adding a sensitive
-# model? Put it in REPLICATION_EXCLUDED_MODELS.
+# tests/test_replication.py::test_no_unclassified_local_models fails in CI
+# otherwise. Adding a sensitive model? Put it in REPLICATION_EXCLUDED_MODELS.
 REPLICATION_INCLUDED_MODELS = [
     Assessment,
     CommCareApp,

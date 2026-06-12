@@ -92,7 +92,13 @@ def refresh_publication(connection, *, desired_tables: set[str], repl_user: str)
 
 def refresh_subscription(connection, *, superset_user: str):
     """On the secondary: re-read the publication (COPY new tables, drop
-    removed) and let the Superset reader see the newly arrived tables."""
+    removed) and let the Superset reader see the newly arrived tables.
+
+    Must run in autocommit (no surrounding transaction): Postgres rejects
+    ALTER SUBSCRIPTION ... REFRESH PUBLICATION inside a transaction block.
+    Safe today because management commands run without an implicit atomic
+    block and the secondary alias has no ATOMIC_REQUESTS — keep it that way.
+    """
     with connection.cursor() as cursor:
         cursor.execute(f"ALTER SUBSCRIPTION {quote_identifier(SUBSCRIPTION_NAME)} REFRESH PUBLICATION")
         _grant_select_all(cursor, superset_user)
