@@ -78,7 +78,7 @@ def quote_identifier(name: str) -> str:
 
 
 def _grant_select_all(cursor, role: str):
-    cursor.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {quote_identifier(role)}")  # noqa: E231,E702
+    cursor.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {quote_identifier(role)}")
 
 
 def refresh_publication(connection, *, desired_tables: set[str], repl_user: str):
@@ -86,7 +86,7 @@ def refresh_publication(connection, *, desired_tables: set[str], repl_user: str)
     and let the replication role read the (possibly new) tables."""
     tables = ", ".join(quote_identifier(t) for t in sorted(desired_tables))
     with connection.cursor() as cursor:
-        cursor.execute(f"ALTER PUBLICATION {quote_identifier(PUBLICATION_NAME)} SET TABLE {tables}")  # noqa: E231,E702
+        cursor.execute(f"ALTER PUBLICATION {quote_identifier(PUBLICATION_NAME)} SET TABLE {tables}")
         _grant_select_all(cursor, repl_user)
 
 
@@ -94,7 +94,5 @@ def refresh_subscription(connection, *, superset_user: str):
     """On the secondary: re-read the publication (COPY new tables, drop
     removed) and let the Superset reader see the newly arrived tables."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            f"ALTER SUBSCRIPTION {quote_identifier(SUBSCRIPTION_NAME)} REFRESH PUBLICATION"
-        )  # noqa: E231,E501,E702
+        cursor.execute(f"ALTER SUBSCRIPTION {quote_identifier(SUBSCRIPTION_NAME)} REFRESH PUBLICATION")
         _grant_select_all(cursor, superset_user)
