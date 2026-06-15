@@ -1,4 +1,4 @@
-from factory import Faker, LazyFunction, SubFactory
+from factory import Faker, LazyFunction, SelfAttribute, SubFactory
 from factory.django import DjangoModelFactory
 
 from commcare_connect.opportunity.models import Country, Currency
@@ -36,6 +36,7 @@ class ProgramFactory(DjangoModelFactory):
 
 class ManagedOpportunityFactory(OpportunityFactory):
     program = SubFactory(ProgramFactory)
+    program_old = SelfAttribute("program")
 
     class Meta:
         model = ManagedOpportunity
