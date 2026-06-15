@@ -115,6 +115,7 @@ class Opportunity(BaseModel):
     is_test = models.BooleanField(default=True)
     delivery_type = models.ForeignKey(DeliveryType, null=True, blank=True, on_delete=models.DO_NOTHING)
     managed = models.BooleanField(default=False)
+    program = models.ForeignKey("program.Program", on_delete=models.DO_NOTHING, null=True)
     hq_server = models.ForeignKey(HQServer, on_delete=models.DO_NOTHING, null=True)
 
     def __str__(self):
