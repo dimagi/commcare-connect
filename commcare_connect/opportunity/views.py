@@ -805,6 +805,26 @@ def payment_import(request, org_slug=None, opp_id=None):
 
 @org_member_required
 @opportunity_required
+def payment_import_status(request, org_slug=None, opp_id=None):
+    task_id = request.GET.get("task_id")
+    result_ready = False
+    result_data = None
+    if task_id:
+        result = AsyncResult(task_id)
+        result_ready = result.ready()
+        if result_ready:
+            result_data = result.result if result.successful() else {"success": False, "error_detail": None}
+    context = {
+        "result_ready": result_ready,
+        "result_data": result_data,
+        "task_id": task_id,
+        "opportunity": request.opportunity,
+    }
+    return render(request, "opportunity/payment_import_status_modal.html", context)
+
+
+@org_member_required
+@opportunity_required
 def add_payment_units(request, org_slug=None, opp_id=None):
     if request.POST:
         return add_payment_unit(request, org_slug=org_slug, opp_id=opp_id)

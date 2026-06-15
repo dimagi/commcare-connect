@@ -2011,6 +2011,16 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
     assert response.status_code == 404
 
 
+def test_payment_import_status_polling(client, organization, opportunity, org_user_member):
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"task_id": str(uuid4())})
+
+    assert response.status_code == 200
+    assert "Uploading your file" in response.content.decode()
+
+
 @pytest.mark.django_db
 class TestSuspendUser:
     def url(self, org_slug, opp_id, pk):

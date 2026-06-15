@@ -1,0 +1,11 @@
+{% load i18n %}
+<div id="payment-import-parent" x-data="{ open: true }" x-show="open" x-cloak class="modal-backdrop">
+  <div class="modal">
+    <div id="payment-import-result"
+         {% if task_id and not result_ready %} hx-get="{% url 'opportunity:payment_import_status' request.org.slug opportunity.opportunity_id %}?task_id={{ task_id }}" hx-trigger="every 2s" hx-target="#payment-import-parent" hx-swap="outerHTML" {% endif %}>
+      {% if task_id and not result_ready %}
+        <p>{% translate "Uploading your file… This may take a moment." %}</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
