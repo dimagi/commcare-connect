@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from django.contrib.messages import get_messages
 from django.core.files.storage.handler import StorageHandler
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template import Context
 from django.template.loader import render_to_string
 from django.test import Client
@@ -2883,6 +2884,31 @@ def test_payment_import_modal_success_text():
         {"result_ready": True, "result_data": {"success": True, "users_paid": 2, "missing_users_message": None}},
     )
     assert "You have successfully uploaded 2 payments!" in html
+
+
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_redirects_with_popup_param(mock_delay, client, organization, opportunity, org_user_member):
+    mock_delay.return_value.id = "task-123"
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    csv_bytes = b"username,payment amount,payment date (yyyy-mm-dd),payment method,payment operator\n"
+    upload = SimpleUploadedFile("payments.csv", csv_bytes, content_type="text/csv")
+
+    response = client.post(url, {"payments": upload})
+
+    assert response.status_code == 302
+    assert "payment_import_task_id=task-123" in response.url
+    assert "export_task_id=" not in response.url
+
+
+def test_worker_payments_page_renders_modal_when_task_present(client, organization, opportunity, org_user_member):
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": str(uuid4())})
+
+    assert response.status_code == 200
+    assert "payment-import-parent" in response.content.decode()
 
 
 def test_payment_import_modal_success_shows_missing_users():

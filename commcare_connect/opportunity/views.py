@@ -800,7 +800,7 @@ def payment_import(request, org_slug=None, opp_id=None):
     saved_path = default_storage.save(file_path, file)
 
     result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
 
 
 @org_member_required
@@ -2667,6 +2667,7 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
             "export_task_id": self.request.GET.get("export_task_id"),
+            "payment_import_task_id": self.request.GET.get("payment_import_task_id"),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)
