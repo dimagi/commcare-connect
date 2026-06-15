@@ -557,7 +557,7 @@ class BaseOpportunityList(OrgContextTable):
 
     status = tables.Column(verbose_name="Status", accessor="status", orderable=True)
 
-    program = tables.Column()
+    program = tables.Column(accessor="program_name")
     start_date = DMYTColumn()
     end_date = DMYTColumn()
 
