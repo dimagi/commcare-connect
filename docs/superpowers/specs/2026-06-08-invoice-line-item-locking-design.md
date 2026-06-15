@@ -26,7 +26,7 @@ late approvals must be paid ([Open question 1](#open-questions-resolved)).
 - **Correcting historical drift.** This design stops *future* drift; it does **not** reconcile
   invoices that have already drifted. The backfill freezes legacy rows from their current `saved_*`
   values ([§1.8](#18-backfill)), so an already-drifted invoice stays as-is, and the original per-work
-  split generally can't be reconstructed. Drift can be *surfaced* read-only
+  split generally can't be reliably reconstructed. Drift can be *surfaced* read-only
   ([Good to have — legacy drift report](#good-to-have--legacy-drift-report)) but is never
   auto-corrected.
 
@@ -381,12 +381,14 @@ current `saved_*`, so an already-drifted invoice is frozen *with* its drift. To 
 silently, add a read-only report (management command / query, not a migration step):
 
 - For each existing invoice, compare `Σ(CompletedWorkInvoice.amount)` against `PaymentInvoice.amount`.
-- Where they differ, emit invoice number, opportunity, and delta. **Report only — no auto-correct**
-  (history is a non-goal; the original per-work split can't be reconstructed).
+- Where they differ, emit invoice number, opportunity, and delta. **Report only — no auto-correct.**
 
-Expected to be a small minority — drift only arises where a post-invoice approve/reject changed
-`saved_*` after the amount froze.
+Expected to be a small minority — drift only arises where a post-invoice approve/reject changed `saved_*` after the amount froze.
 
+**Per-work attribution.** Positive drift can be addressed by recomputing each work's approved count
+over the invoice's start/end dates and billing the difference on a future invoice. Negative drift
+can't — it has already been paid and is hard to roll back — so a legacy invoice can't be reconstructed
+completely. The report stays read-only; appropriate action may be considered based on its output.
 ---
 
 ## Open questions (resolved)
@@ -402,6 +404,17 @@ confirmed a managed work must not bill un-agreed units; counting any approved vi
 `review_status` was a bug, not intended behavior. Fixed in
 [§1.10](#110-agreement-gated-billable-count-managed--oq2-fix), which also removes the need for a
 rejection guard ([Why no rejection guard is needed](#shared--why-no-rejection-guard-is-needed)).
+
+## Implementation tickets
+
+Divided by function; roughly in dependency order.
+
+1. **Gate billable count on agreed units (OQ2)** — managed billable count uses PM-**agreed** units rather than merely approved ([§1.10](#110-agreement-gated-billable-count-managed--oq2-fix)); independent, can land first.
+2. **Legacy drift report** — read-only report surfacing drift on already-issued invoices, computed from legacy data (linked works + recompute, `positive_drift_for_work`) so it runs independently and *before* the backfill freezes drift in place; positive drift is attributable per work ([Good to have](#good-to-have--legacy-drift-report)).
+3. **Schema + backfill** — add `CompletedWorkInvoice` and the `CompletedWork.invoiced_approved_count` watermark, plus the one-off backfill that freezes existing invoiced works into snapshot rows and seeds the watermark from current counts ([§1.1](#11-model-changes), [§1.8](#18-backfill)).
+4. **Code changes** — delta selection, atomic invoice creation (snapshot + month + watermark bump + totals), cancel/reject rollback, snapshot-backed display, and re-pointing readers off `CompletedWork.invoice` ([§1.2](#12-selection--delta-based)–[§1.4](#14-when-a-late-approved-visit-gets-billed-and-under-which-month), [§1.6](#16-lifecycle--cancel--reject--pay)).
+5. **Late-delta display field** — read-only invoice form field + tooltip showing the catch-up count ([§1.11](#111-display--late-delta-catch-up-count-on-the-invoice)).
+6. **Visit agreement tracking** — record when a visit was agreed (PM agreement or auto-approval) ([§1.10](#110-agreement-gated-billable-count-managed--oq2-fix)).
 
 ---
 
