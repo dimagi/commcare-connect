@@ -29,7 +29,7 @@
            :class="{'gap-6': isTest}"
            x-data="{ isOpen: false }">
         <h3 class="text-sm font-medium text-brand-sky flex-1">
-          {% if object.managed %}{{ object.program_name }}{% endif %}
+          {% if object.managed %}{{ object.program.name }}{% endif %}
         </h3>
         {% if object.is_test %}<span class="badge badge-md primary-light">Test</span>{% endif %}
         {% if request.org_membership.is_viewer %}

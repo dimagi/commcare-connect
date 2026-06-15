@@ -227,10 +227,6 @@ class Opportunity(BaseModel):
         return bool(self.active and self.end_date and self.end_date >= now().date())
 
     @property
-    def program_name(self):
-        return self.managedopportunity.program.name if self.managed else None
-
-    @property
     def has_ended(self):
         return bool(self.end_date and self.end_date < now().date())
 
