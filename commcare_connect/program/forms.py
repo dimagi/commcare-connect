@@ -122,6 +122,7 @@ class BaseManagedOpportunityInitForm:
         pass
 
     def save(self, commit=True):
+        self.instance.program_old = self.program  # to be removed in CCCT-2501
         self.instance.program = self.program
         self.instance.currency = self.program.currency
         self.instance.delivery_type = self.program.delivery_type

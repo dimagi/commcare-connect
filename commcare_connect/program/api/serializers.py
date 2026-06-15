@@ -255,6 +255,7 @@ class ManagedOpportunityCreateSerializer(serializers.Serializer):
             short_description=validated_data["short_description"],
             organization=organization,
             program=program,
+            program_old=program,  # to be removed in CCCT-2501
             learn_app=learn_app,
             deliver_app=deliver_app,
             start_date=validated_data["start_date"],
