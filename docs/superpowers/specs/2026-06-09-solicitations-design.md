@@ -62,14 +62,14 @@ This section walks the whole lifecycle once, in order, before meeting the data m
 
 | Persona | Who they are |
 |---|---|
-| **Program Manager (PM)** | A user in a *funding* organization who creates and runs solicitations. ("Funder" in the brief maps to this.) |
+| **Program Manager (PM)** | A user in a *funding* organization who creates and runs solicitations. |
 | **Reviewer** | A colleague in the same funding org, assigned to score a specific solicitation's applications. Can score, but not publish or award. |
 | **Applicant (LLO)** | Someone applying on behalf of a local organization — either a returning Connect user or a brand-new sign-up who found a public solicitation. |
 | **Public visitor** | An anonymous browser who can see published, public solicitations but nothing internal. |
 
 ### Step 1 — A PM creates and publishes a solicitation
 
-The PM opens their workspace and creates a draft. They give it a title, choose **RFP** or
+The PM (in a funder org) opens their workspace and creates a draft. They give it a title, choose **RFP** or
 **EOI**, write the scope of work, set a budget range, pick country / delivery type, and set
 an application deadline. They build a **question template** — the questions applicants must
 answer — and define **evaluation criteria** with weights (e.g. "Technical Expertise — 25%")
@@ -95,12 +95,12 @@ deadline, and opens a solicitation to read its scope, budget range, and deadline
 after they sign in to apply, and criteria are never shown to applicants at all (they're an
 internal scoring tool).
 
-When they click **Apply**, they go through the **standard Connect sign-up/login flow** and
-then choose who they're applying *as*: they **pick an LLO they're affiliated with** (one of
-the organizations they already belong to) or **create a new one inline** — just a name and
-short name. Creating one inline also sets up the backing Connect organization behind the
-scenes, so a brand-new user becomes a normal org from then on. The application is keyed on
-the resulting **organization** (the LLO is its real-world label). They answer the questions and either save a draft or submit.
+When they click **Apply**, they go through the **standard Connect sign-up/login flow** (the
+shared signup owned by CCCT-2494) and then choose which **organization** they're applying *as*:
+a returning user **picks one of their organizations**; a brand-new user **creates a new
+organization** as part of signup (it starts *probationary*, pending Dimagi verification, but
+that doesn't block them from applying). The application is keyed on that **organization**. They
+answer the questions and either save a draft or submit.
 After submitting they can track status (*submitted → under review → shortlisted →
 awarded/rejected*) and can withdraw before the deadline. They're emailed on every status
 change.
@@ -153,9 +153,9 @@ app. The feature has four distinct audiences, so it has four URL surfaces:
 | Surface | URL | Why it's separate |
 |---|---|---|
 | **Public marketplace** | top-level `/solicitations/`, `/solicitations/<id>/` | Must be reachable with no login, like the existing `prelogin` marketing pages. Shows only public, active solicitations. |
-| **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login; the applicant then picks an `LLOEntity` they're affiliated with or creates one inline (which also creates a backing org). The application is keyed on the resulting organization. |
+| **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login/signup (owned by CCCT-2494); the applicant picks one of their organizations or creates a new (probationary) org during signup. The application is keyed on that organization. |
 | **PM workspace** | `/a/<org_slug>/solicitations/…` | Org-scoped management screens; reuses Connect's standard per-org URL pattern and permissions. |
-| **Review screens** | top-level `/solicitations/reviews/` (list), `/solicitations/<id>/review/` (scoring) | Authorized by `ReviewerAssignment`, **not** org membership — so a reviewer assigned across several orgs sees *all* their assigned solicitations in one non-org-scoped list. |
+| **Review screens** | org-scoped `/a/<org_slug>/solicitations/reviews/` (list), `/a/<org_slug>/solicitations/<id>/review/` (scoring) | Org-scoped like the rest of Connect: lists only the current org's solicitations the user is assigned to. A `ReviewerAssignment` for the solicitation is still the per-screen gate (plain org membership isn't enough). A reviewer assigned in several orgs switches org context to see each. |
 
 The whole module sits behind a global **feature switch** named `solicitations`, following
 the existing `flags/switch_names.py` pattern (Release Path 3).
@@ -166,12 +166,6 @@ The screens below, grouped by the four URL surfaces above. "Audience" is who the
 *for*; "Reached via" is how a user navigates to it; auth requirements follow the surface it
 belongs to. Each maps back to a step in Part 2.
 
-Connect has three nav surfaces — the public marketing nav (`prelogin/home.html`), the
-org-scoped left sidebar (`layouts/sidenav.html`), and the header with the org switcher +
-user-profile dropdown (`layouts/header.html`). There is **no central cross-org dashboard**
-(login drops a user into their first org's workspace), so the two authenticated *cross-org*
-lists — "My applications" and "My reviews" — live in the **header user-profile dropdown**,
-the only non-org-scoped UI element.
 
 **Public marketplace** (unauthenticated; shows only `public` + `active` solicitations)
 
@@ -180,12 +174,12 @@ the only non-org-scoped UI element.
 | Marketplace list | Public visitor / prospective applicant | New **"Explore opportunities"** item in the public site nav + home CTA | Browse + filter (type, country, delivery type, deadline) published solicitations as scannable cards. *(Part 2, Step 2)* |
 | Solicitation detail (public) | Public visitor / prospective applicant | Marketplace cards → detail | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. |
 
-**Apply flow** (authenticated applicant; standard sign-up/login, applies as an `LLOEntity` — picked or created inline)
+**Apply flow** (authenticated applicant; standard sign-up/login via CCCT-2494, applies as an `Organization` — an existing membership or a new probationary org)
 
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
-| Application form | Applicant (LLO) | **"Apply" CTA** on the public detail page (routes through login) | Pick an affiliated `LLOEntity` or create one inline (name, short name), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2;)* |
-| "My applications" list | Applicant (LLO) | **Header user-profile dropdown** | All applications the user submitted, with status; filter by type. |
+| Application form | Applicant (LLO) | **"Apply" CTA** on the public detail page (routes through login/signup) | Pick which organization to apply as (or create one during signup), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2)* |
+| "My applications" list | Applicant (LLO) | **Org sidebar** ("Solicitations" → "My applications") | The current org's applications, with status; filter by type. Org-scoped. |
 | Application status / detail | Applicant (LLO) | From "My applications" | View one application's status + answers; withdraw before deadline. |
 
 **PM workspace** (`@org_program_manager_required`)
@@ -200,11 +194,11 @@ the only non-org-scoped UI element.
 | Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. |
 | Close / cancel dialog | Program Manager | From the Solicitations dashboard | Close early or cancel with a reason. |
 
-**Review screens** (top-level, non-org-scoped; gated by `ReviewerAssignment`)
+**Review screens** (org-scoped under `/a/<org_slug>/`; gated by `ReviewerAssignment`)
 
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
-| My assigned solicitations | Reviewer / Observer | New **"My reviews"** entry in the header user-profile dropdown | One page listing **every** solicitation the user is assigned to, **across all orgs** — not scoped to a single org. *(Part 2, Step 3)* |
+| My assigned solicitations | Reviewer / Observer | New **"My reviews"** entry in the org sidebar | Lists the **current org's** solicitations the user is assigned to. A reviewer assigned in several orgs switches org context to see each. *(Part 2, Step 3)* |
 | Application scoring | Reviewer | From "My assigned solicitations" | Score each criterion (with guidance), notes/tags, suggested reward, recommendation; submit. Other reviewers' scores hidden until own submitted. Observers get read-only. |
 
 > **Note:** the public nav label **"Explore opportunities"** is provisional and **to be
@@ -227,43 +221,54 @@ linked, the award must **also** fit within the Program's remaining budget — th
 financial source of truth. Both caps apply where relevant; an award must satisfy whichever is
 binding.
 
-**Decision 2 — Applicants apply as an `LLOEntity`, but the `Application` is keyed on the backing Connect `Organization` (created or linked inline).**
-*Problem it solves:* a marketplace applicant identifies as their real-world organization — the
-**`LLOEntity`** — and may be brand new to Connect, but the downstream onboarding
-(`ProgramApplication`) is keyed on a full **`Organization`**. We need an identity that's
-natural to the applicant *and* resolvable to an org at award. *Decision:* after the standard
-login, the applicant either **picks an `LLOEntity` they're affiliated with** (the LLO of an
-org they already belong to) or **creates one inline** (`name`, `short_name`). Picking an
-existing LLO reuses the org they reached it through; creating a new LLO inline also creates a
-Connect `Organization` linked to it (`org.llo_entity = the new LLO`), with the user as a
-member. The **`Application` is keyed on the resolved `Organization`** — one application per
-organization per solicitation — and also records the `LLOEntity` it was submitted as. Keying on
-the `Organization` matches the downstream `ProgramApplication` (also `Organization`-keyed) and
-sidesteps the org↔LLO ambiguity noted below.
-*Benefit:* the applicant identity matches how LLOs think of themselves, and a real
-`Organization` always exists by submit time, so there's nothing to create lazily at award —
-the award step simply creates/updates the `ProgramApplication` for that org.
-*Affiliation* is defined through org membership: the LLOs a user can pick are the
-`llo_entity` values of the orgs they belong to (a user with no orgs simply creates one
-inline).
+**Decision 2 — Applicants apply as an `Organization`; signup and org creation are delegated to CCCT-2494.**
+*Problem it solves:* a marketplace applicant must resolve to a Connect `Organization` (the
+downstream `ProgramApplication` is `Organization`-keyed), but a brand-new external applicant may
+have no account and no org yet — and historically such signups were **blocked pending manual
+Dimagi unblocking**. *Decision:* the apply flow does **not** build its own identity/signup
+mechanism. It reuses the canonical flow from the *Restructuring Programs, Opportunities and
+Organizations* work (**CCCT-2494**), which exists precisely to let the public respond to
+solicitations without manual unblocking:
+  - **Authenticate** via the standard Connect login/signup.
+  - **Resolve the applying `Organization`:** a user who already belongs to one or more orgs
+    **picks which org to apply as** (their own memberships only — the org list is private, so
+    there is no search of other orgs); a user with no org **creates a new probationary org**
+    through CCCT-2494's org-creation flow (becoming its first Org Admin). A probationary org is
+    pending System-Admin verification, but the user is **not blocked** — they can submit the
+    application immediately.
 
-> **Resolved — the `Application` is keyed on `Organization`, not `LLOEntity`.** `Organization.llo_entity`
-> is a plain FK (`organization/models.py`) and the existing org forms already let two orgs point
-> at the same `LLOEntity` (no 1:1 enforcement). Keying on `Organization` sidesteps that: the
-> `unique(solicitation, organization)` constraint can't wrongly block a distinct org that happens
-> to share an LLO. One UX detail remains for the apply-flow tickets — when a user belongs to two
-> orgs sharing the same `LLOEntity`, the picker must resolve to a *specific* `Organization` (pick
-> the org, not just the LLO) so the key is unambiguous.
+The **`Application` is keyed on the resolved `Organization`** — `unique(solicitation,
+organization)`, one application per org per solicitation. There is **no `LLOEntity` in this
+flow** (the model is being deprecated; CCCT-2494 is org-centric).
+*Benefit:* one identity model shared with the rest of Connect; a real `Organization` always
+exists by submit time, so there's nothing to create lazily at award; duplicate orgs are expected
+and resolved later by System-Admin **merge** (so the apply flow needs no name-collision
+handling); and the award step simply creates/updates the `ProgramApplication` for that org.
+
+> **Award gates on verification.** A probationary (unverified) org may *apply* and be *reviewed*,
+> but an **award is blocked until the org is verified** — the award commits budget and flips
+> `ProgramApplication → accepted` (see §3.5).
 >
-> **Note (inline-create collision):** `LLOEntity.name` is `unique=True`, so inline creation can
-> hit a name clash with an unrelated existing LLO. Handling (surface the existing one, or
-> disambiguate) is left to the implementer.
+> **Dependency on CCCT-2494.** The returning-user path (apply as an existing org) works without
+> CCCT-2494; the **brand-new external applicant path depends on CCCT-2494's signup + probationary
+> org creation** — the gap CCCT-2494 is built to close. E3-T1 is tagged accordingly.
 
 **Decision 3 — Reuse the existing `program_manager` capability to decide who can post.**
 *Problem it solves:* who is a "Funder" allowed to post solicitations? *Decision:* for v1,
 reuse the existing rule — admins of an organization flagged `program_manager=True`, via the
 existing `@org_program_manager_required` decorator. No new permission concept. Letting
 external funders post (without managing programs) is future scope.
+
+> **Forthcoming "Funder org" designation (external dependency — CCCT-2494).** The separate
+> *Restructuring Programs, Opportunities and Organizations* work introduces a dedicated
+> **Funder** organization designation — a System-Admin-applied tag, analogous to the **Program
+> Org** designation, where a Funder may be the parent of one or more Programs. **That work, not
+> this one, implements it.** When it lands, "who may post a solicitation" should migrate from
+> the `program_manager` flag to the Funder / Program-Org designation. Until then, v1 keeps the
+> `program_manager` rule above. This *posting-gate* alignment is forward-looking only (no
+> dependency) — but note the **apply flow's new-external-applicant path does depend on CCCT-2494**
+> (see Decision 2). (That work also reworks org roles — Program / Advising / Supervising /
+> Delivering Org — which solicitations terminology ("PM") will eventually align with.)
 
 **Decision 4 — Reviewer visibility is scoped per-solicitation via a ReviewerAssignment record.**
 *Problem it solves:* the requirement is "a reviewer sees only the solicitations they've been
@@ -272,12 +277,14 @@ added to," but Connect's access model is all-or-nothing per organization — it 
 `ReviewerAssignment(user, solicitation, role)` record *is* the authorization; review screens
 check it rather than relying on org membership alone. Reviewers must still be members of the
 funding org that posted the solicitation (cross-org reviewers — assigning someone outside the
-posting org — are out of scope for v1). But because a single user can belong to *several*
-funding orgs and be assigned in each, the review surface is **non-org-scoped**: it lives on
-its own top-level path so the user's "My assigned solicitations" list shows every assignment
-across all their orgs in one place, and each scoring screen opens directly (no need to first
-enter a specific org's workspace). The per-screen gate is the `ReviewerAssignment` for that
-solicitation. `role` covers reviewer (can score) vs observer (read-only).
+posting org — are out of scope for v1). The review surface is **org-scoped**, like every other
+authenticated page on Connect: it lives under `/a/<org_slug>/solicitations/reviews/`, and a
+user's "My assigned solicitations" list shows only the **current org's** solicitations they're
+assigned to. A reviewer who belongs to several funding orgs and is assigned in more than one
+uses the standard org switcher to move between them. The per-screen gate is still the
+`ReviewerAssignment` for that solicitation (plain org membership isn't enough — not every org
+member reviews every solicitation), additionally scoped to the active org. `role` covers
+reviewer (can score) vs observer (read-only).
 
 **Decision 5 — Evaluation criteria are strictly internal.**
 *Problem it solves:* the prototype showed criteria to applicants, but the brief says they're
@@ -321,9 +328,9 @@ All new models extend the project's `BaseModel` (which already provides `created
 convention. The sketches below show structure and intent; exact field types, lengths,
 `db_index`, and `on_delete` choices are finalized in the technical spec.
 
-**Reused as-is (no schema change):** `LLOEntity` (the applicant identity; picked or created
-inline at apply — only its existing `name`/`short_name` fields are used), `Organization`
-(created or linked inline at apply, and carried for the award handoff), `User`, `Program`,
+**Reused as-is (no schema change):** `Organization` (the applicant identity — an existing
+membership or a new org created during CCCT-2494 signup; carried for the award handoff),
+`User`, `Program`,
 `Currency`, `Country`, `DeliveryType`, `ProgramApplication` (set to *accepted* on award). The
 solicitation module does **not** reference `ManagedOpportunity` — the existing flow builds and owns
 the opportunity downstream of the `ProgramApplication` handoff.
@@ -418,7 +425,7 @@ class SolicitationAttachment(BaseModel):
 
 
 class Application(BaseModel):
-    """One submission from an LLO in response to a solicitation."""
+    """One submission from an organization in response to a solicitation."""
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Draft")
@@ -431,14 +438,10 @@ class Application(BaseModel):
 
     application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")
-    # The backing Connect Organization (created or linked inline at apply). This is the
-    # application's KEY — it matches the Organization-keyed ProgramApplication downstream.
+    # The applying Connect Organization (an existing membership, or a new probationary org
+    # created during CCCT-2494 signup). This is the application's KEY — it matches the
+    # Organization-keyed ProgramApplication downstream. No LLOEntity is involved (Decision 2).
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="solicitation_applications")
-    # The real-world identity the org applied as (often == organization.llo_entity), recorded for
-    # display/onboarding. Nullable (an existing org may have no LLOEntity); not the uniqueness key.
-    llo_entity = models.ForeignKey(
-        LLOEntity, on_delete=models.SET_NULL, null=True, blank=True, related_name="solicitation_applications"
-    )
 
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     submitter_name = models.CharField(max_length=255)   # snapshot, kept even if user changes
@@ -566,6 +569,9 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
   - **Not mandatory before award.** `under_review → awarded` is allowed, so a PM can award a
     clear-cut RFP without shortlisting first; the dashboard still nudges toward the
     shortlist-then-award path.
+  - **Award requires a verified org.** A probationary (unverified) applicant org can apply and be
+    reviewed, but `→ awarded` is **blocked until a System Admin verifies the org** (CCCT-2494) —
+    the award commits budget and flips `ProgramApplication → accepted` (Decision 2).
   - **Reversible.** `shortlisted → under_review` (un-shortlist) is allowed any time before the
     application is awarded or rejected. Un-shortlisting **emails the affected applicant** so the
     status change is communicated, like every other application transition (§3.7).
@@ -582,9 +588,9 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
 | Surface | Gate |
 |---|---|
 | Public marketplace | none — unauthenticated; only `public` + `active` solicitations |
-| Apply flow | authenticated; applicant picks an affiliated `LLOEntity` or creates one inline (which also creates a backing org) |
+| Apply flow | authenticated (login/signup via CCCT-2494); applicant applies as one of their orgs, or a new probationary org |
 | PM workspace | `@org_program_manager_required` |
-| Review screens | non-org-scoped; a `ReviewerAssignment` for that solicitation (reviewer must also be a member of the posting org) |
+| Review screens | org-scoped under `/a/<org_slug>/`; current-org membership **plus** a `ReviewerAssignment` for that solicitation (the reviewer is a member of the posting org) |
 | Whole module | global feature switch `solicitations` (Release Path 3) |
 
 ### 3.7 Notifications & emails
@@ -610,7 +616,8 @@ integration with status-callback webhooks, and two-party counter-signature. Desi
 support contracts for solicitations that happened off-platform. (Google Docs signing is one
 option to explore.) Other future scope from the brief: AI criteria generation and AI
 application/review helpers, reviewer blinding, opt-in notifications for new solicitations,
-external-funder posting, per-RFP FAQs, and a funder analytics dashboard.
+external-funder posting (aligns with the forthcoming Funder org designation, CCCT-2494 — see
+Decision 3), per-RFP FAQs, and a funder analytics dashboard.
 
 ---
 
@@ -628,21 +635,22 @@ Items already flagged inline above are noted as such.
   with a generic "Funder" role "assigned to any Connect user (Dimagi or external) in a
   funding organization." This doc (Decision 3) assumes that means **admins of an org flagged
   `program_manager=True`** via the existing `@org_program_manager_required` decorator — no new
-  permission concept, and the "Funder" persona is collapsed into "PM."
+  permission concept, and the "Funder" persona is collapsed into "PM." A dedicated **Funder org**
+  designation is being introduced separately (CCCT-2494); posting eligibility should align with it
+  once it lands — see the note under Decision 3.
 
-- **Inline LLO creation also creates a backing `Organization`.** The brief lists the applicant
-  identity as "LLO entity, Organization, User" but never says where the `Organization` comes
-  from. This doc (Decision 2) assumes creating an `LLOEntity` inline **also provisions a
-  Connect `Organization`** (with the user as member), so a real org always exists by submit
-  time and the award handoff needs nothing created lazily. *Affiliation* is assumed to mean org
-  membership (the LLOs a user can pick = `llo_entity` of orgs they belong to).
+- **Applicant identity is an `Organization`; signup is delegated to CCCT-2494.** The brief lists
+  the applicant identity as "LLO entity, Organization, User" but never says where the
+  `Organization` comes from. This doc (Decision 2) drops the `LLOEntity` and resolves identity to
+  an `Organization` — an existing membership, or a new probationary org created via CCCT-2494's
+  signup flow — so a real org always exists by submit time and the award handoff needs nothing
+  created lazily. *Affiliation* means org membership (the orgs a user can apply as are the ones
+  they belong to).
 
 - **`Application` is keyed on `Organization`, one per organization per solicitation.** The brief
   implies one submission per applicant but doesn't define the key. This doc keys on the resolved
-  `Organization` (`unique(solicitation, organization)`) rather than `LLOEntity` — matching the
-  Organization-keyed `ProgramApplication` downstream and avoiding the non-1:1 org↔LLO problem
-  (see Decision 2). The `LLOEntity` is still recorded on the application as the real-world
-  identity, but it is not the key.
+  `Organization` (`unique(solicitation, organization)`), matching the Organization-keyed
+  `ProgramApplication` downstream (see Decision 2). `LLOEntity` is not used.
 
 - **Scoring scale is a fixed 1–10; weights are percentages totalling 100%; overall score is
   normalized to /100.** The brief says only "evaluation criteria with weights." This doc
@@ -669,9 +677,11 @@ Items already flagged inline above are noted as such.
   and **structural fields lock once `active`** (questions/criteria freeze; descriptive copy and
   deadline extensions stay editable). The brief specifies neither.
 
-- **Cross-org lists live in the header user-profile dropdown.** Because Connect has no central
-  cross-org dashboard, this doc assumes "My applications" and "My reviews" hang off the only
-  non-org-scoped UI element. The brief doesn't address placement.
+- **The personal lists are org-scoped, in the left sidebar.** "My applications" and "My reviews"
+  show only the current org's items and live in the org sidebar, matching every other
+  authenticated Connect page; a user with several orgs switches org context to see each. The
+  brief doesn't address placement. *(Earlier drafts made these non-org-scoped in the header
+  dropdown; scoped to orgs per review feedback.)*
 
 - **Added Solicitation fields not named in the brief:** `contact_email`, `estimated_scale`,
   `expected_start_date` / `expected_end_date`, and `hide_scores_until_submit` as a stored

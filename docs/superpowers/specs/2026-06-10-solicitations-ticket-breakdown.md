@@ -38,12 +38,12 @@ E0 Foundations ─┬─> E1 PM authoring ──┐
 - **E6 (notifications) is last** because it hangs off transitions defined across E1–E5; it can
   start once those transitions exist, and is itself parallelizable per-event.
 
-### Blocking open question (resolve before E3-T1)
+### Key dependency (apply flow)
 
-The design's [deferred open question](2026-06-09-solicitations-design.md) — whether
-`Organization ↔ LLOEntity` is 1:1, and whether the `Application` keys on `LLOEntity` or
-`Organization` — **must be decided before the apply form (E3-T1) is built**, because it
-changes the unique constraint and the org-resolution logic. Tracked as **E3-T0** below.
+The brand-new external applicant path (E3-T1) depends on **CCCT-2494** (signup + probationary
+org creation) — the gap CCCT-2494 exists to close. The returning-user path (apply as an existing
+org) does not. The `Application` is keyed on `Organization` (design Decision 2); there is no
+`LLOEntity` in this flow.
 
 ---
 
@@ -63,7 +63,7 @@ convention. Finalize `on_delete`, indexes, and the unique constraints. Generate 
 - App installed; migrations apply on PostGIS; models importable.
 - `SOLICITATIONS = "solicitations"` (or similar) in `switch_names.py`; a reusable gate (CBV
   mixin) returns 404/redirect when the switch is off, verified by test.
-- Unique constraints enforced (`one_application_per_llo`, `one_assignment_per_user`,
+- Unique constraints enforced (`one_application_per_org`, `one_assignment_per_user`,
   `one_review_per_reviewer`), tested at the DB/model level.
 - `CriterionScore.score` validated to the fixed 1–10 range (Decision 6).
 - No `scope_of_work` field — `description` only (per review).
@@ -152,32 +152,26 @@ criteria.** "Apply" CTA routes through login to the apply flow.
 
 ## Epic E3 — Apply flow
 
-Authenticated; `/solicitations/<id>/apply/`. Applicant applies as an `LLOEntity`.
+Authenticated; `/solicitations/<id>/apply/`. Applicant applies as an `Organization` (an existing
+membership or a new probationary org via CCCT-2494 signup).
 
-### E3-T0 — Resolve org↔LLOEntity identity rule *(spike / decision)*
-**Scope:** Decide and document whether to assume/enforce 1:1 `Organization ↔ LLOEntity` for
-the apply flow, or key the `Application` on `Organization` instead. Update the design doc and
-the unique constraint accordingly. Also decide inline-create name-collision handling
-(`LLOEntity.name` is unique).
-**Acceptance:** decision recorded in the design doc; E0-T1's constraint updated if needed.
-**Dependencies:** E0-T1.
-**Design:** Decision 2 + the deferred open question note.
-
-### E3-T1 — Application form (pick/create LLO + answer questions)
-**Scope:** After standard login, applicant picks an affiliated `LLOEntity` or creates one
-inline (name, short name) — which also creates a backing `Organization` (`org.llo_entity`)
-with the user as member. Render the question template (questions visible here for the first
-time). Save draft or submit. Application keyed per E3-T0's decision.
-**Acceptance:** inline-create produces LLO + org + membership; existing-LLO path reuses the
-right org; draft/submit transitions correct; required-question validation on submit;
-submission one-shot.
-**Dependencies:** E2-T2, E3-T0.
+### E3-T1 — Application form (resolve org + answer questions)
+**Scope:** After standard login/signup, the applicant resolves the applying `Organization`: pick
+one of their memberships, or (brand-new user) create a new probationary org via CCCT-2494's
+signup/org-creation flow. Render the question template (questions visible here for the first
+time). Save draft or submit. Application keyed on the resolved `Organization`.
+**Acceptance:** existing-member path applies as the chosen org; new-user path creates a
+probationary org (CCCT-2494) + membership and is **not** blocked from submitting; draft/submit
+transitions correct; required-question validation on submit; submission one-shot;
+`unique(solicitation, organization)` enforced.
+**Dependencies:** E2-T2; **CCCT-2494** (for the new-external-applicant path).
 **Design:** Decision 2, Part 2 Step 2, §3.2 (Apply flow).
 
-### E3-T2 — "My applications" list (header dropdown)
-**Scope:** Cross-org list of the user's applications with status; filter by type. Entry in the
-**header user-profile dropdown** (`layouts/header.html`) — the non-org-scoped surface.
-**Acceptance:** shows all the user's applications across orgs; reachable on top-level pages.
+### E3-T2 — "My applications" list (org sidebar)
+**Scope:** Org-scoped list of the current org's applications with status; filter by type. Entry
+in the **org sidebar** ("Solicitations" → "My applications").
+**Acceptance:** shows only the current org's applications; switching org context changes the
+list; not reachable for an org the user isn't a member of.
 **Dependencies:** E3-T1.
 **Design:** §3.2 (Apply flow + nav note).
 
@@ -192,21 +186,23 @@ set.
 
 ## Epic E4 — Review
 
-Top-level, non-org-scoped, `/solicitations/reviews/…`; gated by `ReviewerAssignment`.
+Org-scoped under `/a/<org_slug>/solicitations/reviews/…`; gated by `ReviewerAssignment`.
 
 ### E4-T1 — ReviewerAssignment authorization layer
-**Scope:** A per-screen gate that authorizes via `ReviewerAssignment` for the solicitation
-(not org membership), enforcing reviewer vs observer. Reusable across review screens.
+**Scope:** A per-screen gate that authorizes via `ReviewerAssignment` for the solicitation (not
+plain org membership), scoped to the current org (the solicitation must belong to `org_slug`),
+enforcing reviewer vs observer. Reusable across review screens.
 **Acceptance:** assigned reviewer/observer allowed; unassigned user denied; observer is
-read-only; tested independently of views.
+read-only; a solicitation from another org is not reachable under the current org's URL; tested
+independently of views.
 **Dependencies:** E0-T1, E1-T3.
 **Design:** Decision 4, §3.6.
 
-### E4-T2 — "My assigned solicitations" list (header dropdown)
-**Scope:** One page listing **every** solicitation the user is assigned to, **across all
-orgs**. **"My reviews"** entry in the header user-profile dropdown.
-**Acceptance:** shows assignments from multiple orgs in one list; opens scoring directly
-without entering an org workspace.
+### E4-T2 — "My assigned solicitations" list (org sidebar)
+**Scope:** A page listing the **current org's** solicitations the user is assigned to.
+**"My reviews"** entry in the org sidebar.
+**Acceptance:** shows only the current org's assignments; switching org context changes the
+list; opens the scoring screen for that org.
 **Dependencies:** E4-T1.
 **Design:** Decision 4, §3.2 (Review screens), Part 2 Step 3.
 
@@ -259,11 +255,12 @@ amount would push the solicitation's cumulative awarded total over its `budget_m
 Program is linked, also reject any award that exceeds the Program's remaining budget. On award: if
 program-linked, create/update the `ProgramApplication` to `accepted` and link it on the
 `Application`; if no program (standalone EOI), just record the award. Set solicitation `awarded`
-(reachable from `active` or `closed`).
+(reachable from `active` or `closed`). **Verification gate (CCCT-2494):** award is blocked if the
+applicant org is still probationary/unverified.
 **Acceptance:** award pushing cumulative total over solicitation `budget_max` rejected (tested);
-award over Program remaining budget rejected when program-linked (tested); `ProgramApplication`
-set to `accepted` for program-linked; standalone EOI records award only; solicitation status
-transitions correctly; applicant emailed.
+award over Program remaining budget rejected when program-linked (tested); award blocked for an
+unverified/probationary org (tested); `ProgramApplication` set to `accepted` for program-linked;
+standalone EOI records award only; solicitation status transitions correctly; applicant emailed.
 **Dependencies:** E5-T1 (and ideally E5-T3, though award-from-under_review must also work).
 **Design:** Decision 1, Part 2 Steps 4–5, §3.5.
 
@@ -315,11 +312,20 @@ public detail page.
   404s).
 - **Phase 2 is explicitly out of scope** (contracts, AI, reviewer blinding, external-funder
   posting, FAQs, funder analytics) — see §3.8. No tickets here.
+- **External dependency — CCCT-2494 (Restructuring Programs, Opportunities and Organizations).**
+  Two distinct relationships:
+  - **Apply flow (hard dependency).** The brand-new external applicant path (E3-T1) reuses
+    CCCT-2494's signup + probationary org creation — the gap CCCT-2494 exists to close. The
+    award step also gates on org verification (E5-T4). The returning-user apply path does not
+    depend on it. See design §Decision 2.
+  - **Posting gate (forward-alignment only).** CCCT-2494 also adds a Funder / Program-Org
+    designation; when it lands, E1's `@org_program_manager_required` gate should migrate to it.
+    Neither blocks the other. See design §Decision 3.
 
 ## Suggested sequencing for a small team
 
 1. **E0** (one dev, blocking).
 2. Then parallelize: **E1** (PM authoring) + **E2** (marketplace) + **E4-T1** (auth layer).
-3. **E3** (apply) after E2 + the E3-T0 decision; **E4-T2/T3** (review) after E4-T1 + E3-T1.
+3. **E3** (apply) after E2 (the new-applicant path also needs **CCCT-2494**); **E4-T2/T3** (review) after E4-T1 + E3-T1.
 4. **E5** (evaluation/award) after E3 + E4.
 5. **E6** (notifications) folded in as each transition lands; **E6-T4** can go any time after E0.
