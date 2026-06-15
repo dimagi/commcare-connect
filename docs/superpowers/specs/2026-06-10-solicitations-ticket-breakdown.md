@@ -242,24 +242,28 @@ ignoring hide-until-submit).
 
 ### E5-T3 — Shortlist + bulk-reject + `submitted → under_review`
 **Scope:** Bulk shortlist (`under_review → shortlisted`, reversible, emails affected
-applicants); un-shortlist sends no email; bulk-reject with templated email. Reviewer-initiated
+applicants); un-shortlist (`shortlisted → under_review`) also emails affected applicants;
+bulk-reject with templated email. Reviewer-initiated
 `submitted → under_review` transition (per review). Shortlisting does not freeze review and is
 not a gate to award.
-**Acceptance:** transitions match §3.5 exactly; un-shortlist silent; reviewers can still score
-shortlisted apps; PM-only for shortlist/reject; reviewer-only for the under_review move.
+**Acceptance:** transitions match §3.5 exactly; un-shortlist emails affected applicants;
+reviewers can still score shortlisted apps; PM-only for shortlist/reject; reviewer-only for the
+under_review move.
 **Dependencies:** E5-T1.
 **Design:** §3.5 (Application + shortlisting bullets), Part 2 Step 4.
 
 ### E5-T4 — Award + downstream onboarding handoff
 **Scope:** Award one or more applicants from the shortlist or directly from `under_review`.
-Record `Award` (amount, currency). **Budget hard cap:** if a Program is linked, reject any
-award that exceeds the Program's remaining budget (Decision 1). On award: if program-linked,
-create/update the `ProgramApplication` to `accepted` and link it on the `Application`; if no
-program (standalone EOI), just record the award. Set solicitation `awarded` (reachable from
-`active` or `closed`).
-**Acceptance:** budget over-cap rejected (tested); `ProgramApplication` set to `accepted` for
-program-linked; standalone EOI records award only; solicitation status transitions correctly;
-applicant emailed.
+Record `Award` (amount, currency). **Budget hard caps (Decision 1):** reject any award whose
+amount would push the solicitation's cumulative awarded total over its `budget_max`; and, if a
+Program is linked, also reject any award that exceeds the Program's remaining budget. On award: if
+program-linked, create/update the `ProgramApplication` to `accepted` and link it on the
+`Application`; if no program (standalone EOI), just record the award. Set solicitation `awarded`
+(reachable from `active` or `closed`).
+**Acceptance:** award pushing cumulative total over solicitation `budget_max` rejected (tested);
+award over Program remaining budget rejected when program-linked (tested); `ProgramApplication`
+set to `accepted` for program-linked; standalone EOI records award only; solicitation status
+transitions correctly; applicant emailed.
 **Dependencies:** E5-T1 (and ideally E5-T3, though award-from-under_review must also work).
 **Design:** Decision 1, Part 2 Steps 4–5, §3.5.
 
@@ -271,10 +275,11 @@ Async via `send_mail_async.delay(...)` (`utils/tasks.py`), following `organizati
 Each event can be built in parallel once its triggering transition exists.
 
 ### E6-T1 — Applicant status-change emails
-**Scope:** Templated emails on submission confirmation, under-review, shortlisted, awarded,
-rejected (incl. bulk rejection). Absolute-URI links into the relevant screen.
+**Scope:** Templated emails on submission confirmation, under-review, shortlisted,
+un-shortlisted (back to under-review), awarded, rejected (incl. bulk rejection). Absolute-URI
+links into the relevant screen.
 **Acceptance:** one email per transition; correct recipient (snapshot
-`submitter_email`); no email on un-shortlist.
+`submitter_email`); un-shortlist emails the affected applicant.
 **Dependencies:** the relevant transitions (E3-T1, E5-T3, E5-T4).
 **Design:** §3.7 (applicants), §3.5.
 

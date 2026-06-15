@@ -100,7 +100,7 @@ then choose who they're applying *as*: they **pick an LLO they're affiliated wit
 the organizations they already belong to) or **create a new one inline** — just a name and
 short name. Creating one inline also sets up the backing Connect organization behind the
 scenes, so a brand-new user becomes a normal org from then on. The application is keyed on
-that LLO. They answer the questions and either save a draft or submit.
+the resulting **organization** (the LLO is its real-world label). They answer the questions and either save a draft or submit.
 After submitting they can track status (*submitted → under review → shortlisted →
 awarded/rejected*) and can withdraw before the deadline. They're emailed on every status
 change.
@@ -153,7 +153,7 @@ app. The feature has four distinct audiences, so it has four URL surfaces:
 | Surface | URL | Why it's separate |
 |---|---|---|
 | **Public marketplace** | top-level `/solicitations/`, `/solicitations/<id>/` | Must be reachable with no login, like the existing `prelogin` marketing pages. Shows only public, active solicitations. |
-| **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login; the applicant then picks an `LLOEntity` they're affiliated with or creates one inline (which also creates a backing org). The application is keyed on that LLO. |
+| **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login; the applicant then picks an `LLOEntity` they're affiliated with or creates one inline (which also creates a backing org). The application is keyed on the resulting organization. |
 | **PM workspace** | `/a/<org_slug>/solicitations/…` | Org-scoped management screens; reuses Connect's standard per-org URL pattern and permissions. |
 | **Review screens** | top-level `/solicitations/reviews/` (list), `/solicitations/<id>/review/` (scoring) | Authorized by `ReviewerAssignment`, **not** org membership — so a reviewer assigned across several orgs sees *all* their assigned solicitations in one non-org-scoped list. |
 
@@ -214,14 +214,20 @@ the only non-org-scoped UI element.
 
 ### 3.3 Key design decisions (with the reasoning behind each)
 
-**Decision 1 — Budget lives on the Solicitation; the Program budget is a hard cap on awards.**
+**Decision 1 — Budget lives on the Solicitation; awards are hard-capped by the Solicitation budget (and the Program budget when linked).**
 *Problem it solves:* budget needs to be shown to applicants even when a solicitation has no
 Program (so we can't rely on a Program always existing), but we also don't want to invent a
 new "fund" model. *Decision:* store `budget_min` / `budget_max` + `currency` directly on the
-Solicitation. When a Program *is* linked, an award that would exceed the Program's remaining
-budget is **rejected (hard block)** — the Program remains the financial source of truth.
+Solicitation. A solicitation can produce several awards (especially EOIs), so the **sum of all
+award amounts on a solicitation must fit within its `budget_max`** — an award that would push the
+cumulative awarded total over `budget_max` is **rejected (hard block)**. (Reviewers' suggested
+amounts — `Review.reward_budget` — are advisory and are *not* validated against the budget; the
+cap is enforced only on the actual `Award.award_amount` totals at award time.) When a Program *is*
+linked, the award must **also** fit within the Program's remaining budget — the Program remains the
+financial source of truth. Both caps apply where relevant; an award must satisfy whichever is
+binding.
 
-**Decision 2 — Applicants apply as an `LLOEntity`; the backing Connect `Organization` is created or linked inline.**
+**Decision 2 — Applicants apply as an `LLOEntity`, but the `Application` is keyed on the backing Connect `Organization` (created or linked inline).**
 *Problem it solves:* a marketplace applicant identifies as their real-world organization — the
 **`LLOEntity`** — and may be brand new to Connect, but the downstream onboarding
 (`ProgramApplication`) is keyed on a full **`Organization`**. We need an identity that's
@@ -230,8 +236,10 @@ login, the applicant either **picks an `LLOEntity` they're affiliated with** (th
 org they already belong to) or **creates one inline** (`name`, `short_name`). Picking an
 existing LLO reuses the org they reached it through; creating a new LLO inline also creates a
 Connect `Organization` linked to it (`org.llo_entity = the new LLO`), with the user as a
-member. The **`Application` is keyed on the `LLOEntity`** — one application per LLO per
-solicitation — and also stores the resolved `Organization` so the award has a definite org.
+member. The **`Application` is keyed on the resolved `Organization`** — one application per
+organization per solicitation — and also records the `LLOEntity` it was submitted as. Keying on
+the `Organization` matches the downstream `ProgramApplication` (also `Organization`-keyed) and
+sidesteps the org↔LLO ambiguity noted below.
 *Benefit:* the applicant identity matches how LLOs think of themselves, and a real
 `Organization` always exists by submit time, so there's nothing to create lazily at award —
 the award step simply creates/updates the `ProgramApplication` for that org.
@@ -239,14 +247,13 @@ the award step simply creates/updates the `ProgramApplication` for that org.
 `llo_entity` values of the orgs they belong to (a user with no orgs simply creates one
 inline).
 
-> **Open question (revisit before the apply-flow tickets):** `Organization.llo_entity` is a
-> plain FK (`organization/models.py`), and the existing org forms already let two orgs point at
-> the same `LLOEntity` — there is no 1:1 enforcement today. That breaks two assumptions here:
-> (a) "picking an existing LLO reuses the org you reached it through" is ambiguous if a user
-> belongs to two orgs sharing that LLO, and (b) the `unique(solicitation, llo_entity)`
-> constraint would block a second, genuinely distinct org that shares the LLO from applying.
-> We need to decide whether to assume/enforce 1:1 org↔LLO for the apply flow or key the
-> `Application` on `Organization` instead. **Deferred.**
+> **Resolved — the `Application` is keyed on `Organization`, not `LLOEntity`.** `Organization.llo_entity`
+> is a plain FK (`organization/models.py`) and the existing org forms already let two orgs point
+> at the same `LLOEntity` (no 1:1 enforcement). Keying on `Organization` sidesteps that: the
+> `unique(solicitation, organization)` constraint can't wrongly block a distinct org that happens
+> to share an LLO. One UX detail remains for the apply-flow tickets — when a user belongs to two
+> orgs sharing the same `LLOEntity`, the picker must resolve to a *specific* `Organization` (pick
+> the org, not just the LLO) so the key is unambiguous.
 >
 > **Note (inline-create collision):** `LLOEntity.name` is `unique=True`, so inline creation can
 > hit a name clash with an unrelated existing LLO. Handling (surface the existing one, or
@@ -317,8 +324,9 @@ convention. The sketches below show structure and intent; exact field types, len
 **Reused as-is (no schema change):** `LLOEntity` (the applicant identity; picked or created
 inline at apply — only its existing `name`/`short_name` fields are used), `Organization`
 (created or linked inline at apply, and carried for the award handoff), `User`, `Program`,
-`Currency`, `Country`, `DeliveryType`, `ProgramApplication` (set to *accepted* on award),
-`ManagedOpportunity` (back-linked later by the existing flow).
+`Currency`, `Country`, `DeliveryType`, `ProgramApplication` (set to *accepted* on award). The
+solicitation module does **not** reference `ManagedOpportunity` — the existing flow builds and owns
+the opportunity downstream of the `ProgramApplication` handoff.
 
 **New models** (in `commcare_connect/solicitation/models.py`):
 
@@ -345,8 +353,8 @@ class Solicitation(BaseModel):
 
     description = models.TextField()  # the scope of work; UI may label this "Scope of work" or "Description"
 
-    budget_min = models.PositiveBigIntegerField(null=True, blank=True)
-    budget_max = models.PositiveBigIntegerField(null=True, blank=True)
+    budget_min = models.PositiveBigIntegerField(null=True, blank=True)  # informational lower bound shown to applicants
+    budget_max = models.PositiveBigIntegerField(null=True, blank=True)  # ceiling: cumulative Award.award_amount must not exceed it (Decision 1)
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT, null=True, blank=True)
@@ -423,10 +431,14 @@ class Application(BaseModel):
 
     application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")
-    # The applicant identity: an LLOEntity, picked or created inline at apply.
-    llo_entity = models.ForeignKey(LLOEntity, on_delete=models.PROTECT, related_name="solicitation_applications")
-    # The backing Connect org (created or linked inline at apply); carried for the award handoff.
+    # The backing Connect Organization (created or linked inline at apply). This is the
+    # application's KEY — it matches the Organization-keyed ProgramApplication downstream.
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="solicitation_applications")
+    # The real-world identity the org applied as (often == organization.llo_entity), recorded for
+    # display/onboarding. Nullable (an existing org may have no LLOEntity); not the uniqueness key.
+    llo_entity = models.ForeignKey(
+        LLOEntity, on_delete=models.SET_NULL, null=True, blank=True, related_name="solicitation_applications"
+    )
 
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     submitter_name = models.CharField(max_length=255)   # snapshot, kept even if user changes
@@ -441,7 +453,7 @@ class Application(BaseModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["solicitation", "llo_entity"], name="one_application_per_llo")
+            models.UniqueConstraint(fields=["solicitation", "organization"], name="one_application_per_org")
         ]
 
 
@@ -518,15 +530,13 @@ class Award(BaseModel):
     awarded_date = models.DateTimeField(auto_now_add=True)
     award_amount = models.PositiveBigIntegerField()
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
-    notes = models.TextField(blank=True)
+    comment = models.TextField(blank=True)
     # v1 placeholder: PM manually uploads an out-of-band signed contract PDF.
     # Also covers contracts for solicitations run off-platform. Phase 2 replaces this
     # with generated documents + e-signature (a dedicated Contract model).
     contract_file = models.FileField(upload_to="solicitations/contracts/", null=True, blank=True)
-    # Back-linked later once the existing flow spins up the opportunity (Part 2, Step 5).
-    linked_managed_opportunity = models.ForeignKey(
-        ManagedOpportunity, on_delete=models.SET_NULL, null=True, blank=True
-    )
+    # No link to ManagedOpportunity: the award hands off via ProgramApplication only (Part 2,
+    # Step 5); the existing flow owns the opportunity and the solicitation module never references it.
     # Phase 2 reserves: contract = models.OneToOneField("Contract", ...)
 ```
 
@@ -557,8 +567,8 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
     clear-cut RFP without shortlisting first; the dashboard still nudges toward the
     shortlist-then-award path.
   - **Reversible.** `shortlisted → under_review` (un-shortlist) is allowed any time before the
-    application is awarded or rejected. Un-shortlisting sends **no** applicant email, to avoid
-    status whiplash.
+    application is awarded or rejected. Un-shortlisting **emails the affected applicant** so the
+    status change is communicated, like every other application transition (§3.7).
   - **Does not freeze review.** Reviewers can keep scoring a shortlisted application —
     shortlisting is PM curation, not a review lock.
   - **No completion gate.** The PM can shortlist at any time, even on partial reviews; the
@@ -584,7 +594,8 @@ All sent asynchronously via the existing `send_mail_async.delay(...)` task
 links into the relevant screen.
 
 - **To applicants** — on every status change: submission confirmation, under-review,
-  shortlisted, awarded, rejected (templated, including bulk rejection).
+  shortlisted, un-shortlisted (back to under-review), awarded, rejected (templated, including
+  bulk rejection).
 - **To PMs** — a weekly digest (Celery beat) of how many applications await review per open
   solicitation, plus scores for already-scored applications. Follows the existing
   `WEEKLY_PERFORMANCE_REPORT` flag pattern. Plus a PM-triggered "email all applicants"
@@ -626,10 +637,12 @@ Items already flagged inline above are noted as such.
   time and the award handoff needs nothing created lazily. *Affiliation* is assumed to mean org
   membership (the LLOs a user can pick = `llo_entity` of orgs they belong to).
 
-- **`Application` is keyed on `LLOEntity`, one per LLO per solicitation.** The brief implies
-  one submission per applicant but doesn't define the key. This doc assumes a
-  `unique(solicitation, llo_entity)` constraint. *(Tension with non-1:1 org↔LLO already flagged
-  as a deferred open question in Decision 2.)*
+- **`Application` is keyed on `Organization`, one per organization per solicitation.** The brief
+  implies one submission per applicant but doesn't define the key. This doc keys on the resolved
+  `Organization` (`unique(solicitation, organization)`) rather than `LLOEntity` — matching the
+  Organization-keyed `ProgramApplication` downstream and avoiding the non-1:1 org↔LLO problem
+  (see Decision 2). The `LLOEntity` is still recorded on the application as the real-world
+  identity, but it is not the key.
 
 - **Scoring scale is a fixed 1–10; weights are percentages totalling 100%; overall score is
   normalized to /100.** The brief says only "evaluation criteria with weights." This doc
