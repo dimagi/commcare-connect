@@ -77,23 +77,27 @@ that reviewers will later score against. Each question can be tied to a criterio
 reviewers know which criterion a given answer informs.
 
 They may optionally **link the solicitation to a Program** (some EOIs are exploratory and
-have no program yet — that's allowed). They mark it **public** (shows on the open
-marketplace) or **private** (only invited orgs), assign one or more reviewers, and
-**publish**. They can also email selected existing orgs a link to the public page.
+have no program yet — that's allowed). They mark it **public** (shown on the open marketplace to
+everyone) or **private** (invite-only), assign one or more reviewers, and **publish**. For a
+**private** solicitation they **invite specific organizations** — each invite creates an access
+record — and only invited orgs can see or apply. For a public one they can additionally email
+orgs a link.
 
-> **Note:** the exact **public vs. private** access semantics (likely "private" = *unlisted* —
-> not on the marketplace but reachable by direct link — for v1) are still being worked out and
-> will be specced shortly. The narrative above and the data model don't yet fully agree on how
-> private solicitations are gated.
+> **Public vs. private (resolved).** A **public** solicitation is listed on the open marketplace
+> for everyone. A **private** solicitation is **invite-only**: gated by per-org
+> `SolicitationInvitation` access records (§3.4), kept off the open marketplace, and surfaced in a
+> dedicated **"Invited to you"** marketplace section for logged-in members of an invited org. See
+> Decision 8.
 
 
 ### Step 2 — An organization discovers it and applies
 
 A **public visitor** browses the marketplace, filtering by type, country, delivery type, or
-deadline, and opens a solicitation to read its scope, budget range, and deadline. The
-**questions and the internal criteria are not shown** at this stage — questions appear only
-after they sign in to apply, and criteria are never shown to applicants at all (they're an
-internal scoring tool).
+deadline, and opens a solicitation to read its scope, budget range, and deadline. A **logged-in**
+user additionally sees an **"Invited to you"** section listing the private solicitations their
+orgs have been invited to. The **questions and the internal criteria are not shown** at this
+stage — questions appear only after they sign in to apply, and criteria are never shown to
+applicants at all (they're an internal scoring tool).
 
 When they click **Apply**, they go through the **standard Connect sign-up/login flow** (the
 shared signup owned by CCCT-2494) and then choose which **organization** they're applying *as*:
@@ -102,8 +106,8 @@ organization** as part of signup (it starts *probationary*, pending Dimagi verif
 that doesn't block them from applying). The application is keyed on that **organization**. They
 answer the questions and either save a draft or submit.
 After submitting they can track status (*submitted → under review → shortlisted →
-awarded/rejected*) and can withdraw before the deadline. They're emailed on every status
-change.
+awarded/rejected*) and can **withdraw** — including after an award, which releases that award so
+the PM can re-award. They're emailed on every status change.
 
 ### Step 3 — Reviewers score the applications
 
@@ -167,12 +171,13 @@ The screens below, grouped by the four URL surfaces above. "Audience" is who the
 belongs to. Each maps back to a step in Part 2.
 
 
-**Public marketplace** (unauthenticated; shows only `public` + `active` solicitations)
+**Public marketplace** (`public` + `active` shown to everyone; logged-in users also see private solicitations their orgs are invited to)
 
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
-| Marketplace list | Public visitor / prospective applicant | New **"Explore opportunities"** item in the public site nav + home CTA | Browse + filter (type, country, delivery type, deadline) published solicitations as scannable cards. *(Part 2, Step 2)* |
-| Solicitation detail (public) | Public visitor / prospective applicant | Marketplace cards → detail | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. |
+| Marketplace list | Public visitor / prospective applicant | New **"Explore opportunities"** item in the public site nav + home CTA | Browse + filter (type, country, delivery type, deadline) published `public` solicitations as scannable cards. *(Part 2, Step 2)* |
+| "Invited to you" section | Logged-in member of an invited org | Marketplace (logged-in only) | Lists `private` solicitations the user's orgs hold a `SolicitationInvitation` for. *(Part 2, Step 2; Decision 8)* |
+| Solicitation detail (public) | Public visitor / prospective applicant | Marketplace cards → detail | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. (Private detail reachable only by invited orgs.) |
 
 **Apply flow** (authenticated applicant; standard sign-up/login via CCCT-2494, applies as an `Organization` — an existing membership or a new probationary org)
 
@@ -213,8 +218,9 @@ belongs to. Each maps back to a step in Part 2.
 Program (so we can't rely on a Program always existing), but we also don't want to invent a
 new "fund" model. *Decision:* store `budget_min` / `budget_max` + `currency` directly on the
 Solicitation. A solicitation can produce several awards (especially EOIs), so the **sum of all
-award amounts on a solicitation must fit within its `budget_max`** — an award that would push the
-cumulative awarded total over `budget_max` is **rejected (hard block)**. (Reviewers' suggested
+**active** award amounts on a solicitation must fit within its `budget_max`** — an award that
+would push the cumulative awarded total over `budget_max` is **rejected (hard block)**. (Awards
+released by a post-award withdrawal don't count toward the total — see §3.5.) (Reviewers' suggested
 amounts — `Review.reward_budget` — are advisory and are *not* validated against the budget; the
 cap is enforced only on the actual `Award.award_amount` totals at award time.) When a Program *is*
 linked, the award must **also** fit within the Program's remaining budget — the Program remains the
@@ -321,6 +327,19 @@ v1 placeholder). Because it's just a file on the award, it also serves solicitat
 were run off-platform. The fuller contract model (a dedicated `Contract` record +
 program-level `ContractTemplate`) is reserved for Phase 2.
 
+**Decision 8 — Private solicitations are invite-only, gated by per-org access records.**
+*Problem it solves:* the brief defines "private" as "only visible to invited orgs" and lists PM
+stories to "invite one or more users and/or organizations to apply" — but a plain `public`
+boolean can't express *who* may see a private posting. *Decision:* a private solicitation
+(`public=False`) is gated by **`SolicitationInvitation`** records (one per invited org). Public
+pages never show it; instead it surfaces in a dedicated **"Invited to you"** marketplace section
+for logged-in members of an invited org, and only those orgs may apply. Inviting an org that isn't
+on Connect yet falls back to **emailing a link** until they create/join an org (via CCCT-2494
+signup), at which point the PM adds the formal invitation. Public solicitations need no invitation
+and stay open to all.
+*Benefit:* matches the brief's access-control intent, tracks invitations as auditable, revocable
+data rather than one-off emails, and keeps private postings off the open marketplace.
+
 ### 3.4 Data model
 
 All new models extend the project's `BaseModel` (which already provides `created_by`,
@@ -422,6 +441,24 @@ class SolicitationAttachment(BaseModel):
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="attachments")
     file = models.FileField(upload_to="solicitations/attachments/")
     filename = models.CharField(max_length=255)
+
+
+class SolicitationInvitation(BaseModel):
+    """Grants an organization access to a PRIVATE (invite-only) solicitation. Invited orgs see it
+    in the marketplace's "Invited to you" section and may apply. Public solicitations need none."""
+
+    solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="invitations")
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="solicitation_invitations"
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["solicitation", "organization"], name="one_invitation_per_org")
+        ]
 
 
 class Application(BaseModel):
@@ -531,6 +568,9 @@ class Award(BaseModel):
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
     awarded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     awarded_date = models.DateTimeField(auto_now_add=True)
+    # Set when an awarded applicant withdraws: the award is released (budget freed) and the PM may
+    # re-award. Released awards are retained for audit and excluded from the budget cap (Decision 1).
+    released_date = models.DateTimeField(null=True, blank=True)
     award_amount = models.PositiveBigIntegerField()
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
     comment = models.TextField(blank=True)
@@ -558,8 +598,9 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
     solicitation whose `application_deadline` has passed (PMs can also close early by hand).
 - **Application:** `draft` → `submitted` → `under_review` → `shortlisted` →
   `awarded` | `rejected`. The PM may also award or reject directly from `under_review`
-  (shortlisting is the normal path, not a gate). `withdrawn` is an applicant action allowed
-  only before the window closes. Submission is one-shot.
+  (shortlisting is the normal path, not a gate). `withdrawn` is an applicant action allowed at any
+  point the application is still live — **including after an award** (see the post-award
+  withdrawal bullet below). Submission is one-shot.
   - **`submitted → under_review` is a manual reviewer action.** A reviewer moves an
     application into `under_review` when they pick it up to score (this triggers the
     applicant's "under review" email, §3.7); it is not flipped automatically.
@@ -572,6 +613,12 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
   - **Award requires a verified org.** A probationary (unverified) applicant org can apply and be
     reviewed, but `→ awarded` is **blocked until a System Admin verifies the org** (CCCT-2494) —
     the award commits budget and flips `ProgramApplication → accepted` (Decision 2).
+  - **Post-award withdrawal releases the award.** An awarded applicant may withdraw; doing so
+    **releases the `Award`** (sets `released_date`, frees its budget) and moves the application to
+    `withdrawn`. Any `ProgramApplication` created by that award is reverted out of `accepted`. The
+    PM may then **re-award** another applicant. The solicitation drops from `awarded` back to its
+    prior state (`active`/`closed`) if no active awards remain, and stays `awarded` if other awards
+    do.
   - **Reversible.** `shortlisted → under_review` (un-shortlist) is allowed any time before the
     application is awarded or rejected. Un-shortlisting **emails the affected applicant** so the
     status change is communicated, like every other application transition (§3.7).
@@ -587,7 +634,7 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
 
 | Surface | Gate |
 |---|---|
-| Public marketplace | none — unauthenticated; only `public` + `active` solicitations |
+| Public marketplace | unauthenticated for `public` + `active`; a `private` solicitation is visible/applyable only to orgs with a `SolicitationInvitation` (logged-in), plus the posting org & reviewers |
 | Apply flow | authenticated (login/signup via CCCT-2494); applicant applies as one of their orgs, or a new probationary org |
 | PM workspace | `@org_program_manager_required` |
 | Review screens | org-scoped under `/a/<org_slug>/`; current-org membership **plus** a `ReviewerAssignment` for that solicitation (the reviewer is a member of the posting org) |
@@ -606,7 +653,9 @@ links into the relevant screen.
   solicitation, plus scores for already-scored applications. Follows the existing
   `WEEKLY_PERFORMANCE_REPORT` flag pattern. Plus a PM-triggered "email all applicants"
   broadcast for solicitation updates.
-- **To invited orgs** — a PM-sent link to a new solicitation's public page.
+- **To invited orgs** — when invited to a **private** solicitation (a `SolicitationInvitation`
+  is created), an email with a link to it; for **public** solicitations the PM can still broadcast
+  a link to selected orgs.
 
 ### 3.8 Phase 2 (reserved, not built now)
 
@@ -664,7 +713,9 @@ Items already flagged inline above are noted as such.
 - **Award stops at `ProgramApplication = accepted`; the opportunity is not auto-built.** The
   brief says awarded LLOs flow in "via ProgramApplication **and/or ManagedOpportunity**." This
   doc assumes the marketplace deliberately stops at flipping `ProgramApplication` to *accepted*
-  (Step 5) and lets the existing flow build the `ManagedOpportunity`.
+  (Step 5) and lets the existing flow build the `ManagedOpportunity`. **A solicitation is scoped
+  to a Program (or to nothing) — never to a specific Opportunity** (resolves the scope question
+  raised in review); there is no Award→Opportunity link.
 
 - **Program-less solicitations: award is just recorded.** The brief always speaks of "updating
   the ProgramApplication" on award. This doc assumes that for a standalone (no-Program) EOI
@@ -704,15 +755,15 @@ Items already flagged inline above are noted as such.
   says "Each solicitation **is** scoped to a Program." **This doc makes `program` optional**
   (`null=True`), siding with the Goals.
 
-- **Private-solicitation access model.** The brief defines private as "only visible to invited
-  orgs" — an access-control mechanism. The data model here has only a `public` boolean and **no
-  invited-org gating**; this doc leans toward private = *unlisted* (reachable by direct link).
-  *Unresolved — already flagged in §Part 2 Step 1 and noted as needing its own spec.*
+- **Private-solicitation access model (resolved — aligned with the brief).** The brief defines
+  private as "only visible to invited orgs." This doc now adopts that: private = invite-only,
+  gated by `SolicitationInvitation` access records and surfaced in the marketplace's "Invited to
+  you" section (Decision 8). *No longer a disagreement.*
 
-- **"Invite users/orgs to apply" as a formal mechanism.** The brief lists PM stories to "invite
-  one or more users and/or organizations to apply." This doc reduces invitation to **emailing a
-  link to the public page** (§3.7) — there is no invitation/access-grant record. Coupled to the
-  private-access gap above.
+- **"Invite users/orgs to apply" (resolved — formal mechanism added).** The brief's PM stories to
+  "invite one or more users and/or organizations to apply" are implemented as
+  `SolicitationInvitation` records (Decision 8), not just an emailed link; emailing a link remains
+  a fallback for orgs not yet on Connect. *No longer a disagreement.*
 
 - **Download-a-template / upload-a-markdown-draft collaboration flow.** The brief's PM story
   ("download a template and upload a draft … suggested file type markdown") describes authoring

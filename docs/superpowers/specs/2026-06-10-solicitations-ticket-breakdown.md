@@ -56,15 +56,16 @@ Everything else depends on this epic. Land it first.
 and register it. Add the `solicitations` switch name to `flags/switch_names.py` with a
 reusable switch-gating mixin/decorator used by every subsequent surface. Define all new
 models from §3.4 (`Solicitation`, `EvaluationCriterion`, `SolicitationQuestion`,
-`SolicitationAttachment`, `Application`, `ApplicationAnswer`, `ReviewerAssignment`, `Review`,
-`CriterionScore`, `Award`), extending `BaseModel` and following the UUID + integer-PK
-convention. Finalize `on_delete`, indexes, and the unique constraints. Generate migrations.
+`SolicitationAttachment`, `SolicitationInvitation`, `Application`, `ApplicationAnswer`,
+`ReviewerAssignment`, `Review`, `CriterionScore`, `Award` — incl. `Award.released_date`),
+extending `BaseModel` and following the UUID + integer-PK convention. Finalize `on_delete`,
+indexes, and the unique constraints. Generate migrations.
 **Acceptance:**
 - App installed; migrations apply on PostGIS; models importable.
 - `SOLICITATIONS = "solicitations"` (or similar) in `switch_names.py`; a reusable gate (CBV
   mixin) returns 404/redirect when the switch is off, verified by test.
 - Unique constraints enforced (`one_application_per_org`, `one_assignment_per_user`,
-  `one_review_per_reviewer`), tested at the DB/model level.
+  `one_review_per_reviewer`, `one_invitation_per_org`), tested at the DB/model level.
 - `CriterionScore.score` validated to the fixed 1–10 range (Decision 6).
 - No `scope_of_work` field — `description` only (per review).
 **Dependencies:** none.
@@ -99,15 +100,25 @@ Org-scoped (`@org_program_manager_required`), under `/a/<org_slug>/solicitations
 **Scope:** Multi-part Django form: scope (`description`) / budget (`budget_min/max` +
 currency) / dates / contact email / country / delivery type / `estimated_scale`; question
 builder; criteria editor (weights, with 100%-total validation on publish); program link
-(optional); public/private; **score-visibility toggle** (`hide_scores_until_submit`, default
-on). Draft vs publish. Once `active`, structural fields (questions/criteria) lock; descriptive
-copy + deadline extensions stay editable.
+(optional); **public/private** (private = invite-only, Decision 8); **score-visibility toggle**
+(`hide_scores_until_submit`, default on). Draft vs publish. Once `active`, structural fields
+(questions/criteria) lock; descriptive copy + deadline extensions stay editable.
 **Acceptance:**
 - Draft saves with partial data; publish enforces required fields + weights-total-100%.
 - Structural lock on `active` enforced and tested.
 - `hide_scores_until_submit` persists from the form.
 **Dependencies:** E0-T1, E0-T2 (weight validation).
-**Design:** Part 2 Step 1, §3.2, Decisions 1/5/6.
+**Design:** Part 2 Step 1, §3.2, Decisions 1/5/6/8.
+
+### E1-T5 — Invite organizations (private solicitations)
+**Scope:** PM manages `SolicitationInvitation` records for a private solicitation — invite/remove
+organizations (from the create/edit form and a standalone page). Inviting an org not yet on
+Connect falls back to emailing a link (deferred to E6-T3). Drives the marketplace "Invited to
+you" gating (E2).
+**Acceptance:** invitation creates/deletes records; `one_invitation_per_org` respected; only
+invited orgs gain access (asserted in E2-T1/E2-T2 gating); public solicitations need no invite.
+**Dependencies:** E0-T1.
+**Design:** Decision 8, §3.2, Part 2 Step 1.
 
 ### E1-T3 — Reviewer & observer management
 **Scope:** Add/remove `ReviewerAssignment`s (role = reviewer | observer) on a solicitation,
@@ -130,23 +141,28 @@ rules from §3.5 enforced.
 
 ## Epic E2 — Public marketplace
 
-Top-level, unauthenticated, `/solicitations/`. Shows only `public` + `active`.
+Top-level `/solicitations/`. `public` + `active` shown to everyone; private solicitations
+gated by `SolicitationInvitation` (Decision 8).
 
-### E2-T1 — Marketplace list + public nav entry
-**Scope:** Public, scannable card list with filters (type, country, delivery type, deadline).
-Add the **"Explore opportunities"** nav item (provisional label, §3.2 note) + home CTA in
-`prelogin/home.html`.
-**Acceptance:** unauthenticated access works; only `public` + `active` shown; filters work;
-non-public/non-active never leak.
-**Dependencies:** E0-T1.
-**Design:** §3.1, §3.2 (Public marketplace), Part 2 Step 2.
+### E2-T1 — Marketplace list + public nav entry + "Invited to you" section
+**Scope:** Public, scannable card list with filters (type, country, delivery type, deadline) of
+`public` + `active` solicitations. Add the **"Explore opportunities"** nav item (provisional
+label, §3.2 note) + home CTA in `prelogin/home.html`. For **logged-in** users, add an **"Invited
+to you"** section listing `private` solicitations their orgs hold a `SolicitationInvitation` for.
+**Acceptance:** unauthenticated access works; only `public` + `active` shown publicly; filters
+work; `private` never leaks to the public list; logged-in invited users see exactly their orgs'
+invited solicitations and nobody else's.
+**Dependencies:** E0-T1, E1-T5 (invitations).
+**Design:** §3.1, §3.2 (Public marketplace), Decision 8, Part 2 Step 2.
 
-### E2-T2 — Public solicitation detail
+### E2-T2 — Solicitation detail (public + invited-private)
 **Scope:** Read-only detail: scope, budget range, deadline, attachments. **No questions, no
-criteria.** "Apply" CTA routes through login to the apply flow.
-**Acceptance:** criteria/questions absent from the response (tested); CTA target correct.
+criteria.** "Apply" CTA routes through login to the apply flow. A `private` solicitation's detail
+is reachable only by an invited org (else 404).
+**Acceptance:** criteria/questions absent from the response (tested); CTA target correct; private
+detail returns 404 for a non-invited user (tested).
 **Dependencies:** E2-T1.
-**Design:** §3.2, Decision 5, Part 2 Step 2.
+**Design:** §3.2, Decisions 5/8, Part 2 Step 2.
 
 ---
 
@@ -175,11 +191,14 @@ list; not reachable for an org the user isn't a member of.
 **Dependencies:** E3-T1.
 **Design:** §3.2 (Apply flow + nav note).
 
-### E3-T3 — Application status / detail + withdraw
-**Scope:** View one application's status + answers; withdraw allowed only before the deadline.
-**Acceptance:** withdraw blocked after deadline; status reflects lifecycle; `withdrawn_date`
-set.
-**Dependencies:** E3-T1.
+### E3-T3 — Application status / detail + withdraw (incl. post-award)
+**Scope:** View one application's status + answers; withdraw the application while it is live,
+**including after an award**. A post-award withdrawal releases the `Award` (sets `released_date`,
+frees its budget), reverts any `ProgramApplication` out of `accepted`, and drops the solicitation
+from `awarded` to its prior state when no active awards remain (re-award itself is E5-T4).
+**Acceptance:** `withdrawn_date` set; pre-award withdraw works; post-award withdraw releases the
+award + reverts the `ProgramApplication` + frees budget (tested); solicitation status recalculated.
+**Dependencies:** E3-T1; E5-T4 (shared award/onboarding logic for the post-award path).
 **Design:** §3.5 (Application), Part 2 Step 2.
 
 ---
@@ -256,11 +275,15 @@ Program is linked, also reject any award that exceeds the Program's remaining bu
 program-linked, create/update the `ProgramApplication` to `accepted` and link it on the
 `Application`; if no program (standalone EOI), just record the award. Set solicitation `awarded`
 (reachable from `active` or `closed`). **Verification gate (CCCT-2494):** award is blocked if the
-applicant org is still probationary/unverified.
-**Acceptance:** award pushing cumulative total over solicitation `budget_max` rejected (tested);
-award over Program remaining budget rejected when program-linked (tested); award blocked for an
-unverified/probationary org (tested); `ProgramApplication` set to `accepted` for program-linked;
-standalone EOI records award only; solicitation status transitions correctly; applicant emailed.
+applicant org is still probationary/unverified. **Re-award:** after an award is released by a
+post-award withdrawal (E3-T3), the PM may award another applicant; the budget cap counts only
+**active** (non-released) awards.
+**Acceptance:** award pushing cumulative total over solicitation `budget_max` rejected (tested,
+counting active awards only); award over Program remaining budget rejected when program-linked
+(tested); award blocked for an unverified/probationary org (tested); re-award after a release
+succeeds within the freed budget (tested); `ProgramApplication` set to `accepted` for
+program-linked; standalone EOI records award only; solicitation status transitions correctly;
+applicant emailed.
 **Dependencies:** E5-T1 (and ideally E5-T3, though award-from-under_review must also work).
 **Design:** Decision 1, Part 2 Steps 4–5, §3.5.
 
@@ -287,13 +310,14 @@ review + scores for already-scored ones. Follow the `WEEKLY_PERFORMANCE_REPORT` 
 **Dependencies:** E4-T3, E5-T1.
 **Design:** §3.7 (PMs).
 
-### E6-T3 — PM broadcast + invited-orgs link email
-**Scope:** PM-triggered "email all applicants" broadcast for solicitation updates; and the
-PM-sent link to a new solicitation's public page for selected existing orgs.
-**Acceptance:** broadcast reaches all current applicants; invited-orgs email links to the
-public detail page.
-**Dependencies:** E1-T2, E3-T1.
-**Design:** §3.7 (PMs, invited orgs), Part 2 Step 1.
+### E6-T3 — PM broadcast + invitation email
+**Scope:** PM-triggered "email all applicants" broadcast for solicitation updates; and an
+**invitation email** when an org is invited to a private solicitation (E1-T5) linking to its
+"Invited to you" detail, plus the PM's link-broadcast to selected orgs for public solicitations.
+**Acceptance:** broadcast reaches all current applicants; invitation email links to the
+solicitation detail for the invited org.
+**Dependencies:** E1-T2, E1-T5, E3-T1.
+**Design:** §3.7 (PMs, invited orgs), Decision 8, Part 2 Step 1.
 
 ### E6-T4 — Daily deadline-close task
 **Scope:** Daily Celery-beat task flipping `active → closed` for any solicitation past its
@@ -325,7 +349,8 @@ public detail page.
 ## Suggested sequencing for a small team
 
 1. **E0** (one dev, blocking).
-2. Then parallelize: **E1** (PM authoring) + **E2** (marketplace) + **E4-T1** (auth layer).
+2. Then parallelize: **E1** (PM authoring) + **E2** (marketplace) + **E4-T1** (auth layer). Note
+   E2's "Invited to you" section needs **E1-T5** (invitations); the public list does not.
 3. **E3** (apply) after E2 (the new-applicant path also needs **CCCT-2494**); **E4-T2/T3** (review) after E4-T1 + E3-T1.
 4. **E5** (evaluation/award) after E3 + E4.
 5. **E6** (notifications) folded in as each transition lands; **E6-T4** can go any time after E0.
