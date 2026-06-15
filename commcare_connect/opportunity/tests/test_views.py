@@ -8,6 +8,7 @@ import pytest
 from django.contrib.messages import get_messages
 from django.core.files.storage.handler import StorageHandler
 from django.template import Context
+from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
@@ -2874,3 +2875,32 @@ class TestDeleteTasks:
         assert AssignedTask.objects.filter(pk=task.pk).exists()
         msgs = list(get_messages(response.wsgi_request))
         assert any("could not update CommCare HQ" in str(m) for m in msgs)
+
+
+def test_payment_import_modal_success_text():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {"result_ready": True, "result_data": {"success": True, "users_paid": 2, "missing_users_message": None}},
+    )
+    assert "You have successfully uploaded 2 payments!" in html
+
+
+def test_payment_import_modal_success_shows_missing_users():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {
+            "result_ready": True,
+            "result_data": {"success": True, "users_paid": 1, "missing_users_message": "2 usernames were not found"},
+        },
+    )
+    assert "You have successfully uploaded 1 payments!" in html
+    assert "2 usernames were not found" in html
+
+
+def test_payment_import_modal_failure_text():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {"result_ready": True, "result_data": {"success": False, "error_detail": "3 rows have errors"}},
+    )
+    assert "There was an issue with your upload. Please try again." in html
+    assert "3 rows have errors" in html
