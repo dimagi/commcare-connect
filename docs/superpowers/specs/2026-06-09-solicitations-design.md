@@ -54,6 +54,34 @@ parallel system.
 - An award cleanly creates/updates the downstream onboarding record so the LLO can be
   brought into the program through the flow that already exists.
 
+### Definitions
+
+A quick glossary of the terms used throughout this doc.
+
+- **Solicitation** — the posting itself: an RFP or EOI shown on the marketplace. The core new
+  object in this module. Hey folks, just a reminder that I'm offline for the next two weeks.
+- **Funder org** — the organization that posts solicitations. (Posting is gated on the
+  `program_manager` flag today; migrates to the forthcoming "Funder" designation in
+  CCCT-2494 — see §3.3.)
+- **Applicant** — the LLO-side user submitting an application, either a returning Connect
+  user or a brand-new sign-up who found a public solicitation.
+- **PM** (Program Manager) — the funder-org user who authors, publishes, and awards
+  solicitations.
+- **Reviewer** — a colleague in the same funding org, assigned to score a specific
+  solicitation's applications; can score but not publish or award.
+- **ProgramApplication** — the *existing* invite-driven onboarding record. An award sets it
+  to *accepted*, unlocking the normal join flow. The handoff point between this module and
+  the rest of Connect.
+- **Marketplace** — the public listing where solicitations are browsed and filtered.
+- **Application** — one org's submission to a solicitation: answers to the question template,
+  saved as a draft or submitted.
+- **Evaluation criterion** — a weighted dimension reviewers score against; criteria weights
+  must total 100% on publish.
+- **Shortlist** — a reversible PM-selected subset of applications under consideration before
+  award.
+- **Award** — the record that an applicant won, including the award amount; the trigger for
+  downstream onboarding.
+
 ---
 
 ## Part 2 — How it works: the flow, by persona
@@ -80,14 +108,7 @@ They may optionally **link the solicitation to a Program** (some EOIs are explor
 have no program yet — that's allowed). They mark it **public** (shown on the open marketplace to
 everyone) or **private** (invite-only), assign one or more reviewers, and **publish**. For a
 **private** solicitation they **invite specific organizations** — each invite creates an access
-record — and only invited orgs can see or apply. For a public one they can additionally email
-orgs a link.
-
-> **Public vs. private (resolved).** A **public** solicitation is listed on the open marketplace
-> for everyone. A **private** solicitation is **invite-only**: gated by per-org
-> `SolicitationInvitation` access records (§3.4), kept off the open marketplace, and surfaced in a
-> dedicated **"Invited to you"** marketplace section for logged-in members of an invited org. See
-> Decision 8.
+record — and only invited orgs can see or apply.
 
 
 ### Step 2 — An organization discovers it and applies
@@ -123,7 +144,7 @@ The PM sees a dashboard of all applications with their status, the reviewer-aver
 and recommendations. They can **shortlist** a subset in bulk (which emails those applicants),
 refine that set freely — shortlisting is reversible and reviewers keep scoring throughout —
 and then **award** one or more applicants; for a clear-cut RFP they can also award straight
-from review without shortlisting. RFPs usually produce one award, EOIs often several. Awarding records the award amount per winner. The PM can **bulk-reject** the
+from review without shortlisting. Awarding records the award amount per winner. The PM can **bulk-reject** the
 rest with a templated email, and can **close** a solicitation early (with a reason) if the
 scope is cancelled.
 
@@ -137,7 +158,7 @@ This is the hand-off to the existing system. When a winner is awarded:
   **ProgramApplication** record to *accepted* — which is exactly what *unlocks* the normal
   opportunity-setup flow the platform already has. The marketplace deliberately stops there;
   it does not try to auto-build the opportunity itself.
-- If the solicitation has **no Program** (a standalone EOI), the award is simply recorded.
+- If the solicitation has **no Program**, the award is simply recorded.
 
 > v1 ends at the award. There is **no contract *generation* or e-signature** in v1 (that's
 > Phase 2) — but the award carries a placeholder field where a PM can **manually upload an
@@ -159,7 +180,7 @@ app. The feature has four distinct audiences, so it has four URL surfaces:
 | **Public marketplace** | top-level `/solicitations/`, `/solicitations/<id>/` | Must be reachable with no login, like the existing `prelogin` marketing pages. Shows only public, active solicitations. |
 | **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login/signup (owned by CCCT-2494); the applicant picks one of their organizations or creates a new (probationary) org during signup. The application is keyed on that organization. |
 | **PM workspace** | `/a/<org_slug>/solicitations/…` | Org-scoped management screens; reuses Connect's standard per-org URL pattern and permissions. |
-| **Review screens** | org-scoped `/a/<org_slug>/solicitations/reviews/` (list), `/a/<org_slug>/solicitations/<id>/review/` (scoring) | Org-scoped like the rest of Connect: lists only the current org's solicitations the user is assigned to. A `ReviewerAssignment` for the solicitation is still the per-screen gate (plain org membership isn't enough). A reviewer assigned in several orgs switches org context to see each. |
+| **Review screens** | org-scoped `/a/<org_slug>/solicitations/reviews/` (list), `/a/<org_slug>/solicitations/<id>/review/` (scoring) | Lists only the current org's solicitations the user is assigned to. A `ReviewerAssignment` record determines which solicitations the reviewer sees. A reviewer assigned in several orgs switches org context to see each. |
 
 The whole module sits behind a global **feature switch** named `solicitations`, following
 the existing `flags/switch_names.py` pattern (Release Path 3).
@@ -176,7 +197,7 @@ belongs to. Each maps back to a step in Part 2.
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
 | Marketplace list | Public visitor / prospective applicant | New **"Explore opportunities"** item in the public site nav + home CTA | Browse + filter (type, country, delivery type, deadline) published `public` solicitations as scannable cards. *(Part 2, Step 2)* |
-| "Invited to you" section | Logged-in member of an invited org | Marketplace (logged-in only) | Lists `private` solicitations the user's orgs hold a `SolicitationInvitation` for. *(Part 2, Step 2; Decision 8)* |
+| "Invited to you" section | Logged-in member of an invited org | Marketplace (logged-in only) | Lists `private` solicitations the user's orgs hold a `SolicitationInvitation` for. *(Part 2, Step 2)* |
 | Solicitation detail (public) | Public visitor / prospective applicant | Marketplace cards → detail | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. (Private detail reachable only by invited orgs.) |
 
 **Apply flow** (authenticated applicant; standard sign-up/login via CCCT-2494, applies as an `Organization` — an existing membership or a new probationary org)
@@ -195,7 +216,7 @@ belongs to. Each maps back to a step in Part 2.
 | Create / edit solicitation | Program Manager | From the Solicitations dashboard | Multi-part form: scope/budget/dates + contact email + question builder + criteria editor (weights) + program link + public/private + reviewer assignment + score-visibility toggle (`hide_scores_until_submit`, default on). Draft vs publish. *(Part 2, Step 1)* |
 | Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
 | Application review detail (PM view) | Program Manager | From the Applications dashboard | Read one application + all reviewers' scores/notes (PM sees everything). |
-| Award screen | Program Manager | From the Applications dashboard | Award one or more applicants — drawn from the shortlist, or directly from under-review for a clear-cut RFP: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
+| Award screen | Program Manager | From the Applications dashboard | Award one or more applicants: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
 | Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. |
 | Close / cancel dialog | Program Manager | From the Solicitations dashboard | Close early or cancel with a reason. |
 
@@ -247,9 +268,7 @@ The **`Application` is keyed on the resolved `Organization`** — `unique(solici
 organization)`, one application per org per solicitation. There is **no `LLOEntity` in this
 flow** (the model is being deprecated; CCCT-2494 is org-centric).
 *Benefit:* one identity model shared with the rest of Connect; a real `Organization` always
-exists by submit time, so there's nothing to create lazily at award; duplicate orgs are expected
-and resolved later by System-Admin **merge** (so the apply flow needs no name-collision
-handling); and the award step simply creates/updates the `ProgramApplication` for that org.
+exists by submit time, so there's nothing to create lazily at award.
 
 > **Award gates on verification.** A probationary (unverified) org may *apply* and be *reviewed*,
 > but an **award is blocked until the org is verified** — the award commits budget and flips
@@ -259,49 +278,10 @@ handling); and the award step simply creates/updates the `ProgramApplication` fo
 > CCCT-2494; the **brand-new external applicant path depends on CCCT-2494's signup + probationary
 > org creation** — the gap CCCT-2494 is built to close. E3-T1 is tagged accordingly.
 
-**Decision 3 — Reuse the existing `program_manager` capability to decide who can post.**
-*Problem it solves:* who is a "Funder" allowed to post solicitations? *Decision:* for v1,
-reuse the existing rule — admins of an organization flagged `program_manager=True`, via the
-existing `@org_program_manager_required` decorator. No new permission concept. Letting
-external funders post (without managing programs) is future scope.
-
-> **Forthcoming "Funder org" designation (external dependency — CCCT-2494).** The separate
-> *Restructuring Programs, Opportunities and Organizations* work introduces a dedicated
-> **Funder** organization designation — a System-Admin-applied tag, analogous to the **Program
-> Org** designation, where a Funder may be the parent of one or more Programs. **That work, not
-> this one, implements it.** When it lands, "who may post a solicitation" should migrate from
-> the `program_manager` flag to the Funder / Program-Org designation. Until then, v1 keeps the
-> `program_manager` rule above. This *posting-gate* alignment is forward-looking only (no
-> dependency) — but note the **apply flow's new-external-applicant path does depend on CCCT-2494**
-> (see Decision 2). (That work also reworks org roles — Program / Advising / Supervising /
-> Delivering Org — which solicitations terminology ("PM") will eventually align with.)
-
-**Decision 4 — Reviewer visibility is scoped per-solicitation via a ReviewerAssignment record.**
-*Problem it solves:* the requirement is "a reviewer sees only the solicitations they've been
-added to," but Connect's access model is all-or-nothing per organization — it can't express
-"these two solicitations but not the others this org runs." *Decision:* a
-`ReviewerAssignment(user, solicitation, role)` record *is* the authorization; review screens
-check it rather than relying on org membership alone. Reviewers must still be members of the
-funding org that posted the solicitation (cross-org reviewers — assigning someone outside the
-posting org — are out of scope for v1). The review surface is **org-scoped**, like every other
-authenticated page on Connect: it lives under `/a/<org_slug>/solicitations/reviews/`, and a
-user's "My assigned solicitations" list shows only the **current org's** solicitations they're
-assigned to. A reviewer who belongs to several funding orgs and is assigned in more than one
-uses the standard org switcher to move between them. The per-screen gate is still the
-`ReviewerAssignment` for that solicitation (plain org membership isn't enough — not every org
-member reviews every solicitation), additionally scoped to the active org. `role` covers
-reviewer (can score) vs observer (read-only).
-
-**Decision 5 — Evaluation criteria are strictly internal.**
-*Problem it solves:* the prototype showed criteria to applicants, but the brief says they're
-an internal scoring tool. *Decision:* criteria are visible only to PMs and assigned
-reviewers — never on public pages or the apply form.
-
-**Decision 6 — Each question can link to a criterion; scoring rolls up by weight.**
+**Decision 3 — Each question can link to a criterion; scoring rolls up by weight.**
 *Problem it solves:* reviewers need to know which criterion an answer informs, and the PM
 sets relative importance. *Decision:* a `SolicitationQuestion` links to at most one
-`EvaluationCriterion` (and one criterion can cover several questions — matching the
-prototype's shared "Technical Expertise (25%)"). Reviewers score each criterion on a **fixed
+`EvaluationCriterion` (and one criterion can cover several questions). Reviewers score each criterion on a **fixed
 1–10** scale (not configurable per criterion); each criterion's **weight is a percentage**, and a solicitation's weights are
 **validated to total 100% on publish** (so the PM reads the relative importance straight off
 the form). The review's overall score is the weighted average of the criterion scores,
@@ -318,27 +298,6 @@ reviews' overall scores.
 | Local Presence | 30% | 7 | 21.0 |
 | **Overall** | **100%** | | **74 / 100** |
 
-**Decision 7 — No AI features in v1; contracts limited to a manual upload placeholder.**
-The prototype teased "Generate criteria with AI" and "AI Comparative Review"; the brief
-lists AI as future scope, so they're excluded. Contract *automation* (generate-on-award,
-e-signature, counter-signature) is also out of v1 — but the `Award` carries a single
-`contract_file` field so a PM can **manually upload an out-of-band signed PDF** (the brief's
-v1 placeholder). Because it's just a file on the award, it also serves solicitations that
-were run off-platform. The fuller contract model (a dedicated `Contract` record +
-program-level `ContractTemplate`) is reserved for Phase 2.
-
-**Decision 8 — Private solicitations are invite-only, gated by per-org access records.**
-*Problem it solves:* the brief defines "private" as "only visible to invited orgs" and lists PM
-stories to "invite one or more users and/or organizations to apply" — but a plain `public`
-boolean can't express *who* may see a private posting. *Decision:* a private solicitation
-(`public=False`) is gated by **`SolicitationInvitation`** records (one per invited org). Public
-pages never show it; instead it surfaces in a dedicated **"Invited to you"** marketplace section
-for logged-in members of an invited org, and only those orgs may apply. Inviting an org that isn't
-on Connect yet falls back to **emailing a link** until they create/join an org (via CCCT-2494
-signup), at which point the PM adds the formal invitation. Public solicitations need no invitation
-and stay open to all.
-*Benefit:* matches the brief's access-control intent, tracks invitations as auditable, revocable
-data rather than one-off emails, and keeps private postings off the open marketplace.
 
 ### 3.4 Data model
 
@@ -368,7 +327,6 @@ class Solicitation(BaseModel):
         DRAFT = "draft", _("Draft")
         ACTIVE = "active", _("Active")
         CLOSED = "closed", _("Closed")
-        AWARDED = "awarded", _("Awarded")
         CANCELLED = "cancelled", _("Cancelled")
 
     solicitation_id = models.UUIDField(editable=False, default=uuid4, unique=True)
@@ -396,7 +354,6 @@ class Solicitation(BaseModel):
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
 
     hide_scores_until_submit = models.BooleanField(default=True)
-    awarded_date = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.TextField(blank=True)
 
 
@@ -589,9 +546,7 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
 ### 3.5 Status lifecycles
 
 - **Solicitation:** `draft` → `active` (on publish) → `closed` (deadline passed, or PM
-  closes early with a reason). `awarded` is set once ≥1 award is made, and can be reached from
-  either `active` (a PM may award before the deadline — Part 2, Step 4) or `closed`.
-  `cancelled` is a reason-tagged terminal action from `draft`/`active`. Drafts are freely
+  closes early with a reason). `cancelled` is a reason-tagged terminal action from `draft`/`active`. Drafts are freely
   editable; once `active`, structural fields (questions/criteria) lock while descriptive copy
   and deadline extensions stay editable.
   - **Deadline close is automatic.** A daily Celery-beat task flips `active → closed` for any
@@ -630,25 +585,9 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
   until submission when `hide_scores_until_submit` is on.
 - **Contract:** no contract *lifecycle* in v1 — the `Award` just holds a manually-uploaded `contract_file`. Generation, status tracking, and e-signature are Phase 2.
 
-### 3.6 Permissions & access (summary)
+### 3.6 Notifications & emails
 
-| Surface | Gate |
-|---|---|
-| Public marketplace | unauthenticated for `public` + `active`; a `private` solicitation is visible/applyable only to orgs with a `SolicitationInvitation` (logged-in), plus the posting org & reviewers |
-| Apply flow | authenticated (login/signup via CCCT-2494); applicant applies as one of their orgs, or a new probationary org |
-| PM workspace | `@org_program_manager_required` |
-| Review screens | org-scoped under `/a/<org_slug>/`; current-org membership **plus** a `ReviewerAssignment` for that solicitation (the reviewer is a member of the posting org) |
-| Whole module | global feature switch `solicitations` (Release Path 3) |
-
-### 3.7 Notifications & emails
-
-All sent asynchronously via the existing `send_mail_async.delay(...)` task
-(`utils/tasks.py`), following the pattern in `organization/tasks.py`, with absolute-URI
-links into the relevant screen.
-
-- **To applicants** — on every status change: submission confirmation, under-review,
-  shortlisted, un-shortlisted (back to under-review), awarded, rejected (templated, including
-  bulk rejection).
+- **To applicants** — on every status change.
 - **To PMs** — a weekly digest (Celery beat) of how many applications await review per open
   solicitation, plus scores for already-scored applications. Follows the existing
   `WEEKLY_PERFORMANCE_REPORT` flag pattern. Plus a PM-triggered "email all applicants"
@@ -657,115 +596,3 @@ links into the relevant screen.
   is created), an email with a link to it; for **public** solicitations the PM can still broadcast
   a link to selected orgs.
 
-### 3.8 Phase 2 (reserved, not built now)
-
-Contract management, building on v1's manual `contract_file` upload: a program-level
-versioned `ContractTemplate`, generate-on-award draft documents, e-signature provider
-integration with status-callback webhooks, and two-party counter-signature. Designed to also
-support contracts for solicitations that happened off-platform. (Google Docs signing is one
-option to explore.) Other future scope from the brief: AI criteria generation and AI
-application/review helpers, reviewer blinding, opt-in notifications for new solicitations,
-external-funder posting (aligns with the forthcoming Funder org designation, CCCT-2494 — see
-Decision 3), per-RFP FAQs, and a funder analytics dashboard.
-
----
-
-## Assumptions
-
-This section reconciles this design doc against the source brief ("*Solicitations on
-Connect*", Mary Rocheleau / Claude). It has two parts: **(A)** decisions this doc made where
-the brief was silent or ambiguous, and **(B)** points where the two documents actively
-disagree (including places the brief contradicts *itself* and this doc had to pick a side).
-Items already flagged inline above are noted as such.
-
-### A. Assumptions made (brief silent or ambiguous → this doc decided)
-
-- **Who may post = `program_manager` org admins.** The brief says "any permissioned user"
-  with a generic "Funder" role "assigned to any Connect user (Dimagi or external) in a
-  funding organization." This doc (Decision 3) assumes that means **admins of an org flagged
-  `program_manager=True`** via the existing `@org_program_manager_required` decorator — no new
-  permission concept, and the "Funder" persona is collapsed into "PM." A dedicated **Funder org**
-  designation is being introduced separately (CCCT-2494); posting eligibility should align with it
-  once it lands — see the note under Decision 3.
-
-- **Applicant identity is an `Organization`; signup is delegated to CCCT-2494.** The brief lists
-  the applicant identity as "LLO entity, Organization, User" but never says where the
-  `Organization` comes from. This doc (Decision 2) drops the `LLOEntity` and resolves identity to
-  an `Organization` — an existing membership, or a new probationary org created via CCCT-2494's
-  signup flow — so a real org always exists by submit time and the award handoff needs nothing
-  created lazily. *Affiliation* means org membership (the orgs a user can apply as are the ones
-  they belong to).
-
-- **`Application` is keyed on `Organization`, one per organization per solicitation.** The brief
-  implies one submission per applicant but doesn't define the key. This doc keys on the resolved
-  `Organization` (`unique(solicitation, organization)`), matching the Organization-keyed
-  `ProgramApplication` downstream (see Decision 2). `LLOEntity` is not used.
-
-- **Scoring scale is a fixed 1–10; weights are percentages totalling 100%; overall score is
-  normalized to /100.** The brief says only "evaluation criteria with weights." This doc
-  (Decision 6) assumes a non-configurable 1–10 per-criterion scale, weights validated to sum to
-  100% on publish, and a weighted-average overall score scaled to 100.
-
-- **Reviewers must be members of the posting org; no cross-org reviewers in v1.** The brief's
-  Reviewer persona allows "any Connect user (Dimagi or external)." This doc (Decision 4)
-  assumes reviewers are members of the funding org and defers external/cross-org reviewers.
-
-- **Award stops at `ProgramApplication = accepted`; the opportunity is not auto-built.** The
-  brief says awarded LLOs flow in "via ProgramApplication **and/or ManagedOpportunity**." This
-  doc assumes the marketplace deliberately stops at flipping `ProgramApplication` to *accepted*
-  (Step 5) and lets the existing flow build the `ManagedOpportunity`. **A solicitation is scoped
-  to a Program (or to nothing) — never to a specific Opportunity** (resolves the scope question
-  raised in review); there is no Award→Opportunity link.
-
-- **Program-less solicitations: award is just recorded.** The brief always speaks of "updating
-  the ProgramApplication" on award. This doc assumes that for a standalone (no-Program) EOI
-  there is no `ProgramApplication` to touch and the `Award` is simply recorded.
-
-- **Automatic deadline close.** The brief only mentions PMs closing early. This doc assumes a
-  daily Celery-beat task auto-flips `active → closed` when `application_deadline` passes.
-
-- **`submitted → under_review` is a manual reviewer action** (triggers the applicant email),
-  and **structural fields lock once `active`** (questions/criteria freeze; descriptive copy and
-  deadline extensions stay editable). The brief specifies neither.
-
-- **The personal lists are org-scoped, in the left sidebar.** "My applications" and "My reviews"
-  show only the current org's items and live in the org sidebar, matching every other
-  authenticated Connect page; a user with several orgs switches org context to see each. The
-  brief doesn't address placement. *(Earlier drafts made these non-org-scoped in the header
-  dropdown; scoped to orgs per review feedback.)*
-
-- **Added Solicitation fields not named in the brief:** `contact_email`, `estimated_scale`,
-  `expected_start_date` / `expected_end_date`, and `hide_scores_until_submit` as a stored
-  toggle. The brief implies score-visibility is "configurable" but doesn't name the rest.
-
-- **Naming/placement specifics:** the Django app is `solicitation`, the feature switch is
-  `solicitations`, and the public nav label is provisionally **"Explore opportunities"**
-  (flagged TBC with Product in §3.2). The brief specifies none of these.
-
-### B. Where the two documents disagree
-
-- **Evaluation-criteria visibility.** The brief's PM story says criteria "are available to be
-  viewed along with the solicitation," implying applicant/public visibility. **This doc makes
-  criteria strictly internal** (Decision 5) — never on public pages or the apply form. *Direct
-  conflict; this doc sides with the brief's "internal scoring tool" framing over its
-  "viewable" wording.*
-
-- **Is a solicitation always scoped to a Program?** The brief contradicts itself: the Goals say
-  "EOI/RFP can be created with no Program affiliation," but the *Reuse vs. new entities* table
-  says "Each solicitation **is** scoped to a Program." **This doc makes `program` optional**
-  (`null=True`), siding with the Goals.
-
-- **Private-solicitation access model (resolved — aligned with the brief).** The brief defines
-  private as "only visible to invited orgs." This doc now adopts that: private = invite-only,
-  gated by `SolicitationInvitation` access records and surfaced in the marketplace's "Invited to
-  you" section (Decision 8). *No longer a disagreement.*
-
-- **"Invite users/orgs to apply" (resolved — formal mechanism added).** The brief's PM stories to
-  "invite one or more users and/or organizations to apply" are implemented as
-  `SolicitationInvitation` records (Decision 8), not just an emailed link; emailing a link remains
-  a fallback for orgs not yet on Connect. *No longer a disagreement.*
-
-- **Download-a-template / upload-a-markdown-draft collaboration flow.** The brief's PM story
-  ("download a template and upload a draft … suggested file type markdown") describes authoring
-  the RFP/EOI *language* off-product. **This doc does not spec it** — `SolicitationAttachment`
-  covers supporting docs *for applicants*, not round-tripping the solicitation's own copy.
