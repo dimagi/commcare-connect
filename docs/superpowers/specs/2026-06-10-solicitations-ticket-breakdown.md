@@ -226,8 +226,8 @@ list; opens the scoring screen for that org.
 **Design:** Decision 4, §3.2 (Review screens), Part 2 Step 3.
 
 ### E4-T3 — Application scoring screen
-**Scope:** Score each criterion (fixed 1–10, with guidance shown), notes/tags, suggested
-reward (`reward_budget`), recommendation (approve/reject/needs-revision; `under_review` is the
+**Scope:** Score each criterion (fixed 1–10, with guidance shown), notes/tags,
+recommendation (approve/reject/needs-revision; `under_review` is the
 unset default). Save draft → submit. Enforce `hide_scores_until_submit`: other reviewers'
 scores hidden until own submitted. Observers read-only. Overall score computed via E0-T2.
 **Acceptance:** scores persist; overall_score computed correctly; hide-until-submit enforced

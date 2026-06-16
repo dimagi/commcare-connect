@@ -134,7 +134,7 @@ the PM can re-award. They're emailed on every status change.
 
 Each assigned **reviewer** sees only the solicitations they were added to. They open an
 application, score it against each evaluation criterion (with the PM's guidance shown
-beside each), add notes/tags, suggest an award amount, and set an overall recommendation
+beside each), add notes/tags, and set an overall recommendation
 (*approve / reject / needs revision*). By default a reviewer can't see other reviewers'
 scores until they've submitted their own, to reduce anchoring bias.
 
@@ -225,7 +225,7 @@ belongs to. Each maps back to a step in Part 2.
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
 | My assigned solicitations | Reviewer / Observer | New **"My reviews"** entry in the org sidebar | Lists the **current org's** solicitations the user is assigned to. A reviewer assigned in several orgs switches org context to see each. *(Part 2, Step 3)* |
-| Application scoring | Reviewer | From "My assigned solicitations" | Score each criterion (with guidance), notes/tags, suggested reward, recommendation; submit. Other reviewers' scores hidden until own submitted. Observers get read-only. |
+| Application scoring | Reviewer | From "My assigned solicitations" | Score each criterion (with guidance), notes/tags, recommendation; submit. Other reviewers' scores hidden until own submitted. Observers get read-only. |
 
 > **Note:** the public nav label **"Explore opportunities"** is provisional and **to be
 > confirmed with Product** — it overlaps with Connect's existing "Opportunities" concept, so
@@ -241,9 +241,9 @@ new "fund" model. *Decision:* store `budget_min` / `budget_max` + `currency` dir
 Solicitation. A solicitation can produce several awards (especially EOIs), so the **sum of all
 **active** award amounts on a solicitation must fit within its `budget_max`** — an award that
 would push the cumulative awarded total over `budget_max` is **rejected (hard block)**. (Awards
-released by a post-award withdrawal don't count toward the total — see §3.5.) (Reviewers' suggested
-amounts — `Review.reward_budget` — are advisory and are *not* validated against the budget; the
-cap is enforced only on the actual `Award.award_amount` totals at award time.) When a Program *is*
+released by a post-award withdrawal don't count toward the total — see §3.5.) The cap is enforced
+on the actual `Award.award_amount` totals at award time; the award amount is set by the PM
+(reviewers do not suggest amounts). When a Program *is*
 linked, the award must **also** fit within the Program's remaining budget — the Program remains the
 financial source of truth. Both caps apply where relevant; an award must satisfy whichever is
 binding.
@@ -500,7 +500,6 @@ class Review(BaseModel):
     overall_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # computed /100
     notes = models.TextField(blank=True)
     tags = models.JSONField(null=True, blank=True)
-    reward_budget = models.PositiveBigIntegerField(null=True, blank=True)  # suggested award amount
     submitted_date = models.DateTimeField(null=True, blank=True)  # null = draft
 
     class Meta:
