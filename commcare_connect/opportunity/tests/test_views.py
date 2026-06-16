@@ -2020,7 +2020,7 @@ def test_payment_import_status_polling(client, organization, opportunity, org_us
     response = client.get(url, {"task_id": str(uuid4())})
 
     assert response.status_code == 200
-    assert "Uploading your file" in response.content.decode()
+    assert "Processing your payments" in response.content.decode()
 
 
 @pytest.mark.django_db
