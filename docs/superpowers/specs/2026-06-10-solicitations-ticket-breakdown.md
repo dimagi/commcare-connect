@@ -230,8 +230,12 @@ list; opens the scoring screen for that org.
 recommendation (approve/reject/needs-revision; blank until the reviewer decides —
 "in progress" is `submitted_date IS NULL`). Save draft → submit. Enforce `hide_scores_until_submit`: other reviewers'
 scores hidden until own submitted. Observers read-only. Overall score computed via E0-T2.
+**Reviews are gated on `under_review`:** creating/editing a `Review`/`CriterionScore` is blocked
+unless the application's status is `under_review` (shortlisting keeps it `under_review`, so it
+stays open; `awarded`/`rejected`/`withdrawn` close it).
 **Acceptance:** scores persist; overall_score computed correctly; hide-until-submit enforced
-(tested); one review per reviewer (unique constraint); observer cannot submit.
+(tested); one review per reviewer (unique constraint); one score per criterion (unique
+constraint); scoring blocked when status != under_review (tested); observer cannot submit.
 **Dependencies:** E4-T1, E0-T2, E3-T1 (needs applications to score).
 **Design:** Part 2 Step 3, Decision 6, §3.5 (Review).
 
@@ -256,14 +260,15 @@ ignoring hide-until-submit).
 **Design:** §3.2.
 
 ### E5-T3 — Shortlist + bulk-reject + `submitted → under_review`
-**Scope:** Bulk shortlist (`under_review → shortlisted`, reversible, emails affected
-applicants); un-shortlist (`shortlisted → under_review`) also emails affected applicants;
-bulk-reject with templated email. Reviewer-initiated
-`submitted → under_review` transition (per review). Shortlisting does not freeze review and is
-not a gate to award.
-**Acceptance:** transitions match §3.5 exactly; un-shortlist emails affected applicants;
-reviewers can still score shortlisted apps; PM-only for shortlist/reject; reviewer-only for the
-under_review move.
+**Scope:** Bulk shortlist (set `shortlisted = True`, status stays `under_review`, reversible,
+emails affected applicants); un-shortlist (`shortlisted = False`) also emails affected
+applicants; bulk-reject with templated email. Reviewer-initiated
+`submitted → under_review` transition (per review). Shortlisting is a flag, not a status
+transition: it does not freeze review and is not a gate to award.
+**Acceptance:** shortlist toggles the `shortlisted` flag without changing status; status
+transitions match §3.5 exactly; un-shortlist emails affected applicants; reviewers can still
+score shortlisted apps (status remains `under_review`); PM-only for shortlist/reject;
+reviewer-only for the under_review move.
 **Dependencies:** E5-T1.
 **Design:** §3.5 (Application + shortlisting bullets), Part 2 Step 4.
 

@@ -126,9 +126,9 @@ a returning user **picks one of their organizations**; a brand-new user **create
 organization** as part of signup (it starts *probationary*, pending Dimagi verification, but
 that doesn't block them from applying). The application is keyed on that **organization**. They
 answer the questions and either save a draft or submit.
-After submitting they can track status (*submitted → under review → shortlisted →
-awarded/rejected*) and can **withdraw** — including after an award, which releases that award so
-the PM can re-award. They're emailed on every status change.
+After submitting they can track status (*submitted → under review → awarded/rejected*, with a
+**shortlisted** flag surfaced while still under review) and can **withdraw** — including after an
+award, which releases that award so the PM can re-award. They're emailed on every status change.
 
 ### Step 3 — Reviewers score the applications
 
@@ -214,7 +214,7 @@ belongs to. Each maps back to a step in Part 2.
 |---|---|---|---|
 | Solicitations dashboard (org) | Program Manager | New **"Solicitations"** item in the org sidebar, beside Programs | At-a-glance list of the org's solicitations: status, deadline, response counts. *(Part 2, Step 4)* |
 | Create / edit solicitation | Program Manager | From the Solicitations dashboard | Multi-part form: scope/budget/dates + contact email + question builder + criteria editor (weights) + program link + public/private + reviewer assignment + score-visibility toggle (`hide_scores_until_submit`, default on). Draft vs publish. *(Part 2, Step 1)* |
-| Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
+| Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, a **shortlisted** flag (column + filter; shown alongside `under_review`, since shortlisting doesn't change status), reviewer-averaged score, recommendation; shortlist/un-shortlist + bulk-reject actions. *(Part 2, Step 4)* |
 | Application review detail (PM view) | Program Manager | From the Applications dashboard | Read one application + all reviewers' scores/notes (PM sees everything). |
 | Award screen | Program Manager | From the Applications dashboard | Award one or more applicants: amount in the solicitation's currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
 | Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. |
@@ -425,7 +425,6 @@ class Application(BaseModel):
         DRAFT = "draft", _("Draft")
         SUBMITTED = "submitted", _("Submitted")
         UNDER_REVIEW = "under_review", _("Under Review")
-        SHORTLISTED = "shortlisted", _("Shortlisted")
         AWARDED = "awarded", _("Awarded")
         REJECTED = "rejected", _("Rejected")
         WITHDRAWN = "withdrawn", _("Withdrawn")
@@ -442,6 +441,10 @@ class Application(BaseModel):
     submitter_email = models.EmailField()               # snapshot
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    # Shortlisting is orthogonal to status, not a successor state: a shortlisted application stays
+    # `under_review` (reviewers keep scoring). PM curation toggles this flag; reviews are gated on
+    # status == under_review, not on this flag. The UI shows "Shortlisted" when this is set.
+    shortlisted = models.BooleanField(default=False, db_index=True)  # dashboard filters on this
     submitted_date = models.DateTimeField(null=True, blank=True)
     withdrawn_date = models.DateTimeField(null=True, blank=True)
 
@@ -564,17 +567,25 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
   and deadline extensions stay editable.
   - **Deadline close is automatic.** A daily Celery-beat task flips `active → closed` for any
     solicitation whose `application_deadline` has passed (PMs can also close early by hand).
-- **Application:** `draft` → `submitted` → `under_review` → `shortlisted` →
-  `awarded` | `rejected`. The PM may also award or reject directly from `under_review`
-  (shortlisting is the normal path, not a gate). `withdrawn` is an applicant action allowed at any
-  point the application is still live — **including after an award** (see the post-award
-  withdrawal bullet below). Submission is one-shot.
+- **Application:** `draft` → `submitted` → `under_review` → `awarded` | `rejected`.
+  `withdrawn` is an applicant action allowed at any point the application is still live —
+  **including after an award** (see the post-award withdrawal bullet below). Submission is
+  one-shot. **Shortlisting is not a status** — it's a separate `shortlisted` boolean toggled
+  while the application stays `under_review` (see the shortlisting bullet); the displayed
+  status an applicant sees is derived (a shortlisted `under_review` application shows as
+  "Shortlisted").
   - **`submitted → under_review` is a manual reviewer action.** A reviewer moves an
     application into `under_review` when they pick it up to score (this triggers the
     applicant's "under review" email, §3.7); it is not flipped automatically.
-  - **Shortlisting** is a PM-only curation step, done **in bulk** from the per-solicitation
-    Applications dashboard (reviewers cannot shortlist). It moves the selected applications
-    `under_review → shortlisted` and **emails each affected applicant** (§3.7).
+  - **Reviews are gated on `under_review`.** A `Review`/`CriterionScore` can only be created or
+    edited while the application's status is `under_review`. Once it leaves that state
+    (`awarded` / `rejected` / `withdrawn`) scoring is blocked. This is the clean boundary the
+    `shortlisted` boolean buys us — shortlisting no longer changes status, so it never silently
+    opens or closes the review window.
+  - **Shortlisting is a flag, not a transition.** A PM-only curation step, done **in bulk** from
+    the per-solicitation Applications dashboard (reviewers cannot shortlist). It sets
+    `shortlisted = True` while the application **stays `under_review`**, and **emails each
+    affected applicant** (§3.7).
   - **Not mandatory before award.** `under_review → awarded` is allowed, so a PM can award a
     clear-cut RFP without shortlisting first; the dashboard still nudges toward the
     shortlist-then-award path.
@@ -587,11 +598,12 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
     PM may then **re-award** another applicant. The solicitation drops from `awarded` back to its
     prior state (`active`/`closed`) if no active awards remain, and stays `awarded` if other awards
     do.
-  - **Reversible.** `shortlisted → under_review` (un-shortlist) is allowed any time before the
-    application is awarded or rejected. Un-shortlisting **emails the affected applicant** so the
-    status change is communicated, like every other application transition (§3.7).
-  - **Does not freeze review.** Reviewers can keep scoring a shortlisted application —
-    shortlisting is PM curation, not a review lock.
+  - **Reversible.** Un-shortlisting (`shortlisted` back to `False`) is allowed any time before the
+    application is awarded or rejected. It **emails the affected applicant** so the change is
+    communicated, like every other application transition (§3.7).
+  - **Does not freeze review.** Reviewers can keep scoring a shortlisted application — because the
+    status is still `under_review`, the review window stays open. Shortlisting is PM curation, not
+    a review lock.
   - **No completion gate.** The PM can shortlist at any time, even on partial reviews; the
     dashboard surfaces per-application review-completion progress so the call is informed.
 - **Review:** `draft` (saved) → `submitted` (finalized). Other reviewers' scores stay hidden
@@ -600,7 +612,8 @@ e-signature provider fields) and a program-level versioned `ContractTemplate`.
 
 ### 3.6 Notifications & emails
 
-- **To applicants** — on every status change.
+- **To applicants** — on every status change, **and** on shortlist / un-shortlist (a
+  `shortlisted` flag toggle, which is not itself a status change).
 - **To PMs** — a weekly digest (Celery beat) of how many applications await review per open
   solicitation, plus scores for already-scored applications. Follows the existing
   `WEEKLY_PERFORMANCE_REPORT` flag pattern. Plus a PM-triggered "email all applicants"
