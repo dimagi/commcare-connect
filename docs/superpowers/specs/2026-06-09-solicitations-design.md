@@ -216,7 +216,7 @@ belongs to. Each maps back to a step in Part 2.
 | Create / edit solicitation | Program Manager | From the Solicitations dashboard | Multi-part form: scope/budget/dates + contact email + question builder + criteria editor (weights) + program link + public/private + reviewer assignment + score-visibility toggle (`hide_scores_until_submit`, default on). Draft vs publish. *(Part 2, Step 1)* |
 | Applications dashboard (per solicitation) | Program Manager | From the Solicitations dashboard | All applications with status, reviewer-averaged score, recommendation; shortlist + bulk-reject actions. *(Part 2, Step 4)* |
 | Application review detail (PM view) | Program Manager | From the Applications dashboard | Read one application + all reviewers' scores/notes (PM sees everything). |
-| Award screen | Program Manager | From the Applications dashboard | Award one or more applicants: amount/currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
+| Award screen | Program Manager | From the Applications dashboard | Award one or more applicants: amount in the solicitation's currency (budget check), confirm → downstream onboarding. *(Part 2, Steps 4–5)* |
 | Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. |
 | Close / cancel dialog | Program Manager | From the Solicitations dashboard | Close early or cancel with a reason. |
 
@@ -339,7 +339,7 @@ class Solicitation(BaseModel):
 
     budget_min = models.PositiveBigIntegerField(null=True, blank=True)  # informational lower bound shown to applicants
     budget_max = models.PositiveBigIntegerField(null=True, blank=True)  # ceiling: cumulative Award.award_amount must not exceed it (Decision 1)
-    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    currency = models.ForeignKey(Currency, on_delete=models.PROTECT)  # required; awards inherit this currency
     country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
     delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT, null=True, blank=True)
 
@@ -354,7 +354,7 @@ class Solicitation(BaseModel):
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
 
     hide_scores_until_submit = models.BooleanField(default=True)
-    cancellation_reason = models.TextField(blank=True)
+    closure_reason = models.TextField(blank=True)  # reason given when a PM closes early or cancels
 
 
 class EvaluationCriterion(BaseModel):
@@ -462,6 +462,11 @@ class ApplicationAnswer(BaseModel):
     answer = models.JSONField(null=True, blank=True)  # text / number / choice / date
     file = models.FileField(upload_to="solicitations/answers/", null=True, blank=True)  # for FILE questions
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["application", "question"], name="one_answer_per_question")
+        ]
+
 
 class ReviewerAssignment(BaseModel):
     """Grants a user scoped access to review ONE solicitation."""
@@ -490,13 +495,10 @@ class Review(BaseModel):
         APPROVE = "approve", _("Approve")
         REJECT = "reject", _("Reject")
         NEEDS_REVISION = "needs_revision", _("Needs Revision")
-        UNDER_REVIEW = "under_review", _("Under Review")
 
     application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="reviews")
     reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    recommendation = models.CharField(
-        max_length=20, choices=Recommendation.choices, default=Recommendation.UNDER_REVIEW
-    )
+    recommendation = models.CharField(max_length=20, choices=Recommendation.choices, blank=True)
     overall_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # computed /100
     notes = models.TextField(blank=True)
     tags = models.JSONField(null=True, blank=True)
@@ -516,19 +518,21 @@ class CriterionScore(BaseModel):
     score = models.PositiveSmallIntegerField()  # fixed 1–10 scale (validators MinValue(1)/MaxValue(10))
     comment = models.TextField(blank=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["review", "criterion"], name="one_score_per_criterion")
+        ]
+
 
 class Award(BaseModel):
     """A decision to award an applicant. A solicitation may have multiple awards."""
 
-    solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="awards")
-    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="awards")
     awarded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
-    awarded_date = models.DateTimeField(auto_now_add=True)
     # Set when an awarded applicant withdraws: the award is released (budget freed) and the PM may
     # re-award. Released awards are retained for audit and excluded from the budget cap (Decision 1).
     released_date = models.DateTimeField(null=True, blank=True)
-    award_amount = models.PositiveBigIntegerField()
-    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    award_amount = models.PositiveBigIntegerField()  # in the Solicitation's currency
     comment = models.TextField(blank=True)
     # v1 placeholder: PM manually uploads an out-of-band signed contract PDF.
     # Also covers contracts for solicitations run off-platform. Phase 2 replaces this
@@ -537,6 +541,16 @@ class Award(BaseModel):
     # No link to ManagedOpportunity: the award hands off via ProgramApplication only (Part 2,
     # Step 5); the existing flow owns the opportunity and the solicitation module never references it.
     # Phase 2 reserves: contract = models.OneToOneField("Contract", ...)
+
+    class Meta:
+        constraints = [
+            # At most one live award per application; released awards are retained for audit.
+            models.UniqueConstraint(
+                fields=["application"],
+                condition=models.Q(released_date__isnull=True),
+                name="one_active_award_per_application",
+            )
+        ]
 ```
 
 **Phase 2 only (not built in v1):** a `Contract` (per award; status, signed copy,

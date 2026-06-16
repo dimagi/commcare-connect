@@ -227,8 +227,8 @@ list; opens the scoring screen for that org.
 
 ### E4-T3 — Application scoring screen
 **Scope:** Score each criterion (fixed 1–10, with guidance shown), notes/tags,
-recommendation (approve/reject/needs-revision; `under_review` is the
-unset default). Save draft → submit. Enforce `hide_scores_until_submit`: other reviewers'
+recommendation (approve/reject/needs-revision; blank until the reviewer decides —
+"in progress" is `submitted_date IS NULL`). Save draft → submit. Enforce `hide_scores_until_submit`: other reviewers'
 scores hidden until own submitted. Observers read-only. Overall score computed via E0-T2.
 **Acceptance:** scores persist; overall_score computed correctly; hide-until-submit enforced
 (tested); one review per reviewer (unique constraint); observer cannot submit.
@@ -269,7 +269,7 @@ under_review move.
 
 ### E5-T4 — Award + downstream onboarding handoff
 **Scope:** Award one or more applicants from the shortlist or directly from `under_review`.
-Record `Award` (amount, currency). **Budget hard caps (Decision 1):** reject any award whose
+Record `Award` (amount in the solicitation's currency). **Budget hard caps (Decision 1):** reject any award whose
 amount would push the solicitation's cumulative awarded total over its `budget_max`; and, if a
 Program is linked, also reject any award that exceeds the Program's remaining budget. On award: if
 program-linked, create/update the `ProgramApplication` to `accepted` and link it on the
