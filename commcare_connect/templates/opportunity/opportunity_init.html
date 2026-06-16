@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% load static %}
+{% load i18n %}
 {% load crispy_forms_tags %}
 {% load duration_minutes %}
 {% load tailwind_filters %}
 {% block title %}
   {{ request.org }} -
-  {% if is_update %}
+  {% if opportunity_created %}
     Edit Opportunity
   {% else %}
     Create Opportunity
@@ -15,8 +16,14 @@
   <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-8"
        x-data="{ showAddApiKeyModal: false }">
     {% include "opportunity/steps.html" with step='step1' org_slug=request.org.slug pk=form.instance.opportunity_id %}
+    {% if program %}
+      <div class="flex items-center gap-2 p-4 rounded-lg border-[0.5px] bg-message-info text-message-info-text border-message-info-border">
+        <i class="fa-solid fa-circle-info"></i>
+        <span class="text-sm">{% blocktranslate with name=program.name %}This opportunity will be created under the <strong>{{ name }}</strong> program.{% endblocktranslate %}</span>
+      </div>
+    {% endif %}
     <h6 class="title">
-      {% if is_update %}
+      {% if opportunity_created %}
         Edit Details
       {% else %}
         Create Details

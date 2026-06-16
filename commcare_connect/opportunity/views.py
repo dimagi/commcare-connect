@@ -315,7 +315,7 @@ class OpportunityInit(OrganizationProgramManagerMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["is_update"] = False
+        context["opportunity_created"] = False
         return context
 
     def form_valid(self, form: OpportunityInitForm):
@@ -357,7 +357,7 @@ class OpportunityInitUpdate(OpportunityObjectMixin, OrganizationProgramManagerMi
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["api_key_form"] = HQApiKeyCreateForm(auto_id="api_key_form_id_for_%s")
-        context["is_update"] = True
+        context["opportunity_created"] = True
         return context
 
 
@@ -438,6 +438,13 @@ class OpportunityFinalize(OpportunityObjectMixin, OrganizationProgramManagerMixi
         kwargs["payment_units_max_total"] = payment_units_max_total
         kwargs["cumulative_pu_budget_per_user"] = cumulative_pu_budget_per_user
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        opportunity = self.object
+        if opportunity.managed:
+            context["program"] = opportunity.managedopportunity.program
+        return context
 
     def form_valid(self, form):
         opportunity = form.instance
@@ -808,11 +815,13 @@ def payment_import(request, org_slug=None, opp_id=None):
 def add_payment_units(request, org_slug=None, opp_id=None):
     if request.POST:
         return add_payment_unit(request, org_slug=org_slug, opp_id=opp_id)
-    paymentunit_count = PaymentUnit.objects.filter(opportunity=request.opportunity).count()
+    opportunity = request.opportunity
+    paymentunit_count = PaymentUnit.objects.filter(opportunity=opportunity).count()
+    program = opportunity.managedopportunity.program if opportunity.managed else None
     return render(
         request,
         "opportunity/add_payment_units.html",
-        dict(opportunity=request.opportunity, paymentunit_count=paymentunit_count),
+        dict(opportunity=opportunity, paymentunit_count=paymentunit_count, program=program),
     )
 
 

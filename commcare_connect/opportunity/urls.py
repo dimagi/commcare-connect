@@ -9,8 +9,6 @@ from commcare_connect.opportunity.views import (
     OpportunityDashboard,
     OpportunityEdit,
     OpportunityFinalize,
-    OpportunityInit,
-    OpportunityInitUpdate,
     OpportunityList,
     OpportunityPaymentUnitTableView,
     TaskTypesConfig,
@@ -61,9 +59,7 @@ from commcare_connect.opportunity.views import (
 app_name = "opportunity"
 urlpatterns = [
     path("", view=OpportunityList.as_view(), name="list"),
-    path("init/", view=OpportunityInit.as_view(), name="init"),
     path("add_api_key/", views.add_api_key, name="add_api_key"),
-    path("<slug:opp_id>/init/edit/", view=OpportunityInitUpdate.as_view(), name="init_edit"),
     path("<slug:opp_id>/finalize/", view=OpportunityFinalize.as_view(), name="finalize"),
     path("<slug:opp_id>/edit", view=OpportunityEdit.as_view(), name="edit"),
     path("<slug:opp_id>/", view=OpportunityDashboard.as_view(), name="detail"),

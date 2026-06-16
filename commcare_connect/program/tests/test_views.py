@@ -246,3 +246,35 @@ class TestNetworkManagerPendingPayments:
         PaymentFactory.create(opportunity_access=access, amount=150)
 
         assert self._pending_payment_count(opportunity) is None
+
+
+@pytest.mark.django_db
+class TestManagedOpportunityInitViews(BaseProgramTest):
+    """program:opportunity_init and program:opportunity_init_edit must still work."""
+
+    @pytest.fixture(autouse=True)
+    def test_setup(self):
+        self.program = ProgramFactory.create(organization=self.organization)
+        self.init_url = reverse(
+            "program:opportunity_init",
+            kwargs={"org_slug": self.organization.slug, "pk": self.program.program_id},
+        )
+
+    def test_opportunity_init_get_shows_program_notice(self):
+        response = self.client.get(self.init_url)
+        assert response.status_code == HTTPStatus.OK
+        assert self.program.name.encode() in response.content
+
+    def test_opportunity_init_edit_get(self):
+        opportunity = ManagedOpportunityFactory.create(organization=self.organization, program=self.program)
+        edit_url = reverse(
+            "program:opportunity_init_edit",
+            kwargs={
+                "org_slug": self.organization.slug,
+                "pk": self.program.program_id,
+                "opp_id": opportunity.opportunity_id,
+            },
+        )
+        response = self.client.get(edit_url)
+        assert response.status_code == HTTPStatus.OK
+        assert self.program.name.encode() in response.content

@@ -6,7 +6,7 @@
 {% block title %}{{ request.org }} - Payment Units{% endblock %}
 {% block content %}
   <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-8">
-    {% include "opportunity/steps.html" with step='step2' org_slug=request.org.slug pk=opportunity.opportunity_id %}
+    {% include "opportunity/steps.html" with step='step2' org_slug=request.org.slug pk=opportunity.opportunity_id opportunity_created=True program=program %}
     <div class="card_bg space-y-4 !p-2">
       <div hx-get="{% url 'opportunity:payment_unit_table' org_slug=request.org.slug opp_id=opportunity.opportunity_id %}{% querystring %}"
            hx-trigger="load"
