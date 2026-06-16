@@ -39,6 +39,7 @@ from commcare_connect.opportunity.visit_import import (
     REVIEW_STATUS_COL,
     VISIT_ID_COL,
     ImportException,
+    PaymentImportStatus,
     ReviewVisitRowData,
     VisitData,
     _bulk_update_catchments,
@@ -418,6 +419,17 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
     assert mobile_user.username in error_details[0]
     assert not error_details[0].startswith("(")
     assert Payment.objects.count() == 1
+
+
+@pytest.mark.parametrize("missing_users", [{"ghost"}, {"ghost1", "ghost2"}])
+def test_payment_import_missing_message(missing_users):
+    status = PaymentImportStatus(seen_users={"alice"}, missing_users=missing_users)
+
+    message = status.get_missing_message()
+
+    assert "The following usernames were not found:" in message
+    for user in missing_users:
+        assert user in message
 
 
 @pytest.fixture

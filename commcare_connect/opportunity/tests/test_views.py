@@ -2934,12 +2934,12 @@ def test_payment_import_modal_success_shows_missing_users():
             "result_data": {
                 "success": True,
                 "payments_processed": 1,
-                "missing_users_message": "2 usernames were not found",
+                "missing_users_message": "The following usernames were not found:<br>ghost1, ghost2",
             },
         },
     )
     assert "You have successfully processed 1 payment!" in html
-    assert "2 usernames were not found" in html
+    assert "The following usernames were not found:" in html
 
 
 def test_payment_import_modal_failure_text():

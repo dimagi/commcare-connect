@@ -114,8 +114,7 @@ class PaymentImportStatus:
         joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
         return format_html(
-            "<br>{} usernames were not found:<br>{}",
-            len(self.missing_users),
+            "<br>The following usernames were not found:<br>{}",
             format_html_join(
                 "<br>",
                 "{}",
