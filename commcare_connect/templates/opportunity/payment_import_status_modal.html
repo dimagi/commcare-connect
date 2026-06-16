@@ -21,7 +21,7 @@
         {% if result_data.success %}
           <div class="mt-4 border-t border-gray-100 pt-4 text-green-600 text-center">
             <i class="fa-solid fa-circle-check"></i>
-            {% blocktranslate with count=result_data.users_paid %}You have successfully uploaded {{ count }} payments!{% endblocktranslate %}
+            {% blocktranslate count counter=result_data.payments_processed %}You have successfully processed {{ counter }} payment!{% plural %}You have successfully processed {{ counter }} payments!{% endblocktranslate %}
           </div>
           {% if result_data.missing_users_message %}
             <div class="mt-3 text-sm text-gray-600 text-center">{{ result_data.missing_users_message|safe }}</div>

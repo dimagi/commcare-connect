@@ -2881,9 +2881,18 @@ class TestDeleteTasks:
 def test_payment_import_modal_success_text():
     html = render_to_string(
         "opportunity/payment_import_status_modal.html",
-        {"result_ready": True, "result_data": {"success": True, "users_paid": 2, "missing_users_message": None}},
+        {"result_ready": True, "result_data": {"success": True, "payments_processed": 2, "missing_users_message": None}},
     )
-    assert "You have successfully uploaded 2 payments!" in html
+    assert "You have successfully processed 2 payments!" in html
+
+
+def test_payment_import_modal_success_text_singular():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {"result_ready": True, "result_data": {"success": True, "payments_processed": 1, "missing_users_message": None}},
+    )
+    assert "You have successfully processed 1 payment!" in html
+    assert "1 payments" not in html
 
 
 @mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
@@ -2916,10 +2925,14 @@ def test_payment_import_modal_success_shows_missing_users():
         "opportunity/payment_import_status_modal.html",
         {
             "result_ready": True,
-            "result_data": {"success": True, "users_paid": 1, "missing_users_message": "2 usernames were not found"},
+            "result_data": {
+                "success": True,
+                "payments_processed": 1,
+                "missing_users_message": "2 usernames were not found",
+            },
         },
     )
-    assert "You have successfully uploaded 1 payments!" in html
+    assert "You have successfully processed 1 payment!" in html
     assert "2 usernames were not found" in html
 
 

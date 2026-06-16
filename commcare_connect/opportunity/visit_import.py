@@ -105,6 +105,7 @@ class VisitImportStatus:
 class PaymentImportStatus:
     seen_users: set[str]
     missing_users: set[str]
+    payments_created: int = 0
 
     def __len__(self):
         return len(self.seen_users)
@@ -417,7 +418,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
 
-    return PaymentImportStatus(seen_users, missing_users)
+    return PaymentImportStatus(seen_users, missing_users, len(payment_ids))
 
 
 def get_exchange_rate(currency_code, date=None):

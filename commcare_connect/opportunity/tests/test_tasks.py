@@ -601,11 +601,12 @@ def test_send_task_assignment_notification(send_message_patch):
 @mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
 def test_bulk_update_payments_task_success(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
     mock_dataset.return_value = Dataset(headers=["username"])
-    mock_bulk.return_value = PaymentImportStatus(seen_users={"u1", "u2"}, missing_users=set())
+    # 2 users, 3 payment records created — the count reports payments, not users
+    mock_bulk.return_value = PaymentImportStatus(seen_users={"u1", "u2"}, missing_users=set(), payments_created=3)
 
     result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
 
-    assert result == {"success": True, "users_paid": 2, "missing_users_message": None}
+    assert result == {"success": True, "payments_processed": 3, "missing_users_message": None}
     mock_storage.delete.assert_called_once_with("some/path")
 
 
@@ -616,12 +617,14 @@ def test_bulk_update_payments_task_success(mock_dataset, mock_bulk, mock_storage
 @mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
 def test_bulk_update_payments_task_with_missing_users(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
     mock_dataset.return_value = Dataset(headers=["username"])
-    mock_bulk.return_value = PaymentImportStatus(seen_users={"u1"}, missing_users={"missing1", "missing2"})
+    mock_bulk.return_value = PaymentImportStatus(
+        seen_users={"u1"}, missing_users={"missing1", "missing2"}, payments_created=1
+    )
 
     result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
 
     assert result["success"] is True
-    assert result["users_paid"] == 1
+    assert result["payments_processed"] == 1
     assert "not found" in result["missing_users_message"]
 
 

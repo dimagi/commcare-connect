@@ -473,7 +473,7 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
             status = bulk_update_payments(opportunity_id, headers, rows)
             return {
                 "success": True,
-                "users_paid": len(status),
+                "payments_processed": status.payments_created,
                 "missing_users_message": status.get_missing_message() if status.missing_users else None,
             }
         except ImportException as e:
