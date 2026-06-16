@@ -330,13 +330,13 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             continue
 
         if not username:
-            invalid_rows.append(([escape(r) for r in row], "username required"))
+            invalid_rows.append((row, "username required"))
             continue
 
         try:
             amount = Decimal(amount_raw)
         except InvalidOperation:
-            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
+            invalid_rows.append((row, "amount must be a number"))
             continue
 
         try:
@@ -348,7 +348,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             else:
                 payment_date = None
         except ValueError:
-            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
+            invalid_rows.append((row, "Payment Date must be in YYYY-MM-DD format"))
             continue
 
         payment_row = {
@@ -373,14 +373,15 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         ):
             invalid_rows.append(
                 (
-                    [escape(r) for r in row],
+                    row,
                     "A payment for this user with the same amount and date already exists.",
                 )
             )
         payments_by_user[username].append(payment_row)
 
     if invalid_rows:
-        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join([str(r) for r in invalid_rows]))
+        error_details = [f"{message}: {', '.join(str(cell) for cell in cells)}" for cells, message in invalid_rows]
+        raise ImportException(f"{len(invalid_rows)} rows have errors", error_details)
 
     seen_users = set()
     payment_ids = []

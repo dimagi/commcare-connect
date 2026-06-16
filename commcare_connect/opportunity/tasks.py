@@ -477,7 +477,7 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
                 "missing_users_message": status.get_missing_message() if status.missing_users else None,
             }
         except ImportException as e:
-            return {"success": False, "error_detail": e.rows or e.message}
+            return {"success": False, "error_detail": e.rows or [e.message]}
         finally:
             default_storage.delete(file_path)
 

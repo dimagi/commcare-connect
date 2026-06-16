@@ -635,12 +635,30 @@ def test_bulk_update_payments_task_with_missing_users(mock_dataset, mock_bulk, m
 @mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
 def test_bulk_update_payments_task_import_error(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
     mock_dataset.return_value = Dataset(headers=["username"])
-    mock_bulk.side_effect = ImportException("2 rows have errors", "row error detail")
+    row_errors = ["amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b"]
+    mock_bulk.side_effect = ImportException("1 rows have errors", row_errors)
 
     result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
 
-    assert result == {"success": False, "error_detail": "row error detail"}
+    assert result == {"success": False, "error_detail": row_errors}
     mock_storage.delete.assert_called_once_with("some/path")
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.cache")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payments")
+@mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
+def test_bulk_update_payments_task_import_error_without_rows(
+    mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity
+):
+    # Structural errors (e.g. missing column) carry only a message; it is wrapped into a one-item list
+    mock_dataset.return_value = Dataset(headers=["username"])
+    mock_bulk.side_effect = ImportException("Missing required column(s): 'payment amount'")
+
+    result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
+
+    assert result == {"success": False, "error_detail": ["Missing required column(s): 'payment amount'"]}
 
 
 @pytest.mark.django_db

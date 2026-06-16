@@ -2881,7 +2881,10 @@ class TestDeleteTasks:
 def test_payment_import_modal_success_text():
     html = render_to_string(
         "opportunity/payment_import_status_modal.html",
-        {"result_ready": True, "result_data": {"success": True, "payments_processed": 2, "missing_users_message": None}},
+        {
+            "result_ready": True,
+            "result_data": {"success": True, "payments_processed": 2, "missing_users_message": None},
+        },
     )
     assert "You have successfully processed 2 payments!" in html
 
@@ -2889,7 +2892,10 @@ def test_payment_import_modal_success_text():
 def test_payment_import_modal_success_text_singular():
     html = render_to_string(
         "opportunity/payment_import_status_modal.html",
-        {"result_ready": True, "result_data": {"success": True, "payments_processed": 1, "missing_users_message": None}},
+        {
+            "result_ready": True,
+            "result_data": {"success": True, "payments_processed": 1, "missing_users_message": None},
+        },
     )
     assert "You have successfully processed 1 payment!" in html
     assert "1 payments" not in html
@@ -2939,7 +2945,15 @@ def test_payment_import_modal_success_shows_missing_users():
 def test_payment_import_modal_failure_text():
     html = render_to_string(
         "opportunity/payment_import_status_modal.html",
-        {"result_ready": True, "result_data": {"success": False, "error_detail": "3 rows have errors"}},
+        {
+            "result_ready": True,
+            "result_data": {
+                "success": False,
+                "error_detail": ["amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b"],
+            },
+        },
     )
     assert "There was an issue with your upload. Please try again." in html
-    assert "3 rows have errors" in html
+    assert "amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b" in html
+    # the raw Python-tuple format must no longer appear
+    assert "(['" not in html

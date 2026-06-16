@@ -410,10 +410,13 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
         bulk_update_payments(opportunity.pk, dataset_headers, duplicate_dataset_rows)
 
     assert "1 rows have errors" in str(excinfo.value.message)
-
+    # error rows are human-readable strings ("<message>: <cells>"), not raw Python tuples
     error_details = excinfo.value.rows
+    assert isinstance(error_details, list)
     expected_error_substring = "A payment for this user with the same amount and date already exists."
-    assert expected_error_substring in error_details
+    assert expected_error_substring in error_details[0]
+    assert mobile_user.username in error_details[0]
+    assert not error_details[0].startswith("(")
     assert Payment.objects.count() == 1
 
 
