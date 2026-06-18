@@ -43,7 +43,10 @@ class WorkAreaCSVImporter:
 
     def __init__(self, opp_id, csv_source):
         self.opp_id = opp_id
-        self.csv_source = csv_source
+        content = csv_source.read()
+        if content.startswith("﻿"):  # strip UTF-8 BOM added by Windows Excel CSV export
+            content = content[1:]
+        self.csv_source = io.StringIO(content)
         self.errors = defaultdict(list)
         self.seen_slugs = set()
         self.created_count = 0

@@ -31,9 +31,11 @@ class TestWorkAreaCSVImporter:
         "State",
     ]
 
-    def build_csv(self, rows, headers=None):
+    def build_csv(self, rows, headers=None, bom=False):
         headers = headers or self.HEADERS
         output = io.StringIO()
+        if bom:
+            output.write("﻿")
         writer = csv.writer(output)
         writer.writerow(headers)
         for row in rows:
@@ -161,6 +163,15 @@ class TestWorkAreaCSVImporter:
         result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
 
         assert result["created"] == 1
+
+    def test_utf8_bom_csv(self, opportunity):
+        csv_data = self.build_csv(
+            [["area-bom", "ward", self.CENTROID, self.POLYGON, "5", "6", "100", "LGA1", "State1"]],
+            bom=True,
+        )
+        result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
+        assert result["created"] == 1
+        assert WorkArea.objects.filter(slug="area-bom").exists()
 
     def test_missing_extra_properties(self, opportunity):
         row = [
