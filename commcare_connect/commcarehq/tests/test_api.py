@@ -248,4 +248,18 @@ class TestBulkUpdateUsercases:
         mock_get_usercase.assert_called_once_with(access)
         mock_bulk.assert_called_once()
         cases_data = mock_bulk.call_args[0][2]
-        assert cases_data == [{"case_id": hq_case_id, "create": False, "properties": {"prop": "value"}}]
+        assert cases_data == [{"case_id": hq_case_id, "properties": {"prop": "value"}}]
+        assert mock_bulk.call_args[1]["create"] is False
+
+    def test_raises_when_updates_span_multiple_opportunities(self):
+        api_key = HQApiKeyFactory(hq_server=HQServerFactory())
+        access_a = OpportunityAccessFactory(opportunity__api_key=api_key)
+        access_b = OpportunityAccessFactory(opportunity__api_key=api_key)
+
+        with pytest.raises(ValueError, match="same opportunity"):
+            bulk_update_usercases(
+                {
+                    access_a: {"properties": {"prop": "1"}},
+                    access_b: {"properties": {"prop": "1"}},
+                }
+            )

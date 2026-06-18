@@ -46,6 +46,7 @@ def get_case_list(api_key: HQApiKey, domain: str, filters: GetCaseDataAPIFilters
     with httpx.Client(
         base_url=api_key.hq_server.url,
         headers={"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"},
+        timeout=300,
     ) as client:
         while url is not None:
             try:
@@ -114,10 +115,10 @@ def bulk_create_or_update_cases_by_work_areas(
     for wa in work_areas:
         case_data = dict(WorkAreaCaseSerializer(wa).data)
         case_data["owner_id"] = owner_id_by_username[wa.opportunity_access.user.username.lower()]
-        case_data["create"] = None  # UPSERT: HQ decides create vs update via external_id
         cases_data.append(case_data)
 
-    cases = bulk_create_or_update_cases(api_key, domain, cases_data)
+    # create=None is the UPSERT mode: HQ decides create vs update via external_id
+    cases = bulk_create_or_update_cases(api_key, domain, cases_data, create=None)
 
     wa_by_id = {str(wa.pk): wa for wa in work_areas if wa.case_id is None}
     newly_created = []
@@ -136,13 +137,14 @@ def bulk_create_or_update_cases(
     api_key: HQApiKey,
     domain: str,
     cases_data: list[dict[str, Any]],
+    create: bool | None,
 ) -> list[CommCareCase]:
     url = f"{api_key.hq_server.url}/a/{domain}/api/case/v2/"
     headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
     cases = []
-    with httpx.Client(headers=headers) as client:
+    with httpx.Client(headers=headers, timeout=300) as client:
         for i in range(0, len(cases_data), HQ_CASE_BULK_CHUNK_SIZE):
-            chunk = cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]  # noqa: E203
+            chunk = [{**case, "create": create} for case in cases_data[i : i + HQ_CASE_BULK_CHUNK_SIZE]]  # noqa: E203
             try:
                 response = client.post(url, json=chunk)
                 response.raise_for_status()
@@ -162,7 +164,7 @@ def create_or_update_case(
     headers = {"Authorization": f"ApiKey {api_key.user.email}:{api_key.api_key}"}
 
     try:
-        with httpx.Client(base_url=base_url, headers=headers) as client:
+        with httpx.Client(base_url=base_url, headers=headers, timeout=300) as client:
             if case_id:
                 error_msg = f"Failed to update case data for {domain} with {case_id}."
                 response = client.put(f"{case_id}/", json=case_data)
@@ -182,13 +184,19 @@ def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> N
 
     All entries in `updates` must belong to the same opportunity. The domain, API key, and
     HQ server are derived from the first entry and applied to the entire batch.
+
+    The value for each key is a case update payload. In practice callers only set
+    ``"properties"``, e.g. ``{"properties": {"some_property": "value"}}``.
     """
     if not updates:
         return
 
     first_access = next(iter(updates))
-    domain = first_access.opportunity.deliver_app.cc_domain
-    api_key = first_access.opportunity.api_key
+    opportunity = first_access.opportunity
+    if any(access.opportunity_id != opportunity.id for access in updates.keys()):
+        raise ValueError("All entries in `updates` must belong to the same opportunity.")
+    domain = opportunity.deliver_app.cc_domain
+    api_key = opportunity.api_key
     hq_server = api_key.hq_server
 
     users = [access.user for access in updates]
@@ -206,9 +214,9 @@ def bulk_update_usercases(updates: dict[OpportunityAccess, dict[str, Any]]) -> N
             link.save()
         else:
             hq_case_id = link.hq_case_id
-        cases_data.append({"case_id": hq_case_id, "create": False, **data})
+        cases_data.append({"case_id": hq_case_id, **data})
 
-    bulk_create_or_update_cases(api_key, domain, cases_data)
+    bulk_create_or_update_cases(api_key, domain, cases_data, create=False)
 
 
 def get_usercase(opportunity_access: OpportunityAccess) -> CommCareCase:
