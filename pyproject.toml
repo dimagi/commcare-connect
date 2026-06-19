@@ -125,7 +125,7 @@ dev = [
     "pytest-httpx>=0.24.0",
     "ruff>=0.15.17",
     "watchfiles>=0.19.0",
-    "werkzeug[watchdog]>=2.3.7",
+    "werkzeug[watchdog]>=3.1.8",
     "xml2json",
 ]
 production = [
