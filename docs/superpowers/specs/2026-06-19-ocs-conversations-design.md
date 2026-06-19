@@ -224,6 +224,27 @@ Behavior:
 opportunity/user-scoped API key sent in a request header, validated server-side. See Open
 Decisions.
 
+## Task Completion Notification
+
+An FCM push fires whenever **any** `AssignedTask` (Re-Learn or OCS) transitions to completed,
+mirroring the existing assignment push (`send_task_assignment_notification`, `tasks.py:748`).
+
+- New Celery task `send_task_completion_notification(assigned_task_id)` with the same `Message`
+  shape but `"key": "task_completion"` and a completion title/body.
+- To cover both completion paths without duplication, add a single
+  **`AssignedTask.mark_completed(*, completed_at, xform_id=None, duration=None,
+  app_build_id=None, app_build_version=None)`** method that sets `status=COMPLETED` +
+  `completed_at` (and the optional form fields), saves, and schedules
+  `send_task_completion_notification.delay(pk)` via `transaction.on_commit`.
+- Both completion sites call it: `process_task_modules` (`form_receiver/processor.py:148`, the
+  Re-Learn/form path) and the OCS callback endpoint.
+- Fires **only on the actual transition** to completed — idempotent re-calls (already-completed
+  task) do not re-notify.
+- Consistent with the codebase pattern: explicit `on_commit` Celery task, no Django signals.
+- **No backfill.** Only completions occurring after deploy notify (this is automatic — the push
+  is wired into the completion code path; no migration notifies historical completions). This
+  includes Re-Learn completions, which start notifying going forward but are never backfilled.
+
 ## UI Changes
 
 ### Add Task Type form (`AddTaskTypeForm`)
@@ -278,6 +299,9 @@ testing functions over view responses; prefer fixtures.
 - **Callback logic:** marks completed; username mismatch rejected; optional `completed_at`
   honored; idempotent on repeat.
 - **Serializer:** new fields (`task_type`, `connect_channel_id`) present.
+- **Completion notification:** `mark_completed` fires `send_task_completion_notification` once
+  on transition for both Re-Learn (form) and OCS (callback) paths; no re-notify on idempotent
+  re-completion.
 - **Form:** type branching; OCS requires `ocs_chatbot_id`; chatbot-load failure degradation;
   missing-`OCSApiKey` info-warning path.
 
