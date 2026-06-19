@@ -31,11 +31,9 @@ class TestWorkAreaCSVImporter:
         "State",
     ]
 
-    def build_csv(self, rows, headers=None, bom=False):
+    def build_csv(self, rows, headers=None):
         headers = headers or self.HEADERS
         output = io.StringIO()
-        if bom:
-            output.write("﻿")
         writer = csv.writer(output)
         writer.writerow(headers)
         for row in rows:
@@ -165,11 +163,16 @@ class TestWorkAreaCSVImporter:
         assert result["created"] == 1
 
     def test_utf8_bom_csv(self, opportunity):
-        csv_data = self.build_csv(
-            [["area-bom", "ward", self.CENTROID, self.POLYGON, "5", "6", "100", "LGA1", "State1"]],
-            bom=True,
+        UTF8_BOM = "﻿"
+        raw = (
+            UTF8_BOM
+            + self.build_csv(
+                [["area-bom", "ward", self.CENTROID, self.POLYGON, "5", "6", "100", "LGA1", "State1"]]
+            ).read()
         )
-        result = WorkAreaCSVImporter(opportunity.id, csv_data).run()
+        # utf-8-sig strips BOM on decode — same as import_work_areas_task does
+        decoded = io.StringIO(raw.encode("utf-8").decode("utf-8-sig"))
+        result = WorkAreaCSVImporter(opportunity.id, decoded).run()
         assert result["created"] == 1
         assert WorkArea.objects.filter(slug="area-bom").exists()
 
