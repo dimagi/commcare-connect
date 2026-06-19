@@ -130,8 +130,10 @@ connect_channel_id = models.CharField(max_length=255, null=True, blank=True)
 `AssignedTaskSerializer` (`api/serializers/mobile.py`) adds:
 
 - `task_type` — the `TaskType.type` value (`relearn` / `ocs`), so the mobile app can branch.
-- `ocs_chatbot_id` — `source="task_type.ocs_chatbot_id"`.
 - `connect_channel_id` — from the `AssignedTask`.
+
+(`ocs_chatbot_id` is intentionally **not** exposed in the serializer — the mobile app does not
+need the OCS experiment id.)
 
 ## OCS API Client
 
@@ -275,7 +277,7 @@ testing functions over view responses; prefer fixtures.
   rolls back so no `AssignedTask` row exists; Re-Learn path unchanged.
 - **Callback logic:** marks completed; username mismatch rejected; optional `completed_at`
   honored; idempotent on repeat.
-- **Serializer:** new fields (`task_type`, `ocs_chatbot_id`, `connect_channel_id`) present.
+- **Serializer:** new fields (`task_type`, `connect_channel_id`) present.
 - **Form:** type branching; OCS requires `ocs_chatbot_id`; chatbot-load failure degradation;
   missing-`OCSApiKey` info-warning path.
 
