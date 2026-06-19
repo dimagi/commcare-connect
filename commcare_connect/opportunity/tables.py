@@ -468,7 +468,7 @@ class PaymentInvoiceTable(OpportunityContextTable):
         review_button = (
             f'<a href="{invoice_review_url}" '
             f'class="button button-md outline-style !inline-flex justify-center">'
-            f'{_("Review")}</a>'
+            f"{_('Review')}</a>"
         )
         pay_button = ""
         if self.is_pm:
@@ -597,7 +597,7 @@ class BaseOpportunityList(OrgContextTable):
         return date.strftime("%d-%b-%Y") if date else "--"
 
     def _render_div(self, value, extra_classes=""):
-        base_classes = "flex text-sm font-normal truncate text-brand-deep-purple " "overflow-clip overflow-ellipsis"
+        base_classes = "flex text-sm font-normal truncate text-brand-deep-purple overflow-clip overflow-ellipsis"
         all_classes = f"{base_classes} {extra_classes}".strip()
         return format_html('<div class="{}">{}</div>', all_classes, value)
 
@@ -1050,24 +1050,24 @@ class StatusIndicatorColumn(tables.Column):
     def render(self, record):
         if self._is_suspended(record):
             return format_html(
-                '<span x-data x-tooltip.raw="{}">' '<i class="fa-solid fa-minus-square text-black-600"></i>' "</span>",
+                '<span x-data x-tooltip.raw="{}"><i class="fa-solid fa-minus-square text-black-600"></i></span>',
                 _("User suspended"),
             )
 
         if record.status == UserInviteStatus.accepted:
             return format_html(
-                '<span x-data x-tooltip.raw="{}">' '<i class="fa-solid fa-circle-check text-green-600"></i>' "</span>",
+                '<span x-data x-tooltip.raw="{}"><i class="fa-solid fa-circle-check text-green-600"></i></span>',
                 _("Invite accepted"),
             )
         elif record.status in [UserInviteStatus.invited, UserInviteStatus.sms_delivered]:
             return format_html(
-                '<span x-data x-tooltip.raw="{}">' '<i class="fa-regular fa-clock text-orange-600"></i>' "</span>",
+                '<span x-data x-tooltip.raw="{}"><i class="fa-regular fa-clock text-orange-600"></i></span>',
                 _("Invite pending"),
             )
 
         if record.status in [UserInviteStatus.not_found, UserInviteStatus.sms_not_delivered]:
             return format_html(
-                '<span x-data x-tooltip.raw="{}">' '<i class="fa-solid fa-circle-xmark text-red-600"></i>' "</span>",
+                '<span x-data x-tooltip.raw="{}"><i class="fa-solid fa-circle-xmark text-red-600"></i></span>',
                 _("User not found") if record.status == UserInviteStatus.not_found else _("Invite failed"),
             )
 
@@ -1844,8 +1844,7 @@ class AssignedTaskListTable(OpportunityContextTable):
     def render_assigned_task_id(self, value):
         # TODO: CCCT-2184 - Link to Connect Worker page filtered to task view
         return format_html(
-            '<a href="#" class="text-brand-indigo hover:underline">'
-            '<span class="text-sm font-medium">#{}</span></a>',
+            '<a href="#" class="text-brand-indigo hover:underline"><span class="text-sm font-medium">#{}</span></a>',
             value,
         )
 

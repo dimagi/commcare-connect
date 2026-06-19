@@ -65,6 +65,7 @@ class CoverageDateFilter:
 
     @classmethod
     def last_week(cls) -> "CoverageDateFilter":
+        # Used to compute the pinned 7-day "last week" report columns (not a page-level filter mode).
         today = localdate()
         return cls(start=today - datetime.timedelta(days=WEEK_DAYS - 1), end=today)
 

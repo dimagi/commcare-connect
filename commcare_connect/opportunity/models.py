@@ -504,8 +504,7 @@ class AssignedTask(XFormBaseModel):
                     to_reset.setdefault(access, {"properties": {}})["properties"][prop] = ""
                 if len(to_reset) > HQ_CASE_BULK_CHUNK_SIZE:
                     raise ListTooLongError(
-                        f"Too many HQ case property resets ({len(to_reset)}); "
-                        "split the delete into smaller batches."
+                        f"Too many HQ case property resets ({len(to_reset)}); split the delete into smaller batches."
                     )
                 if to_reset:
                     bulk_update_usercases(to_reset)

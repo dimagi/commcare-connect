@@ -742,7 +742,7 @@ def add_budget_new_users(request, org_slug=None, opp_id=None):
     csrf_token = get_token(request)
     form_html = f"""
         <form id="form-content"
-              hx-post="{reverse('opportunity:add_budget_new_users', args=[org_slug, opp_id])}"
+              hx-post="{reverse("opportunity:add_budget_new_users", args=[org_slug, opp_id])}"
               hx-trigger="submit"
               hx-headers='{{"X-CSRFToken": "{csrf_token}"}}'>
             <input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}">
@@ -2146,16 +2146,16 @@ class UserTasksView(WorkerPageView, FilterMixin):
             create_url = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, self.opportunity.opportunity_id)
             )
-            context[
-                "create_task_url"
-            ] = f"{create_url}?{urlencode({'next': 'worker_tasks', 'user': self.opportunity_access.user.user_id})}"
+            context["create_task_url"] = (
+                f"{create_url}?{urlencode({'next': 'worker_tasks', 'user': self.opportunity_access.user.user_id})}"
+            )
 
             delete_url = reverse(
                 "opportunity:delete_tasks", args=(self.request.org.slug, self.opportunity.opportunity_id)
             )
-            context[
-                "delete_tasks_url"
-            ] = f"{delete_url}?{urlencode({'next': 'worker_tasks', 'user': self.opportunity_access.user.user_id})}"
+            context["delete_tasks_url"] = (
+                f"{delete_url}?{urlencode({'next': 'worker_tasks', 'user': self.opportunity_access.user.user_id})}"
+            )
         return context
 
 

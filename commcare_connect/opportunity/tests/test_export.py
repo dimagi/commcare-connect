@@ -317,9 +317,9 @@ def test_export_catchment_area_table_data(opportunity: Opportunity):
 
     data_set = export_catchment_area_table(opportunity)
 
-    assert set(expected_headers).issubset(
-        set(data_set.headers)
-    ), f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
+    assert set(expected_headers).issubset(set(data_set.headers)), (
+        f"Expected headers {expected_headers} not found in dataset headers {data_set.headers}"
+    )
 
     assert len(data_set) == len(catchments), f"Expected {len(catchments)} catchments, but got {len(data_set)}"
 

@@ -2,7 +2,6 @@ import csv
 import json
 import logging
 import uuid
-from datetime import date
 from functools import partial
 from http import HTTPStatus
 
@@ -45,8 +44,12 @@ from commcare_connect.microplanning.const import (
     MAX_UNASSIGN_WORK_AREAS,
     WORK_AREA_STATUS_COLORS,
 )
-from commcare_connect.microplanning.coverage_progress import CoverageDateFilter, CoverageProgressReport
-from commcare_connect.microplanning.filters import UserVisitMapFilterSet, WorkAreaMapFilterSet
+from commcare_connect.microplanning.coverage_progress import CoverageProgressReport
+from commcare_connect.microplanning.filters import (
+    CoverageProgressFilterSet,
+    UserVisitMapFilterSet,
+    WorkAreaMapFilterSet,
+)
 from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
     exclude_work_areas_for_opportunity,
@@ -947,10 +950,11 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
 def coverage_progress(request, *args, **kwargs):
     """Coverage Progress Tracker page: a header saturation goal plus the per-ward "Core Metrics"
     table and the per-work-area-group "Metrics by Work Area Group" table. Each table has its own
-    download button, handled via the ``_export``/``_table`` query params (see ``_export_coverage_table``).
+    download button, handled via the ``export``/``table`` query params (see ``_export_coverage_table``).
     """
     opportunity = request.opportunity
-    date_filter = _get_coverage_date_filter(request)
+    filterset = CoverageProgressFilterSet(request.GET, queryset=WorkArea.objects.none())
+    date_filter = filterset.to_date_filter()
     try:
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL statement_timeout = %s", [STATEMENT_TIMEOUT])
@@ -973,15 +977,30 @@ def coverage_progress(request, *args, **kwargs):
             content_type="text/plain",
         )
 
-    export_response = _export_coverage_table(request, opportunity, {"ward": ward_table, "wag": wag_table})
+    tables = {"ward": ward_table, "wag": wag_table}
+    export_response = _export_coverage_table(request, opportunity, tables)
     if export_response is not None:
         return export_response
+
+    # Pre-build the per-table download links so each carries the active filter (a download then
+    # matches the on-screen filtered view rather than silently exporting the overall report). The
+    # export param names come from the same constants the export view reads, so they can't drift.
+    export_hrefs = {
+        table_key: {
+            fmt: "?"
+            + filterset.export_querystring({COVERAGE_EXPORT_FORMAT_PARAM: fmt, COVERAGE_EXPORT_TABLE_PARAM: table_key})
+            for fmt in ("csv", "xlsx")
+        }
+        for table_key in tables
+    }
 
     context = {
         "opportunity": opportunity,
         "header": header,
         "ward_table": ward_table,
         "wag_table": wag_table,
+        "filter_form": filterset.form,
+        "export_hrefs": export_hrefs,
         "path": [
             {
                 "title": _("Progress Map"),
@@ -995,11 +1014,11 @@ def coverage_progress(request, *args, **kwargs):
     return render(request, "microplanning/coverage_progress.html", context)
 
 
-# Query params used by the per-table download buttons: ``?_export=<format>&_table=<ward|wag>``.
+# Query params used by the per-table download buttons: ``?export=<format>&table=<ward|wag>``.
 COVERAGE_EXPORT_FORMAT_PARAM = "export"
 COVERAGE_EXPORT_TABLE_PARAM = "table"
 DEFAULT_COVERAGE_EXPORT_TABLE = "ward"
-# Maps each ``_table`` value to the file-name stem used in the download.
+# Maps each ``table`` value to the file-name stem used in the download.
 COVERAGE_EXPORT_FILENAME_STEMS = {"ward": "core_metrics", "wag": "metrics_by_work_area_group"}
 
 
@@ -1024,19 +1043,3 @@ def _export_coverage_table(request, opportunity, tables):
     return exporter.response(
         f"{slugify(opportunity.name)}_{COVERAGE_EXPORT_FILENAME_STEMS[export_table]}.{export_format}"
     )
-
-
-def _get_coverage_date_filter(request):
-    raw_from = request.GET.get("from")
-    raw_to = request.GET.get("to")
-    if raw_from and raw_to:
-        try:
-            start = date.fromisoformat(raw_from)
-            end = date.fromisoformat(raw_to)
-        except ValueError:
-            pass
-        else:
-            # Ignore a reversed range (start after end), which would otherwise read as zero coverage.
-            if start <= end:
-                return CoverageDateFilter(start=start, end=end)
-    return CoverageDateFilter.overall()

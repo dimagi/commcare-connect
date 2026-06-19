@@ -59,22 +59,18 @@ omit = ["*/migrations/*", "*/tests/*"]
 plugins = ["django_coverage_plugin"]
 
 
-# ==== black ====
-[tool.black]
+# ==== ruff ====
+[tool.ruff]
 line-length = 119
-target-version = ['py311']
+target-version = "py311"
+extend-exclude = ["**/migrations/*.py"]
 
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes (flake8 defaults), I: isort
+select = ["E", "F", "W", "I"]
 
-# ==== isort ====
-[tool.isort]
-profile = "black"
-line_length = 119
-known_first_party = [
-    "commcare_connect",
-    "config",
-]
-skip = ["venv/"]
-skip_glob = ["**/migrations/*.py"]
+[tool.ruff.lint.isort]
+known-first-party = ["commcare_connect", "config"]
 
 
 # ==== PyLint ====
@@ -113,13 +109,10 @@ git-build-branch = { git = "https://github.com/dimagi/git-build-branch" }
 
 [dependency-groups]
 dev = [
-    "black>=23.7.0",
     "coverage>=7.2.7",
     "django-debug-toolbar>=4.1.0",
     "djlint>=1.36.4",
     "factory-boy>=3.3.0",
-    "flake8>=6.1.0",
-    "flake8-isort>=6.0.0",
     "git-build-branch",
     "invoke>=2.2.0",
     "ipdb>=0.13.13",
@@ -130,6 +123,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-django>=4.5.2",
     "pytest-httpx>=0.24.0",
+    "ruff>=0.15.17",
     "watchfiles>=0.19.0",
     "werkzeug[watchdog]>=2.3.7",
     "xml2json",

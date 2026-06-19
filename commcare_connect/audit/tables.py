@@ -5,19 +5,16 @@ from django.utils.translation import gettext_lazy as _l
 from django_tables2 import columns
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
-from commcare_connect.utils.tables import OrgContextTable
+from commcare_connect.utils.tables import DMYTColumn, IndexColumn, OrgContextTable
 
 
 class AuditReportTable(OrgContextTable):
-    audit_id = columns.Column(
-        accessor="serial",
-        verbose_name=_l("Audit ID"),
-        order_by=("period_end",),
-    )
-    date = columns.Column(
-        accessor="period_end",
-        verbose_name=_l("Date"),
+    index = IndexColumn()
+    date = DMYTColumn(
+        accessor="date_created",
+        verbose_name=_l("Generation Date"),
         orderable=True,
+        order_by=("date_created",),
     )
     status = columns.Column(verbose_name=_l("Status"))
     reviewer = columns.Column(
@@ -34,28 +31,14 @@ class AuditReportTable(OrgContextTable):
 
     class Meta:
         model = AuditReport
-        fields = ("audit_id", "date", "status", "reviewer", "view")
+        fields = ("index", "date", "status", "reviewer", "view")
         empty_text = _l("No audits have been generated yet.")
-        order_by = ("-period_end",)
-        attrs = {"class": "table table-hover"}
+        order_by = ("-date_created",)
+        row_attrs = {"class": "group"}
 
     def __init__(self, *args, opportunity=None, **kwargs):
         self.opportunity = opportunity
         super().__init__(*args, **kwargs)
-
-    def render_audit_id(self, record):
-        url = reverse(
-            "opportunity:audit:audit_report_detail",
-            kwargs={
-                "org_slug": self.org_slug,
-                "opp_id": self.opportunity.opportunity_id,
-                "audit_report_id": record.audit_report_id,
-            },
-        )
-        return format_html('<a class="text-brand-deep-purple hover:underline" href="{}">#{}</a>', url, record.serial)
-
-    def render_date(self, value):
-        return value.strftime("%b %-d, %Y")
 
     def render_status(self, record):
         if record.status == AuditReport.Status.COMPLETED:
@@ -75,7 +58,14 @@ class AuditReportTable(OrgContextTable):
                 "audit_report_id": record.audit_report_id,
             },
         )
-        return format_html('<a href="{}" aria-label="{}">&rsaquo;</a>', url, _("View audit"))
+        return format_html(
+            '<div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-end">'
+            '<a href="{}" aria-label="{}">'
+            '<i class="fa-solid fa-chevron-right text-brand-deep-purple"></i>'
+            "</a></div>",
+            url,
+            _("View audit"),
+        )
 
 
 class CalcColumn(columns.Column):

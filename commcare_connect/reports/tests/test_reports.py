@@ -489,12 +489,12 @@ def test_export_invoice_report_task_creates_export_file():
     mock_table = mock.MagicMock()
 
     storages_mock = mock.MagicMock(ExportS3Boto3Storage=mock_storage)
-    with mock.patch("commcare_connect.reports.views.InvoiceReportView", mock_view), mock.patch(
-        "commcare_connect.reports.views.InvoiceReportFilter", mock_filter
-    ), mock.patch("commcare_connect.reports.views.InvoiceReportTable", mock_table), mock.patch(
-        "commcare_connect.reports.tasks.TableExport"
-    ) as mock_table_export, mock.patch.dict(
-        "sys.modules", {"commcare_connect.utils.storages": storages_mock}
+    with (
+        mock.patch("commcare_connect.reports.views.InvoiceReportView", mock_view),
+        mock.patch("commcare_connect.reports.views.InvoiceReportFilter", mock_filter),
+        mock.patch("commcare_connect.reports.views.InvoiceReportTable", mock_table),
+        mock.patch("commcare_connect.reports.tasks.TableExport") as mock_table_export,
+        mock.patch.dict("sys.modules", {"commcare_connect.utils.storages": storages_mock}),
     ):
         mock_table_export.return_value.export.return_value = "col1,col2\nval1,val2"
         result = export_invoice_report_task({}, user_id=UserFactory().id)

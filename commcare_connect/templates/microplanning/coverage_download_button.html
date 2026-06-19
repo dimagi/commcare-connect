@@ -11,9 +11,9 @@
        x-cloak
        x-transition
        class="absolute right-0 z-40 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
-    <a href="?_export=csv&_table={{ table_key }}"
+    <a href="{{ hrefs.csv }}"
        class="block px-4 py-1 text-sm hover:bg-slate-100">{% translate "CSV" %}</a>
-    <a href="?_export=xlsx&_table={{ table_key }}"
+    <a href="{{ hrefs.xlsx }}"
        class="block px-4 py-1 text-sm hover:bg-slate-100">{% translate "Excel (.xlsx)" %}</a>
   </div>
 </span>

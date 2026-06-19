@@ -35,11 +35,10 @@ DELIVER_PROCESSOR_PATCHES = [
 
 
 def test_process_learn_form_no_matching_blocks():
-    with mock.patch(
-        "commcare_connect.form_receiver.processor.process_learn_modules"
-    ) as process_learn_modules, mock.patch(
-        "commcare_connect.form_receiver.processor.process_assessments"
-    ) as process_assessments:
+    with (
+        mock.patch("commcare_connect.form_receiver.processor.process_learn_modules") as process_learn_modules,
+        mock.patch("commcare_connect.form_receiver.processor.process_assessments") as process_assessments,
+    ):
         process_learn_form(None, get_form_model(), None, None)
     assert process_learn_modules.call_count == 0
     assert process_assessments.call_count == 0

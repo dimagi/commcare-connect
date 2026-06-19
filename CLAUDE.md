@@ -27,7 +27,7 @@ celery -A config.celery_app worker -B -l info
 pytest                              # run all tests
 pytest path/to/test_file.py::test_name  # run single test
 
-# Linting (runs black, isort, flake8, pyupgrade, django-upgrade, prettier)
+# Linting (runs ruff, ruff-format, pyupgrade, django-upgrade, prettier)
 prek run -a
 
 # Requirements (uv)
@@ -74,7 +74,7 @@ config/
 
 ## Code Style
 
-- **Python**: black + isort (line length 119, target py311). flake8 for linting
+- **Python**: ruff for linting, formatting, and import sorting (line length 119, target py311)
 - **JS/CSS**: prettier (tab-width 2, single-quote). Templates excluded from prettier
 - **prek hooks enforce all of the above** (reading `.pre-commit-config.yaml`) plus pyupgrade (--py311-plus) and django-upgrade (--target-version 4.1)
 - Django models should extend `BaseModel` from `commcare_connect/utils/db.py` (provides `created_by`, `modified_by`, `date_created`, `date_modified`)

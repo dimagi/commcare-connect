@@ -1,8 +1,6 @@
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import F, Window
-from django.db.models.functions import RowNumber
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -38,12 +36,7 @@ def _require_feature_flag(opportunity):
 def audit_report_list(request, org_slug, opp_id):
     opportunity = request.opportunity
     _require_feature_flag(opportunity)
-    # Annotate each row with its chronological position
-    queryset = (
-        AuditReport.objects.filter(opportunity=opportunity)
-        .select_related("completed_by")
-        .annotate(serial=Window(expression=RowNumber(), order_by=F("period_end").asc()))
-    )
+    queryset = AuditReport.objects.filter(opportunity=opportunity).select_related("completed_by")
 
     total_count = queryset.count()
     pending_count = queryset.filter(status=AuditReport.Status.PENDING).count()

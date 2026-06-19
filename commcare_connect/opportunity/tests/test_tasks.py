@@ -193,9 +193,10 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         opportunity=opportunity,
         form_json={"attachments": {"myimage.jpg": {"content_type": "image/jpeg", "length": 20}}},
     )
-    with mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response, mock.patch(
-        "commcare_connect.opportunity.tasks.default_storage.save"
-    ) as save_blob:
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
         get_response.return_value.content = b"asdas"
         download_user_visit_attachments.run(user_visit.id)
         blob_meta = BlobMeta.objects.first()
@@ -221,9 +222,10 @@ def test_download_inaccessibility_request_attachments_creates_blobs(opportunity)
         "photo.jpg": {"content_type": "image/jpeg", "length": 20},
     }
 
-    with mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response, mock.patch(
-        "commcare_connect.opportunity.tasks.default_storage.save"
-    ) as save_blob:
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
         get_response.return_value.content = b"imgdata"
         download_inaccessibility_request_attachments.run(xform_id, attachments)
 
@@ -252,9 +254,10 @@ def test_download_inaccessibility_request_attachments_skips_existing_blobs(oppor
     )
     attachments = {"photo.jpg": {"content_type": "image/jpeg", "length": 20}}
 
-    with mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response, mock.patch(
-        "commcare_connect.opportunity.tasks.default_storage.save"
-    ) as save_blob:
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
         download_inaccessibility_request_attachments.run(xform_id, attachments)
 
     get_response.assert_not_called()

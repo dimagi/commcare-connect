@@ -203,10 +203,12 @@ class OpportunityChangeForm(OpportunityUserInviteForm, forms.ModelForm):
                     <div class='col-span-2'>
                         <h6 class='title-sm'>{_("Date")}</h6>
                         <span class='hint'>
-                            {_(
-                                "Optional: If not specified, the opportunity start & "
-                                "end dates will apply to the form submissions."
-                            )}
+                            {
+                        _(
+                            "Optional: If not specified, the opportunity start & "
+                            "end dates will apply to the form submissions."
+                        )
+                    }
                         </span>
                     </div>
                 """
@@ -1292,7 +1294,7 @@ class PaymentUnitForm(forms.ModelForm):
                         HTML(
                             f"""
                     <button type="button" class="button button-md outline-style" id="sync-button"
-                    hx-post="{reverse('opportunity:sync_deliver_units', args=(org_slug, self.opportunity.pk))}"
+                    hx-post="{reverse("opportunity:sync_deliver_units", args=(org_slug, self.opportunity.pk))}"
                     hx-trigger="click" hx-swap="none" hx-on::after-request="alert(event?.detail?.xhr?.response);
                     event.detail.successful && location.reload();
                     this.removeAttribute('disabled'); this.innerHTML='Sync Deliver Units';""

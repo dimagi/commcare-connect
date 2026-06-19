@@ -236,13 +236,11 @@ def apply_or_decline_application(request, application_id, action, org_slug=None,
     action_map = {
         "apply": {
             "status": ProgramApplicationStatus.APPLIED,
-            "message": f"Application for the program '{application.program.name}' has been "
-            f"successfully submitted.",
+            "message": f"Application for the program '{application.program.name}' has been successfully submitted.",
         },
         "decline": {
             "status": ProgramApplicationStatus.DECLINED,
-            "message": f"The application for the program '{application.program.name}' has been marked "
-            f"as 'Declined'.",
+            "message": f"The application for the program '{application.program.name}' has been marked as 'Declined'.",
         },
     }
 

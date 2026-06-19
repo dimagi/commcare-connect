@@ -43,7 +43,7 @@ def _add_export_credentials(api_client, user):
 
 
 def _hq_app_url(opportunity, app):
-    return f"{opportunity.api_key.hq_server.url}/a/{app.cc_domain}" f"/api/v0.5/application/{app.cc_app_id}/"
+    return f"{opportunity.api_key.hq_server.url}/a/{app.cc_domain}/api/v0.5/application/{app.cc_app_id}/"
 
 
 @pytest.mark.django_db

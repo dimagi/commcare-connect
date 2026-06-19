@@ -5,15 +5,15 @@ from unittest import mock
 import pytest
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
-from commcare_connect.opportunity.models import OpportunityActiveEvent  # added via pghistory
-from commcare_connect.opportunity.models import PaymentInvoiceStatusEvent  # added via pghistory
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
     InvoiceStatus,
     Opportunity,
+    OpportunityActiveEvent,  # added via pghistory
     OpportunityClaimLimit,
     PaymentInvoice,
+    PaymentInvoiceStatusEvent,  # added via pghistory
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,

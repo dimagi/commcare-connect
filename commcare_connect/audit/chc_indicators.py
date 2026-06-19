@@ -543,8 +543,7 @@ class MUACDistributionPatternIndex(AuditCalculation):
 
         if out_of_range:
             logger.warning(
-                "MUAC out-of-range values for opportunity_access=%s period=%s–%s: "
-                "%d value(s) outside 9.5–21.5 cm: %s",
+                "MUAC out-of-range values for opportunity_access=%s period=%s–%s: %d value(s) outside 9.5–21.5 cm: %s",
                 opportunity_access.id,
                 period_start,
                 period_end,

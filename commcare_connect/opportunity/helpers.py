@@ -165,29 +165,23 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
         .select_related("opportunity_access", "opportunity_access__opportunityclaim", "opportunity_access__user")
         .annotate(
             last_visit_date_d=Max(
-                "opportunity_access__user__uservisit__visit_date",
-                filter=Q(opportunity_access__user__uservisit__opportunity=opportunity)
-                & ~Q(opportunity_access__user__uservisit__status=VisitValidationStatus.trial),
+                "opportunity_access__uservisit__visit_date",
+                filter=~Q(opportunity_access__uservisit__status=VisitValidationStatus.trial),
             ),
             date_deliver_started=Min(
-                "opportunity_access__user__uservisit__visit_date",
-                filter=Q(opportunity_access__user__uservisit__opportunity=opportunity),
+                "opportunity_access__uservisit__visit_date",
             ),
             passed_assessment=Sum(
                 Case(
                     When(
-                        Q(
-                            opportunity_access__user__assessments__opportunity=opportunity,
-                            opportunity_access__user__assessments__passed=True,
-                        ),
+                        Q(opportunity_access__assessment__passed=True),
                         then=1,
                     ),
                     default=0,
                 )
             ),
             completed_modules_count=Count(
-                "opportunity_access__user__completed_modules__module",
-                filter=Q(opportunity_access__user__completed_modules__opportunity=opportunity),
+                "opportunity_access__completedmodule__module",
                 distinct=True,
             ),
             job_claimed=Case(
@@ -202,8 +196,7 @@ def get_annotated_opportunity_access(opportunity: Opportunity):
                 When(
                     Q(completed_modules_count=learn_modules_count),
                     then=Max(
-                        "opportunity_access__user__completed_modules__date",
-                        filter=Q(opportunity_access__user__completed_modules__opportunity=opportunity),
+                        "opportunity_access__completedmodule__date",
                     ),
                 )
             )

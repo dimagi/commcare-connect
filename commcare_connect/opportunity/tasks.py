@@ -212,7 +212,7 @@ def generate_review_visit_export(opportunity_id: int, from_date, to_date, status
     opportunity = Opportunity.objects.get(id=opportunity_id)
     logger.info(
         f"""Export review visit for {opportunity.name} with date
-        from {from_date} to {to_date} and status {','.join(status)}"""
+        from {from_date} to {to_date} and status {",".join(status)}"""
     )
     dataset = export_user_visit_review_data(opportunity, from_date, to_date, [VisitReviewStatus(s) for s in status])
     export_tmp_name = f"{now().isoformat()}_{slugify(opportunity.name)}_review_visit_export.{export_format}"

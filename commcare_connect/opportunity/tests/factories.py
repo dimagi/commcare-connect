@@ -284,7 +284,7 @@ class AssignedTaskFactory(DjangoModelFactory):
     completed_at = Faker("date_time", tzinfo=timezone.utc)
     duration = LazyFunction(lambda: timedelta(hours=1))
     status = AssignedTaskStatus.ASSIGNED
-    due_date = LazyFunction(lambda: (date.today() + timedelta(days=7)))
+    due_date = LazyFunction(lambda: date.today() + timedelta(days=7))
     assigned_by = SubFactory(UserFactory)
 
     class Meta:

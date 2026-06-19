@@ -15,9 +15,9 @@ def require_manual_visit_verification(view_func):
 
     @wraps(view_func)
     def _inner(request, *args, **kwargs):
-        assert (
-            getattr(request, "opportunity", None) is not None
-        ), "require_manual_visit_verification must be applied after @opportunity_required"
+        assert getattr(request, "opportunity", None) is not None, (
+            "require_manual_visit_verification must be applied after @opportunity_required"
+        )
         if request.opportunity.automatic_visit_verification:
             response = HttpResponseForbidden()
             response["HX-Trigger"] = "reload_table"

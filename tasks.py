@@ -1,6 +1,7 @@
 """Useful tasks for use when developing CommCare Connect.
 
 This uses the `Invoke` library."""
+
 from pathlib import Path
 
 from invoke import Context, Exit, call, task
