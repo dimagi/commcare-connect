@@ -40,3 +40,10 @@ DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"  # noq
 if platform.system() == "Darwin":
     GDAL_LIBRARY_PATH = env("GDAL_LIBRARY_PATH")
     GEOS_LIBRARY_PATH = env("GEOS_LIBRARY_PATH")
+
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "localhost"
+EMAIL_PORT = 1025
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = False
