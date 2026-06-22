@@ -310,14 +310,28 @@ class DeliveryProgressSerializer(serializers.Serializer):
     payments = serializers.SerializerMethodField()
     max_payments = serializers.SerializerMethodField()
     payment_accrued = serializers.IntegerField()
-    end_date = serializers.DateField(source="opportunityclaim.end_date")
+    end_date = serializers.SerializerMethodField()
     assigned_tasks = serializers.SerializerMethodField()
 
+    def _get_claim(self, obj):
+        # opportunityclaim is a reverse one-to-one: accessing it raises
+        # RelatedObjectDoesNotExist when the access has not been claimed yet.
+        # The mobile app can hit this endpoint before the claim exists, so
+        # degrade gracefully instead of 500ing.
+        try:
+            return obj.opportunityclaim
+        except OpportunityClaim.DoesNotExist:
+            return None
+
+    def get_end_date(self, obj):
+        claim = self._get_claim(obj)
+        return claim.end_date if claim is not None else None
+
     def get_max_payments(self, obj):
-        return (
-            obj.opportunityclaim.opportunityclaimlimit_set.aggregate(max_visits=Sum("max_visits")).get("max_visits", 0)
-            or -1
-        )
+        claim = self._get_claim(obj)
+        if claim is None:
+            return -1
+        return claim.opportunityclaimlimit_set.aggregate(max_visits=Sum("max_visits")).get("max_visits", 0) or -1
 
     def get_payments(self, obj):
         return PaymentSerializer(obj.payment_set.all(), many=True).data
