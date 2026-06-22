@@ -1,0 +1,2700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connect — Design System</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   CSS DESIGN TOKENS
+   ============================================================ */
+:root {
+  /* Brand / Primary */
+  --color-primary:        #3A42C7;
+  --color-primary-light:  #EEF0FF;
+  --color-primary-border: #3A42C7;
+
+  /* Accent Orange (tab active indicator, sidebar active bar) */
+  --color-accent:         #E8632B;
+  --color-accent-light:   #FFF0E8;
+
+  /* Sidebar dark navy */
+  --color-sidebar-bg:     #1A1F6E;
+  --color-sidebar-deep:   #0D1147;
+
+  /* Semantic: Success */
+  --color-success-fg:     #218079;
+  --color-success-bg:     #E6F5E5;
+  --color-success-border: #7ABFB4;
+
+  /* Semantic: Warning */
+  --color-warning-fg:     #BC950F;
+  --color-warning-bg:     #FFF4CD;
+  --color-warning-border: #DBB646;
+
+  /* Semantic: Error */
+  --color-error-fg:       #900000;
+  --color-error-bg:       #FAD4D4;
+  --color-error-border:   #900000;
+
+  /* Gray Scale */
+  --gray-50:  #F8F9FA;
+  --gray-100: #F0F1F3;
+  --gray-200: #E2E4E9;
+  --gray-300: #C8CDD6;
+  --gray-400: #9BA3B2;
+  --gray-500: #6B7280;
+  --gray-600: #4B5563;
+  --gray-700: #374151;
+  --gray-800: #1F2937;
+  --gray-900: #111827;
+
+  /* Typography scale (rem, base 16px) */
+  --text-display-lg:  3.75rem;  /* 60sp */
+  --text-display-md:  3rem;
+  --text-display-sm:  2.25rem;
+  --text-header-lg:   1.75rem;
+  --text-header-md:   1.375rem;
+  --text-header-sm:   1.125rem;
+  --text-title-lg:    1rem;
+  --text-title-md:    0.9375rem;
+  --text-body-lg:     0.875rem;  /* 14sp */
+  --text-body-sm:     0.75rem;   /* 12sp */
+  --text-label-lg:    0.8125rem;
+  --text-label-md:    0.6875rem;
+  --text-caption:     0.625rem;  /* 10sp */
+
+  /* Font weights */
+  --fw-light:     300;
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+  --fw-extrabold: 800;
+
+  /* Spacing */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Radius */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.10);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.12);
+
+  /* Transitions */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+
+  /* Layout */
+  --sidebar-width: 220px;
+  --header-height: 56px;
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--gray-50);
+  color: var(--gray-800);
+  line-height: 1.5;
+  display: flex;
+  min-height: 100vh;
+}
+
+code, .mono {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8em;
+  background: var(--gray-100);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  color: var(--color-primary);
+}
+
+/* ============================================================
+   NAVIGATION SIDEBAR
+   ============================================================ */
+.nav-sidebar {
+  width: 210px;
+  min-height: 100vh;
+  background: #fff;
+  border-right: 1px solid var(--gray-200);
+  padding: var(--space-6) 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.nav-sidebar .brand {
+  padding: 0 var(--space-5) var(--space-5);
+  border-bottom: 1px solid var(--gray-100);
+  margin-bottom: var(--space-4);
+}
+
+.nav-sidebar .brand h1 {
+  font-size: 1rem;
+  font-weight: var(--fw-bold);
+  color: var(--color-primary);
+  letter-spacing: -0.01em;
+}
+
+.nav-sidebar .brand p {
+  font-size: 0.6875rem;
+  color: var(--gray-400);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.nav-section-label {
+  font-size: 0.625rem;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-400);
+  padding: var(--space-3) var(--space-5) var(--space-1);
+}
+
+.nav-sidebar a {
+  display: block;
+  padding: var(--space-2) var(--space-5);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-medium);
+  color: var(--gray-600);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.nav-sidebar a:hover { color: var(--color-primary); background: var(--color-primary-light); }
+.nav-sidebar a.active { color: var(--color-primary); border-left-color: var(--color-primary); background: var(--color-primary-light); }
+
+/* ============================================================
+   MAIN CONTENT
+   ============================================================ */
+.main {
+  flex: 1;
+  padding: var(--space-10) var(--space-12);
+  max-width: 960px;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: var(--fw-bold);
+  color: var(--gray-900);
+  letter-spacing: -0.03em;
+  margin-bottom: var(--space-1);
+}
+
+.page-subtitle {
+  font-size: 0.9375rem;
+  color: var(--gray-500);
+  margin-bottom: var(--space-10);
+}
+
+/* ============================================================
+   SECTION
+   ============================================================ */
+.section {
+  margin-bottom: var(--space-16);
+  scroll-margin-top: var(--space-6);
+}
+
+.section-title {
+  font-size: 1.25rem;
+  font-weight: var(--fw-bold);
+  color: var(--gray-900);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1.5px solid var(--gray-200);
+}
+
+.section-desc {
+  font-size: 0.875rem;
+  color: var(--gray-500);
+  margin-bottom: var(--space-6);
+}
+
+.subsection-title {
+  font-size: 0.75rem;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--gray-400);
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+/* ============================================================
+   SPECIMEN CARD (wrapper for each demo)
+   ============================================================ */
+.specimen {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+.specimen-preview {
+  padding: var(--space-8);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+  background: #fff;
+}
+
+.specimen-preview.dark { background: var(--color-sidebar-bg); }
+.specimen-preview.muted { background: var(--gray-50); }
+
+.specimen-meta {
+  padding: var(--space-3) var(--space-5);
+  background: var(--gray-50);
+  border-top: 1px solid var(--gray-100);
+  font-size: 0.6875rem;
+  color: var(--gray-400);
+  font-family: 'DM Mono', monospace;
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+/* ============================================================
+   COLOR SWATCHES
+   ============================================================ */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: var(--space-3);
+}
+
+.swatch {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+}
+
+.swatch-color {
+  height: 64px;
+}
+
+.swatch-info {
+  padding: var(--space-2) var(--space-3);
+  background: #fff;
+}
+
+.swatch-name {
+  font-size: 0.6875rem;
+  font-weight: var(--fw-semibold);
+  color: var(--gray-700);
+}
+
+.swatch-hex {
+  font-size: 0.625rem;
+  font-family: 'DM Mono', monospace;
+  color: var(--gray-400);
+}
+
+/* ============================================================
+   TYPOGRAPHY
+   ============================================================ */
+.type-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+.type-row:last-child { border-bottom: none; }
+
+.type-meta {
+  width: 180px;
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-family: 'DM Mono', monospace;
+  color: var(--gray-400);
+  line-height: 1.4;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.5rem 1.125rem;
+  border-radius: var(--radius-md);
+  font-family: 'DM Sans', sans-serif;
+  font-size: var(--text-body-lg);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all var(--transition-base);
+  white-space: nowrap;
+  text-decoration: none;
+  line-height: 1;
+}
+
+/* Primary */
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.btn-primary:hover { background: #2f36a8; border-color: #2f36a8; }
+
+/* Secondary / outlined */
+.btn-secondary {
+  background: transparent;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.btn-secondary:hover { background: var(--color-primary-light); }
+
+/* Ghost */
+.btn-ghost {
+  background: transparent;
+  color: var(--gray-600);
+  border-color: var(--gray-300);
+}
+.btn-ghost:hover { background: var(--gray-100); color: var(--gray-800); }
+
+/* Danger */
+.btn-danger {
+  background: var(--color-error-fg);
+  color: #fff;
+  border-color: var(--color-error-fg);
+}
+.btn-danger:hover { background: #700000; }
+
+/* Success */
+.btn-success {
+  background: var(--color-success-fg);
+  color: #fff;
+  border-color: var(--color-success-fg);
+}
+
+/* Disabled */
+.btn:disabled, .btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Sizes */
+.btn-sm { padding: 0.3125rem 0.75rem; font-size: var(--text-body-sm); border-radius: var(--radius-sm); }
+.btn-lg { padding: 0.6875rem 1.5rem; font-size: var(--text-title-md); }
+
+/* Icon button */
+.btn-icon {
+  padding: 0.5rem;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1.5px solid var(--gray-300);
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-icon:hover { background: var(--gray-100); }
+
+/* ============================================================
+   CHIPS / STATUS BADGES
+   ============================================================ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-medium);
+  border: 1px solid transparent;
+}
+
+.chip-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chip-active   { background: var(--color-success-bg); color: var(--color-success-fg); border-color: var(--color-success-border); }
+.chip-active .chip-dot { background: var(--color-success-fg); }
+
+.chip-inactive { background: var(--gray-100); color: var(--gray-500); border-color: var(--gray-300); }
+.chip-inactive .chip-dot { background: var(--gray-400); }
+
+.chip-invited  { background: #EEF0FF; color: var(--color-primary); border-color: var(--color-primary-border); }
+.chip-invited .chip-dot { background: var(--color-primary); }
+
+.chip-applied  { background: #FFF4CD; color: var(--color-warning-fg); border-color: var(--color-warning-border); }
+.chip-applied .chip-dot { background: var(--color-warning-fg); }
+
+.chip-paid     { background: var(--color-success-bg); color: var(--color-success-fg); border-color: var(--color-success-border); }
+.chip-paid .chip-dot { background: var(--color-success-fg); }
+
+.chip-unpaid   { background: var(--color-error-bg); color: var(--color-error-fg); border-color: var(--color-error-border); }
+.chip-unpaid .chip-dot { background: var(--color-error-fg); }
+
+.chip-rejected { background: var(--color-error-bg); color: var(--color-error-fg); border-color: var(--color-error-border); }
+.chip-rejected .chip-dot { background: var(--color-error-fg); }
+
+.chip-ended    { background: var(--gray-100); color: var(--gray-500); border-color: var(--gray-300); }
+.chip-ended .chip-dot { background: var(--gray-400); }
+
+.chip-raised   { background: #FFF4CD; color: var(--color-warning-fg); border-color: var(--color-warning-border); }
+.chip-raised .chip-dot { background: var(--color-warning-fg); }
+
+/* ============================================================
+   MESSAGE BANNERS
+   ============================================================ */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid;
+  font-size: var(--text-body-lg);
+  position: relative;
+}
+
+.banner-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.banner-close {
+  position: absolute; right: var(--space-3); top: var(--space-3);
+  background: none; border: none; cursor: pointer; opacity: 0.5; font-size: 1rem;
+}
+.banner-close:hover { opacity: 1; }
+
+.banner-info    { background: #EEF0FF; color: #3A42C7; border-color: #3A42C7; }
+.banner-success { background: var(--color-success-bg); color: var(--color-success-fg); border-color: var(--color-success-border); }
+.banner-warning { background: var(--color-warning-bg); color: var(--color-warning-fg); border-color: var(--color-warning-border); }
+.banner-error   { background: var(--color-error-bg);   color: var(--color-error-fg);   border-color: var(--color-error-border); }
+
+/* ============================================================
+   TEXT INPUTS
+   ============================================================ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  max-width: 320px;
+}
+
+.field-label {
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--gray-700);
+}
+
+.field-hint {
+  font-size: var(--text-body-sm);
+  color: var(--gray-400);
+}
+
+.input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  font-family: 'DM Sans', sans-serif;
+  font-size: var(--text-body-lg);
+  color: var(--gray-800);
+  background: #fff;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  outline: none;
+}
+
+.input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(58,66,199,0.12); }
+.input.error { border-color: var(--color-error-fg); }
+.input.error:focus { box-shadow: 0 0 0 3px rgba(144,0,0,0.10); }
+.input:disabled { background: var(--gray-100); color: var(--gray-400); cursor: not-allowed; }
+
+.field-error { font-size: var(--text-body-sm); color: var(--color-error-fg); }
+
+textarea.input { resize: vertical; min-height: 96px; }
+
+/* ============================================================
+   TOGGLE
+   ============================================================ */
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle {
+  width: 40px; height: 22px;
+  background: var(--gray-300);
+  border-radius: var(--radius-full);
+  position: relative;
+  transition: background var(--transition-base);
+  flex-shrink: 0;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform var(--transition-base);
+}
+
+.toggle.on { background: var(--color-primary); }
+.toggle.on::after { transform: translateX(18px); }
+
+.toggle-label { font-size: var(--text-body-lg); color: var(--gray-700); font-weight: var(--fw-medium); }
+
+/* ============================================================
+   PROGRESS STEPS
+   ============================================================ */
+.progress-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.step-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.step-number {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: var(--fw-bold);
+  flex-shrink: 0;
+}
+
+.step-number.done { background: var(--color-primary); color: #fff; }
+.step-number.active { background: var(--color-primary); color: #fff; box-shadow: 0 0 0 3px rgba(58,66,199,0.2); }
+.step-number.todo { background: var(--gray-200); color: var(--gray-500); }
+
+.step-label {
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--gray-600);
+}
+
+.step-label.active-label { color: var(--color-primary); }
+
+.step-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--gray-200);
+  margin: 0 var(--space-2);
+}
+
+.step-connector.done { background: var(--color-primary); }
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.card-stat-value {
+  font-size: 1.75rem;
+  font-weight: var(--fw-bold);
+  color: var(--gray-900);
+  letter-spacing: -0.02em;
+}
+
+.card-stat-label {
+  font-size: var(--text-body-sm);
+  color: var(--gray-500);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================
+   SIDEBAR (app component)
+   ============================================================ */
+.app-sidebar {
+  width: 56px;
+  background: var(--color-sidebar-bg);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sidebar-logo {
+  width: 32px; height: 32px;
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 0.75rem; font-weight: var(--fw-bold);
+}
+
+.sidebar-item {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.45);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.sidebar-item:hover, .sidebar-item.active {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+/* ============================================================
+   HEADER (app component)
+   ============================================================ */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  height: var(--header-height);
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  width: 100%;
+}
+
+.app-header .module-name {
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-body-lg);
+  color: var(--gray-800);
+  flex: 1;
+}
+
+.app-header .header-actions {
+  display: flex; align-items: center; gap: var(--space-3);
+}
+
+.avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: var(--fw-bold);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   TOOLTIP
+   ============================================================ */
+.tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip-wrap:hover .tooltip-bubble { opacity: 1; pointer-events: auto; }
+
+.tooltip-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gray-800);
+  color: #fff;
+  font-size: var(--text-body-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.tooltip-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--gray-800);
+}
+
+/* ============================================================
+   DROPDOWN (select)
+   ============================================================ */
+.select-wrap {
+  position: relative;
+  max-width: 220px;
+  width: 100%;
+}
+
+.select-wrap select {
+  width: 100%;
+  appearance: none;
+  padding: 0.5rem 2.25rem 0.5rem 0.75rem;
+  border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  font-family: 'DM Sans', sans-serif;
+  font-size: var(--text-body-lg);
+  color: var(--gray-800);
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.select-wrap select:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(58,66,199,0.12); }
+
+.select-wrap::after {
+  content: '▾';
+  position: absolute;
+  right: 0.75rem; top: 50%;
+  transform: translateY(-50%);
+  color: var(--gray-400);
+  pointer-events: none;
+}
+
+/* ============================================================
+   POPUP / DIALOG
+   ============================================================ */
+.dialog {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  max-width: 360px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+
+.dialog-icon {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.375rem;
+  margin-bottom: var(--space-4);
+}
+
+.dialog-title {
+  font-size: var(--text-title-lg);
+  font-weight: var(--fw-bold);
+  color: var(--gray-900);
+  margin-bottom: var(--space-2);
+}
+
+.dialog-body {
+  font-size: var(--text-body-lg);
+  color: var(--gray-500);
+  margin-bottom: var(--space-5);
+  line-height: 1.6;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+/* ============================================================
+   TOKEN TABLE
+   ============================================================ */
+.token-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body-sm);
+}
+
+.token-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  background: var(--gray-50);
+  color: var(--gray-500);
+  font-weight: var(--fw-semibold);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.token-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--gray-100);
+  vertical-align: middle;
+}
+
+.token-table tr:last-child td { border-bottom: none; }
+.token-table tr:hover td { background: var(--gray-50); }
+
+.color-chip-sm {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.1);
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* ============================================================
+   GRID HELPERS
+   ============================================================ */
+.flex-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.flex-col { display: flex; flex-direction: column; gap: var(--space-3); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 768px) {
+  .nav-sidebar { display: none; }
+  .main { padding: var(--space-6); }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   BREADCRUMB
+   ============================================================ */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.breadcrumb-item {
+  font-size: var(--text-body-sm);
+  color: var(--gray-400);
+  text-decoration: none;
+}
+
+.breadcrumb-item:hover { color: var(--color-primary); text-decoration: underline; }
+
+.breadcrumb-item.current {
+  color: var(--gray-700);
+  font-weight: var(--fw-medium);
+  pointer-events: none;
+}
+
+.breadcrumb-sep {
+  font-size: var(--text-body-sm);
+  color: var(--gray-300);
+  user-select: none;
+}
+
+/* ============================================================
+   TABS
+   ============================================================ */
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1.5px solid var(--gray-200);
+  gap: 0;
+}
+
+.tab {
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-body-lg);
+  font-weight: var(--fw-medium);
+  color: var(--gray-500);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1.5px;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+  white-space: nowrap;
+  font-family: 'DM Sans', sans-serif;
+  position: relative;
+}
+
+.tab:hover { color: var(--color-primary); }
+
+.tab.active {
+  color: var(--color-primary);
+  font-weight: var(--fw-semibold);
+  border-bottom-color: var(--color-accent);
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gray-200);
+  color: var(--gray-600);
+  border-radius: var(--radius-full);
+  font-size: 0.625rem;
+  font-weight: var(--fw-bold);
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 5px;
+}
+
+.tab.active .tab-count {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+/* ============================================================
+   DATA TABLE
+   ============================================================ */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body-lg);
+}
+
+.data-table thead tr {
+  background: var(--gray-50);
+  border-bottom: 1.5px solid var(--gray-200);
+}
+
+.data-table th {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-primary);
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.data-table th .sort-icon {
+  display: inline-block;
+  margin-left: 4px;
+  opacity: 0.5;
+  font-size: 0.6em;
+}
+
+.data-table th:hover .sort-icon { opacity: 1; }
+
+.data-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--gray-700);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:hover td { background: var(--gray-50); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+.data-table .cell-name { font-weight: var(--fw-medium); color: var(--gray-900); }
+.data-table .cell-id {
+  font-size: var(--text-body-sm);
+  color: var(--color-primary);
+  font-family: 'DM Mono', monospace;
+  margin-top: 2px;
+}
+
+.data-table .cell-muted {
+  color: var(--gray-400);
+  font-size: var(--text-body-sm);
+}
+
+.data-table .row-num {
+  color: var(--gray-400);
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* Row checkbox */
+.data-table input[type="checkbox"] {
+  width: 15px; height: 15px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* Status icon in table */
+.status-icon {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: var(--fw-bold);
+  flex-shrink: 0;
+}
+
+.status-icon.ok      { background: #22C55E; color: #fff; }
+.status-icon.pending { background: var(--color-warning-bg); color: var(--color-warning-fg); border: 1.5px solid var(--color-warning-border); }
+.status-icon.block   { background: var(--gray-600); color: #fff; }
+
+/* ============================================================
+   ACTION BUTTON STRIP (Learn App / Deliver App / Payment Units)
+   ============================================================ */
+.action-strip {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.5rem 1rem;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-semibold);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  text-decoration: none;
+}
+
+.action-btn:hover { background: #2f36a8; }
+
+.action-btn-icon {
+  font-size: 0.875rem;
+  opacity: 0.85;
+}
+
+.action-btn-count {
+  background: rgba(255,255,255,0.25);
+  border-radius: var(--radius-full);
+  min-width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: var(--fw-bold);
+  padding: 0 5px;
+}
+
+/* ============================================================
+   METADATA STRIP (icon + label + value row)
+   ============================================================ */
+.meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  flex: 1;
+  min-width: 140px;
+  border-right: 1px solid var(--gray-100);
+}
+
+.meta-item:last-child { border-right: none; }
+
+.meta-item-icon {
+  font-size: 1rem;
+  color: var(--color-primary);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.meta-item-content {}
+
+.meta-item-label {
+  font-size: var(--text-body-sm);
+  color: var(--gray-400);
+  font-weight: var(--fw-medium);
+}
+
+.meta-item-value {
+  font-size: var(--text-body-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--gray-900);
+}
+
+/* ============================================================
+   WORKER PROFILE BANNER (blue strip header)
+   ============================================================ */
+.worker-banner {
+  background: var(--color-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  color: #fff;
+}
+
+.worker-banner-stats {
+  display: flex;
+  flex: 1;
+  gap: 0;
+}
+
+.worker-banner-stat {
+  flex: 1;
+  padding: 0 var(--space-5);
+  border-right: 1px solid rgba(255,255,255,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.worker-banner-stat:last-child { border-right: none; }
+
+.worker-banner-stat-value {
+  font-size: 1.5rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+}
+
+.worker-banner-stat-label {
+  font-size: var(--text-body-sm);
+  color: rgba(255,255,255,0.7);
+}
+
+.worker-banner-stat-icon {
+  font-size: 1rem;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 4px;
+}
+
+/* ============================================================
+   AVATAR INITIALS
+   ============================================================ */
+.avatar-initials {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  font-weight: var(--fw-bold);
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+.avatar-sm { width: 32px; height: 32px; font-size: 0.75rem; }
+.avatar-lg { width: 56px; height: 56px; font-size: 1.25rem; }
+
+.avatar-orange  { background: #E8632B; }
+.avatar-blue    { background: var(--color-primary); }
+.avatar-teal    { background: var(--color-success-fg); }
+.avatar-purple  { background: #7C3AED; }
+
+/* ============================================================
+   PROGRESS BAR (horizontal with label)
+   ============================================================ */
+.progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.progress-row-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.progress-row-label {
+  font-size: var(--text-body-sm);
+  color: var(--gray-700);
+  font-weight: var(--fw-medium);
+  min-width: 80px;
+}
+
+.progress-pct {
+  font-size: var(--text-body-sm);
+  font-weight: var(--fw-medium);
+  color: #fff;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+  min-width: 36px;
+  text-align: center;
+}
+
+.progress-pct.zero {
+  background: var(--gray-300);
+  color: var(--gray-600);
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: var(--gray-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+.progress-count {
+  font-size: var(--text-body-sm);
+  color: var(--gray-500);
+  min-width: 24px;
+  text-align: right;
+}
+
+/* ============================================================
+   DELTA BADGE (green "0↑" style)
+   ============================================================ */
+.delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.6875rem;
+  font-weight: var(--fw-bold);
+}
+
+.delta-up   { background: #22C55E; color: #fff; }
+.delta-down { background: var(--color-error-fg); color: #fff; }
+.delta-flat { background: var(--gray-300); color: var(--gray-600); }
+
+/* ============================================================
+   STAT CARDS (blue filled, from dashboard)
+   ============================================================ */
+.stat-card-blue {
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-card-blue-body {}
+
+.stat-card-blue-label {
+  font-size: var(--text-body-sm);
+  color: rgba(255,255,255,0.75);
+  font-weight: var(--fw-medium);
+  margin-bottom: 2px;
+}
+
+.stat-card-blue-value {
+  font-size: 1.5rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+}
+
+.stat-card-blue-icon {
+  font-size: 1.125rem;
+  color: rgba(255,255,255,0.6);
+}
+
+.stat-card-blue-ext {
+  font-size: 0.875rem;
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+}
+
+/* Warning variant (orange tint) */
+.stat-card-warning {
+  background: #FFF5EC;
+  border: 1.5px solid #F5B78E;
+  color: var(--color-accent);
+}
+
+.stat-card-warning .stat-card-blue-label { color: var(--color-accent); opacity: 0.8; }
+.stat-card-warning .stat-card-blue-value { color: var(--color-accent); }
+.stat-card-warning .stat-card-blue-icon  { color: var(--color-accent); opacity: 0.5; }
+
+/* ============================================================
+   EMPTY STATE
+   ============================================================ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10) var(--space-8);
+  color: var(--gray-400);
+  font-size: var(--text-body-lg);
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 2rem;
+  opacity: 0.35;
+  margin-bottom: var(--space-2);
+}
+
+/* ============================================================
+   SPLIT LAYOUT (table + detail panel)
+   ============================================================ */
+.split-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #fff;
+}
+
+.split-main {
+  border-right: 1px solid var(--gray-200);
+}
+
+.split-detail {
+  padding: var(--space-5);
+}
+
+.split-detail-title {
+  font-size: var(--text-body-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--gray-900);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--gray-100);
+  margin-bottom: var(--space-4);
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     NAVIGATION
+     ============================================================ -->
+<nav class="nav-sidebar">
+  <div class="brand">
+    <h1>Connect</h1>
+    <p>Design System v1</p>
+  </div>
+  <div class="nav-section-label">Foundations</div>
+  <a href="#colors" class="active">Colors</a>
+  <a href="#typography">Typography</a>
+  <a href="#spacing">Spacing & Radius</a>
+  <div class="nav-section-label">Components</div>
+  <a href="#buttons">Buttons</a>
+  <a href="#action-strip">Action Strip</a>
+  <a href="#chips">Chips & Status</a>
+  <a href="#banners">Message Banners</a>
+  <a href="#inputs">Text Inputs</a>
+  <a href="#toggles">Toggles</a>
+  <a href="#dropdowns">Dropdowns</a>
+  <a href="#progress-steps">Progress Steps</a>
+  <a href="#progress-bar">Progress Bar</a>
+  <a href="#cards">Cards</a>
+  <a href="#stat-cards">Stat Cards (Blue)</a>
+  <a href="#dialogs">Dialogs / Popups</a>
+  <a href="#tooltips">Tooltips</a>
+  <a href="#avatar">Avatar Initials</a>
+  <a href="#delta">Delta Badges</a>
+  <a href="#empty-state">Empty State</a>
+  <div class="nav-section-label">Navigation</div>
+  <a href="#breadcrumb">Breadcrumb</a>
+  <a href="#tabs">Tabs</a>
+  <div class="nav-section-label">Layout</div>
+  <a href="#header">Header</a>
+  <a href="#sidebar">Sidebar</a>
+  <a href="#meta-strip">Metadata Strip</a>
+  <a href="#worker-banner">Worker Banner</a>
+  <a href="#data-table">Data Table</a>
+  <a href="#split-layout">Split Layout</a>
+  <div class="nav-section-label">Reference</div>
+  <a href="#tokens">All Tokens</a>
+</nav>
+
+<!-- ============================================================
+     MAIN
+     ============================================================ -->
+<main class="main">
+  <h1 class="page-title">Connect Design System</h1>
+  <p class="page-subtitle">Design tokens, components, and usage guidelines for CommCare Connect web UI.</p>
+
+  <!-- ========== COLORS ========== -->
+  <section class="section" id="colors">
+    <h2 class="section-title">Colors</h2>
+    <p class="section-desc">All colors are available as CSS custom properties on <code>:root</code>.</p>
+
+    <h3 class="subsection-title">Brand / Primary</h3>
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color" style="background:#3A42C7"></div>
+        <div class="swatch-info"><div class="swatch-name">Primary</div><div class="swatch-hex">--color-primary · #3A42C7</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#EEF0FF"></div>
+        <div class="swatch-info"><div class="swatch-name">Primary Light</div><div class="swatch-hex">--color-primary-light · #EEF0FF</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#1A1F6E"></div>
+        <div class="swatch-info"><div class="swatch-name">Sidebar BG</div><div class="swatch-hex">--color-sidebar-bg · #1A1F6E</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#0D1147"></div>
+        <div class="swatch-info"><div class="swatch-name">Sidebar Deep</div><div class="swatch-hex">--color-sidebar-deep · #0D1147</div></div>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Semantic</h3>
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color" style="background:#218079"></div>
+        <div class="swatch-info"><div class="swatch-name">Success FG</div><div class="swatch-hex">--color-success-fg · #218079</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#E6F5E5"></div>
+        <div class="swatch-info"><div class="swatch-name">Success BG</div><div class="swatch-hex">--color-success-bg · #E6F5E5</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#BC950F"></div>
+        <div class="swatch-info"><div class="swatch-name">Warning FG</div><div class="swatch-hex">--color-warning-fg · #BC950F</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#FFF4CD; border:1px solid #eee"></div>
+        <div class="swatch-info"><div class="swatch-name">Warning BG</div><div class="swatch-hex">--color-warning-bg · #FFF4CD</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#900000"></div>
+        <div class="swatch-info"><div class="swatch-name">Error FG</div><div class="swatch-hex">--color-error-fg · #900000</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#FAD4D4"></div>
+        <div class="swatch-info"><div class="swatch-name">Error BG</div><div class="swatch-hex">--color-error-bg · #FAD4D4</div></div>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Gray Scale</h3>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-color" style="background:#F8F9FA;border:1px solid #eee"></div><div class="swatch-info"><div class="swatch-name">Gray 50</div><div class="swatch-hex">#F8F9FA</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#F0F1F3;border:1px solid #eee"></div><div class="swatch-info"><div class="swatch-name">Gray 100</div><div class="swatch-hex">#F0F1F3</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#E2E4E9"></div><div class="swatch-info"><div class="swatch-name">Gray 200</div><div class="swatch-hex">#E2E4E9</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#C8CDD6"></div><div class="swatch-info"><div class="swatch-name">Gray 300</div><div class="swatch-hex">#C8CDD6</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#9BA3B2"></div><div class="swatch-info"><div class="swatch-name">Gray 400</div><div class="swatch-hex">#9BA3B2</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#6B7280"></div><div class="swatch-info"><div class="swatch-name">Gray 500</div><div class="swatch-hex">#6B7280</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#4B5563"></div><div class="swatch-info"><div class="swatch-name">Gray 600</div><div class="swatch-hex">#4B5563</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#374151"></div><div class="swatch-info"><div class="swatch-name">Gray 700</div><div class="swatch-hex">#374151</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#1F2937"></div><div class="swatch-info"><div class="swatch-name">Gray 800</div><div class="swatch-hex">#1F2937</div></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#111827"></div><div class="swatch-info"><div class="swatch-name">Gray 900</div><div class="swatch-hex">#111827</div></div></div>
+    </div>
+  </section>
+
+  <!-- ========== TYPOGRAPHY ========== -->
+  <section class="section" id="typography">
+    <h2 class="section-title">Typography</h2>
+    <p class="section-desc">Font: <strong>DM Sans</strong>. Web unit: <code>rem</code> (base 16px). Android unit: <code>sp</code> (×16). Conversion ratio: 0.0625.</p>
+
+    <div class="specimen">
+      <div class="specimen-preview" style="flex-direction:column; gap: 0;">
+        <div class="type-row">
+          <div class="type-meta">Display Large<br>3.75rem · 60sp<br>fw-bold</div>
+          <div style="font-size:3.75rem;font-weight:700;line-height:1.1;letter-spacing:-0.03em;color:var(--gray-900)">Connect</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Display Medium<br>3rem · 48sp<br>fw-bold</div>
+          <div style="font-size:3rem;font-weight:700;line-height:1.1;letter-spacing:-0.03em;color:var(--gray-900)">Frontline</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Display Small<br>2.25rem · 36sp<br>fw-semibold</div>
+          <div style="font-size:2.25rem;font-weight:600;line-height:1.2;color:var(--gray-900)">1M+ Workers</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Header Large<br>1.75rem · 28sp<br>fw-bold</div>
+          <div style="font-size:1.75rem;font-weight:700;color:var(--gray-900)">Header Large</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Header Medium<br>1.375rem · 22sp<br>fw-semibold</div>
+          <div style="font-size:1.375rem;font-weight:600;color:var(--gray-900)">Header Medium</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Header Small<br>1.125rem · 18sp<br>fw-semibold</div>
+          <div style="font-size:1.125rem;font-weight:600;color:var(--gray-900)">Header Small</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Title Large<br>1rem · 16sp<br>fw-semibold</div>
+          <div style="font-size:1rem;font-weight:600;color:var(--gray-900)">Title Large</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Title Medium<br>0.9375rem · 15sp<br>fw-medium</div>
+          <div style="font-size:0.9375rem;font-weight:500;color:var(--gray-900)">Title Medium</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Body Large<br>0.875rem · 14sp<br>fw-regular</div>
+          <div style="font-size:0.875rem;font-weight:400;color:var(--gray-700)">Body Large — table cell content, general text</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Table Column Header<br>0.875rem · 14sp<br>fw-medium</div>
+          <div style="font-size:0.875rem;font-weight:500;color:var(--gray-700);text-transform:uppercase;letter-spacing:0.04em">Column Header</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Body Small<br>0.75rem · 12sp<br>fw-regular</div>
+          <div style="font-size:0.75rem;font-weight:400;color:var(--gray-500)">Body Small — secondary text, hints, timestamps</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Label Large Medium<br>0.8125rem<br>fw-medium</div>
+          <div style="font-size:0.8125rem;font-weight:500;color:var(--gray-700)">Label Large Medium</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Label Large Bold<br>0.8125rem<br>fw-bold</div>
+          <div style="font-size:0.8125rem;font-weight:700;color:var(--gray-700)">Label Large Bold — User ID, ConnectID</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Label Medium<br>0.6875rem<br>fw-medium</div>
+          <div style="font-size:0.6875rem;font-weight:500;color:var(--gray-500)">Label Medium — captions, metadata</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">Caption<br>0.625rem · 10sp<br>fw-regular</div>
+          <div style="font-size:0.625rem;font-weight:400;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.06em">CAPTION TEXT</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Font Weights</h3>
+    <div class="specimen">
+      <div class="specimen-preview" style="flex-direction:column;gap:0">
+        <div class="type-row"><div class="type-meta">300 · fw-light<br>--fw-light</div><div style="font-weight:300;font-size:1.25rem">Light weight text</div></div>
+        <div class="type-row"><div class="type-meta">400 · fw-regular<br>--fw-regular</div><div style="font-weight:400;font-size:1.25rem">Regular weight text</div></div>
+        <div class="type-row"><div class="type-meta">500 · fw-medium<br>--fw-medium</div><div style="font-weight:500;font-size:1.25rem">Medium weight text</div></div>
+        <div class="type-row"><div class="type-meta">600 · fw-semibold<br>--fw-semibold</div><div style="font-weight:600;font-size:1.25rem">Semibold weight text</div></div>
+        <div class="type-row"><div class="type-meta">700 · fw-bold<br>--fw-bold</div><div style="font-weight:700;font-size:1.25rem">Bold weight text</div></div>
+        <div class="type-row"><div class="type-meta">800 · fw-extrabold<br>--fw-extrabold</div><div style="font-weight:800;font-size:1.25rem">Extra Bold weight text</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SPACING ========== -->
+  <section class="section" id="spacing">
+    <h2 class="section-title">Spacing &amp; Radius</h2>
+
+    <h3 class="subsection-title">Spacing Scale (4px base)</h3>
+    <div class="specimen">
+      <div class="specimen-preview" style="align-items:flex-end;gap:var(--space-4)">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:4px;height:4px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">1 · 4px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:8px;height:8px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">2 · 8px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:12px;height:12px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">3 · 12px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:16px;height:16px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">4 · 16px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:20px;height:20px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">5 · 20px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:24px;height:24px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">6 · 24px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:32px;height:32px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">8 · 32px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:40px;height:40px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">10 · 40px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:48px;height:48px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">12 · 48px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:64px;height:64px;background:var(--color-primary);border-radius:1px"></div>
+          <span style="font-size:0.625rem;color:var(--gray-400);font-family:monospace">16 · 64px</span>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Border Radius</h3>
+    <div class="specimen">
+      <div class="specimen-preview">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:56px;height:56px;background:var(--color-primary-light);border:2px solid var(--color-primary);border-radius:4px"></div>
+          <span style="font-size:0.6875rem;color:var(--gray-400);font-family:monospace">sm · 4px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:56px;height:56px;background:var(--color-primary-light);border:2px solid var(--color-primary);border-radius:8px"></div>
+          <span style="font-size:0.6875rem;color:var(--gray-400);font-family:monospace">md · 8px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:56px;height:56px;background:var(--color-primary-light);border:2px solid var(--color-primary);border-radius:12px"></div>
+          <span style="font-size:0.6875rem;color:var(--gray-400);font-family:monospace">lg · 12px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:56px;height:56px;background:var(--color-primary-light);border:2px solid var(--color-primary);border-radius:16px"></div>
+          <span style="font-size:0.6875rem;color:var(--gray-400);font-family:monospace">xl · 16px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="width:56px;height:56px;background:var(--color-primary-light);border:2px solid var(--color-primary);border-radius:9999px"></div>
+          <span style="font-size:0.6875rem;color:var(--gray-400);font-family:monospace">full · pill</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== BUTTONS ========== -->
+  <section class="section" id="buttons">
+    <h2 class="section-title">Buttons</h2>
+
+    <h3 class="subsection-title">Variants</h3>
+    <div class="specimen">
+      <div class="specimen-preview">
+        <button class="btn btn-primary">Primary</button>
+        <button class="btn btn-secondary">Secondary</button>
+        <button class="btn btn-ghost">Ghost</button>
+        <button class="btn btn-danger">Danger</button>
+        <button class="btn btn-success">Success</button>
+        <button class="btn btn-primary disabled">Disabled</button>
+      </div>
+      <div class="specimen-meta">
+        <span>.btn-primary</span><span>.btn-secondary</span><span>.btn-ghost</span><span>.btn-danger</span><span>.btn-success</span><span>.btn + .disabled</span>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Sizes</h3>
+    <div class="specimen">
+      <div class="specimen-preview" style="align-items:center">
+        <button class="btn btn-primary btn-sm">Small</button>
+        <button class="btn btn-primary">Default</button>
+        <button class="btn btn-primary btn-lg">Large</button>
+      </div>
+      <div class="specimen-meta">
+        <span>.btn-sm · 10px 12px pad</span><span>default · 8px 18px</span><span>.btn-lg · 11px 24px</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CHIPS ========== -->
+  <section class="section" id="chips">
+    <h2 class="section-title">Chips &amp; Status Badges</h2>
+
+    <h3 class="subsection-title">Worker / Opportunity Status</h3>
+    <div class="specimen">
+      <div class="specimen-preview">
+        <span class="chip chip-active"><span class="chip-dot"></span>active</span>
+        <span class="chip chip-inactive"><span class="chip-dot"></span>inactive</span>
+        <span class="chip chip-invited"><span class="chip-dot"></span>invited</span>
+        <span class="chip chip-applied"><span class="chip-dot"></span>applied</span>
+        <span class="chip chip-rejected"><span class="chip-dot"></span>rejected</span>
+        <span class="chip chip-ended"><span class="chip-dot"></span>ended</span>
+      </div>
+      <div class="specimen-meta">
+        <span>.chip-active</span><span>.chip-inactive</span><span>.chip-invited</span><span>.chip-applied</span><span>.chip-rejected</span><span>.chip-ended</span>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Payment Status</h3>
+    <div class="specimen">
+      <div class="specimen-preview">
+        <span class="chip chip-paid"><span class="chip-dot"></span>paid</span>
+        <span class="chip chip-unpaid"><span class="chip-dot"></span>unpaid</span>
+        <span class="chip chip-raised"><span class="chip-dot"></span>raised</span>
+      </div>
+      <div class="specimen-meta">
+        <span>.chip-paid</span><span>.chip-unpaid</span><span>.chip-raised</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== BANNERS ========== -->
+  <section class="section" id="banners">
+    <h2 class="section-title">Message Banners</h2>
+    <p class="section-desc">Inline feedback messages. Use the <code>×</code> button to dismiss. Tokens directly from Figma spec.</p>
+
+    <div class="specimen">
+      <div class="specimen-preview" style="flex-direction:column">
+        <div class="banner banner-info">
+          <span class="banner-icon">ℹ</span>
+          <span>This is an info message.</span>
+          <button class="banner-close">×</button>
+        </div>
+        <div class="banner banner-success">
+          <span class="banner-icon">✓</span>
+          <span>This is a success message.</span>
+          <button class="banner-close">×</button>
+        </div>
+        <div class="banner banner-warning">
+          <span class="banner-icon">⚠</span>
+          <span>This is a warning message.</span>
+          <button class="banner-close">×</button>
+        </div>
+        <div class="banner banner-error">
+          <span class="banner-icon">✕</span>
+          <span>This is an error message.</span>
+          <button class="banner-close">×</button>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Info: FG #3A42C7 · BG #EEF0FF · Border #3A42C7</span>
+        <span>Success: FG #218079 · BG #E6F5E5 · Border #7ABFB4</span>
+        <span>Warning: FG #BC950F · BG #FFF4CD · Border #DBB646</span>
+        <span>Error: FG #900000 · BG #FAD4D4 · Border #900000</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== INPUTS ========== -->
+  <section class="section" id="inputs">
+    <h2 class="section-title">Text Inputs</h2>
+
+    <div class="specimen">
+      <div class="specimen-preview muted" style="flex-wrap:wrap;gap:var(--space-5)">
+        <div class="field">
+          <label class="field-label">Default</label>
+          <input class="input" type="text" placeholder="Placeholder text">
+        </div>
+        <div class="field">
+          <label class="field-label">With hint</label>
+          <input class="input" type="text" placeholder="Enter value">
+          <span class="field-hint">Helper text goes here</span>
+        </div>
+        <div class="field">
+          <label class="field-label">Error state</label>
+          <input class="input error" type="text" value="Invalid input">
+          <span class="field-error">This field is required</span>
+        </div>
+        <div class="field">
+          <label class="field-label">Disabled</label>
+          <input class="input" type="text" placeholder="Disabled" disabled>
+        </div>
+        <div class="field" style="max-width:320px">
+          <label class="field-label">Multiline / Textarea</label>
+          <textarea class="input" placeholder="Enter long text..."></textarea>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Border: 1.5px solid --gray-300</span>
+        <span>Focus ring: 3px rgba(58,66,199,0.12)</span>
+        <span>Error: border --color-error-fg</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== TOGGLES ========== -->
+  <section class="section" id="toggles">
+    <h2 class="section-title">Toggles</h2>
+
+    <div class="specimen">
+      <div class="specimen-preview">
+        <label class="toggle-wrap" onclick="this.querySelector('.toggle').classList.toggle('on')">
+          <div class="toggle"></div>
+          <span class="toggle-label">Inactive</span>
+        </label>
+        <label class="toggle-wrap" onclick="this.querySelector('.toggle').classList.toggle('on')">
+          <div class="toggle on"></div>
+          <span class="toggle-label">Active</span>
+        </label>
+      </div>
+      <div class="specimen-meta">
+        <span>Track: 40×22px · Thumb: 16×16px · --color-primary when on</span>
+        <span>Click to toggle demo</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== DROPDOWNS ========== -->
+  <section class="section" id="dropdowns">
+    <h2 class="section-title">Dropdowns</h2>
+
+    <div class="specimen">
+      <div class="specimen-preview muted">
+        <div class="select-wrap">
+          <select>
+            <option>Network Manager</option>
+            <option>Admin</option>
+            <option>Member</option>
+            <option>Viewer</option>
+          </select>
+        </div>
+        <div class="select-wrap">
+          <select>
+            <option>Sort A→Z</option>
+            <option>Sort Z→A</option>
+          </select>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Same token as .input · border --gray-300 · focus --color-primary</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PROGRESS STEPS ========== -->
+  <section class="section" id="progress-steps">
+    <h2 class="section-title">Progress Steps</h2>
+    <p class="section-desc">Multi-step flow indicator (e.g. opportunity creation: Create → Payment Units → Verification Flags → Budgets).</p>
+
+    <div class="specimen">
+      <div class="specimen-preview" style="flex-direction:column;gap:var(--space-6)">
+        <!-- Step 1 active -->
+        <div class="progress-steps">
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number active">1</div>
+              <span class="step-label active-label">Create</span>
+            </div>
+            <div class="step-connector"></div>
+          </div>
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number todo">2</div>
+              <span class="step-label">Payment Units</span>
+            </div>
+            <div class="step-connector"></div>
+          </div>
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number todo">3</div>
+              <span class="step-label">Verification Flags</span>
+            </div>
+            <div class="step-connector"></div>
+          </div>
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number todo">4</div>
+              <span class="step-label">Budgets</span>
+            </div>
+          </div>
+        </div>
+        <!-- Step 3 active -->
+        <div class="progress-steps">
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number done">✓</div>
+              <span class="step-label">Create</span>
+            </div>
+            <div class="step-connector done"></div>
+          </div>
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number done">✓</div>
+              <span class="step-label">Payment Units</span>
+            </div>
+            <div class="step-connector done"></div>
+          </div>
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number active">3</div>
+              <span class="step-label active-label">Verification Flags</span>
+            </div>
+            <div class="step-connector"></div>
+          </div>
+          <div class="step">
+            <div class="step-indicator">
+              <div class="step-number todo">4</div>
+              <span class="step-label">Budgets</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>done: bg --color-primary · active: bg --color-primary + ring</span>
+        <span>connector done: --color-primary · connector todo: --gray-200</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CARDS ========== -->
+  <section class="section" id="cards">
+    <h2 class="section-title">Cards</h2>
+
+    <div class="specimen">
+      <div class="specimen-preview muted">
+        <div class="card card-stat" style="min-width:160px">
+          <div class="card-stat-value">128</div>
+          <div class="card-stat-label">Total Deliveries</div>
+        </div>
+        <div class="card card-stat" style="min-width:160px">
+          <div class="card-stat-value">2,250,000</div>
+          <div class="card-stat-label">Worker | Total Accrued</div>
+        </div>
+        <div class="card card-stat" style="min-width:160px">
+          <div class="card-stat-value">1M+</div>
+          <div class="card-stat-label">Health Services Delivered</div>
+        </div>
+        <div class="card card-stat" style="min-width:160px">
+          <div class="card-stat-value">10+</div>
+          <div class="card-stat-label">Countries</div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>bg #fff · border --gray-200 · border-radius --radius-lg · shadow --shadow-sm</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== DIALOGS ========== -->
+  <section class="section" id="dialogs">
+    <h2 class="section-title">Dialogs / Popups</h2>
+
+    <div class="specimen">
+      <div class="specimen-preview muted" style="flex-wrap:wrap;gap:var(--space-5);justify-content:center">
+        <!-- Confirm -->
+        <div class="dialog">
+          <div class="dialog-icon" style="background:var(--color-warning-bg);color:var(--color-warning-fg)">⚠</div>
+          <div class="dialog-title">Restore History</div>
+          <div class="dialog-body">Restoring the version will make you lose current data.</div>
+          <div class="dialog-actions">
+            <button class="btn btn-ghost btn-sm">No</button>
+            <button class="btn btn-primary btn-sm">Yes</button>
+          </div>
+        </div>
+        <!-- Success -->
+        <div class="dialog">
+          <div class="dialog-icon" style="background:var(--color-success-bg);color:var(--color-success-fg)">✓</div>
+          <div class="dialog-title">Payment Success</div>
+          <div class="dialog-body">Payment has been done successfully!</div>
+          <div class="dialog-actions">
+            <button class="btn btn-primary btn-sm">OK</button>
+          </div>
+        </div>
+        <!-- Error -->
+        <div class="dialog">
+          <div class="dialog-icon" style="background:var(--color-error-bg);color:var(--color-error-fg)">✕</div>
+          <div class="dialog-title">Payment Failed</div>
+          <div class="dialog-body">Payment submit failed!</div>
+          <div class="dialog-actions">
+            <button class="btn btn-danger btn-sm">OK</button>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>max-width 360px · border-radius --radius-xl · shadow --shadow-lg</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== TOOLTIPS ========== -->
+  <section class="section" id="tooltips">
+    <h2 class="section-title">Tooltips</h2>
+
+    <div class="specimen">
+      <div class="specimen-preview" style="justify-content:center;padding-top:var(--space-10)">
+        <div class="tooltip-wrap">
+          <button class="btn btn-ghost">Hover me</button>
+          <div class="tooltip-bubble">Tooltip text</div>
+        </div>
+        <div class="tooltip-wrap">
+          <button class="btn btn-primary">More info</button>
+          <div class="tooltip-bubble">Only authorized users can join</div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>bg --gray-800 · color #fff · border-radius --radius-sm · shown on :hover</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== HEADER ========== -->
+  <section class="section" id="header">
+    <h2 class="section-title">App Header</h2>
+    <p class="section-desc">Top bar: module name left, search + refresh + org name + avatar right.</p>
+
+    <div class="specimen">
+      <div class="specimen-preview muted" style="padding:var(--space-4)">
+        <div class="app-header">
+          <span class="module-name">Programs</span>
+          <div class="header-actions">
+            <button class="btn-icon" title="Search">🔍</button>
+            <button class="btn-icon" title="Refresh">↻</button>
+            <span style="font-size:var(--text-body-sm);font-weight:var(--fw-medium);color:var(--gray-600)">Meca Healthcare</span>
+            <div class="avatar">AA</div>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>height --header-height (56px) · bg #fff · border --gray-200</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SIDEBAR ========== -->
+  <section class="section" id="sidebar">
+    <h2 class="section-title">App Sidebar</h2>
+    <p class="section-desc">Icon-only collapsed nav. Background: dark navy <code>#1A1F6E</code>. Active item has white bg at 12% opacity.</p>
+
+    <div class="specimen">
+      <div class="specimen-preview dark" style="padding:var(--space-8);justify-content:center">
+        <div class="app-sidebar">
+          <div class="sidebar-logo">C</div>
+          <div class="sidebar-item active" title="Programs">☰</div>
+          <div class="sidebar-item" title="Opportunities">⊞</div>
+          <div class="sidebar-item" title="Analytics">📊</div>
+          <div class="sidebar-item" title="My Organization">🏢</div>
+          <div class="sidebar-item" title="Permissions">🔒</div>
+          <div style="flex:1"></div>
+          <div class="sidebar-item" title="Help & FAQ">?</div>
+          <div class="sidebar-item" title="Settings">⚙</div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>width 56px · bg --color-sidebar-bg #1A1F6E · active item bg rgba(255,255,255,0.12)</span>
+      </div>
+    </div>
+
+    <p class="section-desc" style="margin-top:var(--space-4)">Expanded sidebar (220px) adds labels: Programs, Opportunities, Analytics, My Organization, Permission + Help &amp; FAQ, Settings at bottom.</p>
+  </section>
+
+  <!-- ========== BREADCRUMB ========== -->
+  <section class="section" id="breadcrumb">
+    <h2 class="section-title">Breadcrumb</h2>
+    <p class="section-desc">Chevron-separated path. All ancestor segments are links; current page is non-linked and slightly darker.</p>
+    <div class="specimen">
+      <div class="specimen-preview muted" style="flex-direction:column;gap:var(--space-4)">
+        <nav class="breadcrumb">
+          <a class="breadcrumb-item" href="#">Opportunities</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-item current">feb_16</span>
+        </nav>
+        <nav class="breadcrumb">
+          <a class="breadcrumb-item" href="#">Programs</a>
+          <span class="breadcrumb-sep">›</span>
+          <a class="breadcrumb-item" href="#">prod_check_program</a>
+          <span class="breadcrumb-sep">›</span>
+          <a class="breadcrumb-item" href="#">Opportunities</a>
+          <span class="breadcrumb-sep">›</span>
+          <a class="breadcrumb-item" href="#">feb_16</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-item current">Connect Workers</span>
+        </nav>
+      </div>
+      <div class="specimen-meta">
+        <span>Ancestor: .breadcrumb-item · color --gray-400 · hover --color-primary + underline</span>
+        <span>Current: .breadcrumb-item.current · color --gray-700 · fw-medium · non-interactive</span>
+        <span>Separator: › · color --gray-300</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== TABS ========== -->
+  <section class="section" id="tabs">
+    <h2 class="section-title">Tabs</h2>
+    <p class="section-desc">Horizontal tab bar with <strong>orange accent underline</strong> (<code>--color-accent: #E8632B</code>) on active tab — distinct from the blue primary. Tabs can include a count badge.</p>
+    <div class="specimen">
+      <div class="specimen-preview" style="padding:0;flex-direction:column;gap:0">
+        <div style="padding:var(--space-4) var(--space-5) 0">
+          <div class="tabs" id="demo-tabs">
+            <button class="tab active" onclick="setTab(this)">Connect Workers <span class="tab-count">8</span></button>
+            <button class="tab" onclick="setTab(this)">Learn</button>
+            <button class="tab" onclick="setTab(this)">Deliver</button>
+            <button class="tab" onclick="setTab(this)">Payments</button>
+            <button class="tab" onclick="setTab(this)">Tasks</button>
+          </div>
+        </div>
+        <div style="padding:var(--space-4) var(--space-5)">
+          <div class="tabs">
+            <button class="tab active" onclick="setTab(this)">Pending NM Review <span class="tab-count">0</span></button>
+            <button class="tab" onclick="setTab(this)">Pending PM Review <span class="tab-count">0</span></button>
+            <button class="tab" onclick="setTab(this)">Revalidate <span class="tab-count">0</span></button>
+            <button class="tab" onclick="setTab(this)">Approved <span class="tab-count">0</span></button>
+            <button class="tab" onclick="setTab(this)">Rejected <span class="tab-count">0</span></button>
+            <button class="tab active-override" onclick="setTab(this)" style="color:var(--color-primary);font-weight:600;border-bottom:2.5px solid var(--color-accent);margin-bottom:-1.5px">All <span class="tab-count" style="background:var(--color-primary-light);color:var(--color-primary)">0</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Active underline: 2.5px solid --color-accent (#E8632B)</span>
+        <span>Active text: --color-primary + fw-semibold</span>
+        <span>Count badge: bg --gray-200 · active bg --color-primary-light</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== ACTION STRIP ========== -->
+  <section class="section" id="action-strip">
+    <h2 class="section-title">Action Button Strip</h2>
+    <p class="section-desc">Blue pill buttons with icon, label, and a count badge. Used on the Opportunity detail page (Learn App, Deliver App, Payment Units).</p>
+    <div class="specimen">
+      <div class="specimen-preview muted">
+        <div class="action-strip">
+          <button class="action-btn">
+            <span class="action-btn-icon">📖</span>
+            Learn App
+            <span class="action-btn-count">2</span>
+          </button>
+          <button class="action-btn">
+            <span class="action-btn-icon">📦</span>
+            Deliver App
+            <span class="action-btn-count">5</span>
+          </button>
+          <button class="action-btn">
+            <span class="action-btn-icon">💳</span>
+            Payment Units
+            <span class="action-btn-count">4</span>
+          </button>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>bg --color-primary · border-radius --radius-md · count badge: rgba(255,255,255,0.25)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PROGRESS BAR ========== -->
+  <section class="section" id="progress-bar">
+    <h2 class="section-title">Progress Bar</h2>
+    <p class="section-desc">Horizontal bar with label, percentage badge, track, fill, and count. Used in Verification and Payments panels.</p>
+    <div class="specimen">
+      <div class="specimen-preview" style="flex-direction:column;gap:var(--space-5);width:100%">
+        <!-- 100% approved -->
+        <div style="width:100%">
+          <div class="progress-row">
+            <div class="progress-row-header" style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-1)">
+              <span class="progress-row-label">Approved</span>
+              <span class="progress-pct">100%</span>
+              <div style="flex:1"></div>
+              <span class="progress-count">7</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:100%"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 0% rejected -->
+        <div style="width:100%">
+          <div class="progress-row">
+            <div class="progress-row-header" style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-1)">
+              <span class="progress-row-label">Rejected</span>
+              <span class="progress-pct zero">0%</span>
+              <div style="flex:1"></div>
+              <span class="progress-count">0</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 15% paid -->
+        <div style="width:100%">
+          <div class="progress-row">
+            <div class="progress-row-header" style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-1)">
+              <span class="progress-row-label">Paid</span>
+              <span class="progress-pct">15%</span>
+              <div style="flex:1"></div>
+              <span class="progress-count" style="color:var(--gray-700);font-weight:var(--fw-medium)">INR 210.00</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:15%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Track: 8px · bg --gray-200 · radius --radius-full</span>
+        <span>Fill: bg --color-primary</span>
+        <span>0% badge: bg --gray-300, color --gray-600</span>
+        <span>Active badge: bg --color-primary, color #fff</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STAT CARDS BLUE ========== -->
+  <section class="section" id="stat-cards">
+    <h2 class="section-title">Stat Cards (Blue)</h2>
+    <p class="section-desc">Filled blue cards with icon, label, value, delta badge, and external link. Used in the opportunity dashboard grid. Warning variant uses orange tint for inactive/alert states.</p>
+    <div class="specimen">
+      <div class="specimen-preview muted" style="flex-wrap:wrap;gap:var(--space-3)">
+        <!-- Standard blue -->
+        <div class="stat-card-blue" style="min-width:220px;flex:1">
+          <div class="stat-card-blue-body">
+            <div class="stat-card-blue-label">Services Delivered Total</div>
+            <div style="display:flex;align-items:center;gap:var(--space-2);margin-top:4px">
+              <div class="stat-card-blue-value">7</div>
+              <span class="delta-badge delta-up">0 ↑</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:var(--space-2)">
+            <span class="stat-card-blue-icon">📋</span>
+            <span class="stat-card-blue-ext">↗</span>
+          </div>
+        </div>
+        <!-- Payments Earned -->
+        <div class="stat-card-blue" style="min-width:220px;flex:1">
+          <div class="stat-card-blue-body">
+            <div class="stat-card-blue-label">Payments Earned</div>
+            <div style="display:flex;align-items:center;gap:var(--space-2);margin-top:4px">
+              <div class="stat-card-blue-value">1,400</div>
+              <span class="delta-badge delta-up">0 ↑</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:var(--space-2)">
+            <span class="stat-card-blue-icon">💳</span>
+            <span class="stat-card-blue-ext">↗</span>
+          </div>
+        </div>
+        <!-- Payments Due (no delta) -->
+        <div class="stat-card-blue" style="min-width:220px;flex:1">
+          <div class="stat-card-blue-body">
+            <div class="stat-card-blue-label">Payments Due</div>
+            <div class="stat-card-blue-value" style="margin-top:4px">1,190.00</div>
+          </div>
+          <span class="stat-card-blue-icon">💳</span>
+        </div>
+        <!-- Warning variant -->
+        <div class="stat-card-blue stat-card-warning" style="min-width:220px;flex:1">
+          <div class="stat-card-blue-body">
+            <div class="stat-card-blue-label">Connect Workers Inactive last 3 days</div>
+            <div class="stat-card-blue-value" style="margin-top:4px">6</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:var(--space-2)">
+            <span class="stat-card-blue-icon">📋</span>
+            <span style="color:var(--color-accent);font-size:0.875rem;cursor:pointer">↗</span>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Standard: bg --color-primary · border-radius --radius-lg</span>
+        <span>Warning: bg #FFF5EC · border 1.5px #F5B78E · text --color-accent</span>
+        <span>Delta badge: .delta-up (green) / .delta-down (red) / .delta-flat (gray)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== AVATAR INITIALS ========== -->
+  <section class="section" id="avatar">
+    <h2 class="section-title">Avatar Initials</h2>
+    <p class="section-desc">Colored circle with 1–2 letter initials. Color is assigned per-user (not semantic). Sizes: sm (32px), default (48px), lg (56px).</p>
+    <div class="specimen">
+      <div class="specimen-preview" style="align-items:center;gap:var(--space-5)">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+          <div class="avatar-initials avatar-sm avatar-orange">MR</div>
+          <span style="font-size:0.6875rem;color:var(--gray-400)">sm · 32px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+          <div class="avatar-initials avatar-orange">MR</div>
+          <span style="font-size:0.6875rem;color:var(--gray-400)">default · 48px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+          <div class="avatar-initials avatar-lg avatar-orange">MR</div>
+          <span style="font-size:0.6875rem;color:var(--gray-400)">lg · 56px</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+          <div class="avatar-initials avatar-blue">AA</div>
+          <span style="font-size:0.6875rem;color:var(--gray-400)">.avatar-blue</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+          <div class="avatar-initials avatar-teal">SG</div>
+          <span style="font-size:0.6875rem;color:var(--gray-400)">.avatar-teal</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+          <div class="avatar-initials avatar-purple">NM</div>
+          <span style="font-size:0.6875rem;color:var(--gray-400)">.avatar-purple</span>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>.avatar-initials · border-radius 50% · fw-bold · color #fff</span>
+        <span>.avatar-orange #E8632B · .avatar-blue --color-primary · .avatar-teal --color-success-fg · .avatar-purple #7C3AED</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== DELTA BADGES ========== -->
+  <section class="section" id="delta">
+    <h2 class="section-title">Delta Badges</h2>
+    <p class="section-desc">Pill showing change direction. Always paired with a stat value inside stat cards.</p>
+    <div class="specimen">
+      <div class="specimen-preview">
+        <span class="delta-badge delta-up">0 ↑</span>
+        <span class="delta-badge delta-up">+12 ↑</span>
+        <span class="delta-badge delta-down">-3 ↓</span>
+        <span class="delta-badge delta-flat">0</span>
+      </div>
+      <div class="specimen-meta">
+        <span>.delta-up: bg #22C55E · .delta-down: bg --color-error-fg · .delta-flat: bg --gray-300</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== EMPTY STATE ========== -->
+  <section class="section" id="empty-state">
+    <h2 class="section-title">Empty State</h2>
+    <p class="section-desc">Used when a table or panel has no data for the current filter.</p>
+    <div class="specimen">
+      <div class="specimen-preview muted" style="justify-content:center">
+        <div style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);background:#fff;width:100%;max-width:500px">
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <span>No Visits for this filter.</span>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>color --gray-400 · font-size --text-body-lg · centered in parent</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== METADATA STRIP ========== -->
+  <section class="section" id="meta-strip">
+    <h2 class="section-title">Metadata Strip</h2>
+    <p class="section-desc">Horizontal row of icon + label + value cells. Used below the opportunity title to show Delivery Type, Start/End Date, Max Workers, Max Budget, Status.</p>
+    <div class="specimen">
+      <div class="specimen-preview muted">
+        <div class="meta-strip" style="width:100%">
+          <div class="meta-item">
+            <span class="meta-item-icon">📋</span>
+            <div class="meta-item-content">
+              <div class="meta-item-label">Delivery Type</div>
+              <div class="meta-item-value">Kangaroo Mother Care</div>
+            </div>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item-icon">📅</span>
+            <div class="meta-item-content">
+              <div class="meta-item-label">Start Date</div>
+              <div class="meta-item-value">2026-02-16</div>
+            </div>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item-icon">📅</span>
+            <div class="meta-item-content">
+              <div class="meta-item-label">End Date</div>
+              <div class="meta-item-value">2026-04-30</div>
+            </div>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item-icon">👥</span>
+            <div class="meta-item-content">
+              <div class="meta-item-label">Max Connect Workers</div>
+              <div class="meta-item-value">0</div>
+            </div>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item-icon">💰</span>
+            <div class="meta-item-content">
+              <div class="meta-item-label">Max Budget</div>
+              <div class="meta-item-value">INR 390,000</div>
+            </div>
+          </div>
+          <div class="meta-item" style="border-right:none">
+            <span class="chip chip-active" style="font-size:0.75rem"><span class="chip-dot"></span>Active</span>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>bg #fff · border --gray-200 · dividers --gray-100 · items flex:1 minWidth 140px</span>
+        <span>Last cell can contain a chip (status badge) instead of label+value</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== WORKER BANNER ========== -->
+  <section class="section" id="worker-banner">
+    <h2 class="section-title">Worker Profile Banner</h2>
+    <p class="section-desc">Full-width blue header strip shown on a worker's detail page. Contains avatar, name, ID, phone, and key stat columns.</p>
+    <div class="specimen">
+      <div class="specimen-preview muted">
+        <div class="worker-banner" style="width:100%">
+          <div class="avatar-initials avatar-lg avatar-orange">MR</div>
+          <div style="display:flex;flex-direction:column;gap:2px;min-width:160px">
+            <div style="display:flex;align-items:center;gap:var(--space-2)">
+              <span style="width:8px;height:8px;background:#22C55E;border-radius:50%;flex-shrink:0"></span>
+              <span style="font-size:var(--text-title-md);font-weight:var(--fw-semibold)">March Release</span>
+            </div>
+            <div style="font-size:var(--text-body-sm);color:rgba(255,255,255,0.6);font-family:'DM Mono',monospace">5f60e1f16c4d62be6ec1</div>
+            <div style="font-size:var(--text-body-sm);color:rgba(255,255,255,0.7)">📞 +74268417417</div>
+          </div>
+          <div class="worker-banner-stats">
+            <div class="worker-banner-stat">
+              <div class="worker-banner-stat-icon">📋</div>
+              <div class="worker-banner-stat-value">0</div>
+              <div class="worker-banner-stat-label">Total Deliver Units</div>
+            </div>
+            <div class="worker-banner-stat">
+              <div class="worker-banner-stat-icon">🚩</div>
+              <div class="worker-banner-stat-value">0</div>
+              <div class="worker-banner-stat-label">Flagged Deliver Units</div>
+            </div>
+            <div class="worker-banner-stat">
+              <div class="worker-banner-stat-icon">✕</div>
+              <div class="worker-banner-stat-value">0</div>
+              <div class="worker-banner-stat-label">Rejected Deliver Units</div>
+            </div>
+            <div class="worker-banner-stat">
+              <div class="worker-banner-stat-icon">💰</div>
+              <div class="worker-banner-stat-value">0</div>
+              <div class="worker-banner-stat-label">Accrued Amount (INR)</div>
+            </div>
+            <div class="worker-banner-stat">
+              <div class="worker-banner-stat-icon">💳</div>
+              <div class="worker-banner-stat-value">0.00</div>
+              <div class="worker-banner-stat-label">Paid Amount (INR)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>bg --color-primary · border-radius --radius-lg · padding 20px 24px</span>
+        <span>Stats separated by rgba(255,255,255,0.2) dividers</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== DATA TABLE ========== -->
+  <section class="section" id="data-table">
+    <h2 class="section-title">Data Table</h2>
+    <p class="section-desc">Striped-on-hover table with sortable column headers (blue text + sort icon), checkbox selection, row number, status icon, name+ConnectID subtext cell, and em-dash for empty values.</p>
+    <div class="specimen">
+      <div class="specimen-preview" style="padding:0;overflow-x:auto">
+        <table class="data-table" style="min-width:700px">
+          <thead>
+            <tr>
+              <th style="width:32px"><input type="checkbox"></th>
+              <th style="width:36px">#</th>
+              <th style="width:40px">Status</th>
+              <th>Name <span class="sort-icon">⇅</span></th>
+              <th>Phone Number <span class="sort-icon">⇅</span></th>
+              <th>Invited Date <span class="sort-icon">⇅</span></th>
+              <th>Last Active <span class="sort-icon">↓</span></th>
+              <th>Completed Learn <span class="sort-icon">⇅</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="row-num">1</td>
+              <td><span class="status-icon ok">✓</span></td>
+              <td>
+                <div class="cell-name">Sani</div>
+                <div class="cell-id">5PQXH5ZJIDTJG68SS2JK</div>
+              </td>
+              <td>+918320381423</td>
+              <td>17-Feb-2026 09:13</td>
+              <td class="cell-muted">—</td>
+              <td class="cell-muted">—</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="row-num">2</td>
+              <td><span class="status-icon pending">⏱</span></td>
+              <td>
+                <div class="cell-name">-</div>
+              </td>
+              <td>+74269988000</td>
+              <td class="cell-muted">—</td>
+              <td class="cell-muted">—</td>
+              <td class="cell-muted">—</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="row-num">3</td>
+              <td><span class="status-icon ok">✓</span></td>
+              <td>
+                <div class="cell-name">March Release</div>
+                <div class="cell-id">5f60e1f16c4d62be6ec1</div>
+              </td>
+              <td>+74268417417</td>
+              <td class="cell-muted">—</td>
+              <td>09-Mar-2026 09:07</td>
+              <td>09-Mar-2026 09:07</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="row-num">7</td>
+              <td><span class="status-icon block">■</span></td>
+              <td>
+                <div class="cell-name">Test</div>
+                <div class="cell-id">e90a7c91ca5ede94d249</div>
+              </td>
+              <td>+74269898980</td>
+              <td class="cell-muted">—</td>
+              <td>17-Feb-2026 09:38</td>
+              <td>16-Feb-2026 06:13</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="specimen-meta">
+        <span>Header: bg --gray-50 · color --color-primary · fw-semibold · sortable</span>
+        <span>Row hover: bg --gray-50 · dividers --gray-100</span>
+        <span>Status icons: .ok (green ✓) · .pending (warning clock) · .block (gray filled square)</span>
+        <span>ConnectID subtext: .cell-id · color --color-primary · DM Mono · font-size --text-body-sm</span>
+        <span>Empty cell: em dash (—) in .cell-muted color --gray-400</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SPLIT LAYOUT ========== -->
+  <section class="section" id="split-layout">
+    <h2 class="section-title">Split Layout (Table + Detail Panel)</h2>
+    <p class="section-desc">Two-column layout with a scrollable data table on the left and a contextual detail panel on the right. Used on Visits and similar pages.</p>
+    <div class="specimen">
+      <div class="specimen-preview muted">
+        <div class="split-layout" style="width:100%;min-height:200px">
+          <div class="split-main">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width:32px"><input type="checkbox"></th>
+                  <th>Date <span class="sort-icon">⇅</span></th>
+                  <th>Entity Name <span class="sort-icon">⇅</span></th>
+                  <th>Deliver Unit <span class="sort-icon">⇅</span></th>
+                  <th>Flags</th>
+                  <th>Last Activity <span class="sort-icon">⇅</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="6">
+                    <div class="empty-state">
+                      <div class="empty-state-icon">📭</div>
+                      No Visits for this filter.
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="split-detail">
+            <div class="split-detail-title">Details</div>
+            <div class="empty-state" style="padding:var(--space-6) 0">
+              <span>Please select a visit to load details.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="specimen-meta">
+        <span>Grid: 1fr 320px · main border-right --gray-200</span>
+        <span>Detail panel: padding 20px · title border-bottom --gray-100</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== ALL TOKENS ========== -->
+  <section class="section" id="tokens">
+    <h2 class="section-title">All Tokens Reference</h2>
+    <p class="section-desc">Copy-paste ready. All defined on <code>:root</code> in the CSS.</p>
+
+    <div class="specimen">
+      <table class="token-table">
+        <thead>
+          <tr><th>Token</th><th>Value</th><th>Usage</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>--color-accent</code></td><td><span class="color-chip-sm" style="background:#E8632B"></span>#E8632B</td><td>Tab active underline, sidebar active bar</td></tr>
+          <tr><td><code>--color-accent-light</code></td><td><span class="color-chip-sm" style="background:#FFF0E8;border:1px solid #ddd"></span>#FFF0E8</td><td>Accent hover backgrounds</td></tr>
+          <tr><td><code>--color-primary</code></td><td><span class="color-chip-sm" style="background:#3A42C7"></span>#3A42C7</td><td>CTA buttons, active states, links</td></tr>
+          <tr><td><code>--color-primary-light</code></td><td><span class="color-chip-sm" style="background:#EEF0FF;border:1px solid #ddd"></span>#EEF0FF</td><td>Hover backgrounds, info banners</td></tr>
+          <tr><td><code>--color-sidebar-bg</code></td><td><span class="color-chip-sm" style="background:#1A1F6E"></span>#1A1F6E</td><td>App sidebar background</td></tr>
+          <tr><td><code>--color-success-fg</code></td><td><span class="color-chip-sm" style="background:#218079"></span>#218079</td><td>Success text, active chips</td></tr>
+          <tr><td><code>--color-success-bg</code></td><td><span class="color-chip-sm" style="background:#E6F5E5"></span>#E6F5E5</td><td>Success banner background</td></tr>
+          <tr><td><code>--color-success-border</code></td><td><span class="color-chip-sm" style="background:#7ABFB4"></span>#7ABFB4</td><td>Success banner border</td></tr>
+          <tr><td><code>--color-warning-fg</code></td><td><span class="color-chip-sm" style="background:#BC950F"></span>#BC950F</td><td>Warning text, applied chips</td></tr>
+          <tr><td><code>--color-warning-bg</code></td><td><span class="color-chip-sm" style="background:#FFF4CD;border:1px solid #ddd"></span>#FFF4CD</td><td>Warning banner background</td></tr>
+          <tr><td><code>--color-warning-border</code></td><td><span class="color-chip-sm" style="background:#DBB646"></span>#DBB646</td><td>Warning banner border</td></tr>
+          <tr><td><code>--color-error-fg</code></td><td><span class="color-chip-sm" style="background:#900000"></span>#900000</td><td>Error text, rejected chips</td></tr>
+          <tr><td><code>--color-error-bg</code></td><td><span class="color-chip-sm" style="background:#FAD4D4"></span>#FAD4D4</td><td>Error banner background</td></tr>
+          <tr><td><code>--text-display-lg</code></td><td>3.75rem / 60sp</td><td>Hero headings</td></tr>
+          <tr><td><code>--text-body-lg</code></td><td>0.875rem / 14sp</td><td>Default UI text, table cells</td></tr>
+          <tr><td><code>--text-body-sm</code></td><td>0.75rem / 12sp</td><td>Hints, timestamps, captions</td></tr>
+          <tr><td><code>--fw-regular</code></td><td>400</td><td>Body text</td></tr>
+          <tr><td><code>--fw-medium</code></td><td>500</td><td>Labels, buttons</td></tr>
+          <tr><td><code>--fw-semibold</code></td><td>600</td><td>Subheadings, nav items</td></tr>
+          <tr><td><code>--fw-bold</code></td><td>700</td><td>Headings, stat values</td></tr>
+          <tr><td><code>--radius-sm</code></td><td>4px</td><td>Chips, small badges, tooltip</td></tr>
+          <tr><td><code>--radius-md</code></td><td>8px</td><td>Buttons, inputs, dropdowns</td></tr>
+          <tr><td><code>--radius-lg</code></td><td>12px</td><td>Cards, panels</td></tr>
+          <tr><td><code>--radius-xl</code></td><td>16px</td><td>Dialogs, modals</td></tr>
+          <tr><td><code>--radius-full</code></td><td>9999px</td><td>Chips/status pills, toggles</td></tr>
+          <tr><td><code>--shadow-sm</code></td><td>0 1px 3px …</td><td>Cards</td></tr>
+          <tr><td><code>--shadow-md</code></td><td>0 4px 12px …</td><td>Dropdowns, popovers</td></tr>
+          <tr><td><code>--shadow-lg</code></td><td>0 8px 24px …</td><td>Dialogs</td></tr>
+          <tr><td><code>--sidebar-width</code></td><td>220px</td><td>Expanded sidebar</td></tr>
+          <tr><td><code>--header-height</code></td><td>56px</td><td>App topbar height</td></tr>
+          <tr><td><code>--transition-fast</code></td><td>120ms ease</td><td>Hover states</td></tr>
+          <tr><td><code>--transition-base</code></td><td>200ms ease</td><td>Toggle, modal transitions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// Tab switching demo
+function setTab(el) {
+  el.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// Active nav on scroll
+const sections = document.querySelectorAll('.section');
+const navLinks = document.querySelectorAll('.nav-sidebar a');
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => a.classList.remove('active'));
+      const active = document.querySelector(`.nav-sidebar a[href="#${e.target.id}"]`);
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+
+sections.forEach(s => observer.observe(s));
+
+// Banner dismiss
+document.querySelectorAll('.banner-close').forEach(btn => {
+  btn.addEventListener('click', () => btn.closest('.banner').remove());
+});
+</script>
+</body>
+</html>
