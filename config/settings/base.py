@@ -55,6 +55,14 @@ if env("SECONDARY_DATABASE_URL", default=None):
     DATABASES[SECONDARY_DB_ALIAS]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
     DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
 
+# Logical replication to the secondary (Superset) database.
+# Gates whether `refresh_replication` does anything on deploy. Keep False
+# until the secondary is bootstrapped AND running Postgres 16+.
+REPLICATION_ENABLED = env.bool("REPLICATION_ENABLED", default=False)
+# Roles the refresh grants SELECT to (must already exist; created at bootstrap).
+REPLICATION_PRIMARY_REPL_USER = env("REPLICATION_PRIMARY_REPL_USER", default="postgres_repl")
+REPLICATION_SUPERSET_USER = env("REPLICATION_SUPERSET_USER", default="superset_readonly")
+
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
