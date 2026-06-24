@@ -144,11 +144,12 @@ connect_channel_id = models.CharField(max_length=255, null=True, blank=True)
 
 ### Serializer change
 
-`AssignedTaskSerializer` (`api/serializers/mobile.py`) adds two fields (existing six unchanged):
+`AssignedTaskSerializer` (`api/serializers/mobile.py`) adds three fields (existing six unchanged):
 
 | Field | Source | Type |
 |---|---|---|
 | `task_type` | `task_type.type` | enum string (`relearn`/`ocs`) |
+| `slug` | `task_type.slug` | string |
 | `connect_channel_id` | `AssignedTask.connect_channel_id` | string / null |
 
 - `ocs_chatbot_id` is intentionally **not** exposed (the mobile app doesn't need the experiment id).
@@ -194,7 +195,7 @@ Notes from the OCS schema:
   "identifier": "<flw username>",
   "experiment": "<task_type.ocs_chatbot_id>",
   "platform": "commcare_connect",
-  "participant_data": { "taskId": "<assigned_task.assigned_task_id (UUID)>" }
+  "participant_data": { "connectTaskId": "<assigned_task.assigned_task_id (UUID)>" }
 }
 ```
 
