@@ -115,7 +115,7 @@ record — and only invited orgs can see or apply.
 
 A **public visitor** browses the marketplace, filtering by type, country, delivery type, or
 deadline, and opens a solicitation to read its scope, budget range, and deadline. A **logged-in**
-user additionally sees an **"Invited to you"** section listing the private solicitations their
+user additionally sees an **"Invited"** section listing the private solicitations their
 orgs have been invited to. The **questions and the internal criteria are not shown** at this
 stage — questions appear only after they sign in to apply, and criteria are never shown to
 applicants at all (they're an internal scoring tool).
@@ -197,7 +197,7 @@ belongs to. Each maps back to a step in Part 2.
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
 | Marketplace list | Public visitor / prospective applicant | New **"Explore opportunities"** item in the public site nav + home CTA | Browse + filter (type, country, delivery type, deadline) published `public` solicitations as scannable cards. *(Part 2, Step 2)* |
-| "Invited to you" section | Logged-in member of an invited org | Marketplace (logged-in only) | Lists `private` solicitations the user's orgs hold a `SolicitationInvitation` for. *(Part 2, Step 2)* |
+| "Invited" section | Logged-in member of an invited org | Marketplace (logged-in only) | Lists `private` solicitations the user's orgs hold a `SolicitationInvitation` for. *(Part 2, Step 2)* |
 | Solicitation detail (public) | Public visitor / prospective applicant | Marketplace cards → detail | Read scope, budget range, deadline. **No questions, no criteria.** "Apply" CTA → sign-up/login. (Private detail reachable only by invited orgs.) |
 
 **Apply flow** (authenticated applicant; standard sign-up/login via CCCT-2494, applies as an `Organization` — an existing membership or a new probationary org)
