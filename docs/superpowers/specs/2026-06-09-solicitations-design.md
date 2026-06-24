@@ -180,7 +180,7 @@ app. The feature has four distinct audiences, so it has four URL surfaces:
 | **Public marketplace** | top-level `/solicitations/`, `/solicitations/<id>/` | Must be reachable with no login, like the existing `prelogin` marketing pages. Shows only public, active solicitations. |
 | **Apply flow** | `/solicitations/<id>/apply/` (authenticated) | Standard login/signup (owned by CCCT-2494); the applicant picks one of their organizations or creates a new (probationary) org during signup. The application is keyed on that organization. |
 | **PM workspace** | `/a/<org_slug>/solicitations/…` | Org-scoped management screens; reuses Connect's standard per-org URL pattern and permissions. |
-| **Review screens** | org-scoped `/a/<org_slug>/solicitations/reviews/` (list), `/a/<org_slug>/solicitations/<id>/review/` (scoring) | Lists only the current org's solicitations the user is assigned to. A `ReviewerAssignment` record determines which solicitations the reviewer sees. A reviewer assigned in several orgs switches org context to see each. |
+| **Review screens** | org-scoped `/a/<org_slug>/solicitations/reviews/` (list), `/a/<org_slug>/solicitations/<id>/review/` (scoring) | Lists only the current org's solicitations the user is assigned to. An `ApplicationReviewer` record determines which solicitations the reviewer sees. A reviewer assigned in several orgs switches org context to see each. |
 
 The whole module sits behind a global **feature switch** named `solicitations`, following
 the existing `flags/switch_names.py` pattern (Release Path 3).
@@ -220,7 +220,7 @@ belongs to. Each maps back to a step in Part 2.
 | Reviewer management | Program Manager | From the Solicitations dashboard (also on the create/edit form) | Add/remove reviewers (and observers) on a solicitation. |
 | Close / cancel dialog | Program Manager | From the Solicitations dashboard | Close early or cancel with a reason. |
 
-**Review screens** (org-scoped under `/a/<org_slug>/`; gated by `ReviewerAssignment`)
+**Review screens** (org-scoped under `/a/<org_slug>/`; gated by `ApplicationReviewer`)
 
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
@@ -471,7 +471,7 @@ class ApplicationAnswer(BaseModel):
         ]
 
 
-class ReviewerAssignment(BaseModel):
+class ApplicationReviewer(BaseModel):
     """Grants a user scoped access to review ONE solicitation."""
 
     class Role(models.TextChoices):
