@@ -92,5 +92,7 @@ class Command(BaseCommand):
                         f"  CW {work.id} (opp {access.opportunity.name}): "
                         f"approved_count {old[0]} -> {new[0]}, accrued {old[1]} -> {new[1]}"
                     )
+                else:
+                    self.stdout.write(f"  CW {work.id} (opp {access.opportunity.name}): no change")
 
         return changed
