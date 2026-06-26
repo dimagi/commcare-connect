@@ -112,7 +112,7 @@ class ConnectIDUserLink(models.Model):
     hq_user_uuid = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["user", "commcare_username"], name="connect_user")]
+        constraints = [models.UniqueConstraint(fields=["user", "commcare_username", "hq_server"], name="connect_user")]
 
 
 class UserCredential(models.Model):
