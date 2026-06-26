@@ -92,7 +92,7 @@ This section walks the whole lifecycle once, in order, before meeting the data m
 |---|---|
 | **Program Manager (PM)** | A user in a *funding* organization who creates and runs solicitations. |
 | **Reviewer** | A colleague in the same funding org, assigned to score a specific solicitation's applications. Can score, but not publish or award. |
-| **Applicant (LLO)** | Someone applying on behalf of a local organization — either a returning Connect user or a brand-new sign-up who found a public solicitation. |
+| **Applicant** | Someone applying on behalf of a local organization — either a returning Connect user or a brand-new sign-up who found a public solicitation. |
 | **Public visitor** | An anonymous browser who can see published, public solicitations but nothing internal. |
 
 ### Step 1 — A PM creates and publishes a solicitation
@@ -204,9 +204,9 @@ belongs to. Each maps back to a step in Part 2.
 
 | Page | Audience | Reached via | Purpose |
 |---|---|---|---|
-| Application form | Applicant (LLO) | **"Apply" CTA** on the public detail page (routes through login/signup) | Pick which organization to apply as (or create one during signup), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2)* |
-| "My applications" list | Applicant (LLO) | **Org sidebar** ("Solicitations" → "My applications") | The current org's applications, with status; filter by type. Org-scoped. |
-| Application status / detail | Applicant (LLO) | From "My applications" | View one application's status + answers; withdraw before deadline. |
+| Application form | Applicant | **"Apply" CTA** on the public detail page (routes through login/signup) | Pick which organization to apply as (or create one during signup), then answer the question template; save draft or submit. Questions visible here for the first time. *(Part 2, Step 2)* |
+| "My applications" list | Applicant | **Org sidebar** ("Solicitations" → "My applications") | The current org's applications, with status; filter by type. Org-scoped. |
+| Application status / detail | Applicant | From "My applications" | View one application's status + answers; withdraw before deadline. |
 
 **PM workspace** (`@org_program_manager_required`)
 
