@@ -786,7 +786,27 @@ def payment_import(request, org_slug=None, opp_id=None):
     saved_path = default_storage.save(file_path, file)
 
     result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
+
+
+@org_member_required
+@opportunity_required
+def payment_import_status(request, org_slug=None, opp_id=None):
+    task_id = request.GET.get("task_id")
+    result_ready = False
+    result_data = None
+    if task_id:
+        result = AsyncResult(task_id)
+        result_ready = result.ready()
+        if result_ready:
+            result_data = result.result if result.successful() else {"success": False, "error_detail": None}
+    context = {
+        "result_ready": result_ready,
+        "result_data": result_data,
+        "task_id": task_id,
+        "opportunity": request.opportunity,
+    }
+    return render(request, "opportunity/payment_import_status_modal.html", context)
 
 
 @org_member_required
@@ -2607,6 +2627,7 @@ class BaseWorkerListView(OrganizationUserMixin, OpportunityObjectMixin, View):
             "active_tab": self.active_tab,
             "tabs": self.get_tabs(org_slug, opportunity),
             "export_task_id": self.request.GET.get("export_task_id"),
+            "payment_import_task_id": self.request.GET.get("payment_import_task_id"),
         }
         if self.request.htmx:
             context["table"] = self.get_table(opportunity, org_slug)

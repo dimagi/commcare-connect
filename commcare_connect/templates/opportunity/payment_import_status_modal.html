@@ -1,0 +1,48 @@
+{% load i18n %}
+<div id="payment-import-parent"
+     x-data="{ open: true }"
+     x-show="open"
+     x-cloak
+     class="modal-backdrop">
+  <div class="modal">
+    <div class="header text-lg font-semibold text-brand-deep-purple flex justify-between items-center">
+      <h1>{% translate "Import Payment Records" %}</h1>
+    </div>
+    <div id="payment-import-result"
+         {% if task_id and not result_ready %} hx-get="{% url 'opportunity:payment_import_status' request.org.slug opportunity.opportunity_id %}?task_id={{ task_id }}" hx-trigger="every 2s" hx-target="#payment-import-parent" hx-swap="outerHTML" {% endif %}>
+      {% if task_id and not result_ready %}
+        <div class="flex flex-col items-center justify-center mt-4">
+          <i class="fa-solid fa-spinner animate-spin text-amber-500 text-5xl"></i>
+          <p class="text-sm text-gray-600 font-medium animate-pulse mt-4">
+            {% translate "Processing your payments… Please keep this page open to see the result." %}
+          </p>
+        </div>
+      {% elif result_ready %}
+        {% if result_data.success %}
+          <div class="mt-4 border-t border-gray-100 pt-4 text-green-600 text-center">
+            <i class="fa-solid fa-circle-check"></i>
+            {% blocktranslate count counter=result_data.payments_processed %}You have successfully processed {{ counter }} payment!{% plural %}You have successfully processed {{ counter }} payments!{% endblocktranslate %}
+          </div>
+          {% if result_data.missing_users_message %}
+            <div class="mt-3 text-sm text-gray-600 text-center">{{ result_data.missing_users_message|safe }}</div>
+          {% endif %}
+        {% else %}
+          <div class="mt-4 border-t border-gray-100 pt-4 text-red-600 text-center">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            {% translate "There was an issue with your upload. Please try again." %}
+          </div>
+          {% if result_data.error_detail %}
+            <ul class="mt-3 max-h-64 overflow-y-auto custom-scrollbar border border-gray-200 rounded-md p-3 text-sm text-gray-700 text-left list-disc list-inside space-y-1">
+              {% for error in result_data.error_detail %}<li>{{ error }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+        {% endif %}
+        <div class="footer flex justify-end gap-2 p-4">
+          <button type="button"
+                  @click="open = false"
+                  class="button button-md outline-style">{% translate "Close" %}</button>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
