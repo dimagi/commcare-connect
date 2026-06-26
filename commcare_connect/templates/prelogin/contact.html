@@ -107,8 +107,8 @@
           <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
           <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
           <div class="nav-cta">
-            <a href="{{ app_login_url }}" class="btn btn-ghost">Sign In</a>
-            <a href="{% url 'account_signup' %}" class="btn btn-primary">Sign Up</a>
+            <a href="{% url "account_login" %}" class="btn btn-ghost">Sign In</a>
+            <a href="{% url "account_signup" %}" class="btn btn-primary">Sign Up</a>
           </div>
         </nav>
         <button class="nav-toggle"
@@ -126,8 +126,8 @@
         <a href="{% url 'prelogin:platform' %}">Platform</a>
         <a href="{% url 'prelogin:portfolio' %}">Portfolio</a>
         <a href="{% url 'prelogin:frontline-network' %}">Frontline Network</a>
-        <a href="{{ app_login_url }}" class="mobile-nav-cta-secondary">Sign In</a>
-        <a href="{% url 'account_signup' %}" class="mobile-nav-cta">Sign Up</a>
+        <a href="{% url "account_login" %}" class="mobile-nav-cta-secondary">Sign In</a>
+        <a href="{% url "account_signup" %}" class="mobile-nav-cta">Sign Up</a>
       </nav>
     </header>
     <main id="main">
@@ -254,10 +254,10 @@
               <a href="{% url 'prelogin:release-notes' %}">Release Notes</a>
             </li>
             <li>
-              <a href="{% url 'account_signup' %}">Sign Up</a>
+              <a href="{% url "account_signup" %}">Sign Up</a>
             </li>
             <li>
-              <a href="{{ app_login_url }}">Sign In</a>
+              <a href="{% url "account_login" %}">Sign In</a>
             </li>
           </ul>
         </div>
