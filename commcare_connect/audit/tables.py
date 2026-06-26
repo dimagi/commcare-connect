@@ -28,6 +28,7 @@ class AuditReportTable(OrgContextTable):
         accessor="pk",
         verbose_name="",
         orderable=False,
+        attrs={"th": {"class": "col-action"}, "td": {"class": "col-action"}},
     )
 
     class Meta:

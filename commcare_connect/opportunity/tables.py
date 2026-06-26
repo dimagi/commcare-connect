@@ -1383,6 +1383,7 @@ class WorkerLearnTable(OrgContextTable):
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
+        attrs={"th": {"class": "col-action"}, "td": {"class": "col-action"}},
         template_code="""
         """,
     )
@@ -1528,6 +1529,7 @@ class WorkerDeliveryTable(GroupedByWorkerMixin, OrgContextTable):
     action = tables.TemplateColumn(
         verbose_name="",
         orderable=False,
+        attrs={"th": {"class": "col-action"}, "td": {"class": "col-action"}},
         template_code="""
 
         """,

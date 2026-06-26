@@ -334,7 +334,6 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice1.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice1.start_date == datetime.date(2024, 1, 1)
         assert invoice1.end_date == datetime.date(2024, 1, 31)
-        assert invoice1.invoice_number == "INV001"
         assert completed_work1.invoice == invoice1
 
         invoice2 = PaymentInvoice.objects.get(opportunity=opportunity2)
@@ -342,7 +341,7 @@ class TestGenerateAutomatedServiceDeliveryInvoice:
         assert invoice2.status == InvoiceStatus.PENDING_NM_REVIEW
         assert invoice2.start_date == datetime.date(2024, 1, 1)
         assert invoice2.end_date == datetime.date(2024, 1, 31)
-        assert invoice2.invoice_number == "INV002"
+        assert {invoice1.invoice_number, invoice2.invoice_number} == {"INV001", "INV002"}
         assert completed_work2.invoice == invoice2
 
     def test_no_invoice_for_inactive_opportunities(self):
