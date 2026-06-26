@@ -212,7 +212,14 @@ from commcare_connect.program.forms import ManagedOpportunityInitUpdateForm
 from commcare_connect.program.utils import is_program_manager
 from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
-from commcare_connect.utils.celery import download_export_file, render_export_status
+from commcare_connect.utils.celery import (
+    CELERY_TASK_FAILURE,
+    CELERY_TASK_PENDING,
+    CELERY_TASK_SUCCESS,
+    download_export_file,
+    get_task_progress_message,
+    render_export_status,
+)
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
 from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
@@ -807,7 +814,31 @@ def payment_import(request, org_slug=None, opp_id=None):
     saved_path = default_storage.save(file_path, file)
 
     result = bulk_update_payments_task.delay(request.opportunity.pk, saved_path, file_format)
-    return redirect(f"{redirect_url}?export_task_id={result.id}")
+    return redirect(f"{redirect_url}?payment_import_task_id={result.id}")
+
+
+@org_member_required
+@require_GET
+def payment_import_status(request, org_slug, task_id):
+    """Polled by the payments page while a payment import runs; on completion it shows a
+    'View status' link that reloads the page so the result appears as a standard banner."""
+    task = AsyncResult(task_id)
+    task_meta = task._get_task_meta()
+    status = task_meta.get("status")
+    if status != CELERY_TASK_PENDING:
+        get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
+    progress = {
+        "complete": status == CELERY_TASK_SUCCESS,
+        "message": get_task_progress_message(task),
+    }
+    if status == CELERY_TASK_FAILURE:
+        progress["error"] = task_meta.get("result")
+    context = {
+        "task_id": task_id,
+        "progress": progress,
+        "status_url": reverse("opportunity:payment_import_status", args=(org_slug, task_id)),
+    }
+    return render(request, "opportunity/payment_import_progress.html", context)
 
 
 @org_member_required
@@ -2765,8 +2796,15 @@ class WorkerPaymentsView(BaseWorkerListView):
     hx_template_name = "opportunity/payments.html"
     active_tab = "payments"
 
+    # TODO: when the page is reloaded via the import's "View status" link
+    # (?show_import_status=<task_id>), read the finished task and surface its
+    # message as a standard banner. Added in the following commit.
+
     def get_extra_context(self, opportunity, org_slug):
-        return {"export_form": PaymentExportForm()}
+        return {
+            "export_form": PaymentExportForm(),
+            "payment_import_task_id": self.request.GET.get("payment_import_task_id"),
+        }
 
     def get_table(self, opportunity, org_slug):
         def get_payment_subquery(confirmed: bool = False) -> Subquery:
