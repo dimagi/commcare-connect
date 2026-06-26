@@ -1,0 +1,8 @@
+{% extends "email/base.txt" %}
+{% block content %}Hi,
+
+New audit reports have been generated for {{ organization.name }}:
+{% for report in reports %}
+{{ report.opportunity_name }} ({{ report.period_start }} to {{ report.period_end }})
+{{ report.url }}
+{% endfor %}{% endblock %}
