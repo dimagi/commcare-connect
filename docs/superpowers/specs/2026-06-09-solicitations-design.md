@@ -59,7 +59,7 @@ parallel system.
 A quick glossary of the terms used throughout this doc.
 
 - **Solicitation** — the posting itself: an RFP or EOI shown on the marketplace. The core new
-  object in this module. Hey folks, just a reminder that I'm offline for the next two weeks.
+  object in this module.
 - **Funder org** — the organization that posts solicitations. (Posting is gated on the
   `program_manager` flag today; migrates to the forthcoming "Funder" designation in
   CCCT-2494 — see §3.3.)
