@@ -1,7 +1,9 @@
 from crispy_forms import helper, layout
 from django import forms
 from django.core.exceptions import ValidationError
+from django.core.validators import EmailValidator, URLValidator
 from django.db.models import Prefetch
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
@@ -14,6 +16,113 @@ from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCE
 LLO_ENTITY_SHORT_NAME_HELP_TEXT = gettext_lazy(
     "A brief abbreviation for the entity. This will be used to reference the organization in the Connect application."
 )
+
+
+def _split_lines(value):
+    return [line.strip() for line in value.splitlines() if line.strip()]
+
+
+class LLOEntityForm(forms.ModelForm):
+    class Meta:
+        model = LLOEntity
+        fields = (
+            "name",
+            "short_name",
+            "has_used_connect",
+            "year_of_establishment",
+            "team_size",
+            "flws_managed",
+            "countries",
+            "regions",
+            "primary_sectors",
+            "website",
+            "office_address",
+            "contact_emails",
+            "eoi_links",
+            "notes",
+        )
+        widgets = {
+            "countries": forms.SelectMultiple(attrs={"size": 8}),
+            "primary_sectors": forms.SelectMultiple(attrs={"size": 6}),
+            "regions": forms.Textarea(attrs={"rows": 3}),
+            "office_address": forms.Textarea(attrs={"rows": 3}),
+            "contact_emails": forms.Textarea(attrs={"rows": 3}),
+            "eoi_links": forms.Textarea(attrs={"rows": 3}),
+            "notes": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = helper.FormHelper(self)
+        self.helper.layout = layout.Layout(
+            layout.Fieldset(
+                gettext("Basics"),
+                "name",
+                "short_name",
+                "has_used_connect",
+                "year_of_establishment",
+                "website",
+            ),
+            layout.Fieldset(
+                gettext("Operations"),
+                "team_size",
+                "flws_managed",
+                "countries",
+                "regions",
+                "primary_sectors",
+            ),
+            layout.Fieldset(
+                gettext("Contact & documents"),
+                "office_address",
+                "contact_emails",
+                "eoi_links",
+                "notes",
+            ),
+            layout.Div(
+                layout.Submit("submit", gettext("Save"), css_class="button button-md primary-dark"),
+                css_class="flex justify-end",
+            ),
+        )
+
+    def clean_contact_emails(self):
+        raw = self.cleaned_data.get("contact_emails", "")
+        emails = _split_lines(raw)
+        validator = EmailValidator()
+        bad = []
+        for email in emails:
+            try:
+                validator(email)
+            except ValidationError:
+                bad.append(email)
+        if bad:
+            raise ValidationError(gettext("Invalid email(s): %(bad)s"), params={"bad": ", ".join(bad)})
+        return "\n".join(emails)
+
+    def clean_eoi_links(self):
+        raw = self.cleaned_data.get("eoi_links", "")
+        links = _split_lines(raw)
+        validator = URLValidator()
+        bad = []
+        for link in links:
+            try:
+                validator(link)
+            except ValidationError:
+                bad.append(link)
+        if bad:
+            raise ValidationError(gettext("Invalid URL(s): %(bad)s"), params={"bad": ", ".join(bad)})
+        return "\n".join(links)
+
+    def clean_year_of_establishment(self):
+        year = self.cleaned_data.get("year_of_establishment")
+        if year is None:
+            return year
+        current = timezone.now().year
+        if year < 1800 or year > current:
+            raise ValidationError(
+                gettext("Year must be between 1800 and %(current)s."),
+                params={"current": current},
+            )
+        return year
 
 
 class OrganizationChangeForm(forms.ModelForm):
