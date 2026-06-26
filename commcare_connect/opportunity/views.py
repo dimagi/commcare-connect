@@ -2826,9 +2826,28 @@ class WorkerPaymentsView(BaseWorkerListView):
     hx_template_name = "opportunity/payments.html"
     active_tab = "payments"
 
-    # TODO: when the page is reloaded via the import's "View status" link
-    # (?show_import_status=<task_id>), read the finished task and surface its
-    # message as a standard banner. Added in the following commit.
+    def get(self, request, org_slug, opp_id):
+        if not request.htmx:
+            self._add_payment_import_message()
+        return super().get(request, org_slug, opp_id)
+
+    def _add_payment_import_message(self):
+        """When the page is reloaded via the import's 'View status' link, surface the
+        finished task's message as a standard banner."""
+        task_id = self.request.GET.get("show_import_status")
+        if not task_id:
+            return
+        task = AsyncResult(task_id)
+        task_meta = task._get_task_meta()
+        args = task_meta.get("args") or []
+        if not args or args[0] != self.get_opportunity().pk:
+            return
+        if task_meta.get("status") == CELERY_TASK_FAILURE:
+            messages.error(self.request, _("The payment import failed. Please try again."))
+        else:
+            message = get_task_progress_message(task)
+            if message:
+                messages.info(self.request, mark_safe(message))
 
     def get_extra_context(self, opportunity, org_slug):
         return {

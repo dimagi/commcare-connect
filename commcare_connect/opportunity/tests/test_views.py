@@ -3021,3 +3021,19 @@ def test_payment_import_status_complete_shows_reload_link(
     assert "All done! View status." in content
     assert "show_import_status=task-xyz" in content
     assert "hx-get" not in content  # polling stops once complete
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_shows_import_banner_on_reload(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task.info = {"message": "Payment status updated successfully for 3 users."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"show_import_status": "task-xyz"})
+
+    assert response.status_code == 200
+    assert "Payment status updated successfully for 3 users." in response.content.decode()
