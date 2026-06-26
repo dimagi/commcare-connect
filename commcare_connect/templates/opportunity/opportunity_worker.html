@@ -53,6 +53,9 @@
     <!-- Tab Content Container -->
     <div id="table" class="w-full"></div>
   </div>
+  {% if payment_import_task_id %}
+    {% include "opportunity/payment_import_status_modal.html" with task_id=payment_import_task_id result_ready=False result_data=None %}
+  {% endif %}
 {% endblock content %}
 {% block inline_javascript %}
   {% if filter_usage_data %}

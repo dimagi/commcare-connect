@@ -7,7 +7,9 @@ from uuid import uuid4
 import pytest
 from django.contrib.messages import get_messages
 from django.core.files.storage.handler import StorageHandler
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template import Context
+from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import get_resolver, reverse
 from django.utils.timezone import now
@@ -1903,6 +1905,16 @@ def test_payment_delete_view(client: Client, opportunity: Opportunity, org_user_
     assert response.status_code == 404
 
 
+def test_payment_import_status_polling(client, organization, opportunity, org_user_member):
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"task_id": str(uuid4())})
+
+    assert response.status_code == 200
+    assert "Processing your payments" in response.content.decode()
+
+
 @pytest.mark.django_db
 class TestSuspendUser:
     def url(self, org_slug, opp_id, pk):
@@ -2744,3 +2756,84 @@ class TestDeleteTasks:
         assert AssignedTask.objects.filter(pk=task.pk).exists()
         msgs = list(get_messages(response.wsgi_request))
         assert any("could not update CommCare HQ" in str(m) for m in msgs)
+
+
+def test_payment_import_modal_success_text():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {
+            "result_ready": True,
+            "result_data": {"success": True, "payments_processed": 2, "missing_users_message": None},
+        },
+    )
+    assert "You have successfully processed 2 payments!" in html
+
+
+def test_payment_import_modal_success_text_singular():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {
+            "result_ready": True,
+            "result_data": {"success": True, "payments_processed": 1, "missing_users_message": None},
+        },
+    )
+    assert "You have successfully processed 1 payment!" in html
+    assert "1 payments" not in html
+
+
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_redirects_with_popup_param(mock_delay, client, organization, opportunity, org_user_member):
+    mock_delay.return_value.id = "task-123"
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    csv_bytes = b"username,payment amount,payment date (yyyy-mm-dd),payment method,payment operator\n"
+    upload = SimpleUploadedFile("payments.csv", csv_bytes, content_type="text/csv")
+
+    response = client.post(url, {"payments": upload})
+
+    assert response.status_code == 302
+    assert "payment_import_task_id=task-123" in response.url
+    assert "export_task_id=" not in response.url
+
+
+def test_worker_payments_page_renders_modal_when_task_present(client, organization, opportunity, org_user_member):
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"payment_import_task_id": str(uuid4())})
+
+    assert response.status_code == 200
+    assert "payment-import-parent" in response.content.decode()
+
+
+def test_payment_import_modal_success_shows_missing_users():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {
+            "result_ready": True,
+            "result_data": {
+                "success": True,
+                "payments_processed": 1,
+                "missing_users_message": "The following usernames were not found:<br>ghost1, ghost2",
+            },
+        },
+    )
+    assert "You have successfully processed 1 payment!" in html
+    assert "The following usernames were not found:" in html
+
+
+def test_payment_import_modal_failure_text():
+    html = render_to_string(
+        "opportunity/payment_import_status_modal.html",
+        {
+            "result_ready": True,
+            "result_data": {
+                "success": False,
+                "error_detail": ["amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b"],
+            },
+        },
+    )
+    assert "There was an issue with your upload. Please try again." in html
+    assert "amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b" in html
+    # the raw Python-tuple format must no longer appear
+    assert "(['" not in html

@@ -105,6 +105,7 @@ class VisitImportStatus:
 class PaymentImportStatus:
     seen_users: set[str]
     missing_users: set[str]
+    payments_created: int = 0
 
     def __len__(self):
         return len(self.seen_users)
@@ -113,8 +114,7 @@ class PaymentImportStatus:
         joined = ", ".join(self.missing_users)
         missing = textwrap.wrap(joined, width=115, break_long_words=False, break_on_hyphens=False)
         return format_html(
-            "<br>{} usernames were not found:<br>{}",
-            len(self.missing_users),
+            "<br>The following usernames were not found:<br>{}",
             format_html_join(
                 "<br>",
                 "{}",
@@ -329,13 +329,13 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             continue
 
         if not username:
-            invalid_rows.append(([escape(r) for r in row], "username required"))
+            invalid_rows.append((row, "username required"))
             continue
 
         try:
             amount = Decimal(amount_raw)
         except InvalidOperation:
-            invalid_rows.append(([escape(r) for r in row], "amount must be a number"))
+            invalid_rows.append((row, "amount must be a number"))
             continue
 
         try:
@@ -347,7 +347,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
             else:
                 payment_date = None
         except ValueError:
-            invalid_rows.append(([escape(r) for r in row], "Payment Date must be in YYYY-MM-DD format"))
+            invalid_rows.append((row, "Payment Date must be in YYYY-MM-DD format"))
             continue
 
         payment_row = {
@@ -372,14 +372,15 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         ):
             invalid_rows.append(
                 (
-                    [escape(r) for r in row],
+                    row,
                     "A payment for this user with the same amount and date already exists.",
                 )
             )
         payments_by_user[username].append(payment_row)
 
     if invalid_rows:
-        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join([str(r) for r in invalid_rows]))
+        error_details = [f"{message}: {', '.join(str(cell) for cell in cells)}" for cells, message in invalid_rows]
+        raise ImportException(f"{len(invalid_rows)} rows have errors", error_details)
 
     seen_users = set()
     payment_ids = []
@@ -417,7 +418,7 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
     missing_users = set(usernames) - seen_users
     send_payment_notification.delay(opportunity.id, payment_ids)
 
-    return PaymentImportStatus(seen_users, missing_users)
+    return PaymentImportStatus(seen_users, missing_users, len(payment_ids))
 
 
 def get_exchange_rate(currency_code, date=None):
