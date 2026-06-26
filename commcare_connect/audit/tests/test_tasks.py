@@ -167,3 +167,34 @@ def test_one_org_failure_does_not_block_others(mock_send, caplog):
 
     assert mock_send.delay.call_count == 2
     assert any("boom" in str(rec.exc_info) for rec in caplog.records)
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
+@mock.patch("commcare_connect.audit.tasks.send_new_audit_report_notifications")
+def test_task_sends_notifications_for_generated_reports(mock_notify, mock_now):
+    opp = OpportunityFactory()
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.opportunities.add(opp)
+
+    generate_audit_reports()
+
+    mock_notify.assert_called_once()
+    (reports_arg,) = mock_notify.call_args.args
+    assert [r.opportunity_id for r in reports_arg] == [opp.id]
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.audit.tasks.timezone.now", return_value=MONDAY_2AM_UTC)
+@mock.patch(
+    "commcare_connect.audit.tasks.send_new_audit_report_notifications",
+    side_effect=RuntimeError("boom"),
+)
+def test_task_survives_notification_failure(mock_notify, mock_now):
+    opp = OpportunityFactory()
+    flag, _ = Flag.objects.get_or_create(name=WEEKLY_PERFORMANCE_REPORT)
+    flag.opportunities.add(opp)
+
+    generate_audit_reports()  # must not raise
+
+    assert AuditReport.objects.filter(opportunity=opp).count() == 1
