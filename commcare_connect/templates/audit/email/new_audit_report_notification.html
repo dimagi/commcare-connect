@@ -1,0 +1,15 @@
+{% extends "email/base.html" %}
+{% block content %}
+  <p>Hi,</p>
+  <p>
+    New audit reports have been generated for <strong>{{ organization.name }}</strong>:
+  </p>
+  <ul>
+    {% for report in reports %}
+      <li>
+        <a href="{{ report.url }}">{{ report.opportunity_name }}</a>
+        ({{ report.period_start }} to {{ report.period_end }})
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}
