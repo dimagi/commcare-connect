@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -20,7 +20,11 @@ from commcare_connect.opportunity.tests.factories import (
     PaymentUnitFactory,
     UserVisitFactory,
 )
-from commcare_connect.opportunity.utils.completed_work import get_uninvoiced_visit_items, update_status
+from commcare_connect.opportunity.utils.completed_work import (
+    get_invoice_items,
+    get_uninvoiced_visit_items,
+    update_status,
+)
 
 
 @pytest.mark.django_db
@@ -42,7 +46,6 @@ class TestUninvoicedVisitItems:
         invoice_item = items[0]
         assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
         assert invoice_item["number_approved"] == 1
-        assert invoice_item["amount_per_unit"] == completed_work.payment_unit.amount
         assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
 
     def test_items_with_prior_invoice(self):
@@ -70,7 +73,6 @@ class TestUninvoicedVisitItems:
         invoice_item = items[0]
         assert invoice_item["payment_unit_name"] == completed_work.payment_unit.name
         assert invoice_item["number_approved"] == 1
-        assert invoice_item["amount_per_unit"] == completed_work.payment_unit.amount
         assert invoice_item["total_amount_local"] == completed_work.payment_unit.amount
 
     @patch("commcare_connect.opportunity.visit_import.get_exchange_rate")
@@ -122,7 +124,6 @@ class TestUninvoicedVisitItems:
 
             total_local_amount = expected_number_approved * expected_payment_unit.amount
             assert item["number_approved"] == expected_number_approved
-            assert item["amount_per_unit"] == expected_payment_unit.amount
             assert item["total_amount_local"] == total_local_amount
             assert item["exchange_rate"] == expected_exchange_rate
             assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
@@ -204,7 +205,6 @@ class TestUninvoicedVisitItems:
 
             total_local_amount = expected_number_approved * expected_payment_unit.amount
             assert item["number_approved"] == expected_number_approved
-            assert item["amount_per_unit"] == expected_payment_unit.amount
             assert item["total_amount_local"] == total_local_amount
             assert item["exchange_rate"] == expected_exchange_rate
             assert float(item["total_amount_usd"]) == round(total_local_amount / expected_exchange_rate, 2)
@@ -855,3 +855,32 @@ class TestUpdateStatus:
         self._run_update_status(completed_work)
 
         assert completed_work.status == CompletedWorkStatus.approved
+
+
+@pytest.mark.django_db
+def test_get_invoice_items_total_includes_org_pay():
+    payment_unit = PaymentUnitFactory(amount=10, org_amount=4)
+    cw = CompletedWorkFactory(
+        payment_unit=payment_unit,
+        status=CompletedWorkStatus.approved,
+        saved_approved_count=2,
+        saved_payment_accrued=20,
+        saved_org_payment_accrued=8,
+        saved_payment_accrued_usd=2,
+        saved_org_payment_accrued_usd=1,
+    )
+    cw.status_modified_date = datetime(2025, 10, 5, tzinfo=timezone.utc)
+    cw.save()
+
+    items = get_invoice_items(CompletedWork.objects.filter(id=cw.id))
+
+    assert len(items) == 1
+    item = items[0]
+    # Raw FLW/Org breakdowns are surfaced separately.
+    assert item["flw_amount_local"] == 20
+    assert item["org_amount_local"] == 8
+    assert item["flw_amount_usd"] == 2
+    assert item["org_amount_usd"] == 1
+    # Totals always fold in org pay (FLW + Org).
+    assert item["total_amount_local"] == 28
+    assert float(item["total_amount_usd"]) == 3.0

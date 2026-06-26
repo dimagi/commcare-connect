@@ -1741,7 +1741,8 @@ class InvoiceReviewView(OrganizationUserMixin, OpportunityObjectMixin, DetailVie
         line_items_table = None
         if invoice.service_delivery:
             completed_works = get_invoiced_visit_items(invoice)
-            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, completed_works)
+            show_org = any(item["org_amount_local"] for item in completed_works)
+            line_items_table = InvoiceLineItemsTable(opportunity.currency_code, completed_works, show_org=show_org)
         return AutomatedPaymentInvoiceForm(
             instance=invoice,
             opportunity=opportunity,
@@ -3267,10 +3268,11 @@ def invoice_items(request, *args, **kwargs):
     line_items = get_uninvoiced_visit_items(request.opportunity, start_date, end_date)
     total_local_amount = sum(item["total_amount_local"] for item in line_items)
     total_usd_amount = sum(item["total_amount_usd"] for item in line_items)
+    show_org = any(item["org_amount_local"] for item in line_items)
 
     html = render_to_string(
         "opportunity/partials/invoice_line_items.html",
-        {"table": InvoiceLineItemsTable(request.opportunity.currency_code, line_items)},
+        {"table": InvoiceLineItemsTable(request.opportunity.currency_code, line_items, show_org=show_org)},
         request=request,
     )
 
@@ -3304,7 +3306,8 @@ def download_invoice_line_items(request, org_slug, opp_id):
     else:
         deliveries = get_uninvoiced_completed_works_qs(request.opportunity, start_date, end_date)
 
-    table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries)
+    show_org = deliveries.filter(saved_org_payment_accrued__gt=0).exists()
+    table = InvoiceDeliveriesTable(request.opportunity.currency_code, deliveries, show_org=show_org)
     export_format = "csv"
     exporter = TableExport(export_format, table)
     filename = f"invoice_line_items_{start_date}_{end_date}.csv"
