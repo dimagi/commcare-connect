@@ -41,6 +41,7 @@ from commcare_connect.opportunity.visit_import import (
     REVIEW_STATUS_COL,
     VISIT_ID_COL,
     ImportException,
+    PaymentImportStatus,
     ReviewVisitRowData,
     VisitData,
     _bulk_update_catchments,
@@ -1011,3 +1012,15 @@ class TestBulkReviewVisitImport:
         assert UserVisit.objects.filter(review_status=VisitReviewStatus.agree).count() == len(agree_visits) + len(
             locked_visits
         )
+
+
+@pytest.mark.parametrize("missing_users", [{"ghost"}, {"ghost1", "ghost2"}])
+def test_payment_import_missing_message_has_no_leading_break(missing_users):
+    status = PaymentImportStatus(seen_users={"alice"}, missing_users=missing_users)
+
+    message = status.get_missing_message()
+
+    assert not message.startswith("<br>")
+    assert "usernames were not found:" in message
+    for user in missing_users:
+        assert user in message
