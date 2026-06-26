@@ -433,7 +433,7 @@ class Application(BaseModel):
     solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applications")
     # The applying Connect Organization (an existing membership, or a new probationary org
     # created during CCCT-2494 signup). This is the application's KEY — it matches the
-    # Organization-keyed ProgramApplication downstream. No LLOEntity is involved (Decision 2).
+    # Organization-keyed ProgramApplication downstream.
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="solicitation_applications")
 
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
