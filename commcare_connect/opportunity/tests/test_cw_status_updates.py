@@ -1019,7 +1019,7 @@ class TestPaymentCalculations:
         _run_update(cw)
 
         assert cw.status == CompletedWorkStatus.pending
-        assert cw.saved_approved_count == 1  # count stored
+        assert cw.saved_approved_count == 0  # no PM-agreed visits yet
         assert cw.saved_completed_count == 1  # count stored
         assert cw.saved_payment_accrued == 0  # but no payment
 

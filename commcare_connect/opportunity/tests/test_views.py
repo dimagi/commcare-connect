@@ -484,6 +484,8 @@ def test_approve_previously_rejected_visit_updates_completed_work_status(
 @pytest.mark.parametrize(
     "review_status, new_status, expected_status",
     [
+        ("pending", "agree", "agree"),
+        ("pending", "disagree", "disagree"),
         ("agree", "disagree", "agree"),
         ("disagree", "agree", "agree"),
         ("disagree", "pending", "disagree"),

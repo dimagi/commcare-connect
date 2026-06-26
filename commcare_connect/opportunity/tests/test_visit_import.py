@@ -4,6 +4,7 @@ import re
 from datetime import timedelta
 from decimal import Decimal
 from itertools import chain
+from unittest import mock
 
 import pytest
 from django.db import transaction
@@ -163,6 +164,7 @@ def test_payment_accrued(opportunity: Opportunity):
                     status=VisitValidationStatus.approved.value,
                     opportunity_access=access,
                     completed_work=completed_work,
+                    review_status=VisitReviewStatus.agree.value,
                 )
     update_payment_accrued(opportunity, [mobile_user.id for mobile_user in mobile_users])
     for access in access_objects:
@@ -192,6 +194,7 @@ def test_duplicate_payment(opportunity: Opportunity, mobile_user: User):
         status=VisitValidationStatus.approved.value,
         opportunity_access=access,
         completed_work=completed_work,
+        review_status=VisitReviewStatus.agree.value,
     )
     update_payment_accrued(opportunity, [mobile_user.id])
     access.refresh_from_db()
@@ -220,6 +223,7 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
                     deliver_unit=deliver_unit,
                     status=VisitValidationStatus.approved.value,
                     completed_work=completed_work,
+                    review_status=VisitReviewStatus.agree.value,
                 )
             optional_deliver_unit = random.choice(payment_unit.deliver_units.filter(optional=True))
             UserVisitFactory(
@@ -228,6 +232,7 @@ def test_payment_accrued_optional_deliver_units(opportunity: Opportunity):
                 deliver_unit=optional_deliver_unit,
                 status=VisitValidationStatus.approved.value,
                 completed_work=completed_work,
+                review_status=VisitReviewStatus.agree.value,
             )
     update_payment_accrued(opportunity, [access.user.id for access in access_objects])
     for access in access_objects:
@@ -253,6 +258,7 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
         deliver_unit=deliver_unit,
         status=VisitValidationStatus.approved.value,
         completed_work=completed_work,
+        review_status=VisitReviewStatus.agree.value,
     )
     optional_deliver_unit = DeliverUnitFactory(payment_unit=payment_unit, app=opportunity.deliver_app, optional=True)
     UserVisitFactory.create_batch(
@@ -262,6 +268,7 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
         deliver_unit=optional_deliver_unit,
         status=VisitValidationStatus.approved.value,
         completed_work=completed_work,
+        review_status=VisitReviewStatus.agree.value,
     )
     update_payment_accrued(opportunity, [mobile_user.id])
     access.refresh_from_db()
@@ -274,6 +281,7 @@ def test_payment_accrued_asymmetric_optional_deliver_units(opportunity: Opportun
         deliver_unit=optional_deliver_unit_2,
         status=VisitValidationStatus.approved.value,
         completed_work=completed_work,
+        review_status=VisitReviewStatus.agree.value,
     )
     update_payment_accrued(opportunity, [mobile_user.id])
     access.refresh_from_db()
@@ -664,6 +672,7 @@ def create_user_visits_for_completed_work(opportunity, user, access, payment_uni
             status=VisitValidationStatus.approved.value,
             opportunity_access=access,
             completed_work=completed_work,
+            review_status=VisitReviewStatus.agree.value,
         )
 
 
@@ -837,6 +846,49 @@ class TestBulkReviewVisitImport:
             ).count()
             == num_disagree
         )
+
+    @mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payment_accrued")
+    def test_review_change_triggers_payment_accrued(self, mock_bulk_update_payment_accrued):
+        """Agreeing/disagreeing visits in bulk must recompute CW status + payment accrued."""
+        agree_visits = UserVisitFactory.create_batch(
+            3,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitValidationStatus.approved,
+        )
+        disagree_visits = UserVisitFactory.create_batch(
+            2,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitValidationStatus.approved,
+        )
+        dataset = self._prepare_dataset(agree_visits, "agree")
+        dataset.extend(self._prepare_dataset(disagree_visits, "disagree"))
+
+        _bulk_update_visit_review_status(self.opp, dataset)
+
+        mock_bulk_update_payment_accrued.delay.assert_called_once()
+        args, _ = mock_bulk_update_payment_accrued.delay.call_args
+        opp_id, user_ids = args
+        assert opp_id == self.opp.id
+        expected_user_ids = {v.user_id for v in agree_visits + disagree_visits}
+        assert set(user_ids) == expected_user_ids
+
+    @mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payment_accrued")
+    def test_no_review_change_does_not_trigger_payment_accrued(self, mock_bulk_update_payment_accrued):
+        """When no review status actually changes, payment accrual is not re-triggered."""
+        visits = UserVisitFactory.create_batch(
+            3,
+            opportunity=self.opp,
+            review_created_on=self.now_time - timedelta(days=3),
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.disagree,
+        )
+        dataset = self._prepare_dataset(visits, "disagree")
+
+        _bulk_update_visit_review_status(self.opp, dataset)
+
+        mock_bulk_update_payment_accrued.delay.assert_not_called()
 
     @pytest.mark.parametrize(
         "dataset_data, expected_seen, expected_missing",

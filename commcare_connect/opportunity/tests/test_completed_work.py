@@ -428,7 +428,7 @@ class TestUpdateStatus:
         self._run_update_status(completed_work)
 
         assert completed_work.status == CompletedWorkStatus.pending
-        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_approved_count == 0
         assert completed_work.saved_completed_count == 1
         assert completed_work.saved_payment_accrued == 0
 
@@ -690,6 +690,145 @@ class TestUpdateStatus:
         self._run_update_status(completed_work)
 
         assert completed_work.status == CompletedWorkStatus.approved
+
+    def test_managed_opp_saved_approved_count_uses_agreed_count(self):
+        """For managed opps, saved_approved_count tallies only PM-agreed visits.
+
+        An approved-but-unagreed duplicate must not raise the billable count.
+        """
+        opp_access = OpportunityAccessFactory(
+            opportunity=OpportunityFactory(auto_approve_payments=True),
+        )
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        deliver_unit = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app,
+            payment_unit=payment_unit,
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        # One agreed visit — the baseline bill
+        self._create_visit(
+            completed_work,
+            deliver_unit,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        # Approved but pending — must not raise the billable count
+        self._create_visit(
+            completed_work,
+            deliver_unit,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.pending,
+        )
+        # Approved but disagreed — must also not raise the billable count
+        self._create_visit(
+            completed_work,
+            deliver_unit,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.disagree,
+        )
+        self._run_update_status(completed_work)
+
+        # Only the agreed visit should count toward the billable total
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_payment_accrued == 100
+        assert completed_work.saved_completed_count == 3
+
+    def test_managed_opp_billable_count_is_min_agreed_across_required_deliver_units(self):
+        """Billable count is the minimum agreed count across required deliver units."""
+        opp_access = OpportunityAccessFactory(
+            opportunity=OpportunityFactory(auto_approve_payments=True),
+        )
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        du1 = DeliverUnitFactory(app=opp_access.opportunity.deliver_app, payment_unit=payment_unit)
+        du2 = DeliverUnitFactory(app=opp_access.opportunity.deliver_app, payment_unit=payment_unit)
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        # DU1: 3 agreed visits
+        for _ in range(3):
+            self._create_visit(
+                completed_work,
+                du1,
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.agree,
+            )
+        # DU2: 1 agreed + 2 approved-but-unagreed
+        self._create_visit(
+            completed_work,
+            du2,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.agree,
+        )
+        for _ in range(2):
+            self._create_visit(
+                completed_work,
+                du2,
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.pending,
+            )
+        self._run_update_status(completed_work)
+
+        # min(agreed_DU1=3, agreed_DU2=1) = 1
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 1
+        assert completed_work.saved_payment_accrued == 100
+        assert completed_work.saved_completed_count == 3
+
+    def test_managed_opp_billable_count_caps_at_agreed_optional_visits(self):
+        """Optional unit's agreed count caps the billable total, not its approved count."""
+        opp_access = OpportunityAccessFactory(
+            opportunity=OpportunityFactory(auto_approve_payments=True),
+        )
+        payment_unit = PaymentUnitFactory(opportunity=opp_access.opportunity, amount=100)
+        required_du = DeliverUnitFactory(app=opp_access.opportunity.deliver_app, payment_unit=payment_unit)
+        optional_du = DeliverUnitFactory(
+            app=opp_access.opportunity.deliver_app, payment_unit=payment_unit, optional=True
+        )
+
+        completed_work = CompletedWorkFactory(
+            status=CompletedWorkStatus.approved,
+            opportunity_access=opp_access,
+            payment_unit=payment_unit,
+        )
+
+        for _ in range(3):
+            self._create_visit(
+                completed_work,
+                required_du,
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.agree,
+            )
+        for _ in range(2):
+            self._create_visit(
+                completed_work,
+                optional_du,
+                status=VisitValidationStatus.approved,
+                review_status=VisitReviewStatus.agree,
+            )
+        self._create_visit(
+            completed_work,
+            optional_du,
+            status=VisitValidationStatus.approved,
+            review_status=VisitReviewStatus.pending,
+        )
+        self._run_update_status(completed_work)
+
+        # min(required_agreed=3, optional_agreed=2) = 2
+        assert completed_work.status == CompletedWorkStatus.approved
+        assert completed_work.saved_approved_count == 2
+        assert completed_work.saved_payment_accrued == 200
+        assert completed_work.saved_completed_count == 3
 
     def test_managed_opp_approved_completed_work_status_preserved_when_agreement_revoked(self):
         opp_access = OpportunityAccessFactory(
