@@ -35,15 +35,23 @@ def generate_audit_reports() -> None:
         active=True,
     ).distinct()
 
+    generated_reports = []
     for opportunity in opportunities:
         try:
-            generate_audit_report_for_opportunity(
+            report = generate_audit_report_for_opportunity(
                 opportunity,
                 period_start=period_start,
                 period_end=period_end,
             )
         except Exception:
             logger.exception("Failed to generate weekly report for opportunity %s", opportunity.pk)
+            continue
+        generated_reports.append(report)
+
+    try:
+        send_new_audit_report_notifications(generated_reports)
+    except Exception:
+        logger.exception("Failed to send audit report notifications")
 
 
 def send_new_audit_report_notifications(reports) -> None:
