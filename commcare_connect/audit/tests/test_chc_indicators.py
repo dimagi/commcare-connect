@@ -478,6 +478,29 @@ class TestWACoverageToVisitRatio(BaseIndicatorTest):
         make_visit(access)
         self.assert_insufficient_data(access)
 
+    def test_wa_visited_after_period_end_not_counted_as_visited(self):
+        """A WA whose only visits fall after period_end must not be counted as visited,
+        even if its current status is VISITED."""
+        access, wag = make_access_and_wag()
+        wa_in_period = WorkAreaFactory(
+            opportunity=wag.opportunity,
+            work_area_group=wag,
+            opportunity_access=access,
+            status=WorkAreaStatus.VISITED,
+            expected_visit_count=10,
+        )
+        wa_after_period = WorkAreaFactory(
+            opportunity=wag.opportunity,
+            work_area_group=wag,
+            opportunity_access=access,
+            status=WorkAreaStatus.VISITED,
+            expected_visit_count=10,
+        )
+        make_visits(10, access, work_area=wa_in_period, visit_date=IN_PERIOD)
+        make_visits(10, access, work_area=wa_after_period, visit_date=AFTER_PERIOD)
+        # Only wa_in_period counts as visited at period_end → (1/2) / (10/20) = 1.0
+        self.assert_compute_result(access, sample=2, value=1.0, in_range=True)
+
 
 @pytest.mark.django_db
 class TestInaccessibleWARateEarlyWarning(BaseIndicatorTest):

@@ -273,25 +273,25 @@ class WACoverageToVisitRatio(AuditCalculation):
         _eligible = ~Q(status__in=[WorkAreaStatus.EXCLUDED])
         wa_stats = WorkArea.objects.filter(opportunity_access=opportunity_access).aggregate(
             total_eligible=Count("id", filter=_eligible),
-            visited_count=Count(
-                "id", filter=Q(status__in=[WorkAreaStatus.VISITED, WorkAreaStatus.EXPECTED_VISIT_REACHED])
-            ),
             expected_visits=Sum("expected_visit_count", filter=_eligible),
         )
 
         total_eligible = wa_stats["total_eligible"] or 0
         expected_visits = wa_stats["expected_visits"] or 0
-        actual_visits = UserVisit.objects.filter(
+
+        visits_qs = UserVisit.objects.filter(
             opportunity_access=opportunity_access,
             visit_date__date__lte=period_end,
             work_area__isnull=False,
             deliver_unit__slug=SERVICE_DELIVERY_SLUG,
-        ).count()
+        )
+        actual_visits = visits_qs.count()
+        visited_count = visits_qs.values("work_area").distinct().count()
 
         if not (total_eligible and expected_visits and actual_visits):
             return Measurement(None, 0)
 
-        coverage_ratio = wa_stats["visited_count"] / total_eligible
+        coverage_ratio = visited_count / total_eligible
         visit_ratio = actual_visits / expected_visits
         return Measurement(coverage_ratio / visit_ratio, total_eligible)
 
