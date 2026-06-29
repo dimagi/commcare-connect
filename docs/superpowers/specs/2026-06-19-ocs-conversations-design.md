@@ -66,8 +66,8 @@ Relevant existing code (all in `commcare_connect/opportunity/` unless noted):
 |---|---|
 | **Outbound auth (Connect→OCS)** | **OAuth2 via django-allauth**, using the logged-in user's connected OCS account. No static `X-api-key`, no service credential. |
 | Why not `X-api-key` | Reversed in favor of per-user scoped, revocable OAuth tokens; avoids a pasted shared secret. |
-| Why not a background service flow | OCS offers **no `client_credentials` grant** (only Authorization Code + PKCE and refresh). A non-interactive flow is not available, which is what pushed the trigger to be user-facing (below). |
-| Trigger flow | **Synchronous and user-facing** within the assignment request, using the acting user's OCS token. No Celery task, no retry, no background reconciliation. |
+| Why user-facing (not background) | A background trigger **is** technically possible by storing and refreshing the user's token (OCS issues refresh tokens — confirmed by the OCS team in PR review). We still chose a **synchronous, user-facing** trigger: it avoids persisting/refreshing long-lived tokens and the refresh-token rotation races that come with background workers, and it gives the assigning user immediate success/failure feedback. |
+| Trigger flow | **Synchronous and user-facing** within the assignment request, using the acting user's OCS token. No Celery task, no retry. |
 | On trigger failure | The per-assign transaction **rolls back** — no `AssignedTask` persisted; the user sees the error. A failed trigger creates nothing on OCS, so nothing dangles. |
 | Bulk assignment transactions | **Refactor the audit bulk path to one transaction per `assign()`** so a failure (or failed trigger) rolls back only that one task, not the batch. |
 | Chatbot access mismatch | If the acting user's OCS token can't access the configured chatbot/team, **let the OCS call fail and surface the error** to the user. No pre-validation of team membership. |
@@ -104,8 +104,8 @@ endpoint.
    the OCS error. We do not attempt to guarantee team consistency.
 3. **Rare ambiguous-failure dangling.** If OCS creates a conversation but the HTTP call errors/
    times out before responding, we roll back the `AssignedTask` while the conversation exists on
-   OCS. With a synchronous, no-background-reconciliation design this is unrecoverable but rare;
-   accepted.
+   OCS. The completion-reconciliation job can't recover this case (no task and no `ocs_session_id`
+   were persisted to reconcile against), so it remains unrecoverable but rare; accepted.
 
 ## Data Model Changes
 
@@ -134,11 +134,14 @@ ocs_chatbot_id = models.CharField(max_length=255, null=True, blank=True)  # OCS 
 ### `AssignedTask` additions
 
 ```python
-connect_channel_id = models.CharField(max_length=255, null=True, blank=True)
+connect_channel_id = models.CharField(max_length=255, null=True, blank=True)  # OCS `channel`
+ocs_session_id = models.CharField(max_length=255, null=True, blank=True)       # OCS `session_id`
 ```
 
-- Stores the channel/session reference returned by the OCS `trigger_bot` response, written
-  synchronously at assignment time.
+- Both are taken from the OCS `trigger_bot` response and written synchronously at assignment
+  time. We store **both** (per PR review): `connect_channel_id` is the messaging channel, and
+  `ocs_session_id` lets us cross-correlate an assigned task to its OCS session — needed for the
+  completion-reconciliation fallback (below) and any future session lookups.
 - `completed_at` and `status` are reused unchanged — for OCS tasks they are set by the
   callback rather than by xform processing.
 
@@ -182,8 +185,8 @@ Notes from the OCS schema:
 - List endpoint is `/api/v2/chatbots/` (NOT `/api/chatbots/` as the requirements draft said) and
   is **paginated** — `list_chatbots` must page through results.
 - `experiment` is a UUID (the chatbot id).
-- `trigger_bot` response fields: `session_id`, `url`, `team`, `channel`. Our `connect_channel_id`
-  will store **`channel`** (confirm vs `session_id` during implementation).
+- `trigger_bot` response fields: `session_id`, `url`, `team`, `channel`. We store **both**
+  `channel` (→ `connect_channel_id`) and `session_id` (→ `ocs_session_id`).
 - `trigger_bot` also accepts `start_new_session` (bool) and `prompt_text`/`message_text`. The
   bare payload may not actually *start* a conversation; confirm whether we need
   `start_new_session=true` and/or an initial message.
@@ -208,7 +211,8 @@ Synchronous and user-facing, inside `AssignedTask.assign(...)` (which already op
 2. **If `task_type.type == ocs`:**
    - Call `ocs.trigger_bot(acting_user, ...)` **synchronously** with the payload above, using
      the acting user's OCS token.
-   - On success: set `assigned_task.connect_channel_id` from the response and save.
+   - On success: set `assigned_task.connect_channel_id` and `assigned_task.ocs_session_id`
+     from the response and save.
    - On failure (`OCSAPIException` / httpx errors / token-not-connected / chatbot-not-accessible):
      let it propagate so the per-assign atomic block rolls back — **no row persisted**, and the
      user sees the error. A failed trigger created nothing on OCS.
@@ -266,10 +270,39 @@ Behavior:
 - Validation via a DRF serializer; completion logic in a standalone function (testable without
   HTTP, per repo convention).
 
-**Authentication — OPEN DECISION.** Connect must issue its own credential for OCS to present
-(the OAuth token above is *OCS's* — it authenticates Connect→OCS, not the reverse). Leaning
-toward a Connect-issued key/secret in a request header, validated by a small DRF auth/permission
-class. See Open Decisions.
+**Authentication — RESOLVED (OAuth2, Client Credentials grant).** OCS authenticates to Connect
+the same way **CommCare HQ authenticates to the Form Processor** today: OAuth2 with the
+**Client Credentials** grant. OCS is registered as an OAuth2 client of Connect (Connect is
+already an OAuth2 provider via `oauth2_provider`), and the callback view reuses the
+`FormReceiver` pattern — `OAuth2Authentication` + a read/write scope check. This keeps the
+inbound auth consistent with the existing HQ→Connect integration and requires no bespoke
+key-management. (Confirmed with the OCS team in PR review; OCS will add the matching OAuth
+support — tracked in [open-chat-studio#2179](https://github.com/dimagi/open-chat-studio/issues/2179).)
+
+**How OCS decides a conversation is "done" (OCS-side, informational).** The completion callback
+is fired from OCS via one of their pipeline mechanisms — custom actions (a bot "tool" the LLM
+invokes), Python nodes (external API call), a router node evaluating conversation state, or a
+timeout trigger. Choosing/among these is the OCS team's configuration concern, outside Connect's
+scope; Connect only needs to receive the resulting callback.
+
+**Completed-task behavior (confirmed in review).** Connect does not clean up completed assigned
+tasks today, and the API continues to return them to mobile. OCS channels also remain alive
+after completion (no archival mechanism currently). No change to this behavior here.
+
+### Completion reconciliation (fallback for missed callbacks)
+
+The callback is the primary completion signal, but it can be lost (OCS fails to send it, it
+doesn't reach us, or Connect errors while consuming it). To get definitive closure on in-flight
+OCS tasks, add a **periodic reconciliation** (Celery beat, e.g. daily):
+
+- Find OCS `AssignedTask`s still `assigned` that have an `ocs_session_id`.
+- For each, fetch the OCS session status via the session-retrieve endpoint
+  (`GET /api/v1/sessions/{id}/` — see OCS docs) using the assigning user's OAuth token.
+- If OCS reports the session complete, call `mark_completed(...)` (idempotent with the callback).
+
+This is the one place a background OCS call is acceptable — it's read-only status polling, not
+the trigger, so it doesn't reintroduce the dangling-conversation risk. (Suggested by the OCS
+team in PR review.)
 
 ## Task Completion Notification
 
@@ -342,8 +375,12 @@ responses; prefer fixtures.
   `AssignedTask`, a fixture for a user with a connected OCS `SocialToken`.
 - **OCS client:** `list_chatbots` (pagination) and `trigger_bot` — success and failure
   (timeout / non-2xx → `OCSAPIException`); Bearer auth header; token refresh on expiry.
-- **`AssignedTask.assign` (OCS):** success stores `connect_channel_id`; trigger failure rolls
-  back so no `AssignedTask` exists; not-connected user blocked; Re-Learn path unchanged.
+- **`AssignedTask.assign` (OCS):** success stores `connect_channel_id` **and `ocs_session_id`**;
+  trigger failure rolls back so no `AssignedTask` exists; not-connected user blocked; Re-Learn
+  path unchanged.
+- **Completion reconciliation:** the periodic job finds `assigned` OCS tasks with an
+  `ocs_session_id`, polls OCS session status, and `mark_completed`s those OCS reports done;
+  idempotent with the callback; ignores tasks without a session id.
 - **Bulk audit path:** per-assign isolation — one failing task doesn't roll back the others;
   partial-success messaging.
 - **Callback logic:** marks completed; username mismatch rejected; optional `completed_at`;
@@ -355,34 +392,28 @@ responses; prefer fixtures.
 - **Form:** type branching; OCS requires `ocs_chatbot_id`; chatbot-load failure degradation;
   not-connected info-warning path.
 
-## Open Questions
+## Cross-Team Dependency
 
-These require input from outside this design — primarily the OCS team — and must be resolved
-before the dependent work can be finalized.
-
-1. **Callback authentication (OCS→Connect).** How does OCS authenticate to Connect's
-   completion callback? Connect must issue its own credential for OCS to present (the OAuth
-   token in this design is *OCS's* — it authenticates Connect→OCS, not the reverse). This is a
-   cross-team decision: the mechanism has to be something the OCS team can implement and
-   configure on their side. Current lean is a Connect-issued key/secret in a request header,
-   validated by a small DRF auth/permission class — but the choice depends on OCS-team input.
-   Blocks implementation of the callback endpoint.
+- **Callback authentication (OCS→Connect)** — *resolved in direction, pending OCS work.* OCS will
+  authenticate to Connect's callback via OAuth2 (Client Credentials grant), the same mechanism HQ
+  uses for the Form Processor (see Callback API). This depends on OCS adding OAuth support,
+  tracked in [open-chat-studio#2179](https://github.com/dimagi/open-chat-studio/issues/2179).
+  The callback endpoint can be built against the existing `FormReceiver` OAuth2 pattern once that
+  lands.
 
 ## Open Decisions
 
-1. **`trigger_bot` response field for `connect_channel_id`** (`channel` vs `session_id`) — confirm
-   against the live OCS API.
-2. **`start_new_session` / initial message** — confirm whether the bare `trigger_bot` payload
+1. **`start_new_session` / initial message** — confirm whether the bare `trigger_bot` payload
    starts a conversation or needs `start_new_session=true` / `prompt_text`.
-3. **Partial-success UX** in the audit bulk path — mark reviewed if ≥1 assigned + "skipped M"
+2. **Partial-success UX** in the audit bulk path — mark reviewed if ≥1 assigned + "skipped M"
    message (recommended yes).
-4. **Serializer field name** — `task_type` vs `type` for the discriminator (nit).
+3. **Serializer field name** — `task_type` vs `type` for the discriminator (nit).
 
 ## Out of Scope / YAGNI
 
 - A static `X-api-key` credential (reversed in favor of OAuth).
-- A background/async trigger, retries, or self-healing reconciliation (trigger is user-facing
-  and synchronous).
-- A machine-to-machine OCS credential (OCS offers no `client_credentials` grant).
+- A background/async **trigger** or trigger retries (the trigger is user-facing and synchronous).
+  Note: read-only completion *reconciliation* polling **is** in scope (see Completion
+  reconciliation) — that's status polling, not triggering.
 - Guaranteeing OCS team consistency across users (we let mismatched access fail loudly).
 - Routing completion through CommCare HQ (direct OCS→Connect callback instead).
