@@ -80,8 +80,8 @@ Relevant existing code (all in `commcare_connect/opportunity/` unless noted):
 OCS supports OAuth2 **Authorization Code + PKCE** and **Refresh Token** grants (confirmed from
 OCS docs). Endpoints: authorize `https://www.openchatstudio.com/o/authorize/`, token
 `/o/token/`, userinfo `/o/userinfo/`. Access tokens last ~1 hour; refresh tokens rotate.
-Scopes needed: `chatbots:read` (list) and `chatbots:interact` (trigger). No OIDC discovery
-endpoint.
+Scopes needed: `chatbots:read` (list), `chatbots:interact` (trigger) and `sessions:read` (session status). 
+No OIDC discovery endpoint.
 
 - Add a **custom allauth provider** for OCS (a `Provider` + `OAuth2Adapter` pointing at the
   three endpoints above, requesting the two scopes). allauth has no built-in OCS provider.
@@ -182,14 +182,10 @@ def trigger_bot(user, *, identifier: str, experiment: str, participant_data: dic
 ```
 
 Notes from the OCS schema:
-- List endpoint is `/api/v2/chatbots/` (NOT `/api/chatbots/` as the requirements draft said) and
-  is **paginated** — `list_chatbots` must page through results.
+- List endpoint is `/api/v2/chatbots/` and is **paginated** — `list_chatbots` must page through results.
 - `experiment` is a UUID (the chatbot id).
 - `trigger_bot` response fields: `session_id`, `url`, `team`, `channel`. We store **both**
   `channel` (→ `connect_channel_id`) and `session_id` (→ `ocs_session_id`).
-- `trigger_bot` also accepts `start_new_session` (bool) and `prompt_text`/`message_text`. The
-  bare payload may not actually *start* a conversation; confirm whether we need
-  `start_new_session=true` and/or an initial message.
 
 `trigger_bot` request body:
 
@@ -199,6 +195,7 @@ Notes from the OCS schema:
   "experiment": "<task_type.ocs_chatbot_id>",
   "platform": "commcare_connect",
   "participant_data": { "connectTaskId": "<assigned_task.assigned_task_id (UUID)>" }
+  "start_new_session": true
 }
 ```
 
@@ -246,7 +243,7 @@ for task_type in task_types:
 
 ## Callback API (Completion)
 
-New DRF endpoint (e.g. `POST /api/ocs/task_completed/`) that OCS calls when an FLW finishes a
+New DRF endpoint (e.g. `POST /api/task_completed/`) that OCS calls when an FLW finishes a
 conversation. (We keep completion as a **direct OCS→Connect callback** — not routed through
 CommCare HQ — since the OCS integration is Connect-to-OCS only.)
 
@@ -403,17 +400,12 @@ responses; prefer fixtures.
 
 ## Open Decisions
 
-1. **`start_new_session` / initial message** — confirm whether the bare `trigger_bot` payload
-   starts a conversation or needs `start_new_session=true` / `prompt_text`.
-2. **Partial-success UX** in the audit bulk path — mark reviewed if ≥1 assigned + "skipped M"
+1. **Partial-success UX** in the audit bulk path — mark reviewed if ≥1 assigned + "skipped M"
    message (recommended yes).
-3. **Serializer field name** — `task_type` vs `type` for the discriminator (nit).
 
 ## Out of Scope / YAGNI
 
-- A static `X-api-key` credential (reversed in favor of OAuth).
 - A background/async **trigger** or trigger retries (the trigger is user-facing and synchronous).
   Note: read-only completion *reconciliation* polling **is** in scope (see Completion
   reconciliation) — that's status polling, not triggering.
 - Guaranteeing OCS team consistency across users (we let mismatched access fail loudly).
-- Routing completion through CommCare HQ (direct OCS→Connect callback instead).
