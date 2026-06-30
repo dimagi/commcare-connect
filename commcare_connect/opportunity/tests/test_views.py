@@ -2780,3 +2780,40 @@ def test_fetch_audio_attachment_wrong_opportunity_returns_404(client, organizati
     response = client.get(url)
 
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_user_visit_details_renders_audio_player(client, organization, org_user_member, opportunity):
+    form_json = {
+        "domain": "test",
+        "id": "xform-123",
+        "app_id": "app-1",
+        "build_id": "build-1",
+        "received_on": "2026-06-30T00:00:00Z",
+        "form": {"@xmlns": "http://example.com/form"},
+        "metadata": {
+            "timeStart": "2026-06-30T00:00:00Z",
+            "timeEnd": "2026-06-30T00:05:00Z",
+            "app_build_version": "1",
+            "username": "worker",
+            "location": None,
+        },
+        "attachments": {},
+    }
+    visit = UserVisitFactory.create(opportunity=opportunity, form_json=form_json)
+    audio = AudioAttachmentFactory.create(user_visit=visit, transcript="hello world")
+
+    url = reverse(
+        "opportunity:user_visit_details",
+        args=(organization.slug, opportunity.opportunity_id, visit.user_visit_id),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 200
+    audio_url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.opportunity_id, audio.pk),
+    )
+    assert audio_url.encode() in response.content
+    assert b"hello world" in response.content
