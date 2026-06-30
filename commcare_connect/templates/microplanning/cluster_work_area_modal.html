@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n crispy_forms_tags %}
 <div id="cluster-work-area-modal"
      class="modal-backdrop"
      x-cloak
@@ -13,6 +13,9 @@
       <p class="mt-4">
         {% translate "This process may take a few minutes. Please do not close this window until it has completed." %}
       </p>
+      {% if not request.GET.clustering_task_id %}
+        {% crispy cluster_form %}
+      {% endif %}
       <div>
         {% if request.GET.clustering_task_id %}
           <div id="clustering-status"
@@ -28,9 +31,6 @@
         {% endif %}
       </div>
       <div class="flex justify-between mt-4">
-        <button type="button"
-                class="button button-md outline-style"
-                @click="showCreateWorkAreaGroupsModal = false">{% trans 'Close' %}</button>
         {% if request.GET.clustering_task_id %}
           <button type="button" disabled class="button button-md primary-dark">{% translate "Create Groups" %}</button>
         {% else %}
@@ -38,8 +38,12 @@
                   class="button button-md primary-dark"
                   hx-post="{% url 'microplanning:cluster_work_areas' request.org.slug request.opportunity.opportunity_id %}"
                   hx-trigger="click"
+                  hx-include="[name='building_count']"
                   hx-swap="outerHTML">{% trans 'Create Groups' %}</button>
         {% endif %}
+        <button type="button"
+                class="button button-md outline-style"
+                @click="showCreateWorkAreaGroupsModal = false">{% trans 'Close' %}</button>
       </div>
     </div>
   </div>
