@@ -42,6 +42,13 @@ class TestFlagModel:
         invalid_obj = {"name": "test"}
         assert flag.is_active_for(invalid_obj) is False
 
+    def test_unsaved_flag_is_not_active_for(self, opportunity):
+        """A transient Flag (no pk) — e.g. waffle's default for a missing flag — must
+        not blow up when its M2M relations are checked during a flag lookup."""
+        transient_flag = Flag(name="open_chat_studio_widget")
+        assert transient_flag.pk is None
+        assert transient_flag.is_active_for(opportunity) is False
+
     def test_active_flags_for_user(self):
         user = UserFactory()
         user_flag = FlagFactory()
