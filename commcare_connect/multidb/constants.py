@@ -1,3 +1,4 @@
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaInaccessibilityRequest
 from commcare_connect.opportunity.models import (
     Assessment,
     CommCareApp,
@@ -56,4 +57,7 @@ REPLICATION_ALLOWED_MODELS = [
     UserAnalyticsData,
     UserCredential,
     PaymentInvoice,
+    WorkArea,
+    WorkAreaGroup,
+    WorkAreaInaccessibilityRequest,
 ]
