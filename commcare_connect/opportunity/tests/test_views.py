@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core.files.base import ContentFile
+from django.core.files.storage import storages
 from django.core.files.storage.handler import StorageHandler
 from django.template import Context
 from django.test import Client
@@ -42,6 +44,7 @@ from commcare_connect.opportunity.tables import TaskTable
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
+    AudioAttachmentFactory,
     BlobMetaFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -2744,3 +2747,36 @@ class TestDeleteTasks:
         assert AssignedTask.objects.filter(pk=task.pk).exists()
         msgs = list(get_messages(response.wsgi_request))
         assert any("could not update CommCare HQ" in str(m) for m in msgs)
+
+
+@pytest.mark.django_db
+def test_fetch_audio_attachment_returns_file(client, organization, org_user_member, opportunity):
+    visit = UserVisitFactory.create(opportunity=opportunity)
+    audio = AudioAttachmentFactory.create(user_visit=visit, content_type="audio/mp4")
+    storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
+
+    url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.id, audio.pk),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "audio/mp4"
+    assert b"".join(response.streaming_content) == b"audiobytes"
+
+
+@pytest.mark.django_db
+def test_fetch_audio_attachment_wrong_opportunity_returns_404(client, organization, org_user_member, opportunity):
+    other_visit = UserVisitFactory.create()  # belongs to a different opportunity
+    audio = AudioAttachmentFactory.create(user_visit=other_visit)
+
+    url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.id, audio.pk),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 404
