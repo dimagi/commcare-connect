@@ -10,6 +10,7 @@ from tablib import Dataset
 from commcare_connect.connect_id_client.models import ConnectIdUser, Message
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.models import (
+    AudioAttachment,
     BlobMeta,
     CompletedWorkStatus,
     ExchangeRate,
@@ -210,6 +211,60 @@ def test_download_attachments(mobile_user: User, opportunity: Opportunity):
         blob_id, content_file = save_blob.call_args_list[0].args
         assert str(blob_id) == blob_meta.blob_id
         assert content_file.read() == b"asdas"
+
+
+def test_download_routes_audio_to_audio_attachment(mobile_user: User, opportunity: Opportunity):
+    user_visit = UserVisitFactory.create(
+        user=mobile_user,
+        opportunity=opportunity,
+        form_json={
+            "attachments": {
+                "myimage.jpg": {"content_type": "image/jpeg", "length": 20},
+                "recording.m4a": {"content_type": "audio/mp4", "length": 50},
+            }
+        },
+    )
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
+        get_response.return_value.content = b"bytes"
+        download_user_visit_attachments.run(user_visit.id)
+
+    # Image still goes to BlobMeta
+    blob_metas = BlobMeta.objects.filter(parent_id=user_visit.xform_id)
+    assert blob_metas.count() == 1
+    assert blob_metas.first().name == "myimage.jpg"
+
+    # Audio goes to AudioAttachment, not BlobMeta
+    assert not BlobMeta.objects.filter(name="recording.m4a").exists()
+    audios = AudioAttachment.objects.filter(user_visit=user_visit)
+    assert audios.count() == 1
+    audio = audios.first()
+    assert audio.name == "recording.m4a"
+    assert audio.content_type == "audio/mp4"
+    assert audio.content_length == 50
+    # Bytes saved under the audio's blob_id
+    saved_keys = [call.args[0] for call in save_blob.call_args_list]
+    assert str(audio.blob_id) in saved_keys
+
+
+def test_download_audio_attachment_is_idempotent(mobile_user: User, opportunity: Opportunity):
+    user_visit = UserVisitFactory.create(
+        user=mobile_user,
+        opportunity=opportunity,
+        form_json={"attachments": {"recording.m4a": {"content_type": "audio/mp4", "length": 50}}},
+    )
+    with (
+        mock.patch("commcare_connect.opportunity.tasks.httpx.get") as get_response,
+        mock.patch("commcare_connect.opportunity.tasks.default_storage.save") as save_blob,
+    ):
+        get_response.return_value.content = b"bytes"
+        download_user_visit_attachments.run(user_visit.id)
+        download_user_visit_attachments.run(user_visit.id)
+
+    assert AudioAttachment.objects.filter(user_visit=user_visit).count() == 1
+    assert save_blob.call_count == 1
 
 
 @pytest.mark.django_db
