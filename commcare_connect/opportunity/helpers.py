@@ -270,13 +270,17 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
             )
 
         pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
-        approved_count_sq = completed_work_status_subquery(CompletedWorkStatus.approved, sum_field="saved_approved_count")
+        approved_count_sq = completed_work_status_subquery(
+            CompletedWorkStatus.approved, sum_field="saved_approved_count"
+        )
         rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
         over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
         incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
 
         total_pending_for_user = completed_work_status_total_subquery(CompletedWorkStatus.pending)
-        total_approved_for_user = completed_work_status_total_subquery(CompletedWorkStatus.approved, sum_field="saved_approved_count")
+        total_approved_for_user = completed_work_status_total_subquery(
+            CompletedWorkStatus.approved, sum_field="saved_approved_count"
+        )
         total_rejected_for_user = completed_work_status_total_subquery(CompletedWorkStatus.rejected)
         total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 
