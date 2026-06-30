@@ -324,19 +324,6 @@
                 this.flwSummaryLoading = false;
             },
 
-            getSelectedStats() {
-                let buildings = 0;
-                let visits = 0;
-                for (const id of this.selectedWorkAreas) {
-                    const props = this.workAreaProperties.get(id);
-                    if (props) {
-                        buildings += parseInt(props.building_count) || 0;
-                        visits += parseInt(props.expected_visit_count) || 0;
-                    }
-                }
-                return { buildings, visits };
-            },
-
             getSelectedStatsForSummary() {
                 // Live preview of pending changes for the FLW summary. Only count
                 // selected work areas that are NOT already assigned to this FLW.
@@ -389,12 +376,16 @@
 
             addToQueue() {
                 if (this.selectedWorkAreas.size === 0 || !this.selectedAssigneeId) return;
+                const newWorkAreaIds = Array.from(this.selectedWorkAreas).filter(
+                    id => !this.flwFilterWorkAreaIds.has(id)
+                );
+                const newStats = this.getSelectedStatsForSummary();
                 this.assignmentQueue.push({
                     assignee_id: this.selectedAssigneeId,
                     assignee_name: this.getAssigneeName(),
-                    work_area_ids: Array.from(this.selectedWorkAreas),
-                    buildings: this.getSelectedStats().buildings,
-                    visits: this.getSelectedStats().visits,
+                    work_area_ids: newWorkAreaIds,
+                    buildings: newStats.buildings,
+                    visits: newStats.visits,
                 });
                 this.clearSelection();
                 if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
