@@ -1,8 +1,13 @@
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Field, Layout
+from crispy_forms.layout import Div, Field, Layout
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from commcare_connect.microplanning.const import (
+    DEFAULT_BUILDING_COUNT,
+    MAX_BUILDING_COUNT,
+    MIN_BUILDING_COUNT,
+)
 from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup
 from commcare_connect.opportunity.models import OpportunityAccess
 
@@ -10,6 +15,48 @@ INPUT_CSS = (
     "w-full rounded-md border border-gray-300 px-3 py-2 "
     "text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
 )
+
+BUILDING_COUNT_RANGE_MESSAGE = _("Enter a value between %(min)s and %(max)s.") % {
+    "min": MIN_BUILDING_COUNT,
+    "max": MAX_BUILDING_COUNT,
+}
+
+
+class ClusterWorkAreasForm(forms.Form):
+    """Validates the target building count used when clustering work areas into groups."""
+
+    building_count = forms.IntegerField(
+        required=False,
+        min_value=MIN_BUILDING_COUNT,
+        max_value=MAX_BUILDING_COUNT,
+        label=_("Building Count"),
+        error_messages={
+            "min_value": BUILDING_COUNT_RANGE_MESSAGE,
+            "max_value": BUILDING_COUNT_RANGE_MESSAGE,
+            "invalid": BUILDING_COUNT_RANGE_MESSAGE,
+        },
+        widget=forms.NumberInput(
+            attrs={
+                "class": INPUT_CSS,
+                "min": MIN_BUILDING_COUNT,
+                "max": MAX_BUILDING_COUNT,
+                "placeholder": _("Enter a value between %(min)s and %(max)s")
+                % {"min": MIN_BUILDING_COUNT, "max": MAX_BUILDING_COUNT},
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        # Wrap the field in an addressable container so the htmx error response
+        # can retarget the swap onto just this field (see cluster_work_areas view).
+        self.helper.layout = Layout(Div(Field("building_count"), css_id="building-count-field", css_class="my-8"))
+
+    def clean_building_count(self):
+        value = self.cleaned_data.get("building_count")
+        return value if value is not None else DEFAULT_BUILDING_COUNT
 
 
 class WorkAreaModelForm(forms.ModelForm):
