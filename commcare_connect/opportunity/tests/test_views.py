@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from django.contrib.messages import get_messages
 from django.core.files.storage.handler import StorageHandler
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template import Context
 from django.test import Client
 from django.urls import get_resolver, reverse
@@ -2744,3 +2745,68 @@ class TestDeleteTasks:
         assert AssignedTask.objects.filter(pk=task.pk).exists()
         msgs = list(get_messages(response.wsgi_request))
         assert any("could not update CommCare HQ" in str(m) for m in msgs)
+
+
+@mock.patch("commcare_connect.opportunity.views.bulk_update_payments_task.delay")
+def test_payment_import_redirects_with_payment_task_id(mock_delay, client, organization, opportunity, org_user_member):
+    mock_delay.return_value.id = "task-123"
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import", args=(organization.slug, opportunity.id))
+    csv_bytes = b"username,payment amount,payment date (yyyy-mm-dd),payment method,payment operator\n"
+    upload = SimpleUploadedFile("payments.csv", csv_bytes, content_type="text/csv")
+
+    response = client.post(url, {"payments": upload})
+
+    assert response.status_code == 302
+    assert "payment_import_task_id=task-123" in response.url
+    assert "export_task_id=" not in response.url
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "PROGRESS", "args": [opportunity.id]}
+    task.info = {"message": "Payment Record Import is in progress."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Payment Record Import is in progress." in content
+    assert "hx-get" in content  # keeps polling while not complete
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_payment_import_status_complete_shows_reload_link(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task.info = {"message": "done"}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:payment_import_status", args=(organization.slug, "task-xyz"))
+
+    response = client.get(url)
+
+    content = response.content.decode()
+    assert "All done! View status." in content
+    assert "show_import_status=task-xyz" in content
+    assert "hx-get" not in content  # polling stops once complete
+
+
+@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+def test_worker_payments_shows_import_banner_on_reload(
+    mock_async_result, client, organization, opportunity, org_user_member
+):
+    task = mock_async_result.return_value
+    task._get_task_meta.return_value = {"status": "SUCCESS", "args": [opportunity.id]}
+    task.info = {"message": "Payment status updated successfully for 3 users."}
+    client.force_login(org_user_member)
+    url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
+
+    response = client.get(url, {"show_import_status": "task-xyz"})
+
+    assert response.status_code == 200
+    assert "Payment status updated successfully for 3 users." in response.content.decode()
