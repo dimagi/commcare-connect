@@ -162,6 +162,20 @@ class TestWorkAreaCSVImporter:
 
         assert result["created"] == 1
 
+    def test_utf8_bom_csv(self, opportunity):
+        UTF8_BOM = "﻿"
+        raw = (
+            UTF8_BOM
+            + self.build_csv(
+                [["area-bom", "ward", self.CENTROID, self.POLYGON, "5", "6", "100", "LGA1", "State1"]]
+            ).read()
+        )
+        # utf-8-sig strips BOM on decode — same as import_work_areas_task does
+        decoded = io.StringIO(raw.encode("utf-8").decode("utf-8-sig"))
+        result = WorkAreaCSVImporter(opportunity.id, decoded).run()
+        assert result["created"] == 1
+        assert WorkArea.objects.filter(slug="area-bom").exists()
+
     def test_missing_extra_properties(self, opportunity):
         row = [
             "area-1",
