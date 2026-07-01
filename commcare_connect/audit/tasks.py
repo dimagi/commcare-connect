@@ -4,6 +4,7 @@ import logging
 from collections import defaultdict
 
 from allauth.utils import build_absolute_uri
+from django.contrib.postgres.aggregates import ArrayAgg
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -67,40 +68,48 @@ def send_new_audit_report_notifications(reports) -> None:
     """
     reports_by_org = defaultdict(list)
     for report in reports:
-        opportunity = report.opportunity
-        if opportunity.program_id is None:
+        try:
+            opportunity = report.opportunity
+            if opportunity.program_id is None:
+                continue
+            pm_org = opportunity.program.organization
+            report_url = build_absolute_uri(
+                None,
+                reverse(
+                    "opportunity:audit:audit_report_detail",
+                    kwargs={
+                        "org_slug": pm_org.slug,
+                        "opp_id": opportunity.opportunity_id,
+                        "audit_report_id": report.audit_report_id,
+                    },
+                ),
+            )
+            reports_by_org[pm_org].append(
+                {
+                    "opportunity_name": opportunity.name,
+                    "period_start": report.period_start.isoformat(),
+                    "period_end": report.period_end.isoformat(),
+                    "url": report_url,
+                }
+            )
+        except Exception:
+            logger.exception("Failed to build notification for audit report %s", report.audit_report_id)
             continue
-        pm_org = opportunity.program.organization
-        report_url = build_absolute_uri(
-            None,
-            reverse(
-                "opportunity:audit:audit_report_detail",
-                kwargs={
-                    "org_slug": pm_org.slug,
-                    "opp_id": opportunity.opportunity_id,
-                    "audit_report_id": report.audit_report_id,
-                },
-            ),
-        )
-        reports_by_org[pm_org].append(
-            {
-                "opportunity_name": opportunity.name,
-                "period_start": report.period_start.isoformat(),
-                "period_end": report.period_end.isoformat(),
-                "url": report_url,
-            }
-        )
 
     if not reports_by_org:
         return
 
-    org_emails = defaultdict(list)
-    for org_id, email in UserOrganizationMembership.objects.filter(
-        organization_id__in=[org.id for org in reports_by_org],
-        role=UserOrganizationMembership.Role.ADMIN,
-    ).values_list("organization_id", "user__email"):
-        if email:
-            org_emails[org_id].append(email)
+    org_emails = dict(
+        UserOrganizationMembership.objects.filter(
+            organization_id__in=[org.id for org in reports_by_org],
+            role=UserOrganizationMembership.Role.ADMIN,
+        )
+        .exclude(user__email__isnull=True)
+        .exclude(user__email="")
+        .values("organization_id")
+        .annotate(emails=ArrayAgg("user__email", distinct=True))
+        .values_list("organization_id", "emails")
+    )
 
     for pm_org, items in reports_by_org.items():
         recipient_emails = org_emails.get(pm_org.id)
