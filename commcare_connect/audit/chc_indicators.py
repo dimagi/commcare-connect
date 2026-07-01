@@ -338,7 +338,7 @@ class InaccessibleWARateEarlyWarning(AuditCalculation):
         return Measurement(
             value=_percent(stats["inaccessible_count"], stats["total"]),
             sample_size=stats["terminal_count"],
-            denominator=stats["total"],
+            denominator_override=stats["total"],
         )
 
 

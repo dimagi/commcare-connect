@@ -158,7 +158,7 @@ def test_percentage_denominator_defaults_to_sample_size():
 
 def test_percentage_denominator_override_decouples_from_gating_sample():
     # Gate on sample_size=6 (>= min 5), but report the rate over 8.
-    result = _PctCalc(Measurement(25.0, 6, denominator=8)).run(None, None, None)
+    result = _PctCalc(Measurement(25.0, 6, denominator_override=8)).run(None, None, None)
     assert result.has_sufficient_data is True
     assert result.denominator == 8
     assert result.numerator == 2  # round(25.0 * 8 / 100), derived from value not sample_size
