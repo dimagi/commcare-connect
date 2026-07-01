@@ -310,6 +310,34 @@ def test_delivery_progress_assigned_tasks_filtered_by_user(
         assert assigned_task_data["due_date"] == str(assigned_task.due_date)
 
 
+def test_delivery_progress_no_claim_degrades_gracefully(mobile_user: User, api_client: APIClient):
+    """An OpportunityAccess with no OpportunityClaim must return 200, not 500.
+
+    The mobile app can poll /delivery_progress before the worker has claimed the
+    opportunity (e.g. the claim POST failed, or the screen is opened pre-claim).
+    DeliveryProgressSerializer previously assumed ``obj.opportunityclaim`` always
+    exists (via the ``end_date`` source and ``get_max_payments``), so an unclaimed
+    access raised ``OpportunityAccess.opportunityclaim.RelatedObjectDoesNotExist``
+    — an unhandled 500 that surfaced on mobile as an opaque error. The endpoint
+    must degrade gracefully instead: ``end_date=None`` and ``max_payments=-1``
+    (the same "no limit" sentinel ``get_max_payments`` already returns).
+    """
+    opportunity, opportunity_access = _setup_opportunity_and_access(
+        mobile_user, total_budget=1000, end_date=datetime.date.today() + datetime.timedelta(days=100)
+    )
+    assert not OpportunityClaim.objects.filter(opportunity_access=opportunity_access).exists()
+
+    api_client.force_authenticate(mobile_user)
+    response = api_client.get(f"/api/opportunity/{opportunity.id}/delivery_progress")
+
+    assert response.status_code == 200
+    assert response.data.keys() == DeliveryProgressSerializer().get_fields().keys()
+    assert response.data["end_date"] is None
+    assert response.data["max_payments"] == -1
+    assert response.data["payments"] == []
+    assert response.data["deliveries"] == []
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "endpoint_func, payload_func",
