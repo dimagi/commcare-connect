@@ -16,6 +16,11 @@
       {% endif %}
       <h6 class="title text-brand-deep-purple">Login</h6>
       <span class="text-sm text-gray-600">Please enter your details</span>
+      {% if request.GET.next and "/organization/invite/" in request.GET.next %}
+        <div class="text-sm text-brand-deep-purple bg-brand-cornflower-blue/10 rounded-lg p-3">
+          {% translate "You've been invited to a workspace. Sign in to accept the invitation." %}
+        </div>
+      {% endif %}
       {% if messages %}
         {% for message in messages %}<p class="text-sm text-red-600">* {{ message }}</p>{% endfor %}
       {% endif %}

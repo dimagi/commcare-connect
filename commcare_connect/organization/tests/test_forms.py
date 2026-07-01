@@ -4,7 +4,7 @@ from django.test import Client
 from django.urls import reverse
 
 from commcare_connect.organization.forms import OrganizationChangeForm, OrganizationSelectOrCreateForm
-from commcare_connect.organization.models import LLOEntity, Organization
+from commcare_connect.organization.models import LLOEntity, Organization, OrganizationInvite
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import LLOEntityFactory, UserFactory
 from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
@@ -21,55 +21,53 @@ class TestAddMembersView:
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(
-        "email, role, expected_status_code, create_user, expected_role, should_exist",
+        "email, role, create_user, make_member, expect_invite",
         [
-            ("testformember@example.com", "member", 302, True, "member", True),
-            ("testforadmin@example.com", "admin", 302, True, "admin", True),
-            ("nonexistent@example.com", "member", 302, False, None, False),
-            ("existing@example.com", "admin", 302, True, "member", True),
+            # brand-new person with no Connect account -> invite is created
+            ("testformember@example.com", "member", False, False, True),
+            # existing Connect user who is not yet in this workspace -> invite is created
+            ("testforadmin@example.com", "admin", True, False, True),
+            # already a member of this workspace -> rejected, no invite
+            ("existing@example.com", "admin", True, True, False),
         ],
     )
-    def test_add_member(
+    def test_add_member_creates_invite(
         self,
         email,
         role,
-        expected_status_code,
         create_user,
-        expected_role,
-        should_exist,
+        make_member,
+        expect_invite,
         organization,
     ):
         if create_user:
             user = UserFactory(email=email)
+            if make_member:
+                organization.members.add(user, through_defaults={"role": "member"})
 
-            if email == "existing@example.com":
-                organization.members.add(user, through_defaults={"role": expected_role})
+        response = self.client.post(self.url, {"email": email, "role": role})
 
-        data = {"email": email, "role": role}
-        response = self.client.post(self.url, data)
-
-        membership_filter = {"user__email": email}
-
-        assert response.status_code == expected_status_code
-        membership_exists = organization.memberships.filter(**membership_filter).exists()
-        assert membership_exists == should_exist
-
-        if should_exist and expected_role:
-            membership = organization.memberships.get(**membership_filter)
-            assert membership.role == expected_role
+        assert response.status_code == 302
+        invite_qs = OrganizationInvite.objects.filter(organization=organization, email=email)
+        assert invite_qs.exists() == expect_invite
+        if expect_invite:
+            assert invite_qs.get().role == role
+        # inviting never creates a membership directly; that only happens on accept
+        assert not organization.memberships.filter(user__email=email, role=role).exists()
 
     @pytest.mark.django_db
     def test_invalid_invite_shows_error_message(self):
-        response = self.client.post(self.url, {"email": "nonexistent@example.com", "role": "member"}, follow=True)
+        # inviting someone who is already a member is rejected with a surfaced error
+        response = self.client.post(self.url, {"email": self.user.email, "role": "member"}, follow=True)
 
         messages = list(response.context["messages"])
         assert len(messages) == 1
         assert messages[0].level_tag == "error"
-        assert "does not exist or is already a member" in str(messages[0])
+        assert "already belongs" in str(messages[0])
 
     @pytest.mark.django_db
     def test_valid_invite_shows_success_message(self):
-        UserFactory(email="newmember@example.com")
+        # a brand-new email (no Connect account) can be invited
         response = self.client.post(self.url, {"email": "newmember@example.com", "role": "member"}, follow=True)
 
         messages = list(response.context["messages"])

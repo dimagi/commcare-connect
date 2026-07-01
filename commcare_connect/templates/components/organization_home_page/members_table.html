@@ -1,0 +1,28 @@
+{% load i18n %}
+{% include "components/tables/table.html" %}
+{% if pending_invites %}
+  <div class="mt-8">
+    <h3 class="text-lg font-semibold text-brand-deep-purple mb-3">{% trans "Pending Invites" %}</h3>
+    <div class="flex flex-col gap-2">
+      {% for invite in pending_invites %}
+        <div class="flex items-center justify-between bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+          <div class="flex items-center gap-3">
+            <span class="text-sm text-gray-900">{{ invite.email }}</span>
+            <span class="badge badge-md warning-dark">{% trans "Invited" %}</span>
+            <span class="text-xs text-gray-400">{{ invite.get_role_display }}</span>
+          </div>
+          <form action="{% url 'organization:revoke_invite' request.org.slug %}"
+                method="post">
+            {% csrf_token %}
+            <input type="hidden" name="invite_id" value="{{ invite.pk }}">
+            <button type="submit"
+                    class="button button-sm bg-red-600 hover:bg-red-700 text-white">
+              <i class="fa-solid fa-xmark"></i>
+              {% trans "Revoke" %}
+            </button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
