@@ -1737,3 +1737,48 @@ class TestCoverageProgressView(BaseMicroplanningFlagTest):
             report_cls.return_value.header.side_effect = OperationalError("connection lost")  # no pgcode 57014
             with pytest.raises(OperationalError):
                 client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+
+@pytest.mark.django_db
+class TestClusterWorkAreas(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:cluster_work_areas", kwargs={"org_slug": org_slug, "opp_id": opp_id})
+
+    @pytest.fixture
+    def work_area(self, opportunity):
+        return WorkAreaFactory(opportunity=opportunity)
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_valid_building_count_forwards_to_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        mock_delay.return_value = MagicMock(id="task-123")
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"building_count": 250})
+
+        assert response.status_code == 200
+        mock_delay.assert_called_once_with(opportunity.id, 250)
+        assert "clustering_task_id=task-123" in response.headers["HX-Push-Url"]
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_empty_building_count_defaults(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        mock_delay.return_value = MagicMock(id="task-123")
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {})
+
+        assert response.status_code == 200
+        mock_delay.assert_called_once_with(opportunity.id, 200)
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_out_of_range_does_not_start_task(self, mock_delay, client, org_user_admin, opportunity, work_area):
+        client.force_login(org_user_admin)
+
+        url = self.url(opportunity.organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"building_count": 500})
+
+        assert response.status_code == 200
+        mock_delay.assert_not_called()
+        assert "between 100 and 300" in response.content.decode()
+        assert response.headers["HX-Retarget"] == "#building-count-field"
