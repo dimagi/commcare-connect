@@ -16,14 +16,14 @@ INPUT_CSS = (
     "text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
 )
 
-BUILDING_COUNT_RANGE_MESSAGE = _("Enter a value between %(min)s and %(max)s.") % {
-    "min": MIN_BUILDING_COUNT,
-    "max": MAX_BUILDING_COUNT,
-}
-
 
 class ClusterWorkAreasForm(forms.Form):
     """Validates the target building count used when clustering work areas into groups."""
+
+    BUILDING_COUNT_RANGE_MESSAGE = _("Enter a value between %(min)s and %(max)s.") % {
+        "min": MIN_BUILDING_COUNT,
+        "max": MAX_BUILDING_COUNT,
+    }
 
     building_count = forms.IntegerField(
         required=False,
