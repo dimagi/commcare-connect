@@ -30,10 +30,14 @@ def generate_audit_reports() -> None:
 
     period_start, period_end = period_for(timezone.now().date())
 
-    opportunities = Opportunity.objects.filter(
-        Q(pk__in=flag.opportunities.values_list("pk", flat=True)) | Q(program__in=flag.programs.all()),
-        active=True,
-    ).distinct()
+    opportunities = (
+        Opportunity.objects.filter(
+            Q(pk__in=flag.opportunities.values_list("pk", flat=True)) | Q(program__in=flag.programs.all()),
+            active=True,
+        )
+        .select_related("program__organization")
+        .distinct()
+    )
 
     generated_reports = []
     for opportunity in opportunities:
@@ -61,14 +65,12 @@ def send_new_audit_report_notifications(reports) -> None:
     listing all of that org's new reports. Reports for opportunities without a
     program (no PM org) are skipped, as are orgs with no admin recipients.
     """
-    pm_orgs = {}
     reports_by_org = defaultdict(list)
     for report in reports:
         opportunity = report.opportunity
         if opportunity.program_id is None:
             continue
         pm_org = opportunity.program.organization
-        pm_orgs[pm_org.id] = pm_org
         report_url = build_absolute_uri(
             None,
             reverse(
@@ -80,7 +82,7 @@ def send_new_audit_report_notifications(reports) -> None:
                 },
             ),
         )
-        reports_by_org[pm_org.id].append(
+        reports_by_org[pm_org].append(
             {
                 "opportunity_name": opportunity.name,
                 "period_start": report.period_start.isoformat(),
@@ -94,20 +96,20 @@ def send_new_audit_report_notifications(reports) -> None:
 
     org_emails = defaultdict(list)
     for org_id, email in UserOrganizationMembership.objects.filter(
-        organization_id__in=reports_by_org.keys(),
+        organization_id__in=[org.id for org in reports_by_org],
         role=UserOrganizationMembership.Role.ADMIN,
     ).values_list("organization_id", "user__email"):
         if email:
             org_emails[org_id].append(email)
 
-    for org_id, items in reports_by_org.items():
-        recipient_emails = org_emails.get(org_id)
+    for pm_org, items in reports_by_org.items():
+        recipient_emails = org_emails.get(pm_org.id)
         if not recipient_emails:
             continue
         try:
-            _send_org_audit_report_email(pm_orgs[org_id], items, recipient_emails)
+            _send_org_audit_report_email(pm_org, items, recipient_emails)
         except Exception:
-            logger.exception("Failed to send audit report notification for organization %s", org_id)
+            logger.exception("Failed to send audit report notification for organization %s", pm_org.id)
 
 
 def _send_org_audit_report_email(organization, reports, recipient_emails) -> None:
