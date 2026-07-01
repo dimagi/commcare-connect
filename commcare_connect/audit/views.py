@@ -28,7 +28,10 @@ def _require_feature_flag(opportunity):
         flag = Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT)
     except Flag.DoesNotExist:
         raise Http404("Weekly performance report is not enabled.")
-    if not flag.opportunities.filter(pk=opportunity.pk).exists():
+    enabled = flag.opportunities.filter(pk=opportunity.pk).exists() or (
+        opportunity.program_id is not None and flag.programs.filter(pk=opportunity.program_id).exists()
+    )
+    if not enabled:
         raise Http404("Weekly performance report is not enabled for this opportunity.")
 
 
