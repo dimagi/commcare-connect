@@ -114,6 +114,16 @@
               <p class="text-sm font-normal text-brand-deep-purple">{{ audio.translation }}</p>
             </div>
           {% endif %}
+          {% if not request.is_opportunity_pm %}
+            <a href="{% url 'opportunity:audio_attachment_transcribe' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}"
+               class="button button-sm outline-style w-fit">
+              {% if audio.transcript or audio.translation %}
+                <i class="fa-regular fa-pen-to-square mr-1"></i>{% translate "Edit Transcript" %}
+              {% else %}
+                <i class="fa-solid fa-plus mr-1"></i>{% translate "Add Transcript" %}
+              {% endif %}
+            </a>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
