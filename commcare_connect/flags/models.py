@@ -63,6 +63,10 @@ class Flag(AbstractUserFlag):
         return cls.objects.filter(filters).distinct()
 
     def is_active_for(self, obj: Organization | Opportunity | Program):
+        # A transient/unsaved Flag (e.g. waffle's default for a missing flag) has no
+        # primary key
+        if self.pk is None:
+            return False
         if isinstance(obj, Organization):
             organization_ids = self._get_ids_for_relation("organizations")
             return obj.pk in organization_ids
