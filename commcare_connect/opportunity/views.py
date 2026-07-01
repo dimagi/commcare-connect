@@ -16,6 +16,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
 from django.core.files.storage import default_storage, storages
 from django.db import transaction
@@ -79,6 +80,7 @@ from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
+    AudioAttachmentTranscribeForm,
     AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     DeliverUnitFlagsForm,
@@ -1160,6 +1162,61 @@ def fetch_audio_attachment(request, org_slug, opp_id, pk):
     except FileNotFoundError:
         return HttpResponseNotFound()
     return FileResponse(attachment, filename=audio.name, content_type=audio.content_type)
+
+
+class AudioAttachmentTranscribe(
+    SuccessMessageMixin, OrganizationUserMemberRoleMixin, OpportunityObjectMixin, UpdateView
+):
+    model = AudioAttachment
+    form_class = AudioAttachmentTranscribeForm
+    template_name = "opportunity/audio_attachment_transcribe.html"
+    success_message = gettext_lazy("Transcript saved.")
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.is_opportunity_pm:
+            raise Http404()
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_object(self, queryset=None):
+        return get_object_or_404(
+            AudioAttachment.objects.select_related("user_visit__user", "user_visit__opportunity__program"),
+            pk=self.kwargs["pk"],
+            user_visit__opportunity=self.get_opportunity(),
+        )
+
+    def get_visit_details_url(self):
+        return (
+            f"{reverse('opportunity:user_visits_list', args=(self.kwargs['org_slug'], self.kwargs['opp_id']))}"
+            f"?{urlencode({'user': self.object.user_visit.user.user_id})}"
+        )
+
+    def get_breadcrumbs(self, org_slug, opp_id):
+        user_visit = self.object.user_visit
+        opportunity = user_visit.opportunity
+
+        return [
+            {"title": opportunity.program.name, "url": reverse("program:home", args=(org_slug,))},
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(org_slug, opp_id)),
+            },
+            {
+                "title": _("Connect Workers"),
+                "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id)),
+            },
+            {"title": user_visit.user.name, "url": self.get_visit_details_url()},
+            {"title": _("Transcribe Audio"), "url": self.request.path},
+        ]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = self.get_breadcrumbs(self.kwargs["org_slug"], self.kwargs["opp_id"])
+        context["visit_details_url"] = self.get_visit_details_url()
+        return context
+
+    def get_success_url(self):
+        return self.get_visit_details_url()
 
 
 @org_member_required
