@@ -63,8 +63,7 @@ def send_new_audit_report_notifications(reports) -> None:
     """Email PM-org admins about newly generated audit reports.
 
     Reports are grouped by PM org so each org's admins receive a single email
-    listing all of that org's new reports. Reports for opportunities without a
-    program (no PM org) are skipped, as are orgs with no admin recipients.
+    listing all of that org's new reports.
     """
     reports_by_org = defaultdict(list)
     for report in reports:
