@@ -24,6 +24,28 @@ from commcare_connect.audit.calculations import (
         ({"value": 56.44543, "numerator": 3, "denominator": 5}, True, "56% (3/5)"),
         ({"value": 0.564356}, True, "0.56"),
         ({"value": None}, True, "-"),
+        (
+            {
+                "value": 0.8,
+                "components": [
+                    {"numerator": 1, "denominator": 2},
+                    {"numerator": 10, "denominator": 20},
+                ],
+            },
+            False,
+            "0.80 ((1/2) / (10/20))",
+        ),
+        (
+            {
+                "value": 0.8,
+                "components": [
+                    {"numerator": 1, "denominator": 2},
+                    {"numerator": 10, "denominator": 20},
+                ],
+            },
+            True,
+            "0.80 ((1/2) / (10/20))",
+        ),
     ],
 )
 def test_format_value(result, with_fraction, expected):
@@ -100,6 +122,32 @@ class _PctCalc(AuditCalculation):
 
     def compute(self, opportunity_access, period_start, period_end):
         return self._measurement
+
+
+class _RatioCalc(AuditCalculation):
+    name = "ratio"
+    label = "Ratio"
+    min_sample_size = 1
+
+    def compute(self, opportunity_access, period_start, period_end):
+        return Measurement(
+            0.8,
+            2,
+            components=[
+                {"numerator": 1, "denominator": 2},
+                {"numerator": 10, "denominator": 20},
+            ],
+        )
+
+
+def test_components_flow_through_run_and_to_dict():
+    result = _RatioCalc().run(None, None, None)
+    components = [
+        {"numerator": 1, "denominator": 2},
+        {"numerator": 10, "denominator": 20},
+    ]
+    assert result.components == components
+    assert result.to_dict()["components"] == components
 
 
 def test_percentage_denominator_defaults_to_sample_size():

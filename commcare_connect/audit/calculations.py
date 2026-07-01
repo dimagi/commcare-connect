@@ -15,11 +15,15 @@ class Measurement:
     ``denominator`` overrides the displayed fraction's denominator for percentage
     calculations whose rate is taken over a different population than the gate;
     when ``None`` the denominator defaults to ``sample_size``.
+    ``components`` exposes the sub-fractions of a value that is itself built from
+    several fractions (e.g. a ratio-of-ratios); each entry is a
+    ``{"numerator", "denominator"}`` dict, rendered in order alongside the value.
     """
 
     value: Any
     sample_size: int
     denominator: int | None = None
+    components: list[dict] | None = None
 
 
 @dataclass
@@ -31,6 +35,7 @@ class CalculationResult:
     in_range: bool
     numerator: int | None = None
     denominator: int | None = None
+    components: list[dict] | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -43,6 +48,8 @@ class CalculationResult:
             d["numerator"] = self.numerator
         if self.denominator is not None:
             d["denominator"] = self.denominator
+        if self.components is not None:
+            d["components"] = self.components
         return d
 
 
@@ -105,6 +112,7 @@ class AuditCalculation(ABC):
             in_range=self._in_range(m.value),
             numerator=numerator,
             denominator=denominator,
+            components=m.components,
         )
 
     def _in_range(self, value) -> bool:
@@ -117,17 +125,29 @@ class AuditCalculation(ABC):
 
 def format_value(result: dict, with_fraction: bool = False) -> str:
     """Format a calculation result dict for display. Reads ``value`` and,
-    for percentages, ``numerator``/``denominator``."""
+    for percentages, ``numerator``/``denominator``; for values built from
+    sub-fractions, ``components``."""
     value = result.get("value")
     if value is None:
         return "-"
+    components = result.get("components")
+    if components:
+        return f"{_format_scalar(value)} ({_format_components(components)})"
     if result.get("numerator") is not None:
         if with_fraction:
             return f"{round(value)}% ({result['numerator']}/{result['denominator']})"
         return f"{round(value)}%"
+    return _format_scalar(value)
+
+
+def _format_scalar(value) -> str:
     if isinstance(value, float):
         return f"{value:.2f}"
     return str(value)
+
+
+def _format_components(components: list[dict]) -> str:
+    return " / ".join(f"({c['numerator']}/{c['denominator']})" for c in components)
 
 
 def register_calculation(cls):
