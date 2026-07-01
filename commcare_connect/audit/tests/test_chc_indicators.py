@@ -455,6 +455,29 @@ class TestWACoverageToVisitRatio(BaseIndicatorTest):
         # VISITED + INACCESSIBLE = 2 eligible; coverage=1/2, visit_ratio=10/20 → ratio=1.0
         self.assert_compute_result(access, sample=2, value=1.0)
 
+    def test_components_expose_both_sub_fractions(self):
+        access, wag = make_access_and_wag()
+        wa = WorkAreaFactory(
+            opportunity=wag.opportunity,
+            work_area_group=wag,
+            opportunity_access=access,
+            status=WorkAreaStatus.VISITED,
+            expected_visit_count=10,
+        )
+        WorkAreaFactory(
+            opportunity=wag.opportunity,
+            work_area_group=wag,
+            opportunity_access=access,
+            status=WorkAreaStatus.NOT_VISITED,
+            expected_visit_count=10,
+        )
+        make_visits(10, access, work_area=wa)
+        # coverage = 1 visited / 2 eligible; visits = 10 actual / 20 expected
+        assert self.compute(access).components == [
+            {"numerator": 1, "denominator": 2},
+            {"numerator": 10, "denominator": 20},
+        ]
+
     def test_no_actual_visits_returns_insufficient_data(self):
         access, wag = make_access_and_wag()
         WorkAreaFactory(
