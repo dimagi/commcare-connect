@@ -1,5 +1,6 @@
 {% load i18n %}
 {% load crispy_forms_tags %}
+{% load socialaccount %}
 {% load static %}
 <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
 <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
@@ -37,6 +38,15 @@
           <i class="fa-solid fa-xmark cursor-pointer" aria-hidden="true"></i>
         </button>
       </div>
+      {# TEMP: OCS OAuth connect test button — remove after testing (CCCT-2551) #}
+      <form method="post"
+            action="{% provider_login_url 'ocs' process='connect' %}"
+            class="mb-4">
+        {% csrf_token %}
+        <button type="submit" class="button button-md primary-dark w-full">
+          {% trans "Connect OCS account (TEMP TEST)" %}
+        </button>
+      </form>
       <div id="create-task-form-wrapper">
         <form id="create-task-form"
               method="post"
