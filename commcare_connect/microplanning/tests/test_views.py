@@ -18,7 +18,7 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
@@ -1010,6 +1010,52 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         client.force_login(org_user_admin)
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
         response = client.post(url, {"action": "approve"})
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize(
+        "action, expected_request_status",
+        [
+            ("approve", InaccessibilityRequestStatus.APPROVED),
+            ("deny", InaccessibilityRequestStatus.DENIED),
+        ],
+        ids=["approve", "deny"],
+    )
+    def test_action_records_review_outcome_on_request(
+        self, action, expected_request_status, client, org_user_admin, pending_wa, organization
+    ):
+        work_area, inacc_request = pending_wa
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        with patch("commcare_connect.microplanning.views.create_or_update_case_by_work_area"):
+            response = client.post(url, {"action": action})
+        assert response.status_code == 204
+        inacc_request.refresh_from_db()
+        assert inacc_request.status == expected_request_status
+
+    def test_review_modal_returns_pending_not_historical_request(
+        self, client, org_user_admin, pending_wa, organization
+    ):
+        work_area, historical_request = pending_wa
+        historical_request.status = InaccessibilityRequestStatus.DENIED
+        historical_request.save(update_fields=["status"])
+        pending_request = WorkAreaInaccessibilityRequestFactory(
+            work_area=work_area,
+            opportunity_access=historical_request.opportunity_access,
+            status=InaccessibilityRequestStatus.PENDING,
+        )
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["inaccessibility_request"].id == pending_request.id
+
+    def test_action_404_when_only_a_resolved_request_exists(self, client, org_user_admin, pending_wa, organization):
+        work_area, inacc_request = pending_wa
+        inacc_request.status = InaccessibilityRequestStatus.DENIED
+        inacc_request.save(update_fields=["status"])
+        client.force_login(org_user_admin)
+        url = self.action_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.post(url, {"action": "deny"})
         assert response.status_code == 404
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
