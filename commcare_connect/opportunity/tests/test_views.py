@@ -2771,6 +2771,7 @@ def test_fetch_audio_attachment_returns_file(client, organization, org_user_memb
 def test_fetch_audio_attachment_wrong_opportunity_returns_404(client, organization, org_user_member, opportunity):
     other_visit = UserVisitFactory.create()  # belongs to a different opportunity
     audio = AudioAttachmentFactory.create(user_visit=other_visit)
+    storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
 
     url = reverse(
         "opportunity:fetch_audio_attachment",
