@@ -44,15 +44,18 @@ def _is_valid(token):
 
 
 def _refresh(token, token_url):
-    response = httpx.post(
-        token_url,
-        data={
-            "grant_type": "refresh_token",
-            "client_id": token.app.client_id,
-            "client_secret": token.app.secret,
-            "refresh_token": token.token_secret,
-        },
-    )
+    try:
+        response = httpx.post(
+            token_url,
+            data={
+                "grant_type": "refresh_token",
+                "client_id": token.app.client_id,
+                "client_secret": token.app.secret,
+                "refresh_token": token.token_secret,
+            },
+        )
+    except httpx.RequestError as e:
+        raise TokenRefreshError(f"Failed to refresh token: {e}") from e
     if response.status_code != 200:
         raise TokenRefreshError(f"Failed to refresh token: {response.text}")
 

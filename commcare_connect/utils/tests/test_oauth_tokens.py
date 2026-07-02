@@ -148,3 +148,13 @@ class TestRefreshAccessToken:
 
         with pytest.raises(TokenRefreshError):
             refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
+
+    def test_raises_token_refresh_error_on_network_error(self, user, httpx_mock):
+        import httpx
+
+        past = timezone.now() - datetime.timedelta(minutes=5)
+        _make_token(user, expires_at=past)
+        httpx_mock.add_exception(httpx.ConnectError("boom"), url=TOKEN_URL, method="POST")
+
+        with pytest.raises(TokenRefreshError):
+            refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
