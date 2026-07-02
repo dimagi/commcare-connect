@@ -676,6 +676,11 @@ class ModifyWorkAreaUpdateView(UpdateView):
             )
             return super().form_invalid(form)
 
+        visits_completed = UserVisit.objects.filter(
+            opportunity=work_area.opportunity,
+            work_area=work_area,
+            status=VisitValidationStatus.approved,
+        ).count()
         response = HttpResponse(status=204)
         response["HX-Trigger"] = json.dumps(
             {
@@ -684,6 +689,8 @@ class ModifyWorkAreaUpdateView(UpdateView):
                     "expected_visit_count": work_area.expected_visit_count,
                     "group_id": work_area.work_area_group_id,
                     "group_name": getattr(work_area.work_area_group, "name", None),
+                    "slug": work_area.slug,
+                    "visits_completed": visits_completed,
                 }
             }
         )
