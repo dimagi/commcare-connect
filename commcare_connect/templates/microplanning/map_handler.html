@@ -324,10 +324,10 @@
                 this.flwSummaryLoading = false;
             },
 
-            getSelectedStats() {
+            getStatsForIds(workAreaIds) {
                 let buildings = 0;
                 let visits = 0;
-                for (const id of this.selectedWorkAreas) {
+                for (const id of workAreaIds) {
                     const props = this.workAreaProperties.get(id);
                     if (props) {
                         buildings += parseInt(props.building_count) || 0;
@@ -335,6 +335,10 @@
                     }
                 }
                 return { buildings, visits };
+            },
+
+            getSelectedStats() {
+                return this.getStatsForIds(this.selectedWorkAreas);
             },
 
             getSelectedStatsForSummary() {
@@ -392,21 +396,38 @@
                 const newWorkAreaIds = Array.from(this.selectedWorkAreas).filter(
                     id => !this.flwFilterWorkAreaIds.has(id)
                 );
-                const newStats = this.getSelectedStatsForSummary();
-                const totalStats = this.getSelectedStats();
-                this.assignmentQueue.push({
-                    assignee_id: this.selectedAssigneeId,
-                    assignee_name: this.getAssigneeName(),
-                    // Delta (newly-selected areas only)
-                    work_area_ids: newWorkAreaIds,
-                    buildings: newStats.buildings,
-                    visits: newStats.visits,
-                    // Post-save totals (all selected areas, incl. the FLW's existing
-                    // areas auto-selected via the filter)
-                    total_work_areas: this.selectedWorkAreas.size,
-                    total_buildings: totalStats.buildings,
-                    total_visits: totalStats.visits,
-                });
+                const existing = this.assignmentQueue.find(
+                    e => String(e.assignee_id) === String(this.selectedAssigneeId)
+                );
+                if (existing) {
+                    // Consolidate into the FLW's existing entry, counting only areas not
+                    // already queued for them so re-selecting an area can't double-count.
+                    const alreadyQueued = new Set(existing.work_area_ids);
+                    const addedIds = newWorkAreaIds.filter(id => !alreadyQueued.has(id));
+                    const added = this.getStatsForIds(addedIds);
+                    existing.work_area_ids.push(...addedIds);
+                    existing.buildings += added.buildings;
+                    existing.visits += added.visits;
+                    existing.total_work_areas += addedIds.length;
+                    existing.total_buildings += added.buildings;
+                    existing.total_visits += added.visits;
+                } else {
+                    const newStats = this.getSelectedStatsForSummary();
+                    const totalStats = this.getSelectedStats();
+                    this.assignmentQueue.push({
+                        assignee_id: this.selectedAssigneeId,
+                        assignee_name: this.getAssigneeName(),
+                        // Delta (newly-selected areas only)
+                        work_area_ids: newWorkAreaIds,
+                        buildings: newStats.buildings,
+                        visits: newStats.visits,
+                        // Post-save totals (all selected areas, incl. the FLW's existing
+                        // areas auto-selected via the filter)
+                        total_work_areas: this.selectedWorkAreas.size,
+                        total_buildings: totalStats.buildings,
+                        total_visits: totalStats.visits,
+                    });
+                }
                 this.clearSelection();
                 if (this.$refs.assigneeSelect) this.$refs.assigneeSelect.value = '';
                 this.selectedAssigneeId = null;
