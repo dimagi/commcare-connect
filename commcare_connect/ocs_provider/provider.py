@@ -11,6 +11,7 @@ class OcsProvider(OAuth2Provider):
     id = "ocs"
     name = "Open Chat Studio"
     account_class = OcsAccount
+    pkce_enabled_default = True
 
     def get_default_scope(self):
         return ["chatbots:read", "chatbots:interact"]
