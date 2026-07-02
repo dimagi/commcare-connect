@@ -407,6 +407,9 @@
               <p class="text-sm mb-4">
                 {% translate "Saving these changes will alert all impacted FLWs that their assignment has changed. Are you sure you want to continue?" %}
               </p>
+              <p class="text-xs text-gray-500 mb-3">
+                {% translate "Figures show each FLW's total assignment after saving, not just the changes." %}
+              </p>
               <div class="space-y-2 mb-4 max-h-60 overflow-auto">
                 <template x-for="(entry, index) in assignmentQueue" :key="index">
                   <dl class="text-sm space-y-1 bg-gray-50 rounded-lg p-3">
@@ -416,7 +419,7 @@
                       </dd>
                     </div>
                     <div class="flex justify-between">
-                      <dt>{% translate "Work Areas" %}</dt>
+                      <dt>{% translate "Total Work Areas" %}</dt>
                       <dd class="font-semibold" x-text="entry.total_work_areas">
                       </dd>
                     </div>
