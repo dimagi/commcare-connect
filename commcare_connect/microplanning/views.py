@@ -392,7 +392,17 @@ def import_status(request, org_slug, opp_id):
 
 class WorkAreaVectorLayer(VectorLayer):
     id = "workareas"
-    tile_fields = ("id", "status", "building_count", "expected_visit_count", "group_id", "group_name", "assignee_name")
+    tile_fields = (
+        "id",
+        "status",
+        "building_count",
+        "expected_visit_count",
+        "group_id",
+        "group_name",
+        "assignee_name",
+        "slug",
+        "visits_completed",
+    )
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -406,6 +416,7 @@ class WorkAreaVectorLayer(VectorLayer):
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
             assignee_name=F("opportunity_access__user__name"),
+            visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
         )
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
 
