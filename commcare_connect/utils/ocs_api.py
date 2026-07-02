@@ -34,5 +34,42 @@ def list_chatbots(user) -> list[tuple[str, str]]:
     return chatbots
 
 
+def trigger_bot(
+    user,
+    *,
+    identifier,
+    experiment,
+    participant_data=None,
+    start_new_session=None,
+    message_text=None,
+    prompt_text=None,
+    session_data=None,
+) -> dict:
+    """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
+    token = _valid_token(user)
+    payload = {"identifier": identifier, "experiment": experiment, "platform": "commcare_connect"}
+    optionals = {
+        "participant_data": participant_data,
+        "start_new_session": start_new_session,
+        "message_text": message_text,
+        "prompt_text": prompt_text,
+        "session_data": session_data,
+    }
+    payload.update({k: v for k, v in optionals.items() if v is not None})
+
+    try:
+        response = httpx.post(
+            f"{settings.OCS_BASE_URL}/api/trigger_bot",
+            json=payload,
+            headers={"Authorization": f"Bearer {token.token}"},
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError:
+        raise OcsApiError(f"Failed to trigger bot: {response.text}")
+    except httpx.RequestError as e:
+        raise OcsApiError(f"Failed to trigger bot: {e}")
+    return response.json()
+
+
 def _valid_token(user):
     return refresh_access_token(user, provider=OcsProvider.id, token_url=f"{settings.OCS_BASE_URL}/o/token/")

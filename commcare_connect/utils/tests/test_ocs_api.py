@@ -1,5 +1,7 @@
 import datetime
+import json
 
+import httpx
 import pytest
 from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 from django.test import override_settings
@@ -81,8 +83,6 @@ def test_list_chatbots_raises_ocs_api_error_on_non_2xx(user, httpx_mock):
 @pytest.mark.django_db
 @override_settings(OCS_BASE_URL=OCS_URL)
 def test_list_chatbots_raises_ocs_api_error_on_network_error(user, httpx_mock):
-    import httpx
-
     _connect_ocs(user)
     httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/v2/chatbots/")
     with pytest.raises(ocs_api.OcsApiError):
@@ -94,3 +94,83 @@ def test_list_chatbots_raises_ocs_api_error_on_network_error(user, httpx_mock):
 def test_list_chatbots_raises_when_not_connected(user):
     with pytest.raises(SocialTokenMissingError):
         ocs_api.list_chatbots(user)
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
+def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
+    _connect_ocs(user)
+    httpx_mock.add_response(
+        url=f"{OCS_URL}/api/trigger_bot",
+        method="POST",
+        json={"session_id": "s1", "url": "https://ocs/x", "team": {"id": "t"}, "channel": "chan-1"},
+    )
+
+    result = ocs_api.trigger_bot(
+        user, identifier="flw-user", experiment="exp-uuid", participant_data={"connectTaskId": "task-1"}
+    )
+
+    assert result["session_id"] == "s1"
+    assert result["channel"] == "chan-1"
+    body = json.loads(httpx_mock.get_requests()[0].read())
+    assert body["identifier"] == "flw-user"
+    assert body["experiment"] == "exp-uuid"
+    assert body["platform"] == "commcare_connect"
+    assert body["participant_data"] == {"connectTaskId": "task-1"}
+    # optionals not passed => absent from payload
+    assert "start_new_session" not in body
+    assert "message_text" not in body
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
+def test_trigger_bot_includes_optionals_only_when_provided(user, httpx_mock):
+    _connect_ocs(user)
+    httpx_mock.add_response(
+        url=f"{OCS_URL}/api/trigger_bot",
+        method="POST",
+        json={"session_id": "s", "url": "u", "team": {}, "channel": "c"},
+    )
+
+    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", start_new_session=True, message_text="hi")
+
+    body = json.loads(httpx_mock.get_requests()[0].read())
+    assert body["start_new_session"] is True
+    assert body["message_text"] == "hi"
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
+def test_trigger_bot_includes_falsey_optionals_when_provided(user, httpx_mock):
+    """A falsey-but-not-None optional (e.g. start_new_session=False) must survive into the payload."""
+    _connect_ocs(user)
+    httpx_mock.add_response(
+        url=f"{OCS_URL}/api/trigger_bot",
+        method="POST",
+        json={"session_id": "s", "url": "u", "team": {}, "channel": "c"},
+    )
+
+    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", start_new_session=False)
+
+    body = json.loads(httpx_mock.get_requests()[0].read())
+    assert "start_new_session" in body
+    assert body["start_new_session"] is False
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
+def test_trigger_bot_raises_ocs_api_error_on_non_2xx(user, httpx_mock):
+    _connect_ocs(user)
+    httpx_mock.add_response(url=f"{OCS_URL}/api/trigger_bot", method="POST", status_code=400, text="bad")
+
+    with pytest.raises(ocs_api.OcsApiError):
+        ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
+def test_trigger_bot_raises_ocs_api_error_on_network_error(user, httpx_mock):
+    _connect_ocs(user)
+    httpx_mock.add_exception(httpx.ConnectError("boom"), url=f"{OCS_URL}/api/trigger_bot", method="POST")
+    with pytest.raises(ocs_api.OcsApiError):
+        ocs_api.trigger_bot(user, identifier="flw", experiment="exp")
