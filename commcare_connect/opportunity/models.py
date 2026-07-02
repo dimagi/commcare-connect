@@ -885,6 +885,10 @@ class UserVisit(XFormBaseModel):
         return BlobMeta.objects.filter(parent_id=self.xform_id, content_type__startswith="image/")
 
     @property
+    def audio(self):
+        return self.audio_attachments.all()
+
+    @property
     def duration(self):
         duration = None
         start = self.form_json["metadata"].get("timeStart")
@@ -991,6 +995,26 @@ class BlobMeta(models.Model):
             ("parent_id", "name"),
         ]
         indexes = [models.Index(fields=["blob_id"])]
+
+
+class AudioAttachment(models.Model):
+    user_visit = models.ForeignKey(
+        "UserVisit",
+        on_delete=models.CASCADE,
+        related_name="audio_attachments",
+    )
+    blob_id = models.CharField(max_length=255, default=uuid4, unique=True)
+    name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=255, null=True)
+    content_length = models.IntegerField()
+    transcript = models.TextField(blank=True, default="")
+    translation = models.TextField(blank=True, default="")
+    date_created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [
+            ("user_visit", "name"),
+        ]
 
 
 class UserInviteStatus(models.TextChoices):

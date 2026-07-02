@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.messages import get_messages
+from django.core.files.base import ContentFile
+from django.core.files.storage import storages
 from django.core.files.storage.handler import StorageHandler
 from django.template import Context
 from django.test import Client
@@ -42,6 +44,7 @@ from commcare_connect.opportunity.tables import TaskTable
 from commcare_connect.opportunity.tasks import invite_user
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
+    AudioAttachmentFactory,
     BlobMetaFactory,
     CompletedWorkFactory,
     DeliverUnitFactory,
@@ -2744,3 +2747,74 @@ class TestDeleteTasks:
         assert AssignedTask.objects.filter(pk=task.pk).exists()
         msgs = list(get_messages(response.wsgi_request))
         assert any("could not update CommCare HQ" in str(m) for m in msgs)
+
+
+@pytest.mark.django_db
+def test_fetch_audio_attachment_returns_file(client, organization, org_user_member, opportunity):
+    visit = UserVisitFactory.create(opportunity=opportunity)
+    audio = AudioAttachmentFactory.create(user_visit=visit, content_type="audio/mp4")
+    storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
+
+    url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.id, audio.pk),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "audio/mp4"
+    assert b"".join(response.streaming_content) == b"audiobytes"
+
+
+@pytest.mark.django_db
+def test_fetch_audio_attachment_wrong_opportunity_returns_404(client, organization, org_user_member, opportunity):
+    other_visit = UserVisitFactory.create()  # belongs to a different opportunity
+    audio = AudioAttachmentFactory.create(user_visit=other_visit)
+    storages["default"].save(str(audio.blob_id), ContentFile(b"audiobytes"))
+
+    url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.id, audio.pk),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_user_visit_details_renders_audio_player(client, organization, org_user_member, opportunity):
+    form_json = {
+        "domain": "test",
+        "id": "xform-123",
+        "app_id": "app-1",
+        "build_id": "build-1",
+        "received_on": "2026-06-30T00:00:00Z",
+        "form": {"@xmlns": "http://example.com/form"},
+        "metadata": {
+            "timeStart": "2026-06-30T00:00:00Z",
+            "timeEnd": "2026-06-30T00:05:00Z",
+            "app_build_version": "1",
+            "username": "worker",
+            "location": None,
+        },
+        "attachments": {},
+    }
+    visit = UserVisitFactory.create(opportunity=opportunity, form_json=form_json)
+    audio = AudioAttachmentFactory.create(user_visit=visit, transcript="hello world")
+
+    url = reverse(
+        "opportunity:user_visit_details",
+        args=(organization.slug, opportunity.opportunity_id, visit.user_visit_id),
+    )
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    assert response.status_code == 200
+    audio_url = reverse(
+        "opportunity:fetch_audio_attachment",
+        args=(organization.slug, opportunity.opportunity_id, audio.pk),
+    )
+    assert audio_url.encode() in response.content
+    assert b"hello world" in response.content

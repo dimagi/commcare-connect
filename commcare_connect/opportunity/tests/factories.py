@@ -324,3 +324,14 @@ class BlobMetaFactory(DjangoModelFactory):
 
     class Meta:
         model = "opportunity.BlobMeta"
+
+
+class AudioAttachmentFactory(DjangoModelFactory):
+    user_visit = SubFactory(UserVisitFactory)
+    blob_id = Faker("uuid4")
+    name = Faker("file_name", extension="m4a")
+    content_type = "audio/mp4"
+    content_length = Faker("pyint", min_value=100, max_value=10000)
+
+    class Meta:
+        model = "opportunity.AudioAttachment"
