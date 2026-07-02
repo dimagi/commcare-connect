@@ -1150,10 +1150,7 @@ def fetch_attachment(request, org_slug, opp_id, blob_id):
 @org_member_required
 @opportunity_required
 def fetch_audio_attachment(request, org_slug, opp_id, pk):
-    audio = get_object_or_404(AudioAttachment, pk=pk)
-
-    if audio.user_visit.opportunity_id != request.opportunity.id:
-        return HttpResponseNotFound()
+    audio = get_object_or_404(AudioAttachment, pk=pk, user_visit__opportunity=request.opportunity)
 
     try:
         attachment = storages["default"].open(audio.blob_id)

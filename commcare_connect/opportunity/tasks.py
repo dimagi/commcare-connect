@@ -382,11 +382,7 @@ def _download_attachments(api_key, domain: str, xform_id: str, attachments: dict
         if name == "form.xml":
             continue
         url = f"{api_key.hq_server.url}/a/{domain}/api/form/attachment/{xform_id}/{name}"
-        content_type = blob.get("content_type") or ""
-        if user_visit is not None and content_type.startswith("audio/"):
-            _save_audio_attachment(api_key, url, name, blob, user_visit)
-        else:
-            _save_blob_attachment(api_key, url, name, blob, xform_id)
+        _save_attachment(api_key, url, name, blob, xform_id, user_visit)
 
 
 def _fetch_hq_attachment(api_key, url):
@@ -397,11 +393,16 @@ def _fetch_hq_attachment(api_key, url):
     return response.content
 
 
-def _save_blob_attachment(api_key, url, name, blob, xform_id):
+def _save_attachment(api_key, url, name, blob, xform_id, user_visit=None):
+    content_type = blob.get("content_type") or ""
+    if user_visit is not None and content_type.startswith("audio/"):
+        model, lookup = AudioAttachment, {"user_visit": user_visit, "name": name}
+    else:
+        model, lookup = BlobMeta, {"parent_id": xform_id, "name": name}
+
     with transaction.atomic():
-        blob_meta, created = BlobMeta.objects.get_or_create(
-            name=name,
-            parent_id=xform_id,
+        obj, created = model.objects.get_or_create(
+            **lookup,
             defaults={
                 "content_length": blob["length"],
                 "content_type": blob["content_type"],
@@ -411,24 +412,7 @@ def _save_blob_attachment(api_key, url, name, blob, xform_id):
             # attachment already exists
             return
         content = _fetch_hq_attachment(api_key, url)
-        default_storage.save(str(blob_meta.blob_id), ContentFile(content, name))
-
-
-def _save_audio_attachment(api_key, url, name, blob, user_visit):
-    with transaction.atomic():
-        audio, created = AudioAttachment.objects.get_or_create(
-            user_visit=user_visit,
-            name=name,
-            defaults={
-                "content_length": blob["length"],
-                "content_type": blob["content_type"],
-            },
-        )
-        if not created:
-            # attachment already exists
-            return
-        content = _fetch_hq_attachment(api_key, url)
-        default_storage.save(str(audio.blob_id), ContentFile(content, name))
+        default_storage.save(str(obj.blob_id), ContentFile(content, name))
 
 
 @celery_app.task(

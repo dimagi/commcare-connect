@@ -999,7 +999,7 @@ class BlobMeta(models.Model):
 
 class AudioAttachment(models.Model):
     user_visit = models.ForeignKey(
-        "UserVisit",
+        UserVisit,
         on_delete=models.CASCADE,
         related_name="audio_attachments",
     )
