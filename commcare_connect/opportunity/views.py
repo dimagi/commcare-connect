@@ -217,6 +217,7 @@ from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
+from commcare_connect.utils.ocs_api import user_has_connected_ocs
 from commcare_connect.utils.tables import (
     DEFAULT_PAGE_SIZE,
     PAGE_SIZE_OPTIONS,
@@ -2145,6 +2146,7 @@ class UserTasksView(WorkerPageView, FilterMixin):
         context.update(self.get_filter_context())
         if can_manage_tasks:
             context["create_task_form"] = CreateTaskForm(opportunity=self.opportunity, access=self.opportunity_access)
+            context.update(_ocs_connect_context(self.request))
             create_url = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, self.opportunity.opportunity_id)
             )
@@ -3419,6 +3421,7 @@ class AssignedTaskListView(OpportunityObjectMixin, OrganizationUserMixin, Filter
         context["can_manage_tasks"] = can_manage_tasks
         if can_manage_tasks:
             context["create_task_form"] = CreateTaskForm(opportunity=opportunity)
+            context.update(_ocs_connect_context(self.request))
             context["create_task_url"] = reverse(
                 "opportunity:create_task", args=(self.request.org.slug, opportunity.opportunity_id)
             )
@@ -3465,6 +3468,13 @@ class EditAssignedTask(ManagedOpportunityPMRequiredMixin, OrganizationUserMember
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
 
+def _ocs_connect_context(request):
+    return {
+        "ocs_connected": user_has_connected_ocs(request.user),
+        "ocs_next_url": request.headers.get("HX-Current-URL") or request.get_full_path(),
+    }
+
+
 @require_POST
 @org_member_required
 @opportunity_required
@@ -3485,6 +3495,7 @@ def create_task(request, org_slug, opp_id):
                 "form": form,
                 "modal_name": "showCreateTaskModal",
                 "create_task_url": request.get_full_path(),
+                **_ocs_connect_context(request),
             },
         )
 
