@@ -98,8 +98,7 @@
       {% for audio in user_visit.audio %}
         <div class="flex flex-col gap-2">
           <audio controls preload="none" class="w-full">
-            <source src="{% url 'opportunity:fetch_audio_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}"
-                    type="{{ audio.content_type }}">
+            <source src="{% url 'opportunity:fetch_audio_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}">
             {% translate "Your browser does not support the audio element." %}
           </audio>
           {% if audio.transcript %}
