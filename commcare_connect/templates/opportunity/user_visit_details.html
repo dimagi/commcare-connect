@@ -91,6 +91,33 @@
     </div>
     <hr class="h-px bg-gray-200 border-0">
   {% endif %}
+  <!-- Audio Section -->
+  {% if user_visit.audio %}
+    <div class="flex flex-col gap-4">
+      <p class="text-sm font-medium text-brand-deep-purple">{% translate "Audio" %}</p>
+      {% for audio in user_visit.audio %}
+        <div class="flex flex-col gap-2">
+          <audio controls preload="none" class="w-full">
+            <source src="{% url 'opportunity:fetch_audio_attachment' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}">
+            {% translate "Your browser does not support the audio element." %}
+          </audio>
+          {% if audio.transcript %}
+            <div>
+              <p class="text-sm font-medium text-brand-blue-light">{% translate "Transcript" %}</p>
+              <p class="text-sm font-normal text-brand-deep-purple">{{ audio.transcript }}</p>
+            </div>
+          {% endif %}
+          {% if audio.translation %}
+            <div>
+              <p class="text-sm font-medium text-brand-blue-light">{% translate "Translation" %}</p>
+              <p class="text-sm font-normal text-brand-deep-purple">{{ audio.translation }}</p>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <hr class="h-px bg-gray-200 border-0">
+  {% endif %}
   <!-- Verification Flags -->
   <div class="flex flex-col gap-4">
     <p class="text-sm font-medium text-brand-deep-purple">{% translate "Verification Parameters" %}</p>
