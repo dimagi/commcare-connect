@@ -133,7 +133,7 @@
       <!-- Add budget for existing users-->
       <div x-show="selectedTab === 'existing_workers'">
         <form method="post"
-              x-data="handleExistingBudgetComponent({{ per_visit_costs_json|safe }})">
+              x-data='handleExistingBudgetComponent({{ per_visit_costs_json|safe }})'>
           {% csrf_token %}
           {% if form.non_field_errors %}
             <div class="text-sm text-red-600 mt-1">
