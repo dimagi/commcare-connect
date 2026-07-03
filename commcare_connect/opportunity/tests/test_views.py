@@ -1,4 +1,5 @@
 import inspect
+import json
 from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 from unittest import mock
@@ -181,6 +182,29 @@ def test_add_budget_existing_users_for_managed_opportunity(
     form = response.context["form"]
     assert "number_of_visits" in form.errors
     assert form.errors["number_of_visits"][0] == "The number of visits being increased exceeds the opportunity budget."
+
+
+@pytest.mark.django_db
+def test_add_budget_existing_users_per_visit_cost_includes_org_amount(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_unit_1 = PaymentUnitFactory(opportunity=opportunity, amount=3000, org_amount=30984, max_total=12)
+    payment_unit_2 = PaymentUnitFactory(opportunity=opportunity, amount=0, org_amount=0, max_total=12)
+    opportunity.organization = organization
+    opportunity.total_budget = 1_000_000
+    opportunity.save()
+
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit_1, max_visits=12)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit_2, max_visits=12)
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    per_visit_costs = json.loads(response.context["per_visit_costs_json"])
+    assert per_visit_costs[str(claim.id)] == 33984
 
 
 @pytest.mark.django_db

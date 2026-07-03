@@ -29,12 +29,12 @@
     }
   }
 
-  function handleExistingBudgetComponent(budgetPerVisit) {
+  function handleExistingBudgetComponent(perVisitCosts) {
     return {
       modalOpen: false,
       numberOfVisits: null,
       adjustmentType: null,
-      budgetPerVisit: budgetPerVisit,
+      perVisitCosts: perVisitCosts,
       selected_users: [],
       end_date: '',
       openModal() {
@@ -60,7 +60,12 @@
         return this.selected_users.length * (parseInt(this.numberOfVisits) || 0);
       },
       calculatedBudget() {
-        return (this.totalVisits() * budgetPerVisit)
+        const numberOfVisits = parseInt(this.numberOfVisits) || 0;
+        const selectedCost = this.selected_users.reduce(
+          (total, id) => total + (this.perVisitCosts[id] || 0),
+          0
+        );
+        return numberOfVisits * selectedCost;
       },
       // Validation methods
       hasnumberOfVisitsOrEndDate() {
@@ -128,7 +133,7 @@
       <!-- Add budget for existing users-->
       <div x-show="selectedTab === 'existing_workers'">
         <form method="post"
-              x-data="handleExistingBudgetComponent({{ budget_per_visit }})">
+              x-data="handleExistingBudgetComponent({{ per_visit_costs_json|safe }})">
           {% csrf_token %}
           {% if form.non_field_errors %}
             <div class="text-sm text-red-600 mt-1">

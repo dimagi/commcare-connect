@@ -23,6 +23,7 @@ from django.db.models import (
     Case,
     Count,
     DecimalField,
+    F,
     FloatField,
     Func,
     IntegerField,
@@ -646,7 +647,13 @@ def review_visit_import(request, org_slug=None, opp_id=None):
 def add_budget_existing_users(request, org_slug=None, opp_id=None):
     opportunity_access = OpportunityAccess.objects.filter(opportunity=request.opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access).annotate(
-        total_max_visits=Coalesce(Sum("opportunityclaimlimit__max_visits"), Value(0))
+        total_max_visits=Coalesce(Sum("opportunityclaimlimit__max_visits"), Value(0)),
+        total_per_visit_cost=Coalesce(
+            Sum(
+                F("opportunityclaimlimit__payment_unit__amount") + F("opportunityclaimlimit__payment_unit__org_amount")
+            ),
+            Value(0),
+        ),
     )
 
     form = AddBudgetExistingUsersForm(
@@ -708,7 +715,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
             "tabs": tabs,
             "path": path,
             "opportunity_claims": opportunity_claims,
-            "budget_per_visit": request.opportunity.budget_per_visit,
+            "per_visit_costs_json": json.dumps({claim.id: claim.total_per_visit_cost for claim in opportunity_claims}),
             "opportunity": request.opportunity,
         },
     )
