@@ -124,6 +124,41 @@ class TestMicroplanningHomeView(BaseMicroplanningFlagTest):
         response = client.get(self.url(organization.slug, str(opportunity.opportunity_id)))
         assert response.status_code == 404
 
+    def test_rerun_and_clear_buttons_shown_post_clustering(self, client, org_user_admin, opportunity):
+        """After clustering (groups exist) with no FLW assignments, rerun/clear controls are offered."""
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_rerun_clear_work_area_groups_btn"] is True
+        assert response.context["clustering_is_rerun"] is True
+        # The one-time "create" control is gone once groups exist.
+        assert response.context["show_workarea_groups_btn"] is False
+
+    def test_rerun_and_clear_buttons_hidden_when_assigned(self, client, org_user_admin, opportunity):
+        """Once any work area is assigned to an FLW, rerun/clear controls disappear."""
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_rerun_clear_work_area_groups_btn"] is False
+        assert response.context["clustering_is_rerun"] is False
+
+    def test_rerun_and_clear_buttons_hidden_before_clustering(self, client, org_user_admin, opportunity):
+        """Before any clustering has run, only the initial create control is available."""
+        WorkAreaFactory(opportunity=opportunity)
+        client.force_login(org_user_admin)
+
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.context["show_rerun_clear_work_area_groups_btn"] is False
+        assert response.context["show_workarea_groups_btn"] is True
+
 
 @pytest.mark.django_db
 class TestModifyWorkAreaUpdateView(BaseMicroplanningFlagTest):
@@ -1782,3 +1817,95 @@ class TestClusterWorkAreas(BaseMicroplanningFlagTest):
         mock_delay.assert_not_called()
         assert "between 100 and 300" in response.content.decode()
         assert response.headers["HX-Retarget"] == "#building-count-field"
+
+
+@pytest.mark.django_db
+class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:cluster_work_areas", args=(org_slug, opp_id))
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_rerun_replaces_existing_groups(self, mock_delay, client, org_user_admin, opportunity):
+        from commcare_connect.microplanning.models import WorkAreaGroup
+
+        mock_task = MagicMock()
+        mock_task.id = "3f8f2e6c-0000-4000-8000-000000000000"
+        mock_delay.return_value = mock_task
+
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=old_group)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)) + "?rerun=1")
+
+        assert response.status_code == 200
+        # Old group is discarded; the async task will produce the new grouping.
+        assert not WorkAreaGroup.objects.filter(id=old_group.id).exists()
+        assert mock_delay.call_count == 1
+        # The work area itself survives (SET_NULL), just ungrouped until the task runs.
+        work_area.refresh_from_db()
+        assert work_area.work_area_group is None
+
+    @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
+    def test_rerun_blocked_when_assigned(self, mock_delay, client, org_user_admin, opportunity):
+        from commcare_connect.microplanning.models import WorkAreaGroup
+
+        old_group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=old_group, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)) + "?rerun=1")
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        assert mock_delay.call_count == 0
+        # Nothing is deleted when assignments exist.
+        assert WorkAreaGroup.objects.filter(id=old_group.id).exists()
+
+
+@pytest.mark.django_db
+class TestClearWorkAreaGroups(BaseMicroplanningFlagTest):
+    def url(self, org_slug, opp_id):
+        return reverse("microplanning:clear_work_area_groups", args=(org_slug, opp_id))
+
+    def test_clears_groups_and_ungroups_work_areas(self, client, org_user_admin, opportunity):
+        from commcare_connect.microplanning.models import WorkAreaGroup
+
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert response.headers["HX-Redirect"].endswith(
+            reverse(
+                "microplanning:microplanning_home", args=(opportunity.organization.slug, opportunity.opportunity_id)
+            )
+        )
+        assert not WorkAreaGroup.objects.filter(opportunity=opportunity).exists()
+        # The polygons remain, returned to their pre-clustering ungrouped state.
+        work_area.refresh_from_db()
+        assert work_area.work_area_group is None
+        messages = list(response.wsgi_request._messages)
+        assert any("cleared" in str(m) for m in messages)
+
+    def test_clear_blocked_when_assigned(self, client, org_user_admin, opportunity):
+        from commcare_connect.microplanning.models import WorkAreaGroup
+
+        group = WorkAreaGroupFactory(opportunity=opportunity)
+        access = OpportunityAccessFactory(opportunity=opportunity)
+        WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
+        client.force_login(org_user_admin)
+
+        response = client.post(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+
+        assert response.status_code == 200
+        assert "HX-Redirect" in response.headers
+        assert WorkAreaGroup.objects.filter(id=group.id).exists()
+
+    def test_clear_requires_post(self, client, org_user_admin, opportunity):
+        client.force_login(org_user_admin)
+        response = client.get(self.url(opportunity.organization.slug, str(opportunity.opportunity_id)))
+        assert response.status_code == 405
