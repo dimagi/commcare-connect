@@ -224,62 +224,50 @@
                 this.updateFlwSummary();
             },
 
-            async selectGroup(groupId) {
-                // Clear previous group selections
-                for (const id of this.groupWorkAreaIds) {
-                    this.selectedWorkAreas.delete(id);
-                    this.setWorkAreaState(id, { assignment_selected: false });
-                }
-                this.groupWorkAreaIds.clear();
+            selectGroup(groupId) {
                 this.selectedGroupId = groupId || null;
-
-                if (!groupId) {
-                    this.updateFlwSummary();
-                    return;
-                }
-
-                try {
-                    const url = '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId);
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    for (const wa of data.work_areas) {
-                        this.selectedWorkAreas.add(wa.id);
-                        this.groupWorkAreaIds.add(wa.id);
-                        this.workAreaProperties.set(wa.id, wa);
-                        this.setWorkAreaState(wa.id, { assignment_selected: true });
-                    }
-                } catch (e) {
-                    this.showToast("{% translate 'Failed to load group work areas' %}", true);
-                }
-                this.updateFlwSummary();
+                return this.replaceFilterSelection({
+                    trackingSet: this.groupWorkAreaIds,
+                    selectionId: groupId,
+                    url: '{{ group_work_areas_url|escapejs }}'.replace('__group_id__', groupId),
+                    errorMsg: "{% translate 'Failed to load group work areas' %}",
+                });
             },
 
-            async selectByAssignee(assigneeId) {
-                // Clear previous FLW-filter selections
-                for (const id of this.flwFilterWorkAreaIds) {
+            selectByAssignee(assigneeId) {
+                this.selectedFlwFilterId = assigneeId || null;
+                return this.replaceFilterSelection({
+                    trackingSet: this.flwFilterWorkAreaIds,
+                    selectionId: assigneeId,
+                    url: '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId),
+                    errorMsg: "{% translate 'Failed to load FLW work areas' %}",
+                });
+            },
+
+            // Replaces the selection contributed by one filter (a group or an FLW).
+            async replaceFilterSelection({ trackingSet, selectionId, url, errorMsg }) {
+                for (const id of trackingSet) {
                     this.selectedWorkAreas.delete(id);
                     this.setWorkAreaState(id, { assignment_selected: false });
                 }
-                this.flwFilterWorkAreaIds.clear();
-                this.selectedFlwFilterId = assigneeId || null;
+                trackingSet.clear();
 
-                if (!assigneeId) {
+                if (!selectionId) {
                     this.updateFlwSummary();
                     return;
                 }
 
                 try {
-                    const url = '{{ flw_work_areas_url|escapejs }}'.replace('__assignee_id__', assigneeId);
                     const resp = await fetch(url);
                     const data = await resp.json();
                     for (const wa of data.work_areas) {
                         this.selectedWorkAreas.add(wa.id);
-                        this.flwFilterWorkAreaIds.add(wa.id);
+                        trackingSet.add(wa.id);
                         this.workAreaProperties.set(wa.id, wa);
                         this.setWorkAreaState(wa.id, { assignment_selected: true });
                     }
                 } catch (e) {
-                    this.showToast("{% translate 'Failed to load FLW work areas' %}", true);
+                    this.showToast(errorMsg, true);
                 }
                 this.updateFlwSummary();
             },
