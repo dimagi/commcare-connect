@@ -40,7 +40,7 @@ class ClusterWorkAreasForm(forms.Form):
                 "class": INPUT_CSS,
                 "min": MIN_BUILDING_COUNT,
                 "max": MAX_BUILDING_COUNT,
-                "placeholder": _("Enter a value between %(min)s and %(max)s")
+                "placeholder": _("Enter a value between %(min)s and %(max)s. Default value is 200.")
                 % {"min": MIN_BUILDING_COUNT, "max": MAX_BUILDING_COUNT},
             }
         ),
