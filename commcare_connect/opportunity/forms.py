@@ -23,6 +23,7 @@ from commcare_connect.opportunity.app_xml import get_task_units_for_app
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
+    AudioAttachment,
     CommCareApp,
     CompletedWork,
     CompletedWorkStatus,
@@ -2141,3 +2142,32 @@ class EditAssignedTaskForm(forms.ModelForm):
     def has_changed(self):
         # Ignore "reason" field if no updated due date is given
         return "due_date" in self.changed_data
+
+
+class AudioAttachmentTranscribeForm(forms.ModelForm):
+    class Meta:
+        model = AudioAttachment
+        fields = ["transcript", "translation"]
+        labels = {
+            "transcript": _("Transcript"),
+            "translation": _("English Translation"),
+        }
+        widgets = {
+            "transcript": forms.Textarea(
+                attrs={
+                    "rows": 6,
+                    "placeholder": _("Type or paste the transcript..."),
+                }
+            ),
+            "translation": forms.Textarea(
+                attrs={
+                    "rows": 6,
+                    "placeholder": _("Type or paste the English translation..."),
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
