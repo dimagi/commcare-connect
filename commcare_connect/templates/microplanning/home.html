@@ -323,7 +323,11 @@
                     <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-xs">
                       <div class="min-w-0">
                         <span class="font-medium truncate block" x-text="entry.assignee_name"></span>
-                        <span class="text-gray-500"><span x-text="entry.work_area_ids.length"></span> {% translate "work areas" %}</span>
+                        <span class="text-gray-500">
+                          <span x-text="entry.work_area_ids.length"></span> {% translate "work areas" %}
+                          · <span x-text="entry.buildings"></span> {% translate "buildings" %}
+                          · <span x-text="entry.visits"></span> {% translate "expected visits" %}
+                        </span>
                       </div>
                       <button type="button"
                               @click="removeFromQueue(index)"
