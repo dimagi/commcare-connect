@@ -17,7 +17,10 @@ class OcsProvider(OAuth2Provider):
         return ["chatbots:read", "chatbots:interact"]
 
     def extract_uid(self, data):
-        return str(data.get("sub") or data["id"])
+        uid = data.get("sub")
+        if not uid:
+            raise ValueError("OCS userinfo response missing 'sub'")
+        return str(uid)
 
 
 provider_classes = [OcsProvider]
