@@ -4,8 +4,13 @@ from unittest import mock
 
 import pytest
 
+from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import WorkArea
-from commcare_connect.microplanning.tasks import WorkAreaCSVImporter, send_work_area_assignment_notification
+from commcare_connect.microplanning.tasks import (
+    WorkAreaCSVImporter,
+    cluster_work_areas_task,
+    send_work_area_assignment_notification,
+)
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
 
@@ -208,8 +213,6 @@ def test_cluster_work_areas_task_forwards_max_buildings(mock_grouper, mock_cache
 @mock.patch("commcare_connect.microplanning.tasks.cache")
 @mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
 def test_cluster_work_areas_task_defaults_max_buildings(mock_grouper, mock_cache):
-    from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
-    from commcare_connect.microplanning.tasks import cluster_work_areas_task
 
     cluster_work_areas_task(opp_id=1)
 
