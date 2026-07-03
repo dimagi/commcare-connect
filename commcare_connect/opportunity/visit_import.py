@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from django.core.cache import cache
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models import Q
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.timezone import now
 from tablib import Dataset
@@ -235,18 +236,23 @@ def update_payment_accrued(opportunity: Opportunity, users: list, incremental=Fa
         update_payment_accrued_for_user(access, incremental)
 
 
-def update_payment_accrued_for_user(opportunity_access, incremental):
-    filter_kwargs = {}
-    exclude_status = []
+def update_payment_accrued_for_user(opportunity_access, incremental, completed_work_id=None):
+    """Recalculate payment for the access's CompletedWork records.
+    When incremental, CompletedWork already fully processed (approved, with its
+    payment already computed) is skipped for performance. Pass completed_work_id
+    to always include that specific record regardless — e.g. a CompletedWork that
+    was already approved but just received another auto-approved visit (duplicate
+    entity submission), whose payment total is now stale.
+    """
+    incremental_filter = Q()
     if incremental:
-        exclude_status.append(CompletedWorkStatus.approved)
-        filter_kwargs["saved_approved_count"] = 0
+        incremental_filter = Q(saved_approved_count=0) & ~Q(status=CompletedWorkStatus.approved)
+        if completed_work_id is not None:
+            incremental_filter |= Q(id=completed_work_id)
 
     with cache.lock(f"update_payment_accrued_lock_{opportunity_access.id}", timeout=900):
-        completed_works = (
-            opportunity_access.completedwork_set.filter(**filter_kwargs)
-            .exclude(status__in=exclude_status)
-            .select_related("payment_unit")
+        completed_works = opportunity_access.completedwork_set.filter(incremental_filter).select_related(
+            "payment_unit"
         )
         update_status(completed_works, opportunity_access, compute_payment=True)
 
