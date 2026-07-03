@@ -257,6 +257,10 @@
                     return;
                 }
 
+                // Show the summary spinner while this filter's areas load. Until they
+                // land, flwFilterWorkAreaIds is empty, so the live delta would transiently
+                // count the FLW's own existing areas as "new" and inflate the total.
+                this.flwSummaryLoading = true;
                 try {
                     const resp = await fetch(url);
                     const data = await resp.json();
@@ -288,6 +292,7 @@
             async updateFlwSummary() {
                 if (!this.flwSummaryAssigneeId) {
                     this.flwSummary = null;
+                    this.flwSummaryLoading = false;
                     return;
                 }
                 this.flwSummaryLoading = true;
@@ -319,15 +324,25 @@
             },
 
             getSelectedStatsForSummary() {
-                // Live preview of pending changes for the FLW summary. Only count
-                // selected work areas that are NOT already assigned to this FLW.
-                // selectByAssignee() auto-selects the FLW's existing areas (tracked in
-                // flwFilterWorkAreaIds); those are already reflected in flwSummary, so
-                // including them here would double-count buildings/visits/work areas.
+                // Live preview of pending changes for the FLW summary. Count only the
+                // net-new areas this selection would add, i.e. exclude:
+                //   - the FLW's existing DB areas (flwFilterWorkAreaIds), which
+                //     selectByAssignee() auto-selects and are already in flwSummary; and
+                //   - areas already queued for this FLW, which getQueuedStatsForAssignee()
+                //     already counts — re-selecting one would otherwise double-count it.
+                const alreadyQueued = this.getQueuedWorkAreaIdsForAssignee(this.selectedAssigneeId);
                 const pendingIds = Array.from(this.selectedWorkAreas).filter(
-                    id => !this.flwFilterWorkAreaIds.has(id)
+                    id => !this.flwFilterWorkAreaIds.has(id) && !alreadyQueued.has(id)
                 );
                 return { ...this.getStatsForIds(pendingIds), workAreas: pendingIds.length };
+            },
+
+            getQueuedWorkAreaIdsForAssignee(assigneeId) {
+                return new Set(
+                    this.assignmentQueue
+                        .filter(entry => String(entry.assignee_id) === String(assigneeId))
+                        .flatMap(entry => entry.work_area_ids)
+                );
             },
 
             getQueuedStatsForAssignee() {
