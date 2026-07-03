@@ -1,6 +1,7 @@
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Div, Field, Layout
 from django import forms
+from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.microplanning.const import (
@@ -20,10 +21,11 @@ INPUT_CSS = (
 class ClusterWorkAreasForm(forms.Form):
     """Validates the target building count used when clustering work areas into groups."""
 
-    BUILDING_COUNT_RANGE_MESSAGE = _("Enter a value between %(min)s and %(max)s.") % {
-        "min": MIN_BUILDING_COUNT,
-        "max": MAX_BUILDING_COUNT,
-    }
+    BUILDING_COUNT_RANGE_MESSAGE = format_lazy(
+        _("Enter a value between {min} and {max}."),
+        min=MIN_BUILDING_COUNT,
+        max=MAX_BUILDING_COUNT,
+    )
 
     building_count = forms.IntegerField(
         required=False,
@@ -40,8 +42,11 @@ class ClusterWorkAreasForm(forms.Form):
                 "class": INPUT_CSS,
                 "min": MIN_BUILDING_COUNT,
                 "max": MAX_BUILDING_COUNT,
-                "placeholder": _("Enter a value between %(min)s and %(max)s. Default value is 200.")
-                % {"min": MIN_BUILDING_COUNT, "max": MAX_BUILDING_COUNT},
+                "placeholder": format_lazy(
+                    _("Enter a value between {min} and {max}. Default value is 200."),
+                    min=MIN_BUILDING_COUNT,
+                    max=MAX_BUILDING_COUNT,
+                ),
             }
         ),
     )
