@@ -3,6 +3,7 @@ from django.urls import include, path
 from commcare_connect.opportunity import views
 from commcare_connect.opportunity.views import (
     AssignedTaskListView,
+    AudioAttachmentTranscribe,
     EditAssignedTask,
     EditTaskType,
     OpportunityCompletedWorkTable,
@@ -107,6 +108,11 @@ urlpatterns = [
         "<slug:opp_id>/fetch_audio_attachment/<int:pk>",
         view=fetch_audio_attachment,
         name="fetch_audio_attachment",
+    ),
+    path(
+        "<slug:opp_id>/audio_attachment/<int:pk>/transcribe/",
+        view=AudioAttachmentTranscribe.as_view(),
+        name="audio_attachment_transcribe",
     ),
     path(
         "<slug:opp_id>/completed_work_table/",

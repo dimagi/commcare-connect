@@ -102,16 +102,44 @@
             {% translate "Your browser does not support the audio element." %}
           </audio>
           {% if audio.transcript %}
-            <div>
+            <div x-data="{ expanded: false, overflowing: false }"
+                 x-init="$nextTick(() => overflowing = $refs.transcriptText.scrollHeight > $refs.transcriptText.clientHeight)">
               <p class="text-sm font-medium text-brand-blue-light">{% translate "Transcript" %}</p>
-              <p class="text-sm font-normal text-brand-deep-purple">{{ audio.transcript }}</p>
+              <p x-ref="transcriptText"
+                 class="text-sm font-normal text-brand-deep-purple"
+                 :class="expanded ? '' : 'line-clamp-3'">{{ audio.transcript }}</p>
+              <button type="button"
+                      x-show="overflowing"
+                      x-cloak
+                      @click="expanded = !expanded"
+                      class="block w-fit ml-auto text-sm font-medium text-brand-blue-light hover:underline"
+                      x-text="expanded ? '{% translate 'Show less' %}' : '{% translate 'Show more' %}'"></button>
             </div>
           {% endif %}
           {% if audio.translation %}
-            <div>
+            <div x-data="{ expanded: false, overflowing: false }"
+                 x-init="$nextTick(() => overflowing = $refs.translationText.scrollHeight > $refs.translationText.clientHeight)">
               <p class="text-sm font-medium text-brand-blue-light">{% translate "Translation" %}</p>
-              <p class="text-sm font-normal text-brand-deep-purple">{{ audio.translation }}</p>
+              <p x-ref="translationText"
+                 class="text-sm font-normal text-brand-deep-purple"
+                 :class="expanded ? '' : 'line-clamp-3'">{{ audio.translation }}</p>
+              <button type="button"
+                      x-show="overflowing"
+                      x-cloak
+                      @click="expanded = !expanded"
+                      class="block w-fit ml-auto text-sm font-medium text-brand-blue-light hover:underline"
+                      x-text="expanded ? '{% translate 'Show less' %}' : '{% translate 'Show more' %}'"></button>
             </div>
+          {% endif %}
+          {% if not request.is_opportunity_pm %}
+            <a href="{% url 'opportunity:audio_attachment_transcribe' org_slug=request.org.slug opp_id=user_visit.opportunity.opportunity_id pk=audio.pk %}"
+               class="button button-sm outline-style w-fit">
+              {% if audio.transcript or audio.translation %}
+                <i class="fa-regular fa-pen-to-square mr-1"></i>{% translate "Edit Transcript" %}
+              {% else %}
+                <i class="fa-solid fa-plus mr-1"></i>{% translate "Add Transcript" %}
+              {% endif %}
+            </a>
           {% endif %}
         </div>
       {% endfor %}

@@ -2,6 +2,7 @@ import inspect
 from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 from unittest import mock
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
@@ -2909,3 +2910,66 @@ def test_payment_import_modal_failure_text():
     assert "amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b" in html
     # the raw Python-tuple format must no longer appear
     assert "(['" not in html
+
+
+@pytest.mark.django_db
+class TestAudioAttachmentTranscribe:
+    def _url(self, organization, opportunity, audio):
+        return reverse(
+            "opportunity:audio_attachment_transcribe",
+            args=(organization.slug, opportunity.opportunity_id, audio.pk),
+        )
+
+    def test_get_renders_form(self, client, organization, org_user_member, opportunity):
+        worker = UserFactory(name="Gabriella Nelson")
+        visit = UserVisitFactory.create(opportunity=opportunity, user=worker)
+        audio = AudioAttachmentFactory.create(user_visit=visit)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, audio))
+
+        assert response.status_code == 200
+        assert opportunity.program.name.encode() in response.content
+        assert b"Connect Workers" in response.content
+        assert b"Gabriella Nelson" in response.content
+
+    def test_post_saves_transcript_and_translation(self, client, organization, org_user_member, opportunity):
+        visit = UserVisitFactory.create(opportunity=opportunity)
+        audio = AudioAttachmentFactory.create(user_visit=visit)
+
+        client.force_login(org_user_member)
+        response = client.post(
+            self._url(organization, opportunity, audio),
+            data={"transcript": "hello", "translation": "bonjour"},
+        )
+
+        audio.refresh_from_db()
+        assert audio.transcript == "hello"
+        assert audio.translation == "bonjour"
+        assert response.status_code == 302
+        assert response.url == (
+            f"{reverse('opportunity:user_visits_list', args=(organization.slug, opportunity.opportunity_id))}"
+            f"?{urlencode({'user': visit.user.user_id})}"
+        )
+
+    def test_program_manager_cannot_access(
+        self, client, organization, program_manager_org, program_manager_org_user_admin
+    ):
+        program = ProgramFactory(organization=program_manager_org)
+        managed_opp = OpportunityFactory(program=program, organization=organization)
+        visit = UserVisitFactory.create(opportunity=managed_opp)
+        audio = AudioAttachmentFactory.create(user_visit=visit)
+
+        client.force_login(program_manager_org_user_admin)
+        response = client.get(self._url(program_manager_org, managed_opp, audio))
+
+        assert response.status_code == 404
+
+    def test_wrong_opportunity_returns_404(self, client, organization, org_user_member, opportunity):
+        other_visit = UserVisitFactory.create()  # belongs to a different opportunity
+        audio = AudioAttachmentFactory.create(user_visit=other_visit)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity, audio))
+
+        assert response.status_code == 404
