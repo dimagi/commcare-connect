@@ -41,6 +41,7 @@ from commcare_connect.opportunity.views import (
     opportunity_user_invite,
     payment_delete,
     payment_import,
+    payment_import_status,
     payment_report,
     reject_visits,
     resend_user_invites,
@@ -74,6 +75,7 @@ urlpatterns = [
     path("<slug:opp_id>/add_budget_new_users", view=add_budget_new_users, name="add_budget_new_users"),
     path("<slug:opp_id>/payment_export/", view=export_users_for_payment, name="payment_export"),
     path("<slug:opp_id>/payment_import/", view=payment_import, name="payment_import"),
+    path("<slug:opp_id>/payment_import_status/", view=payment_import_status, name="payment_import_status"),
     path("<slug:opp_id>/payment_unit/create", view=add_payment_unit, name="add_payment_unit"),
     path("<slug:opp_id>/payment_units/create", view=add_payment_units, name="add_payment_units"),
     path(

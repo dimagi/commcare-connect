@@ -27,6 +27,7 @@ from commcare_connect.opportunity.tasks import (
     add_connect_users,
     auto_archive_test_opportunities,
     auto_deactivate_ended_opportunities,
+    bulk_update_payments_task,
     download_inaccessibility_request_attachments,
     download_user_visit_attachments,
     generate_automated_service_delivery_invoice,
@@ -54,6 +55,7 @@ from commcare_connect.opportunity.tests.factories import (
     TaskTypeFactory,
     UserVisitFactory,
 )
+from commcare_connect.opportunity.visit_import import ImportException, PaymentImportStatus
 from commcare_connect.users.models import User
 
 
@@ -637,3 +639,85 @@ def test_send_task_assignment_notification(send_message_patch):
             },
         )
     )
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.cache")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payments")
+@mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
+def test_bulk_update_payments_task_success(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
+    mock_dataset.return_value = Dataset(headers=["username"])
+    # 2 users, 3 payment records created — the count reports payments, not users
+    mock_bulk.return_value = PaymentImportStatus(seen_users={"u1", "u2"}, missing_users=set(), payments_created=3)
+
+    result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
+
+    assert result == {"success": True, "payments_processed": 3, "missing_users_message": None}
+    mock_storage.delete.assert_called_once_with("some/path")
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.cache")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payments")
+@mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
+def test_bulk_update_payments_task_with_missing_users(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
+    mock_dataset.return_value = Dataset(headers=["username"])
+    mock_bulk.return_value = PaymentImportStatus(
+        seen_users={"u1"}, missing_users={"missing1", "missing2"}, payments_created=1
+    )
+
+    result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
+
+    assert result["success"] is True
+    assert result["payments_processed"] == 1
+    assert "not found" in result["missing_users_message"]
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.cache")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payments")
+@mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
+def test_bulk_update_payments_task_import_error(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
+    mock_dataset.return_value = Dataset(headers=["username"])
+    row_errors = ["amount must be a number: alice, NOT_A_NUMBER, 2026-06-09, bank, op_b"]
+    mock_bulk.side_effect = ImportException("1 rows have errors", row_errors)
+
+    result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
+
+    assert result == {"success": False, "error_detail": row_errors}
+    mock_storage.delete.assert_called_once_with("some/path")
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.cache")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payments")
+@mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
+def test_bulk_update_payments_task_import_error_without_rows(
+    mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity
+):
+    # Structural errors (e.g. missing column) carry only a message; it is wrapped into a one-item list
+    mock_dataset.return_value = Dataset(headers=["username"])
+    mock_bulk.side_effect = ImportException("Missing required column(s): 'payment amount'")
+
+    result = bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"]).result
+
+    assert result == {"success": False, "error_detail": ["Missing required column(s): 'payment amount'"]}
+
+
+@pytest.mark.django_db
+@mock.patch("commcare_connect.opportunity.tasks.cache")
+@mock.patch("commcare_connect.opportunity.tasks.default_storage")
+@mock.patch("commcare_connect.opportunity.visit_import.bulk_update_payments")
+@mock.patch("commcare_connect.opportunity.visit_import.get_imported_dataset")
+def test_bulk_update_payments_task_unexpected_error(mock_dataset, mock_bulk, mock_storage, mock_cache, opportunity):
+    mock_dataset.return_value = Dataset(headers=["username"])
+    mock_bulk.side_effect = ValueError("boom")
+
+    with pytest.raises(ValueError):
+        bulk_update_payments_task.apply(args=[opportunity.pk, "some/path", "csv"], throw=True)
+
+    mock_storage.delete.assert_called_once_with("some/path")

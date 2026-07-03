@@ -486,7 +486,6 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
     from commcare_connect.opportunity.visit_import import ImportException, bulk_update_payments, get_imported_dataset
 
     with cache.lock(get_payment_upload_key(opportunity_id), timeout=600):
-        set_task_progress(self, "Payment Record Import is in progress.")
         try:
             with default_storage.open(file_path, "rb") as f:
                 dataset = get_imported_dataset(f, file_format)
@@ -494,18 +493,15 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
                 rows = list(dataset)
 
             status = bulk_update_payments(opportunity_id, headers, rows)
-            messages = [f"Payment status updated successfully for {len(status)} users."]
-            if status.missing_users:
-                messages.append(status.get_missing_message())
-
+            return {
+                "success": True,
+                "payments_processed": status.payments_created,
+                "missing_users_message": status.get_missing_message() if status.missing_users else None,
+            }
         except ImportException as e:
-            messages = [f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", [])
-        except Exception as e:
-            messages = [f"Unexpected error during payment import: {e}"]
+            return {"success": False, "error_detail": e.rows or [e.message]}
         finally:
             default_storage.delete(file_path)
-
-        set_task_progress(self, "<br>".join(messages), is_complete=True)
 
 
 @celery_app.task(bind=True)
