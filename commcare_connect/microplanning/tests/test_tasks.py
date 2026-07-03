@@ -202,8 +202,6 @@ def test_send_work_area_assignment_notification(opportunity):
 @mock.patch("commcare_connect.microplanning.tasks.cache")
 @mock.patch("commcare_connect.microplanning.tasks.WorkAreaGrouper")
 def test_cluster_work_areas_task_forwards_max_buildings(mock_grouper, mock_cache):
-    from commcare_connect.microplanning.tasks import cluster_work_areas_task
-
     cluster_work_areas_task(opp_id=1, max_buildings=250)
 
     mock_grouper.assert_called_once_with(1, max_buildings=250)
