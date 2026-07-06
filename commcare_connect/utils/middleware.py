@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 from pghistory.middleware import HistoryMiddleware
 from rest_framework.settings import api_settings
 
@@ -17,7 +18,7 @@ API_KEY_ERROR = """
     Please re-login using CommCare HQ or add a <a href="{url}">CommCare API Key</a>.
 """
 
-OCS_CONNECT_ERROR = (
+OCS_CONNECT_ERROR = _(
     "Your Open Chat Studio account isn't connected (or its session expired).<br>"
     'Please <a href="{url}">connect your OCS account</a> and try again.'
 )
