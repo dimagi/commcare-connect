@@ -3,6 +3,7 @@ from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 
 from commcare_connect.ocs_provider.provider import OcsProvider
+from commcare_connect.users.models import User
 from commcare_connect.utils.oauth_tokens import refresh_access_token
 
 OCS_HTTP_TIMEOUT = 10  # seconds
@@ -37,24 +38,18 @@ def list_chatbots(user) -> list[tuple[str, str]]:
 
 
 def trigger_bot(
-    user,
+    user: User,
     *,
-    identifier,
-    experiment,
-    participant_data=None,
-    start_new_session=None,
-    message_text=None,
-    prompt_text=None,
-    session_data=None,
+    identifier: str,
+    experiment: str,
+    start_new_session: bool = True,
+    session_data: dict | None = None,
 ) -> dict:
     """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
     token = _valid_token(user)
     payload = {"identifier": identifier, "experiment": experiment, "platform": "commcare_connect"}
     optionals = {
-        "participant_data": participant_data,
         "start_new_session": start_new_session,
-        "message_text": message_text,
-        "prompt_text": prompt_text,
         "session_data": session_data,
     }
     payload.update({k: v for k, v in optionals.items() if v is not None})
