@@ -107,7 +107,9 @@ def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
     )
 
     result = ocs_api.trigger_bot(
-        user, identifier="flw-user", experiment="exp-uuid", participant_data={"connectTaskId": "task-1"}
+        user,
+        identifier="flw-user",
+        experiment="exp-uuid",
     )
 
     assert result["session_id"] == "s1"
@@ -116,10 +118,7 @@ def test_trigger_bot_posts_required_payload_and_maps_response(user, httpx_mock):
     assert body["identifier"] == "flw-user"
     assert body["experiment"] == "exp-uuid"
     assert body["platform"] == "commcare_connect"
-    assert body["participant_data"] == {"connectTaskId": "task-1"}
-    # optionals not passed => absent from payload
-    assert "start_new_session" not in body
-    assert "message_text" not in body
+    assert body["start_new_session"] is True
 
 
 @pytest.mark.django_db
@@ -132,11 +131,10 @@ def test_trigger_bot_includes_optionals_only_when_provided(user, httpx_mock):
         json={"session_id": "s", "url": "u", "team": {}, "channel": "c"},
     )
 
-    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", start_new_session=True, message_text="hi")
+    ocs_api.trigger_bot(user, identifier="flw", experiment="exp", start_new_session=True)
 
     body = json.loads(httpx_mock.get_requests()[0].read())
     assert body["start_new_session"] is True
-    assert body["message_text"] == "hi"
 
 
 @pytest.mark.django_db
