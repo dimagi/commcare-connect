@@ -1,9 +1,5 @@
-from urllib.parse import urlencode
-
 from django.contrib import messages
 from django.http import HttpResponseRedirect
-from django.urls import reverse
-from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
@@ -18,9 +14,9 @@ API_KEY_ERROR = """
     Please re-login using CommCare HQ or add a <a href="{url}">CommCare API Key</a>.
 """
 
-OCS_CONNECT_ERROR = _(
-    "Your Open Chat Studio account isn't connected (or its session expired).<br>"
-    'Please <a href="{url}">connect your OCS account</a> and try again.'
+TOKEN_REFRESH_ERROR = _(
+    "We couldn't verify one of your connected accounts (it may have been disconnected "
+    "or its session expired). Please reconnect the account and try again."
 )
 
 
@@ -37,8 +33,7 @@ class CustomErrorHandlingMiddleware:
             messages.error(request, mark_safe(API_KEY_ERROR.format(url=api_url)))
             return HttpResponseRedirect(_safe_referer(request))
         if isinstance(exception, TokenRefreshError):
-            connect_url = f"{reverse('ocs_login')}?{urlencode({'process': 'connect', 'next': request.path})}"
-            messages.error(request, format_html(OCS_CONNECT_ERROR, url=connect_url))
+            messages.error(request, TOKEN_REFRESH_ERROR)
             return HttpResponseRedirect(_safe_referer(request))
 
 
