@@ -53,6 +53,7 @@ def _refresh(token, token_url):
                 "client_secret": token.app.secret,
                 "refresh_token": token.token_secret,
             },
+            timeout=10,
         )
     except httpx.RequestError as e:
         raise TokenRefreshError(f"Failed to refresh token: {e}") from e

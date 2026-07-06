@@ -13,7 +13,7 @@ class OcsOAuth2Adapter(OAuth2Adapter):
     redirect_uri_protocol = "https"
 
     def complete_login(self, request, app, token, **kwargs):
-        response = httpx.get(self.profile_url, headers={"Authorization": f"Bearer {token}"})
+        response = httpx.get(self.profile_url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
         extra_data = response.json()
         return self.get_provider().sociallogin_from_response(request, extra_data)
 

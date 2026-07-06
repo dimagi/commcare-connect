@@ -5,6 +5,8 @@ from django.conf import settings
 from commcare_connect.ocs_provider.provider import OcsProvider
 from commcare_connect.utils.oauth_tokens import refresh_access_token
 
+OCS_HTTP_TIMEOUT = 10  # seconds
+
 
 class OcsApiError(Exception):
     """Raised when an OCS API call fails."""
@@ -22,7 +24,7 @@ def list_chatbots(user) -> list[tuple[str, str]]:
     chatbots = []
     while url:
         try:
-            response = httpx.get(url, headers=headers)
+            response = httpx.get(url, headers=headers, timeout=OCS_HTTP_TIMEOUT)
             response.raise_for_status()
         except httpx.HTTPStatusError:
             raise OcsApiError(f"Failed to list chatbots: {response.text}")
@@ -62,6 +64,7 @@ def trigger_bot(
             f"{settings.OCS_BASE_URL}/api/trigger_bot",
             json=payload,
             headers={"Authorization": f"Bearer {token.token}"},
+            timeout=OCS_HTTP_TIMEOUT,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError:
