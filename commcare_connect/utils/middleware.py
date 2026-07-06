@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
 from pghistory.middleware import HistoryMiddleware
 from rest_framework.settings import api_settings
@@ -33,11 +34,20 @@ class CustomErrorHandlingMiddleware:
         if isinstance(exception, CommCareTokenException):
             api_url = "#"  # TODO: make this a real URL
             messages.error(request, mark_safe(API_KEY_ERROR.format(url=api_url)))
-            return HttpResponseRedirect(request.headers["referer"])
+            return HttpResponseRedirect(_safe_referer(request))
         if isinstance(exception, TokenRefreshError):
             connect_url = f"{reverse('ocs_login')}?{urlencode({'process': 'connect', 'next': request.path})}"
             messages.error(request, format_html(OCS_CONNECT_ERROR, url=connect_url))
-            return HttpResponseRedirect(request.headers.get("referer", "/"))
+            return HttpResponseRedirect(_safe_referer(request))
+
+
+def _safe_referer(request):
+    referer = request.headers.get("referer")
+    if referer and url_has_allowed_host_and_scheme(
+        referer, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return referer
+    return "/"
 
 
 class CurrentVersionMiddleware:
