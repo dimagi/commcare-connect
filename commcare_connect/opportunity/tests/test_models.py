@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,  # added via pghistory
+    TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -444,3 +445,23 @@ def test_audio_attachment_unique_per_visit_and_name():
     AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
     with pytest.raises(IntegrityError):
         AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
+
+
+@pytest.mark.django_db
+class TestTaskFields:
+    def test_task_type_mode_defaults_to_relearn(self):
+        task_type = TaskTypeFactory()
+        task_type.refresh_from_db()
+        assert task_type.mode == TaskTypeModeChoices.RELEARN
+
+    def test_task_type_stores_ocs_fields(self):
+        task_type = TaskTypeFactory(mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="chatbot-123")
+        task_type.refresh_from_db()
+        assert task_type.mode == TaskTypeModeChoices.OCS
+        assert task_type.ocs_chatbot_id == "chatbot-123"
+
+    def test_assigned_task_stores_ocs_fields(self):
+        task = AssignedTaskFactory(connect_channel_id="channel-1", ocs_session_id="session-1")
+        task.refresh_from_db()
+        assert task.connect_channel_id == "channel-1"
+        assert task.ocs_session_id == "session-1"
