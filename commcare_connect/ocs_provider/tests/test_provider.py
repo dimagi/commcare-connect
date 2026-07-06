@@ -8,7 +8,7 @@ def test_provider_id_is_ocs():
 def test_default_scope_requests_read_and_interact():
     # get_default_scope is an instance method; call it on a bare instance.
     provider = OcsProvider.__new__(OcsProvider)
-    assert provider.get_default_scope() == ["openid", "chatbots:read", "chatbots:interact"]
+    assert provider.get_default_scope() == ["openid", "chatbots:read", "chatbots:interact", "sessions:read"]
 
 
 def test_extract_uid_uses_sub():

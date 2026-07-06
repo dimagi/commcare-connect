@@ -14,7 +14,7 @@ class OcsProvider(OAuth2Provider):
     pkce_enabled_default = True
 
     def get_default_scope(self):
-        return ["openid", "chatbots:read", "chatbots:interact"]
+        return ["openid", "chatbots:read", "chatbots:interact", "sessions:read"]
 
     def extract_uid(self, data):
         uid = data.get("sub")
