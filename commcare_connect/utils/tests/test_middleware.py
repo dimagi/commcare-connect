@@ -25,9 +25,7 @@ def test_missing_ocs_token_redirects_with_connect_message(rf):
     assert isinstance(response, HttpResponseRedirect)
     assert response.url == "/a/org/opportunity/"
     text = " ".join(str(m) for m in get_messages(request))
-    assert "/accounts/ocs/login/" in text
-    assert "process=connect" in text
-    assert "next=" in text
+    assert "reconnect the account" in text
 
 
 @pytest.mark.django_db
