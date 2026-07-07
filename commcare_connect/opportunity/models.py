@@ -494,6 +494,14 @@ class AssignedTask(XFormBaseModel):
         self.connect_channel_id = response.get("channel")
         self.save(update_fields=["ocs_session_id", "connect_channel_id"])
 
+    def mark_completed(self, *, completed_at=None):
+        """Mark this task completed.
+
+        TODO(CCCT-2467): implement — set status=COMPLETED and completed_at, make it
+        idempotent (no-op if already completed), and reuse this from the form-receiver
+        completion path (process_task_modules). Stubbed for now.
+        """
+
     @classmethod
     def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
         from commcare_connect.commcarehq.api import HQ_CASE_BULK_CHUNK_SIZE, bulk_update_usercases
