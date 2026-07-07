@@ -10,9 +10,8 @@ app_name = "prelogin"
 # home.html. Server-side we must still list each route, otherwise a direct
 # load or refresh of e.g. /platform hits Django (not the router) and 404s.
 #
-# All routes go through views.home (HomeView) — not a bare TemplateView — so
-# {{ app_login_url }} is supplied on every page, not just "/". Keep this list
-# in sync with the data-page routes in index.html upstream
+# All routes go through views.home (HomeView) — not a bare TemplateView.
+# Keep this list in sync with the data-page routes in index.html upstream
 # (dimagi-internal/connect-prelogin) and with sitemap.xml.
 #
 # Do NOT use a blanket catch-all: this host also serves the real app

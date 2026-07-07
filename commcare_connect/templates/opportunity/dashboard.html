@@ -30,16 +30,13 @@
            x-data="{ isOpen: false }">
         <h3 class="text-sm font-medium text-brand-sky flex-1">{{ object.program.name }}</h3>
         {% if object.is_test %}<span class="badge badge-md primary-light">Test</span>{% endif %}
-        {% if request.org_membership.is_viewer %}
-          <i class="fa-solid opacity-50"
-             :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark' : 'fa-bars']"></i>
-        {% else %}
+        {% if not request.org_membership.is_viewer %}
           <i class="fa-solid cursor-pointer"
              :class="[isTest ? 'text-gray-800' : 'text-white', isOpen ? 'fa-xmark' : 'fa-bars']"
              @click="isOpen = !isOpen"></i>
+          <!-- Dropdown Menu -->
+          {% include "opportunity/opportunity_menu.html" with request=request opportunity=object is_opportunity_pm=request.is_opportunity_pm %}
         {% endif %}
-        <!-- Dropdown Menu -->
-        {% include "opportunity/opportunity_menu.html" with request=request opportunity=object is_opportunity_pm=request.is_opportunity_pm %}
       </div>
       <div class="flex justify-between items-end">
         <div class="flex flex-col gap-2">

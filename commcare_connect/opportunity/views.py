@@ -16,6 +16,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.contrib.messages.views import SuccessMessageMixin
 from django.core.cache import cache
 from django.core.files.storage import default_storage, storages
 from django.db import transaction
@@ -23,6 +24,7 @@ from django.db.models import (
     Case,
     Count,
     DecimalField,
+    F,
     FloatField,
     Func,
     IntegerField,
@@ -55,10 +57,10 @@ from django_tables2 import RequestConfig, SingleTableView
 from django_tables2.export import TableExport
 from django_weasyprint.views import WeasyTemplateResponse
 from geopy import distance
-from waffle import switch_is_active
+from waffle import flag_is_active, switch_is_active
 
 from commcare_connect.connect_id_client import fetch_users
-from commcare_connect.flags.flag_names import MICROPLANNING
+from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.flags.utils import is_flag_active
 from commcare_connect.form_receiver.serializers import XFormSerializer
@@ -79,6 +81,7 @@ from commcare_connect.opportunity.forms import (
     AddBudgetExistingUsersForm,
     AddBudgetNewUsersForm,
     AddTaskTypeForm,
+    AudioAttachmentTranscribeForm,
     AutomatedPaymentInvoiceForm,
     CreateTaskForm,
     DeliverUnitFlagsForm,
@@ -113,6 +116,7 @@ from commcare_connect.opportunity.helpers import (
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
+    AudioAttachment,
     BlobMeta,
     CompletedModule,
     CompletedWork,
@@ -646,7 +650,13 @@ def review_visit_import(request, org_slug=None, opp_id=None):
 def add_budget_existing_users(request, org_slug=None, opp_id=None):
     opportunity_access = OpportunityAccess.objects.filter(opportunity=request.opportunity)
     opportunity_claims = OpportunityClaim.objects.filter(opportunity_access__in=opportunity_access).annotate(
-        total_max_visits=Coalesce(Sum("opportunityclaimlimit__max_visits"), Value(0))
+        total_max_visits=Coalesce(Sum("opportunityclaimlimit__max_visits"), Value(0)),
+        total_per_visit_cost=Coalesce(
+            Sum(
+                F("opportunityclaimlimit__payment_unit__amount") + F("opportunityclaimlimit__payment_unit__org_amount")
+            ),
+            Value(0),
+        ),
     )
 
     form = AddBudgetExistingUsersForm(
@@ -708,7 +718,7 @@ def add_budget_existing_users(request, org_slug=None, opp_id=None):
             "tabs": tabs,
             "path": path,
             "opportunity_claims": opportunity_claims,
-            "budget_per_visit": request.opportunity.budget_per_visit,
+            "per_visit_costs_json": json.dumps({claim.id: claim.total_per_visit_cost for claim in opportunity_claims}),
             "opportunity": request.opportunity,
         },
     )
@@ -1144,6 +1154,73 @@ def fetch_attachment(request, org_slug, opp_id, blob_id):
     except FileNotFoundError:
         return HttpResponseNotFound()
     return FileResponse(attachment, filename=blob_meta.name, content_type=blob_meta.content_type)
+
+
+@org_member_required
+@opportunity_required
+def fetch_audio_attachment(request, org_slug, opp_id, pk):
+    audio = get_object_or_404(AudioAttachment, pk=pk, user_visit__opportunity=request.opportunity)
+
+    try:
+        attachment = storages["default"].open(audio.blob_id)
+    except FileNotFoundError:
+        return HttpResponseNotFound()
+    return FileResponse(attachment, filename=audio.name, content_type=audio.content_type)
+
+
+class AudioAttachmentTranscribe(
+    SuccessMessageMixin, OrganizationUserMemberRoleMixin, OpportunityObjectMixin, UpdateView
+):
+    model = AudioAttachment
+    form_class = AudioAttachmentTranscribeForm
+    template_name = "opportunity/audio_attachment_transcribe.html"
+    success_message = gettext_lazy("Transcript saved.")
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.is_opportunity_pm:
+            raise Http404()
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_object(self, queryset=None):
+        return get_object_or_404(
+            AudioAttachment.objects.select_related("user_visit__user", "user_visit__opportunity__program"),
+            pk=self.kwargs["pk"],
+            user_visit__opportunity=self.get_opportunity(),
+        )
+
+    def get_visit_details_url(self):
+        return (
+            f"{reverse('opportunity:user_visits_list', args=(self.kwargs['org_slug'], self.kwargs['opp_id']))}"
+            f"?{urlencode({'user': self.object.user_visit.user.user_id})}"
+        )
+
+    def get_breadcrumbs(self, org_slug, opp_id):
+        user_visit = self.object.user_visit
+        opportunity = user_visit.opportunity
+
+        return [
+            {"title": opportunity.program.name, "url": reverse("program:home", args=(org_slug,))},
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", args=(org_slug,))},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(org_slug, opp_id)),
+            },
+            {
+                "title": _("Connect Workers"),
+                "url": reverse("opportunity:worker_deliver", args=(org_slug, opp_id)),
+            },
+            {"title": user_visit.user.name, "url": self.get_visit_details_url()},
+            {"title": _("Transcribe Audio"), "url": self.request.path},
+        ]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["path"] = self.get_breadcrumbs(self.kwargs["org_slug"], self.kwargs["opp_id"])
+        context["visit_details_url"] = self.get_visit_details_url()
+        return context
+
+    def get_success_url(self):
+        return self.get_visit_details_url()
 
 
 @org_member_required
@@ -3072,57 +3149,71 @@ def opportunity_delivery_stats(request, org_slug, opp_id):
             "url": f"{delivery_url}?{urlencode({'sort': '-last_active'})}",
             "incr": stats.deliveries_from_yesterday,
         },
-        {
-            "icon": "fa-map-location-dot",
-            "name": _("View Progress Map"),
-            "status": "",
-            "value": "",
-            "url": microplanning_url,
-        },
-        {
-            "icon": "fa-magnifying-glass",
-            "name": _("Audit Opportunity"),
-            "status": "",
-            "value": "",
-            "url": reverse(
-                "opportunity:audit:audit_report_list",
-                kwargs={"org_slug": org_slug, "opp_id": opp_id},
-            ),
-        },
     ]
+    if flag_is_active(request, MICROPLANNING):
+        deliveries_panels.append(
+            {
+                "icon": "fa-map-location-dot",
+                "name": _("View Progress Map"),
+                "status": "",
+                "value": "",
+                "url": microplanning_url,
+            }
+        )
+    if is_flag_active(WEEKLY_PERFORMANCE_REPORT, request.opportunity):
+        deliveries_panels.append(
+            {
+                "icon": "fa-magnifying-glass",
+                "name": _("Audit Opportunity"),
+                "status": "",
+                "value": "",
+                "url": reverse(
+                    "opportunity:audit:audit_report_list",
+                    kwargs={"org_slug": org_slug, "opp_id": opp_id},
+                ),
+            }
+        )
 
     tasks_url = reverse("opportunity:assigned_task_list", args=(org_slug, opp_id))
+    connect_worker_panels = [
+        {
+            "icon": "fa-user-group",
+            "name": _("Connect Workers"),
+            "status": "",
+            "value": "",
+            "url": status_url,
+        },
+        {
+            "icon": "fa-clipboard-list",
+            "name": _("Connect Workers"),
+            "status": _("Inactive last 3 days"),
+            "url": f"{delivery_url}?{urlencode({'last_active': '3'})}",
+            "value": header_with_tooltip(
+                stats.inactive_workers, _("Did not submit a Learn or Deliver form in the last 3 days")
+            ),
+            **panel_type_2,
+        },
+    ]
+    if (
+        switch_is_active(WORKER_VISITS_TASKS)
+        and TaskType.objects.filter(opportunity=request.opportunity, is_active=True).exists()
+    ):
+        connect_worker_panels.append(
+            {
+                "icon": "fa-list-check",
+                "name": _("Tasks Assigned to Connect Workers"),
+                "status": "",
+                "value": stats.active_tasks_count,
+                "url": tasks_url,
+            }
+        )
+
     opp_stats = [
         {
             "title": _("Connect Workers"),
             "sub_heading": "",
             "value": "",
-            "panels": [
-                {
-                    "icon": "fa-user-group",
-                    "name": _("Connect Workers"),
-                    "status": "",
-                    "value": "",
-                    "url": status_url,
-                },
-                {
-                    "icon": "fa-clipboard-list",
-                    "name": _("Connect Workers"),
-                    "status": _("Inactive last 3 days"),
-                    "url": f"{delivery_url}?{urlencode({'last_active': '3'})}",
-                    "value": header_with_tooltip(
-                        stats.inactive_workers, _("Did not submit a Learn or Deliver form in the last 3 days")
-                    ),
-                    **panel_type_2,
-                },
-                {
-                    "icon": "fa-list-check",
-                    "name": _("Tasks Assigned to Connect Workers"),
-                    "status": "",
-                    "value": stats.active_tasks_count,
-                    "url": tasks_url,
-                },
-            ],
+            "panels": connect_worker_panels,
         },
         {
             "title": _("Services Delivered"),

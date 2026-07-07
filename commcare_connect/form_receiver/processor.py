@@ -190,6 +190,7 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
                     "app_build_id",
                     "app_build_version",
                     "status",
+                    "date_modified",
                 ]
             )
             updated_tasks = True
@@ -566,7 +567,8 @@ def process_deliver_unit(user, xform: XForm, app: CommCareApp, opportunity: Oppo
             if completed_work_needs_save:
                 completed_work.save()
 
-    update_payment_accrued_for_user(access, incremental=True)
+    completed_work_id = completed_work.id if completed_work is not None else None
+    update_payment_accrued_for_user(access, incremental=True, completed_work_id=completed_work_id)
     transaction.on_commit(partial(download_user_visit_attachments.delay, user_visit.id))
 
 
