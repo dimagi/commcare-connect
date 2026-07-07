@@ -1,12 +1,13 @@
 from crispy_forms import helper, layout
 from django import forms
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
 from django.utils.html import format_html
 from django.utils.translation import gettext, gettext_lazy
 
 from commcare_connect.opportunity.forms import CHECKBOX_CLASS
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import LLOEntity, Organization, OrganizationInvite
 from commcare_connect.users.models import User
 from commcare_connect.utils.forms import CreatableModelChoiceField, DynamicCreatableChoiceField
 from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
@@ -116,18 +117,12 @@ class OrganizationChangeForm(forms.ModelForm):
         return org
 
 
-class MembershipForm(forms.ModelForm):
-    email = forms.CharField(
-        max_length=254,
-        required=True,
-        label="",
-        widget=forms.TextInput(attrs={"placeholder": "Enter email address"}),
-    )
-
+class OrganizationInviteForm(forms.ModelForm):
     class Meta:
-        model = UserOrganizationMembership
-        fields = ("role",)
-        labels = {"role": ""}
+        model = OrganizationInvite
+        fields = ("email", "role")
+        labels = {"email": "", "role": ""}
+        widgets = {"email": forms.EmailInput(attrs={"placeholder": "Enter email address"})}
 
     def __init__(self, *args, **kwargs):
         self.organization = kwargs.pop("organization")
@@ -148,13 +143,45 @@ class MembershipForm(forms.ModelForm):
 
     def clean_email(self):
         email = self.cleaned_data["email"]
-        user = User.objects.filter(email=email).exclude(memberships__organization=self.organization).first()
+        if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
+            raise ValidationError(gettext("A member with this email already belongs to this workspace."))
+        if OrganizationInvite.objects.filter(
+            organization=self.organization,
+            email__iexact=email,
+            status=OrganizationInvite.Status.invited,
+            date_created__gte=OrganizationInvite.expiry_cutoff(),
+        ).exists():
+            raise ValidationError(gettext("This email already has a pending invite."))
+        # Normalize so the case-sensitive unique_pending_org_invite constraint is effective.
+        return email.lower()
 
-        if not user:
-            raise ValidationError("User with this email does not exist or is already a member")
 
-        self.instance.user = user
-        return email
+class InviteSignupForm(forms.Form):
+    """Password fields for a brand-new invitee creating their account inline.
+
+    The email is fixed by the invite (the recipient proved ownership by clicking
+    the emailed link), so it is not a form field here.
+    """
+
+    password1 = forms.CharField(widget=forms.PasswordInput(attrs={"placeholder": gettext_lazy("Password")}))
+    password2 = forms.CharField(widget=forms.PasswordInput(attrs={"placeholder": gettext_lazy("Confirm Password")}))
+    agree = forms.BooleanField(
+        required=True,
+        error_messages={"required": gettext_lazy("You must accept the Privacy Policy and Acceptable Use Policy.")},
+    )
+
+    def clean_password1(self):
+        password = self.cleaned_data["password1"]
+        validate_password(password)
+        return password
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get("password1")
+        password2 = cleaned_data.get("password2")
+        if password1 and password2 and password1 != password2:
+            self.add_error("password2", gettext("The two password fields didn't match."))
+        return cleaned_data
 
 
 class AddCredentialForm(forms.Form):

@@ -1,7 +1,9 @@
+from datetime import timedelta
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.users.models import User
@@ -81,3 +83,52 @@ class UserOrganizationMembership(models.Model):
         db_table = "organization_membership"
         unique_together = ("user", "organization")
         indexes = [models.Index(fields=["invite_id"])]
+
+
+class OrganizationInvite(BaseModel):
+    """A pending invitation for a person (by email) to join an organization.
+
+    Stored independently of any User account so people who have not yet signed
+    up can be invited. The membership is created only when the invite is
+    accepted by a logged-in user whose email matches.
+    """
+
+    EXPIRY_DAYS = 7
+
+    class Status(models.TextChoices):
+        invited = "invited", _("Invited")
+        accepted = "accepted", _("Accepted")
+        expired = "expired", _("Expired")
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="invites")
+    email = models.EmailField()
+    role = models.CharField(
+        max_length=20,
+        choices=UserOrganizationMembership.Role.choices,
+        default=UserOrganizationMembership.Role.MEMBER,
+    )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.invited)
+    token = models.UUIDField(default=uuid4, unique=True, editable=False)
+    invited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="sent_org_invites")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "email"],
+                condition=models.Q(status="invited"),
+                name="unique_pending_org_invite",
+            )
+        ]
+        indexes = [models.Index(fields=["token"])]
+
+    def __str__(self):
+        return f"{self.email} -> {self.organization.slug} ({self.status})"
+
+    @classmethod
+    def expiry_cutoff(cls):
+        """Invites created before this moment have passed their expiry window."""
+        return timezone.now() - timedelta(days=cls.EXPIRY_DAYS)
+
+    @property
+    def is_expired(self):
+        return self.date_created < self.expiry_cutoff()
