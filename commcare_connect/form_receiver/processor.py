@@ -151,9 +151,6 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
             access = OpportunityAccess.objects.get(opportunity=opportunity, user=user)
         except OpportunityAccess.DoesNotExist:
             raise ProcessingError(f"User does not have access to opportunity {opportunity.name}")
-        save_access = False
-
-        updated_tasks = False
 
         for task_data in blocks:
             task_slug = task_data.get("@id")
@@ -175,30 +172,14 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
             except AssignedTask.DoesNotExist:
                 continue
 
-            assigned_task.xform_id = xform.id
-            assigned_task.completed_at = xform.metadata.timeEnd
-            assigned_task.duration = xform.metadata.duration
-            assigned_task.app_build_id = xform.build_id
-            assigned_task.app_build_version = xform.metadata.app_build_version
-            assigned_task.status = AssignedTaskStatus.COMPLETED
-
-            assigned_task.save(
-                update_fields=[
-                    "xform_id",
-                    "completed_at",
-                    "duration",
-                    "app_build_id",
-                    "app_build_version",
-                    "status",
-                ]
+            assigned_task.mark_completed(
+                completed_at=xform.metadata.timeEnd,
+                xform_id=xform.id,
+                duration=xform.metadata.duration,
+                app_build_id=xform.build_id,
+                app_build_version=xform.metadata.app_build_version,
+                send_notification=False,
             )
-            updated_tasks = True
-            if not access.last_active or access.last_active < assigned_task.completed_at:
-                access.last_active = assigned_task.completed_at
-                save_access = True
-
-        if updated_tasks and save_access:
-            access.save(update_fields=["last_active"])
 
 
 def update_completed_learn_date(access, save_access=False):

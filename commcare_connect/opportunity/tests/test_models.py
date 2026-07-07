@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 from django.db.utils import IntegrityError
+from django.utils.timezone import now
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
@@ -408,6 +409,89 @@ class TestAssignedTaskAssign:
 
         mock_trigger.assert_called_once()
         mock_hq.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestAssignedTaskMarkCompleted:
+    def test_transitions_to_completed_and_notifies(self, django_capture_on_commit_callbacks):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+        completed_at = now()
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=completed_at)
+
+        task.refresh_from_db()
+        assert task.status == AssignedTaskStatus.COMPLETED
+        assert task.completed_at == completed_at
+        notify.delay.assert_called_once_with(task.pk)
+
+    def test_send_notification_false_suppresses_email(self, django_capture_on_commit_callbacks):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=now(), send_notification=False)
+
+        task.refresh_from_db()
+        assert task.status == AssignedTaskStatus.COMPLETED
+        notify.delay.assert_not_called()
+
+    def test_defaults_completed_at_to_now(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED, completed_at=None)
+        before = now()
+
+        task.mark_completed()
+
+        task.refresh_from_db()
+        assert task.completed_at >= before
+
+    def test_stores_optional_form_fields(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+
+        task.mark_completed(
+            completed_at=now(),
+            xform_id="form-1",
+            duration=timedelta(minutes=3),
+            app_build_id="build-1",
+            app_build_version=7,
+        )
+
+        task.refresh_from_db()
+        assert task.xform_id == "form-1"
+        assert task.duration == timedelta(minutes=3)
+        assert task.app_build_id == "build-1"
+        assert task.app_build_version == 7
+
+    def test_bumps_last_active_when_newer(self):
+        task = AssignedTaskFactory(status=AssignedTaskStatus.ASSIGNED)
+        access = task.opportunity_access
+        access.last_active = now() - timedelta(days=2)
+        access.save(update_fields=["last_active"])
+        completed_at = now()
+
+        task.mark_completed(completed_at=completed_at)
+
+        access.refresh_from_db()
+        assert access.last_active == completed_at
+
+    def test_is_idempotent_when_already_completed(self, django_capture_on_commit_callbacks):
+        original = now() - timedelta(days=1)
+        task = AssignedTaskFactory(status=AssignedTaskStatus.COMPLETED, completed_at=original)
+
+        with (
+            mock.patch("commcare_connect.opportunity.tasks.send_task_completion_notification") as notify,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            task.mark_completed(completed_at=now())
+
+        task.refresh_from_db()
+        assert task.completed_at == original
+        notify.delay.assert_not_called()
 
 
 @pytest.mark.django_db

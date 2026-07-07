@@ -27,20 +27,13 @@ def _authed_client(user):
 
 @pytest.mark.django_db
 class TestCompleteTask:
-    def test_marks_completed_and_enqueues_notification(self, django_capture_on_commit_callbacks):
+    def test_marks_task_completed(self):
         task = AssignedTaskFactory()
 
-        with (
-            mock.patch.object(AssignedTask, "mark_completed") as mark_completed,
-            mock.patch(
-                "commcare_connect.opportunity.api.views.task_completion.send_task_completion_notification"
-            ) as notify,
-            django_capture_on_commit_callbacks(execute=True),
-        ):
+        with mock.patch.object(AssignedTask, "mark_completed") as mark_completed:
             result = complete_task(task.assigned_task_id)
 
         mark_completed.assert_called_once_with(completed_at=None)
-        notify.delay.assert_called_once_with(task.pk)
         assert result == task
 
     def test_passes_completed_at_through(self):
@@ -63,22 +56,15 @@ class TestTaskCompletedView:
         response = APIClient().post(CALLBACK_URL, data={"connectTaskId": str(uuid.uuid4())}, format="json")
         assert response.status_code == 401
 
-    def test_marks_task_completed(self, user, django_capture_on_commit_callbacks):
+    def test_marks_task_completed(self, user):
         task = AssignedTaskFactory()
         client = _authed_client(user)
 
-        with (
-            mock.patch.object(AssignedTask, "mark_completed") as mark_completed,
-            mock.patch(
-                "commcare_connect.opportunity.api.views.task_completion.send_task_completion_notification"
-            ) as notify,
-            django_capture_on_commit_callbacks(execute=True),
-        ):
+        with mock.patch.object(AssignedTask, "mark_completed") as mark_completed:
             response = client.post(CALLBACK_URL, data={"connectTaskId": str(task.assigned_task_id)}, format="json")
 
         assert response.status_code == 200
         mark_completed.assert_called_once()
-        notify.delay.assert_called_once_with(task.pk)
 
     def test_returns_404_for_unknown_task(self, user):
         client = _authed_client(user)

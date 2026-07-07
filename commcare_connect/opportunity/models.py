@@ -494,13 +494,39 @@ class AssignedTask(XFormBaseModel):
         self.connect_channel_id = response.get("channel")
         self.save(update_fields=["ocs_session_id", "connect_channel_id"])
 
-    def mark_completed(self, *, completed_at=None):
-        """Mark this task completed.
+    def mark_completed(
+        self,
+        *,
+        completed_at=None,
+        xform_id=None,
+        duration=None,
+        app_build_id=None,
+        app_build_version=None,
+        send_notification=True,
+    ):
+        """Mark this task complete, optionally notifying the assigner."""
+        from commcare_connect.opportunity.tasks import send_task_completion_notification
 
-        TODO(CCCT-2467): implement — set status=COMPLETED and completed_at, make it
-        idempotent (no-op if already completed), and reuse this from the form-receiver
-        completion path (process_task_modules). Stubbed for now.
-        """
+        if self.status == AssignedTaskStatus.COMPLETED:
+            return
+
+        self.status = AssignedTaskStatus.COMPLETED
+        self.completed_at = completed_at or now()
+        self.xform_id = xform_id
+        self.duration = duration
+        self.app_build_id = app_build_id
+        self.app_build_version = app_build_version
+        self.save(
+            update_fields=["status", "completed_at", "xform_id", "duration", "app_build_id", "app_build_version"]
+        )
+
+        access = self.opportunity_access
+        if not access.last_active or access.last_active < self.completed_at:
+            access.last_active = self.completed_at
+            access.save(update_fields=["last_active"])
+
+        if send_notification:
+            transaction.on_commit(lambda: send_task_completion_notification.delay(self.pk))
 
     @classmethod
     def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:
