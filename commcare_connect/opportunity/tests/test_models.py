@@ -467,8 +467,8 @@ class TestTaskFields:
         assert task.ocs_session_id == "session-1"
 
     def test_assigned_task_date_modified_updates_on_save(self):
-        created_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-        updated_at = datetime.datetime(2026, 1, 2, tzinfo=datetime.timezone.utc)
+        created_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+        updated_at = datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC)
 
         with mock.patch("django.utils.timezone.now", return_value=created_at):
             task = AssignedTaskFactory()
