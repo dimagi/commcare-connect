@@ -2182,6 +2182,7 @@ class UserVisitVerificationView(WorkerPageView):
         context = super().get_context_data(**kwargs)
         context["MAPBOX_TOKEN"] = settings.MAPBOX_TOKEN
         context["show_worker_tasks_tabs"] = switch_is_active(WORKER_VISITS_TASKS)
+        context["visit_id"] = self.request.GET.get("visit_id")
         return context
 
 
@@ -2326,6 +2327,7 @@ class WorkerVisitTableView(WorkerTableView):
         kwargs = super().get_table_kwargs()
         kwargs["organization"] = self.request.org
         kwargs["is_opportunity_pm"] = self.request.is_opportunity_pm
+        kwargs["highlighted_visit_id"] = self.request.GET.get("visit_id")
         return kwargs
 
     def get_queryset(self):
@@ -2333,7 +2335,26 @@ class WorkerVisitTableView(WorkerTableView):
         user_id = self.request.GET.get("user")
         if user_id:
             queryset = queryset.filter(user__user_id=user_id)
-        return queryset.order_by("visit_date")
+        return queryset.order_by("visit_date", "pk")
+
+    def get_table(self, **kwargs):
+        table = super().get_table(**kwargs)
+        visit_id = self.request.GET.get("visit_id")
+        if visit_id and "page" not in self.request.GET:
+            page = self._get_visit_page(visit_id)
+            if page:
+                table.paginate(page=page, per_page=get_validated_page_size(self.request))
+        return table
+
+    def _get_visit_page(self, visit_id):
+        queryset = self.get_queryset()
+        target = queryset.filter(user_visit_id=visit_id).first()
+        if not target:
+            return None
+        preceding_count = queryset.filter(
+            Q(visit_date__lt=target.visit_date) | Q(visit_date=target.visit_date, pk__lt=target.pk)
+        ).count()
+        return preceding_count // get_validated_page_size(self.request) + 1
 
 
 class VisitVerificationTableView(WorkerVisitTableView):
