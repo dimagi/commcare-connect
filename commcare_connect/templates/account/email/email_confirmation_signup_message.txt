@@ -1,0 +1,6 @@
+{% extends "account/email/base_message.txt" %}
+{% load i18n %}
+
+{% block content %}{% autoescape off %}{% blocktrans with site_domain=current_site.domain %}You're receiving this e-mail because you signed up for an account on {{ site_domain }}.
+
+To confirm your e-mail address, go to {{ activate_url }}{% endblocktrans %}{% endautoescape %}{% endblock %}
