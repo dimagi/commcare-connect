@@ -313,6 +313,7 @@ class AssignedTaskSerializer(serializers.ModelSerializer):
             "status",
             "due_date",
             "date_created",
+            "date_modified",
         ]
 
 

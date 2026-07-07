@@ -439,6 +439,7 @@ class AssignedTask(XFormBaseModel):
     )
     due_date = models.DateField()
     date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
     connect_channel_id = models.CharField(max_length=255, null=True, blank=True)
     ocs_session_id = models.CharField(max_length=255, null=True, blank=True)
     assigned_by = models.ForeignKey(

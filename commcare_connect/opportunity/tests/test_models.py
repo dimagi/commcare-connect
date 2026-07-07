@@ -465,3 +465,17 @@ class TestTaskFields:
         task.refresh_from_db()
         assert task.connect_channel_id == "channel-1"
         assert task.ocs_session_id == "session-1"
+
+    def test_assigned_task_date_modified_updates_on_save(self):
+        created_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        updated_at = datetime.datetime(2026, 1, 2, tzinfo=datetime.timezone.utc)
+
+        with mock.patch("django.utils.timezone.now", return_value=created_at):
+            task = AssignedTaskFactory()
+        assert task.date_modified == created_at
+
+        with mock.patch("django.utils.timezone.now", return_value=updated_at):
+            task.status = AssignedTaskStatus.COMPLETED
+            task.save()
+        task.refresh_from_db()
+        assert task.date_modified == updated_at
