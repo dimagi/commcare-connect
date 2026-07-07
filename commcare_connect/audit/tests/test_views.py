@@ -1,11 +1,15 @@
+from datetime import date, timedelta
+from unittest import mock
+
 import pytest
 from django.urls import reverse
 
 from commcare_connect.audit.models import AuditReport, AuditReportEntry
 from commcare_connect.audit.tests.factories import AuditReportEntryFactory, AuditReportFactory
+from commcare_connect.audit.views import _assign_audit_tasks, _assignment_result_message
 from commcare_connect.flags.flag_names import WEEKLY_PERFORMANCE_REPORT
 from commcare_connect.flags.models import Flag
-from commcare_connect.opportunity.models import AssignedTask
+from commcare_connect.opportunity.models import AssignedTask, TaskTypeModeChoices
 from commcare_connect.opportunity.tests.factories import (
     OpportunityAccessFactory,
     OpportunityFactory,
@@ -14,6 +18,7 @@ from commcare_connect.opportunity.tests.factories import (
 )
 from commcare_connect.organization.models import UserOrganizationMembership
 from commcare_connect.users.tests.factories import OrgWithUsersFactory
+from commcare_connect.utils.ocs_api import OcsApiError
 
 
 @pytest.fixture
@@ -477,8 +482,9 @@ def test_modal_submit_rejects_already_reviewed(client, program_manager_org_user_
 
 
 @pytest.mark.django_db
-def test_modal_submit_returns_400_when_task_already_assigned(client, program_manager_org_user_admin, audit_opp):
-    """Re-assigning an already-assigned task type returns 400 with a user-friendly message."""
+def test_modal_submit_already_assigned_is_idempotent(client, program_manager_org_user_admin, audit_opp):
+    """Re-assigning an already-assigned task type is idempotent: it reviews the entry with no duplicate,
+    so a partially-succeeded batch never wedges on retry."""
     client.force_login(program_manager_org_user_admin)
     report = AuditReportFactory(opportunity=audit_opp)
     entry = _entry(report, audit_opp, flagged=True)
@@ -491,7 +497,7 @@ def test_modal_submit_returns_400_when_task_already_assigned(client, program_man
     )
     assert AssignedTask.objects.filter(task_type=task_type).count() == 1
 
-    # Reset entry so the guard checks pass, then try to assign the same task again.
+    # Reset entry so the guard checks pass, then submit the same (already-assigned) task again.
     entry.reviewed = False
     entry.review_action = None
     entry.save(update_fields=["reviewed", "review_action"])
@@ -500,11 +506,91 @@ def test_modal_submit_returns_400_when_task_already_assigned(client, program_man
         _action_url(audit_opp, report, entry),
         data={"action": "tasks_assigned", "task_type_ids": [str(task_type.pk)]},
     )
-    assert response.status_code == 400
-    assert "already assigned" in response.content.decode()
-    assert "not completed" in response.content.decode()
-    # No duplicate task created.
+    assert response.status_code == 200
+    # No duplicate task, and the entry is reviewed rather than stuck.
     assert AssignedTask.objects.filter(task_type=task_type).count() == 1
+    entry.refresh_from_db()
+    assert entry.reviewed is True
+
+
+@pytest.mark.django_db
+def test_assign_audit_tasks_treats_already_assigned_as_success(audit_opp):
+    """An already-assigned task type is idempotent success, not a failure — the goal (task assigned) holds."""
+    access = OpportunityAccessFactory(opportunity=audit_opp, accepted=True)
+    assigner = UserFactory()
+    ok_type = TaskTypeFactory(opportunity=audit_opp, name="OK")
+    dup_type = TaskTypeFactory(opportunity=audit_opp, name="Dup")
+    AssignedTask.assign(task_type=dup_type, opportunity_access=access, due_date=date.today())
+
+    assigned, failed = _assign_audit_tasks([ok_type, dup_type], access, assigner, date.today() + timedelta(days=7))
+
+    assert assigned == ["OK", "Dup"]
+    assert failed == []
+    assert AssignedTask.objects.filter(task_type=ok_type, opportunity_access=access).count() == 1
+
+
+@pytest.mark.django_db
+def test_assign_audit_tasks_isolates_ocs_failure(audit_opp):
+    """An OCS trigger failure on one task must roll back only that task, not sibling assignments."""
+    access = OpportunityAccessFactory(opportunity=audit_opp, accepted=True)
+    access.user.phone_number = "+15551234567"
+    access.user.save()
+    assigner = UserFactory()
+    ocs_type = TaskTypeFactory(opportunity=audit_opp, name="OCS", mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="exp")
+    relearn_type = TaskTypeFactory(opportunity=audit_opp, name="Relearn")
+
+    with mock.patch("commcare_connect.utils.ocs_api.trigger_bot", side_effect=OcsApiError("boom")):
+        assigned, failed = _assign_audit_tasks(
+            [ocs_type, relearn_type], access, assigner, date.today() + timedelta(days=7)
+        )
+
+    assert assigned == ["Relearn"]
+    assert failed == [("OCS", "Chatbot session could not be started")]
+    assert not AssignedTask.objects.filter(task_type=ocs_type).exists()
+    assert AssignedTask.objects.filter(task_type=relearn_type).count() == 1
+
+
+def test_assignment_result_message_partial():
+    msg = _assignment_result_message(["A", "B"], [("C", "already assigned to this worker")])
+    assert "Assigned: A, B." in msg
+    assert "Could not assign: C (already assigned to this worker)." in msg
+
+
+def test_assignment_result_message_total_failure():
+    msg = _assignment_result_message([], [("C", "already assigned to this worker")])
+    assert "Assigned:" not in msg
+    assert "Could not assign: C (already assigned to this worker)." in msg
+
+
+@pytest.mark.django_db
+def test_modal_submit_partial_failure_keeps_successes_and_returns_400(
+    client, program_manager_org_user_admin, audit_opp
+):
+    """A genuine failure (OCS trigger) returns 400 and leaves the entry unreviewed, but the sibling
+    that succeeded is committed."""
+    client.force_login(program_manager_org_user_admin)
+    report = AuditReportFactory(opportunity=audit_opp)
+    entry = _entry(report, audit_opp, flagged=True)
+    entry.opportunity_access.user.phone_number = "+15551234567"
+    entry.opportunity_access.user.save()
+    new_type = TaskTypeFactory(opportunity=audit_opp, name="New")
+    ocs_type = TaskTypeFactory(opportunity=audit_opp, name="OCS", mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="exp")
+
+    with mock.patch("commcare_connect.utils.ocs_api.trigger_bot", side_effect=OcsApiError("boom")):
+        response = client.post(
+            _action_url(audit_opp, report, entry),
+            data={"action": "tasks_assigned", "task_type_ids": [str(new_type.pk), str(ocs_type.pk)]},
+        )
+
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert "New" in body
+    assert "OCS" in body and "Chatbot session could not be started" in body
+    # The relearn task persisted; the OCS one rolled back; the entry is left unreviewed.
+    assert AssignedTask.objects.filter(task_type=new_type, opportunity_access=entry.opportunity_access).count() == 1
+    assert not AssignedTask.objects.filter(task_type=ocs_type, opportunity_access=entry.opportunity_access).exists()
+    entry.refresh_from_db()
+    assert entry.reviewed is False
 
 
 @pytest.mark.django_db

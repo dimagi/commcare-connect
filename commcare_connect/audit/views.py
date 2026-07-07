@@ -1,6 +1,5 @@
 from datetime import timedelta
 
-from django.db import transaction
 from django.http import Http404, HttpResponse, HttpResponseBadRequest, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -18,6 +17,8 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import AssignedTask, TaskType
 from commcare_connect.organization.decorators import opportunity_required, org_member_required
+from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import OcsApiError
 
 DEFAULT_PAGE_SIZE = 25
 DEFAULT_TASK_DUE_DAYS = 7
@@ -190,20 +191,9 @@ def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_i
         task_type_ids = request.POST.getlist("task_type_ids")
         task_types = TaskType.objects.filter(pk__in=task_type_ids, opportunity=opportunity)
         due_date = timezone.now().date() + timedelta(days=DEFAULT_TASK_DUE_DAYS)
-        try:
-            with transaction.atomic():
-                for task_type in task_types:
-                    AssignedTask.assign(
-                        task_type=task_type,
-                        opportunity_access=entry.opportunity_access,
-                        due_date=due_date,
-                        assigned_by=request.user,
-                    )
-        except TaskAlreadyAssignedError:
-            return HttpResponseBadRequest(
-                _("Task assignment not completed: '%(name)s' is already assigned to this worker.")
-                % {"name": task_type.name}
-            )
+        assigned, failed = _assign_audit_tasks(task_types, entry.opportunity_access, request.user, due_date)
+        if failed:
+            return HttpResponseBadRequest(_assignment_result_message(assigned, failed))
         entry.review_action = AuditReportEntry.ReviewAction.TASKS_ASSIGNED
     elif action == "none":
         entry.review_action = AuditReportEntry.ReviewAction.NONE
@@ -216,6 +206,39 @@ def audit_report_task_action(request, org_slug, opp_id, audit_report_id, entry_i
     response = HttpResponse(status=200)
     response["HX-Trigger"] = "refreshDetail"
     return response
+
+
+def _assign_audit_tasks(task_types, opportunity_access, assigned_by, due_date):
+    assigned = []
+    failed = []
+    for task_type in task_types:
+        try:
+            AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=opportunity_access,
+                due_date=due_date,
+                assigned_by=assigned_by,
+            )
+        except TaskAlreadyAssignedError:
+            # Already assigned is the desired end state — treat it as success
+            assigned.append(task_type.name)
+        except OcsApiError:
+            failed.append((task_type.name, _("Chatbot session could not be started")))
+        except CommCareHQAPIException:
+            failed.append((task_type.name, _("CommCare HQ update failed")))
+        else:
+            assigned.append(task_type.name)
+    return assigned, failed
+
+
+def _assignment_result_message(assigned, failed):
+    parts = []
+    if assigned:
+        parts.append(_("Assigned: %(names)s.") % {"names": ", ".join(assigned)})
+    if failed:
+        details = ", ".join(f"{name} ({reason})" for name, reason in failed)
+        parts.append(_("Could not assign: %(details)s.") % {"details": details})
+    return " ".join(parts)
 
 
 @opportunity_required
