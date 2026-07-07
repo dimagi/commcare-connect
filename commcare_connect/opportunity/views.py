@@ -45,7 +45,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
-from django.utils.timezone import now
+from django.utils.timezone import is_aware, localtime, now
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views import View
@@ -221,6 +221,7 @@ from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
 from commcare_connect.utils.tables import (
+    DATE_TIME_FORMAT,
     DEFAULT_PAGE_SIZE,
     PAGE_SIZE_OPTIONS,
     get_duration_min,
@@ -2540,6 +2541,30 @@ def user_visit_details(request, org_slug, opp_id, pk):
             flag_count=flag_count,
             attachment_flagged=attachment_flagged,
         ),
+    )
+
+
+@org_viewer_required
+@opportunity_required
+def user_visit_data(request, org_slug, opp_id, pk):
+    user_visit = get_object_or_404(
+        UserVisit.objects.select_related("user", "deliver_unit"),
+        user_visit_id=pk,
+        opportunity=request.opportunity,
+    )
+    worker_url = reverse("opportunity:user_visits_list", args=[org_slug, opp_id])
+    visit_date = user_visit.visit_date
+    if is_aware(visit_date):
+        visit_date = localtime(visit_date)
+    return JsonResponse(
+        {
+            "visit_date": visit_date.strftime(DATE_TIME_FORMAT),
+            "worker_name": user_visit.user.name,
+            "deliver_type": user_visit.deliver_unit.name if user_visit.deliver_unit else None,
+            "worker_url": (
+                f"{worker_url}?{urlencode({'user': user_visit.user.user_id, 'visit_id': user_visit.user_visit_id})}"
+            ),
+        }
     )
 
 
