@@ -44,6 +44,7 @@ def trigger_bot(
     experiment: str,
     start_new_session: bool = True,
     session_data: dict | None = None,
+    participant_data: dict | None = None,
 ) -> dict:
     """Trigger an OCS bot for ``identifier`` on ``experiment``; return the parsed response."""
     token = _valid_token(user)
@@ -51,6 +52,7 @@ def trigger_bot(
     optionals = {
         "start_new_session": start_new_session,
         "session_data": session_data,
+        "participant_data": participant_data,
     }
     payload.update({k: v for k, v in optionals.items() if v is not None})
 

@@ -18,6 +18,7 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.opportunity.exceptions import ListTooLongError, TaskAlreadyAssignedError
 from commcare_connect.organization.models import Organization
 from commcare_connect.users.models import User, UserCredential
+from commcare_connect.utils import ocs_api
 from commcare_connect.utils.db import BaseModel, slugify_uniquely
 
 
@@ -474,11 +475,24 @@ class AssignedTask(XFormBaseModel):
                 )
             except IntegrityError:
                 raise TaskAlreadyAssignedError(f"Task type '{task_type}' could not be assigned.")
-            case_property = task_type.case_property
-            if case_property:
-                bulk_update_usercases({opportunity_access: {"properties": {case_property: "1"}}})
+
+            if task_type.mode == TaskTypeModeChoices.OCS:
+                assigned_task.trigger_ocs_bot(assigned_by)
+            elif task_type.case_property:
+                bulk_update_usercases({opportunity_access: {"properties": {task_type.case_property: "1"}}})
             transaction.on_commit(lambda: send_task_assignment_notification.delay(assigned_task.pk))
         return assigned_task
+
+    def trigger_ocs_bot(self, assigned_by):
+        response = ocs_api.trigger_bot(
+            assigned_by,
+            identifier=self.opportunity_access.user.phone_number,
+            experiment=self.task_type.ocs_chatbot_id,
+            participant_data={"connectTaskId": str(self.assigned_task_id)},
+        )
+        self.ocs_session_id = response.get("session_id")
+        self.connect_channel_id = response.get("channel")
+        self.save(update_fields=["ocs_session_id", "connect_channel_id"])
 
     @classmethod
     def bulk_delete(cls, task_ids: list[int], opportunity: Opportunity) -> int:

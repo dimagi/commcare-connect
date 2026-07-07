@@ -16,6 +16,7 @@ from commcare_connect.opportunity.models import (
     OpportunityClaimLimit,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,  # added via pghistory
+    TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -37,6 +38,7 @@ from commcare_connect.opportunity.visit_import import update_payment_accrued
 from commcare_connect.users.models import User
 from commcare_connect.users.tests.factories import MobileUserFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import OcsApiError
 
 
 @pytest.mark.django_db
@@ -304,6 +306,108 @@ class TestAssignedTaskAssign:
                 )
 
         assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+
+    def test_triggers_ocs_bot_and_persists_session_for_ocs_mode(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+        )
+        due_date = date.today() + timedelta(days=7)
+        assigner = access.user
+
+        with mock.patch(
+            "commcare_connect.utils.ocs_api.trigger_bot",
+            return_value={"session_id": "sess-1", "channel": "chan-1"},
+        ) as mock_trigger:
+            assigned = AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=assigner,
+            )
+
+        mock_trigger.assert_called_once_with(
+            assigner,
+            identifier="+15551234567",
+            experiment="exp-uuid",
+            participant_data={"connectTaskId": str(assigned.assigned_task_id)},
+        )
+        assigned.refresh_from_db()
+        assert assigned.ocs_session_id == "sess-1"
+        assert assigned.connect_channel_id == "chan-1"
+
+    def test_does_not_trigger_ocs_bot_for_non_ocs_mode(self):
+        access = OpportunityAccessFactory()
+        task_type = TaskTypeFactory(app=access.opportunity.deliver_app, mode=TaskTypeModeChoices.RELEARN)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch("commcare_connect.utils.ocs_api.trigger_bot") as mock_trigger:
+            AssignedTask.assign(task_type=task_type, opportunity_access=access, due_date=due_date)
+
+        mock_trigger.assert_not_called()
+
+    def test_does_not_create_row_when_ocs_trigger_fails(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+            case_property="needs_assessment",
+        )
+        due_date = date.today() + timedelta(days=7)
+
+        with (
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                side_effect=OcsApiError("boom"),
+            ),
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_update,
+        ):
+            with pytest.raises(OcsApiError):
+                AssignedTask.assign(
+                    task_type=task_type,
+                    opportunity_access=access,
+                    due_date=due_date,
+                    assigned_by=access.user,
+                )
+
+        assert not AssignedTask.objects.filter(opportunity_access=access, task_type=task_type).exists()
+        mock_update.assert_not_called()
+
+    def test_ocs_mode_skips_hq_even_with_case_property(self):
+        access = OpportunityAccessFactory()
+        access.user.phone_number = "+15551234567"
+        access.user.save()
+        task_type = TaskTypeFactory(
+            app=access.opportunity.deliver_app,
+            mode=TaskTypeModeChoices.OCS,
+            ocs_chatbot_id="exp-uuid",
+            case_property="needs_assessment",
+        )
+        due_date = date.today() + timedelta(days=7)
+
+        with (
+            mock.patch(
+                "commcare_connect.utils.ocs_api.trigger_bot",
+                return_value={"session_id": "s", "channel": "c"},
+            ) as mock_trigger,
+            mock.patch("commcare_connect.commcarehq.api.bulk_update_usercases") as mock_hq,
+        ):
+            AssignedTask.assign(
+                task_type=task_type,
+                opportunity_access=access,
+                due_date=due_date,
+                assigned_by=access.user,
+            )
+
+        mock_trigger.assert_called_once()
+        mock_hq.assert_not_called()
 
 
 @pytest.mark.django_db

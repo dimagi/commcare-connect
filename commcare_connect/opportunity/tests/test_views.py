@@ -77,6 +77,7 @@ from commcare_connect.users.tests.factories import (
     UserFactory,
 )
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
+from commcare_connect.utils.ocs_api import OcsApiError
 
 
 @pytest.mark.django_db
@@ -2602,6 +2603,21 @@ class TestCreateTask:
         assert not AssignedTask.objects.filter(task_type=task, opportunity_access=access).exists()
         msgs = list(get_messages(response.wsgi_request))
         assert any("CommCare HQ" in str(m) for m in msgs)
+
+    def test_create_task_ocs_failure_shows_error(self, client, program_manager_org_user_admin, opportunity, access):
+        client.force_login(program_manager_org_user_admin)
+        task = TaskTypeFactory(app=opportunity.deliver_app)
+        due_date = date.today() + timedelta(days=7)
+
+        with mock.patch.object(AssignedTask, "assign", side_effect=OcsApiError("boom")):
+            response = client.post(
+                self._url(opportunity),
+                data={"task": task.pk, "access": access.pk, "due_date": due_date.isoformat()},
+            )
+
+        assert response.status_code == HTTPStatus.OK
+        msgs = list(get_messages(response.wsgi_request))
+        assert any("chatbot" in str(m).lower() for m in msgs)
 
     def test_create_task_invalid_form(self, client, program_manager_org_user_admin, opportunity):
         client.force_login(program_manager_org_user_admin)
