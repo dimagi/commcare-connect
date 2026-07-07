@@ -603,6 +603,31 @@ def test_auto_approve_visits_and_payments(
     validate_saved_fields(completed_work)
 
 
+def test_auto_approve_duplicate_visit_accrues_payment_for_each_visit(
+    user_with_connectid_link: User, api_client: APIClient, opportunity: Opportunity
+):
+    form_json = _create_opp_and_form_json(opportunity, user=user_with_connectid_link)
+    opportunity.auto_approve_visits = True
+    opportunity.auto_approve_payments = True
+    opportunity.save()
+    oauth_application = opportunity.hq_server.oauth_application
+
+    make_request(api_client, form_json, user_with_connectid_link, oauth_application=oauth_application)
+    duplicate_json = deepcopy(form_json)
+    duplicate_json["id"] = duplicate_json["metadata"]["instanceID"] = str(uuid4())
+    make_request(api_client, duplicate_json, user_with_connectid_link, oauth_application=oauth_application)
+
+    visits = UserVisit.objects.filter(user=user_with_connectid_link).order_by("id")
+    assert visits.count() == 2
+    assert [v.status for v in visits] == [VisitValidationStatus.approved, VisitValidationStatus.approved]
+
+    access = OpportunityAccess.objects.get(user=user_with_connectid_link, opportunity=opportunity)
+    completed_work = CompletedWork.objects.get(opportunity_access=access)
+    assert completed_work.saved_approved_count == 2
+    assert access.payment_accrued == completed_work.payment_accrued == 2 * completed_work.payment_unit.amount
+    validate_saved_fields(completed_work)
+
+
 @pytest.mark.parametrize(
     "opportunity",
     [

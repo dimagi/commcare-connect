@@ -3,12 +3,15 @@ import io
 from unittest import mock
 
 import pytest
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
 from commcare_connect.microplanning.const import DEFAULT_BUILDING_COUNT
 from commcare_connect.microplanning.models import WorkArea
 from commcare_connect.microplanning.tasks import (
     WorkAreaCSVImporter,
     cluster_work_areas_task,
+    import_work_areas_task,
     send_work_area_assignment_notification,
 )
 from commcare_connect.microplanning.tests.factories import WorkAreaFactory
@@ -182,6 +185,22 @@ class TestWorkAreaCSVImporter:
         error_keys = " ".join(result["errors"].keys()).lower()
         expected_error = "Missing values for properties: lga, state"
         assert expected_error.lower() in error_keys
+
+
+@pytest.mark.django_db
+def test_import_work_areas_task_bom_csv(opportunity):
+    CENTROID = "77.1 28.6"
+    POLYGON = "POLYGON((77 28, 78 28, 78 29, 77 29, 77 28))"
+    headers = "Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State\r\n"
+    row = f'area-bom,ward,{CENTROID},"{POLYGON}",5,6,100,LGA1,State1\r\n'
+    bom_bytes = ("\ufeff" + headers + row).encode("utf-8")
+
+    file_name = "test-bom-upload.csv"
+    default_storage.save(file_name, ContentFile(bom_bytes))
+    result = import_work_areas_task.apply(args=[opportunity.id, file_name]).get()
+
+    assert result["created"] == 1
+    assert WorkArea.objects.filter(slug="area-bom").exists()
 
 
 @pytest.mark.django_db

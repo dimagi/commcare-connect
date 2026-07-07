@@ -257,9 +257,10 @@ def import_work_areas_task(self, opp_id, file_name):
         if WorkArea.objects.filter(opportunity_id=opp_id).exists():
             return {"errors": {_("Work Areas already exist for this opportunity"): [0]}}
 
-        with default_storage.open(file_name, "r") as f:
-            importer = WorkAreaCSVImporter(opp_id, f)
-            result = importer.run()
+        with default_storage.open(file_name, "rb") as f:
+            content = io.StringIO(f.read().decode("utf-8-sig"))
+        importer = WorkAreaCSVImporter(opp_id, content)
+        result = importer.run()
         return result
     finally:
         cache.delete(get_import_area_cache_key(opp_id))

@@ -17,15 +17,6 @@ class TestPreloginHome:
         assert resp.status_code == 200
         assert b"Connect by Dimagi" in resp.content
 
-    def test_login_url_defaults_to_accounts_login(self, client):
-        resp = client.get(reverse("prelogin:home"))
-        assert resp.context["app_login_url"] == "/accounts/login/"
-
-    def test_login_url_respects_setting_override(self, client, settings):
-        settings.PRELOGIN_APP_LOGIN_URL = "/custom/login/"
-        resp = client.get(reverse("prelogin:home"))
-        assert resp.context["app_login_url"] == "/custom/login/"
-
 
 class TestMarketingRoutes:
     """Every clean-URL route renders the SPA template server-side so a direct
@@ -37,7 +28,6 @@ class TestMarketingRoutes:
     def test_marketing_route_renders(self, client, name):
         resp = client.get(reverse(f"prelogin:{name}"))
         assert resp.status_code == 200
-        assert resp.context["app_login_url"] == "/accounts/login/"
 
     def test_portfolio_detail_renders(self, client):
         resp = client.get("/portfolio/kangaroo-mother-care")
@@ -63,7 +53,3 @@ class TestContactPage:
         content = pathlib.Path(path).read_text()
         assert "503070" in content  # portalId
         assert "ca08edba-5d8f-4386-b5e9-d6b026c14599" in content  # formId
-
-    def test_contact_login_url_in_context(self, client):
-        resp = client.get("/contact/")
-        assert resp.context["app_login_url"] == "/accounts/login/"

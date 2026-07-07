@@ -247,34 +247,40 @@ def get_annotated_opportunity_access_deliver_status(opportunity: Opportunity, fi
             output_field=IntegerField(),
         )
 
-        def completed_work_status_subquery(status_value):
+        def completed_work_status_subquery(status_value, sum_field=None):
+            agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
             return Subquery(
                 CompletedWork.objects.filter(
                     opportunity_access_id=OuterRef("pk"), payment_unit=payment_unit, status=status_value
                 )
                 .values("opportunity_access_id")
-                .annotate(status_count=Count("id", distinct=True))
+                .annotate(status_count=agg)
                 .values("status_count")[:1],
                 output_field=IntegerField(),
             )
 
-        def completed_work_status_total_subquery(status_value):
+        def completed_work_status_total_subquery(status_value, sum_field=None):
+            agg = Sum(sum_field) if sum_field else Count("id", distinct=True)
             return Subquery(
                 CompletedWork.objects.filter(opportunity_access_id=OuterRef("pk"), status=status_value)
                 .values("opportunity_access_id")
-                .annotate(status_count=Count("id", distinct=True))
+                .annotate(status_count=agg)
                 .values("status_count")[:1],
                 output_field=IntegerField(),
             )
 
         pending_count_sq = completed_work_status_subquery(CompletedWorkStatus.pending)
-        approved_count_sq = completed_work_status_subquery(CompletedWorkStatus.approved)
+        approved_count_sq = completed_work_status_subquery(
+            CompletedWorkStatus.approved, sum_field="saved_approved_count"
+        )
         rejected_count_sq = completed_work_status_subquery(CompletedWorkStatus.rejected)
         over_limit_count_sq = completed_work_status_subquery(CompletedWorkStatus.over_limit)
         incomplete_count_sq = completed_work_status_subquery(CompletedWorkStatus.incomplete)
 
         total_pending_for_user = completed_work_status_total_subquery(CompletedWorkStatus.pending)
-        total_approved_for_user = completed_work_status_total_subquery(CompletedWorkStatus.approved)
+        total_approved_for_user = completed_work_status_total_subquery(
+            CompletedWorkStatus.approved, sum_field="saved_approved_count"
+        )
         total_rejected_for_user = completed_work_status_total_subquery(CompletedWorkStatus.rejected)
         total_over_limit_for_user = completed_work_status_total_subquery(CompletedWorkStatus.over_limit)
 

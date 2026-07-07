@@ -3,11 +3,13 @@ from datetime import date, timedelta
 from unittest import mock
 
 import pytest
+from django.db.utils import IntegrityError
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
+    AudioAttachment,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
@@ -434,3 +436,11 @@ class TestAssignedTaskDeleteAndResetHQ:
             AssignedTask.bulk_delete([task_a.pk, task_b.pk], access.opportunity)
 
         mock_update.assert_called_once_with({access: {"properties": {"prop_a": "", "prop_b": ""}}})
+
+
+@pytest.mark.django_db
+def test_audio_attachment_unique_per_visit_and_name():
+    visit = UserVisitFactory.create()
+    AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
+    with pytest.raises(IntegrityError):
+        AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)

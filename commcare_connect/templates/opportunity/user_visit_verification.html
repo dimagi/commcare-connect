@@ -18,7 +18,7 @@
     {% if show_worker_tasks_tabs %}
       {% include 'components/worker_page/visit_task_tabs.html' %}
     {% endif %}
-    <div class="w-full grid grid-cols-10 gap-2">
+    <div class="w-full grid grid-cols-10 gap-2 min-h-[600px]">
       <div class="col-span-6" hx-indicator="#loading-spinner">
         <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
              hx-trigger="load"

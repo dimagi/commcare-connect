@@ -1,3 +1,5 @@
+from django.db.models import Value
+from django.db.models.functions import Coalesce, NullIf
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext as _
@@ -19,7 +21,7 @@ class AuditReportTable(OrgContextTable):
     )
     status = columns.Column(verbose_name=_l("Status"))
     reviewer = columns.Column(
-        accessor="completed_by__name",
+        accessor="completed_by",
         verbose_name=_l("Reviewer"),
         default="—",
         orderable=True,
@@ -50,6 +52,14 @@ class AuditReportTable(OrgContextTable):
             modifier = "warning-dark"
             label = _("Pending")
         return format_html('<span class="badge badge-md {}">{}</span>', modifier, label)
+
+    def render_reviewer(self, value):
+        return value.name or value.username
+
+    def order_reviewer(self, queryset, is_descending):
+        reviewer_display = Coalesce(NullIf("completed_by__name", Value("")), "completed_by__username")
+        queryset = queryset.order_by(reviewer_display.desc() if is_descending else reviewer_display.asc())
+        return queryset, True
 
     def render_view(self, record):
         url = reverse(
