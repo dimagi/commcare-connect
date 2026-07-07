@@ -844,11 +844,15 @@ class WorkerVisitTable(tables.Table):
             ":class": lambda record: f"selectedRow == {record.id} && 'active'",
             "data-visit-id": lambda record: record.pk,
             "data-visit-status": lambda record: record.status,
+            "class": lambda record, table: (
+                "bg-yellow-100" if str(record.user_visit_id) == table.highlighted_visit_id else ""
+            ),
         }
 
     def __init__(self, *args, **kwargs):
         self.organization = kwargs.pop("organization", None)
         self.is_opportunity_pm = kwargs.pop("is_opportunity_pm", False)
+        self.highlighted_visit_id = kwargs.pop("highlighted_visit_id", None)
         super().__init__(*args, **kwargs)
         self.use_view_url = True
 
