@@ -306,6 +306,8 @@ def test_delivery_progress_assigned_tasks_filtered_by_user(
         assigned_task = assigned_tasks_by_id[assigned_task_data["assigned_task_id"]]
         assert assigned_task_data["task_name"] == assigned_task.task_type.name
         assert assigned_task_data["task_description"] == assigned_task.task_type.description
+        assert assigned_task_data["task_mode"] == assigned_task.task_type.mode
+        assert assigned_task_data["slug"] == assigned_task.task_type.slug
         assert assigned_task_data["status"] == assigned_task.status
         assert assigned_task_data["due_date"] == str(assigned_task.due_date)
 

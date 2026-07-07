@@ -190,6 +190,7 @@ def process_task_modules(user: User, xform: XForm, app: CommCareApp, opportunity
                     "app_build_id",
                     "app_build_version",
                     "status",
+                    "date_modified",
                 ]
             )
             updated_tasks = True
