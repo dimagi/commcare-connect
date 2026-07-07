@@ -254,6 +254,11 @@ class LearnModule(models.Model):
         return self.name
 
 
+class TaskTypeModeChoices(models.TextChoices):
+    RELEARN = "relearn", gettext("relearn")
+    OCS = "ocs", gettext("ocs")
+
+
 class TaskType(models.Model):
     task_type_id = models.UUIDField(editable=False, default=uuid4, unique=True)
     app = models.ForeignKey(CommCareApp, on_delete=models.CASCADE, related_name="tasks")
@@ -266,6 +271,12 @@ class TaskType(models.Model):
     archived = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     duration = models.IntegerField(null=True, blank=True)
+    mode = models.CharField(
+        choices=TaskTypeModeChoices.choices,
+        default=TaskTypeModeChoices.RELEARN,
+        max_length=50,
+    )
+    ocs_chatbot_id = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -425,6 +436,8 @@ class AssignedTask(XFormBaseModel):
     )
     due_date = models.DateField()
     date_created = models.DateTimeField(auto_now_add=True)
+    connect_channel_id = models.CharField(max_length=255, null=True, blank=True)
+    ocs_session_id = models.CharField(max_length=255, null=True, blank=True)
     assigned_by = models.ForeignKey(
         User,
         null=True,
