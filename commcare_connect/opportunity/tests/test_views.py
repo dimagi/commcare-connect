@@ -2882,3 +2882,49 @@ class TestAudioAttachmentTranscribe:
         response = client.get(self._url(organization, opportunity, audio))
 
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestUserVisitsListVisitIdParam:
+    def _make_visits(self, opportunity, mobile_user):
+        access = mobile_user.opportunityaccess_set.first()
+        return [
+            UserVisitFactory(
+                opportunity=opportunity,
+                user=mobile_user,
+                opportunity_access=access,
+                visit_date=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+            )
+            for i in range(25)
+        ]
+
+    def test_visit_id_jumps_to_containing_page(self, client, organization, org_user_member, opportunity, mobile_user):
+        visits = self._make_visits(opportunity, mobile_user)
+        target = visits[20]  # 21st visit in date order -> page 2 at the default page size of 20
+
+        client.force_login(org_user_member)
+        url = reverse(
+            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
+        )
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}")
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert table.page.number == 2
+        assert any(row.record.pk == target.pk for row in table.page.object_list)
+
+    def test_explicit_page_param_is_not_overridden(
+        self, client, organization, org_user_member, opportunity, mobile_user
+    ):
+        visits = self._make_visits(opportunity, mobile_user)
+        target = visits[20]
+
+        client.force_login(org_user_member)
+        url = reverse(
+            "opportunity:user_visit_verification_table", args=(organization.slug, opportunity.opportunity_id)
+        )
+        response = client.get(f"{url}?user={mobile_user.user_id}&visit_id={target.user_visit_id}&page=1")
+
+        assert response.status_code == HTTPStatus.OK
+        table = response.context["table"]
+        assert table.page.number == 1
