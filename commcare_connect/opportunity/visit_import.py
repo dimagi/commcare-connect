@@ -291,7 +291,7 @@ def get_data_by_visit_id(headers, rows) -> dict[int, VisitData]:
 
 def get_imported_dataset(file, file_format):
     if file_format == "csv":
-        file = codecs.iterdecode(file, "utf-8")
+        file = codecs.iterdecode(file, "utf-8-sig")
     imported_data = Dataset().load(file, format=file_format)
     return imported_data
 
