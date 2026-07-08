@@ -2120,7 +2120,7 @@ class AddTaskTypeForm(forms.ModelForm):
         if not task_unit_id:
             self.add_error("task_unit_id", _("Please select a task unit."))
         elif self._slug_exists(task_unit_id):
-            self.add_error("task_unit_id", _("A task with this task unit ID already exists."))
+            self.add_error("task_unit_id", _("A task type with this task unit ID already exists."))
 
     def _slug_exists(self, slug):
         return TaskType.objects.filter(app=self.opportunity.deliver_app, slug=slug).exists()

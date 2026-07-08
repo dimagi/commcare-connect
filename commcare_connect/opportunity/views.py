@@ -6,7 +6,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from functools import cached_property, partial
 from http import HTTPStatus
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urlunsplit
 
 import pghistory
 from celery.result import AsyncResult
@@ -1386,7 +1386,7 @@ def _hx_current_path(request):
     if not hx_current_url:
         return request.get_full_path()
     parsed = urlparse(hx_current_url)
-    return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+    return urlunsplit(("", "", parsed.path, parsed.query, ""))
 
 
 class TaskTypeOcsSection(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, View):
