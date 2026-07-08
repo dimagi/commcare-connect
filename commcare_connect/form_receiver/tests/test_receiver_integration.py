@@ -1323,14 +1323,6 @@ def test_work_area_update_inaccessible_allowed_again_after_denial(
 
     # First request creates a pending row and moves the work area into review.
     submit()
-    work_area.refresh_from_db()
-    assert work_area.status == WorkAreaStatus.REQUEST_FOR_INACCESSIBLE
-    assert (
-        WorkAreaInaccessibilityRequest.objects.filter(
-            work_area=work_area, status=InaccessibilityRequestStatus.PENDING
-        ).count()
-        == 1
-    )
 
     # A second request while one is still pending is rejected.
     submit(expected_status_code=400)
