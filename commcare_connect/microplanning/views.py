@@ -511,6 +511,7 @@ def workareas_group_geojson(request, org_slug, opp_id):
 @org_admin_required
 @opportunity_required
 @require_POST
+@waffle_flag(MICROPLANNING)
 def cluster_work_areas(request, org_slug, opp_id):
     redirect_url = reverse(
         "microplanning:microplanning_home",
