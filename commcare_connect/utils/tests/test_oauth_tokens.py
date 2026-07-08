@@ -6,6 +6,7 @@ from allauth.socialaccount.models import SocialAccount, SocialApp, SocialToken
 from django.utils import timezone
 
 from commcare_connect.utils.oauth_tokens import (
+    DEFAULT_ACCESS_TOKEN_TTL,
     SocialTokenMissingError,
     TokenRefreshError,
     refresh_access_token,
@@ -80,6 +81,31 @@ class TestRefreshAccessToken:
         assert abs((result.expires_at - expected).total_seconds()) < 10
         # regression guard against the old hardcoded 900s
         assert result.expires_at > timezone.now() + datetime.timedelta(seconds=1000)
+
+    def test_expiry_falls_back_to_default_when_expires_in_absent(self, user, httpx_mock):
+        # A 200 refresh with no expires_in must still advance expires_at, otherwise
+        # every subsequent call would re-refresh and burn a single-use refresh token.
+        past = timezone.now() - datetime.timedelta(minutes=5)
+        _make_token(user, expires_at=past)
+        httpx_mock.add_response(url=TOKEN_URL, method="POST", json={"access_token": "new"})
+
+        result = refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
+
+        assert result.expires_at > timezone.now() + datetime.timedelta(seconds=60)
+        expected = timezone.now() + DEFAULT_ACCESS_TOKEN_TTL
+        assert abs((result.expires_at - expected).total_seconds()) < 10
+
+    def test_valid_after_refresh_without_expires_in_does_not_refetch(self, user, httpx_mock):
+        past = timezone.now() - datetime.timedelta(minutes=5)
+        _make_token(user, expires_at=past)
+        httpx_mock.add_response(url=TOKEN_URL, method="POST", json={"access_token": "new"})
+
+        refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
+        # Second call should treat the refreshed token as valid — no further network call.
+        result = refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
+
+        assert result.token == "new"
+        assert len(httpx_mock.get_requests()) == 1
 
     def test_keeps_existing_refresh_token_when_response_omits_it(self, user, httpx_mock):
         past = timezone.now() - datetime.timedelta(minutes=5)

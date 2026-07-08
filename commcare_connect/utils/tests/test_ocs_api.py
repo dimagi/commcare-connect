@@ -91,6 +91,30 @@ def test_list_chatbots_raises_ocs_api_error_on_network_error(user, httpx_mock):
 
 @pytest.mark.django_db
 @override_settings(OCS_BASE_URL=OCS_URL)
+def test_list_chatbots_raises_ocs_api_error_on_non_json_body(user, httpx_mock):
+    _connect_ocs(user)
+    httpx_mock.add_response(url=f"{OCS_URL}/api/v2/chatbots/", text="<html>proxy error</html>")
+
+    with pytest.raises(ocs_api.OcsApiError):
+        ocs_api.list_chatbots(user)
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
+def test_list_chatbots_raises_ocs_api_error_on_malformed_results(user, httpx_mock):
+    _connect_ocs(user)
+    # 200 OK but a result object is missing the "name" key.
+    httpx_mock.add_response(
+        url=f"{OCS_URL}/api/v2/chatbots/",
+        json={"count": 1, "next": None, "previous": None, "results": [{"id": "id-1"}]},
+    )
+
+    with pytest.raises(ocs_api.OcsApiError):
+        ocs_api.list_chatbots(user)
+
+
+@pytest.mark.django_db
+@override_settings(OCS_BASE_URL=OCS_URL)
 def test_list_chatbots_raises_when_not_connected(user):
     with pytest.raises(SocialTokenMissingError):
         ocs_api.list_chatbots(user)
