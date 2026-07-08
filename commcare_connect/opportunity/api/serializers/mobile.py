@@ -299,10 +299,22 @@ class PaymentSerializer(serializers.ModelSerializer):
 class AssignedTaskSerializer(serializers.ModelSerializer):
     task_name = serializers.CharField(source="task_type.name")
     task_description = serializers.CharField(source="task_type.description")
+    task_mode = serializers.CharField(source="task_type.mode")
+    slug = serializers.CharField(source="task_type.slug")
 
     class Meta:
         model = AssignedTask
-        fields = ["assigned_task_id", "task_name", "task_description", "status", "due_date", "date_created"]
+        fields = [
+            "assigned_task_id",
+            "task_name",
+            "task_description",
+            "task_mode",
+            "slug",
+            "status",
+            "due_date",
+            "date_created",
+            "date_modified",
+        ]
 
 
 class DeliveryProgressSerializer(serializers.Serializer):
