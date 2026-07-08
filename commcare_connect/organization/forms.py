@@ -154,7 +154,7 @@ class OrganizationInviteForm(forms.ModelForm):
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()
 
-        if User.objects.filter(email=email, memberships__organization=self.organization).exists():
+        if User.objects.filter(email__iexact=email, memberships__organization=self.organization).exists():
             raise ValidationError(gettext("This person is already a member of this workspace."))
 
         OrganizationInvite.retire_expired(self.organization, email)

@@ -56,8 +56,8 @@ class PendingInviteTable(tables.Table):
         fields = ("email", "role", "date_created")
         sequence = ("index", "email", "role", "date_created", "revoke")
 
-    def render_role(self, value):
-        return format_html("<div class=' underline underline-offset-4'>{}</div>", value)
+    def render_role(self, record):
+        return format_html("<div class=' underline underline-offset-4'>{}</div>", record.get_role_display())
 
     def render_revoke(self, record):
         return format_html(

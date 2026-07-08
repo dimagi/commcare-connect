@@ -115,7 +115,16 @@ def accept_invite(request, org_slug, token):
         if invite.status == OrganizationInvite.Status.INVITED and invite.is_expired:
             invite.status = OrganizationInvite.Status.EXPIRED
             invite.save(update_fields=["status", "date_modified"])
-        messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
+        if invite.status == OrganizationInvite.Status.REVOKED:
+            messages.error(
+                request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
+            )
+        elif invite.status == OrganizationInvite.Status.ACCEPTED:
+            messages.error(
+                request, gettext("This invitation has already been accepted. Log in to access the workspace.")
+            )
+        else:
+            messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
         return redirect("account_login")
 
     if request.user.is_authenticated:

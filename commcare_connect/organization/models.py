@@ -131,10 +131,10 @@ class OrganizationInvite(BaseModel):
         cutoff = timezone.now() - timedelta(days=cls.EXPIRY_DAYS)
         cls.objects.filter(
             organization=organization, email=email, status=cls.Status.INVITED, date_created__lt=cutoff
-        ).update(status=cls.Status.EXPIRED, modified_by=email)
+        ).update(status=cls.Status.EXPIRED, modified_by=email, date_modified=timezone.now())
 
     def accept(self, user):
-        membership, _created = UserOrganizationMembership.objects.get_or_create(
+        membership, _created = UserOrganizationMembership.objects.update_or_create(
             organization=self.organization, user=user, defaults={"role": self.role}
         )
         self.status = self.Status.ACCEPTED
