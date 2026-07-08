@@ -12,6 +12,7 @@
 {% endblock javascript %}
 {% block content %}
   <div class="min-w-0">
+    {% include 'components/breadcrumbs.html' with path=path %}
     <h2 class="mb-4 text-brand-deep-purple font-medium">{% translate "Select Opportunity Area" %}</h2>
     <!-- Top header section -->
     <header class="mb-2">

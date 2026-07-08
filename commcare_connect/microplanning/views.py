@@ -160,6 +160,14 @@ def microplanning_home(request, *args, **kwargs):
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
         "opportunity": opportunity,
+        "path": [
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
+            },
+            {"title": _("Progress Map")},
+        ],
         "metrics": get_metrics_for_microplanning(opportunity),
         "tiles_url": tiles_url,
         "visit_tiles_url": visit_tiles_url,
@@ -1031,6 +1039,11 @@ def coverage_progress(request, *args, **kwargs):
         "filter_form": filterset.form,
         "export_hrefs": export_hrefs,
         "path": [
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
+            },
             {
                 "title": _("Progress Map"),
                 "url": reverse(
