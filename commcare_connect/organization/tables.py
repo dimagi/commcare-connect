@@ -1,6 +1,5 @@
 import django_tables2 as tables
 from django.utils.html import format_html
-from django.utils.translation import gettext
 from django_tables2 import columns
 
 from commcare_connect.opportunity.tables import IndexColumn
@@ -49,7 +48,17 @@ class PendingInviteTable(tables.Table):
     email = tables.Column()
     role = tables.Column()
     date_created = columns.DateColumn(verbose_name="Invited on")
-    revoke = tables.Column(empty_values=(), verbose_name="", orderable=False)
+    revoke = columns.TemplateColumn(
+        verbose_name="",
+        orderable=False,
+        template_code="""
+            {% load i18n %}
+            <button type="button" class="button button-sm outline-style text-red-600"
+                hx-post="{{ record.get_revoke_url }}" hx-target="#pending_invites_container" hx-swap="innerHTML">
+                {% translate "Revoke" %}
+            </button>
+        """,
+    )
 
     class Meta:
         model = OrganizationInvite
@@ -58,12 +67,3 @@ class PendingInviteTable(tables.Table):
 
     def render_role(self, record):
         return format_html("<div class=' underline underline-offset-4'>{}</div>", record.get_role_display())
-
-    def render_revoke(self, record):
-        return format_html(
-            '<button type="button" class="button button-sm outline-style text-red-600" '
-            'hx-post="{}" hx-target="#pending_invites_container" hx-swap="innerHTML" hx-confirm="{}">{}</button>',
-            record.get_revoke_url(),
-            gettext("Revoke invite for {email}?").format(email=record.email),
-            gettext("Revoke"),
-        )
