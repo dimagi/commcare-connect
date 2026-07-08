@@ -3,17 +3,20 @@ from datetime import date, timedelta
 from unittest import mock
 
 import pytest
+from django.db.utils import IntegrityError
 
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
 from commcare_connect.opportunity.models import (
     AssignedTask,
     AssignedTaskStatus,
+    AudioAttachment,
     InvoiceStatus,
     Opportunity,
     OpportunityActiveEvent,  # added via pghistory
     OpportunityClaimLimit,
     PaymentInvoice,
     PaymentInvoiceStatusEvent,  # added via pghistory
+    TaskTypeModeChoices,
 )
 from commcare_connect.opportunity.tests.factories import (
     AssignedTaskFactory,
@@ -434,3 +437,45 @@ class TestAssignedTaskDeleteAndResetHQ:
             AssignedTask.bulk_delete([task_a.pk, task_b.pk], access.opportunity)
 
         mock_update.assert_called_once_with({access: {"properties": {"prop_a": "", "prop_b": ""}}})
+
+
+@pytest.mark.django_db
+def test_audio_attachment_unique_per_visit_and_name():
+    visit = UserVisitFactory.create()
+    AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
+    with pytest.raises(IntegrityError):
+        AudioAttachment.objects.create(user_visit=visit, name="recording.m4a", content_length=1)
+
+
+@pytest.mark.django_db
+class TestTaskFields:
+    def test_task_type_mode_defaults_to_relearn(self):
+        task_type = TaskTypeFactory()
+        task_type.refresh_from_db()
+        assert task_type.mode == TaskTypeModeChoices.RELEARN
+
+    def test_task_type_stores_ocs_fields(self):
+        task_type = TaskTypeFactory(mode=TaskTypeModeChoices.OCS, ocs_chatbot_id="chatbot-123")
+        task_type.refresh_from_db()
+        assert task_type.mode == TaskTypeModeChoices.OCS
+        assert task_type.ocs_chatbot_id == "chatbot-123"
+
+    def test_assigned_task_stores_ocs_fields(self):
+        task = AssignedTaskFactory(connect_channel_id="channel-1", ocs_session_id="session-1")
+        task.refresh_from_db()
+        assert task.connect_channel_id == "channel-1"
+        assert task.ocs_session_id == "session-1"
+
+    def test_assigned_task_date_modified_updates_on_save(self):
+        created_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+        updated_at = datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC)
+
+        with mock.patch("django.utils.timezone.now", return_value=created_at):
+            task = AssignedTaskFactory()
+        assert task.date_modified == created_at
+
+        with mock.patch("django.utils.timezone.now", return_value=updated_at):
+            task.status = AssignedTaskStatus.COMPLETED
+            task.save()
+        task.refresh_from_db()
+        assert task.date_modified == updated_at

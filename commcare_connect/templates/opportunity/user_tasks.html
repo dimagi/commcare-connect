@@ -22,7 +22,24 @@
     {% include "components/worker_page/worker_profile_kpi.html" %}
     <div class="relative">
       {% include 'components/worker_page/visit_task_tabs.html' %}
-      <div class="absolute right-4 top-1/2 -translate-y-1/2">
+      <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+        {% if can_manage_tasks %}
+          <button type="button"
+                  class="button-icon shadow-sm"
+                  aria-label="{% trans 'Create Task' %}"
+                  @click.stop="showCreateTaskModal = true"
+                  x-tooltip.raw="{% trans 'Create Task' %}">
+            <i class="fa-solid fa-plus text-brand-deep-purple"></i>
+          </button>
+          <button type="button"
+                  class="button-icon hover:bg-red-600 hover:text-white shadow-sm"
+                  aria-label="{% trans 'Delete Task(s)' %}"
+                  @click="$store.confirmModal.show({ title: '{% trans "Delete Tasks" %}', message: `{% blocktrans %}Are you sure you want to delete __count__ task(s)? This action can not be undone.{% endblocktrans %}`.replace('__count__', selected.length), confirmBtnText: '{% trans "Delete" %}', confirmBtnRed: true, formRef: $refs.deleteTasksForm })"
+                  :disabled="selected.length === 0"
+                  x-tooltip.raw="{% trans 'Delete Task(s)' %}">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        {% endif %}
         <button type="button"
                 @click="showFilterModal = true"
                 class="relative button-icon shadow-sm">
@@ -35,6 +52,17 @@
         </button>
       </div>
     </div>
+    {% if can_manage_tasks %}
+      <form x-ref="deleteTasksForm"
+            hx-post="{{ delete_tasks_url }}"
+            hx-trigger="submit"
+            class="hidden">
+        {% csrf_token %}
+        <template x-for="id in selected">
+          <input type="hidden" name="task_ids" :value="id">
+        </template>
+      </form>
+    {% endif %}
     <div x-show="showFilterModal" x-cloak class="modal-backdrop">
       <div class="modal">
         <div class="header text-lg font-semibold text-brand-deep-purple">
@@ -59,7 +87,7 @@
       </div>
     </div>
     {% include "components/tomselect_init.html" %}
-    <div class="w-full grid grid-cols-10 gap-2">
+    <div class="w-full grid grid-cols-10 gap-2 min-h-[600px]">
       <div class="col-span-6" hx-indicator="#loading-spinner">
         <div class="w-full"
              hx-get="{% url 'opportunity:user_tasks_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
@@ -118,33 +146,6 @@
             </div>
           </div>
         </div>
-        {% if can_manage_tasks %}
-          <div class="flex gap-4 items-center justify-start mt-4">
-            <form x-ref="deleteTasksForm"
-                  hx-post="{{ delete_tasks_url }}"
-                  hx-trigger="submit"
-                  class="hidden">
-              {% csrf_token %}
-              <template x-for="id in selected">
-                <input type="hidden" name="task_ids" :value="id">
-              </template>
-            </form>
-            <button type="button"
-                    class="button button-md primary-dark"
-                    @click.stop="showCreateTaskModal = true">
-              <i class="fa-solid fa-plus mr-2"></i>
-              {% trans "Create Task" %}
-            </button>
-            <button type="button"
-                    class="button button-md bg-red-600 hover:bg-red-700 text-white"
-                    @click="$store.confirmModal.show({ title: '{% trans "Delete Tasks" %}', message: '{% trans "Are you sure you want to delete these tasks? This action can not be undone." %}', confirmBtnText: '{% trans "Delete" %}', confirmBtnRed: true, formRef: $refs.deleteTasksForm, })"
-                    :disabled="selected.length === 0">
-              <i class="fa-solid fa-trash mr-2"></i>
-              <span x-text="selected.length === 0 ? '{% trans "Delete Tasks" %}' : selected.length === 1 ? '{% trans "Delete 1 Task" %}' : '{% trans "Delete" %} ' + selected.length + ' {% trans "Tasks" %}'">
-              </span>
-            </button>
-          </div>
-        {% endif %}
       </div>
       <div class="col-span-4 relative" hx-indicator="#task-loading-indicator">
         <div class="absolute inset-0">
