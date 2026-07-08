@@ -842,8 +842,9 @@ class WorkerVisitTable(tables.Table):
             "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
             ":class": lambda record, table: (
-                f"selectedRow == {record.id} ? 'active' : "
-                f"'{'active' if str(record.user_visit_id) == table.highlighted_visit_id else ''}'"
+                f"(selectedRow == {record.id} || (selectedRow === null && "
+                f"{str(str(record.user_visit_id) == table.highlighted_visit_id).lower()})) "
+                f"? 'active' : ''"
             ),
             "data-visit-id": lambda record: record.pk,
             "data-visit-status": lambda record: record.status,
