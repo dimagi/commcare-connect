@@ -520,7 +520,9 @@ def cluster_work_areas(request, org_slug, opp_id):
     rerun = request.GET.get("rerun") is not None
     if rerun:
         if WorkArea.objects.filter(opportunity_id=request.opportunity.id, opportunity_access__isnull=False).exists():
-            messages.error(request, _("Clustering cannot be re-run for this opportunity."))
+            messages.error(
+                request, _("Clustering cannot be re-run because Work Areas have already been assigned to FLWs.")
+            )
             return HttpResponse(headers={"HX-Redirect": redirect_url})
         WorkAreaGroup.objects.filter(opportunity_id=request.opportunity.id).delete()
 
