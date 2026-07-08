@@ -6,14 +6,18 @@ import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
-from commcare_connect.microplanning.models import WorkArea
+from commcare_connect.microplanning.models import ImplementationArea, WorkArea
 from commcare_connect.microplanning.tasks import (
+    ImplementationAreaCSVImporter,
     WorkAreaCSVImporter,
     import_work_areas_task,
     send_work_area_assignment_notification,
 )
-from commcare_connect.microplanning.tests.factories import WorkAreaFactory
+from commcare_connect.microplanning.tests.factories import ImplementationAreaFactory, WorkAreaFactory
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory
+
+WA_BASE_HEADER = "Area Slug,Ward,Centroid,Boundary,Building Count,Expected Visit Count,Target Population,LGA,State"
+WA_ROW = 'area-{n},Ward1,77.1 28.6,"POLYGON((77 28,78 28,78 29,77 29,77 28))",5,6,7,LGA1,State1'
 
 
 @pytest.fixture
@@ -214,3 +218,70 @@ def test_send_work_area_assignment_notification(opportunity):
     assert message.data["opportunity_uuid"] == str(opportunity.opportunity_id)
     assert message.data["title"]
     assert message.data["body"]
+
+
+@pytest.mark.django_db
+def test_work_area_import_matches_implementation_area_by_name(opportunity):
+    ia = ImplementationAreaFactory(opportunity=opportunity, name="Ward North")
+    content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Ward North\n")
+    result = WorkAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 1}
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id == ia.id
+
+
+@pytest.mark.django_db
+def test_work_area_import_unmatched_implementation_area_is_null(opportunity):
+    content = io.StringIO(f"{WA_BASE_HEADER},Implementation Area\n" + WA_ROW.format(n=1) + ",Nonexistent\n")
+    result = WorkAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 1}
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
+
+
+@pytest.mark.django_db
+def test_work_area_import_without_implementation_area_column(opportunity):
+    content = io.StringIO(f"{WA_BASE_HEADER}\n" + WA_ROW.format(n=1) + "\n")
+    result = WorkAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 1}
+    assert WorkArea.objects.get(slug="area-1").implementation_area_id is None
+
+
+IA_HEADER = "Implementation Area Name,Centroid,Boundary"
+IA_POLY = "POLYGON((77 28,78 28,78 29,77 29,77 28))"
+
+
+@pytest.mark.django_db
+def test_implementation_area_import_success(opportunity):
+    content = io.StringIO(f'{IA_HEADER}\nWard North,77.1 28.6,"{IA_POLY}"\nWard South,77.2 28.7,"{IA_POLY}"\n')
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert result == {"created": 2}
+    assert ImplementationArea.objects.filter(opportunity_id=opportunity.id).count() == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "row,expected_error",
+    [
+        (f",77.1 28.6,{IA_POLY}", "Implementation Area Name is required and should be unique."),
+        ("Ward,bad-centroid," + IA_POLY, "Centroid must be in 'lon lat' format"),
+        ("Ward,77.1 28.6,NOT_WKT", "Invalid WKT format for Boundary(Polygon)."),
+    ],
+)
+def test_implementation_area_row_validations(opportunity, row, expected_error):
+    content = io.StringIO(f"{IA_HEADER}\n{row}\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert expected_error in result["errors"]
+    assert result["errors"][expected_error] == [2]
+
+
+@pytest.mark.django_db
+def test_implementation_area_duplicate_name_in_file(opportunity):
+    content = io.StringIO(f"{IA_HEADER}\nWard,77.1 28.6,{IA_POLY}\nWard,77.2 28.7,{IA_POLY}\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert "Duplicate Implementation Area Name in file" in result["errors"]
+
+
+@pytest.mark.django_db
+def test_implementation_area_missing_columns(opportunity):
+    content = io.StringIO("Implementation Area Name,Centroid\nWard,77.1 28.6\n")
+    result = ImplementationAreaCSVImporter(opportunity.id, content).run()
+    assert any("Missing columns" in msg for msg in result["errors"])
