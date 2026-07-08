@@ -112,42 +112,57 @@ def accept_invite(request, org_slug, token):
     invite = get_object_or_404(OrganizationInvite, token=token, organization__slug=org_slug)
 
     if invite.status != OrganizationInvite.Status.INVITED or invite.is_expired:
-        if invite.status == OrganizationInvite.Status.INVITED and invite.is_expired:
-            invite.status = OrganizationInvite.Status.EXPIRED
-            invite.save(update_fields=["status", "date_modified"])
-        if invite.status == OrganizationInvite.Status.REVOKED:
-            messages.error(
-                request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
-            )
-        elif invite.status == OrganizationInvite.Status.ACCEPTED:
-            messages.error(
-                request, gettext("This invitation has already been accepted. Log in to access the workspace.")
-            )
-        else:
-            messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
-        return redirect("account_login")
+        return _reject_invalid_invite(request, invite)
 
     if request.user.is_authenticated:
-        if request.user.email and request.user.email.lower() == invite.email.lower():
-            invite.accept(request.user)
-            messages.success(request, gettext("You've joined {org}.").format(org=invite.organization.name))
-            return redirect("opportunity:list", org_slug)
-        messages.error(
-            request,
-            gettext("This invitation was sent to {email}. Log in with that email to accept it.").format(
-                email=invite.email
-            ),
-        )
-        return redirect("organization:home", org_slug)
+        return _accept_invite_for_authenticated_user(request, invite, org_slug)
 
     if User.objects.filter(email__iexact=invite.email).exists():
-        messages.info(
-            request,
-            gettext("You've been invited to join {org}. Log in to accept.").format(org=invite.organization.name),
-        )
-        login_url = reverse("account_login") + "?" + urlencode({"next": request.path})
-        return redirect(login_url)
+        return _redirect_existing_user_to_login(request, invite)
 
+    return _accept_invite_for_new_user(request, invite, org_slug)
+
+
+def _reject_invalid_invite(request, invite):
+    if invite.status == OrganizationInvite.Status.INVITED and invite.is_expired:
+        invite.status = OrganizationInvite.Status.EXPIRED
+        invite.save(update_fields=["status", "date_modified"])
+
+    if invite.status == OrganizationInvite.Status.REVOKED:
+        messages.error(
+            request, gettext("This invitation has been revoked. Contact an admin if you believe this is an error.")
+        )
+    elif invite.status == OrganizationInvite.Status.ACCEPTED:
+        messages.error(request, gettext("This invitation has already been accepted. Log in to access the workspace."))
+    else:
+        messages.error(request, gettext("This invitation has expired. Ask an admin to send you a new one."))
+    return redirect("account_login")
+
+
+def _accept_invite_for_authenticated_user(request, invite, org_slug):
+    if request.user.email and request.user.email.lower() == invite.email.lower():
+        invite.accept(request.user)
+        messages.success(request, gettext("You've joined {org}.").format(org=invite.organization.name))
+        return redirect("opportunity:list", org_slug)
+
+    messages.error(
+        request,
+        gettext("This invitation was sent to {email}. Log in with that email to accept it.").format(
+            email=invite.email
+        ),
+    )
+    return redirect("organization:home", org_slug)
+
+
+def _redirect_existing_user_to_login(request, invite):
+    messages.info(
+        request, gettext("You've been invited to join {org}. Log in to accept.").format(org=invite.organization.name)
+    )
+    login_url = reverse("account_login") + "?" + urlencode({"next": request.path})
+    return redirect(login_url)
+
+
+def _accept_invite_for_new_user(request, invite, org_slug):
     adapter = get_adapter(request)
     new_user = User(email=invite.email)
     adapter.populate_username(request, new_user)
