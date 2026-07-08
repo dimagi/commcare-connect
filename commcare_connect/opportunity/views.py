@@ -221,6 +221,8 @@ from commcare_connect.utils.datetime import get_start_end_date_range_with_time
 from commcare_connect.utils.db import get_object_by_uuid_or_int
 from commcare_connect.utils.file import get_file_extension
 from commcare_connect.utils.flags import FlagLabels, Flags
+from commcare_connect.utils.oauth_tokens import TokenRefreshError
+from commcare_connect.utils.ocs_api import OcsApiError, list_chatbots, user_has_connected_ocs
 from commcare_connect.utils.tables import (
     DEFAULT_PAGE_SIZE,
     PAGE_SIZE_OPTIONS,
@@ -1329,7 +1331,7 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
             {
                 "opportunity": opportunity,
                 "table": table,
-                "form": kwargs.get("form", AddTaskTypeForm(opportunity=opportunity)),
+                "form": kwargs.get("form", AddTaskTypeForm(opportunity=opportunity, org_slug=org_slug)),
                 "path": path,
             }
         )
@@ -1340,12 +1342,53 @@ class TaskTypesConfig(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberR
 
     def post(self, request, org_slug, opp_id):
         opportunity = self.get_opportunity()
-        form = AddTaskTypeForm(data=request.POST, opportunity=opportunity)
+        form = AddTaskTypeForm(data=request.POST, opportunity=opportunity, org_slug=org_slug)
         if form.is_valid():
             form.save()
             messages.success(request, _("Task type added successfully."))
             return redirect("opportunity:task_types_config", org_slug=org_slug, opp_id=opp_id)
         return self.render_to_response(self.get_context_data(form=form))
+
+
+def get_ocs_task_section_context(request):
+    if not user_has_connected_ocs(request.user):
+        return _ocs_connect_prompt_context(request)
+    try:
+        chatbots = list_chatbots(request.user)
+    except TokenRefreshError:
+        return _ocs_connect_prompt_context(request)
+    except OcsApiError:
+        return {"ocs_connected": True, "ocs_error": True}
+    return {
+        "ocs_connected": True,
+        "chatbots": chatbots,
+        "selected_chatbot_id": request.GET.get("selected"),
+    }
+
+
+def _ocs_connect_prompt_context(request):
+    return {
+        "ocs_connected": False,
+        "ocs_next_url": _hx_current_path(request),
+    }
+
+
+def _hx_current_path(request):
+    """
+    Relative path (path + query) of the page the htmx request came from.
+    """
+    hx_current_url = request.headers.get("HX-Current-URL")
+    if not hx_current_url:
+        return request.get_full_path()
+    parsed = urlparse(hx_current_url)
+    return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+
+
+class TaskTypeOcsSection(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, View):
+    def get(self, request, org_slug, opp_id):
+        context = get_ocs_task_section_context(request)
+        context["ocs_section_url"] = request.get_full_path()
+        return render(request, "opportunity/_ocs_task_section.html", context)
 
 
 class EditTaskType(ManagedOpportunityPMRequiredMixin, OrganizationUserMemberRoleMixin, UpdateView):
