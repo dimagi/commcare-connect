@@ -1032,6 +1032,65 @@ class TestAddTaskTypeForm:
         assert task_type.app == opportunity.deliver_app
         assert task_type.opportunity == opportunity
 
+    def test_ocs_mode_requires_chatbot(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"mode": "ocs", "name": "Chat task", "description": "desc"},
+                opportunity=opportunity,
+            )
+        assert not form.is_valid()
+        assert "Please select a chatbot." in form.non_field_errors()
+
+    def test_ocs_mode_ignores_missing_task_unit(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
+                opportunity=opportunity,
+            )
+        assert form.is_valid(), form.errors
+        assert "task_unit_id" not in form.errors
+
+    def test_ocs_mode_save_sets_slug_and_clears_case_property(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={
+                    "mode": "ocs",
+                    "ocs_chatbot_id": "bot-123",
+                    "name": "Chat task",
+                    "description": "desc",
+                    "case_property": "ignored",
+                },
+                opportunity=opportunity,
+            )
+            assert form.is_valid(), form.errors
+            task_type = form.save()
+        assert task_type.mode == "ocs"
+        assert task_type.slug == "bot-123"
+        assert task_type.ocs_chatbot_id == "bot-123"
+        assert task_type.case_property is None
+        assert task_type.app == opportunity.deliver_app
+
+    def test_ocs_mode_duplicate_chatbot_rejected(self, opportunity, task_units):
+        TaskTypeFactory(app=opportunity.deliver_app, slug="bot-123")
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"mode": "ocs", "ocs_chatbot_id": "bot-123", "name": "Chat task", "description": "desc"},
+                opportunity=opportunity,
+            )
+        assert not form.is_valid()
+        assert "A task type for this chatbot already exists." in form.non_field_errors()
+
+    def test_relearn_mode_still_valid_and_default(self, opportunity, task_units):
+        with patch("commcare_connect.opportunity.forms.get_task_units_for_app", return_value=task_units):
+            form = AddTaskTypeForm(
+                data={"task_unit_id": "task_1", "name": "My Task", "description": "desc"},
+                opportunity=opportunity,
+            )
+            assert form.is_valid(), form.errors
+            task_type = form.save()
+        assert task_type.mode == "relearn"
+        assert task_type.slug == "task_1"
+
 
 @pytest.mark.django_db
 class TestEditTaskTypeForm:

@@ -11,6 +11,7 @@ from dateutil.relativedelta import relativedelta
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Count, F, Min, Q, Sum, TextChoices
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.timezone import now
@@ -44,6 +45,7 @@ from commcare_connect.opportunity.models import (
     PaymentInvoice,
     PaymentUnit,
     TaskType,
+    TaskTypeModeChoices,
     UserVisit,
     VisitReviewStatus,
     VisitValidationStatus,
@@ -2012,28 +2014,63 @@ class AddTaskTypeForm(forms.ModelForm):
     task_unit_id = forms.ChoiceField(
         label=_("Task unit"),
         choices=[],
+        required=False,
         widget=forms.Select(attrs={"@change": "onTaskUnitSelectChange($event.target.value)"}),
+    )
+    mode = forms.ChoiceField(
+        label=_("Task mode"),
+        choices=TaskTypeModeChoices.choices,
+        initial=TaskTypeModeChoices.RELEARN,
+        required=False,
+        widget=forms.RadioSelect(attrs={"x-model": "taskMode"}),
     )
 
     class Meta:
         model = TaskType
-        fields = ["name", "description", "case_property"]
+        fields = ["mode", "name", "description", "case_property", "ocs_chatbot_id"]
         widgets = {"description": forms.Textarea(attrs={"rows": 2})}
 
-    def __init__(self, *args, opportunity, **kwargs):
+    def __init__(self, *args, opportunity, org_slug=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.opportunity = opportunity
         self._populate_task_unit_choices()
 
+        org_slug = org_slug or opportunity.organization.slug
+        ocs_section_url = reverse(
+            "opportunity:task_type_ocs_section",
+            args=(org_slug, opportunity.opportunity_id),
+        )
+        # Preserve the chosen chatbot across a validation-error round-trip: the
+        # OCS section is (re)loaded fresh via htmx, so pass the submitted value
+        # through so the endpoint can re-select it.
+        selected_chatbot_id = self.data.get("ocs_chatbot_id") if self.is_bound else None
+        if selected_chatbot_id:
+            ocs_section_url = f"{ocs_section_url}?{urlencode({'selected': selected_chatbot_id})}"
+
         self.helper = FormHelper(self)
         self.helper.form_tag = False
         self.helper.layout = Layout(
+            Field("mode"),
             Div(
                 Field("task_unit_id"),
-                Field("name"),
-                css_class="grid grid-cols-2 gap-6",
+                Field("case_property"),
+                **{"x-show": "taskMode === 'relearn'"},
             ),
-            Field("case_property"),
+            Div(
+                Div(
+                    HTML(render_to_string("opportunity/_ocs_loading_spinner.html")),
+                    id="ocs-task-section",
+                    **{
+                        "hx-get": ocs_section_url,
+                        "hx-trigger": "intersect once",
+                        "hx-target": "#ocs-task-section",
+                        "hx-swap": "innerHTML",
+                    },
+                ),
+                css_class="my-4",
+                **{"x-show": "taskMode === 'ocs'"},
+            ),
+            Field("name"),
             Field("description"),
         )
 
@@ -2061,26 +2098,49 @@ class AddTaskTypeForm(forms.ModelForm):
             {tu.id: {"name": tu.name, "description": tu.description} for tu in available_units}
         )
 
+    def clean(self):
+        cleaned_data = super().clean()
+        mode = cleaned_data.get("mode") or TaskTypeModeChoices.RELEARN
+        cleaned_data["mode"] = mode
+        if mode == TaskTypeModeChoices.OCS:
+            self._clean_ocs(cleaned_data)
+        else:
+            self._clean_relearn(cleaned_data)
+        return cleaned_data
+
+    def _clean_ocs(self, cleaned_data):
+        chatbot_id = cleaned_data.get("ocs_chatbot_id")
+        if not chatbot_id:
+            self.add_error(None, _("Please select a chatbot."))
+        elif self._slug_exists(chatbot_id):
+            self.add_error(None, _("A task type for this chatbot already exists."))
+
+    def _clean_relearn(self, cleaned_data):
+        task_unit_id = cleaned_data.get("task_unit_id")
+        if not task_unit_id:
+            self.add_error("task_unit_id", _("Please select a task unit."))
+        elif self._slug_exists(task_unit_id):
+            self.add_error("task_unit_id", _("A task with this task unit ID already exists."))
+
+    def _slug_exists(self, slug):
+        return TaskType.objects.filter(app=self.opportunity.deliver_app, slug=slug).exists()
+
     def save(self, commit=True):
         task_type = super().save(commit=False)
         task_type.app = self.opportunity.deliver_app
         task_type.opportunity = self.opportunity
-        task_type.slug = self.cleaned_data["task_unit_id"]
-        unit_name = dict(self.fields["task_unit_id"].choices).get(task_type.slug, "")
-        task_type.unit_name = unit_name[:255]
+        if self.cleaned_data["mode"] == TaskTypeModeChoices.OCS:
+            task_type.slug = self.cleaned_data["ocs_chatbot_id"]
+            task_type.case_property = None
+            task_type.unit_name = ""
+        else:
+            task_type.slug = self.cleaned_data["task_unit_id"]
+            unit_name = dict(self.fields["task_unit_id"].choices).get(task_type.slug, "")
+            task_type.unit_name = unit_name[:255]
+            task_type.ocs_chatbot_id = None
         if commit:
             task_type.save()
         return task_type
-
-    def clean(self):
-        cleaned_data = super().clean()
-        task_unit_id = cleaned_data.get("task_unit_id")
-        if not task_unit_id:
-            return cleaned_data
-
-        if TaskType.objects.filter(app=self.opportunity.deliver_app, slug=task_unit_id).exists():
-            self.add_error("task_unit_id", _("A task with this task unit ID already exists."))
-        return cleaned_data
 
 
 class EditTaskTypeForm(forms.ModelForm):
