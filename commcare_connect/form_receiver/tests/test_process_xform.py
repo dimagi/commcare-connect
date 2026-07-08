@@ -144,6 +144,34 @@ class TestProcessTaskModules:
         assert assigned_task.completed_at == context["xform"].metadata.timeEnd
         assert assigned_task.duration == context["xform"].metadata.duration
 
+    def test_completion_updates_date_modified(self, task_module_context):
+        context = task_module_context
+        task_type = TaskType.objects.create(
+            app=context["opportunity"].deliver_app,
+            slug="task-one",
+            name="Task 1",
+            description="desc",
+        )
+        assigned_task = AssignedTask.objects.create(
+            task_type=task_type,
+            opportunity_access=context["access"],
+            xform_id=None,
+            status=AssignedTaskStatus.ASSIGNED,
+            due_date=now() + datetime.timedelta(days=7),
+        )
+        original_date_modified = assigned_task.date_modified
+
+        task_block = TaskJsonFactory(id=task_type.slug).json
+        context["xform"] = get_form_model(form_block=task_block)
+
+        completion_time = original_date_modified + datetime.timedelta(hours=1)
+        with mock.patch("django.utils.timezone.now", return_value=completion_time):
+            self._process(context, [task_block["task"]])
+
+        assigned_task.refresh_from_db()
+        assert assigned_task.status == AssignedTaskStatus.COMPLETED
+        assert assigned_task.date_modified == completion_time
+
     def test_missing_task(self, task_module_context):
         task_block = TaskJsonFactory(id="unknown-task").json["task"]
         self._process(task_module_context, [task_block])

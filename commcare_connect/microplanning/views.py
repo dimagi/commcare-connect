@@ -392,7 +392,17 @@ def import_status(request, org_slug, opp_id):
 
 class WorkAreaVectorLayer(VectorLayer):
     id = "workareas"
-    tile_fields = ("id", "status", "building_count", "expected_visit_count", "group_id", "group_name", "assignee_name")
+    tile_fields = (
+        "id",
+        "status",
+        "building_count",
+        "expected_visit_count",
+        "group_id",
+        "group_name",
+        "assignee_name",
+        "slug",
+        "visits_completed",
+    )
     geom_field = "boundary"
     min_zoom = WORKAREA_MIN_ZOOM
 
@@ -406,6 +416,7 @@ class WorkAreaVectorLayer(VectorLayer):
             group_id=F("work_area_group__id"),
             group_name=F("work_area_group__name"),
             assignee_name=F("opportunity_access__user__name"),
+            visits_completed=Count("uservisit", filter=Q(uservisit__status=VisitValidationStatus.approved)),
         )
         return WorkAreaMapFilterSet(self.filter_params, queryset=qs, opportunity=self.opportunity).qs
 
@@ -665,6 +676,11 @@ class ModifyWorkAreaUpdateView(UpdateView):
             )
             return super().form_invalid(form)
 
+        visits_completed = UserVisit.objects.filter(
+            opportunity=work_area.opportunity,
+            work_area=work_area,
+            status=VisitValidationStatus.approved,
+        ).count()
         response = HttpResponse(status=204)
         response["HX-Trigger"] = json.dumps(
             {
@@ -673,6 +689,8 @@ class ModifyWorkAreaUpdateView(UpdateView):
                     "expected_visit_count": work_area.expected_visit_count,
                     "group_id": work_area.work_area_group_id,
                     "group_name": getattr(work_area.work_area_group, "name", None),
+                    "slug": work_area.slug,
+                    "visits_completed": visits_completed,
                 }
             }
         )
