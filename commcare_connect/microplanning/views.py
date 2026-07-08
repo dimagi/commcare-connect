@@ -105,6 +105,10 @@ def microplanning_home(request, *args, **kwargs):
     opportunity = request.opportunity
     areas_present = WorkArea.objects.filter(opportunity_id=request.opportunity.id).exists()
     show_area_btn = not (cache.get(get_import_area_cache_key(opportunity.id)) is not None or areas_present)
+    implementation_areas_present = ImplementationArea.objects.filter(opportunity_id=opportunity.id).exists()
+    show_implementation_area_btn = not (
+        cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None or implementation_areas_present
+    )
     work_area_groups_present = WorkAreaGroup.objects.filter(opportunity_id=opportunity.id).exists()
     show_workarea_groups_btn = areas_present and not work_area_groups_present
 
@@ -159,6 +163,7 @@ def microplanning_home(request, *args, **kwargs):
 
     context = {
         "show_area_btn": show_area_btn,
+        "show_implementation_area_btn": show_implementation_area_btn,
         "show_workarea_groups_btn": show_workarea_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
