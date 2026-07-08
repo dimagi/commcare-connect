@@ -1,4 +1,5 @@
 import inspect
+import json
 from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 from unittest import mock
@@ -18,6 +19,8 @@ from django_tables2 import RequestConfig
 from waffle.testutils import override_switch
 
 from commcare_connect.connect_id_client.models import ConnectIdUser
+from commcare_connect.flags.flag_names import MICROPLANNING, WEEKLY_PERFORMANCE_REPORT
+from commcare_connect.flags.models import Flag
 from commcare_connect.flags.switch_names import WORKER_VISITS_TASKS
 from commcare_connect.microplanning.tests.factories import WorkAreaInaccessibilityRequestFactory
 from commcare_connect.opportunity.exceptions import TaskAlreadyAssignedError
@@ -185,6 +188,29 @@ def test_add_budget_existing_users_for_managed_opportunity(
     form = response.context["form"]
     assert "number_of_visits" in form.errors
     assert form.errors["number_of_visits"][0] == "The number of visits being increased exceeds the opportunity budget."
+
+
+@pytest.mark.django_db
+def test_add_budget_existing_users_per_visit_cost_includes_org_amount(
+    organization: Organization, org_user_member: User, opportunity: Opportunity, mobile_user: User, client: Client
+):
+    payment_unit_1 = PaymentUnitFactory(opportunity=opportunity, amount=3000, org_amount=30984, max_total=12)
+    payment_unit_2 = PaymentUnitFactory(opportunity=opportunity, amount=0, org_amount=0, max_total=12)
+    opportunity.organization = organization
+    opportunity.total_budget = 1_000_000
+    opportunity.save()
+
+    access = OpportunityAccess.objects.get(opportunity=opportunity, user=mobile_user)
+    claim = OpportunityClaimFactory(opportunity_access=access, end_date=opportunity.end_date)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit_1, max_visits=12)
+    OpportunityClaimLimitFactory(opportunity_claim=claim, payment_unit=payment_unit_2, max_visits=12)
+
+    url = reverse("opportunity:add_budget_existing_users", args=(organization.slug, opportunity.pk))
+    client.force_login(org_user_member)
+    response = client.get(url)
+
+    per_visit_costs = json.loads(response.context["per_visit_costs_json"])
+    assert per_visit_costs[str(claim.id)] == 33984
 
 
 @pytest.mark.django_db
@@ -2928,3 +2954,66 @@ class TestUserVisitsListVisitIdParam:
         assert response.status_code == HTTPStatus.OK
         table = response.context["table"]
         assert table.page.number == 1
+
+
+@pytest.mark.django_db
+class TestOpportunityDeliveryStatsTiles:
+    def _url(self, organization, opportunity):
+        return reverse("opportunity:delivery_stats", args=(organization.slug, opportunity.opportunity_id))
+
+    def test_tiles_hidden_by_default(self, client, organization, org_user_member, opportunity):
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+
+        assert response.status_code == 200
+        assert b"View Progress Map" not in response.content
+        assert b"Audit Opportunity" not in response.content
+        assert b"Tasks Assigned to Connect Workers" not in response.content
+
+    @pytest.mark.parametrize("scope", ["opportunity", "program", "organization"])
+    def test_progress_map_shown_when_flag_enabled(self, client, organization, org_user_member, opportunity, scope):
+        flag = Flag.objects.create(name=MICROPLANNING)
+        if scope == "opportunity":
+            flag.opportunities.add(opportunity)
+        elif scope == "program":
+            program = ProgramFactory(organization=organization)
+            opportunity.program = program
+            opportunity.save(update_fields=["program"])
+            flag.programs.add(program)
+        elif scope == "organization":
+            flag.organizations.add(organization)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+
+        assert b"View Progress Map" in response.content
+
+    def test_audit_tile_shown_only_when_flag_scoped_to_opportunity(
+        self, client, organization, org_user_member, opportunity
+    ):
+        program = ProgramFactory(organization=organization)
+        opportunity.program = program
+        opportunity.save(update_fields=["program"])
+        Flag.objects.create(name=WEEKLY_PERFORMANCE_REPORT).programs.add(program)
+
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization, opportunity))
+        assert b"Audit Opportunity" not in response.content
+
+        Flag.objects.get(name=WEEKLY_PERFORMANCE_REPORT).opportunities.add(opportunity)
+        response = client.get(self._url(organization, opportunity))
+        assert b"Audit Opportunity" in response.content
+
+    def test_tasks_tile_shown_only_with_switch_and_configured_task_type(
+        self, client, organization, org_user_member, opportunity
+    ):
+        client.force_login(org_user_member)
+
+        with override_switch(WORKER_VISITS_TASKS, active=True):
+            response = client.get(self._url(organization, opportunity))
+        assert b"Tasks Assigned to Connect Workers" not in response.content
+
+        TaskTypeFactory(opportunity=opportunity, is_active=True)
+        with override_switch(WORKER_VISITS_TASKS, active=True):
+            response = client.get(self._url(organization, opportunity))
+        assert b"Tasks Assigned to Connect Workers" in response.content

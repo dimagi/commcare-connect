@@ -17,7 +17,11 @@
       <h6 class="title text-brand-deep-purple">Login</h6>
       <span class="text-sm text-gray-600">Please enter your details</span>
       {% if messages %}
-        {% for message in messages %}<p class="text-sm text-red-600">* {{ message }}</p>{% endfor %}
+        {% for message in messages %}
+          <p class="text-sm {% if 'error' in message.tags or 'warning' in message.tags %}text-red-600{% else %}text-green-600{% endif %}">
+            * {{ message }}
+          </p>
+        {% endfor %}
       {% endif %}
       {% if form.non_field_errors %}
         {% for error in form.non_field_errors %}<p class="text-sm text-red-600">* {{ error }}</p>{% endfor %}
