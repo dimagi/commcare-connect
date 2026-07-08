@@ -6,9 +6,10 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.utils import OperationalError
 from django.test import Client
@@ -19,7 +20,7 @@ from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
 from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
-from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
+from commcare_connect.microplanning.tasks import WorkAreaCSVExporter, get_implementation_area_import_cache_key
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
     WorkAreaGroupFactory,
@@ -98,6 +99,65 @@ class TestWorkAreaUpload(BaseMicroplanningFlagTest):
         response = client.post(url, {"csv_file": csv_file})
         assert response.status_code == 404
         assert mock_delay.call_count == 0
+
+
+@pytest.mark.django_db
+class TestImplementationAreaUpload(BaseMicroplanningFlagTest):
+    CSV_CONTENT = (
+        b"Implementation Area Name,Centroid,Boundary\nWard North,77.1 28.6,POLYGON((77 28,78 28,78 29,77 29,77 28))\n"
+    )
+
+    @pytest.fixture
+    def csv_file(self):
+        return SimpleUploadedFile("ia.csv", self.CSV_CONTENT, content_type="text/csv")
+
+    def get_url(self, org_slug, opp_id):
+        return reverse(
+            "microplanning:upload_implementation_areas",
+            kwargs={"org_slug": org_slug, "opp_id": opp_id},
+        )
+
+    @patch("commcare_connect.microplanning.views.import_implementation_areas_task.delay")
+    def test_locking_and_redirect(self, mock_delay, client, org_user_admin, organization, opportunity, csv_file):
+        mock_delay.return_value = Mock(id="00000000-0000-0000-0000-000000000000")
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        response = client.post(url, {"csv_file": csv_file})
+        assert response.status_code == 302
+        assert "task_id=" in response.url
+        mock_delay.assert_called_once()
+        assert cache.get(get_implementation_area_import_cache_key(opportunity.id)) is not None
+
+    def test_template_download(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response["Content-Disposition"] == 'attachment; filename="implementation_area_template.csv"'
+        assert b"Implementation Area Name" in response.content
+
+    @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
+    def test_flag_required(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, opportunity.opportunity_id)
+        assert client.get(url).status_code == 404
+
+    def test_status_modal_renders_implementation_area_title(self, client, org_user_admin, organization, opportunity):
+        client.force_login(org_user_admin)
+        url = reverse(
+            "microplanning:implementation_area_import_status",
+            kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+        )
+        response = client.get(url)
+        assert response.status_code == 200
+        assert b"Upload Implementation Area" in response.content
+        assert (
+            reverse(
+                "microplanning:upload_implementation_areas",
+                kwargs={"org_slug": organization.slug, "opp_id": opportunity.opportunity_id},
+            ).encode()
+            in response.content
+        )
 
 
 @pytest.mark.django_db
@@ -676,6 +736,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
             "0",
             "LGA1",
             "State1",
+            "",
             wa.work_area_group.name,
         ]
 
@@ -697,7 +758,7 @@ class TestDownloadWorkAreas(BaseMicroplanningFlagTest):
         WorkAreaFactory(opportunity=opportunity, case_properties=None, work_area_group=None)
         client.force_login(org_user_admin)
         row = self._parse_csv(client.get(self.url(opportunity)))[1]
-        assert row[6:] == ["0", "", "", ""]
+        assert row[6:] == ["0", "", "", "", ""]
 
     @pytest.mark.parametrize(
         "login_as, method, expected_status",

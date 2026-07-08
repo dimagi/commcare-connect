@@ -10,6 +10,17 @@ urlpatterns = [
     path("<slug:opp_id>/upload_work_areas/", views.WorkAreaImport.as_view(), name="upload_work_areas"),
     path("<slug:opp_id>/import_status/", views.import_status, name="import_status"),
     path(
+        "<slug:opp_id>/upload_implementation_areas/",
+        views.ImplementationAreaImport.as_view(),
+        name="upload_implementation_areas",
+    ),
+    path(
+        "<slug:opp_id>/implementation_area_import_status/",
+        views.import_status,
+        {"area_type": "implementation_area"},
+        name="implementation_area_import_status",
+    ),
+    path(
         "<slug:opp_id>/tiles/<int:z>/<int:x>/<int:y>/",
         views.WorkAreaTileView.as_view(),
         name="workareas_tiles",
