@@ -43,7 +43,7 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.utils.timezone import is_aware, localtime, now
@@ -2587,8 +2587,8 @@ def user_visit_data(request, org_slug, opp_id, pk):
     return JsonResponse(
         {
             "visit_date": visit_date.strftime(DATE_TIME_FORMAT),
-            "worker_name": user_visit.user.name,
-            "deliver_type": user_visit.deliver_unit.name if user_visit.deliver_unit else None,
+            "worker_name": escape(user_visit.user.name),
+            "deliver_type": escape(user_visit.deliver_unit.name) if user_visit.deliver_unit else None,
             "worker_url": (
                 f"{worker_url}?{urlencode({'user': user_visit.user.user_id, 'visit_id': user_visit.user_visit_id})}"
             ),
