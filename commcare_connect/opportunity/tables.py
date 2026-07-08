@@ -841,12 +841,12 @@ class WorkerVisitTable(tables.Table):
             "hx-params": "none",
             "hx-swap": "innerHTML",
             "@click": lambda record: f"selectedRow = {record.id}",
-            ":class": lambda record: f"selectedRow == {record.id} && 'active'",
+            ":class": lambda record, table: (
+                f"selectedRow == {record.id} ? 'active' : "
+                f"'{'active' if str(record.user_visit_id) == table.highlighted_visit_id else ''}'"
+            ),
             "data-visit-id": lambda record: record.pk,
             "data-visit-status": lambda record: record.status,
-            "class": lambda record, table: (
-                "bg-yellow-100" if str(record.user_visit_id) == table.highlighted_visit_id else ""
-            ),
         }
 
     def __init__(self, *args, **kwargs):
