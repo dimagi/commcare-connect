@@ -19,7 +19,9 @@
       {% include 'components/worker_page/visit_task_tabs.html' %}
     {% endif %}
     <div class="w-full grid grid-cols-10 gap-2 min-h-[600px]">
-      <div class="col-span-6" hx-indicator="#loading-spinner">
+      <div class="col-span-6"
+           hx-indicator="#loading-spinner"
+           hx-on::after-settle="scrollToActiveRow()">
         <div hx-get="{% url 'opportunity:user_visit_verification_table' request.org.slug opportunity.opportunity_id %}{% querystring %}"
              hx-trigger="load"
              hx-swap="outerHTML"></div>
@@ -142,6 +144,10 @@
   });
 
 
+
+  function scrollToActiveRow() {
+    document.querySelector('tr.active')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 
   let map;
   function removeMap() { if (map) map?.remove(); }
