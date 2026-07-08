@@ -1,0 +1,6 @@
+{% load django_tables2 %}
+{% load i18n %}
+{% if table.data %}
+  <h3 class="text-sm font-semibold text-brand-deep-purple mt-6 mb-2">{% trans "Pending Invites" %}</h3>
+  {% render_table table %}
+{% endif %}
