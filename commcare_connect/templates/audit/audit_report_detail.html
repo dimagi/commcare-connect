@@ -12,8 +12,8 @@
   <script src="{% static 'bundles/js/tomselect-bundle.js' %}"></script>
 {% endblock javascript %}
 {% block content %}
-  <div class="container md:max-w-screen-2xl mx-auto flex flex-col gap-4">
-    {% include 'components/breadcrumbs.html' with path=path %}
+  {% include 'components/breadcrumbs.html' with path=path %}
+  <div class="w-full flex flex-col gap-4">
     {% include "audit/audit_report_body.html" %}
     <div id="modal-root"></div>
   </div>
