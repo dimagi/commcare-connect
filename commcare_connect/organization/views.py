@@ -151,7 +151,7 @@ def _accept_invite_for_authenticated_user(request, invite, org_slug):
             email=invite.email
         ),
     )
-    return redirect("organization:home", org_slug)
+    return redirect("opportunity:list", org_slug)
 
 
 def _redirect_existing_user_to_login(request, invite):
