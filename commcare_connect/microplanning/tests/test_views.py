@@ -18,7 +18,7 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import InaccessibilityRequestStatus, WorkArea, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
@@ -930,10 +930,10 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert photo.name == "photo.jpg"
 
     @pytest.mark.parametrize(
-        "action, expected_status, expect_notify",
+        "action, expected_status, expected_request_status, expect_notify",
         [
-            ("approve", WorkAreaStatus.INACCESSIBLE, False),
-            ("deny", WorkAreaStatus.NOT_VISITED, True),
+            ("approve", WorkAreaStatus.INACCESSIBLE, InaccessibilityRequestStatus.APPROVED, False),
+            ("deny", WorkAreaStatus.NOT_VISITED, InaccessibilityRequestStatus.DENIED, True),
         ],
         ids=["approve", "deny"],
     )
@@ -941,6 +941,7 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         self,
         action,
         expected_status,
+        expected_request_status,
         expect_notify,
         client,
         org_user_admin,
@@ -962,6 +963,8 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         assert response.status_code == 204
         work_area.refresh_from_db()
         assert work_area.status == expected_status
+        inacc_request.refresh_from_db()
+        assert inacc_request.status == expected_request_status
         hx_trigger = json.loads(response["HX-Trigger"])
         assert "inaccessibilityReviewed" in hx_trigger
         assert hx_trigger["inaccessibilityReviewed"]["status"] == expected_status
@@ -1011,6 +1014,23 @@ class TestReviewInaccessibilityModal(BaseMicroplanningFlagTest):
         url = self.action_url(organization.slug, opportunity.opportunity_id, work_area.id)
         response = client.post(url, {"action": "approve"})
         assert response.status_code == 404
+
+    def test_review_modal_returns_pending_not_historical_request(
+        self, client, org_user_admin, pending_wa, organization
+    ):
+        work_area, historical_request = pending_wa
+        historical_request.status = InaccessibilityRequestStatus.DENIED
+        historical_request.save(update_fields=["status"])
+        pending_request = WorkAreaInaccessibilityRequestFactory(
+            work_area=work_area,
+            opportunity_access=historical_request.opportunity_access,
+            status=InaccessibilityRequestStatus.PENDING,
+        )
+        client.force_login(org_user_admin)
+        url = self.get_url(organization.slug, work_area.opportunity.opportunity_id, work_area.id)
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.context["inaccessibility_request"].id == pending_request.id
 
     @pytest.mark.parametrize("setup_microplanning_flag", [False], indirect=True)
     def test_get_modal_microplanning_flag_required(self, client, org_user_admin, opportunity, organization):

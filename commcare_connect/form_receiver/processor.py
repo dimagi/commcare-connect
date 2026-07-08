@@ -16,7 +16,13 @@ from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.form_receiver.const import CCC_LEARN_XMLNS
 from commcare_connect.form_receiver.exceptions import ProcessingError
 from commcare_connect.form_receiver.serializers import XForm
-from commcare_connect.microplanning.models import SRID, WorkArea, WorkAreaInaccessibilityRequest, WorkAreaStatus
+from commcare_connect.microplanning.models import (
+    SRID,
+    InaccessibilityRequestStatus,
+    WorkArea,
+    WorkAreaInaccessibilityRequest,
+    WorkAreaStatus,
+)
 from commcare_connect.opportunity.models import (
     Assessment,
     AssignedTask,
@@ -297,8 +303,10 @@ def process_work_area_update(user: User, opportunity: Opportunity, xform: XForm,
         except WorkArea.DoesNotExist:
             raise ProcessingError("Work area not found")
 
-        if WorkAreaInaccessibilityRequest.objects.filter(work_area=work_area).exists():
-            raise ProcessingError("Only one inaccessibility request per work area")
+        if WorkAreaInaccessibilityRequest.objects.filter(
+            work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+        ).exists():
+            raise ProcessingError("A pending inaccessibility request already exists for this work area")
 
         if work_area.opportunity_access_id != access.id:
             raise ProcessingError("User is not assigned to this work area")
