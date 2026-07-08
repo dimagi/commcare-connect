@@ -18,14 +18,19 @@ from commcare_connect.flags.flag_names import MICROPLANNING
 from commcare_connect.flags.models import Flag
 from commcare_connect.microplanning import views as microplanning_views
 from commcare_connect.microplanning.filters import WorkAreaMapFilterSet
-from commcare_connect.microplanning.models import WorkArea, WorkAreaStatus
+from commcare_connect.microplanning.models import WorkArea, WorkAreaGroup, WorkAreaStatus
 from commcare_connect.microplanning.tasks import WorkAreaCSVExporter
 from commcare_connect.microplanning.tests.factories import (
     WorkAreaFactory,
     WorkAreaGroupFactory,
     WorkAreaInaccessibilityRequestFactory,
 )
-from commcare_connect.microplanning.views import UserVisitVectorLayer, get_metrics_for_microplanning
+from commcare_connect.microplanning.views import (
+    MAX_EXCLUDE_WORK_AREAS,
+    MAX_UNASSIGN_WORK_AREAS,
+    UserVisitVectorLayer,
+    get_metrics_for_microplanning,
+)
 from commcare_connect.opportunity.models import BlobMeta, VisitValidationStatus
 from commcare_connect.opportunity.tests.factories import OpportunityAccessFactory, OpportunityFactory, UserVisitFactory
 from commcare_connect.utils.commcarehq_api import CommCareHQAPIException
@@ -1313,7 +1318,6 @@ class TestUnassignWorkAreas:
         program_manager_org_user_admin,
         managed_opportunity,
     ):
-        from commcare_connect.microplanning.views import MAX_UNASSIGN_WORK_AREAS
 
         client.force_login(program_manager_org_user_admin)
         response = client.post(
@@ -1401,7 +1405,6 @@ class TestExcludeWorkAreasView:
 
     @patch("commcare_connect.microplanning.views.exclude_work_areas_for_opportunity")
     def test_too_many_work_area_ids_returns_400(self, mock_exclude, client, org_user_admin, opportunity):
-        from commcare_connect.microplanning.views import MAX_EXCLUDE_WORK_AREAS
 
         client.force_login(org_user_admin)
         response = client.post(
@@ -1826,7 +1829,6 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
 
     @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
     def test_rerun_replaces_existing_groups(self, mock_delay, client, org_user_admin, opportunity):
-        from commcare_connect.microplanning.models import WorkAreaGroup
 
         mock_task = MagicMock()
         mock_task.id = "3f8f2e6c-0000-4000-8000-000000000000"
@@ -1848,7 +1850,6 @@ class TestClusterWorkAreasRerun(BaseMicroplanningFlagTest):
 
     @patch("commcare_connect.microplanning.views.cluster_work_areas_task.delay")
     def test_rerun_blocked_when_assigned(self, mock_delay, client, org_user_admin, opportunity):
-        from commcare_connect.microplanning.models import WorkAreaGroup
 
         old_group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
@@ -1870,8 +1871,6 @@ class TestClearWorkAreaGroups(BaseMicroplanningFlagTest):
         return reverse("microplanning:clear_work_area_groups", args=(org_slug, opp_id))
 
     def test_clears_groups_and_ungroups_work_areas(self, client, org_user_admin, opportunity):
-        from commcare_connect.microplanning.models import WorkAreaGroup
-
         group = WorkAreaGroupFactory(opportunity=opportunity)
         work_area = WorkAreaFactory(opportunity=opportunity, work_area_group=group)
         client.force_login(org_user_admin)
@@ -1892,8 +1891,6 @@ class TestClearWorkAreaGroups(BaseMicroplanningFlagTest):
         assert any("cleared" in str(m) for m in messages)
 
     def test_clear_blocked_when_assigned(self, client, org_user_admin, opportunity):
-        from commcare_connect.microplanning.models import WorkAreaGroup
-
         group = WorkAreaGroupFactory(opportunity=opportunity)
         access = OpportunityAccessFactory(opportunity=opportunity)
         WorkAreaFactory(opportunity=opportunity, work_area_group=group, opportunity_access=access)
