@@ -17,6 +17,9 @@
         <i class="fa-solid fa-xmark text-xl"></i>
       </button>
     </div>
+    <form id="ocs-connect-form" method="post">
+      {% csrf_token %}
+    </form>
     <form method="post"
           x-ref="createTaskForm"
           action="{% url 'opportunity:task_types_config' request.org.slug opportunity.opportunity_id %}">

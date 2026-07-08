@@ -6,13 +6,13 @@
 {% endblock %}
 {% block content %}
   {% include 'components/breadcrumbs.html' with path=path %}
-  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6" x-init="$watch('showCreateTaskTypeModal', val => { if (!val) $refs.createTaskForm.reset() })" x-data="{ showCreateTaskTypeModal:
+  <div class="container md:max-w-screen-lg mx-auto flex flex-col gap-6" x-init="$watch('showCreateTaskTypeModal', val => { if (!val) { $refs.createTaskForm.reset(); taskMode = $refs.createTaskForm.querySelector('[name=mode]:checked')?.value || 'relearn'; } })" x-data="{ showCreateTaskTypeModal:
     {% if form.errors %}
       true
     {% else %}
       false
     {% endif %}
-    , showEditTaskTypeModal: false, editTaskError: false, task_units: {{ form.task_units_data }}, onTaskUnitSelectChange(taskUnitId) { const unit = this.task_units[taskUnitId]; if (unit) { document.getElementById('id_name').value = unit.name; document.getElementById('id_description').value = unit.description; } } }">
+    , showEditTaskTypeModal: false, editTaskError: false, task_units: {{ form.task_units_data }}, taskMode: '{{ form.mode.value|default:"relearn" }}', onTaskUnitSelectChange(taskUnitId) { const unit = this.task_units[taskUnitId]; if (unit) { document.getElementById('id_name').value = unit.name; document.getElementById('id_description').value = unit.description; } } }">
     <h2 class="title">{% translate "Configure Task Types" %}</h2>
     <div x-show="editTaskError"
          x-cloak
