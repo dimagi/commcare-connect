@@ -1,9 +1,20 @@
+from datetime import timedelta
+from urllib.parse import unquote
+
 import pytest
 from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
 from django.urls import reverse
+from django.utils import timezone
 
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
+from commcare_connect.organization.models import (
+    LLOEntity,
+    Organization,
+    OrganizationInvite,
+    UserOrganizationMembership,
+)
+from commcare_connect.users.models import User
+from commcare_connect.users.tests.factories import OrganizationInviteFactory, UserFactory
 from commcare_connect.utils.forms import TOMSELECT_NEW_ENTRY_PREFIX
 
 
@@ -158,46 +169,126 @@ class TestOrganizationCreateView:
 @pytest.mark.django_db
 class TestAcceptInviteView:
     @staticmethod
-    def _url(org_slug, invite_id):
-        return reverse("organization:accept_invite", args=(org_slug, invite_id))
+    def _url(org_slug, token):
+        return reverse("organization:accept_invite", args=(org_slug, token))
 
-    def test_valid_invite_redirects_to_opportunity_list(self, client, user, organization):
-        membership = organization.memberships.first()
+    def test_invalid_token_returns_404(self, client, organization):
+        response = client.get(self._url(organization.slug, "nonexistent-token"))
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("status", [None, OrganizationInvite.Status.REVOKED])
+    def test_expired_or_revoked_invite_is_rejected(self, client, organization, status):
+        kwargs = {"status": status} if status else {}
+        invite = OrganizationInviteFactory(organization=organization, **kwargs)
+        if status is None:
+            OrganizationInvite.objects.filter(pk=invite.pk).update(
+                date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+            )
+
+        response = client.get(self._url(organization.slug, invite.token))
+
+        assert response.status_code == 302
+        assert response.url == reverse("account_login")
+        invite.refresh_from_db()
+        assert invite.status == (OrganizationInvite.Status.EXPIRED if status is None else status)
+
+    def test_authenticated_matching_email_accepts_and_creates_membership(self, client, organization):
+        user = UserFactory(email="invitee@example.com")
+        invite = OrganizationInviteFactory(organization=organization, email=user.email, role="member")
         client.force_login(user)
 
-        response = client.get(self._url(organization.slug, membership.invite_id))
+        response = client.get(self._url(organization.slug, invite.token))
 
         assert response.status_code == 302
         assert response.url == reverse("opportunity:list", args=(organization.slug,))
-        messages = list(get_messages(response.wsgi_request))
-        assert len(messages) == 1
-        assert organization.slug in str(messages[0])
+        assert UserOrganizationMembership.objects.filter(user=user, organization=organization, role="member").exists()
+        invite.refresh_from_db()
+        assert invite.status == OrganizationInvite.Status.ACCEPTED
 
-    def test_non_admin_invitee_lands_on_accessible_page(self, client, org_user_member, organization):
-        membership = UserOrganizationMembership.objects.get(user=org_user_member, organization=organization)
-        client.force_login(org_user_member)
+    def test_authenticated_mismatched_email_does_not_accept(self, client, organization):
+        user = UserFactory(email="someone-else@example.com")
+        invite = OrganizationInviteFactory(organization=organization, email="invitee@example.com")
+        client.force_login(user)
 
-        response = client.get(self._url(organization.slug, membership.invite_id), follow=True)
+        response = client.get(self._url(organization.slug, invite.token))
+
+        assert response.status_code == 302
+        assert not UserOrganizationMembership.objects.filter(user=user, organization=organization).exists()
+        invite.refresh_from_db()
+        assert invite.status == OrganizationInvite.Status.INVITED
+
+    def test_unauthenticated_existing_account_redirects_to_login(self, client, organization):
+        existing_user = UserFactory(email="invitee@example.com")
+        invite = OrganizationInviteFactory(organization=organization, email=existing_user.email)
+
+        response = client.get(self._url(organization.slug, invite.token))
+
+        assert response.status_code == 302
+        assert response.url.startswith(reverse("account_login"))
+        assert self._url(organization.slug, invite.token) in unquote(response.url)
+
+    def test_unauthenticated_new_user_renders_join_form(self, client, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com")
+
+        response = client.get(self._url(organization.slug, invite.token))
 
         assert response.status_code == 200
+        assert "form" in response.context
 
-    def test_invalid_invite_id_returns_404(self, client, user, organization):
-        client.force_login(user)
+    def test_unauthenticated_new_user_can_join(self, client, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com", role="admin")
 
-        response = client.get(self._url(organization.slug, "nonexistent-invite-id"))
+        response = client.post(
+            self._url(organization.slug, invite.token),
+            data={"password1": "a-very-strong-password-1", "password2": "a-very-strong-password-1", "agree": "on"},
+        )
+
+        assert response.status_code == 302
+        assert response.url == reverse("opportunity:list", args=(organization.slug,))
+        new_user = User.objects.get(email="brand-new@example.com")
+        assert UserOrganizationMembership.objects.filter(
+            user=new_user, organization=organization, role="admin"
+        ).exists()
+        invite.refresh_from_db()
+        assert invite.status == OrganizationInvite.Status.ACCEPTED
+
+    def test_unauthenticated_new_user_join_requires_matching_passwords(self, client, organization):
+        invite = OrganizationInviteFactory(organization=organization, email="brand-new@example.com")
+
+        response = client.post(
+            self._url(organization.slug, invite.token),
+            data={"password1": "a-very-strong-password-1", "password2": "different-password", "agree": "on"},
+        )
+
+        assert response.status_code == 200
+        assert not User.objects.filter(email="brand-new@example.com").exists()
+
+
+@pytest.mark.django_db
+class TestRevokeInviteView:
+    @staticmethod
+    def _url(org_slug, invite_id):
+        return reverse("organization:revoke_invite", args=(org_slug, invite_id))
+
+    def test_admin_can_revoke_pending_invite(self, client, org_user_admin, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        client.force_login(org_user_admin)
+
+        response = client.post(self._url(organization.slug, invite.pk))
+
+        assert response.status_code == 200
+        invite.refresh_from_db()
+        assert invite.status == OrganizationInvite.Status.REVOKED
+
+    def test_member_cannot_revoke_invite(self, client, org_user_member, organization):
+        invite = OrganizationInviteFactory(organization=organization)
+        client.force_login(org_user_member)
+
+        response = client.post(self._url(organization.slug, invite.pk))
 
         assert response.status_code == 404
-
-    def test_invite_id_for_different_org_slug_returns_404_without_message(
-        self, client, user, organization, program_manager_org
-    ):
-        membership = organization.memberships.first()
-        client.force_login(user)
-
-        response = client.get(self._url(program_manager_org.slug, membership.invite_id))
-
-        assert response.status_code == 404
-        assert not list(get_messages(response.wsgi_request))
+        invite.refresh_from_db()
+        assert invite.status == OrganizationInvite.Status.INVITED
 
 
 @pytest.mark.django_db
@@ -220,3 +311,30 @@ class TestOrgMemberTableView:
         response = client.get(self._url(organization.slug))
         assert response.status_code == 302
         assert "login" in response.url
+
+
+@pytest.mark.django_db
+class TestPendingInvitesTableView:
+    @staticmethod
+    def _url(org_slug):
+        return reverse("organization:pending_invites_table", args=(org_slug,))
+
+    def test_lists_only_pending_invites(self, client, org_user_admin, organization):
+        pending = OrganizationInviteFactory(organization=organization, email="pending@example.com")
+        OrganizationInviteFactory(organization=organization, status=OrganizationInvite.Status.ACCEPTED)
+        expired = OrganizationInviteFactory(organization=organization, email="expired@example.com")
+        OrganizationInvite.objects.filter(pk=expired.pk).update(
+            date_created=timezone.now() - timedelta(days=OrganizationInvite.EXPIRY_DAYS + 1)
+        )
+        client.force_login(org_user_admin)
+
+        response = client.get(self._url(organization.slug))
+
+        assert response.status_code == 200
+        assert pending.email.encode() in response.content
+        assert expired.email.encode() not in response.content
+
+    def test_member_cannot_access(self, client, org_user_member, organization):
+        client.force_login(org_user_member)
+        response = client.get(self._url(organization.slug))
+        assert response.status_code == 404
