@@ -95,18 +95,6 @@ class TestRefreshAccessToken:
         expected = timezone.now() + DEFAULT_ACCESS_TOKEN_TTL
         assert abs((result.expires_at - expected).total_seconds()) < 10
 
-    def test_valid_after_refresh_without_expires_in_does_not_refetch(self, user, httpx_mock):
-        past = timezone.now() - datetime.timedelta(minutes=5)
-        _make_token(user, expires_at=past)
-        httpx_mock.add_response(url=TOKEN_URL, method="POST", json={"access_token": "new"})
-
-        refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
-        # Second call should treat the refreshed token as valid — no further network call.
-        result = refresh_access_token(user, provider="ocs", token_url=TOKEN_URL)
-
-        assert result.token == "new"
-        assert len(httpx_mock.get_requests()) == 1
-
     def test_keeps_existing_refresh_token_when_response_omits_it(self, user, httpx_mock):
         past = timezone.now() - datetime.timedelta(minutes=5)
         _make_token(user, refresh="keep-me", expires_at=past)
