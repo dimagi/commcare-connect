@@ -54,7 +54,8 @@ class PendingInviteTable(tables.Table):
         template_code="""
             {% load i18n %}
             <button type="button" class="button button-sm outline-style text-red-600"
-                hx-post="{{ record.get_revoke_url }}" hx-target="#pending_invites_container" hx-swap="innerHTML">
+                hx-post="{% url 'organization:revoke_invite' record.organization.slug record.pk %}"
+                hx-target="#pending_invites_container" hx-swap="innerHTML">
                 {% translate "Revoke" %}
             </button>
         """,

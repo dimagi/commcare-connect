@@ -3,7 +3,6 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
-from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -84,10 +83,6 @@ class UserOrganizationMembership(models.Model):
         unique_together = ("user", "organization")
 
 
-def _generate_invite_token():
-    return secrets.token_urlsafe(32)
-
-
 class OrganizationInvite(BaseModel):
     EXPIRY_DAYS = 7
 
@@ -101,7 +96,7 @@ class OrganizationInvite(BaseModel):
     email = models.EmailField()
     role = models.CharField(max_length=20, choices=UserOrganizationMembership.Role.choices)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.INVITED)
-    token = models.CharField(max_length=64, unique=True, default=_generate_invite_token)
+    token = models.CharField(max_length=64, unique=True, default=secrets.token_urlsafe)
     invited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="sent_invites")
 
     class Meta:
@@ -115,9 +110,6 @@ class OrganizationInvite(BaseModel):
 
     def __str__(self):
         return f"Invite for {self.email} to {self.organization}"
-
-    def get_revoke_url(self):
-        return reverse("organization:revoke_invite", args=(self.organization.slug, self.pk))
 
     @property
     def is_expired(self):
