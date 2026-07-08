@@ -1367,6 +1367,11 @@ def get_ocs_task_section_context(request):
 
 
 def _ocs_connect_prompt_context(request):
+    """
+    Since the OCS connect prompt is loaded as an htmx request we need to make
+    sure the ocs "next" url references the parent page the htmx request came
+    from.
+    """
     return {
         "ocs_connected": False,
         "ocs_next_url": _hx_current_path(request),
