@@ -31,9 +31,9 @@
         {% for error in form.email.errors %}<p class="error-msg">* {{ error }}</p>{% endfor %}
       </div>
       {% translate "Password" as password_label %}
-      {% include "account/password_field.html" with field=form.password1 placeholder=password_label x_model="password" persist_value=True %}
+      {% include "account/password_field.html" with field=form.password1 placeholder=password_label x_model="password" %}
       {% translate "Confirm Password" as confirm_password_label %}
-      {% include "account/password_field.html" with field=form.password2 placeholder=confirm_password_label x_model="confirmPassword" persist_value=True %}
+      {% include "account/password_field.html" with field=form.password2 placeholder=confirm_password_label x_model="confirmPassword" %}
       <!-- Checkbox and Submit -->
       <div class="flex flex-col items-end gap-3">
         <div class="input-group">
