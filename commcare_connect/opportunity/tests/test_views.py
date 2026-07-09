@@ -3051,8 +3051,10 @@ class TestUserVisitVerificationDeepLink:
 
     def test_invalid_visit_param_is_ignored(self, client, organization, org_user_member, opportunity):
         access = OpportunityAccessFactory(opportunity=opportunity)
+        visit = UserVisitFactory.create(opportunity=opportunity, user=access.user, opportunity_access=access)
 
         client.force_login(org_user_member)
         response = client.get(self._url(organization, opportunity, user=access.user.user_id, visit="not-a-uuid"))
 
         assert response.status_code == 200
+        assert self._details_url(organization, opportunity, visit).encode() not in response.content

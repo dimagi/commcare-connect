@@ -2193,6 +2193,7 @@ class UserVisitVerificationView(WorkerPageView):
         return context
 
     def _get_initial_visit_details_url(self):
+        """Return the details URL for a valid ``visit`` query param, so the template auto-opens it."""
         visit_id = self.request.GET.get("visit")
         if not visit_id:
             return None
