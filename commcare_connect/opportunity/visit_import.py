@@ -385,7 +385,8 @@ def bulk_update_payments(opportunity_id: int, headers: list[str], rows: list[lis
         payments_by_user[username].append(payment_row)
 
     if invalid_rows:
-        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join([str(r) for r in invalid_rows]))
+        error_details = [f"{reason}: {', '.join(cells)}" for cells, reason in invalid_rows]
+        raise ImportException(f"{len(invalid_rows)} rows have errors", "<br>".join(error_details))
 
     seen_users = set()
     payment_ids = []

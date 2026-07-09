@@ -422,6 +422,7 @@ def test_bulk_update_payments_duplicate_check(opportunity: Opportunity):
     error_details = excinfo.value.rows
     expected_error_substring = "A payment for this user with the same amount and date already exists."
     assert expected_error_substring in error_details
+    assert "(['" not in error_details  # readable "reason: cells", not a raw Python tuple
     assert Payment.objects.count() == 1
 
 

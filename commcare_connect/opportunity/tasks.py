@@ -512,7 +512,9 @@ def bulk_update_payments_task(self, opportunity_id: int, file_path: str, file_fo
             status = bulk_update_payments(opportunity_id, headers, rows)
             message, is_error = get_payment_import_result_message(status)
         except ImportException as e:
-            message = "<br>".join([f"Payment Import failed: {e}"] + getattr(e, "invalid_rows", []))
+            message = f"Payment Import failed: {e.message}"
+            if e.rows:
+                message += f"<br>{e.rows}"
             is_error = True
         except Exception as e:
             message = f"Unexpected error during payment import: {e}"
