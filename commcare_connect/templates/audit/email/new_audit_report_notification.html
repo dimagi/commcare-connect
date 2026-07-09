@@ -1,14 +1,17 @@
 {% extends "email/base.html" %}
+{% load i18n %}
 {% block content %}
-  <p>Hi,</p>
+  <p>{% trans "Hi," %}</p>
   <p>
-    New audit reports have been generated for <strong>{{ organization.name }}</strong>:
+    {% blocktrans with org_name=organization.name %}
+        New audit reports have been generated for <strong>{{ org_name }}</strong>:
+    {% endblocktrans %}
   </p>
   <ul>
     {% for report in reports %}
       <li>
         <a href="{{ report.url }}">{{ report.opportunity_name }}</a>
-        ({{ report.period_start }} to {{ report.period_end }})
+        {% blocktrans with period_start=report.period_start period_end=report.period_end %}({{ period_start }} to {{ period_end }}){% endblocktrans %}
       </li>
     {% endfor %}
   </ul>

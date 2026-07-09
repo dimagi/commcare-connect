@@ -1,8 +1,9 @@
 {% extends "email/base.txt" %}
-{% block content %}Hi,
+{% load i18n %}
+{% block content %}{% trans "Hi," %}
 
-New audit reports have been generated for {{ organization.name }}:
+{% blocktrans with org_name=organization.name %}New audit reports have been generated for {{ org_name }}:{% endblocktrans %}
 {% for report in reports %}
-{{ report.opportunity_name }} ({{ report.period_start }} to {{ report.period_end }})
+{{ report.opportunity_name }} {% blocktrans with period_start=report.period_start period_end=report.period_end %}({{ period_start }} to {{ period_end }}){% endblocktrans %}
 {{ report.url }}
 {% endfor %}{% endblock %}
