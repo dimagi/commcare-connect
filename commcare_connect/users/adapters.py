@@ -5,7 +5,6 @@ from allauth.account.utils import user_email
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialLogin
-from allauth.socialaccount.providers.base import AuthProcess
 from allauth.utils import email_address_exists
 from django.conf import settings
 from django.contrib import messages
@@ -14,7 +13,7 @@ from django.shortcuts import redirect
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 
-from commcare_connect.ocs_provider.provider import OcsProvider
+from commcare_connect.commcarehq_provider.provider import CommcareHQProvider
 
 
 class AccountAdapter(DefaultAccountAdapter):
@@ -51,11 +50,10 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
     def pre_social_login(self, request: HttpRequest, sociallogin: SocialLogin):
         if sociallogin.is_existing:
             return
-        if sociallogin.state.get("process") == AuthProcess.CONNECT and sociallogin.account.provider == OcsProvider.id:
-            return  # OCS account being linked to an already-authenticated user
-        email = user_email(sociallogin.user)
-        if not email:
-            return
-        if email_address_exists(email):
-            messages.error(request, _("Unable to sign in with SSO. Please sign in with your email and password."))
-            raise ImmediateHttpResponse(redirect("account_login"))
+        if sociallogin.account.provider == CommcareHQProvider.id:
+            email = user_email(sociallogin.user)
+            if not email:
+                return
+            if email_address_exists(email):
+                messages.error(request, _("Unable to sign in with SSO. Please sign in with your email and password."))
+                raise ImmediateHttpResponse(redirect("account_login"))
