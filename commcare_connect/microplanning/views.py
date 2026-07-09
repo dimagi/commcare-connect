@@ -7,6 +7,7 @@ from http import HTTPStatus
 
 import pghistory
 from celery.result import AsyncResult
+from crispy_forms.utils import render_crispy_form
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.gis.db.models import Extent, Union
@@ -50,7 +51,7 @@ from commcare_connect.microplanning.filters import (
     UserVisitMapFilterSet,
     WorkAreaMapFilterSet,
 )
-from commcare_connect.microplanning.forms import AssignmentModeForm, WorkAreaModelForm
+from commcare_connect.microplanning.forms import AssignmentModeForm, ClusterWorkAreasForm, WorkAreaModelForm
 from commcare_connect.microplanning.helpers import (
     exclude_work_areas_for_opportunity,
     pct,
@@ -182,6 +183,7 @@ def microplanning_home(request, *args, **kwargs):
         ).replace("/0/", "/"),
         "exclude_url": exclude_url,
         "filter_form": filterset.form,
+        "cluster_form": ClusterWorkAreasForm(),
         "is_program_manager": is_program_manager,
         "assignment_mode": assignment_mode,
     }
@@ -538,12 +540,21 @@ def cluster_work_areas(request, org_slug, opp_id):
         messages.error(request, _("Work Area Groups already exist for this opportunity."))
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
+    form = ClusterWorkAreasForm(request.POST)
+    if not form.is_valid():
+        # Retarget the swap onto the field container so the error renders in
+        # place, keeping the Create Groups button and the modal untouched.
+        response = HttpResponse(render_crispy_form(form))
+        response.headers["HX-Retarget"] = "#building-count-field"
+        response.headers["HX-Reswap"] = "outerHTML"
+        return response
+
     lock_key = get_cluster_area_cache_lock_key(request.opportunity.id)
     if cache.lock(lock_key).locked():
         messages.error(request, _("Work Area Clustering is already in progress for this opportunity."))
         return HttpResponse(headers={"HX-Redirect": redirect_url})
 
-    task = cluster_work_areas_task.delay(request.opportunity.id)
+    task = cluster_work_areas_task.delay(request.opportunity.id, form.cleaned_data["building_count"])
     redirect_url += f"?clustering_task_id={task.id}"
     response = render(
         request,
