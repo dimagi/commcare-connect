@@ -341,11 +341,7 @@
             </template>
             <!-- Panel 3: FLW Summary -->
             <div class="border-t border-gray-200 pt-3">
-              <h3 class="text-sm font-semibold mb-2">
-                {% translate "FLW Summary" %}
-                <i class="fa-solid fa-circle-info text-gray-400 ml-1 cursor-help"
-                   x-tooltip.raw="{% translate 'Totals reflect the counts currently assigned to this FLW, including any pending (unsaved) assignments.' %}"></i>
-              </h3>
+              <h3 class="text-sm font-semibold mb-2">{% translate "FLW Summary" %}</h3>
               <div class="mb-2">
                 <label class="block text-xs text-gray-500 mb-1">{% translate "Select FLW" %}</label>
                 <select x-ref="flwSummarySelect"
@@ -371,15 +367,15 @@
                     <div class="grid grid-cols-2 items-center gap-2 text-sm">
                       <dt class="text-gray-500">{% translate "Total Buildings" %}</dt>
                       <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                          x-text="flwSummary.assigned_buildings + getQueuedStatsForAssignee().buildings + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStatsForSummary().buildings : 0)">
+                          x-text="formatFlwSummaryTotal(flwSummary.assigned_buildings, 'buildings')">
                       </dd>
                       <dt class="text-gray-500">{% translate "Total Expected Visits" %}</dt>
                       <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                          x-text="flwSummary.assigned_visits + getQueuedStatsForAssignee().visits + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStatsForSummary().visits : 0)">
+                          x-text="formatFlwSummaryTotal(flwSummary.assigned_visits, 'visits')">
                       </dd>
                       <dt class="text-gray-500">{% translate "Total Work Areas" %}</dt>
                       <dd class="font-medium text-right border border-gray-200 rounded-lg px-3 py-2 bg-gray-50"
-                          x-text="flwSummary.assigned_work_areas + getQueuedStatsForAssignee().workAreas + (String(flwSummaryAssigneeId) === String(selectedAssigneeId) ? getSelectedStatsForSummary().workAreas : 0)">
+                          x-text="formatFlwSummaryTotal(flwSummary.assigned_work_areas, 'workAreas')">
                       </dd>
                     </div>
                   </dl>

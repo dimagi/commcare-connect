@@ -359,6 +359,22 @@
                 return { buildings, visits, workAreas };
             },
 
+            getFlwSummaryPendingDelta(kind) {
+                // Net-new count (kind: 'buildings' | 'visits' | 'workAreas') for the FLW
+                // shown in the summary: areas queued for them plus, if they're the
+                // active assignee, the live selection's net-new areas.
+                const queued = this.getQueuedStatsForAssignee()[kind];
+                const selected = String(this.flwSummaryAssigneeId) === String(this.selectedAssigneeId)
+                    ? this.getSelectedStatsForSummary()[kind]
+                    : 0;
+                return queued + selected;
+            },
+
+            formatFlwSummaryTotal(base, kind) {
+                const delta = this.getFlwSummaryPendingDelta(kind);
+                return delta > 0 ? `${base} + ${delta} (new)` : `${base}`;
+            },
+
             findAssignee(assigneeId) {
                 return this.assignees.find(assignee => String(assignee.id) === String(assigneeId));
             },
