@@ -2043,7 +2043,7 @@ class AddTaskTypeForm(forms.ModelForm):
         # Preserve the chosen chatbot across a validation-error round-trip: the
         # OCS section is (re)loaded fresh via htmx, so pass the submitted value
         # through so the endpoint can re-select it.
-        selected_chatbot_id = self.data.get("ocs_chatbot_id") if self.is_bound else None
+        selected_chatbot_id = self.data.get("ocs_chatbot_id")
         if selected_chatbot_id:
             ocs_section_url = f"{ocs_section_url}?{urlencode({'selected': selected_chatbot_id})}"
 

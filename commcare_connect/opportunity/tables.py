@@ -1943,7 +1943,7 @@ class TaskTable(OpportunityContextTable):
     index = IndexColumn()
     name = tables.Column(verbose_name=gettext_lazy("Task Type Name"))
     description = tables.Column(verbose_name=gettext_lazy("Description"))
-    mode = tables.Column(verbose_name=gettext_lazy("Mode"), accessor="mode")
+    mode = tables.Column(verbose_name=gettext_lazy("Mode"))
     linked_task_unit = tables.Column(verbose_name=gettext_lazy("Linked Task Unit"), accessor="unit_name")
     archived = tables.DateColumn(verbose_name=gettext_lazy("Archived"))
     actions = tables.TemplateColumn(
