@@ -810,7 +810,7 @@ def payment_import(request, org_slug=None, opp_id=None):
 
 @org_member_required
 @require_GET
-def payment_import_status(request, org_slug, task_id):
+def render_payment_import_progress(request, org_slug, task_id):
     """Polled by the payments page while a payment import runs; on completion it shows a
     'View status' link that reloads the page so the result appears as a standard banner."""
 
