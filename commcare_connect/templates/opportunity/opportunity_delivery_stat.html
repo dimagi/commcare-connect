@@ -52,7 +52,7 @@
                 <p class="text-sm text-white {{ panel.text_color }}">{{ panel.status }}</p>
               </div>
               <h3 class="text-2xl font-medium text-white {{ panel.text_color }}">{{ panel.value }}</h3>
-              <div class="w-17">
+              <div>
                 {% if panel.incr is not None %}
                   <span x-data
                         x-tooltip.raw="Increment in last 24 hours"
