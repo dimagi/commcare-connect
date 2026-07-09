@@ -153,6 +153,19 @@ def microplanning_home(request, *args, **kwargs):
         for status in WorkAreaStatus
     }
 
+    # After an upload the view redirects here with ?task_id=&area_type=; the auto-poll must
+    # hit the status endpoint matching the area that was uploaded so the modal shows the right labels.
+    area_type = request.GET.get("area_type", "work_area")
+    status_url_name = (
+        "microplanning:implementation_area_import_status"
+        if area_type == "implementation_area"
+        else "microplanning:import_status"
+    )
+    import_status_url = reverse(
+        status_url_name,
+        kwargs={"org_slug": request.org.slug, "opp_id": opportunity.opportunity_id},
+    )
+
     is_program_manager = request_user_is_program_manager(request)
     assignment_mode = is_program_manager and bool(request.GET.get("assignment_mode"))
 
@@ -167,6 +180,7 @@ def microplanning_home(request, *args, **kwargs):
         "show_workarea_groups_btn": show_workarea_groups_btn,
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
+        "import_status_url": import_status_url,
         "opportunity": opportunity,
         "metrics": get_metrics_for_microplanning(opportunity),
         "tiles_url": tiles_url,
@@ -406,7 +420,7 @@ class ImplementationAreaImport(View):
         task = import_implementation_areas_task.delay(request.opportunity.id, file_name)
         cache.set(lock_key, task.id, timeout=1200)
         messages.info(request, _("Implementation Area upload has been started."))
-        redirect_url += f"?task_id={task.id}"
+        redirect_url += f"?task_id={task.id}&area_type=implementation_area"
         return redirect(redirect_url)
 
 

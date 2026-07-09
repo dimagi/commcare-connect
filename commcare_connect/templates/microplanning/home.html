@@ -62,7 +62,7 @@
          class="flex items-center justify-between w-full px-2 bg-white rounded-lg shadow-sm h-14 mb-4">
       <div class="flex items-end space-x-2 w-full">
         {% if task_id %}
-          <div hx-get="{% url 'microplanning:import_status' request.org.slug request.opportunity.opportunity_id %}"
+          <div hx-get="{{ import_status_url }}"
                hx-vals='{"task_id": "{{ task_id }}"}'
                hx-trigger="load"
                hx-target="#modal-container"></div>
