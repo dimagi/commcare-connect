@@ -58,6 +58,7 @@ from commcare_connect.microplanning.helpers import (
     unassign_work_areas_for_opportunity,
 )
 from commcare_connect.microplanning.models import (
+    InaccessibilityRequestStatus,
     WorkArea,
     WorkAreaGroup,
     WorkAreaInaccessibilityRequest,
@@ -165,6 +166,14 @@ def microplanning_home(request, *args, **kwargs):
         "mapbox_api_key": settings.MAPBOX_TOKEN,
         "task_id": request.GET.get("task_id"),
         "opportunity": opportunity,
+        "path": [
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
+            },
+            {"title": _("Progress Map")},
+        ],
         "metrics": get_metrics_for_microplanning(opportunity),
         "tiles_url": tiles_url,
         "visit_tiles_url": visit_tiles_url,
@@ -924,7 +933,9 @@ def review_inaccessibility_request(request, org_slug, opp_id, work_area_id):
         opportunity=request.opportunity,
         status=WorkAreaStatus.REQUEST_FOR_INACCESSIBLE,
     )
-    inacc_request = get_object_or_404(WorkAreaInaccessibilityRequest, work_area=work_area)
+    inacc_request = get_object_or_404(
+        WorkAreaInaccessibilityRequest, work_area=work_area, status=InaccessibilityRequestStatus.PENDING
+    )
     try:
         photo = BlobMeta.objects.get(parent_id=inacc_request.xform_id)
     except BlobMeta.DoesNotExist:
@@ -955,6 +966,11 @@ _ACTION_TO_NEW_STATUS = {
     InaccessibilityReviewAction.DENY: WorkAreaStatus.NOT_VISITED,
 }
 
+_ACTION_TO_REQUEST_STATUS = {
+    InaccessibilityReviewAction.APPROVE: InaccessibilityRequestStatus.APPROVED,
+    InaccessibilityReviewAction.DENY: InaccessibilityRequestStatus.DENIED,
+}
+
 
 @require_POST
 @org_admin_required
@@ -977,13 +993,16 @@ def act_on_inaccessibility_request(request, org_slug, opp_id, work_area_id):
     inacc_request = get_object_or_404(
         WorkAreaInaccessibilityRequest.objects.select_related("opportunity_access__user"),
         work_area=work_area,
+        status=InaccessibilityRequestStatus.PENDING,
     )
 
     work_area.status = new_status
+    inacc_request.status = _ACTION_TO_REQUEST_STATUS[action]
     try:
         with transaction.atomic():
             with pghistory.context(username=request.user.username, user_email=request.user.email):
                 work_area.save(update_fields=["status"])
+            inacc_request.save(update_fields=["status"])
             if work_area.opportunity_access_id:
                 create_or_update_case_by_work_area(work_area)
     except CommCareHQAPIException as e:
@@ -1063,6 +1082,11 @@ def coverage_progress(request, *args, **kwargs):
         "filter_form": filterset.form,
         "export_hrefs": export_hrefs,
         "path": [
+            {"title": _("Opportunities"), "url": reverse("opportunity:list", kwargs={"org_slug": request.org.slug})},
+            {
+                "title": opportunity.name,
+                "url": reverse("opportunity:detail", args=(request.org.slug, opportunity.opportunity_id)),
+            },
             {
                 "title": _("Progress Map"),
                 "url": reverse(
