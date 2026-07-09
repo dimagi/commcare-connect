@@ -42,7 +42,13 @@
       </div>
       <div class="flex justify-between mt-4">
         {% if request.GET.clustering_task_id %}
-          <button type="button" disabled class="button button-md primary-dark">{% translate "Create Groups" %}</button>
+          <button type="button" disabled class="button button-md primary-dark">
+            {% if clustering_is_rerun %}
+              {% trans 'Rerun Clustering' %}
+            {% else %}
+              {% trans 'Create Groups' %}
+            {% endif %}
+          </button>
         {% else %}
           <button type="submit"
                   class="button button-md primary-dark"
