@@ -2990,7 +2990,7 @@ def test_payment_import_redirects_with_payment_task_id(mock_delay, client, organ
     assert "export_task_id=" not in response.url
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_payment_import_status_in_progress(mock_async_result, client, organization, opportunity, org_user_member):
     task = mock_async_result.return_value
     task._get_task_meta.return_value = {"status": "PROGRESS", "args": [opportunity.id]}
@@ -3006,7 +3006,7 @@ def test_payment_import_status_in_progress(mock_async_result, client, organizati
     assert "hx-get" in content  # keeps polling while not complete
 
 
-@mock.patch("commcare_connect.opportunity.views.AsyncResult")
+@mock.patch("commcare_connect.utils.celery.AsyncResult")
 def test_payment_import_status_complete_shows_reload_link(
     mock_async_result, client, organization, opportunity, org_user_member
 ):

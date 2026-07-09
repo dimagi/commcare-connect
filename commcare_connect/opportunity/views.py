@@ -217,9 +217,8 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import (
     CELERY_TASK_FAILURE,
-    CELERY_TASK_PENDING,
-    CELERY_TASK_SUCCESS,
     download_export_file,
+    get_task_progress,
     get_task_progress_message,
     render_export_status,
 )
@@ -814,17 +813,11 @@ def payment_import(request, org_slug=None, opp_id=None):
 def payment_import_status(request, org_slug, task_id):
     """Polled by the payments page while a payment import runs; on completion it shows a
     'View status' link that reloads the page so the result appears as a standard banner."""
-    task = AsyncResult(task_id)
-    task_meta = task._get_task_meta()
-    status = task_meta.get("status")
-    if status != CELERY_TASK_PENDING:
+
+    def ownership_check(request, task_meta):
         get_opportunity_or_404(org_slug=org_slug, pk=task_meta.get("args")[0])
-    progress = {
-        "complete": status == CELERY_TASK_SUCCESS,
-        "message": get_task_progress_message(task),
-    }
-    if status == CELERY_TASK_FAILURE:
-        progress["error"] = task_meta.get("result")
+
+    progress = get_task_progress(request, task_id, ownership_check)
     context = {
         "task_id": task_id,
         "progress": progress,
