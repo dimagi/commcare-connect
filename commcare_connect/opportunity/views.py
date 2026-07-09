@@ -217,6 +217,7 @@ from commcare_connect.users.models import User
 from commcare_connect.utils.analytics import GA_CUSTOM_DIMENSIONS, Event, GATrackingInfo, send_event_to_ga
 from commcare_connect.utils.celery import (
     CELERY_TASK_FAILURE,
+    CELERY_TASK_SUCCESS,
     download_export_file,
     get_task_progress,
     get_task_progress_message,
@@ -2820,35 +2821,48 @@ class WorkerPaymentsView(BaseWorkerListView):
     active_tab = "payments"
 
     def get(self, request, org_slug, opp_id):
-        if not request.htmx:
+        # A finished import surfaces its result as a banner; a running one keeps the
+        # polling progress bar (added to context in get_extra_context).
+        if not request.htmx and self._payment_import_complete():
             self._add_payment_import_message()
         return super().get(request, org_slug, opp_id)
 
-    def _add_payment_import_message(self):
-        """When the page is reloaded via the import's 'View status' link, surface the
-        finished task's message as a standard banner."""
-        task_id = self.request.GET.get("show_import_status")
+    def _payment_import_task(self):
+        task_id = self.request.GET.get("payment_import_task_id")
         if not task_id:
-            return
+            return None
         task = AsyncResult(task_id)
-        task_meta = task._get_task_meta()
-        args = task_meta.get("args") or []
+        args = task._get_task_meta().get("args") or []
         if not args or args[0] != self.get_opportunity().pk:
-            return
-        if task_meta.get("status") == CELERY_TASK_FAILURE:
+            return None
+        return task
+
+    def _payment_import_complete(self):
+        task = self._payment_import_task()
+        return bool(task) and task._get_task_meta().get("status") in (CELERY_TASK_SUCCESS, CELERY_TASK_FAILURE)
+
+    def _add_payment_import_message(self):
+        """Surface the finished import task's result as a standard banner."""
+        task = self._payment_import_task()
+        if task._get_task_meta().get("status") == CELERY_TASK_FAILURE:
             messages.error(self.request, _("The payment import failed. Please try again."))
             return
         message = get_task_progress_message(task)
         if not message:
             return
-        is_error = (task_meta.get("result") or {}).get("is_error")
+        is_error = (task._get_task_meta().get("result") or {}).get("is_error")
         add_message = messages.error if is_error else messages.success
         add_message(self.request, mark_safe(message))
 
     def get_extra_context(self, opportunity, org_slug):
+        # Only keep polling while the import is still running; once complete the result
+        # is shown as a banner instead of the progress bar.
+        task_id = self.request.GET.get("payment_import_task_id")
+        if task_id and self._payment_import_complete():
+            task_id = None
         return {
             "export_form": PaymentExportForm(),
-            "payment_import_task_id": self.request.GET.get("payment_import_task_id"),
+            "payment_import_task_id": task_id,
         }
 
     def get_table(self, opportunity, org_slug):

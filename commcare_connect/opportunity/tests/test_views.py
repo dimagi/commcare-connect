@@ -3020,7 +3020,7 @@ def test_payment_import_status_complete_shows_reload_link(
 
     content = response.content.decode()
     assert "All done! View status." in content
-    assert "show_import_status=task-xyz" in content
+    assert "payment_import_task_id=task-xyz" in content
     assert "hx-get" not in content  # polling stops once complete
 
 
@@ -3043,7 +3043,7 @@ def test_worker_payments_shows_import_banner_on_reload(
     client.force_login(org_user_member)
     url = reverse("opportunity:worker_payments", args=(organization.slug, opportunity.id))
 
-    response = client.get(url, {"show_import_status": "task-xyz"})
+    response = client.get(url, {"payment_import_task_id": "task-xyz"})
 
     content = response.content.decode()
     assert response.status_code == 200
